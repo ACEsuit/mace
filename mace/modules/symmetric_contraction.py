@@ -218,10 +218,15 @@ class Contraction(torch.nn.Module):
         for idx, keep in enumerate(path_weight):
             zero_flag = not keep
             if idx < correlation - 1:
+                # path_weight[idx] corresponds to correlation order nu = idx + 1,
+                # while self.weights is built in descending order
+                # [nu = correlation - 1, ..., nu = 1].  Map the flag to the slot
+                # that the forward pass actually contracts with U_tensors(nu).
+                weight_idx = correlation - 2 - idx
                 if zero_flag:
-                    self.weights[idx] = EmptyParam(self.weights[idx])
+                    self.weights[weight_idx] = EmptyParam(self.weights[weight_idx])
                 self.register_buffer(
-                    f"weights_{idx}_zeroed",
+                    f"weights_{weight_idx}_zeroed",
                     torch.tensor(zero_flag, dtype=torch.bool),
                 )
             else:

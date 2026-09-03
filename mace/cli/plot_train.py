@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import dataclasses
 import glob
@@ -6,11 +8,21 @@ import os
 import re
 from typing import List
 
-import matplotlib.pyplot as plt
-import pandas as pd
+# matplotlib/pandas are not mace-torch dependencies: guard the import so the
+# console entry point resolves (and --help works) in a clean install, and
+# main() can explain what to install instead of crashing with ImportError.
+try:
+    import matplotlib.pyplot as plt
+    import pandas as pd
 
-plt.rcParams.update({"font.size": 8})
-plt.style.use("seaborn-v0_8-paper")
+    plt.rcParams.update({"font.size": 8})
+    plt.style.use("seaborn-v0_8-paper")
+
+    PLOT_DEPS_AVAILABLE = True
+except ImportError:
+    plt = None
+    pd = None
+    PLOT_DEPS_AVAILABLE = False
 
 
 colors = [
@@ -118,6 +130,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _aggregate(data, keys: List[str]):
+    """Mean and std per group, over the numeric columns only.
+
+    The results log carries `head` as a string and the mean of a string is not a
+    thing. pandas used to drop such a column from an aggregation by itself; 3.0
+    raises `dtype 'str' does not support operation 'mean'` instead, and
+    `numeric_only=True` does not help because the list-of-aggregations path
+    dispatches per column and then refuses on that same column. Selecting the
+    numeric columns up front is what works on both.
+    """
+    values = [
+        column
+        for column in data.columns
+        if column not in keys and pd.api.types.is_numeric_dtype(data[column])
+    ]
+    return data.groupby(keys)[values].agg(["mean", "std"]).reset_index()
+
+
 def plot(
     data: pd.DataFrame,
     min_epoch: int,
@@ -161,9 +191,7 @@ def plot(
 
     data = data[data["epoch"] > min_epoch]
     if heads is None:
-        data = (
-            data.groupby(["name", "mode", "epoch"]).agg(["mean", "std"]).reset_index()
-        )
+        data = _aggregate(data, ["name", "mode", "epoch"])
 
         valid_data = data[data["mode"] == "eval"]
         valid_data_dict = {"default": valid_data}
@@ -171,18 +199,10 @@ def plot(
     else:
         heads = heads.split(",")
         # Separate eval and opt data
-        valid_data = (
-            data[data["mode"] == "eval"]
-            .groupby(["name", "mode", "epoch", "head"])
-            .agg(["mean", "std"])
-            .reset_index()
+        valid_data = _aggregate(
+            data[data["mode"] == "eval"], ["name", "mode", "epoch", "head"]
         )
-        train_data = (
-            data[data["mode"] == "opt"]
-            .groupby(["name", "mode", "epoch"])
-            .agg(["mean", "std"])
-            .reset_index()
-        )
+        train_data = _aggregate(data[data["mode"] == "opt"], ["name", "mode", "epoch"])
         valid_data_dict = {
             head: valid_data[valid_data["head"] == head] for head in heads
         }
@@ -313,6 +333,11 @@ def get_paths(path: str) -> List[str]:
 
 
 def main() -> None:
+    if not PLOT_DEPS_AVAILABLE:
+        raise SystemExit(
+            "mace_plot_train requires matplotlib and pandas: "
+            "pip install matplotlib pandas"
+        )
     args = parse_args()
     run(args)
 

@@ -1,7 +1,13 @@
-from typing import Any, Dict, List, Optional
+# pylint: disable=too-many-lines  # magnetic MACE variants live here
+import logging
+from abc import abstractmethod
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
+import numpy as np
 import torch
 from e3nn import o3
+from e3nn.io import CartesianTensor
+from e3nn.o3._reduce import ReducedTensorProducts
 from e3nn.util.jit import compile_mode
 
 try:
@@ -18,30 +24,53 @@ except (ImportError, ModuleNotFoundError):
     GRAPH_LONGRANGE_AVAILABLE = False
 
 from mace.modules.blocks import (
+    LinearLesReadoutBlock,
     LinearReadoutBlock,
     NonLinearBiasReadoutBlock,
+    NonLinearLesReadoutBlock,
     NonLinearReadoutBlock,
 )
+from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.models import ScaleShiftMACE
-from mace.modules.utils import get_atomic_virials_stresses, get_outputs, prepare_graph
+from mace.modules.utils import (
+    compute_total_charge_dipole_permuted,
+    get_atomic_virials_stresses,
+    get_outputs,
+    prepare_graph,
+    safe_double,
+)
 from mace.modules.wrapper_ops import (
     CuEquivarianceConfig,
     OEQConfig,
     TransposeIrrepsLayoutWrapper,
 )
 from mace.tools.scatter import scatter_mean, scatter_sum
+from mace.tools.torch_tools import spherical_to_cartesian
 
+from .blocks import (
+    AtomicEnergiesBlock,
+    EquivariantProductBasisWithSelfMagmomBlock,
+    InteractionBlock,
+    LinearNodeEmbeddingBlock,
+    LinearReadoutBlock,
+    NonLinearReadoutBlock,
+    RadialEmbeddingBlock,
+    ScaleShiftBlock,
+)
 from .field_blocks import (
     EnvironmentDependentSpinSourceBlock,
     MultiLayerFeatureMixer,
     field_readout_blocks,
     field_update_blocks,
 )
-from .utils import compute_total_charge_dipole_permuted
+from .radial import ZBLBasis
+from .utils import get_edge_vectors_and_lengths, get_symmetric_displacement
 
 
 def _copy_mace_readout(
-    mace_readout: torch.nn.Module, cueq_config: Optional[CuEquivarianceConfig] = None
+    mace_readout: torch.nn.Module,
+    change_irrep_out: Optional[str] = None,  # o3.Irreps("1x1o")
+    cueq_config: Optional[CuEquivarianceConfig] = None,
 ) -> torch.nn.Module:
     """
     Helper function to copy a MACE readout block.
@@ -49,7 +78,7 @@ def _copy_mace_readout(
     if isinstance(mace_readout, LinearReadoutBlock):
         return LinearReadoutBlock(
             irreps_in=mace_readout.linear.irreps_in,  # type: ignore
-            irrep_out=mace_readout.linear.irreps_out,  # type: ignore
+            irrep_out=o3.Irreps(change_irrep_out) if change_irrep_out is not None else mace_readout.linear.irreps_out,  # type: ignore
             cueq_config=cueq_config,
         )
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type: ignore
@@ -59,8 +88,43 @@ def _copy_mace_readout(
             gate=mace_readout.non_linearity._modules["acts"][  # pylint: disable=W0212
                 0
             ].f,
-            irrep_out=mace_readout.linear_2.irreps_out,  # type: ignore
+            irrep_out=o3.Irreps(change_irrep_out) if change_irrep_out is not None else mace_readout.linear_2.irreps_out,  # type: ignore
             num_heads=mace_readout.num_heads,
+            cueq_config=cueq_config,
+        )
+    raise TypeError("Unsupported readout type.")
+
+
+def _copy_mace_readout_tp(
+    mace_readout: torch.nn.Module,
+    make_w_pos: bool = True,
+    cueq_config: Optional[CuEquivarianceConfig] = None,
+    use_nonlinear_readout: bool = False,
+) -> torch.nn.Module:
+    """
+    Helper function to copy a MACE readout block.
+    """
+    logging.debug(f"use_nonlinear_readout for alpha? {use_nonlinear_readout}")
+    if isinstance(mace_readout, LinearReadoutBlock):
+        if use_nonlinear_readout:
+            return NonLinearLesReadoutBlock(
+                irreps_in=mace_readout.linear.irreps_in,  # type: ignore
+                cueq_config=cueq_config,
+            )
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear.irreps_in,  # type: ignore
+            make_w_pos=make_w_pos,
+            cueq_config=cueq_config,
+        )
+    if isinstance(mace_readout, NonLinearReadoutBlock):  # type: ignore
+        if use_nonlinear_readout:
+            return NonLinearLesReadoutBlock(
+                irreps_in=mace_readout.linear_1.irreps_in,  # type: ignore
+                cueq_config=cueq_config,
+            )
+        return LinearLesReadoutBlock(
+            irreps_in=mace_readout.linear_1.irreps_in,  # type: ignore
+            make_w_pos=make_w_pos,
             cueq_config=cueq_config,
         )
     raise TypeError("Unsupported readout type.")
@@ -77,6 +141,9 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
 @compile_mode("script")
 class MACELES(ScaleShiftMACE):
     def __init__(self, les_arguments: Optional[Dict] = None, **kwargs):
+        # MACELES requires full irreps at all interaction layers so that LES
+        # readout blocks can access vector features (e.g. dipoles, quadrupoles).
+        kwargs["keep_last_layer_irreps"] = True
         super().__init__(**kwargs)
         try:
             from les import Les
@@ -88,8 +155,38 @@ class MACELES(ScaleShiftMACE):
             les_arguments = {"use_atomwise": False}
         self.compute_bec = les_arguments.get("compute_bec", False)
         self.bec_output_index = les_arguments.get("bec_output_index", None)
+        self.use_dipoles = les_arguments.get("use_dipole", False)
+        self.use_quads = les_arguments.get("use_quad", False)
+        self.use_induced_charges = les_arguments.get("use_induced_charge", False)
+        self.use_induced_dipoles = les_arguments.get("use_induced_dipole", False)
+        self.use_anisotropic_polarizability = les_arguments.get(
+            "use_anisotropic_polarizability", False
+        )
+        self.alpha_irreps = les_arguments.get("alpha_irreps", "0e+1o+2e")
+        self.alpha_1o_nonlinear_readout = les_arguments.get(
+            "alpha_1o_nonlinear_readout", False
+        )
+        self.alpha_1o_linear_w_pos = les_arguments.get("alpha_1o_linear_w_pos", True)
+        self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
+        self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
+
+        logging.info(f"use_dipoles {self.use_dipoles}")
+        logging.info(f"use_induced_charges {self.use_induced_charges}")
+        logging.info(f"use_induced_dipoles {self.use_induced_dipoles}")
         self.les = Les(les_arguments=les_arguments)
+
         self.les_readouts = torch.nn.ModuleList()
+        self.les_u_readouts = torch.nn.ModuleList()
+        self.les_quad_2e_readouts = torch.nn.ModuleList()
+        self.les_quad_1o_readouts = torch.nn.ModuleList()
+        self.les_alpha_readouts = torch.nn.ModuleList()
+        self.les_alpha_1o_readouts = torch.nn.ModuleList()
+        self.les_alpha_2e_readouts = torch.nn.ModuleList()
+        self.les_kappa_readouts = torch.nn.ModuleList()
+        self.les_output_scale = les_arguments.get("output_scale", 0.1)
+        self.les_kappa_scale = les_arguments.get("kappa_scale", 0.01)
+        self.les_alpha_scale = les_arguments.get("alpha_scale", 0.01)
+
         self.readout_input_dims = [
             _get_readout_input_dim(readout) for readout in self.readouts  # type: ignore
         ]
@@ -98,6 +195,85 @@ class MACELES(ScaleShiftMACE):
             self.les_readouts.append(
                 _copy_mace_readout(readout, cueq_config=cueq_config)
             )
+            if self.use_dipoles:
+                self.les_u_readouts.append(
+                    # _copy_mace_readout(readout,  change_irrep_out="1x1o", cueq_config=cueq_config)
+                    _copy_mace_readout(
+                        self.readouts[0],
+                        change_irrep_out="1x1o",
+                        cueq_config=cueq_config,
+                    )
+                )
+            if self.use_quads:
+                mace_irreps = str(self.readouts[0].linear.irreps_in)
+                if "2e" in mace_irreps:
+                    logging.info("Using l=2 readout to predict quadrupoles.")
+                    change_of_basis_quads = ReducedTensorProducts(
+                        "ij=ji", i="1o", filter_ir_out=["2e"]
+                    ).change_of_basis
+                    self.les_quad_2e_readouts.append(
+                        _copy_mace_readout(
+                            self.readouts[0],
+                            change_irrep_out="1x2e",
+                            cueq_config=cueq_config,
+                        )
+                    )
+                    self.register_buffer("change_of_basis_quads", change_of_basis_quads)
+                if "1o" in mace_irreps:
+                    logging.info("Using l=1 readout to predict quadrupoles.")
+                    self.les_quad_1o_readouts.append(
+                        _copy_mace_readout_tp(
+                            self.readouts[0],
+                            use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
+                            make_w_pos=False,
+                            cueq_config=cueq_config,
+                        )
+                    )
+            if self.use_induced_charges:
+                self.les_kappa_readouts.append(
+                    _copy_mace_readout(readout, cueq_config=cueq_config)
+                )
+            if self.use_induced_dipoles:
+                if self.use_anisotropic_polarizability:
+                    mace_irreps = str(self.readouts[0].linear.irreps_in)
+                    if "2e" in mace_irreps and "2e" in self.alpha_irreps:
+                        logging.info(
+                            "Using l=2 readout to predict anisotropic polarizability."
+                        )
+                        change_of_basis = (
+                            CartesianTensor("ij=ji")
+                            .reduced_tensor_products()
+                            .change_of_basis
+                        )
+                        self.les_alpha_2e_readouts.append(
+                            _copy_mace_readout(
+                                self.readouts[0],
+                                change_irrep_out="1x0e + 1x2e",
+                                cueq_config=cueq_config,
+                            )
+                        )
+                        self.register_buffer("change_of_basis", change_of_basis)
+                    if "1o" in mace_irreps and "1o" in self.alpha_irreps:
+                        # Obtain 2e from l=1 outer products
+                        logging.info(
+                            "Using l=1 readout to predict anisotropic polarizability."
+                        )
+                        self.les_alpha_1o_readouts.append(
+                            _copy_mace_readout_tp(
+                                self.readouts[0],
+                                use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
+                                make_w_pos=self.alpha_1o_linear_w_pos,
+                                cueq_config=cueq_config,
+                            )
+                        )
+                    if not ("1o" in mace_irreps or "2e" in mace_irreps):
+                        raise ValueError(
+                            "Unsupported irreps for anisotropic polarizability. Expected '1o' or '2e' in the readout irreps."
+                        )
+                if not self.use_anisotropic_polarizability or "0e" in self.alpha_irreps:
+                    self.les_alpha_readouts.append(
+                        _copy_mace_readout(readout, cueq_config=cueq_config)
+                    )
 
     def forward(
         self,
@@ -120,6 +296,7 @@ class MACELES(ScaleShiftMACE):
             compute_displacement=compute_displacement,
             lammps_mliap=lammps_mliap,
         )
+
         is_lammps = ctx.is_lammps
         num_atoms_arange = ctx.num_atoms_arange
         num_graphs = ctx.num_graphs
@@ -128,10 +305,26 @@ class MACELES(ScaleShiftMACE):
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
+        pbc = ctx.pbc
         node_heads = ctx.node_heads
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
+
+        e_ext = data.get("external_field", None)
+        # external_field may default to zeros(1,3) from atomic_data.py; treat as None
+        if e_ext is not None and not e_ext.any():
+            e_ext = None
+
+        # for backward compatibility
+        if not hasattr(self, "les_output_scale"):
+            self.les_output_scale = 1.0
+        if not hasattr(self, "les_kappa_scale"):
+            self.les_kappa_scale = 1.0
+        if not hasattr(self, "les_alpha_scale"):
+            self.les_alpha_scale = 1.0
+        if not hasattr(self, "use_anisotropic_polarizability"):
+            self.use_anisotropic_polarizability = False
 
         # Setting LES cell input to zero when boundary conditions are not periodic
         cell_les = cell.clone()
@@ -141,6 +334,15 @@ class MACELES(ScaleShiftMACE):
         cell_les[no_pbc_mask_rows] = torch.zeros(
             (no_pbc_mask_rows.sum(), 3), dtype=cell_les.dtype, device=cell_les.device
         )
+        if displacement is not None:
+            symmetric_displacement = 0.5 * (
+                displacement + displacement.transpose(-1, -2)
+            )
+            cell_les_view = cell_les.view(-1, 3, 3)
+            cell_les_view = cell_les_view + torch.matmul(
+                cell_les_view, symmetric_displacement
+            )
+            cell_les = cell_les_view.view_as(cell_les)
 
         # Atomic energies
         node_e0 = self.atomic_energies_fn(data["node_attrs"])[
@@ -193,6 +395,10 @@ class MACELES(ScaleShiftMACE):
         node_es_list = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
         node_qs_list: List[torch.Tensor] = []
+        node_us_list: List[torch.Tensor] = []
+        node_quads_list: List[torch.Tensor] = []
+        node_kappas_list: List[torch.Tensor] = []
+        node_alphas_list: List[torch.Tensor] = []
 
         for i, (interaction, product) in enumerate(
             zip(self.interactions, self.products)
@@ -230,6 +436,83 @@ class MACELES(ScaleShiftMACE):
             ]  # type: ignore
             node_qs_list.append(node_qs)
             node_es_list.append(node_es)
+            if hasattr(self, "use_dipoles") and self.use_dipoles:
+                les_u_readout = self.les_u_readouts[i]
+                node_us = les_u_readout(node_feats_list[feat_idx])[
+                    num_atoms_arange
+                ]  # type: ignore
+                node_us_list.append(node_us)
+                # print('dipoles', i, node_us[:3])
+            if hasattr(self, "use_induced_charges") and self.use_induced_charges:
+                les_kappa_readout = self.les_kappa_readouts[i]
+                node_kappas = les_kappa_readout(node_feats_list[feat_idx], node_heads)[
+                    num_atoms_arange, node_heads
+                ]  # type: ignore
+                node_kappas_list.append(node_kappas)
+            if hasattr(self, "use_quads"):
+                if (
+                    hasattr(self, "les_quad_2e_readouts")
+                    and len(self.les_quad_2e_readouts) > i
+                ):
+                    les_quad_readout = self.les_quad_2e_readouts[i]
+                    node_quads = les_quad_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type: ignore
+                    node_quads = spherical_to_cartesian(
+                        node_quads, self.change_of_basis_quads
+                    )
+                    node_quads_list.append(node_quads)
+                if (
+                    hasattr(self, "les_quad_1o_readouts")
+                    and len(self.les_quad_1o_readouts) > i
+                ):
+                    les_quad_readout = self.les_quad_1o_readouts[i]
+                    node_quads = les_quad_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type: ignore
+                    node_quads_list.append(node_quads)
+            if hasattr(self, "use_induced_dipoles") and self.use_induced_dipoles:
+                if (
+                    hasattr(self, "les_alpha_1o_readouts")
+                    and len(self.les_alpha_1o_readouts) > i
+                ):
+                    les_alpha_readout = self.les_alpha_1o_readouts[i]
+                    node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type: ignore
+                    node_alphas_list.append(node_alphas)
+                if (
+                    hasattr(self, "les_alpha_2e_readouts")
+                    and len(self.les_alpha_2e_readouts) > i
+                ):
+                    les_alpha_readout = self.les_alpha_2e_readouts[i]
+                    node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
+                        num_atoms_arange
+                    ]  # type: ignore
+                    node_alphas = spherical_to_cartesian(
+                        node_alphas, self.change_of_basis
+                    )
+                    node_alphas_list.append(node_alphas)
+                if len(self.les_alpha_readouts) > i:
+                    les_alpha_readout = self.les_alpha_readouts[i]
+                    node_alphas = les_alpha_readout(
+                        node_feats_list[feat_idx], node_heads
+                    )[
+                        num_atoms_arange, node_heads
+                    ]  # type: ignore
+                    if (
+                        hasattr(self, "use_anisotropic_polarizability")
+                        and self.use_anisotropic_polarizability
+                    ):
+                        eye = torch.eye(
+                            3,
+                            device=node_alphas.device,
+                            dtype=node_alphas.dtype,
+                        )
+                        node_alphas = node_alphas.unsqueeze(-1).unsqueeze(
+                            -1
+                        ) * eye.unsqueeze(0)
+                    node_alphas_list.append(node_alphas)
 
         node_feats_out = torch.cat(node_feats_list, dim=-1)
         node_inter_es = torch.sum(torch.stack(node_es_list, dim=0), dim=0)
@@ -237,17 +520,87 @@ class MACELES(ScaleShiftMACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
-        node_energy = node_e0.clone().double() + node_inter_es.clone().double()
+        node_energy = safe_double(node_e0.clone()) + safe_double(node_inter_es.clone())
 
-        les_q = torch.sum(torch.stack(node_qs_list, dim=1), dim=1)
+        les_q = (
+            torch.sum(torch.stack(node_qs_list, dim=1), dim=1) * self.les_output_scale
+        )
+        if len(node_us_list) > 0:
+            les_u = (
+                torch.sum(torch.stack(node_us_list, dim=-1), dim=-1)
+                * self.les_output_scale
+            )
+        else:
+            les_u = None
+
+        if len(node_kappas_list) > 0:
+            les_kappa = (
+                torch.sum(torch.stack(node_kappas_list, dim=1), dim=1)
+                * self.les_kappa_scale
+            )
+        else:
+            les_kappa = None
+
+        if len(node_quads_list) > 0:
+            les_quad = (
+                torch.sum(torch.stack(node_quads_list, dim=1), dim=1)
+                * self.les_output_scale
+            )
+            # Make quads traceless:
+            traces = les_quad.diagonal(dim1=-1, dim2=-2).sum(dim=1)
+            eye = torch.eye(3, device=les_quad.device, dtype=les_quad.dtype)
+            les_quad = les_quad - eye[None, :, :] * traces[:, None, None] / 3
+        else:
+            les_quad = None
+
+        if len(node_alphas_list) > 0:
+            les_alpha = (
+                torch.sum(torch.stack(node_alphas_list, dim=1), dim=1)
+                * self.les_alpha_scale
+            )
+            # print('les_alpha', les_alpha.shape, les_alpha[:3])
+        else:
+            les_alpha = None
+
+        if (
+            hasattr(self, "make_alpha_positive")
+            and self.make_alpha_positive
+            and les_alpha is not None
+        ):
+            # dim 1 is the default isotropic case: the scalar readout is indexed
+            # as out[num_atoms_arange, node_heads], and advanced indexing with two
+            # 1-D index arrays collapses to [n_atoms]. Without it here the flag is
+            # a silent no-op on the default path and negative alphas reach Les.
+            if les_alpha.dim() in (1, 2):
+                les_alpha = les_alpha**2
+            if (
+                les_alpha.dim() == 3
+                and les_alpha.shape[1] == 3
+                and les_alpha.shape[2] == 3
+            ):
+                les_alpha = torch.einsum("nij,nkj->nik", les_alpha, les_alpha)
+        if (
+            hasattr(self, "make_kappa_positive")
+            and self.make_kappa_positive
+            and les_kappa is not None
+        ):
+            les_kappa = les_kappa**2
+
+        les_positions = data["positions"] if displacement is not None else positions
         les_result = self.les(
+            atomic_numbers=data["atomic_numbers"],
             latent_charges=les_q,
-            positions=positions,
+            latent_dipoles=les_u,
+            latent_quads=les_quad,
+            latent_alphas=les_alpha,
+            latent_kappas=les_kappa,
+            positions=les_positions,
             cell=cell_les.view(-1, 3, 3),
             batch=data["batch"],
             compute_energy=True,
             compute_bec=(compute_bec or self.compute_bec),
             bec_output_index=self.bec_output_index,
+            e_ext=e_ext,
         )
         les_energy_opt = les_result["E_lr"]
         if les_energy_opt is None:
@@ -256,12 +609,13 @@ class MACELES(ScaleShiftMACE):
             les_energy = les_energy_opt
         total_energy += les_energy
 
-        forces, virials, stress, hessian, edge_forces = get_outputs(
+        forces, virials, stress, hessian, edge_forces, _ = get_outputs(
             energy=inter_e + les_energy,
             positions=positions,
             displacement=displacement,
             vectors=vectors,
             cell=cell,
+            pbc=pbc,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -280,6 +634,7 @@ class MACELES(ScaleShiftMACE):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
         return {
             "energy": total_energy,
@@ -294,7 +649,11 @@ class MACELES(ScaleShiftMACE):
             "hessian": hessian,
             "node_feats": node_feats_out,
             "les_energy": les_energy,
-            "latent_charges": les_q,
+            "latent_charges": les_result["latent_charges"],
+            "latent_dipoles": les_result["latent_dipoles"],
+            "latent_kappas": les_kappa,
+            "latent_alphas": les_result["latent_alphas"],
+            "latent_quads": les_quad,
             "BEC": les_result["BEC"],
         }
 
@@ -626,6 +985,7 @@ class PolarMACE(ScaleShiftMACE):
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
+        pbc = ctx.pbc
         node_heads = ctx.node_heads
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
@@ -740,7 +1100,7 @@ class PolarMACE(ScaleShiftMACE):
             fukui_input = fukui_to_mul_ir(fukui_input)
         fukui_sources = self.fukui_source_map(fukui_input)
         fukui_norm = scatter_sum(
-            src=fukui_sources.double(),
+            src=safe_double(fukui_sources),
             index=data["batch"],
             dim=0,
             dim_size=num_graphs,
@@ -752,7 +1112,7 @@ class PolarMACE(ScaleShiftMACE):
         Q_p_S = (data["total_charge"] + (data["total_spin"] - 1))[data["batch"]]
         Q_m_S = (data["total_charge"] - (data["total_spin"] - 1))[data["batch"]]
         pred_total_charges_0 = scatter_sum(
-            src=spin_charge_density[:, :, 0].double(),
+            src=safe_double(spin_charge_density[:, :, 0]),
             index=data["batch"],
             dim=0,
             dim_size=num_graphs,
@@ -774,6 +1134,7 @@ class PolarMACE(ScaleShiftMACE):
         field_independent_spin_charge_density = spin_charge_density.clone()
         esps: Optional[torch.Tensor] = None
 
+        final_fukui_sources = fukui_sources
         for i in range(self.num_recursion_steps):
             source_feats_alpha = spin_charge_density[:, 0, :].clone()
             source_feats_beta = spin_charge_density[:, 1, :].clone()
@@ -798,7 +1159,7 @@ class PolarMACE(ScaleShiftMACE):
 
             # Add external field contribution and subtract barycenter for gauge invariance
             barycenter = scatter_mean(
-                src=positions.double(),
+                src=safe_double(positions),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -840,7 +1201,7 @@ class PolarMACE(ScaleShiftMACE):
             spin_charge_density = spin_charge_density + spin_charge_density_sources
 
             fukui_norm2 = scatter_sum(
-                src=current_fukui_sources.double(),
+                src=safe_double(current_fukui_sources),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -849,8 +1210,9 @@ class PolarMACE(ScaleShiftMACE):
                 fukui_norm2 == 0, torch.ones_like(fukui_norm2), fukui_norm2
             )
             current_fukui_sources = current_fukui_sources / fukui_norm2
+            final_fukui_sources = current_fukui_sources
             pred_total_charges = scatter_sum(
-                src=spin_charge_density[:, :, 0].double(),
+                src=safe_double(spin_charge_density[:, :, 0]),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
@@ -928,12 +1290,13 @@ class PolarMACE(ScaleShiftMACE):
             + torch.sum(external_potential[:, 1:] * total_dipole, dim=-1)
         )
 
-        forces, virials, stress, hessian, edge_forces = get_outputs(
+        forces, virials, stress, hessian, edge_forces, _ = get_outputs(
             energy=total_energy,
             positions=positions,
             displacement=displacement,
             vectors=vectors,
             cell=cell,
+            pbc=pbc,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -954,11 +1317,13 @@ class PolarMACE(ScaleShiftMACE):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
 
         return {
             "energy": total_energy,
-            "node_energy": node_e0.clone().double() + node_inter_es.clone().double(),
+            "node_energy": safe_double(node_e0.clone())
+            + safe_double(node_inter_es.clone()),
             "interaction_energy": inter_e,
             "forces": forces,
             "edge_forces": edge_forces,
@@ -984,4 +1349,973 @@ class PolarMACE(ScaleShiftMACE):
             "electron_energy": le_total,
             "electrostatic_potentials": esps,
             "spin_charge_density": spin_charge_density_mul_ir,
+            "fukui_functions": final_fukui_sources,
+        }
+
+
+# === magnetic mace utilities  ===
+class SHModule(torch.nn.Module):
+    """Example of how to use SphericalHarmonics from within a
+    `torch.nn.Module`"""
+
+    def __init__(self, l_max):
+        super().__init__()
+        try:
+            import sphericart.torch
+        except ImportError as exc:
+            raise ImportError(
+                "Cannot import 'sphericart.torch'. Please install the 'sphericart.torch' library from https://github.com/lab-cosmo/sphericart."
+            ) from exc
+        self.SH = sphericart.torch.SolidHarmonics(l_max)
+
+    def forward(self, xyz):
+        sh = self.SH(
+            torch.index_select(
+                xyz, 1, torch.tensor([2, 0, 1], dtype=torch.long, device=xyz.device)
+            )
+        )
+        return sh
+
+
+class ChebyshevBasisGeneral(torch.nn.Module):
+    """
+    Differentiable Chebyshev basis up to T_n(x) using recurrence.
+    Can include or exclude constant term T₀(x) = 1.
+
+    Args:
+        r_max (float): Cutoff or scaling parameter (not used directly here).
+        num_basis (int): Number of basis functions to return.
+        include_constant (bool): Whether to include T₀(x)=1 as first term.
+    """
+
+    def __init__(self, r_max: float, num_basis: int = 8, include_constant: bool = True):
+        super().__init__()
+        self.r_max = r_max
+        self.num_basis = num_basis
+        self.include_constant = include_constant
+
+        # Store the polynomial orders for compatibility
+        start = 0 if include_constant else 1
+        self.register_buffer("n", torch.arange(start, start + num_basis))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (Tensor): shape [N, 1], assumed scaled to [-1, 1]
+        Returns:
+            Tensor [N, num_basis] of Chebyshev basis values
+        """
+        T0 = torch.ones_like(x)
+        T1 = x
+        basis = [T0, T1]
+
+        # Build full recurrence sequence
+        for _ in range(
+            2, self.num_basis + 1 if self.include_constant else self.num_basis + 2
+        ):
+            T2 = 2 * x * T1 - T0
+            basis.append(T2)
+            T0, T1 = T1, T2
+
+        if self.include_constant:
+            out = torch.cat(basis[: self.num_basis], dim=-1)
+        else:
+            out = torch.cat(basis[1 : self.num_basis + 1], dim=-1)
+        return out
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(r_max={self.r_max}, "
+            f"num_basis={self.num_basis}, include_constant={self.include_constant})"
+        )
+
+
+@compile_mode("script")
+class MagneticMACE(torch.nn.Module):
+    def __init__(
+        self,
+        r_max: float,
+        num_bessel: int,
+        num_polynomial_cutoff: int,
+        max_ell: int,
+        m_max: List[int],
+        num_mag_radial_basis: int,
+        max_m_ell: int,
+        interaction_cls: Type[InteractionBlock],
+        interaction_cls_first: Type[InteractionBlock],
+        num_interactions: int,
+        num_elements: int,
+        hidden_irreps: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        atomic_energies: np.ndarray,
+        avg_num_neighbors: float,
+        atomic_numbers: List[int],
+        correlation: Union[int, List[int]],
+        gate: Optional[Callable],
+        pair_repulsion: bool = False,
+        apply_cutoff: bool = True,
+        use_reduced_cg: bool = True,
+        use_so3: bool = False,
+        use_agnostic_product: bool = False,
+        use_last_readout_only: bool = False,
+        use_embedding_readout: bool = False,
+        distance_transform: str = "None",
+        use_magmom_one_body: Optional[bool] = False,
+        edge_irreps: Optional[o3.Irreps] = None,
+        use_edge_irreps_first: bool = False,  # pylint: disable=unused-argument
+        radial_MLP: Optional[List[int]] = None,
+        radial_type: Optional[str] = "bessel",
+        heads: Optional[List[str]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,
+        embedding_specs: Optional[Dict[str, Any]] = None,
+        oeq_config: Optional[Dict[str, Any]] = None,
+        lammps_mliap: Optional[bool] = False,
+        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
+    ):
+        super().__init__()
+
+        self.register_buffer(
+            "atomic_numbers", torch.tensor(atomic_numbers, dtype=torch.int64)
+        )
+        self.register_buffer(
+            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
+        )
+        self.register_buffer(
+            "m_max", torch.tensor(m_max, dtype=torch.get_default_dtype())
+        )
+        self.register_buffer(
+            "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
+        )
+        if heads is None:
+            heads = ["default"]
+        self.heads = heads
+        if isinstance(correlation, int):
+            correlation = [correlation] * num_interactions
+
+        self.lammps_mliap = lammps_mliap
+        self.apply_cutoff = apply_cutoff
+        self.edge_irreps = edge_irreps
+        self.use_reduced_cg = use_reduced_cg
+        self.use_agnostic_product = use_agnostic_product
+        self.use_so3 = use_so3
+        self.use_last_readout_only = use_last_readout_only
+        self.use_magmom_one_body = use_magmom_one_body
+
+        # Embedding
+        node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
+        node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
+        self.node_embedding = LinearNodeEmbeddingBlock(
+            irreps_in=node_attr_irreps,
+            irreps_out=node_feats_irreps,
+            cueq_config=cueq_config,
+        )
+
+        embedding_size = node_feats_irreps.count(o3.Irrep(0, 1))
+        if embedding_specs is not None:
+            self.embedding_specs = embedding_specs
+            self.joint_embedding = GenericJointEmbedding(
+                base_dim=embedding_size,
+                embedding_specs=embedding_specs,
+                out_dim=embedding_size,
+            )
+            if use_embedding_readout:
+                self.embedding_readout = LinearReadoutBlock(
+                    node_feats_irreps,
+                    o3.Irreps(f"{len(heads)}x0e"),
+                    cueq_config,
+                    oeq_config,
+                )
+
+        self.radial_embedding = RadialEmbeddingBlock(
+            r_max=r_max,
+            num_bessel=num_bessel,
+            num_polynomial_cutoff=num_polynomial_cutoff,
+            radial_type=radial_type,
+            distance_transform=distance_transform,
+        )
+        edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
+        if pair_repulsion:
+            self.pair_repulsion_fn = ZBLBasis(p=num_polynomial_cutoff)
+            self.pair_repulsion = True
+
+        sh_irreps = o3.Irreps.spherical_harmonics(max_ell)
+        num_features = hidden_irreps.count(o3.Irrep(0, 1))
+        interaction_irreps = (sh_irreps * num_features).sort()[0].simplify()
+        self.spherical_harmonics = o3.SphericalHarmonics(
+            sh_irreps, normalize=True, normalization="component"
+        )
+        if radial_MLP is None:
+            radial_MLP = [64, 64, 64]
+
+        # Interactions and readout
+        self.atomic_energies_fn = AtomicEnergiesBlock(atomic_energies)
+
+        self.mag_radial_embedding = ChebyshevBasisGeneral(
+            r_max=0.0,
+            num_basis=num_mag_radial_basis,
+            include_constant=False,
+        )
+
+        magmom_sh_irreps = o3.Irreps.spherical_harmonics(max_m_ell)
+
+        # simplify this later
+        self.mag_solid_harmoics = SHModule(
+            o3.SphericalHarmonics(
+                magmom_sh_irreps, normalize=True, normalization="component"
+            )._lmax
+        )
+
+        # --- interaction and product basis modules ---
+        if num_interactions == 1:
+            hidden_irreps_out = str(hidden_irreps[0])
+        else:
+            hidden_irreps_out = hidden_irreps
+
+        inter = interaction_cls_first(
+            node_attrs_irreps=node_attr_irreps,
+            node_feats_irreps=node_feats_irreps,
+            edge_attrs_irreps=sh_irreps,
+            edge_feats_irreps=edge_feats_irreps,
+            target_irreps=interaction_irreps,
+            hidden_irreps=hidden_irreps_out,
+            avg_num_neighbors=avg_num_neighbors,
+            radial_MLP=radial_MLP,
+            cueq_config=cueq_config,
+            magmom_node_inv_feats_irreps=o3.Irreps(
+                f"{self.mag_radial_embedding.num_basis}x0e"
+            ),
+            magmom_node_attrs_irreps=magmom_sh_irreps,
+        )
+        self.interactions = torch.nn.ModuleList([inter])
+
+        # Use the appropriate self connection at the first layer for proper E0
+        use_sc_first = False
+        if "Residual" in str(interaction_cls_first):
+            use_sc_first = True
+
+        node_feats_irreps_out = inter.target_irreps
+
+        # define class for many body interaction
+        prod = EquivariantProductBasisWithSelfMagmomBlock(
+            node_feats_irreps=node_feats_irreps_out,
+            target_irreps=hidden_irreps_out,
+            # assume only a single correlation
+            correlation=correlation[0],
+            use_sc=use_sc_first,
+            num_elements=len(self.atomic_numbers),
+            cueq_config=cueq_config,
+            magmom_node_inv_feats_irreps=o3.Irreps(
+                f"{self.mag_radial_embedding.num_basis}x0e"
+            ),
+            magmom_node_attrs_irreps=o3.Irreps.spherical_harmonics(
+                self.mag_solid_harmoics.SH.l_max()
+            ),
+        )
+
+        self.products = torch.nn.ModuleList([prod])
+
+        self.readouts = torch.nn.ModuleList()
+        if not use_last_readout_only:
+            self.readouts.append(
+                LinearReadoutBlock(
+                    hidden_irreps_out,
+                    o3.Irreps(f"{len(heads)}x0e"),
+                    cueq_config,
+                    oeq_config,
+                )
+            )
+
+        for i in range(num_interactions - 1):
+            if i == num_interactions - 2:
+                hidden_irreps_out = str(
+                    hidden_irreps[0]
+                )  # Select only scalars for last layer
+            else:
+                hidden_irreps_out = hidden_irreps
+            inter = interaction_cls(
+                node_attrs_irreps=node_attr_irreps,
+                node_feats_irreps=hidden_irreps,
+                edge_attrs_irreps=sh_irreps,
+                edge_feats_irreps=edge_feats_irreps,
+                target_irreps=interaction_irreps,
+                hidden_irreps=hidden_irreps_out,
+                avg_num_neighbors=avg_num_neighbors,
+                radial_MLP=radial_MLP,
+                cueq_config=cueq_config,
+                magmom_node_inv_feats_irreps=o3.Irreps(
+                    f"{self.mag_radial_embedding.num_basis}x0e"
+                ),
+                magmom_node_attrs_irreps=magmom_sh_irreps,
+            )
+
+            self.interactions.append(inter)
+            prod = EquivariantProductBasisWithSelfMagmomBlock(
+                node_feats_irreps=interaction_irreps,
+                target_irreps=hidden_irreps_out,
+                # assume only a single correlation
+                correlation=correlation[i + 1],
+                num_elements=num_elements,
+                use_sc=True,
+                cueq_config=prod.cueq_config,
+                magmom_node_inv_feats_irreps=o3.Irreps(
+                    f"{self.mag_radial_embedding.num_basis}x0e"
+                ),
+                magmom_node_attrs_irreps=o3.Irreps.spherical_harmonics(
+                    self.mag_solid_harmoics.SH.l_max()
+                ),
+            )
+
+            self.products.append(prod)
+
+            if i == num_interactions - 2:
+                self.readouts.append(
+                    readout_cls(
+                        hidden_irreps_out,
+                        (len(heads) * MLP_irreps).simplify(),
+                        gate,
+                        o3.Irreps(f"{len(heads)}x0e"),
+                        len(heads),
+                        cueq_config,
+                        oeq_config,
+                    )
+                )
+            else:
+                # Intermediate iterations use LinearReadoutBlock — same choice
+                # as base MACE (see mace/modules/models.py). `readout_cls`
+                # defaults to NonLinearReadoutBlock and takes different ctor
+                # args, so using it here would blow up whenever
+                # num_interactions > 2.
+                self.readouts.append(
+                    LinearReadoutBlock(
+                        hidden_irreps,
+                        o3.Irreps(f"{len(heads)}x0e"),
+                        cueq_config,
+                        oeq_config,
+                    )
+                )
+
+    @abstractmethod
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        compute_force: bool = True,
+        compute_virials: bool = False,
+        compute_stress: bool = False,
+        compute_displacement: bool = False,
+        compute_hessian: bool = False,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        raise NotImplementedError
+
+
+@compile_mode("script")
+class MagneticScaleShiftMACE(MagneticMACE):
+    def __init__(
+        self,
+        atomic_inter_scale: float,
+        atomic_inter_shift: float,
+        **kwargs,
+    ):
+        num_mag_radial_basis_one_body = kwargs.pop("num_mag_radial_basis_one_body", 0)
+        super().__init__(**kwargs)
+        self.scale_shift = ScaleShiftBlock(
+            scale=atomic_inter_scale, shift=atomic_inter_shift
+        )
+
+        if self.use_magmom_one_body:
+            # coefficient for the chebyshev polynomails
+            self.onebody_magmombasis_coeffs = torch.nn.Parameter(
+                torch.randn(
+                    len(self.atomic_numbers),
+                    num_mag_radial_basis_one_body,
+                    len(self.heads),
+                )
+            )
+
+            self.one_body_cheb_basis_with_const = ChebyshevBasisGeneral(
+                r_max=1.0,
+                num_basis=num_mag_radial_basis_one_body,
+                include_constant=True,
+            )
+
+            # correction to shift E0s for each species
+            self.register_buffer(
+                "one_body_magmom_const_correction",
+                torch.zeros(len(self.atomic_numbers), len(self.heads)),
+            )
+
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        compute_force: bool = True,
+        compute_virials: bool = False,
+        compute_stress: bool = False,
+        compute_displacement: bool = False,
+        compute_hessian: bool = False,
+        compute_magforces: bool = True,
+        compute_edge_forces: bool = False,
+        compute_atomic_stresses: bool = False,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        # Setup
+        data["positions"].requires_grad_(True)
+        data["node_attrs"].requires_grad_(True)
+        data["magmom"].requires_grad_(True)
+
+        num_graphs = data["ptr"].numel() - 1
+        num_atoms_arange = torch.arange(data["positions"].shape[0])
+        node_heads = (
+            data["head"][data["batch"]]
+            if "head" in data
+            else torch.zeros_like(data["batch"])
+        )
+        displacement = torch.zeros(
+            (num_graphs, 3, 3),
+            dtype=data["positions"].dtype,
+            device=data["positions"].device,
+        )
+        if compute_virials or compute_stress or compute_displacement:
+            (
+                data["positions"],
+                data["shifts"],
+                displacement,
+            ) = get_symmetric_displacement(
+                positions=data["positions"],
+                unit_shifts=data["unit_shifts"],
+                cell=data["cell"],
+                edge_index=data["edge_index"],
+                num_graphs=num_graphs,
+                batch=data["batch"],
+            )
+
+        # Atomic energies
+        node_e0 = self.atomic_energies_fn(data["node_attrs"])[
+            num_atoms_arange, node_heads
+        ]
+        e0 = scatter_sum(
+            src=node_e0, index=data["batch"], dim=0, dim_size=num_graphs
+        )  # [n_graphs, num_heads]
+
+        # node embedding on species
+        node_feats = self.node_embedding(data["node_attrs"])
+
+        # prepare the Rnl and Ylm
+        vectors, lengths = get_edge_vectors_and_lengths(
+            positions=data["positions"],
+            edge_index=data["edge_index"],
+            shifts=data["shifts"],
+        )
+        edge_attrs = self.spherical_harmonics(vectors)
+        edge_feats, _ = self.radial_embedding(
+            lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+        )
+        if hasattr(self, "pair_repulsion"):
+            pair_node_energy = self.pair_repulsion_fn(
+                lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
+            )
+        else:
+            pair_node_energy = torch.zeros_like(node_e0)
+
+        # --- magnetic stuffs ---
+
+        magmom_lengths = torch.norm(data["magmom"], dim=-1, keepdim=True)
+        element_dependent_scaling = self.m_max[
+            torch.argmax(data["node_attrs"], dim=1)
+        ].unsqueeze(-1)
+        element_dependent_scaling.requires_grad_(True)
+        element_dependent_scaling.retain_grad()
+
+        magmom_lengths_trans = (
+            1
+            - 2
+            * torch.clamp(magmom_lengths / element_dependent_scaling, min=0.0, max=1.0)
+            ** 2
+        )
+        magmom_node_attrs = self.mag_solid_harmoics(data["magmom"])
+
+        #
+        magmom_node_feats = self.mag_radial_embedding(
+            magmom_lengths_trans
+        )  # (n_atoms, n_basis)
+
+        # one body contribution radials, this is with constant shift so that it can be fitted
+        if hasattr(self, "one_body_cheb_basis_with_const"):
+            magmom_one_body_radials = self.one_body_cheb_basis_with_const(
+                magmom_lengths_trans
+            )
+
+        # Interactions
+        node_es_list = [pair_node_energy]
+        node_feats_list = []
+
+        for idx, (interaction, product, readout) in enumerate(
+            zip(self.interactions, self.products, self.readouts)
+        ):
+            node_feats, sc = interaction(
+                node_attrs=data["node_attrs"],
+                node_feats=node_feats,
+                edge_attrs=edge_attrs,
+                edge_feats=edge_feats,
+                edge_index=data["edge_index"],
+                magmom_node_inv_feats=magmom_node_feats,
+                magmom_node_attrs=magmom_node_attrs,
+            )
+
+            node_feats = product(
+                node_feats=node_feats,
+                sc=sc,
+                node_attrs=data["node_attrs"],
+                magmom_node_inv_feats=magmom_node_feats,
+                magmom_node_attrs=magmom_node_attrs,
+            )
+
+            node_feats_list.append(node_feats)
+            if idx == (len(self.readouts) - 1):
+                if hasattr(self, "one_body_cheb_basis_with_const"):
+                    selected_coeffs = torch.einsum(
+                        "ns,sbh->nbh",
+                        data["node_attrs"],
+                        self.onebody_magmombasis_coeffs,
+                    )
+                    #
+                    one_body_correction = torch.einsum(
+                        "ns,sh->nh",
+                        data["node_attrs"],
+                        self.one_body_magmom_const_correction,
+                    )
+
+                    # Compute dot product over nbasis → (n_nodes, num_heads)
+                    onebody_magmom_contri = (
+                        magmom_one_body_radials.unsqueeze(-1) * selected_coeffs
+                    ).sum(dim=1)
+
+                    # apply optional correction so that the zero matches E0 exactly
+                    onebody_magmom_contri -= one_body_correction
+
+                    # Gather energy per atom + one-body magmom contribution for each head
+                    node_es_list.append(
+                        readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+                        + onebody_magmom_contri[num_atoms_arange, node_heads]
+                    )
+                else:
+                    node_es_list.append(
+                        readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+                    )
+            else:
+                node_es_list.append(
+                    readout(node_feats, node_heads)[num_atoms_arange, node_heads]
+                )  # {[n_nodes, ], }
+
+        # Concatenate node features
+        node_feats_out = torch.cat(node_feats_list, dim=-1)
+
+        # Sum over interactions
+        node_inter_es = torch.sum(
+            torch.stack(node_es_list, dim=0), dim=0
+        )  # [n_nodes, ]
+        node_inter_es = self.scale_shift(node_inter_es, node_heads)
+
+        # Sum over nodes in graph
+        inter_e = scatter_sum(
+            src=node_inter_es, index=data["batch"], dim=-1, dim_size=num_graphs
+        )  # [n_graphs,]
+
+        # Add E_0 and (scaled) interaction energy
+        total_energy = e0 + inter_e
+        node_energy = node_e0 + node_inter_es
+        forces, virials, stress, hessian, edge_forces, magforces = get_outputs(
+            energy=inter_e,
+            positions=data["positions"],
+            displacement=displacement,
+            vectors=vectors,
+            cell=data["cell"],
+            pbc=data["pbc"] if "pbc" in data else None,
+            magmoms=data["magmom"],
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_hessian=compute_hessian,
+            compute_edge_forces=compute_edge_forces or compute_atomic_stresses,
+            compute_magforces=compute_magforces,
+        )
+        atomic_virials: Optional[torch.Tensor] = None
+        atomic_stresses: Optional[torch.Tensor] = None
+        if compute_atomic_stresses and edge_forces is not None:
+            atomic_virials, atomic_stresses = get_atomic_virials_stresses(
+                edge_forces=edge_forces,
+                edge_index=data["edge_index"],
+                vectors=vectors,
+                num_atoms=data["positions"].shape[0],
+                batch=data["batch"],
+                cell=data["cell"],
+                pbc=data["pbc"] if "pbc" in data else None,
+            )
+        output = {
+            "energy": total_energy,
+            "node_energy": node_energy,
+            "interaction_energy": inter_e,
+            "forces": forces,
+            "magforces": magforces,
+            "edge_forces": edge_forces,
+            "virials": virials,
+            "stress": stress,
+            "atomic_virials": atomic_virials,
+            "atomic_stresses": atomic_stresses,
+            "hessian": hessian,
+            "displacement": displacement,
+            "node_feats": node_feats_out,
+        }
+        return output
+
+
+# this does not differentiate through SCF but just a convenient wrapper for equilibrating magmom
+# for a given position. Still later we can do something like:
+# given position also predict the magnetic moment based on the previous magnetic moment
+# to accelerate SCF cycles that have to be done
+class MagneticSCFMACE(torch.nn.Module):
+    def __init__(
+        self,
+        model,
+        n_scf_step=10,
+        scf_tol=1e-5,
+        scf_logging=False,
+        scf_step_size=1.0,
+        use_scf=True,
+        use_collinear=False,
+    ):
+        super().__init__()
+        self.magmom_mace = model  # original magnetic mace
+        self.n_scf_step = n_scf_step
+        self.scf_tol = scf_tol
+        self.cache_magmom = None
+        self.scf_logging = scf_logging
+        self.scf_step_size = scf_step_size
+        self.use_scf = use_scf
+        self.use_collinear = use_collinear
+
+        self.cache_magmom = None
+
+    def __getattr__(self, name):
+        """Fall back to the wrapped model for anything this class does not define.
+
+        Otherwise the wrapper hides every attribute of the model it stands in
+        for -- heads, atomic_numbers, r_max, num_interactions, products, the
+        blocks -- and each consumer has to know to reach through magmom_mace.
+        Most do not, so SCF checkpoints fail in eval, export and fine-tuning;
+        the one that does, MagneticMACECalculator, spells it out six times.
+
+        nn.Module.__getattr__ runs first, so parameters, buffers and submodules
+        resolve normally and forward stays this class's own. _modules is read
+        out of __dict__ deliberately: during unpickling __getattr__ can fire
+        before it exists, and self.magmom_mace would recurse.
+        """
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            inner = self.__dict__.get("_modules", {}).get("magmom_mace")
+            if inner is None or name == "magmom_mace":
+                raise
+            return getattr(inner, name)
+
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        compute_force: bool = True,
+        compute_virials: bool = False,
+        compute_stress: bool = False,
+        compute_displacement: bool = False,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+
+        device = next(self.magmom_mace.parameters()).device
+
+        # === Initialize magmom ===
+        if "magmom" in data:
+            magmom = data["magmom"].detach().to(device).clone()
+        elif self.cache_magmom is not None:
+            magmom = self.cache_magmom.clone()
+        else:
+            raise ValueError(
+                "No initial magnetic moment provided and no cache available."
+            )
+
+        magmom = magmom.to(device)
+        magmom.requires_grad_(True)
+        energy_history = []
+
+        # === Define optimizer ===
+        if self.use_scf:
+            optimizer = torch.optim.LBFGS(
+                [magmom],
+                max_iter=self.n_scf_step,
+                tolerance_grad=self.scf_tol,
+                line_search_fn="strong_wolfe",
+                lr=self.scf_step_size,
+            )
+
+            def closure():
+                optimizer.zero_grad()
+
+                # Update magnetic moments in config
+                data["magmom"] = magmom
+
+                # Evaluate model
+                output = self.magmom_mace(
+                    data,
+                    training=training,
+                    compute_force=compute_force,
+                    compute_virials=compute_virials,
+                    compute_stress=compute_stress,
+                    compute_displacement=compute_displacement,
+                )
+
+                energy = output["energy"][0]
+                energy_history.append(energy.item())
+
+                # Set gradient manually from mag_forces
+                magmom.grad = -output["magforces"].detach()
+                if self.use_collinear:
+                    # Zero the transverse components so LBFGS only moves magmom
+                    # along z, enforcing a collinear SCF. Assumes initial magmom
+                    # is already along z (or is projected there by the caller).
+                    magmom.grad[:, 0] = 0.0
+                    magmom.grad[:, 1] = 0.0
+                if self.scf_logging:
+                    print(
+                        f"[SCF LBFGS] Energy = {energy.item():.6f} | Mag force norm = {magmom.grad.norm().item():.6f}"
+                    )
+                return energy
+
+            optimizer.step(closure)
+
+            # Cache final magnetic moments
+            self.cache_magmom = magmom.detach()
+
+            # Final output (evaluate one last time with final magmom)
+
+        final_output = self.magmom_mace(
+            data,
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_displacement=compute_displacement,
+        )
+
+        # Add SCF info to output
+        final_output["scf_energy_history"] = torch.tensor(
+            energy_history, dtype=torch.float32
+        )
+        final_output["scf_steps"] = len(energy_history)
+        final_output["equilibrated_magmom"] = magmom.detach()
+
+        return final_output
+
+
+class TimeReversalSymmetrizedMACE(torch.nn.Module):
+    r"""Exact time-reversal symmetrisation of a magnetic MACE model.
+
+    Evaluates the projection
+
+    .. math::
+        E_{\mathrm{TR}}(R, M) = \tfrac{1}{2}\left[E_\theta(R, M) + E_\theta(R, -M)\right]
+
+    with :math:`M \mapsto -M` reversing **all** per-atom moments globally, so
+    :math:`E_{\mathrm{TR}}(R, -M) = E_{\mathrm{TR}}(R, M)` holds exactly for any base
+    model. The base model's O(3) behaviour is untouched, so the axial law
+    :math:`E_{\mathrm{TR}}(QR, \det(Q)\,QM) = E_{\mathrm{TR}}(R, M)` still holds.
+
+    Base parameters are unchanged: an existing checkpoint is loaded and wrapped without
+    retraining. Symmetrisation is explicit, and persisted if the wrapped model is saved.
+
+    By default the two branches are stacked into a single batch and evaluated in ONE
+    forward pass, which parallelises better on GPU than two sequential passes. Set
+    ``batched=False`` to evaluate them sequentially (lower peak memory). Either way the
+    cost is roughly twice the base model.
+
+    Outputs are combined by time-reversal parity: energies, forces, virials and stresses
+    are even and averaged; magnetic forces are odd and antisymmetrised as
+    :math:`\tfrac{1}{2}[F_M(+M) - F_M(-M)]`, following this repository's
+    ``magforces = -dE/dM`` convention. Latent outputs have no established parity and are
+    taken from the ``+M`` branch.
+
+    .. note::
+        Compose as ``MagneticSCFMACE(TimeReversalSymmetrizedMACE(base))`` so the projection
+        acts on the energy surface before the SCF; the reverse order is rejected.
+
+    .. warning::
+        Tooling that dispatches on the model's class name does not see through the
+        wrapper. In particular
+        :func:`mace.tools.scripts_utils.extract_config_mace_model` returns an error dict
+        rather than raising, so the
+        calculator's ``compile_mode`` path and TorchScript export must be applied to the
+        unwrapped model (``wrapped.model``), with the wrapper re-applied afterwards.
+        ``torch.save`` / ``torch.load`` of the wrapped model work normally, as does the
+        eager :class:`~mace.calculators.MagneticMACECalculator` path via attribute
+        delegation.
+    """
+
+    _EVEN_KEYS = (
+        "energy",
+        "node_energy",
+        "interaction_energy",
+        "contributions",
+        "forces",
+        "edge_forces",
+        "virials",
+        "stress",
+        "atomic_virials",
+        "atomic_stresses",
+        "hessian",
+    )
+    _ODD_KEYS = ("magforces",)
+
+    def __init__(self, model: torch.nn.Module, batched: bool = True) -> None:
+        super().__init__()
+        if isinstance(model, TimeReversalSymmetrizedMACE):
+            raise ValueError("model is already time-reversal symmetrised")
+        if isinstance(model, MagneticSCFMACE):
+            raise ValueError(
+                "wrap the base model, not MagneticSCFMACE: the projection must act BEFORE "
+                "the SCF. Use MagneticSCFMACE(TimeReversalSymmetrizedMACE(base), ...)."
+            )
+        self.model = model
+        self.batched = batched
+
+    def __getattr__(self, name: str):
+        """Fall back to the wrapped model for anything this class does not define.
+
+        ``_modules`` is read out of ``__dict__`` deliberately: during unpickling
+        ``__getattr__`` can fire before it exists, and ``self.model`` would recurse.
+        Mirrors :class:`MagneticSCFMACE`.
+        """
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            inner = self.__dict__.get("_modules", {}).get("model")
+            if inner is None or name == "model":
+                raise
+            return getattr(inner, name)
+
+    @staticmethod
+    def stack_time_reversed(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a batch holding the structures twice, moments reversed in the second copy.
+
+        Node- and edge-level tensors are concatenated; ``edge_index``, ``batch`` and ``ptr``
+        are offset so the two copies stay disconnected graphs. Evaluating this in one
+        forward pass parallelises better than two sequential passes. The caller's tensors
+        are not modified.
+        """
+        n_nodes = data["positions"].shape[0]
+        n_graphs = data["ptr"].numel() - 1
+        out: Dict[str, torch.Tensor] = {}
+        for key, value in data.items():
+            if not isinstance(value, torch.Tensor) or value.ndim == 0:
+                # non-tensors and 0-dim scalars are graph-independent: pass through
+                out[key] = value
+            elif key == "magmom":
+                out[key] = torch.cat([value, -value], dim=0)
+            elif key == "edge_index":
+                out[key] = torch.cat([value, value + n_nodes], dim=1)
+            elif key == "batch":
+                out[key] = torch.cat([value, value + n_graphs], dim=0)
+            elif key == "ptr":
+                out[key] = torch.cat([value, value[1:] + n_nodes], dim=0)
+            else:
+                out[key] = torch.cat([value, value], dim=0)
+        return out
+
+    def unstack_time_reversed(
+        self,
+        out: Dict[str, Optional[torch.Tensor]],
+        n_nodes: int,
+        n_graphs: int,
+        n_edges: int,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        """Inverse of :meth:`stack_time_reversed`: split each doubled output and combine
+        the two halves by their time-reversal parity.
+
+        A doubled output is recognised by its leading dimension, which is twice the node,
+        edge, graph or cell-row count depending on the quantity. The Hessian is handled
+        separately because it is doubled in TWO dimensions, giving a block-diagonal
+        ``(3 * 2N, 2N, 3)`` tensor whose off-diagonal blocks vanish (the copies are
+        disconnected graphs); its diagonal blocks are extracted and combined. Anything
+        whose leading dimension matches no known count is passed through unchanged.
+        """
+        halves = {
+            2 * n_nodes: n_nodes,
+            2 * n_edges: n_edges,
+            2 * n_graphs: n_graphs,
+            6 * n_graphs: 3 * n_graphs,
+        }
+        result: Dict[str, Optional[torch.Tensor]] = {}
+        for key, value in out.items():
+            if not isinstance(value, torch.Tensor) or value.ndim == 0:
+                result[key] = value
+                continue
+            if key == "hessian" and value.shape[0] == 6 * n_nodes:
+                rows = 3 * n_nodes
+                result[key] = self._combine(
+                    key, value[:rows, :n_nodes], value[rows:, n_nodes:]
+                )
+                continue
+            half = halves.get(value.shape[0])
+            result[key] = (
+                value
+                if half is None
+                else self._combine(key, value[:half], value[half:])
+            )
+        return result
+
+    def _combine(self, key: str, a: torch.Tensor, b: torch.Tensor):
+        if key in self._ODD_KEYS:
+            return 0.5 * (a - b)
+        if key in self._EVEN_KEYS:
+            return 0.5 * (a + b)
+        return a
+
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        **kwargs,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        magmom = data.get("magmom")
+        if magmom is None:
+            raise ValueError(
+                "TimeReversalSymmetrizedMACE requires per-atom moments under 'magmom'"
+            )
+
+        # Both branches must differentiate w.r.t. the same leaf: if the moments do not
+        # already require grad, the reversed copy becomes an independent leaf and
+        # d(E_TR)/dM sees only the +M half. The base model sets this flag itself, so this
+        # is the same side effect one step earlier; values are never modified.
+        if not magmom.requires_grad:
+            magmom.requires_grad_(True)
+
+        n_nodes = data["positions"].shape[0]
+        n_graphs = data["ptr"].numel() - 1
+
+        if self.batched:
+            stacked = self.model(
+                self.stack_time_reversed(dict(data)), training=training, **kwargs
+            )
+            return self.unstack_time_reversed(
+                stacked, n_nodes, n_graphs, data["edge_index"].shape[1]
+            )
+
+        data_plus = dict(data)
+        data_plus["magmom"] = magmom
+        data_minus = dict(data)
+        data_minus["magmom"] = -magmom
+        out_plus = self.model(data_plus, training=training, **kwargs)
+        out_minus = self.model(data_minus, training=training, **kwargs)
+        return {
+            key: (
+                value
+                if value is None or out_minus.get(key) is None
+                else self._combine(key, value, out_minus[key])
+            )
+            for key, value in out_plus.items()
         }

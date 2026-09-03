@@ -1,0 +1,196 @@
+# GPU pipeline run on GitLab CI runners provided by MPCDF.
+#
+# This file is NOT a repository-root .gitlab-ci.yml on purpose: nothing in
+# GitHub reads it. The `gpu tests (MPCDF)` workflow copies it to
+# `.gitlab-ci.yml` on a throwaway branch, pushes that branch to a mirror
+# project and starts the pipeline through the API. Keeping it here means the
+# GitHub repository carries no top-level GitLab configuration.
+#
+# Control always flows GitHub -> GitLab, never the reverse: GitHub stays the
+# single entry point and the checks on a pull request come from the workflow.
+
+# Only API-created pipelines run. Without this the `git push` performed by the
+# bridge would start a second, redundant pipeline for the same commit.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "api"
+    - when: never
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PIP_DEFAULT_TIMEOUT: "120"
+  GIT_DEPTH: "1"
+  # Keep the JIT-compiled OpenEquivariance kernels inside the project, the only
+  # place the cache below can reach.
+  TORCH_EXTENSIONS_DIR: "$CI_PROJECT_DIR/.cache/torch_extensions"
+
+stages:
+  - test
+
+# A plain Python image is enough wherever the PyTorch wheels suffice: they
+# ship their own runtime libraries and only need the driver, which the runner
+# exposes into the container. The exception is OpenEquivariance, which
+# JIT-compiles its kernels and therefore needs a real toolkit, so each vendor
+# job overrides the image below with one that carries the compiler.
+.gpu:
+  stage: test
+  image: python:3.11
+  timeout: 2h
+  # Cache only what is small AND expensive to reproduce: wheels pip had to
+  # build itself (matscipy compiles from an sdist) and the JIT-compiled
+  # kernels. Deliberately NOT the venv or pip's download cache — the torch
+  # builds put those in the multi-GB range, which the cache store rejects, and
+  # a rejected upload does not fail the job, so the whole cache silently stops
+  # working. Both paths are reused only when what produced them still matches,
+  # so a warm cache can save work but never change a result.
+  cache:
+    key:
+      files:
+        - setup.cfg
+      prefix: "$CI_JOB_NAME"
+    paths:
+      - .cache/pip/wheels
+      - .cache/torch_extensions
+  before_script:
+    # `before_script` and `script` are concatenated into ONE shell, which is why
+    # both the venv activation below and this function survive into `script`.
+    #
+    # pip's --retries covers its own HTTP requests, NOT the `git clone` it shells
+    # out to for the git+https pins in requirements/*.txt — a DNS blip there
+    # fails the install outright. The retired self-hosted workflow wrapped every
+    # install for this reason; containers on shared runners are no less exposed.
+    - |
+      retry() {
+        for i in 1 2 3; do
+          "$@" && return 0
+          echo "'$*' failed (attempt $i/3), retrying in 20s" >&2
+          sleep 20
+        done
+        "$@"
+      }
+    - python3 -V
+    - python3 -m venv .venv
+    - . .venv/bin/activate
+    - retry python -m pip install -U pip
+  script:
+    - |
+      if [ -n "$TORCH_INDEX" ]; then
+        retry python -m pip install --retries 5 torch --index-url "$TORCH_INDEX"
+      fi
+    - retry python -m pip install --retries 5 ".[${EXTRAS}]"
+    - |
+      for req in $PIP_REQUIREMENTS; do
+        retry python -m pip install --retries 5 -r "$req"
+      done
+    - python -m pip freeze
+    # Fail loudly rather than silently running the CPU path: a runner that
+    # hands us no GPU must not report a green pipeline.
+    - |
+      python - <<'PY'
+      import torch
+      print("torch:", torch.__version__)
+      print("cuda:", torch.version.cuda, "| hip:", torch.version.hip)
+      if not torch.cuda.is_available():
+          raise SystemExit("No GPU is visible to torch on this runner")
+      print("device:", torch.cuda.get_device_name(0))
+      PY
+    # MACE_REQUIRE_CAPS turns a broken backend install into a failure instead
+    # of a skip, the same contract the GitHub jobs use (tests/conftest.py).
+    #
+    # MACE_CI_ALLOW_NETWORK is what the retired self-hosted workflow passed as
+    # `allow-network: true`. The `network` capability is never autodetected, so
+    # without it the foundation-model tests that also carry `gpu` are collected
+    # and then skipped — silently narrower GPU coverage than the fleet had.
+    # It is in REQUIRE_CAPS too, so removing this line fails the job instead of
+    # quietly dropping those tests again.
+    #
+    # `and not benchmark` stays, and it is a decision rather than an oversight:
+    # this job runs -n 2 on a contended shared runner under a 2 h cap, so a
+    # timing taken here would be noise wearing a number, and it is a
+    # correctness gate that must not grow a perf-shaped flake. The consequence
+    # is that no CI job anywhere runs a gpu-marked benchmark — the CPU baseline
+    # in tests/benchmarks/test_inference_cpu.py is what the nightly publishes,
+    # and the GPU cases are the by-hand reproduction recipe recorded in that
+    # file's module docstring. Removing this clause is not the way to fix that;
+    # a separate, non-gating benchmark job would be.
+    - >
+      MACE_REQUIRE_CAPS="$REQUIRE_CAPS"
+      MACE_CI_ALLOW_NETWORK=1
+      python -m pytest tests
+      -m "($MARKER_EXPR) and not benchmark"
+      -n 2 --timeout 1200 -ra
+
+# ONLY_VENDOR is set by the bridge so each GitHub job drives a pipeline
+# containing a single vendor, and the two report as independent checks. Unset
+# (a pipeline started by hand) runs both.
+gpu-nvidia:
+  extends: .gpu
+  rules:
+    - if: '$ONLY_VENDOR == null || $ONLY_VENDOR == "" || $ONLY_VENDOR == "nvidia"'
+  # OpenEquivariance JIT-compiles its kernels with nvcc, so a driver-only
+  # environment cannot run those tests at all; hence the toolkit image. Its
+  # major version tracks the default PyTorch wheels, verified rather than
+  # assumed: the run below prints `torch: 2.13.0+cu130`. Keep the cueq ops
+  # extra on the same major, or pip resolves a second CUDA runtime into the
+  # venv alongside torch's and the two only happen to coexist.
+  image: nvidia/cuda:13.0.3-devel-ubuntu24.04
+  before_script:
+    - apt-get update
+    - >
+      apt-get install -y --no-install-recommends
+      python3 python3-venv python3-dev build-essential git
+    - !reference [ .gpu, before_script ]
+  tags:
+    - mpcdf-shared
+    - gpu-nvidia
+  variables:
+    CUDA_HOME: /usr/local/cuda
+    TORCH_INDEX: ""
+    EXTRAS: "dev,cueq,cueq-cuda-13,oeq,schedulefree"
+    PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
+    # Everything listed IS reachable under `-m gpu`, which is the whole point:
+    # a capability whose tests are all deselected passes the guard in
+    # tests/conftest.py silently, because that guard counts collected tests
+    # rather than selected ones.
+    REQUIRE_CAPS: "gpu,cueq,oeq,polar,les,schedulefree,network"
+    MARKER_EXPR: "gpu"
+
+# cuEquivariance is NVIDIA-only, hence the narrower marker expression. This
+# job is deliberately not allow_failure: it surfaces as its own check on the
+# GitHub side, so whether a red AMD blocks a merge is a branch-protection
+# decision rather than something hidden inside the pipeline.
+gpu-amd:
+  extends: .gpu
+  rules:
+    - if: '$ONLY_VENDOR == null || $ONLY_VENDOR == "" || $ONLY_VENDOR == "amd"'
+  # The ROCm dev image is the AMD counterpart of the CUDA one above: it brings
+  # hipcc, which OpenEquivariance needs to JIT-compile its kernels. The version
+  # tracks the PyTorch wheel index below, so the two ROCm stacks match.
+  image: rocm/dev-ubuntu-24.04:6.3.4
+  before_script:
+    - apt-get update
+    # rocblas-dev is NOT in the dev image, only in the much larger -complete
+    # one: OpenEquivariance includes rocblas/rocblas.h, so without it every
+    # oeq test dies at JIT time with a missing-header error.
+    - >
+      apt-get install -y --no-install-recommends
+      python3 python3-venv python3-dev build-essential git rocblas-dev
+    - !reference [ .gpu, before_script ]
+  tags:
+    - mpcdf-shared
+    - gpu-amd
+  variables:
+    ROCM_PATH: /opt/rocm
+    PYTORCH_ROCM_ARCH: "gfx90a"
+    TORCH_INDEX: "https://download.pytorch.org/whl/rocm6.3"
+    EXTRAS: "dev,oeq,schedulefree"
+    PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
+    # Narrower than the Nvidia list, because `not cueq` removes the only test
+    # that could exercise `les` or `network`: both of those `gpu` tests are also
+    # `cueq`-marked. Requiring them here would read as coverage this job does
+    # not have, and the zero-collection guard in tests/conftest.py cannot catch
+    # that for us, since it counts collected tests rather than selected ones.
+    # `polar` is required: its `gpu` test carries no `cueq` mark, so it runs
+    # here too — verified on an MI210, 39 passed.
+    REQUIRE_CAPS: "gpu,oeq,polar,schedulefree"
+    MARKER_EXPR: "gpu and not cueq"

@@ -282,7 +282,12 @@ def plot_epoch_dependence(
             valid_data["epoch"],
             valid_data[key]["mean"] * 1e3,
             color=color,
-            label=label,
+            # `label` is the (key, axis label) pair this loop unpacks two lines
+            # above; passing the pair itself gave matplotlib two labels for one
+            # dataset, which it refuses, and `run_train` swallowed the refusal at
+            # DEBUG. The axis label is the readable half and the one already used
+            # for `set_ylabel`.
+            label=axis_label,
             linewidth=1,
         )
         main_ax.set_yscale("log")
@@ -301,6 +306,17 @@ def plot_epoch_dependence(
 
 
 # INFERENCE=========
+
+
+def belongs_to_head(name: str, head: str) -> bool:
+    """Whether a data-loader key belongs to `head`.
+
+    The two dicts are keyed differently: train and valid are `train_<head>`
+    and `valid_<head>`, test sets are `<head>_<set name>`. A plain `head in
+    name` substring test mis-assigns overlapping head names, giving every
+    H2O point to the H2 head as well.
+    """
+    return name in (f"train_{head}", f"valid_{head}") or name.startswith(f"{head}_")
 
 
 def plot_inference_from_results(
@@ -326,7 +342,7 @@ def plot_inference_from_results(
             else:
                 fixed_color_train_valid = colors[0]
                 marker = "+"
-            if head not in name:
+            if not belongs_to_head(name, head):
                 continue
 
             # Initialize scatter to None
@@ -384,8 +400,10 @@ def plot_inference_from_results(
 
         fixed_color_test = colors[2]  # Color for test dataset
 
-        # Plot test data (single legend entry)
+        # Plot test data (single legend entry per head)
         for name, result in test_dict.items():
+            if not belongs_to_head(name, head):
+                continue
             # Initialize scatter to None to avoid possibly used before assignment
             scatter = None
 
@@ -396,7 +414,6 @@ def plot_inference_from_results(
                     result[e_key]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
                 )
 
             elif key == "force" and "forces" in result:
@@ -405,7 +422,6 @@ def plot_inference_from_results(
                     result["forces"]["predicted"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
                 )
 
             elif key == "stress" and "stress" in result:
@@ -414,7 +430,6 @@ def plot_inference_from_results(
                     result["stress"]["predicted"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
                 )
 
             elif key == "virials" and "virials" in result:
@@ -423,7 +438,6 @@ def plot_inference_from_results(
                     result["virials"]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
                 )
 
             elif key == "dipole" and "dipole" in result:
@@ -432,12 +446,11 @@ def plot_inference_from_results(
                     result["dipole"]["predicted_per_atom"],
                     marker="o",
                     color=fixed_color_test,
-                    label="Test",
                 )
 
             # Only add to legend_labels if scatter was assigned
             if scatter is not None:
-                legend_labels["Test"] = scatter
+                legend_labels[f"Test {head}"] = scatter
 
         # Add diagonal line for guide
         min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])

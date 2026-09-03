@@ -5,12 +5,30 @@
 [![License](https://img.shields.io/badge/License-MIT%202.0-blue.svg)](https://opensource.org/licenses/mit)
 [![GitHub issues](https://img.shields.io/github/issues/ACEsuit/mace.svg)](https://GitHub.com/ACEsuit/mace/issues/)
 [![Documentation Status](https://readthedocs.org/projects/mace/badge/)](https://mace-docs.readthedocs.io/en/latest/)
-[![DOI](https://zenodo.org/badge/505964914.svg)](https://doi.org/10.5281/zenodo.14103332)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.14103332-blue.svg)](https://doi.org/10.5281/zenodo.14103332)
+[![Coverage](https://coveralls.io/repos/github/ACEsuit/mace/badge.svg?branch=develop)](https://coveralls.io/github/ACEsuit/mace/?branch=develop)
+
+## Project status
+
+**MACE is being rewritten toward v1.0.** The rewrite happens in the open on the
+[`mace-reforge`](https://github.com/ACEsuit/mace/tree/mace-reforge) branch, and
+tracks progress on [its board](https://github.com/orgs/ACEsuit/projects/2).
+
+**v0.3.x remains the supported line.** It keeps taking bug fixes, and nothing
+about installing or using MACE changes today. v1.0 will not preserve code
+compatibility, and trained checkpoints will migrate through an explicit
+converter rather than loading directly; functionality is preserved.
+
+Planning to contribute while this is under way? Read
+[CONTRIBUTING.md](CONTRIBUTING.md) first. It says what we can accept into v0.3
+and what belongs in v1. The answer depends on whether we can carry your change
+over.
 
 ## Table of contents
 
 - [MACE](#mace)
   - [Table of contents](#table-of-contents)
+  - [Project status](#project-status)
   - [About MACE](#about-mace)
   - [Documentation](#documentation)
   - [Installation](#installation)
@@ -32,6 +50,7 @@
     - [Latest recommended foundation models](#latest-recommended-foundation-models)
   - [Caching](#caching)
   - [Development](#development)
+  - [Contributing](#contributing)
   - [References](#references)
   - [Contact](#contact)
   - [License](#license)
@@ -56,7 +75,7 @@ A partial documentation is available at: https://mace-docs.readthedocs.io
 
 ### 1. Requirements
 
-- Python >= 3.9
+- Python >= 3.10
 - [PyTorch](https://pytorch.org/) >= 1.12 **(training with float64 is not supported with PyTorch 2.1 but is supported with 2.2 and later, Pytorch 2.4.1 is not supported)**
 
 **Make sure to install PyTorch.** Please refer to the [official PyTorch installation](https://pytorch.org/get-started/locally/) for the installation instructions. Select the appropriate options for your system.
@@ -342,6 +361,9 @@ the environment variable XDG_CACHE_HOME. When set, the new cache path expands to
 
 ## Development
 
+Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md): while the
+v1 rewrite is under way, where a change belongs depends on what it touches.
+
 This project uses [pre-commit](https://pre-commit.com/) to execute code formatting and linting on commit.
 We also use `black`, `isort`, `pylint`, and `mypy`.
 We recommend setting up your development environment by installing the `dev` packages
@@ -356,7 +378,46 @@ The second line will initialise `pre-commit` to automaticaly run code checks on 
 We have CI set up to check this, but we _highly_ recommend that you run those commands
 before you commit (and push) to avoid accidentally committing bad code.
 
+### Running the tests
+
+The test suite is organised by what each test needs to run:
+
+| Directory | Contents | Extra requirements |
+|---|---|---|
+| `tests/unit` | fast, CPU-only unit tests | — |
+| `tests/workflows` | end-to-end CLI trainings (subprocess) | — |
+| `tests/backends` | e3nn ↔ cueq/oeq parity and converters | `cueq` / `oeq` extras (GPU for execution) |
+| `tests/extensions/<x>` | polar / les / torchsim / schedulefree | the extension's dependency |
+| `tests/foundations` | foundation-model loaders (downloads) | network, opt-in |
+| `tests/integrations/<x>` | LAMMPS (and future integrations) | see `tests/integrations/README.md` |
+| `tests/benchmarks` | performance measurements | GPU |
+
+Capabilities a test needs (a GPU, an optional package, network access) are
+pytest markers enforced by `tests/conftest.py`: locally, tests whose
+requirements are missing are skipped; CI jobs export `MACE_REQUIRE_CAPS` to
+turn those skips into failures. Network downloads are opt-in via
+`MACE_CI_ALLOW_NETWORK=1`.
+
+```bash
+pytest tests/unit                             # quick check
+pytest tests -m "not slow and not network"    # smoke over everything runnable
+```
+
+Every CI test job runs through the `.github/actions/run-tests` composite
+action, whose inputs (`tests`, `markers`, `require-caps`, `allow-network`,
+`splits`, `coverage`, ...) map 1:1 to pytest flags — to reproduce a job
+locally, read its `with:` block in the workflow and run the equivalent pytest
+command (e.g. the unit job is `pytest tests/unit -m "not slow" -n auto`).
+
 We are happy to accept pull requests under an [MIT license](https://choosealicense.com/licenses/mit/). Please copy/paste the license text as a comment into your pull request.
+
+## Contributing
+
+Bug fixes are always welcome, on both lines. New features are best built
+directly in v1; where that is not possible they are accepted into v0.3 if they
+are self-contained and tested on numbers we can reproduce. Changes to core or
+shared code go into v1 only. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+details and the reasoning.
 
 ## References
 

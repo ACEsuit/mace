@@ -19,6 +19,17 @@ from mace.tools.torch_geometric.batch import Batch
 from .blocks import AtomicEnergiesBlock
 
 
+def safe_double(t: torch.Tensor) -> torch.Tensor:
+    """Cast to float64 for accumulation precision, except on MPS.
+
+    The Apple-Silicon MPS backend does not support float64, so there the
+    tensor is returned unchanged in its working dtype.
+    """
+    if t.device.type == "mps":
+        return t
+    return t.double()
+
+
 def compute_forces(
     energy: torch.Tensor, positions: torch.Tensor, training: bool = True
 ) -> torch.Tensor:
@@ -38,6 +49,43 @@ def compute_forces(
     return -1 * gradient
 
 
+def cell_volume_and_mask(
+    cell: torch.Tensor,  # [n_graphs, 3, 3] or [n_graphs * 3, 3]
+    pbc: Optional[torch.Tensor] = None,  # [n_graphs, 3]
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Per-graph cell volume, plus a mask of the graphs it is a volume for.
+
+    A graph with no periodic direction has nothing to normalize a virial by:
+    the cell it carries is the padding box `get_neighborhood` builds around the
+    atoms, so `virials / det(cell)` is a number set by that padding rather than
+    a stress. The mask marks those graphs (and any with a degenerate cell) so
+    the caller can zero them and keep the stress of the periodic graphs in a
+    batch that mixes molecules with crystals. `pbc` may be None (LAMMPS,
+    hand-built inputs), in which case only a degenerate cell is masked.
+
+    The returned volume is 1 where the mask is False, so the caller's division
+    stays finite: masking a nan after the fact still routes a nan back through
+    the division on the backward pass.
+    """
+    cell = cell.view(-1, 3, 3)
+    volume = torch.linalg.det(cell).abs()
+    periodic = volume > 0.0
+    if pbc is not None:
+        periodic = torch.logical_and(periodic, pbc.view(-1, 3).any(dim=-1))
+    return torch.where(periodic, volume, torch.ones_like(volume)), periodic
+
+
+def stress_from_virials(
+    virials: torch.Tensor,  # [n_graphs, 3, 3]
+    cell: torch.Tensor,
+    pbc: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    volume, periodic = cell_volume_and_mask(cell, pbc)
+    stress = virials / volume.view(-1, 1, 1)
+    stress = torch.where(periodic.view(-1, 1, 1), stress, torch.zeros_like(stress))
+    return torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
+
+
 def compute_forces_virials(
     energy: torch.Tensor,
     positions: torch.Tensor,
@@ -45,6 +93,7 @@ def compute_forces_virials(
     cell: torch.Tensor,
     training: bool = True,
     compute_stress: bool = False,
+    pbc: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
     grad_outputs: List[Optional[torch.Tensor]] = [torch.ones_like(energy)]
     forces, virials = torch.autograd.grad(
@@ -57,10 +106,7 @@ def compute_forces_virials(
     )
     stress = torch.zeros_like(displacement)
     if compute_stress and virials is not None:
-        cell = cell.view(-1, 3, 3)
-        volume = torch.linalg.det(cell).abs().unsqueeze(-1)
-        stress = virials / volume.view(-1, 1, 1)
-        stress = torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
+        stress = stress_from_virials(virials, cell, pbc)
     if forces is None:
         forces = torch.zeros_like(positions)
     if virials is None:
@@ -164,26 +210,136 @@ def compute_hessians_loop(
     return hessian
 
 
+def compute_forces_virials_magforces(
+    energy: torch.Tensor,
+    positions: torch.Tensor,
+    displacement: torch.Tensor,
+    cell: torch.Tensor,
+    magmoms: torch.Tensor,
+    training: bool = True,
+    compute_stress: bool = False,
+    pbc: Optional[torch.Tensor] = None,
+) -> Tuple[
+    torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]
+]:
+
+    # forces correct static type
+    grad_outputs = torch.jit.annotate(
+        List[Optional[torch.Tensor]], [torch.ones_like(energy)]
+    )
+
+    # Pack all inputs into a list
+    inputs = [positions, displacement, magmoms]
+
+    grads = torch.autograd.grad(
+        outputs=[energy],
+        inputs=inputs,
+        grad_outputs=grad_outputs,
+        retain_graph=training,
+        create_graph=training,
+        allow_unused=True,
+    )
+
+    # Explicit unwrapping of Optionals for torch compile
+    forces_opt = grads[0]
+    virials_opt = grads[1]
+    mag_forces_opt = grads[2]
+
+    forces = forces_opt if forces_opt is not None else torch.zeros_like(positions)
+    virials = virials_opt if virials_opt is not None else torch.zeros_like(displacement)
+    mag_forces = (
+        mag_forces_opt if mag_forces_opt is not None else torch.zeros_like(magmoms)
+    )
+
+    # Compute stress if requested
+    stress = torch.zeros_like(displacement)
+    if compute_stress:
+        stress = stress_from_virials(virials, cell, pbc)
+
+    return -forces, -virials, stress, -mag_forces
+
+
+def compute_forces_magforces(
+    energy: torch.Tensor,
+    positions: torch.Tensor,
+    magmoms: torch.Tensor,
+    training: bool = True,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """
+    Compute atomic forces and magnetic forces in a single autograd pass.
+
+    Returns:
+        -forces: dE/d(positions)
+        -mag_forces: dE/d(magmoms), or None if magmoms not provided
+    """
+
+    # forces correct static type
+    grad_outputs = torch.jit.annotate(
+        List[Optional[torch.Tensor]], [torch.ones_like(energy)]
+    )
+
+    inputs = [positions, magmoms]
+    grads = torch.autograd.grad(
+        outputs=[energy],
+        inputs=inputs,
+        grad_outputs=grad_outputs,
+        retain_graph=training,
+        create_graph=training,
+        allow_unused=True,
+    )
+
+    # Explicitly unwrap Optionals so TorchScript knows they are Tensors
+    forces_opt = grads[0]
+    mag_forces_opt = grads[1]
+
+    forces = forces_opt if forces_opt is not None else torch.zeros_like(positions)
+    mag_forces = (
+        mag_forces_opt if mag_forces_opt is not None else torch.zeros_like(magmoms)
+    )
+
+    return -forces, -mag_forces
+
+
 def get_outputs(
     energy: torch.Tensor,
     positions: torch.Tensor,
     cell: torch.Tensor,
     displacement: Optional[torch.Tensor],
     vectors: Optional[torch.Tensor] = None,
+    magmoms: Optional[torch.Tensor] = None,
     training: bool = False,
     compute_force: bool = True,
     compute_virials: bool = True,
     compute_stress: bool = True,
     compute_hessian: bool = False,
     compute_edge_forces: bool = False,
+    compute_magforces: bool = False,
+    pbc: Optional[torch.Tensor] = None,
 ) -> Tuple[
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
+    Optional[torch.Tensor],
 ]:
-    if (compute_virials or compute_stress) and displacement is not None:
+
+    if (
+        (compute_virials or compute_stress) and displacement is not None
+    ) and compute_magforces:
+        if magmoms is None:
+            raise ValueError("Magnetic moment must be provided to get magnetic forces")
+        forces, virials, stress, mag_forces = compute_forces_virials_magforces(
+            energy=energy,
+            positions=positions,
+            displacement=displacement,
+            cell=cell,
+            magmoms=magmoms,
+            training=(training or compute_hessian or compute_edge_forces),
+            compute_stress=True,
+            pbc=pbc,
+        )
+    elif (compute_virials or compute_stress) and displacement is not None:
         forces, virials, stress = compute_forces_virials(
             energy=energy,
             positions=positions,
@@ -191,7 +347,19 @@ def get_outputs(
             cell=cell,
             compute_stress=compute_stress,
             training=(training or compute_hessian or compute_edge_forces),
+            pbc=pbc,
         )
+        mag_forces = None
+    elif compute_force and compute_magforces:
+        if magmoms is None:
+            raise ValueError("Magnetic moment must be provided to get magnetic forces")
+        forces, mag_forces = compute_forces_magforces(
+            energy=energy,
+            positions=positions,
+            magmoms=magmoms,
+            training=(training or compute_hessian or compute_edge_forces),
+        )
+        virials, stress = None, None
     elif compute_force:
         forces, virials, stress = (
             compute_forces(
@@ -202,8 +370,9 @@ def get_outputs(
             None,
             None,
         )
+        mag_forces = None
     else:
-        forces, virials, stress = (None, None, None)
+        forces, virials, stress, mag_forces = (None, None, None, None)
     if compute_hessian:
         assert forces is not None, "Forces must be computed to get the hessian"
         hessian = compute_hessians_vmap(forces, positions)
@@ -219,7 +388,7 @@ def get_outputs(
             edge_forces = -1 * edge_forces  # Match LAMMPS sign convention
     else:
         edge_forces = None
-    return forces, virials, stress, hessian, edge_forces
+    return forces, virials, stress, hessian, edge_forces, mag_forces
 
 
 def get_atomic_virials_stresses(
@@ -229,6 +398,7 @@ def get_atomic_virials_stresses(
     num_atoms: int,
     batch: torch.Tensor,
     cell: torch.Tensor,  # [n_graphs, 3, 3]
+    pbc: Optional[torch.Tensor] = None,  # [n_graphs, 3]
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Compute atomic virials and optionally atomic stresses from edge forces and vectors.
@@ -247,11 +417,13 @@ def get_atomic_virials_stresses(
     )
     atom_virial = (atom_virial_sender + atom_virial_receiver) / 2
     atom_virial = (atom_virial + atom_virial.transpose(-1, -2)) / 2
-    atom_stress = None
-    cell = cell.view(-1, 3, 3)
-    volume = torch.linalg.det(cell).abs().unsqueeze(-1)
-    atom_volume = volume[batch].view(-1, 1, 1)
-    atom_stress = atom_virial / atom_volume
+    # Masked exactly like the total stress, so an aperiodic graph's atomic
+    # stresses stay zero rather than reporting its padding box.
+    volume, periodic = cell_volume_and_mask(cell, pbc)
+    atom_stress = atom_virial / volume[batch].view(-1, 1, 1)
+    atom_stress = torch.where(
+        periodic[batch].view(-1, 1, 1), atom_stress, torch.zeros_like(atom_stress)
+    )
     atom_stress = torch.where(
         torch.abs(atom_stress) < 1e10, atom_stress, torch.zeros_like(atom_stress)
     )
@@ -589,6 +761,7 @@ class GraphContext(NamedTuple):
     vectors: torch.Tensor
     lengths: torch.Tensor
     cell: torch.Tensor
+    pbc: Optional[torch.Tensor]
     node_heads: torch.Tensor
     interaction_kwargs: InteractionKwargs
 
@@ -609,6 +782,7 @@ def prepare_graph(
         else torch.zeros_like(data["batch"])
     )
 
+    pbc: Optional[torch.Tensor] = None
     if lammps_mliap:
         n_real, n_ghost = data["natoms"][0], data["natoms"][1]
         num_graphs = 2
@@ -632,6 +806,7 @@ def prepare_graph(
             data["positions"].requires_grad_(True)
         positions = data["positions"]
         cell = data["cell"]
+        pbc = data["pbc"] if "pbc" in data else None
         num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)
         num_graphs = int(data["ptr"].numel() - 1)
         displacement = torch.zeros(
@@ -664,6 +839,7 @@ def prepare_graph(
         vectors=vectors,
         lengths=lengths,
         cell=cell,
+        pbc=pbc,
         node_heads=node_heads,
         interaction_kwargs=ikw,
     )

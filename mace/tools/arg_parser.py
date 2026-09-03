@@ -144,6 +144,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "AtomicDipolesMACE",
             "AtomicDielectricMACE",
             "EnergyDipolesMACE",
+            "MagneticScaleShiftMACE",
         ],
     )
     parser.add_argument(
@@ -210,6 +211,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticResidualNonLinearInteractionBlock",
+            "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+            "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -223,6 +226,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticDensityResidualInteractionBlock",
             "RealAgnosticResidualNonLinearInteractionBlock",
+            "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+            "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
         ],
     )
     parser.add_argument(
@@ -465,6 +470,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--compute_magforces",
+        help="Select True to compute magnetic forces",
+        type=str2bool,
+        default=False,
+    )
 
     # Dataset
     parser.add_argument(
@@ -573,13 +584,6 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="When replay pseudolabels are generated, always generate stress labels even if the original replay data lacked stress",
         type=str2bool,
         default=False,
-    )
-    parser.add_argument(
-        "--foundation_filter_elements",
-        help="Filter element during fine-tuning",
-        type=str2bool,
-        default=True,
-        required=False,
     )
     parser.add_argument(
         "--heads",
@@ -724,6 +728,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=DefaultKeys.POLARIZABILITY.value,
     )
     parser.add_argument(
+        "--magmom_key",
+        help="Key of magnetic moment in training xyz",
+        type=str,
+        default=DefaultKeys.MAGMOM.value,
+    )
+    parser.add_argument(
+        "--magforces_key",
+        help="Key of magnetic forces in training xyz",
+        type=str,
+        default=DefaultKeys.MAGFORCES.value,
+    )
+    parser.add_argument(
         "--head_key",
         help="Key of head in training xyz",
         type=str,
@@ -812,6 +828,20 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=100.0,
         dest="swa_forces_weight",
+    )
+    parser.add_argument(
+        "--magforces_weight",
+        help="weight of mag forces loss",
+        type=float,
+        default=100.0,
+    )
+    parser.add_argument(
+        "--swa_magforces_weight",
+        "--stage_two_magforces_weight",
+        help="weight of magforces loss after starting Stage Two (previously called swa)",
+        type=float,
+        default=100.0,
+        dest="swa_magforces_weight",
     )
     parser.add_argument(
         "--energy_weight", help="weight of energy loss", type=float, default=1.0
@@ -907,6 +937,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         help="Beta2 parameter for the ScheduleFree optimizer",
         type=float,
         default=0.98,
+    )
+    parser.add_argument(
+        "--warmup_steps_schedulefree",
+        help="Number of linear LR warmup steps for the ScheduleFree optimizer",
+        type=int,
+        default=0,
     )
     parser.add_argument("--batch_size", help="batch size", type=int, default=10)
     parser.add_argument(
@@ -1016,9 +1052,43 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--foundation_model_readout",
-        help="Use readout of foundation model for transfer learning",
-        action="store_false",
+        help=(
+            "Transfer the foundation model's readout weights. Pass the flag with "
+            "no value to turn the transfer off, or an explicit boolean."
+        ),
+        # `nargs="?"` rather than `store_false`, so the flag reads the same way
+        # from a YAML config as from the command line. configargparse turns a
+        # config entry into the flag plus its value, and a `store_false` switch
+        # ignores that value: `foundation_model_readout: true` then applied the
+        # bare switch and turned the transfer OFF. Accepting an optional value
+        # keeps the bare form working and makes the config say what it means.
+        nargs="?",
+        const=False,
+        type=str2bool,
         default=True,
+    )
+    parser.add_argument(
+        # Deprecated spelling of the flag above, kept because it has been the
+        # only way to reach this behaviour since April 2024. It never filtered
+        # elements: it was passed as `load_readout`, so both names have always
+        # meant "copy the foundation model's readout weights". Shares the dest,
+        # so old scripts keep working and get exactly what they got before.
+        "--foundation_filter_elements",
+        help=(
+            "Deprecated alias of --foundation_model_readout. Despite the name it "
+            "never filtered elements; it decides whether the foundation model's "
+            "readout weights are transferred."
+        ),
+        dest="foundation_model_readout",
+        type=str2bool,
+        default=True,
+        required=False,
+    )
+    parser.add_argument(
+        "--finetune_dipoles_polarizabilities",
+        help="Fine-tune an existing AtomicDielectricMACE (MACE-MDP) model on dipoles and polarizabilities only. Requires --foundation_model pointing to the pretrained MDP checkpoint.",
+        type=str2bool,
+        default=False,
     )
     parser.add_argument(
         "--eval_interval", help="evaluate model every <n> epochs", type=int, default=1
@@ -1129,6 +1199,70 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "forces_weight",
         ],
     )
+
+    # --- magnetic mace specific arguments ---
+    parser.add_argument(
+        "--num_mag_radial_basis_one_body",
+        help="number of radial basis for one body contribution in magnetic mace",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--m_max",
+        help=(
+            "|m| saturation per element. Either a dict literal mapping atomic "
+            'number to m_max (e.g. "{26: 1.8, 28: 1.2}" — only listed elements '
+            "are required, others default to 1.0), or a space-separated list of "
+            "floats ordered by z_table.zs (legacy)."
+        ),
+        type=str,
+        nargs="+",
+        default=None,
+    )
+    parser.add_argument(
+        "--max_m_ell",
+        help="max_ell for magnetic mace",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
+        "--num_mag_radial_basis",
+        help="number of radial basis for magnetic part",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
+        "--use_magmom_one_body",
+        help="If true, use one body mangetic moment contribution in the model",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--train_one_body_contribution",
+        help="If true, include the magmom one-body coefficients in the optimizer "
+        "(only relevant when --use_magmom_one_body is set).",
+        type=str2bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--data_aug_magmom",
+        help="Whether to use data augmentation on magnetic moment training. ",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--data_aug_magmom_mode",
+        help="Which magnetic symmetries to augment. 'non-soc' draws from the full "
+        "O(3)_spin (random rotation AND global sign flip), valid when the energy is "
+        "invariant under rotating the moments independently of the lattice. 'soc' applies "
+        "ONLY the sign flip m -> -m: with spin-orbit coupling a free spin rotation is not "
+        "a symmetry, so augmenting with it would teach an invariance the model must not "
+        "have, while time reversal still holds at zero field.",
+        type=str,
+        default="non-soc",
+        choices=["soc", "non-soc"],
+    )
+
     return parser
 
 

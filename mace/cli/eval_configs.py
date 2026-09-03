@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import argparse
+import logging
 from typing import Dict
 
 import ase.data
@@ -14,9 +15,12 @@ import torch
 from e3nn import o3
 from tqdm.auto import tqdm
 from mace import data
+from mace.calculators.mace import get_model_dtype
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
+from mace.tools.default_keys import DefaultKeys
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,6 +112,19 @@ def parse_args() -> argparse.Namespace:
         required=False,
         default=None,
     )
+    parser.add_argument(
+        "--magmom_key",
+        help="atoms.arrays key for the magnetic moments fed into magnetic MACE models",
+        type=str,
+        required=False,
+        default=DefaultKeys.MAGMOM.value,
+    )
+    parser.add_argument(
+        "--return_magforces",
+        help="compute magnetic forces (dE/dm) from a magnetic MACE model and write them to atoms.arrays",
+        action="store_true",
+        default=False,
+    )
     return parser.parse_args()
 
 
@@ -116,6 +133,7 @@ def get_model_output(
     batch: Dict[str, torch.Tensor],
     compute_stress: bool,
     compute_bec: bool,
+    compute_magforces: bool = False,
 ) -> Dict[str, torch.Tensor]:
     forward_args = {
         "compute_stress": compute_stress,
@@ -124,6 +142,8 @@ def get_model_output(
         # Only add `compute_bec` if it is requested
         # We check if the model is MACELES at the start of the run function
         forward_args["compute_bec"] = compute_bec
+    if compute_magforces:
+        forward_args["compute_magforces"] = compute_magforces
     return model(batch, **forward_args)
 
 
@@ -133,11 +153,32 @@ def main() -> None:
 
 
 def run(args: argparse.Namespace) -> None:
+    if not hasattr(args, "return_magforces"):
+        args.return_magforces = False
     torch_tools.set_default_dtype(args.default_dtype)
     device = torch_tools.init_device(args.device)
 
     # Load model
     model = torch.load(f=args.model, map_location=args.device)
+
+    # Reconcile the requested dtype with the checkpoint's, as the ase
+    # calculator already does. Without this, `--default_dtype float32` against a
+    # float64 checkpoint reached the forward pass unchanged and died inside a
+    # scripted tensor product on "both inputs should have same dtype", naming
+    # neither the flag nor the checkpoint -- while the calculator, given the
+    # same two things, warned and converted. One request, two shipped inference
+    # routes, opposite outcomes.
+    model_dtype = get_model_dtype(model)
+    if model_dtype != args.default_dtype:
+        logging.warning(
+            f"Default dtype {args.default_dtype} does not match model dtype "
+            f"{model_dtype}, converting models to {args.default_dtype}."
+        )
+        if args.default_dtype == "float64":
+            model = model.double()
+        elif args.default_dtype == "float32":
+            model = model.float()
+
     if model.__class__.__name__ != "MACELES" and args.compute_bec:
         raise ValueError("BEC can only be computed with MACELES model. ")
     if args.enable_cueq:
@@ -150,6 +191,16 @@ def run(args: argparse.Namespace) -> None:
     for param in model.parameters():
         param.requires_grad = False
 
+    # Model metadata needs no unwrapping: MagneticSCFMACE delegates attribute
+    # lookup to the model it wraps. Its forward signature is its own, though,
+    # and takes no compute_magforces.
+    if args.return_magforces and hasattr(model, "magmom_mace"):
+        raise ValueError(
+            "--return_magforces is not supported for SCF-wrapped magnetic models: "
+            f"{model.__class__.__name__}.forward does not accept compute_magforces. "
+            "Evaluate the underlying model instead."
+        )
+
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
     if args.head is not None:
@@ -157,8 +208,12 @@ def run(args: argparse.Namespace) -> None:
         head_name = args.head
     else:
         head_name = "Default"
+    key_specification = update_keyspec_from_kwargs(KeySpecification(), vars(args))
     configs = [
-        data.config_from_atoms(atoms, head_name=head_name) for atoms in atoms_list
+        data.config_from_atoms(
+            atoms, key_specification=key_specification, head_name=head_name
+        )
+        for atoms in atoms_list
     ]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
@@ -188,12 +243,21 @@ def run(args: argparse.Namespace) -> None:
     stresses_list = []
     bec_list = []
     qs_list = []
+    us_list = []
+    kappas_list = []
+    alphas_list = []
+    quads_list = []
     forces_collection = []
+    magforces_collection = []
 
     for batch in tqdm(data_loader):
         batch = batch.to(device)
         output = get_model_output(
-            model, batch.to_dict(), args.compute_stress, args.compute_bec
+            model,
+            batch.to_dict(),
+            args.compute_stress,
+            args.compute_bec,
+            compute_magforces=args.return_magforces,
         )
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:
@@ -206,12 +270,45 @@ def run(args: argparse.Namespace) -> None:
             )
             bec_list.append(becs[:-1])  # drop last as its empty
 
+        if "latent_charges" in output and output["latent_charges"] is not None:
             qs = np.split(
                 torch_tools.to_numpy(output["latent_charges"]),
                 indices_or_sections=batch.ptr[1:],
                 axis=0,
             )
             qs_list.append(qs[:-1])  # drop last as its empty
+
+        if "latent_dipoles" in output and output["latent_dipoles"] is not None:
+            us = np.split(
+                torch_tools.to_numpy(output["latent_dipoles"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            us_list.append(us[:-1])
+
+        if "latent_kappas" in output and output["latent_kappas"] is not None:
+            kappas = np.split(
+                torch_tools.to_numpy(output["latent_kappas"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            kappas_list.append(kappas[:-1])
+
+        if "latent_alphas" in output and output["latent_alphas"] is not None:
+            alphas = np.split(
+                torch_tools.to_numpy(output["latent_alphas"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            alphas_list.append(alphas[:-1])
+
+        if "latent_quads" in output and output["latent_quads"] is not None:
+            quads = np.split(
+                torch_tools.to_numpy(output["latent_quads"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            quads_list.append(quads[:-1])
 
         if args.return_contributions:
             contributions_list.append(torch_tools.to_numpy(output["contributions"]))
@@ -251,7 +348,12 @@ def run(args: argparse.Namespace) -> None:
             descriptors_list.extend(descriptors[:-1])  # drop last as its empty
 
         if args.return_node_energies:
-            node_energies_list.append(
+            # extend, not append: one entry per structure, as the descriptors
+            # above do. Appending the per-batch list of splits made the outer
+            # list per-batch, and the concatenation below then had to build a
+            # rectangular array out of it -- which only works while every
+            # structure has the same number of atoms.
+            node_energies_list.extend(
                 np.split(
                     torch_tools.to_numpy(output["node_energy"]),
                     indices_or_sections=batch.ptr[1:],
@@ -268,18 +370,40 @@ def run(args: argparse.Namespace) -> None:
         )
         forces_collection.append(forces[:-1])  # drop last as its empty
 
+        if args.return_magforces and output.get("magforces") is not None:
+            magforces = np.split(
+                torch_tools.to_numpy(output["magforces"]),
+                indices_or_sections=batch.ptr[1:],
+                axis=0,
+            )
+            magforces_collection.append(magforces[:-1])
+
     energies = np.concatenate(energies_list, axis=0)
     forces_list = [
         forces for forces_list in forces_collection for forces in forces_list
     ]
+    magforces_list = [
+        magforces for sublist in magforces_collection for magforces in sublist
+    ]
     assert len(atoms_list) == len(energies) == len(forces_list)
+    if args.return_magforces and magforces_list:
+        assert len(atoms_list) == len(magforces_list)
     if args.compute_stress:
         stresses = np.concatenate(stresses_list, axis=0)
         assert len(atoms_list) == stresses.shape[0]
 
     if args.compute_bec:
         bec_list = [becs for sublist in bec_list for becs in sublist]
+    if len(qs_list) > 0:
         qs_list = [qs for sublist in qs_list for qs in sublist]
+    if len(us_list) > 0:
+        us_list = [us for sublist in us_list for us in sublist]
+    if len(kappas_list) > 0:
+        kappas_list = [kappas for sublist in kappas_list for kappas in sublist]
+    if len(alphas_list) > 0:
+        alphas_list = [alphas for sublist in alphas_list for alphas in sublist]
+    if len(quads_list) > 0:
+        quads_list = [quads for sublist in quads_list for quads in sublist]
 
     if args.return_contributions:
         contributions = np.concatenate(contributions_list, axis=0)
@@ -290,8 +414,8 @@ def run(args: argparse.Namespace) -> None:
         assert len(atoms_list) == len(descriptors_list)
 
     if args.return_node_energies:
-        node_energies = np.concatenate(node_energies_list, axis=0)
-        assert len(atoms_list) == node_energies.shape[0]
+        # no concatenation - one array per structure, of that structure's length
+        assert len(atoms_list) == len(node_energies_list)
 
     # Store data in atoms objects
     for i, (atoms, energy, forces) in enumerate(zip(atoms_list, energies, forces_list)):
@@ -299,12 +423,30 @@ def run(args: argparse.Namespace) -> None:
         atoms.info[args.info_prefix + "energy"] = energy
         atoms.arrays[args.info_prefix + "forces"] = forces
 
+        if args.return_magforces and magforces_list:
+            atoms.arrays[args.info_prefix + "magforces"] = magforces_list[i]
+
         if args.compute_stress:
             atoms.info[args.info_prefix + "stress"] = stresses[i]
 
         if args.compute_bec:
-            atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(-1, 9)
+            atoms.arrays[args.info_prefix + "BEC"] = bec_list[i].reshape(
+                bec_list[i].shape[0], -1
+            )
+        if len(qs_list) > 0:
             atoms.arrays[args.info_prefix + "latent_charges"] = qs_list[i]
+        if len(us_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_dipoles"] = us_list[i]
+        if len(kappas_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_kappas"] = kappas_list[i]
+        if len(alphas_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_alphas"] = alphas_list[i].reshape(
+                alphas_list[i].shape[0], -1
+            )
+        if len(quads_list) > 0:
+            atoms.arrays[args.info_prefix + "latent_quads"] = quads_list[i].reshape(
+                quads_list[i].shape[0], -1
+            )
 
         if args.return_contributions:
             atoms.info[args.info_prefix + "BO_contributions"] = contributions[i]
@@ -327,7 +469,7 @@ def run(args: argparse.Namespace) -> None:
                 atoms.arrays[args.info_prefix + "descriptors"] = np.array(descriptors)
 
         if args.return_node_energies:
-            atoms.arrays[args.info_prefix + "node_energies"] = node_energies[i]
+            atoms.arrays[args.info_prefix + "node_energies"] = node_energies_list[i]
 
     # Write atoms to output path
     ase.io.write(args.output, images=atoms_list, format="extxyz")

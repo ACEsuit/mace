@@ -1,0 +1,358 @@
+{
+  "backend": "e3nn",
+  "device": "cpu",
+  "dtype": "float64",
+  "global_gradient_norm": 1.3171696106763509,
+  "gradcheck": {
+    "gradcheck_positions": true,
+    "gradcheck_strain": true,
+    "gradgradcheck_positions": true,
+    "gradgradcheck_strain": true
+  },
+  "kind": "train_step_gradient",
+  "loss": 24.723692968766137,
+  "metadata": {
+    "loss": "WeightedEnergyForcesLoss",
+    "loss_weights": {
+      "energy_weight": 1.0,
+      "forces_weight": 10.0
+    },
+    "model": "tiny_mace.model",
+    "model_class": "MACE",
+    "projection": "sum_k g_k * cos(k + 1), C-order flattening",
+    "seed": 20260810,
+    "structures": "first 4 non-isolated configurations of fixtures/tiny_train.xyz"
+  },
+  "n_elements": 37704,
+  "parameters": {
+    "interactions.0.conv_tp_weights.layer0.weight": {
+      "abs_sum": 6.319428825870839,
+      "count": 512,
+      "projection": 0.44472347670545276,
+      "shape": [
+        8,
+        64
+      ],
+      "sq_sum": 0.20160784769931583,
+      "sum": -0.18997803941908892
+    },
+    "interactions.0.conv_tp_weights.layer1.weight": {
+      "abs_sum": 13.833957785627442,
+      "count": 4096,
+      "projection": 0.021013464349724648,
+      "shape": [
+        64,
+        64
+      ],
+      "sq_sum": 0.1292873228115174,
+      "sum": 2.512040442898427
+    },
+    "interactions.0.conv_tp_weights.layer2.weight": {
+      "abs_sum": 10.157282996131347,
+      "count": 4096,
+      "projection": 0.10776017442424035,
+      "shape": [
+        64,
+        64
+      ],
+      "sq_sum": 0.08394589600139193,
+      "sum": 1.7525880505121019
+    },
+    "interactions.0.conv_tp_weights.layer3.weight": {
+      "abs_sum": 5.497110282875777,
+      "count": 3072,
+      "projection": -0.07121129329884561,
+      "shape": [
+        64,
+        48
+      ],
+      "sq_sum": 0.050669036317179506,
+      "sum": -0.07605038224898902
+    },
+    "interactions.0.linear.weight": {
+      "abs_sum": 4.907302867731019,
+      "count": 768,
+      "projection": -0.21626451246534098,
+      "shape": [
+        768
+      ],
+      "sq_sum": 0.18796159338890506,
+      "sum": -0.3043713430198708
+    },
+    "interactions.0.linear_up.weight": {
+      "abs_sum": 3.2620582614336477,
+      "count": 256,
+      "projection": -0.18003883485439082,
+      "shape": [
+        256
+      ],
+      "sq_sum": 0.09730369092301402,
+      "sum": -0.34459169512989396
+    },
+    "interactions.0.skip_tp.weight": {
+      "abs_sum": 8.874599965953632,
+      "count": 2304,
+      "projection": -0.7118469692231979,
+      "shape": [
+        2304
+      ],
+      "sq_sum": 0.25616877004654365,
+      "sum": 0.3169792834920432
+    },
+    "interactions.1.conv_tp_weights.layer0.weight": {
+      "abs_sum": 0.46377874195377106,
+      "count": 512,
+      "projection": 0.003557809025407012,
+      "shape": [
+        8,
+        64
+      ],
+      "sq_sum": 0.0009163680219055518,
+      "sum": 0.020099579887882055
+    },
+    "interactions.1.conv_tp_weights.layer1.weight": {
+      "abs_sum": 0.9714821469554223,
+      "count": 4096,
+      "projection": 0.005955541736772447,
+      "shape": [
+        64,
+        64
+      ],
+      "sq_sum": 0.0005609712645350037,
+      "sum": -0.007150619968668111
+    },
+    "interactions.1.conv_tp_weights.layer2.weight": {
+      "abs_sum": 1.073136013070855,
+      "count": 4096,
+      "projection": 0.0210534156385648,
+      "shape": [
+        64,
+        64
+      ],
+      "sq_sum": 0.0006950949630121787,
+      "sum": -0.027349008990623213
+    },
+    "interactions.1.conv_tp_weights.layer3.weight": {
+      "abs_sum": 0.7585535320220602,
+      "count": 7168,
+      "projection": 0.009889453687680794,
+      "shape": [
+        64,
+        112
+      ],
+      "sq_sum": 0.000704192792885085,
+      "sum": 0.00956977136207154
+    },
+    "interactions.1.linear.weight": {
+      "abs_sum": 0.300326251207717,
+      "count": 1792,
+      "projection": 0.00306931965217726,
+      "shape": [
+        1792
+      ],
+      "sq_sum": 0.0008011041614917982,
+      "sum": 0.007330266115359961
+    },
+    "interactions.1.linear_up.weight": {
+      "abs_sum": 0.47616440471634836,
+      "count": 512,
+      "projection": -0.031005120862511823,
+      "shape": [
+        512
+      ],
+      "sq_sum": 0.0012675716552094146,
+      "sum": 0.014333561599688592
+    },
+    "interactions.1.skip_tp.weight": {
+      "abs_sum": 2.983048916321393,
+      "count": 768,
+      "projection": -0.21607064443313423,
+      "shape": [
+        768
+      ],
+      "sq_sum": 0.04049900569783452,
+      "sum": -0.3107262296678711
+    },
+    "node_embedding.linear.weight": {
+      "abs_sum": 1.669073753003537,
+      "count": 48,
+      "projection": 0.032511598123534075,
+      "shape": [
+        48
+      ],
+      "sq_sum": 0.08479060579726687,
+      "sum": -1.0883982688367986
+    },
+    "products.0.linear.weight": {
+      "abs_sum": 4.4628793872715,
+      "count": 512,
+      "projection": 0.1725189885863865,
+      "shape": [
+        512
+      ],
+      "sq_sum": 0.21483313844759494,
+      "sum": -0.056620360334816336
+    },
+    "products.0.symmetric_contractions.contractions.0.weights.0": {
+      "abs_sum": 0.6917236566587929,
+      "count": 144,
+      "projection": -0.005301030020950739,
+      "shape": [
+        3,
+        3,
+        16
+      ],
+      "sq_sum": 0.025399295103056614,
+      "sum": -0.19013639660002252
+    },
+    "products.0.symmetric_contractions.contractions.0.weights.1": {
+      "abs_sum": 1.8614180891078345,
+      "count": 48,
+      "projection": -0.15638708038688787,
+      "shape": [
+        3,
+        1,
+        16
+      ],
+      "sq_sum": 0.19693101421564338,
+      "sum": -0.26998435856101666
+    },
+    "products.0.symmetric_contractions.contractions.0.weights_max": {
+      "abs_sum": 0.12653759580996612,
+      "count": 528,
+      "projection": -0.02120415589826926,
+      "shape": [
+        3,
+        11,
+        16
+      ],
+      "sq_sum": 0.0004878789754982739,
+      "sum": -0.008617032353705728
+    },
+    "products.0.symmetric_contractions.contractions.1.weights.0": {
+      "abs_sum": 0.02150047235281103,
+      "count": 192,
+      "projection": 0.0006103927935743618,
+      "shape": [
+        3,
+        4,
+        16
+      ],
+      "sq_sum": 7.351161286516038e-06,
+      "sum": 0.0003934245883528576
+    },
+    "products.0.symmetric_contractions.contractions.1.weights.1": {
+      "abs_sum": 0.12320246291840056,
+      "count": 48,
+      "projection": 0.01963835748867517,
+      "shape": [
+        3,
+        1,
+        16
+      ],
+      "sq_sum": 0.0006088692928685974,
+      "sum": 0.031593024098252466
+    },
+    "products.0.symmetric_contractions.contractions.1.weights_max": {
+      "abs_sum": 0.006131065085020816,
+      "count": 1008,
+      "projection": 9.9207621932206e-05,
+      "shape": [
+        3,
+        21,
+        16
+      ],
+      "sq_sum": 3.2460454429558395e-07,
+      "sum": -0.00015768166123611318
+    },
+    "products.1.linear.weight": {
+      "abs_sum": 0.31568822992905743,
+      "count": 256,
+      "projection": -0.008981678461337062,
+      "shape": [
+        256
+      ],
+      "sq_sum": 0.0009416201170864774,
+      "sum": 0.060234684364244666
+    },
+    "products.1.symmetric_contractions.contractions.0.weights.0": {
+      "abs_sum": 0.0026322075762417307,
+      "count": 144,
+      "projection": -0.0007224068100614193,
+      "shape": [
+        3,
+        3,
+        16
+      ],
+      "sq_sum": 2.5251591592984465e-07,
+      "sum": 0.001254752533560361
+    },
+    "products.1.symmetric_contractions.contractions.0.weights.1": {
+      "abs_sum": 0.11424604146022257,
+      "count": 48,
+      "projection": 0.00497721852257129,
+      "shape": [
+        3,
+        1,
+        16
+      ],
+      "sq_sum": 0.0008960105252983465,
+      "sum": 0.028055832296053244
+    },
+    "products.1.symmetric_contractions.contractions.0.weights_max": {
+      "abs_sum": 3.633692182454232e-05,
+      "count": 528,
+      "projection": -1.7930559284438015e-06,
+      "shape": [
+        3,
+        11,
+        16
+      ],
+      "sq_sum": 2.115569564904448e-11,
+      "sum": 6.7691527446194284e-06
+    },
+    "readouts.0.linear.weight": {
+      "abs_sum": 0.9206585058890172,
+      "count": 16,
+      "projection": -0.15866415043112714,
+      "shape": [
+        16
+      ],
+      "sq_sum": 0.09931956738573507,
+      "sum": -0.33148713129442764
+    },
+    "readouts.1.linear_1.weight": {
+      "abs_sum": 1.0806096022246607,
+      "count": 128,
+      "projection": -0.0062879628363154555,
+      "shape": [
+        128
+      ],
+      "sq_sum": 0.029664320118432994,
+      "sum": -0.3155355247337176
+    },
+    "readouts.1.linear_2.weight": {
+      "abs_sum": 0.4017072273273972,
+      "count": 8,
+      "projection": 0.18155156955885096,
+      "shape": [
+        8
+      ],
+      "sq_sum": 0.028667069263164556,
+      "sum": 0.018021989171437644
+    }
+  },
+  "parameters_without_a_gradient": [],
+  "provenance": {
+    "description": "One forward+backward of an energy+forces loss on the tiny_mace anchor, reduced to a per-parameter gradient digest. A rewrite of the training path has to reproduce these, and a rewrite that changes them has to say which gradient moved and why.",
+    "evaluated_with": "e3nn, CPU, float64",
+    "recipe": "tests/golden/train_step.py",
+    "source": "tests/golden/models/tiny_mace.model",
+    "tolerance_row": "fp64_cpu_reference"
+  },
+  "schema_version": 1,
+  "units": {
+    "energy": "eV",
+    "length": "Ang"
+  }
+}
