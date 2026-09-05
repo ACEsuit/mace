@@ -64,10 +64,13 @@ def _urlretrieve_with_timeout(url, filename, timeout=_DOWNLOAD_TIMEOUT):
         with urllib.request.urlopen(
             _normalize_github_download_url(url), timeout=timeout
         ) as response:
+            info = response.info()
+            content_type = info.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if content_type == "text/html":
+                raise RuntimeError(f"Model download failed, please check the URL {url}")
             total = int(response.headers.get("Content-Length", 0))
             downloaded = 0
             block_size = 256 * 1024  # 256 KB
-            info = response.info()
             with open(tmp, "wb") as out:
                 while True:
                     block = response.read(block_size)
