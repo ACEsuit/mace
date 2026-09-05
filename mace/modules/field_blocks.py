@@ -445,11 +445,16 @@ class SparseUvuTensorProduct(torch.nn.Module):
             # mode_code determines whether out is scalar (d_out=1) or vector (d_out=d1).
             if mode_code == 0:
                 # (l x l -> 0): [B, mul1, d] · [B, mul2, d] -> [B, mul1]
+                # Contract the weight into x2 before contracting over d. Summing over v last
+                # would build a [B, mul1, mul2] intermediate only to contract it away on the
+                # next line; with multiplicities in the hundreds and d = 2l+1 in {1,3,5} that
+                # dominates the memory of the whole Polar model. Same leading flop count, and the same
+                # order e3nn's opt_einsum pass picks for its `zuv,zui,zvi->zu` form.
                 x1v = to_mul_ir(in1_block, mul1, d1)
                 x2v = to_mul_ir(in2_block, mul2, d1)
                 w = self.weight[w_start:w_stop].view(mul1, mul2)
-                pair = torch.einsum("bud,bvd->buv", x1v, x2v) / math.sqrt(float(d1))
-                mixed = torch.einsum("buv,uv->bu", pair, w)
+                weighted_x2 = torch.einsum("uv,bvd->bud", w, x2v)
+                mixed = (x1v * weighted_x2).sum(dim=-1) / math.sqrt(float(d1))
                 out[:, out_start:out_stop] = out_block + path_weight * mixed
             else:
                 # (l x 0 -> l): x1 scaled per channel by weighted scalar mixture from x2.
