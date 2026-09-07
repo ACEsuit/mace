@@ -44,6 +44,7 @@ from mace.modules.wrapper_ops import (
     OEQConfig,
     TransposeIrrepsLayoutWrapper,
 )
+from mace.tools.polar_conversion import ensure_polar_compatibility, validate_pbc_handling
 from mace.tools.scatter import scatter_mean, scatter_sum
 from mace.tools.torch_tools import spherical_to_cartesian
 
@@ -681,6 +682,7 @@ class PolarMACE(ScaleShiftMACE):
         field_norm_factor: Optional[float] = 0.02,
         fixedpoint_update_config: Optional[Dict[str, Any]] = None,
         field_readout_config: Optional[Dict[str, Any]] = None,
+        pbc_handling: str = "auto",
         **kwargs,
     ):
         if not GRAPH_LONGRANGE_AVAILABLE:
@@ -822,6 +824,7 @@ class PolarMACE(ScaleShiftMACE):
             include_self_interaction=field_si,
             quadrupole_feature_corrections=quadrupole_feature_corrections,
             integral_normalization="receiver",
+            pbc_handling=pbc_handling,
         )
         field_layout_target = (
             cueq_config.layout_str
@@ -940,13 +943,33 @@ class PolarMACE(ScaleShiftMACE):
             density_smearing_width=atomic_multipoles_smearing_width,
             kspace_cutoff=float(kspace_cutoff),
             include_self_interaction=include_electrostatic_self_interaction,
+            pbc_handling=pbc_handling,
         )
+        self.set_electrostatic_pbcs(pbc_handling)
         self.return_electrostatic_potentials = return_electrostatic_potentials
         self.layer_feature_mixer = MultiLayerFeatureMixer(
             node_feats_irreps=hidden_irreps,
             num_interactions=num_interactions,
             cueq_config=cueq_config,
         )
+
+    def __setstate__(self, state):
+        """Restore whole-model pickles, repairing known legacy electrostatic state."""
+        super().__setstate__(state)
+        ensure_polar_compatibility(self)
+
+    def set_electrostatic_pbcs(self, pbc_handling: str) -> None:
+        """Select the same electrostatic evaluator for features and energy.
+
+        ``auto`` preserves legacy batch dispatch. Use ``realspace`` for open
+        molecules, ``pbc`` for bulk, and ``slab`` for z-normal TTF slabs.
+        Explicit modes must match the input geometry; callers validate PBCs.
+        """
+        validate_pbc_handling(pbc_handling)
+        self.electric_potential_descriptor.set_pbc_handling(pbc_handling)
+        self.coulomb_energy.set_pbc_handling(pbc_handling)
+        self.pbc_handling = pbc_handling
+        self.electric_potential_descriptor.static_quantities = None
 
     def forward(
         self,
@@ -960,7 +983,6 @@ class PolarMACE(ScaleShiftMACE):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
-        use_pbc_evaluator: bool = False,
         fermi_level: Optional[torch.Tensor] = None,
         external_field: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
@@ -1067,15 +1089,24 @@ class PolarMACE(ScaleShiftMACE):
         node_inter_es = self.scale_shift(node_inter_es, node_heads)
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
-        # Build k-grid
-        (
-            k_vectors,
-            kv_norms_squared,
-            k_vectors_batch,
-            k_vectors_0mask,
-        ) = compute_k_vectors_flat(
-            self.kspace_cutoff, cell.view(-1, 3, 3), data["rcell"].view(-1, 3, 3)
-        )
+        # Only the compatibility mode inspects tensor PBCs for dispatch.
+        realspace = self.pbc_handling == "realspace"
+        if self.pbc_handling == "auto":
+            realspace = not bool(torch.any(pbc))
+        if realspace:
+            k_vectors = positions.new_empty((0, 3))
+            kv_norms_squared = positions.new_empty((0,))
+            k_vectors_batch = data["batch"].new_empty((0,))
+            k_vectors_0mask = positions.new_empty((0,))
+        else:
+            (
+                k_vectors,
+                kv_norms_squared,
+                k_vectors_batch,
+                k_vectors_0mask,
+            ) = compute_k_vectors_flat(
+                self.kspace_cutoff, cell.view(-1, 3, 3), data["rcell"].view(-1, 3, 3)
+            )
 
         field_feature_cache = self.electric_potential_descriptor.precompute_geometry(
             k_vectors=k_vectors,
@@ -1086,8 +1117,8 @@ class PolarMACE(ScaleShiftMACE):
             batch=data["batch"],
             volume=data["volume"],
             pbc=data["pbc"].view(-1, 3),
-            force_pbc_evaluator=use_pbc_evaluator,
         )
+        self.electric_potential_descriptor.static_quantities = None
 
         # SCF fixed point
         features_mixed = self.layer_feature_mixer(torch.stack(node_feats_list, dim=0))
@@ -1143,13 +1174,11 @@ class PolarMACE(ScaleShiftMACE):
                 source_feats_beta = charges_to_mul_ir(source_feats_beta)
             field_feats_alpha = self.electric_potential_descriptor.forward_dynamic(
                 cache=field_feature_cache,
-                source_feats=source_feats_alpha.unsqueeze(-2),
-                pbc=data["pbc"].view(-1, 3),
+                source_feats=source_feats_alpha,
             )
             field_feats_beta = self.electric_potential_descriptor.forward_dynamic(
                 cache=field_feature_cache,
-                source_feats=source_feats_beta.unsqueeze(-2),
-                pbc=data["pbc"].view(-1, 3),
+                source_feats=source_feats_beta,
             )
             field_from_mul_ir = getattr(self, "_field_from_mul_ir", None)
             if field_from_mul_ir is not None:
@@ -1282,7 +1311,6 @@ class PolarMACE(ScaleShiftMACE):
             batch=data["batch"],
             volume=data["volume"],
             pbc=data["pbc"].view(-1, 3),
-            force_pbc_evaluator=use_pbc_evaluator,
         )
         total_energy = (
             total_energy

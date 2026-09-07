@@ -30,6 +30,7 @@ from mace.tools.compile import (
     simplify,
 )
 from mace.tools.default_keys import DefaultKeys
+from mace.tools.polar_conversion import validate_pbc_handling
 from mace.tools.scripts_utils import extract_model
 
 try:
@@ -89,6 +90,9 @@ class MACECalculator(Calculator):
                     EnergyDipoleMACE]
         For PolarMACE models, per-atom Fukui functions are returned in
         results["fukui_functions"] with shape (num_atoms, 2)
+        pbc_handling: Polar electrostatic mode. "auto" delegates boundary-condition
+            dispatch to the model and graph_longrange. Explicit modes
+            are realspace, pbc, slab, molecule_in_box, and mixed_periodic.
 
     Dipoles are returned in units of Debye
     """
@@ -116,6 +120,7 @@ class MACECalculator(Calculator):
         eps_infty: float = None,
         electric_field_unit: float = 1.0,
         keep_neutral: bool = True,
+        pbc_handling: str = "auto",
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
@@ -380,6 +385,9 @@ class MACECalculator(Calculator):
                 run_e3nn_to_oeq(model, device=device).to(device)
                 for model in self.models
             ]
+
+        if self.model_type == "PolarMACE":
+            self.set_electrostatic_pbcs(pbc_handling)
 
         self.use_compile = False
         if compile_mode is not None:
@@ -648,6 +656,39 @@ class MACECalculator(Calculator):
             batch_clone["positions"].requires_grad_(True)
         return batch_clone
 
+    def set_electrostatic_pbcs(self, pbc_handling: str) -> None:
+        """Set every Polar model's evaluator and invalidate cached ASE results.
+
+        ``auto`` delegates dispatch to the model and graph_longrange.
+        ``pbc`` also permits deliberately uncorrected periodic approximations.
+        """
+        validate_pbc_handling(pbc_handling)
+        for model in self.models:
+            model.set_electrostatic_pbcs(pbc_handling)
+        self.pbc_handling = pbc_handling
+        self.reset()
+
+    def _validate_electrostatic_pbcs(self, atoms) -> None:
+        """Check compatibility of geometry and pbc_handling. For pbc_handling in
+        [realspace, slab, molecule_in_box], checks that atoms.pbc is as exepected."""
+        flags = tuple(bool(flag) for flag in atoms.pbc)
+        supported_flags = (
+            (False, False, False),
+            (True, True, True),
+            (True, True, False),
+        )
+        mode = self.pbc_handling
+        expected = {
+            "realspace": (False, False, False),
+            "molecule_in_box": (False, False, False),
+            "slab": (True, True, False),
+        }
+        if mode in expected and flags != expected[mode]:
+            raise ValueError(f"pbc_handling={mode!r} is incompatible with PBC {flags}")
+        if mode in ("auto", "mixed_periodic") and flags not in supported_flags:
+            raise ValueError(f"Unsupported Polar periodicity {flags}, you can force a" +
+            " periodic electrostatics calculation using pbc_handling=pbc")
+
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
@@ -658,6 +699,9 @@ class MACECalculator(Calculator):
         :return:
         """
         Calculator.calculate(self, atoms)
+
+        if self.model_type == "PolarMACE":
+            self._validate_electrostatic_pbcs(self.atoms)
 
         batch_base = self._atoms_to_batch(atoms)
         num_real_atoms = len(atoms)
