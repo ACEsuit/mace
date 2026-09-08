@@ -1,0 +1,264 @@
+# The capabilities manifest: where each capability of MACE lives during the
+# rewrite, and what CI derives from that.
+#
+# One table per capability. Two kinds of capability share one namespace,
+# because both have to migrate and neither is complete on its own:
+#
+#   kind = "probe"   an optional requirement of a test -- a GPU, an optional
+#                    dependency, an external binary, network access. The
+#                    vocabulary is exactly the entries of CAPABILITY_PROBES in
+#                    tests/conftest.py, asserted against that dict rather than
+#                    against a list retyped here: `magnetic` and `wandb` are
+#                    routinely dropped from hand-written enumerations, and a
+#                    manifest missing one would be silently short.
+#   kind = "axis"    a functional slice of the product -- energy, data,
+#                    dipoles, deployment. An axis is what `--engine` selects
+#                    and therefore what has a default to flip; a probe does
+#                    not. Every axis maps 1:1 onto the RET-* ticket that
+#                    deletes its legacy half.
+#
+# STATE is the migration state, and the four values are ordered:
+#
+#   legacy      the only implementation is the frozen mace/ tree
+#   v1-optin    packages/ implements it; reachable with --engine v1
+#   v1-default  --engine defaults to v1 for it; legacy kept as the oracle
+#   retired     the legacy half is deleted
+#
+# Everything is `legacy` today, which is the honest reading of an empty
+# packages/ scaffold and is what makes the fitness tests xfail rather than
+# pass by accident.
+#
+# WHAT IS GENERATED FROM THIS FILE. Three pieces of CI configuration are
+# derived, never hand-maintained beside it:
+#
+#   * the paths-filter entries of .github/workflows/ci-extensions.yaml
+#   * the per-file coverage floors of .github/workflows/nightly.yaml, and
+#     the informative listing of the same files in ci-core.yaml
+#   * the xfail markers of the per-debt fitness tests in tests/architecture
+#
+# The first two are written into the workflows by
+# tests/architecture/generate_ci.py and verified by a meta-test, so a RET-*
+# pull request touches this file and the deletion, and a default flip touches
+# this file and the flag default. Run the generator after editing:
+#
+#     python3 tests/architecture/generate_ci.py --write
+#
+# The floors' VALUES are not decided here. They were measured under the
+# selection nightly.yaml documents, and this file records which capability
+# owns each one so that the floor moves with the behaviour when the
+# capability ports.
+
+[meta]
+states = ["legacy", "v1-optin", "v1-default", "retired"]
+probe_source = "tests/conftest.py::CAPABILITY_PROBES"
+
+# ---------------------------------------------------------------------------
+# Paths every extension job watches. A change to the model, the tools, the
+# data layer or the capability contract itself can break any of them, so the
+# shared set is prepended to each generated filter as a YAML anchor.
+# ---------------------------------------------------------------------------
+[shared_ci_paths]
+paths = [
+    "setup.cfg",
+    "pyproject.toml",
+    "tests/conftest.py",
+    "tests/helpers.py",
+    "tests/architecture/capabilities.toml",
+    ".github/workflows/ci-extensions.yaml",
+    ".github/actions/setup-mace/**",
+    "mace/modules/**",
+    "mace/tools/**",
+    "mace/data/**",
+]
+
+# ===========================================================================
+# Functional axes -- one per RET-* ticket, and what `--engine` selects
+# ===========================================================================
+
+[capabilities.energy]
+kind = "axis"
+state = "legacy"
+summary = "Energy, forces and stress: the MACE / ScaleShiftMACE family and the derivative engine around it."
+burn_step = "RET-1 (#1597)"
+legacy_surface = ["mace/modules/models.py", "mace/modules/blocks.py", "mace/modules/radial.py", "mace/modules/symmetric_contraction.py", "mace/modules/loss.py", "mace/modules/utils.py"]
+
+[[capabilities.energy.coverage_floors]]
+path = "mace/modules/loss.py"
+floor = 90
+
+[[capabilities.energy.coverage_floors]]
+path = "mace/modules/radial.py"
+floor = 90
+
+[[capabilities.energy.coverage_floors]]
+path = "mace/modules/utils.py"
+floor = 85
+
+[capabilities.data]
+kind = "axis"
+state = "legacy"
+summary = "The data layer: Configuration parsing, AtomicData, neighbour lists, HDF5/LMDB datasets and the vendored torch_geometric."
+burn_step = "RET-2 (#1598)"
+legacy_surface = ["mace/data/**", "mace/tools/torch_geometric/**"]
+
+[[capabilities.data.coverage_floors]]
+path = "mace/data/utils.py"
+floor = 85
+
+[[capabilities.data.coverage_floors]]
+path = "mace/data/neighborhood.py"
+floor = 95
+
+[[capabilities.data.coverage_floors]]
+path = "mace/data/atomic_data.py"
+floor = 85
+
+[capabilities.backends]
+kind = "axis"
+state = "legacy"
+summary = "Accelerated kernel backends and the cross-layout weight conversions between them."
+burn_step = "RET-3 (#1599)"
+legacy_surface = ["mace/cli/convert_e3nn_cueq.py", "mace/cli/convert_cueq_e3nn.py", "mace/cli/convert_e3nn_oeq.py", "mace/cli/convert_oeq_e3nn.py", "mace/cli/convert_e3nn_hybrid.py", "mace/tools/cg_cueq_tools.py"]
+
+[capabilities.backends.ci]
+filter = "backends"
+paths = ["mace/cli/convert_*.py", "tests/backends/**", "tests/golden/**"]
+
+[capabilities.backends.ci.path_notes]
+"tests/golden/**" = "The backend goldens live with the other goldens, not in tests/backends: they are cueq/oeq tests that happen to assert against a committed reference. Without this line a change to them is reviewed by no job that has cuequivariance installed."
+
+[capabilities.dipole]
+kind = "axis"
+state = "legacy"
+summary = "Non-energy observables: the dipole, dielectric, polar and magnetic model classes and extensions.py."
+burn_step = "RET-4 (#1600)"
+legacy_surface = ["mace/modules/extensions.py", "mace/modules/field_blocks.py"]
+
+[capabilities.lammps]
+kind = "axis"
+state = "legacy"
+summary = "Deployment to LAMMPS: the TorchScript export path and the two LAMMPS calculators."
+burn_step = "RET-5 (#1601)"
+legacy_surface = ["mace/cli/create_lammps_model.py", "mace/calculators/lammps_mace.py", "mace/calculators/lammps_mliap_mace.py"]
+
+[capabilities.training]
+kind = "axis"
+state = "legacy"
+summary = "The training entry point and the mace/tools god-module behind it: the loop, checkpointing, multihead and fine-tuning."
+burn_step = "RET-6 (#1602)"
+legacy_surface = ["mace/tools/**", "mace/cli/run_train.py"]
+
+# ===========================================================================
+# Capability probes -- the eleven entries of CAPABILITY_PROBES
+#
+# Each names the axis whose retirement carries it, so that a probe cannot sit
+# in this file without a ticket that eventually moves it. `owned_by` is not
+# decoration: the meta-test rejects a probe pointing at no axis, which is what
+# would otherwise happen to a dependency nobody claimed.
+# ===========================================================================
+
+[capabilities.gpu]
+kind = "probe"
+state = "legacy"
+summary = "A CUDA or ROCm device. Hardware rather than a dependency, and vendor-agnostic by design: tests write device=\"cuda\", which is valid on ROCm."
+owned_by = "energy"
+burn_step = "RET-1 (#1597)"
+
+[capabilities.cueq]
+kind = "probe"
+state = "legacy"
+summary = "cuEquivariance: NVIDIA's accelerated equivariant kernels, and the internal weight layout that comes with them."
+owned_by = "backends"
+burn_step = "RET-3 (#1599)"
+
+[capabilities.oeq]
+kind = "probe"
+state = "legacy"
+summary = "OpenEquivariance: the vendor-neutral accelerated kernel backend, JIT-compiled against a real toolkit."
+owned_by = "backends"
+burn_step = "RET-3 (#1599)"
+
+[capabilities.polar]
+kind = "probe"
+state = "legacy"
+summary = "graph_longrange: the k-space electrostatics behind PolarMACE."
+owned_by = "dipole"
+burn_step = "RET-4 (#1600)"
+
+[capabilities.polar.ci]
+filter = "polar"
+paths = ["mace/cli/polar_density_cube.py", "mace/calculators/**", "tests/extensions/polar/**", "requirements/polar.txt", "tests/golden/**"]
+
+[capabilities.polar.ci.path_notes]
+"tests/golden/**" = "The MACE-Polar golden lives here, and this is the only PR-time job with graph_longrange, so a change to tests/golden that this job would catch must be able to start it."
+
+[capabilities.les]
+kind = "probe"
+state = "legacy"
+summary = "les: latent Ewald summation, an external long-range correction."
+owned_by = "dipole"
+burn_step = "RET-4 (#1600)"
+
+[capabilities.les.ci]
+filter = "les"
+paths = ["tests/extensions/les/**", "tests/golden/**", "mace/calculators/**", "mace/cli/eval_configs.py", "requirements/les.txt"]
+
+[capabilities.les.ci.path_notes]
+"tests/golden/**" = "The golden anchors run in this job, and two of the three surfaces they pin live outside mace/modules: the external-field and BEC handling in the calculator, and the eval CLI's flattened latent multipoles. Without these paths a change to either would not run the job that holds its numbers."
+
+[capabilities.magnetic]
+kind = "probe"
+state = "legacy"
+summary = "sphericart: the spherical harmonics behind the MagneticMACE family and its two extra default property keys."
+owned_by = "dipole"
+burn_step = "RET-4 (#1600)"
+
+[capabilities.magnetic.ci]
+filter = "magnetic"
+paths = ["mace/calculators/**", "mace/cli/**", "tests/extensions/magnetic/**", "tests/golden/**"]
+
+[capabilities.magnetic.ci.path_notes]
+"tests/golden/**" = "This job owns the magnetic goldens too: they live in tests/golden and are the only place that runs them with sphericart installed, so a change there has to reach it."
+
+[capabilities.torchsim]
+kind = "probe"
+state = "legacy"
+summary = "torch-sim-atomistic: an alternative MD runtime driving the calculator."
+owned_by = "training"
+burn_step = "RET-6 (#1602)"
+
+[capabilities.torchsim.ci]
+filter = "torchsim"
+paths = ["mace/calculators/**", "tests/extensions/torchsim/**"]
+
+[capabilities.schedulefree]
+kind = "probe"
+state = "legacy"
+summary = "schedulefree: the schedule-free optimizer variants selectable from the training CLI."
+owned_by = "training"
+burn_step = "RET-6 (#1602)"
+
+[capabilities.schedulefree.ci]
+filter = "schedulefree"
+paths = ["tests/extensions/schedulefree/**"]
+
+[capabilities.wandb]
+kind = "probe"
+state = "legacy"
+summary = "wandb: the experiment tracker the six --wandb flags configure."
+owned_by = "training"
+burn_step = "RET-6 (#1602)"
+
+[capabilities.bin_lammps]
+kind = "probe"
+state = "legacy"
+summary = "A working LAMMPS python module with ML-IAP python coupling. An external binary rather than an import, which is why its probe imports rather than probing a spec."
+owned_by = "lammps"
+burn_step = "RET-5 (#1601)"
+
+[capabilities.network]
+kind = "probe"
+state = "legacy"
+summary = "Outbound network access, for the foundation-model downloads. Never autodetected: an explicit opt-in via MACE_CI_ALLOW_NETWORK=1, so PR jobs stay deterministic."
+owned_by = "training"
+burn_step = "RET-6 (#1602)"
