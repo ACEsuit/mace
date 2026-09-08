@@ -27,6 +27,7 @@ try:
     from graph_longrange.features import (
         apply_coulomb_kernel_batch,
         assemble_fourier_series_batch,
+        compute_coulomb_factor,
     )
     from graph_longrange.gto_utils import GTOBasis, gto_basis_kspace_cutoff
     from graph_longrange.kspace import (
@@ -312,9 +313,13 @@ class PotentialInterpolator:
             density_basis_fs=density_basis_fs,
             volume_per_k=volume_per_k,
         )
-        potential = apply_coulomb_kernel_batch(
+        k_factor_coulomb = compute_coulomb_factor(
             k_norm2=k_norm2,
+            k0_mask=k0_mask,
+        )
+        potential = apply_coulomb_kernel_batch(
             density=density,
+            k_factor_coulomb=k_factor_coulomb,
         )
 
         _, total_dipole = self._total_charge_dipole(multipoles, node_positions, batch)
