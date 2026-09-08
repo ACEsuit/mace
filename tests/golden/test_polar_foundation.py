@@ -80,13 +80,8 @@ def test_polar_foundation_reproduces_its_reference(
     )
     reference = harness.load_reference(REFERENCE_PATH)
     reference["fixtures"] = {fixture_name: reference["fixtures"][fixture_name]}
-    # Stress has a known, separately tracked Polar bug. Preserve every other
-    # committed output and its existing tolerance, including electrostatics.
-    channels = [
-        key for key in reference["fixtures"][fixture_name]["outputs"] if key != "stress"
-    ]
     harness.compare_to_reference(
-        snapshot, reference, row=harness.FP64_CPU_REFERENCE.name, channels=channels
+        snapshot, reference, row=harness.FP64_CPU_REFERENCE.name
     )
     assert polar_calc.models[0].pbc_handling == pbc_handling
 

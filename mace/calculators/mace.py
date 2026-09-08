@@ -93,6 +93,9 @@ class MACECalculator(Calculator):
         pbc_handling: Polar electrostatic mode. "auto" delegates boundary-condition
             dispatch to the model and graph_longrange. Explicit modes
             are realspace, pbc, slab, molecule_in_box, and mixed_periodic.
+        compute_stress: bool, whether to compute stress for energy models (default
+            True). Set False for fixed-cell MD; stress is then unavailable through
+            ASE and cannot be combined with compute_atomic_stresses=True.
 
     Dipoles are returned in units of Debye
     """
@@ -121,10 +124,14 @@ class MACECalculator(Calculator):
         electric_field_unit: float = 1.0,
         keep_neutral: bool = True,
         pbc_handling: str = "auto",
+        compute_stress: bool = True,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
         self.compute_bec = compute_bec
+        self.compute_stress = compute_stress
+        if not compute_stress and kwargs.get("compute_atomic_stresses", False):
+            raise ValueError("compute_atomic_stresses requires compute_stress=True")
         if external_field is not None:
             external_field = np.asarray(external_field, dtype=np.float64).reshape(
                 -1
@@ -434,6 +441,12 @@ class MACECalculator(Calculator):
         self.pad_num_atoms = max(int(pad_num_atoms), 0)
         self.pad_num_edges = max(int(pad_num_edges), 0)
         self._padding_initialized = self.pad_num_atoms > 0 and self.pad_num_edges > 0
+        if not self.compute_stress:
+            self.implemented_properties = [
+                prop
+                for prop in self.implemented_properties
+                if prop not in ("stress", "stress_comm", "stress_var")
+            ]
 
     def check_state(self, atoms, tol: float = 1e-15) -> list:
         """
@@ -707,7 +720,11 @@ class MACECalculator(Calculator):
         num_real_atoms = len(atoms)
         is_padded = self.pad_num_atoms > 0 or self.pad_num_edges > 0
 
-        compute_stress = self.model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]
+        compute_stress = self.compute_stress and self.model_type in [
+            "MACE",
+            "EnergyDipoleMACE",
+            "PolarMACE",
+        ]
         # For oeq/hybrid + compile: create displacement outside the compiled
         # graph so autograd.grad (which runs as a graph break) can
         # differentiate energy w.r.t. displacement for stress.
