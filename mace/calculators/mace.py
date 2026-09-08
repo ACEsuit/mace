@@ -1,4 +1,5 @@
 ###########################################################################################
+# pylint: disable=too-many-lines
 # The ASE Calculator for MACE
 # Authors: Ilyes Batatia, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
@@ -699,8 +700,10 @@ class MACECalculator(Calculator):
         if mode in expected and flags != expected[mode]:
             raise ValueError(f"pbc_handling={mode!r} is incompatible with PBC {flags}")
         if mode in ("auto", "mixed_periodic") and flags not in supported_flags:
-            raise ValueError(f"Unsupported Polar periodicity {flags}, you can force a" +
-            " periodic electrostatics calculation using pbc_handling=pbc")
+            raise ValueError(
+                f"Unsupported Polar periodicity {flags}, you can force a"
+                + " periodic electrostatics calculation using pbc_handling=pbc"
+            )
 
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):

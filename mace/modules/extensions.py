@@ -44,7 +44,10 @@ from mace.modules.wrapper_ops import (
     OEQConfig,
     TransposeIrrepsLayoutWrapper,
 )
-from mace.tools.polar_conversion import ensure_polar_compatibility, validate_pbc_handling
+from mace.tools.polar_conversion import (
+    ensure_polar_compatibility,
+    validate_pbc_handling,
+)
 from mace.tools.scatter import scatter_mean, scatter_sum
 from mace.tools.torch_tools import spherical_to_cartesian
 
