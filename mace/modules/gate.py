@@ -52,6 +52,9 @@ class GatedEquivariantBlock(torch.nn.Module):
     the ``layout`` keyword.
     """
 
+    __constants__ = ["_has_act_scalar", "_has_act_gate"]
+    _gated_info: List[Tuple[int, int, int, int, int]]
+
     def __init__(
         self,
         irreps_scalars: o3.Irreps,
@@ -176,6 +179,15 @@ class GatedEquivariantBlock(torch.nn.Module):
             self._act_gate = act_gates[0]
             self._gate_cst = _normalize2mom_cst(act_gates[0])
 
+        self._has_act_scalar = self._act_scalar is not None
+        self._has_act_gate = self._act_gate is not None
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # Full-module checkpoints predating TorchScript support lack these flags.
+        self._has_act_scalar = self._act_scalar is not None
+        self._has_act_gate = self._act_gate is not None
+
     @staticmethod
     def _compute_scalar_output_irreps(
         irreps_scalars: o3.Irreps, act_scalars: Sequence[Optional[Callable]]
@@ -202,23 +214,25 @@ class GatedEquivariantBlock(torch.nn.Module):
         return o3.Irreps(out)
 
     @property
+    @torch.jit.unused
     def irreps_in(self) -> o3.Irreps:
         return self._irreps_in
 
     @property
+    @torch.jit.unused
     def irreps_out(self) -> o3.Irreps:
         return self._irreps_out
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         scalars = features.narrow(-1, self._s_start, self._s_len)
-        if self._act_scalar is not None:
+        if self._has_act_scalar:
             scalars = self._act_scalar(scalars) * self._scalar_cst
 
         if not self._gated_info:
             return scalars
 
         gates = features.narrow(-1, self._g_start, self._g_len)
-        if self._act_gate is not None:
+        if self._has_act_gate:
             gates = self._act_gate(gates) * self._gate_cst
 
         ir_mul = self._layout_is_ir_mul
@@ -227,17 +241,17 @@ class GatedEquivariantBlock(torch.nn.Module):
             gated_chunk = features.narrow(-1, gd_start, gd_len)
             gate_chunk = gates.narrow(-1, g_off, mul)
 
-            batch_shape = features.shape[:-1]
+            batch_shape = list(features.shape[:-1])
             if ir_mul:
                 # ir_mul: data is [c1_m1, c1_m2, ..., c2_m1, ...] → (ir_dim, mul)
-                gated_3d = gated_chunk.reshape(*batch_shape, ir_dim, mul)
+                gated_3d = gated_chunk.reshape(batch_shape + [ir_dim, mul])
                 gate_3d = gate_chunk.unsqueeze(-2)
-                result = (gated_3d * gate_3d).reshape(*batch_shape, ir_dim * mul)
+                result = (gated_3d * gate_3d).reshape(batch_shape + [ir_dim * mul])
             else:
                 # mul_ir: data is [m1_c1, m1_c2, ..., m2_c1, ...] → (mul, ir_dim)
-                gated_3d = gated_chunk.reshape(*batch_shape, mul, ir_dim)
+                gated_3d = gated_chunk.reshape(batch_shape + [mul, ir_dim])
                 gate_3d = gate_chunk.unsqueeze(-1)
-                result = (gated_3d * gate_3d).reshape(*batch_shape, mul * ir_dim)
+                result = (gated_3d * gate_3d).reshape(batch_shape + [mul * ir_dim])
             gated_parts.append(result)
 
         return torch.cat([scalars] + gated_parts, dim=-1)
