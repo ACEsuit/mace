@@ -30,6 +30,7 @@ from mace.tools.compile import (
     simplify,
 )
 from mace.tools.default_keys import DefaultKeys
+from mace.tools.deprecation import warn
 from mace.tools.scripts_utils import extract_model
 
 try:
@@ -163,7 +164,7 @@ class MACECalculator(Calculator):
                 "'model_path' argument is deprecated, please use 'model_paths'"
             )
             if model_paths is None:
-                logging.warning(f"{deprecation_message} in the future.")
+                warn("calc.param.model_path")
                 model_paths = kwargs["model_path"]
             else:
                 raise ValueError(
@@ -1055,7 +1056,7 @@ class MagneticMACECalculator(Calculator):
                 "'model_path' argument is deprecated, please use 'model_paths'"
             )
             if model_paths is None:
-                logging.warning(f"{deprecation_message} in the future.")
+                warn("calc.param.model_path")
                 model_paths = kwargs["model_path"]
             else:
                 raise ValueError(

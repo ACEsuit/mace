@@ -7,6 +7,7 @@ import os
 import torch
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig, OEQConfig
+from mace.tools import deprecation
 from mace.tools.scripts_utils import extract_config_mace_model
 from mace.tools.torch_tools import restores_default_dtype
 
@@ -139,6 +140,7 @@ def _shapes_match_up_to_unsqueeze(a, b):
 
 
 def main():
+    deprecation.warn("ep.convert_e3nn_hybrid")
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input MACE model")
     parser.add_argument(

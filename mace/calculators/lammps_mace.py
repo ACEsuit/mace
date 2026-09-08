@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 import torch
 from e3nn.util.jit import compile_mode
 
+from mace.tools.deprecation import warn
 from mace.tools.scatter import scatter_sum
 
 
@@ -10,6 +11,7 @@ from mace.tools.scatter import scatter_sum
 class LAMMPS_MACE(torch.nn.Module):
     def __init__(self, model, **kwargs):
         super().__init__()
+        warn("calc.export.LAMMPS_MACE")
         self.model = model
         self.register_buffer("atomic_numbers", model.atomic_numbers)
         self.register_buffer("r_max", model.r_max)

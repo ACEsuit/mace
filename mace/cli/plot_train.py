@@ -8,6 +8,8 @@ import os
 import re
 from typing import List
 
+from mace.tools import deprecation
+
 # matplotlib/pandas are not mace-torch dependencies: guard the import so the
 # console entry point resolves (and --help works) in a clean install, and
 # main() can explain what to install instead of crashing with ImportError.
@@ -127,7 +129,9 @@ def parse_args() -> argparse.Namespace:
         required=False,
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    deprecation.warn_args("cli.plot_train", parser)
+    return args
 
 
 def _aggregate(data, keys: List[str]):

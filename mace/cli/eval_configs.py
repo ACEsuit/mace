@@ -19,7 +19,7 @@ from mace.calculators.mace import get_model_dtype
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.utils import extract_invariant
-from mace.tools import torch_geometric, torch_tools, utils
+from mace.tools import deprecation, torch_geometric, torch_tools, utils
 from mace.tools.default_keys import DefaultKeys
 
 
@@ -125,7 +125,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    deprecation.warn_args("cli.eval_configs", parser)
+    return args
 
 
 def get_model_output(

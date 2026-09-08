@@ -20,7 +20,7 @@ from mace import data, tools
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.data.utils import save_configurations_as_HDF5
 from mace.modules import compute_statistics
-from mace.tools import torch_geometric
+from mace.tools import deprecation, torch_geometric
 from mace.tools.scripts_utils import get_atomic_energies, get_dataset_from_xyz
 from mace.tools.utils import AtomicNumberTable
 
@@ -135,7 +135,9 @@ def main() -> None:
     This script loads an xyz dataset and prepares
     new hdf5 file that is ready for training with on-the-fly dataloading
     """
-    args = tools.build_preprocess_arg_parser().parse_args()
+    parser = tools.build_preprocess_arg_parser()
+    args = parser.parse_args()
+    deprecation.warn_args("prep", parser)
     run(args)
 
 
