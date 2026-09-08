@@ -25,6 +25,7 @@ User Guide
     foundation_models
     polar_mace
     finetuning
+    finetuning_guidance
     multihead_finetuning
     lora_finetuning
     multihead_training
