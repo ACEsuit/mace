@@ -279,3 +279,76 @@ def test_the_coverage_floors_are_declared_by_a_capability():
             f"{floor.path} is owned by {floor.owner}, which is a probe. A "
             f"floor moves when a functional axis ports, so its owner is an axis"
         )
+
+
+# ---------------------------------------------------------------------------
+# The generated regions, read back and checked against the manifest
+#
+# `test_the_generated_ci_matches_the_manifest` above compares each file against
+# what the generator produces, so it catches a hand edit and nothing else: a
+# generator that emits the wrong thing agrees with itself and stays green. That
+# is not hypothetical. The first version of this change emitted every coverage
+# floor twice into the per-pull-request job, once in each of two formats, and
+# the drift check passed on the doubled output.
+#
+# So the floors are also read back out of the workflow text and compared to the
+# manifest directly, without asking the generator anything.
+# ---------------------------------------------------------------------------
+
+CI_CORE = REPO_ROOT / ".github" / "workflows" / "ci-core.yaml"
+NIGHTLY = REPO_ROOT / ".github" / "workflows" / "nightly.yaml"
+
+
+def _generated_region(path: Path, name: str) -> list:
+    """The lines between one region's markers, stripped of indentation."""
+    text = path.read_text(encoding="utf-8")
+    begin = f"# >>> generated from capabilities.toml: {name}"
+    end = f"# <<< generated from capabilities.toml: {name}"
+    lines = [line.strip() for line in text.splitlines()]
+    assert lines.count(begin) == 1 and lines.count(end) == 1, (
+        f"{path.name}: region {name!r} is not delimited exactly once"
+    )
+    return lines[lines.index(begin) + 1 : lines.index(end)]
+
+
+@pytest.mark.parametrize(
+    "path, region",
+    [
+        (NIGHTLY, "coverage-floors"),
+        (CI_CORE, "coverage-floors-informative"),
+    ],
+    ids=["the-nightly-gate", "the-per-pr-listing"],
+)
+def test_a_generated_floor_block_lists_every_floor_exactly_once(path, region):
+    """Both shapes, read as their consumer reads them.
+
+    A data line is anything in the region that is not a comment and not shell.
+    Each must be exactly two whitespace-separated fields, because both blocks
+    read them with `read -r file floor` and `tests/unit/test_ci_gates.py`
+    parses the nightly's with a two-way `split()`. A trailing `# owner` on the
+    line would land inside `$floor`.
+    """
+    data_lines = [
+        line
+        for line in _generated_region(path, region)
+        if line
+        and not line.startswith("#")
+        and not line.startswith(("echo", "while", "done", "case", "printf", "measured"))
+        and line != "FLOORS"
+        and not line.startswith(">>")
+    ]
+    parsed = []
+    for line in data_lines:
+        fields = line.split()
+        assert len(fields) == 2, (
+            f"{path.name}: floor line {line!r} has {len(fields)} fields, not "
+            f"two. Both blocks read it with `read -r file floor`, so anything "
+            f"after the percentage ends up inside $floor"
+        )
+        parsed.append((fields[0], int(fields[1])))
+
+    expected = [(floor.path, floor.floor) for floor in capabilities.coverage_floors()]
+    assert parsed == expected, (
+        f"{path.name}: the region lists {parsed}, the manifest declares "
+        f"{expected}"
+    )

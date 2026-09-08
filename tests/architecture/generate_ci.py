@@ -191,8 +191,6 @@ def _core_floors() -> List[str]:
         '    >> "$GITHUB_STEP_SUMMARY"',
         "done <<'FLOORS'",
     ]
-    for path, floor, owner in _floor_rows():
-        lines.append(f"{path} {floor}  # {owner}")
     lines += _floor_lines()
     lines.append("FLOORS")
     lines.append("echo '```' >> \"$GITHUB_STEP_SUMMARY\"")

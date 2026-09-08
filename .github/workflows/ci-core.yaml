@@ -389,12 +389,6 @@ jobs:
             printf '%-34s floor %3s%%   measured %s\n' "$file" "$floor" "${measured:-n/a}" \
               >> "$GITHUB_STEP_SUMMARY"
           done <<'FLOORS'
-          mace/modules/loss.py 90  # energy
-          mace/modules/radial.py 90  # energy
-          mace/modules/utils.py 85  # energy
-          mace/data/utils.py 85  # data
-          mace/data/neighborhood.py 95  # data
-          mace/data/atomic_data.py 85  # data
           # energy
           mace/modules/loss.py 90
           mace/modules/radial.py 90
