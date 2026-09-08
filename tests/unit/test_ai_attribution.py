@@ -233,3 +233,48 @@ def test_a_bare_token_is_only_used_where_nobody_is_called_it():
     for product_only in ("Copilot", "Codex", "CodeWhisperer", "ChatGPT"):
         identity = f"{product_only} <bot@example.org>"
         assert not checker.inspect([_commit(author=identity)]).ok, product_only
+
+
+#: Real GitHub app identities. An app names itself freely, so the suffix
+#: between the vendor token and `[bot]` cannot be enumerated: reserving
+#: `gemini` for people let `gemini-code-assist[bot]` through until this list
+#: existed. Found in review of #1716.
+BOT_IDENTITIES = [
+    "gemini-code-assist[bot] <x@users.noreply.github.com>",
+    "claude[bot] <x@users.noreply.github.com>",
+    "claude-code[bot] <x@users.noreply.github.com>",
+    "copilot-swe-agent[bot] <x@users.noreply.github.com>",
+    "chatgpt-codex-connector[bot] <x@users.noreply.github.com>",
+    "devin-ai-integration[bot] <x@users.noreply.github.com>",
+    "cursor[bot] <x@users.noreply.github.com>",
+    "coderabbitai[bot] <x@users.noreply.github.com>",
+    "sourcery-ai[bot] <x@users.noreply.github.com>",
+    "google-labs-jules[bot] <x@users.noreply.github.com>",
+]
+
+
+@pytest.mark.parametrize("identity", BOT_IDENTITIES)
+def test_an_app_identity_is_caught_whatever_it_calls_itself(identity):
+    assert not checker.inspect([_commit(author=identity)]).ok, identity
+
+
+#: Model names, with an innocent address so the name is what has to carry it.
+#: `GPT-4o` ends in a letter, so a boundary straight after the version digit
+#: never arrives.
+MODEL_NAMES = [
+    "GPT-4o", "GPT-4o-mini", "GPT-4", "GPT-5", "GPT-4.1", "o3-mini",
+    "Claude 3.5 Sonnet", "Gemini 2.5 Pro", "Claude Opus 4.7", "Claude Code",
+]
+
+
+@pytest.mark.parametrize("name", MODEL_NAMES)
+def test_a_model_name_is_caught_on_an_innocent_address(name):
+    identity = f"{name} <someone@gmail.com>"
+    assert not checker.inspect([_commit(author=identity)]).ok, name
+
+
+def test_a_person_is_not_a_bot_just_because_a_bot_shares_their_name():
+    """The `[bot]` suffix is what makes the liberal bot matching safe."""
+    assert checker.inspect([_commit(author="Gemini Rossi <gemini@example.org>")]).ok
+    assert checker.inspect([_commit(author="Jules Verne <jverne@example.org>")]).ok
+    assert checker.inspect([_commit(author="Cody Banks <cbanks@example.org>")]).ok

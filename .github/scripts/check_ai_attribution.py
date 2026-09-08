@@ -38,13 +38,17 @@ VENDOR_EMAIL = re.compile(
     re.IGNORECASE,
 )
 
-#: Bot accounts, which GitHub renders with a `[bot]` suffix.
+#: Bot accounts, which GitHub renders with a `[bot]` suffix. Anything is
+#: allowed between the vendor token and the suffix, because apps name
+#: themselves freely: `gemini-code-assist[bot]`, `copilot-swe-agent[bot]`.
+#: Being liberal here costs nothing, since `[bot]` is already proof that the
+#: identity is not a person.
 BOT_ACCOUNT = re.compile(
     r"\b(?:claude|copilot|chatgpt|codex|chatgpt-codex-connector|cursor|devin"
     r"|devin-ai-integration|gemini|jules|google-labs-jules|openhands|sweep"
     r"|codegen|cody|continue|augment|qodo|codiumai|coderabbitai|greptile"
     r"|ellipsis|korbit|sourcery|bito|tembo|factory-droid|charlie"
-    r"|blackboxai)(?:-ai)?\[bot\]",
+    r"|blackboxai)[\w-]*\[bot\]",
     re.IGNORECASE,
 )
 
@@ -67,7 +71,7 @@ ASSISTANT_PRODUCT = re.compile(
     r"|claude[\s_-]+\d"
     r"|gemini[\s_-]*(?:pro|flash)"
     r"|gemini[\s_-]+\d"
-    r"|gpt-?\d"
+    r"|gpt-?\d\w*"
     r"|o[1-4]-(?:mini|preview)"
     r"|devin[\s_-]*ai"
     r"|chatgpt|copilot|codex|codewhisperer|windsurf|openhands"
