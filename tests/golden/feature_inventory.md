@@ -385,7 +385,7 @@ Group default: KEEP.
 | `train.save_all_checkpoints` | `--save_all_checkpoints` | `mace/tools/arg_parser.py:1052` | KEEP | `tests/workflows/test_checkpoint_retention.py::test_save_all_checkpoints_leaves_one_per_evaluation` |
 | `train.save_cpu` | `--save_cpu` | `mace/tools/arg_parser.py:1064` | DROP — safetensors checkpoints are device-agnostic, so there is nothing to choose | — |
 
-### 3.10 Acceleration (3)
+### 3.10 Acceleration (4)
 
 Group default: MERGE into backend-dispatch configuration; the numerics are pinned on GPU CI.
 
@@ -394,6 +394,7 @@ Group default: MERGE into backend-dispatch configuration; the numerics are pinne
 | `train.enable_cueq` | `--enable_cueq` | `mace/tools/arg_parser.py:1083` | MERGE — backend dispatch config | `tests/golden/test_backend_parity_golden.py::test_the_calculators_own_backend_flag_reaches_the_same_kernels` |
 | `train.enable_oeq` | `--enable_oeq` | `mace/tools/arg_parser.py:1096` | MERGE — idem | `tests/golden/test_backend_parity_golden.py::test_the_calculators_own_backend_flag_reaches_the_same_kernels` |
 | `train.only_cueq` | `--only_cueq` | `mace/tools/arg_parser.py:1089` | MERGE — idem: 'use cueq for every op, not just the ones that benefit' becomes a dispatch policy, not a second boolean. Its own row precisely because a group-level `--enable_cueq/--only_cueq/--enable_oeq` cell hides it | `tests/golden/test_backend_parity_golden.py::test_converting_for_the_cpu_leaves_cueq_unfused_and_the_audit_says_so` |
+| `train.cueq_conv_fusion` | `--cueq_conv_fusion` | `mace/tools/arg_parser.py:1116` | MERGE — idem: the fusion knob of the same dispatch policy. Its own row because it is the one acceleration flag whose default differs between training (unfused) and inference (fused), which a group-level cell would hide | `tests/unit/test_convert_e3nn_cueq.py::test_only_cueq_uses_training_fusion_policy` + `tests/unit/test_convert_e3nn_cueq.py::test_training_conversion_forwards_fusion_flag` |
 
 ### 3.11 wandb (6)
 
