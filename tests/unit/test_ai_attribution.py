@@ -1,0 +1,168 @@
+"""The authorship gate's rules, pinned against what the tools really emit.
+
+The policy is narrow on purpose: an assistant may be used, it may not be
+credited as an author. So the rejected cases are all authorship claims, and
+the accepted ones include every way of saying a tool helped.
+
+Samples marked "seen on this repo" are copied from real commits, so a regex
+edit that stops catching them fails here rather than on the next pull request.
+"""
+
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+_SCRIPT = (
+    Path(__file__).resolve().parents[2]
+    / ".github"
+    / "scripts"
+    / "check_ai_attribution.py"
+)
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("check_ai_attribution", _SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    # `@dataclass` resolves annotations through sys.modules, so the module has
+    # to be registered before it executes.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+checker = _load()
+
+HUMAN = "Ada Lovelace <ada@example.org>"
+
+
+def _commit(message="Do a thing", author=HUMAN, committer=None):
+    return checker.Commit(
+        sha="0" * 40,
+        author=author,
+        committer=committer if committer is not None else author,
+        message=message,
+    )
+
+
+REJECTED_COAUTHORS = [
+    # Claude Code's default trailer. Seen on this repo in #1244 and #1711, and
+    # on #1711 it is the *only* thing crediting an assistant: the author field
+    # there is already the contributor's own.
+    "Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>",
+    "Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+    "Co-authored-by: Claude Code <noreply@anthropic.com>",
+    # Other assistants.
+    "Co-authored-by: Copilot <198982749+Copilot@users.noreply.github.com>",
+    "Co-authored-by: Cursor Agent <cursoragent@cursor.com>",
+    "Co-authored-by: devin-ai-integration[bot] <devin@example.com>",
+    "Co-authored-by: claude[bot] <claude@example.com>",
+    "Co-authored-by: ChatGPT <noreply@openai.com>",
+]
+
+
+@pytest.mark.parametrize("line", REJECTED_COAUTHORS)
+def test_an_assistant_credited_as_coauthor_is_rejected(line):
+    report = checker.inspect([_commit(message=f"Add a block\n\n{line}\n")])
+    assert not report.ok, f"missed: {line}"
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "Claude <noreply@anthropic.com>",
+        "Claude Code <noreply@anthropic.com>",
+        "claude[bot] <bot@users.noreply.github.com>",
+        "Copilot <copilot@example.com>",
+    ],
+)
+def test_an_assistant_as_author_or_committer_is_rejected(identity):
+    assert not checker.inspect([_commit(author=identity)]).ok
+    assert not checker.inspect([_commit(author=HUMAN, committer=identity)]).ok
+
+
+ALLOWED_TOOL_DISCLOSURE = [
+    # Cursor's trailer, seen on this repo in #1391. It discloses a tool rather
+    # than claiming authorship, so it passes.
+    "Made-with: Cursor",
+    "Generated-by: Devin",
+    "Assisted-by: Gemini",
+    # Claude Code's footer.
+    "🤖 Generated with [Claude Code](https://claude.ai/code)",
+    "Generated with Claude Code",
+    # Saying so in prose is fine too.
+    "Wrote the first draft of this block with Claude, then rewrote the loop",
+    "Reviewed-by: Copilot",
+]
+
+
+@pytest.mark.parametrize("line", ALLOWED_TOOL_DISCLOSURE)
+def test_disclosing_a_tool_is_allowed(line):
+    report = checker.inspect([_commit(message=f"Add a block\n\n{line}\n")])
+    assert report.ok, f"tool disclosure must pass: {line} -> {report.findings}"
+
+
+ACCEPTED_PEOPLE = [
+    # A contributor whose given name is Claude. The gate keys on the vendor
+    # address or a product name, never on a bare first name.
+    "Co-authored-by: Claude Dupont <claude.dupont@univ-lyon1.fr>",
+    "Co-authored-by: Claude Bernard <cbernard@example.org>",
+    "Co-authored-by: Claude <claude@univ-lyon1.fr>",
+    "Co-authored-by: Ilyes Batatia <ilyes@example.org>",
+    # Prose that happens to contain the words.
+    "Move the cursor to the next atom in the readout loop",
+    "Fix: cursor position drifts when the basis is truncated",
+]
+
+
+@pytest.mark.parametrize("line", ACCEPTED_PEOPLE)
+def test_people_and_prose_are_accepted(line):
+    report = checker.inspect([_commit(message=f"Add a block\n\n{line}\n")])
+    assert report.ok, f"false positive on: {line} -> {report.findings}"
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "Claude Dupont <claude.dupont@univ-lyon1.fr>",
+        "Claude <claude@univ-lyon1.fr>",
+    ],
+)
+def test_a_person_named_claude_can_author_a_commit(identity):
+    assert checker.inspect([_commit(author=identity)]).ok
+
+
+def test_a_clean_commit_passes():
+    assert checker.inspect([_commit()]).ok
+
+
+def test_it_reports_every_offending_line_not_just_the_first():
+    message = (
+        "Add a block\n\n"
+        "Co-authored-by: Claude Opus 5 <noreply@anthropic.com>\n"
+        "Co-authored-by: Copilot <1+Copilot@users.noreply.github.com>\n"
+    )
+    assert len(checker.inspect([_commit(message=message)]).findings) == 2
+
+
+def test_findings_name_the_commit_and_the_reason():
+    report = checker.inspect(
+        [_commit(message="x\n\nCo-authored-by: Claude Code <noreply@anthropic.com>\n")]
+    )
+    finding = report.findings[0]
+    assert finding.sha == "0" * 40
+    assert "trailer" in finding.where
+    assert finding.why
+
+
+def test_trailers_survive_crlf_and_indentation():
+    crlf = "x\r\n\r\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>\r\n"
+    indented = "x\n\n  Co-authored-by: Claude Opus 5 <noreply@anthropic.com>\n"
+    assert not checker.inspect([_commit(message=crlf)]).ok
+    assert not checker.inspect([_commit(message=indented)]).ok
+
+
+def test_a_commit_with_no_body_passes():
+    assert checker.inspect([_commit(message="Fix it")]).ok
+    assert checker.inspect([_commit(message="")]).ok

@@ -33,6 +33,37 @@ jobs:
           pip-packages: wandb
       - run: pre-commit run --all-files --show-diff-on-failure
 
+  attribution:
+    # A commit's authors have to be people. GitHub builds the contributor list
+    # from the author, the committer and `Co-authored-by:`, so an assistant in
+    # any of the three lands on MACE's contributor list, and a squash merge
+    # copies the branch's trailers into the permanent history: two commits on
+    # develop carry nineteen such lines between them. Using a tool is fine and
+    # disclosing it is fine; only the authorship claim fails.
+    #
+    # Only the commits the PR adds are inspected, so what is already merged
+    # cannot fail an unrelated branch.
+    #
+    # `pull_request` only. On a push the offending commit is already in, and
+    # there is nothing the run could ask anyone to do about it.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Both sides of the range have to be present, and the default
+          # checkout is a depth-1 merge commit.
+          fetch-depth: 0
+      - name: Reject AI attribution in the commits this PR adds
+        # The SHAs go through the environment rather than into the script
+        # body: nothing from the event should be expanded into a shell.
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Stdlib only, so the runner's interpreter is enough.
+        run: python3 .github/scripts/check_ai_attribution.py "$BASE_SHA" "$HEAD_SHA"
+
   cueq-wheel-extras:
     # The `cueq*` extras name wheels no PR job installs: the GPU pipeline pulls
     # cueq-cuda-13 and nothing anywhere touches cu11 or cu12. The only failure
