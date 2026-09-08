@@ -50,13 +50,30 @@ BOT_ACCOUNT = re.compile(
 #: An assistant's product name. `Claude Dupont` is a person; `Claude Opus 4.7`,
 #: `Claude Code` and `GPT-4` are not. Requiring this form is what lets an
 #: identity naming a real human through without a vendor address.
+#:
+#: Both boundaries are anchored, or a token matches any longer word starting
+#: with it and the surname Devine reads as Devin. A version digit needs a
+#: separator in front of it for the same reason: `Claude 3` is a model,
+#: `claude3` is the start of somebody's email address.
 ASSISTANT_PRODUCT = re.compile(
-    r"\b(?:claude\s*(?:code|opus|sonnet|haiku|instant|\d)"
-    r"|gpt-?\d|o[1-4]-(?:mini|preview)|chatgpt|copilot|codex"
-    r"|gemini\s*(?:pro|flash|\d)|devin|cursor\s*agent|codewhisperer"
-    r"|amazon\s+q|windsurf|openhands|swe-?agent|replit\s+agent)",
+    r"\b(?:"
+    r"claude[\s_-]*(?:code|opus|sonnet|haiku|instant)"
+    r"|claude[\s_-]+\d"
+    r"|gemini[\s_-]*(?:pro|flash)"
+    r"|gemini[\s_-]+\d"
+    r"|gpt-?\d"
+    r"|o[1-4]-(?:mini|preview)"
+    r"|chatgpt|copilot|codex|devin|codewhisperer|windsurf|openhands"
+    r"|cursor[\s_-]*agent"
+    r"|swe-?agent"
+    r"|amazon\s+q"
+    r"|replit\s+agent"
+    r")\b",
     re.IGNORECASE,
 )
+
+#: `Name <email>`, so a product name can be matched against the name alone.
+_IDENTITY = re.compile(r"^(?P<name>.*?)\s*<[^>]*>$")
 
 #: The trailer GitHub reads to add a co-author. Attribution trailers that do
 #: not claim authorship are deliberately not listed: `Made-with:` discloses a
@@ -93,13 +110,23 @@ class Report:
         return not self.findings
 
 
+def display_name(identity: str) -> str:
+    """The name half of `Name <email>`, or all of it when there is no address."""
+    identity = identity.strip()
+    match = _IDENTITY.match(identity)
+    return match.group("name") if match else identity
+
+
 def assistant_reason(identity: str) -> str:
     """Why `identity` names an assistant rather than a person, or ""."""
     if VENDOR_EMAIL.search(identity):
         return "an AI vendor email address"
     if BOT_ACCOUNT.search(identity):
         return "an AI bot account"
-    if ASSISTANT_PRODUCT.search(identity):
+    # Against the display name only. An email's local part is not a name:
+    # reading `claude1@` as `Claude 1` would block the very people the vendor
+    # address and product name rules are shaped to leave alone.
+    if ASSISTANT_PRODUCT.search(display_name(identity)):
         return "an assistant's product name"
     return ""
 

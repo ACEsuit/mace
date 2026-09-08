@@ -122,15 +122,47 @@ def test_people_and_prose_are_accepted(line):
     assert report.ok, f"false positive on: {line} -> {report.findings}"
 
 
-@pytest.mark.parametrize(
-    "identity",
-    [
-        "Claude Dupont <claude.dupont@univ-lyon1.fr>",
-        "Claude <claude@univ-lyon1.fr>",
-    ],
-)
-def test_a_person_named_claude_can_author_a_commit(identity):
-    assert checker.inspect([_commit(author=identity)]).ok
+#: People the gate must leave alone. Every one of these was a real false
+#: positive on the first cut of the patterns, found in review of #1716.
+PEOPLE = [
+    "Claude Dupont <claude.dupont@univ-lyon1.fr>",
+    "Claude <claude@univ-lyon1.fr>",
+    # A digit right after the name is an email local part, not a model
+    # version. These read as "Claude 1" and "Gemini 1" without the separator.
+    "Claude <claude1@example.org>",
+    "Claude Bernard <claude2024@gmail.com>",
+    "Gemini Rossi <gemini1@example.org>",
+    # A token has to be a whole word, or every longer word starting with it
+    # matches. Devine is a real surname.
+    "Mary Devine <mdevine@example.org>",
+    "Raj Devinder <raj@example.org>",
+    "Ann Codexis <ann@example.org>",
+    "Joe Windsurfer <joe@example.org>",
+    "Tom Copilots <tom@example.org>",
+]
+
+
+@pytest.mark.parametrize("identity", PEOPLE)
+def test_a_person_can_author_a_commit(identity):
+    assert checker.inspect([_commit(author=identity)]).ok, identity
+
+
+@pytest.mark.parametrize("identity", PEOPLE)
+def test_a_person_can_be_credited_as_coauthor(identity):
+    report = checker.inspect([_commit(message=f"x\n\nCo-authored-by: {identity}\n")])
+    assert report.ok, f"{identity} -> {report.findings}"
+
+
+def test_a_product_name_is_read_from_the_name_not_the_address():
+    """The split is the fix for the email-local-part false positives.
+
+    An assistant is still caught when the address is innocent, which is what
+    stops the narrowing from becoming a hole.
+    """
+    assert checker.display_name("Claude Opus 5 <x@gmail.com>") == "Claude Opus 5"
+    assert checker.display_name("plain@example.org") == "plain@example.org"
+    assert not checker.inspect([_commit(author="Claude Opus 4.7 <someone@gmail.com>")]).ok
+    assert not checker.inspect([_commit(author="Claude 3.5 Sonnet <x@gmail.com>")]).ok
 
 
 def test_a_clean_commit_passes():
