@@ -9,6 +9,7 @@ import torch
 from ase import units
 from ase.calculators.mixing import SumCalculator
 
+from mace.tools.deprecation import warn
 from mace.tools.utils import get_cache_dir
 
 from .mace import MACECalculator
@@ -499,6 +500,11 @@ def mace_anicc(
         If you are using this function, please cite the relevant paper associated with the MACE model, ANI dataset, and also the following:
         - "Evaluation of the MACE Force Field Architecture by Dávid Péter Kovács, Ilyes Batatia, Eszter Sára Arany, and Gábor Csányi, The Journal of Chemical Physics, 2023, URL: https://doi.org/10.1063/5.0155322
     """
+    # The row for this loader already covers the model and the checkpoint that
+    # go with it, so fm.mace_anicc and pkg.anicc_checkpoint stay table-only.
+    warn("calc.export.mace_anicc")
+    if model_path is not None:
+        warn("kwarg.model_path")
     if model_path is None:
         model_path = os.path.join(
             module_dir, "foundations_models/ani500k_large_CC.model"

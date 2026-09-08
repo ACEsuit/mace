@@ -22,6 +22,7 @@ import torch
 from ase.io.cube import write_cube
 
 from mace.calculators.foundations_models import mace_polar
+from mace.tools import deprecation
 
 try:
     from graph_longrange.features import (
@@ -582,7 +583,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="optional JSON path for cube quality metrics",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    deprecation.warn_args("cli.polar_density_cube", parser)
+    return args
 
 
 def run(args: argparse.Namespace) -> list[Path]:

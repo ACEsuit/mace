@@ -7,6 +7,7 @@ import torch
 from e3nn import o3
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig
+from mace.tools import deprecation
 from mace.tools.cg import O3_e3nn
 from mace.tools.cg_cueq_tools import symmetric_contraction_proj
 from mace.tools.scripts_utils import extract_config_mace_model
@@ -278,6 +279,7 @@ def run(
 
 
 def main():
+    deprecation.warn("ep.mace_e3nn_cueq")
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input MACE model")
     parser.add_argument(

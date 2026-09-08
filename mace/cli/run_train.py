@@ -37,7 +37,7 @@ from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.lora import inject_LoRAs, merge_lora_weights
-from mace.tools import torch_geometric
+from mace.tools import deprecation, torch_geometric
 from mace.tools.distributed_tools import init_distributed, xpu_device_index
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
@@ -82,8 +82,21 @@ def main() -> None:
     """
     This script runs the training/fine tuning for mace
     """
-    args = tools.build_default_arg_parser().parse_args()
+    parser = tools.build_default_arg_parser()
+    args = parser.parse_args()
+    _warn_about_v1_removals(parser, args)
     run(args)
+
+
+def _warn_about_v1_removals(parser, args) -> None:
+    """Say which of the options actually passed do not survive MACE v1.0."""
+    passed = deprecation.explicit_dests(parser)
+    deprecation.warn_args("train", parser)
+    if "model" in passed:
+        deprecation.warn_choice("choice", args.model)
+    for dest in ("interaction", "interaction_first"):
+        if dest in passed:
+            deprecation.warn_choice("reg", getattr(args, dest, None))
 
 
 def run(args) -> None:
@@ -1192,6 +1205,10 @@ def run(args) -> None:
                 torch.save(
                     model_to_save, Path(args.model_dir) / (args.name + "_stagetwo.model")
                 )
+                # Outside the try: under -W error this warning is an
+                # exception, and the handler below reports anything it catches
+                # as a compile failure, which would lose the artifact.
+                deprecation.warn("lammps.compiled_side_artifact")
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_stagetwo_compiled.model"
@@ -1210,6 +1227,10 @@ def run(args) -> None:
                     )
             else:
                 torch.save(model_to_save, Path(args.model_dir) / (args.name + ".model"))
+                # Outside the try: under -W error this warning is an
+                # exception, and the handler below reports anything it catches
+                # as a compile failure, which would lose the artifact.
+                deprecation.warn("lammps.compiled_side_artifact")
                 try:
                     path_complied = Path(args.model_dir) / (
                         args.name + "_compiled.model"

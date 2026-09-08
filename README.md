@@ -49,6 +49,7 @@ over.
     - [Finetuning foundation models](#finetuning-foundation-models)
     - [Latest recommended foundation models](#latest-recommended-foundation-models)
   - [Caching](#caching)
+  - [What changes in MACE v1.0](#what-changes-in-mace-v10)
   - [Development](#development)
   - [Contributing](#contributing)
   - [References](#references)
@@ -358,6 +359,38 @@ If you want to finetune another model, the model will be loaded from the path pr
 
 By default automatically downloaded models, like mace_mp, mace_off and data for fine tuning, end up in `~/.cache/mace`. The path can be changed by using
 the environment variable XDG_CACHE_HOME. When set, the new cache path expands to $XDG_CACHE_HOME/.cache/mace
+
+## What changes in MACE v1.0
+
+MACE v1.0 is a rewrite, and it does not carry every surface of the 0.3.x line.
+The options, commands, classes and output keys that go away, or that survive
+only under a more general mechanism, now say so when you use them: they raise a
+`FutureWarning` and write the same text to the run log. Nothing changes about
+what they do in 0.3.x.
+
+A warning fires only for something you asked for. A flag warns when you pass it,
+not when it merely has a default, and a command warns when you run it. To see
+the whole list at once, including the parts that have no single moment to warn
+at, run:
+
+```sh
+python -m mace.tools.deprecation
+```
+
+Each entry says whether v1.0 removes the feature outright or replaces it with a
+more general mechanism, and why. The v1.0 migration guide will carry the new
+spellings; these warnings deliberately do not name v1 commands, because the
+last 0.3.x release ships before the v1 CLI exists.
+
+Every message starts with `MACE v1.0`, so one filter silences all of them:
+
+```python
+import warnings
+warnings.filterwarnings("ignore", message="MACE v1.0", category=FutureWarning)
+```
+
+`module="mace"` does not work here, because the warning is attributed to the
+caller that passed the option rather than to a module inside the package.
 
 ## Development
 

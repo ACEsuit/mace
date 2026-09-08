@@ -7,6 +7,7 @@ from e3nn import o3
 
 from mace import modules
 from mace.modules.wrapper_ops import CuEquivarianceConfig
+from mace.tools.deprecation import warn
 from mace.tools.finetuning_utils import load_foundations_elements, load_foundations_mdp
 from mace.tools.scripts_utils import extract_config_mace_model, resolve_m_max
 from mace.tools.torch_tools import dtype_dict
@@ -285,6 +286,11 @@ def _build_model(
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticResidualNonLinearInteractionBlock",
         ]:
+            warn(
+                "pkg.first_block_coercion",
+                context=f"--interaction_first {args.interaction_first} is being "
+                "replaced by RealAgnosticInteractionBlock for --model MACE",
+            )
             args.interaction_first = "RealAgnosticInteractionBlock"
         return modules.ScaleShiftMACE(
             **model_config,

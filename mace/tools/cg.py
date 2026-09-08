@@ -13,6 +13,8 @@ import numpy as np
 import torch
 from e3nn import o3
 
+from mace.tools.deprecation import warn_env
+
 try:
     import cuequivariance as cue
 
@@ -26,6 +28,8 @@ USE_CUEQ_CG = os.environ.get("MACE_USE_CUEQ_CG", "0").lower() in (
     "yes",
     "y",
 )
+
+warn_env("MACE_USE_CUEQ_CG")
 
 _TP = collections.namedtuple("_TP", "op, args")
 _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
