@@ -220,6 +220,7 @@ def run(
     device="cpu",
     return_model=True,
     layout: str = "ir_mul",
+    conv_fusion: bool = True,
 ):
     # Setup logging
 
@@ -247,7 +248,7 @@ def run(
         layout=layout,
         group="O3_e3nn",
         optimize_all=True,
-        conv_fusion=(torch.device(device).type == "cuda"),
+        conv_fusion=conv_fusion and torch.device(device).type == "cuda",
     )
 
     # Create new model with cuequivariance config

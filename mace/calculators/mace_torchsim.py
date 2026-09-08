@@ -124,7 +124,11 @@ class MaceTorchSimModel(ModelInterface):
             from mace.cli.convert_e3nn_cueq import run as run_cueq
 
             try:
-                self.model = run_cueq(self.model, device=self._device.type)
+                self.model = run_cueq(
+                    self.model,
+                    device=self._device.type,
+                    conv_fusion=True,
+                )
             except (RuntimeError, ValueError):
                 from mace.cli.convert_e3nn_hybrid import run as run_hybrid
 

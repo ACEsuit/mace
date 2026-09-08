@@ -184,7 +184,8 @@ def configure_model(
                 layout="ir_mul",
                 group="O3_e3nn",
                 optimize_all=True,
-                conv_fusion=(args.device == "cuda"),
+                conv_fusion=args.cueq_conv_fusion
+                and torch.device(args.device).type == "cuda",
             )
 
         model_config = dict(

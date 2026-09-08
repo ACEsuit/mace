@@ -1112,6 +1112,12 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         type=str2bool,
         default=False,
     )
+    parser.add_argument(
+        "--cueq_conv_fusion",
+        help="Enable cuEquivariance convolution fusion during training",
+        type=str2bool,
+        default=False,
+    )
     # option for openequivariance acceleration
     parser.add_argument(
         "--enable_oeq",
