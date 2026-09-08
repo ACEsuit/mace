@@ -139,6 +139,11 @@ PEOPLE = [
     "Ann Codexis <ann@example.org>",
     "Joe Windsurfer <joe@example.org>",
     "Tom Copilots <tom@example.org>",
+    # Devin is a product and a common given name, so the bare token cannot
+    # stand on its own any more than Claude can.
+    "Devin Smith <devin@example.org>",
+    "Devin Booker <dbooker@example.org>",
+    "Devin <devin.smith@univ-lyon1.fr>",
 ]
 
 
@@ -198,3 +203,33 @@ def test_trailers_survive_crlf_and_indentation():
 def test_a_commit_with_no_body_passes():
     assert checker.inspect([_commit(message="Fix it")]).ok
     assert checker.inspect([_commit(message="")]).ok
+
+
+REJECTED_ASSISTANTS = [
+    # Devin still has to be caught, by a product form, a bot account or the
+    # vendor's own domain.
+    "Devin AI <x@gmail.com>",
+    "devin-ai <x@gmail.com>",
+    "devin-ai-integration[bot] <devin@example.com>",
+    "Devin <noreply@cognition.ai>",
+    "Devin <noreply@devin.ai>",
+]
+
+
+@pytest.mark.parametrize("identity", REJECTED_ASSISTANTS)
+def test_devin_is_still_caught_by_product_bot_or_domain(identity):
+    assert not checker.inspect([_commit(author=identity)]).ok, identity
+
+
+def test_a_bare_token_is_only_used_where_nobody_is_called_it():
+    """The rule the patterns follow, so an addition cannot quietly break it.
+
+    A name that people actually have needs a product word, a version number
+    or a vendor address. A name nobody has may stand alone.
+    """
+    for human_name in ("Claude", "Gemini", "Devin"):
+        identity = f"{human_name} Smith <smith@example.org>"
+        assert checker.inspect([_commit(author=identity)]).ok, human_name
+    for product_only in ("Copilot", "Codex", "CodeWhisperer", "ChatGPT"):
+        identity = f"{product_only} <bot@example.org>"
+        assert not checker.inspect([_commit(author=identity)]).ok, product_only

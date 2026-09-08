@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 #: mail at anthropic.com by being called Claude.
 VENDOR_EMAIL = re.compile(
     r"@(?:anthropic\.com|openai\.com|cursor\.(?:com|sh)|cognition(?:-?labs)?\.ai"
+    r"|devin\.ai"
     r"|codeium\.com|sourcegraph\.com|tabnine\.com|aider\.chat)\b",
     re.IGNORECASE,
 )
@@ -55,6 +56,11 @@ BOT_ACCOUNT = re.compile(
 #: with it and the surname Devine reads as Devin. A version digit needs a
 #: separator in front of it for the same reason: `Claude 3` is a model,
 #: `claude3` is the start of somebody's email address.
+#:
+#: A token stands alone only when nobody is called it. `Copilot`, `Codex` and
+#: `CodeWhisperer` are safe on their own; `Claude`, `Gemini` and `Devin` are
+#: people's names, so each needs a product word, a version number or a vendor
+#: address before it counts. Apply that test to anything added here.
 ASSISTANT_PRODUCT = re.compile(
     r"\b(?:"
     r"claude[\s_-]*(?:code|opus|sonnet|haiku|instant)"
@@ -63,7 +69,8 @@ ASSISTANT_PRODUCT = re.compile(
     r"|gemini[\s_-]+\d"
     r"|gpt-?\d"
     r"|o[1-4]-(?:mini|preview)"
-    r"|chatgpt|copilot|codex|devin|codewhisperer|windsurf|openhands"
+    r"|devin[\s_-]*ai"
+    r"|chatgpt|copilot|codex|codewhisperer|windsurf|openhands"
     r"|cursor[\s_-]*agent"
     r"|swe-?agent"
     r"|amazon\s+q"
