@@ -3,7 +3,11 @@ name: extension tests
 # capability via MACE_REQUIRE_CAPS: a broken install fails, never skips.
 # On PRs, paths-filter runs only the extensions the PR can affect; pushes to
 # main/develop always run everything (the safety net lives on the branch).
-# Adding an extension = tests/extensions/<name>/ + a filter entry + a job.
+# Adding an extension = tests/extensions/<name>/ + a row in
+# tests/architecture/capabilities.toml + a job. The `changes` job's outputs and
+# filters are GENERATED from that manifest by
+# tests/architecture/generate_ci.py; editing them here is reverted by the next
+# run of the generator and failed by a meta-test in tests/architecture.
 
 on:
   pull_request:
@@ -25,15 +29,17 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Outside pull requests (push/dispatch/schedule) the filter step is
-    # skipped and every output falls back to 'true': always run everything.
     outputs:
+      # >>> generated from capabilities.toml: filter-outputs
+      # Outside a pull request the filter step below is skipped and every
+      # output is empty, so the `|| 'true'` fallback runs everything.
+      backends: ${{ steps.filter.outputs.backends || 'true' }}
       polar: ${{ steps.filter.outputs.polar || 'true' }}
       les: ${{ steps.filter.outputs.les || 'true' }}
       magnetic: ${{ steps.filter.outputs.magnetic || 'true' }}
       torchsim: ${{ steps.filter.outputs.torchsim || 'true' }}
       schedulefree: ${{ steps.filter.outputs.schedulefree || 'true' }}
-      backends: ${{ steps.filter.outputs.backends || 'true' }}
+      # <<< generated from capabilities.toml: filter-outputs
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
@@ -41,34 +47,44 @@ jobs:
         id: filter
         with:
           filters: |
+            # >>> generated from capabilities.toml: filter-paths
             shared: &shared
               - 'setup.cfg'
               - 'pyproject.toml'
               - 'tests/conftest.py'
               - 'tests/helpers.py'
+              - 'tests/architecture/capabilities.toml'
               - '.github/workflows/ci-extensions.yaml'
               - '.github/actions/setup-mace/**'
               - 'mace/modules/**'
               - 'mace/tools/**'
               - 'mace/data/**'
+            backends:
+              - *shared
+              - 'mace/cli/convert_*.py'
+              - 'tests/backends/**'
+              # The backend goldens live with the other goldens, not in tests/backends:
+              # they are cueq/oeq tests that happen to assert against a committed
+              # reference. Without this line a change to them is reviewed by no job that
+              # has cuequivariance installed.
+              - 'tests/golden/**'
             polar:
               - *shared
               - 'mace/cli/polar_density_cube.py'
               - 'mace/calculators/**'
               - 'tests/extensions/polar/**'
               - 'requirements/polar.txt'
-              # The MACE-Polar golden lives here, and this is the only
-              # PR-time job with graph_longrange, so a change to tests/golden
-              # that this job would catch must be able to start it.
+              # The MACE-Polar golden lives here, and this is the only PR-time job with
+              # graph_longrange, so a change to tests/golden that this job would catch
+              # must be able to start it.
               - 'tests/golden/**'
             les:
               - *shared
               - 'tests/extensions/les/**'
-              # The golden anchors run in this job, and two of the three
-              # surfaces they pin live outside mace/modules: the external-field
-              # and BEC handling in the calculator, and the eval CLI's
-              # flattened latent multipoles. Without these paths a change to
-              # either would not run the job that holds its numbers.
+              # The golden anchors run in this job, and two of the three surfaces they pin
+              # live outside mace/modules: the external-field and BEC handling in the
+              # calculator, and the eval CLI's flattened latent multipoles. Without these
+              # paths a change to either would not run the job that holds its numbers.
               - 'tests/golden/**'
               - 'mace/calculators/**'
               - 'mace/cli/eval_configs.py'
@@ -78,9 +94,9 @@ jobs:
               - 'mace/calculators/**'
               - 'mace/cli/**'
               - 'tests/extensions/magnetic/**'
-              # This job owns the magnetic goldens too: they live in
-              # tests/golden and are the only place that runs them with
-              # sphericart installed, so a change there has to reach it.
+              # This job owns the magnetic goldens too: they live in tests/golden and are
+              # the only place that runs them with sphericart installed, so a change there
+              # has to reach it.
               - 'tests/golden/**'
             torchsim:
               - *shared
@@ -89,15 +105,7 @@ jobs:
             schedulefree:
               - *shared
               - 'tests/extensions/schedulefree/**'
-            backends:
-              - *shared
-              - 'mace/cli/convert_*.py'
-              - 'tests/backends/**'
-              # The backend goldens live with the other goldens, not in
-              # tests/backends: they are cueq/oeq tests that happen to assert
-              # against a committed reference. Without this line a change to
-              # them is reviewed by no job that has cuequivariance installed.
-              - 'tests/golden/**'
+            # <<< generated from capabilities.toml: filter-paths
 
   polar:
     needs: changes

@@ -96,3 +96,35 @@ def test_all_import_contracts_hold():
         + output
     )
     assert result.returncode == 0, "import contracts broken:\n" + output
+
+
+# ---------------------------------------------------------------------------
+# The fitness suite's entry to this contract
+# ---------------------------------------------------------------------------
+
+
+def test_import_direction_one_way():
+    """The named fitness function, delegating to the guard above.
+
+    The fitness suite lists five invariants about the target shape and this is
+    one of them, so it is nameable and greppable from that list. It owns no
+    logic: the guard is `.importlinter` plus the `lint-imports` step, and a
+    second implementation of the same check would be a second thing to keep
+    correct. What it does own is the invariant's *statement* -- packages/ never
+    imports mace/, with exactly two allowlisted double importers -- and the
+    fact that the check is reachable at all, which is what fails when the
+    config is deleted or the console script disappears from the environment.
+    """
+    assert CONFIG.exists(), (
+        "there are no import contracts, so the direction is unguarded whatever "
+        "the rest of this file asserts"
+    )
+    assert len(ALLOWED_DOUBLE_IMPORTERS) == 2, ALLOWED_DOUBLE_IMPORTERS
+
+    if shutil.which("lint-imports") is None or _missing_roots():
+        pytest.skip(
+            "the contracts need import-linter and every root package "
+            "installed; test_all_import_contracts_hold above is the one that "
+            "runs them, and the ci-core `architecture` job is where it does"
+        )
+    test_all_import_contracts_hold()
