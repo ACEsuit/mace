@@ -1,0 +1,49 @@
+# The canonical observable declarations: energy, and its derivatives with
+# respect to the two inputs every model has.
+#
+# This file is the example every other observable copies. A new property is a
+# row here (or in a project's own file) and needs no code: the spec drives the
+# head, the loss term, the derivative names and the per-atom/per-graph padding.
+#
+# Units follow the project convention: eV and Å. The strain is dimensionless,
+# so the cell input carries "1".
+
+inputs:
+  # Atomic positions. A polar vector: it changes sign under inversion, which is
+  # what makes the energy gradient taken against it a 1o quantity as well.
+  - name: pos
+    irreps: "1o"
+    per_atom: true
+    units: "Å"
+
+  # The symmetric strain the cell derivative is actually taken against, not the
+  # nine cell entries. A symmetric rank-2 tensor is a scalar plus an l=2 part.
+  - name: cell
+    irreps: "0e+2e"
+    per_atom: false
+    units: "1"
+
+observables:
+  - name: energy
+    irreps: "0e"
+    per_atom: false
+    units: "eV"
+    # The std of the target, the successor of the legacy `std_scaling` entry.
+    # The legacy default was `rms_forces_scaling`, which scales the energy
+    # readout by the RMS of the *force* targets; that couples two observables
+    # through one number and cannot be written as a per-observable field. Which
+    # of the two v1 defaults to is a decision for the head, not for this file.
+    normalization: "std"
+    default_loss_weight: 1.0
+    derivatives:
+      # Named `forces`, reported as -dE/dpos.
+      - wrt: pos
+        units: "eV/Å"
+        normalization: "rms"
+        default_loss_weight: 100.0
+      # Named `stress`, reported as +dE/dstrain, divided by the cell volume by
+      # whatever computes it. The division is not part of the sign.
+      - wrt: cell
+        units: "eV/Å^3"
+        normalization: "none"
+        default_loss_weight: 1.0

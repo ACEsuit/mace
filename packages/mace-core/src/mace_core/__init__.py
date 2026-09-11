@@ -1,5 +1,9 @@
 """Framework-agnostic contract and pure math for MACE v1.
 
+This package imports no framework. Everything here is expressed over plain
+Python, numpy and pydantic, so the same types carry ``torch.Tensor`` in
+``mace_torch`` and ``jax.Array`` in ``mace_jax``.
+
 Re-exports the public surface of the lightweight submodules. Heavy ones (the
 Clebsch-Gordan basis, neighbours) are imported from their own modules.
 """
@@ -8,14 +12,28 @@ from importlib.metadata import PackageNotFoundError, version
 
 from mace_core.config import BaseConfig, ConfigError, ConfigSection
 from mace_core.metadata import ModelMetadata, format_citations
+from mace_core.observables import (
+    DerivativeSpec,
+    InputSpec,
+    ObservableCatalogue,
+    ObservableSpec,
+    load_default_catalogue,
+)
+from mace_core.outputs import MACEOutput
 
 __all__ = [
     "BaseConfig",
     "ConfigError",
     "ConfigSection",
+    "DerivativeSpec",
+    "InputSpec",
+    "MACEOutput",
     "ModelMetadata",
+    "ObservableCatalogue",
+    "ObservableSpec",
     "__version__",
     "format_citations",
+    "load_default_catalogue",
 ]
 
 #: Version of the installed `mace-core` distribution. Read from installed metadata

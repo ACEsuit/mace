@@ -18,6 +18,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "numpy>=1.23",
     # The suite passes at this floor (2.7.4 on Python 3.10) and at current
     # releases.
     "pydantic>=2.7",
