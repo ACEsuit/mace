@@ -22,9 +22,12 @@ dependencies = ["mace-core"]
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
 
-# No [project.scripts]. Every mace_* console entry point is owned by one
+# No [project.scripts] yet. Every mace_* console entry point is owned by one
 # distribution, mace-launcher; two distributions declaring the same script name
-# is undefined behaviour in pip.
+# is undefined behaviour in pip. This package gains exactly one script of its
+# own when its CLI lands: `mace-jax`, hyphenated so it stays outside the mace_*
+# set, since mace-jax does not depend on mace-torch and has to be usable with
+# no torch installed.
 
 [tool.hatch.version]
 source = "vcs"

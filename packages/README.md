@@ -51,9 +51,24 @@ undefined behaviour in pip. That is not a theoretical hazard: uninstalling one
 of two such distributions deletes the script files the other one had
 overwritten, and the surviving distribution is left with none.
 
+The rule is one owner per script name, not one owner overall. `mace-jax` will
+declare a single script of its own, `mace-jax`, when its CLI lands: it does not
+depend on `mace-torch` and has to work with no torch installed, so it cannot
+inherit a script from either the launcher or `mace-torch`. The hyphen keeps the
+name outside the `mace_*` set, so the two owners never overlap.
+
 The launcher is also the only place the two stacks meet. It picks one with
 `--engine {legacy,v1}` or `MACE_ENGINE`, defaulting to `legacy`, and installs a
 runtime guard that fails if a v1 module imports the frozen legacy package.
+
+**`mace-launcher` is never published either, and unlike `mace-torch-v1` it does
+not survive under another name.** It exists to choose between two engines, so it
+has nothing left to do once the legacy package is deleted. RET-6 removes the
+package and moves its `[project.scripts]` table into `mace-torch`, pointed at
+`mace_torch.cli.*`. Single ownership survives that move: exactly one installed
+distribution still declares each `mace_*` script, and from then on it is
+`mace-torch`. The v1.0.0 release therefore publishes three distributions, not
+four.
 
 ## Installing alongside the legacy package
 
