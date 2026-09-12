@@ -130,6 +130,75 @@ def test_the_default_conversions_change_nothing(water):
     assert explicit["forces"] == pytest.approx(plain["forces"])
 
 
+@pytest.mark.parametrize("num_models", [1, 2])
+def test_hessian_follows_energy_conversion(water, num_models):
+    """Convert each member's Hessian without changing the single/committee API."""
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        results = []
+        for factor in (1.0, ENERGY_FACTOR):
+            calc = MACECalculator(
+                models=[_tiny_model(seed) for seed in range(num_models)],
+                device="cpu",
+                default_dtype="float64",
+                energy_units_to_eV=factor,
+                length_units_to_A=1.0,
+            )
+            result = calc.get_hessian(water)
+            assert isinstance(result, np.ndarray if num_models == 1 else list)
+            members = [result] if num_models == 1 else result
+            assert len(members) == num_models
+            assert all(h.shape == (3 * len(water), len(water), 3) for h in members)
+            results.append(members)
+        for plain, converted in zip(*results):
+            np.testing.assert_allclose(converted, plain * ENERGY_FACTOR, atol=1e-10)
+    finally:
+        torch.set_default_dtype(previous)
+
+
+@pytest.mark.parametrize("energy_factor", [1.0, ENERGY_FACTOR])
+@pytest.mark.parametrize("num_models", [1, 2])
+def test_hessian_matches_calculator_force_derivative(water, energy_factor, num_models):
+    """Use force differences to check units independently of Hessian scaling."""
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        calc = MACECalculator(
+            models=[_tiny_model(seed) for seed in range(num_models)],
+            device="cpu",
+            default_dtype="float64",
+            energy_units_to_eV=energy_factor,
+            length_units_to_A=1.0,
+        )
+        hessian = calc.get_hessian(water)
+        if num_models > 1:
+            hessian = np.mean(hessian, axis=0)
+        hessian = hessian.reshape(3 * len(water), 3 * len(water))
+        np.testing.assert_allclose(hessian, hessian.T, atol=1e-10)
+        direction = np.array([[0.3, -0.2, 0.1], [-0.1, 0.4, -0.2], [0.1, 0.2, 0.3]])
+        direction /= np.linalg.norm(direction)
+        expected = -hessian @ direction.ravel()
+        errors3, errors5 = [], []
+        for step in (1e-2, 1e-3, 1e-4):
+
+            def displaced_forces(offset):
+                atoms = water.copy()
+                atoms.positions += offset * step * direction
+                atoms.calc = calc
+                return atoms.get_forces().ravel()
+
+            p2, p1, m1, m2 = [displaced_forces(k) for k in (2, 1, -1, -2)]
+            errors3.append(np.max(np.abs((p1 - m1) / (2 * step) - expected)))
+            errors5.append(
+                np.max(np.abs((-p2 + 8 * p1 - 8 * m1 + m2) / (12 * step) - expected))
+            )
+        assert min(errors3) < 1e-6
+        assert min(errors5) < 1e-7
+    finally:
+        torch.set_default_dtype(previous)
+
+
 # ---------------------------------------------------------------------------
 # the committee spread
 # ---------------------------------------------------------------------------

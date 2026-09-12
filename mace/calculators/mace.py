@@ -944,7 +944,10 @@ class MACECalculator(Calculator):
                 )["hessian"]
                 for model in self.models
             ]
-        hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
+        hessians = [
+            hessian.detach().cpu().numpy() * self.energy_units_to_eV
+            for hessian in hessians
+        ]
         if self.num_models == 1:
             return hessians[0]
         return hessians
