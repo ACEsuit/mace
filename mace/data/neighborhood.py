@@ -59,11 +59,21 @@ def get_neighborhood(
     else:
         cell = extended_cell
 
+    # The search box is anchored at the origin, so atoms must be moved into it
+    # along the non-periodic axes: matscipy wraps whatever lies outside and
+    # reports the wrap in unit_shifts, which downstream is added back to the
+    # *unwrapped* positions (D = r_j - r_i + S.cell). The offset is rigid, so it
+    # changes no distance, and the caller's positions are untouched.
+    search_positions = np.array(positions, dtype=float, copy=True)
+    for dim in range(3):
+        if not pbc[dim]:
+            search_positions[:, dim] -= search_positions[:, dim].min()
+
     sender, receiver, unit_shifts = neighbour_list(
         quantities="ijS",
         pbc=pbc,
         cell=extended_cell,
-        positions=positions,
+        positions=search_positions,
         cutoff=cutoff,
         # self_interaction=True,  # we want edges from atom to itself in different periodic images
         # use_scaled_positions=False,  # positions are not scaled positions
