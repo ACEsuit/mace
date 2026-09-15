@@ -484,6 +484,14 @@ _SKEWED_CELLS = {
         (True, False, False),
         np.array([[1.8, 1.7, 1.6], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
     ),
+    "aspect_1_to_20": (
+        (True, True, False),
+        np.array([[60.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 0.0]]),
+    ),
+    "aspect_1_to_20_and_tilted": (
+        (True, True, False),
+        np.array([[60.0, 0.0, 1.5], [0.0, 3.0, -1.5], [0.0, 0.0, 0.0]]),
+    ),
 }
 
 # Zero, one per axis, and one that is large and awkward on all three at once.
@@ -570,6 +578,93 @@ def test_randomly_skewed_cells_match_the_oracle_after_translation():
         ):
             failures.append((trial, pbc, np.round(cell, 3).tolist()))
     assert not failures, f"{len(failures)} of 120 disagree, first: {failures[:3]}"
+
+
+# Skew has no natural ceiling. Nested sampling walks the cell shape and reaches
+# aspect ratios of 1:20 and beyond, so the tests below drive it far past
+# anything a builder produces, using a check that has no ceiling either.
+_SHEAR_FACTORS = [1, 5, 20, 50, 200]
+
+_WELL_CONDITIONED_CELL = np.array(
+    [[3.4, 0.0, 0.0], [0.6, 3.1, 0.0], [0.2, 0.4, 3.3]]
+)
+
+
+@pytest.mark.parametrize("shear", _SHEAR_FACTORS)
+@pytest.mark.parametrize("pbc", [(True, True, True), (True, True, False)])
+def test_a_skewed_basis_for_the_same_lattice_gives_the_same_neighbours(shear, pbc):
+    """``a_2 -> k * a_1 + a_2`` is the same lattice written in a worse basis.
+
+    This needs no reference implementation, which is what lets it go as far as
+    the skew does: the neighbours of a lattice do not depend on the basis
+    chosen to name it, so the edge vectors must come back identical however
+    badly conditioned that basis is. The integer shifts legitimately differ,
+    since they count different vectors, so the comparison is on displacements.
+    """
+    cell = _WELL_CONDITIONED_CELL.copy()
+    if not all(pbc):
+        cell[2] = 0.0
+    rng = np.random.default_rng(7)
+    positions = rng.uniform(0.0, 1.0, size=(8, 3)) @ _WELL_CONDITIONED_CELL
+    cutoff = 5.0
+
+    def displacements(lattice):
+        edge_index, shifts, _, _ = get_neighborhood(
+            positions, cutoff=cutoff, pbc=pbc, cell=lattice
+        )
+        return canonical_edges_from_shifts(
+            edge_index, positions[edge_index[1]] - positions[edge_index[0]] + shifts
+        )
+
+    skewed = cell.copy()
+    skewed[1] = shear * cell[0] + cell[1]
+    assert displacements(skewed) == displacements(cell)
+
+
+def test_the_oracle_covers_a_heavily_sheared_cell():
+    """The reference has to survive the same skew, and it did not.
+
+    Its image range used to be searched for rather than computed: grown one
+    step at a time until two consecutive radii gave the same edge set. A
+    sheared cell needs a very different range on each axis, so that cubic
+    search can plateau on an incomplete set and stop. This cell made it return
+    a wrong reference with no error at all, which showed up as a false failure
+    of the code under test. The range is now derived from the reciprocal
+    lattice and is exact.
+    """
+    cell = np.array([[3.0, 0.0, 0.0], [20.0, 3.0, 0.0], [0.0, 20.0, 3.0]])
+    pbc = (True, True, True)
+    cutoff = 4.0
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0.0, 1.0, size=(6, 3)) @ cell
+
+    edge_index, shifts, unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(edge_index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context="cell sheared by 20 on two axes",
+    )
+    # every edge it reports is a real one, which is the half that needs no
+    # reference at all
+    lengths = np.linalg.norm(
+        positions[edge_index[1]] - positions[edge_index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff)
+
+
+def test_the_oracle_refuses_a_cell_it_cannot_cover():
+    # The exact bound can be enormous, and an oracle that quietly takes hours
+    # is no better than one that quietly lies. It raises instead.
+    cell = np.array([[3.0, 0.0, 0.0], [600.0, 3.0, 0.0], [0.0, 600.0, 3.0]])
+    with pytest.raises(RuntimeError, match="lattice images"):
+        brute_force_neighborhood(
+            np.zeros((2, 3)), 5.0, (True, True, True), cell
+        )
 
 
 _NONORTHO_CELLS = {
