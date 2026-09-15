@@ -27,34 +27,34 @@ over.
 ## Table of contents
 
 - [MACE](#mace)
-  - [Table of contents](#table-of-contents)
-  - [Project status](#project-status)
-  - [About MACE](#about-mace)
-  - [Documentation](#documentation)
-  - [Installation](#installation)
-    - [pip installation](#installation-from-pypi)
-    - [pip installation from source](#installation-from-source)
-  - [Usage](#usage)
-    - [Training](#training)
-    - [Evaluation](#evaluation)
-  - [Tutorials](#tutorials)
-  - [CUDA acceleration with cuEquivariance](#cuda-acceleration-with-cuequivariance)
-  - [Weights and Biases for experiment tracking](#weights-and-biases-for-experiment-tracking)
-  - [Pretrained Foundation Models](#pretrained-foundation-models)
-    - [MACE-MP: Materials Project Force Fields](#mace-mp-materials-project-force-fields)
-      - [Example usage in ASE](#example-usage-in-ase)
-    - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
-      - [Example usage in ASE](#example-usage-in-ase-1)
-    - [MACE-Polar: Electrostatics foundation models](#mace-polar-electrostatics-foundation-models)
-    - [Finetuning foundation models](#finetuning-foundation-models)
-    - [Latest recommended foundation models](#latest-recommended-foundation-models)
-  - [Caching](#caching)
-  - [What changes in MACE v1.0](#what-changes-in-mace-v10)
-  - [Development](#development)
-  - [Contributing](#contributing)
-  - [References](#references)
-  - [Contact](#contact)
-  - [License](#license)
+ - [Table of contents](#table-of-contents)
+ - [Project status](#project-status)
+ - [About MACE](#about-mace)
+ - [Documentation](#documentation)
+ - [Installation](#installation)
+ - [pip installation](#installation-from-pypi)
+ - [pip installation from source](#installation-from-source)
+ - [Usage](#usage)
+ - [Training](#training)
+ - [Evaluation](#evaluation)
+ - [Tutorials](#tutorials)
+ - [CUDA acceleration with cuEquivariance](#cuda-acceleration-with-cuequivariance)
+ - [Weights and Biases for experiment tracking](#weights-and-biases-for-experiment-tracking)
+ - [Pretrained Foundation Models](#pretrained-foundation-models)
+ - [MACE-MP: Materials Project Force Fields](#mace-mp-materials-project-force-fields)
+ - [Example usage in ASE](#example-usage-in-ase)
+ - [MACE-OFF: Transferable Organic Force Fields](#mace-off-transferable-organic-force-fields)
+ - [Example usage in ASE](#example-usage-in-ase-1)
+ - [MACE-Polar: Electrostatics foundation models](#mace-polar-electrostatics-foundation-models)
+ - [Finetuning foundation models](#finetuning-foundation-models)
+ - [Latest recommended foundation models](#latest-recommended-foundation-models)
+ - [Caching](#caching)
+ - [What changes in MACE v1.0](#what-changes-in-mace-v10)
+ - [Development](#development)
+ - [Contributing](#contributing)
+ - [References](#references)
+ - [Contact](#contact)
+ - [License](#license)
 
 ## About MACE
 
@@ -107,29 +107,29 @@ To train a MACE model, you can use the `mace_run_train` script, which should be 
 
 ```sh
 mace_run_train \
-    --name="MACE_model" \
-    --train_file="train.xyz" \
-    --valid_fraction=0.05 \
-    --test_file="test.xyz" \
-    --config_type_weights='{"Default":1.0}' \
-    --E0s='{1:-13.663181292231226, 6:-1029.2809654211628, 7:-1484.1187695035828, 8:-2042.0330099956639}' \
-    --model="MACE" \
-    --hidden_irreps='128x0e + 128x1o' \
-    --r_max=5.0 \
-    --batch_size=10 \
-    --max_num_epochs=1500 \
-    --stage_two \
-    --start_stage_two=1200 \
-    --ema \
-    --ema_decay=0.99 \
-    --amsgrad \
-    --restart_latest \
-    --device=cuda \
+ --name="MACE_model" \
+ --train_file="train.xyz" \
+ --valid_fraction=0.05 \
+ --test_file="test.xyz" \
+ --config_type_weights='{"Default":1.0}' \
+ --E0s='{1:-13.663181292231226, 6:-1029.2809654211628, 7:-1484.1187695035828, 8:-2042.0330099956639}' \
+ --model="MACE" \
+ --hidden_irreps='128x0e + 128x1o' \
+ --r_max=5.0 \
+ --batch_size=10 \
+ --max_num_epochs=1500 \
+ --stage_two \
+ --start_stage_two=1200 \
+ --ema \
+ --ema_decay=0.99 \
+ --amsgrad \
+ --restart_latest \
+ --device=cuda \
 ```
 
 To give a specific validation set, use the argument `--valid_file`. To set a larger batch size for evaluating the validation set, specify `--valid_batch_size`.
 
-To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the     `--num_channels=128` and `--max_L=1`keys.
+To control the model's size, you need to change `--hidden_irreps`. For most applications, the recommended default model size is `--hidden_irreps='256x0e'` (meaning 256 invariant messages) or `--hidden_irreps='128x0e + 128x1o'`. If the model is not accurate enough, you can include higher order features, e.g., `128x0e + 128x1o + 128x2e`, or increase the number of channels to `256`. It is also possible to specify the model using the `--num_channels=128` and `--max_L=1`keys.
 
 It is usually preferred to add the isolated atoms to the training set, rather than reading in their energies through the command line like in the example above. To label them in the training set, set `config_type=IsolatedAtom` in their info fields. 
 
@@ -169,11 +169,11 @@ max_num_epochs: 1500
 device: cpu
 test_file: test.xyz
 E0s:
-  41: -1029.2809654211628
-  38: -1484.1187695035828
-  8: -2042.0330099956639
+ 41: -1029.2809654211628
+ 38: -1484.1187695035828
+ 8: -2042.0330099956639
 config_type_weights:
-  Default: 1.0
+ Default: 1.0
 
 ```
 
@@ -185,9 +185,9 @@ To evaluate your MACE model on an XYZ file, run the `mace_eval_configs`:
 
 ```sh
 mace_eval_configs \
-    --configs="your_configs.xyz" \
-    --model="your_model.model" \
-    --output="./your_output.xyz"
+ --configs="your_configs.xyz" \
+ --model="your_model.model" \
+ --output="./your_output.xyz"
 ```
 
 ## Tutorials
@@ -211,43 +211,43 @@ If you have a large dataset that might not fit into the GPU memory it is recomme
 ```sh
 mkdir processed_data
 python ./mace/scripts/preprocess_data.py \
-    --train_file="/path/to/train_large.xyz" \
-    --valid_fraction=0.05 \
-    --test_file="/path/to/test_large.xyz" \
-    --atomic_numbers="[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]" \
-    --r_max=4.5 \
-    --h5_prefix="processed_data/" \
-    --compute_statistics \
-    --E0s="average" \
-    --seed=123 \
+ --train_file="/path/to/train_large.xyz" \
+ --valid_fraction=0.05 \
+ --test_file="/path/to/test_large.xyz" \
+ --atomic_numbers="[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]" \
+ --r_max=4.5 \
+ --h5_prefix="processed_data/" \
+ --compute_statistics \
+ --E0s="average" \
+ --seed=123 \
 ```
 
 To see all options and a little description of them run `python ./mace/scripts/preprocess_data.py --help` . The script will create a number of HDF5 files in the `processed_data` folder which can be used for training. There will be one folder for training, one for validation and a separate one for each `config_type` in the test set. To train the model use the `run_train.py` script as follows:
 
 ```sh
 python ./mace/scripts/run_train.py \
-    --name="MACE_on_big_data" \
-    --num_workers=16 \
-    --train_file="./processed_data/train.h5" \
-    --valid_file="./processed_data/valid.h5" \
-    --test_dir="./processed_data" \
-    --statistics_file="./processed_data/statistics.json" \
-    --model="ScaleShiftMACE" \
-    --num_interactions=2 \
-    --num_channels=128 \
-    --max_L=1 \
-    --correlation=3 \
-    --batch_size=32 \
-    --valid_batch_size=32 \
-    --max_num_epochs=100 \
-    --stage_two \
-    --start_stage_two=60 \
-    --ema \
-    --ema_decay=0.99 \
-    --amsgrad \
-    --error_table='PerAtomMAE' \
-    --device=cuda \
-    --seed=123 \
+ --name="MACE_on_big_data" \
+ --num_workers=16 \
+ --train_file="./processed_data/train.h5" \
+ --valid_file="./processed_data/valid.h5" \
+ --test_dir="./processed_data" \
+ --statistics_file="./processed_data/statistics.json" \
+ --model="ScaleShiftMACE" \
+ --num_interactions=2 \
+ --num_channels=128 \
+ --max_L=1 \
+ --correlation=3 \
+ --batch_size=32 \
+ --valid_batch_size=32 \
+ --max_num_epochs=100 \
+ --stage_two \
+ --start_stage_two=60 \
+ --ema \
+ --ema_decay=0.99 \
+ --amsgrad \
+ --error_table='PerAtomMAE' \
+ --device=cuda \
+ --seed=123 \
 ```
 
 ## Weights and Biases for experiment tracking
@@ -267,17 +267,17 @@ Foundation models are a rapidly evolving field. Please look at the [MACE-MP GitH
 
 ### Latest Recommended Foundation Models
 
-| Model Name           | Elements Covered | Training Dataset | Level of Theory     | Target System     | Model Size                                                                                                                                                                                                                                                                                                                                                                        | GitHub Release | Notes                                                              | License |
+| Model Name | Elements Covered | Training Dataset | Level of Theory | Target System | Model Size | GitHub Release | Notes | License |
 | -------------------- | ---------------- | ---------------- | ------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------ | ------- |
-| MACE-MP-0a           | 89               | MPTrj            | DFT (PBE+U)         | Materials         | [small](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model), [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model), [large](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0/2024-01-07-mace-128-L2_epoch-199.model) | >=v0.3.6       | Initial release of foundation model.                               | MIT     |
-| MACE-MP-0b3          | 89               | MPTrj            | DFT (PBE+U)         | Materials         | [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b3/mace-mp-0b3-medium.model)                                                                                                                                                                                                                                                                      | >=v0.3.10      | Improved high pressure stability and reference energies.           | MIT     |
-| MACE-MPA-0           | 89               | MPTrj + sAlex    | DFT (PBE+U)         | Materials         | [medium-mpa-0](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model)                                                                                                                                                                                                                                                                  | >=v0.3.10      | Improved accuracy for materials, improved high pressure stability. | MIT     |
-| MACE-OMAT-0          | 89               | OMAT             | DFT (PBE+U) VASP 54 | Materials         | [medium-omat-0](https://github.com/ACEsuit/mace-foundations/releases/download/mace_omat_0/mace-omat-0-medium.model)                                                                                                                                                                                                                                                               | >=v0.3.10      |                                                                    | ASL     |
-| MACE-OFF23           | 10               | SPICE v1         | DFT (wB97M+D3)      | Organic Chemistry | [small](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model), [medium](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model), [large](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model)                                                                                                    | >=v0.3.6       | Initial release covering neutral organic chemistry.                | ASL     |
-| MACE-MATPES-PBE-0    | 89               | MATPES-PBE       | DFT (PBE)           | Materials         | [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-pbe-omat-ft.model)                                                                                                                                                                                                                                                               | >=v0.3.10      | No +U correction.                                                  | ASL     |
-| MACE-MATPES-r2SCAN-0 | 89               | MATPES-r2SCAN    | DFT (r2SCAN)        | Materials         | [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-r2scan-omat-ft.model)                                                                                                                                                                                                                                                            | >=v0.3.10      | Better functional for materials.                                   | ASL     |
-| MACE-OMOL-0 | 89               | OMOL    | DFT (wB97M-VV10)        | Molecules/Transition metals/Cations         | [large](https://github.com/ACEsuit/mace-foundations/releases/download/mace_omol_0/MACE-omol-0-extra-large-1024.model)                                                                                                                                                                                                                                                           | >=v0.3.14      | Charge/Spin embedding, very good molecular accuracy.                                   | ASL     |
-| MACE-MH-0/1 | 89               | OMAT/OMOL/OC20/MATPES    | DFT (PBE/R2SCAN/wB97M-VV10)        | Inorganic crystals, molecules and surfaces. [More info.](https://huggingface.co/mace-foundations/mace-mh-1)         | [mh-0](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-0.model) [mh-1](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-1.model)                                                                                                                                                                                                                                                           | >=v0.3.14      | Very good cross domain performance on surfaces/bulk/molecules.   | ASL     |
+| MACE-MP-0a | 89 | MPTrj | DFT (PBE+U) | Materials | [small](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0/2023-12-10-mace-128-L0_energy_epoch-249.model), [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model), [large](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0/2024-01-07-mace-128-L2_epoch-199.model) | >=v0.3.6 | Initial release of foundation model. | MIT |
+| MACE-MP-0b3 | 89 | MPTrj | DFT (PBE+U) | Materials | [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b3/mace-mp-0b3-medium.model) | >=v0.3.10 | Improved high pressure stability and reference energies. | MIT |
+| MACE-MPA-0 | 89 | MPTrj + sAlex | DFT (PBE+U) | Materials | [medium-mpa-0](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model) | >=v0.3.10 | Improved accuracy for materials, improved high pressure stability. | MIT |
+| MACE-OMAT-0 | 89 | OMAT | DFT (PBE+U) VASP 54 | Materials | [medium-omat-0](https://github.com/ACEsuit/mace-foundations/releases/download/mace_omat_0/mace-omat-0-medium.model) | >=v0.3.10 | | ASL |
+| MACE-OFF23 | 10 | SPICE v1 | DFT (wB97M+D3) | Organic Chemistry | [small](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model), [medium](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_medium.model), [large](https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_large.model) | >=v0.3.6 | Initial release covering neutral organic chemistry. | ASL |
+| MACE-MATPES-PBE-0 | 89 | MATPES-PBE | DFT (PBE) | Materials | [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-pbe-omat-ft.model) | >=v0.3.10 | No +U correction. | ASL |
+| MACE-MATPES-r2SCAN-0 | 89 | MATPES-r2SCAN | DFT (r2SCAN) | Materials | [medium](https://github.com/ACEsuit/mace-foundations/releases/download/mace_matpes_0/MACE-matpes-r2scan-omat-ft.model) | >=v0.3.10 | Better functional for materials. | ASL |
+| MACE-OMOL-0 | 89 | OMOL | DFT (wB97M-VV10) | Molecules/Transition metals/Cations | [large](https://github.com/ACEsuit/mace-foundations/releases/download/mace_omol_0/MACE-omol-0-extra-large-1024.model) | >=v0.3.14 | Charge/Spin embedding, very good molecular accuracy. | ASL |
+| MACE-MH-0/1 | 89 | OMAT/OMOL/OC20/MATPES | DFT (PBE/R2SCAN/wB97M-VV10) | Inorganic crystals, molecules and surfaces. [More info.](https://huggingface.co/mace-foundations/mace-mh-1) | [mh-0](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-0.model) [mh-1](https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/mace-mh-1.model) | >=v0.3.14 | Very good cross domain performance on surfaces/bulk/molecules. | ASL |
 
 
 ### MACE-MP: Materials Project Force Fields
@@ -332,24 +332,24 @@ To finetune one of the mace-mp-0 foundation model, you can use the `mace_run_tra
 
 ```sh
 mace_run_train \
-  --name="MACE" \
-  --foundation_model="small" \
-  --train_file="train.xyz" \
-  --valid_fraction=0.05 \
-  --test_file="test.xyz" \
-  --energy_weight=1.0 \
-  --forces_weight=1.0 \
-  --E0s="average" \
-  --lr=0.01 \
-  --scaling="rms_forces_scaling" \
-  --batch_size=2 \
-  --max_num_epochs=6 \
-  --ema \
-  --ema_decay=0.99 \
-  --amsgrad \
-  --default_dtype="float32" \
-  --device=cuda \
-  --seed=3
+ --name="MACE" \
+ --foundation_model="small" \
+ --train_file="train.xyz" \
+ --valid_fraction=0.05 \
+ --test_file="test.xyz" \
+ --energy_weight=1.0 \
+ --forces_weight=1.0 \
+ --E0s="average" \
+ --lr=0.01 \
+ --scaling="rms_forces_scaling" \
+ --batch_size=2 \
+ --max_num_epochs=6 \
+ --ema \
+ --ema_decay=0.99 \
+ --amsgrad \
+ --default_dtype="float32" \
+ --device=cuda \
+ --seed=3
 ```
 
 Other options are "medium" and "large", or the path to a foundation model.
@@ -432,8 +432,8 @@ turn those skips into failures. Network downloads are opt-in via
 `MACE_CI_ALLOW_NETWORK=1`.
 
 ```bash
-pytest tests/unit                             # quick check
-pytest tests -m "not slow and not network"    # smoke over everything runnable
+pytest tests/unit # quick check
+pytest tests -m "not slow and not network" # smoke over everything runnable
 ```
 
 Every CI test job runs through the `.github/actions/run-tests` composite
@@ -458,23 +458,23 @@ If you use this code, please cite our papers:
 
 ```bibtex
 @inproceedings{Batatia2022mace,
-  title={{MACE}: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields},
-  author={Ilyes Batatia and David Peter Kovacs and Gregor N. C. Simm and Christoph Ortner and Gabor Csanyi},
-  booktitle={Advances in Neural Information Processing Systems},
-  editor={Alice H. Oh and Alekh Agarwal and Danielle Belgrave and Kyunghyun Cho},
-  year={2022},
-  url={https://openreview.net/forum?id=YPpSngE-ZU}
+ title={{MACE}: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields},
+ author={Ilyes Batatia and David Peter Kovacs and Gregor N. C. Simm and Christoph Ortner and Gabor Csanyi},
+ booktitle={Advances in Neural Information Processing Systems},
+ editor={Alice H. Oh and Alekh Agarwal and Danielle Belgrave and Kyunghyun Cho},
+ year={2022},
+ url={https://openreview.net/forum?id=YPpSngE-ZU}
 }
 
 @misc{Batatia2022Design,
-  title = {The Design Space of E(3)-Equivariant Atom-Centered Interatomic Potentials},
-  author = {Batatia, Ilyes and Batzner, Simon and Kov{\'a}cs, D{\'a}vid P{\'e}ter and Musaelian, Albert and Simm, Gregor N. C. and Drautz, Ralf and Ortner, Christoph and Kozinsky, Boris and Cs{\'a}nyi, G{\'a}bor},
-  year = {2022},
-  number = {arXiv:2205.06643},
-  eprint = {2205.06643},
-  eprinttype = {arxiv},
-  doi = {10.48550/arXiv.2205.06643},
-  archiveprefix = {arXiv}
+ title = {The Design Space of E(3)-Equivariant Atom-Centered Interatomic Potentials},
+ author = {Batatia, Ilyes and Batzner, Simon and Kov{\'a}cs, D{\'a}vid P{\'e}ter and Musaelian, Albert and Simm, Gregor N. C. and Drautz, Ralf and Ortner, Christoph and Kozinsky, Boris and Cs{\'a}nyi, G{\'a}bor},
+ year = {2022},
+ number = {arXiv:2205.06643},
+ eprint = {2205.06643},
+ eprinttype = {arxiv},
+ doi = {10.48550/arXiv.2205.06643},
+ archiveprefix = {arXiv}
  }
 ```
 
