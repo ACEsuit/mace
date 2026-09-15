@@ -24,6 +24,7 @@ from mace.data import (
     get_neighborhood,
     save_configurations_as_HDF5,
 )
+from mace.data.neighborhood import _aperiodic_search_directions
 from mace.tools import AtomicNumberTable, torch_geometric
 
 mace_path = REPO_ROOT
@@ -317,6 +318,132 @@ def test_partial_pbc_is_translation_invariant_along_the_vacuum_axis(offset):
         canonical_edges(ref_index, ref_unit_shifts),
         context=f"slab displaced {offset} A along vacuum",
     )
+
+
+# A slab whose periodic vectors reach out of the plane they span. The vacuum
+# axis of such a cell is not a Cartesian axis, which is what the search box has
+# to be built along.
+_OUT_OF_PLANE_SLAB_CELL = np.array(
+    [[3.1, 0.2, 0.1], [0.9, 2.8, -0.2], [0.0, 0.0, 0.0]]
+)
+
+
+@pytest.mark.parametrize("axis", [0, 1, 2])
+@pytest.mark.parametrize("offset", [0.0, 300.0])
+def test_tilted_slab_is_translation_invariant_along_every_axis(axis, offset):
+    # Moving the atoms into the box is only half of it. If the box is built
+    # along a Cartesian axis that a lattice vector reaches into, a periodic
+    # image carries them straight back out, so a displacement along a PERIODIC
+    # direction still corrupted the edge vectors even once the vacuum axis
+    # itself was handled.
+    cell = _OUT_OF_PLANE_SLAB_CELL
+    pbc = (True, True, False)
+    cutoff = 5.0
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0.0, 1.0, size=(6, 2)) @ cell[:2]
+    positions[:, 2] += rng.uniform(-0.3, 0.3, size=6)
+    positions[:, axis] += offset
+
+    edge_index, shifts, unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(edge_index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context=f"axis {axis} displaced {offset} A",
+    )
+    lengths = np.linalg.norm(
+        positions[edge_index[1]] - positions[edge_index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff), f"max |D| = {lengths.max():.3f} A"
+
+
+@pytest.mark.parametrize("angle", [0.0, 30.0, 45.0, 60.0])
+def test_rotated_1d_cell_is_correct_at_the_origin(angle):
+    # A one-dimensional cell leaves two non-periodic axes for a periodic image
+    # to push an atom out of, so this needs no displacement at all to go wrong:
+    # past roughly 45 degrees off the Cartesian axis the edge vectors came back
+    # three times the cutoff with the chain sitting at the origin.
+    theta = np.radians(angle)
+    a_1 = 3.0 * np.array([np.cos(theta), np.sin(theta), 0.0])
+    cell = np.array([a_1, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    pbc = (True, False, False)
+    # Not a whole multiple of |a_1|, so no self-image sits exactly on the
+    # cutoff where matscipy and the oracle can round apart.
+    cutoff = 5.5
+    rng = np.random.default_rng(11)
+    positions = np.linspace(0.0, 1.0, 6)[:, None] * a_1 + rng.uniform(
+        -0.4, 0.4, size=(6, 3)
+    )
+
+    edge_index, shifts, unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(edge_index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context=f"lattice vector {angle} deg off the axis",
+    )
+    lengths = np.linalg.norm(
+        positions[edge_index[1]] - positions[edge_index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff), f"max |D| = {lengths.max():.3f} A"
+
+
+def test_vacuum_row_is_orthogonal_to_the_periodic_vectors():
+    # The third row of this cell is all zeros, so the fictitious one is what
+    # comes back, and what comes back is read by more than the search: the
+    # stress divides by its determinant and the electrostatics use it as their
+    # k-space box. Along z the real separation between periodic images is only
+    # its projection on the surface normal, which is less vacuum than the
+    # padding asked for and a volume smaller than the slab's.
+    cell = _OUT_OF_PLANE_SLAB_CELL
+    pbc = (True, True, False)
+    cutoff = 5.0
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0.0, 1.0, size=(6, 2)) @ cell[:2]
+    positions[:, 2] += rng.uniform(-0.3, 0.3, size=6)
+
+    _, _, _, returned = get_neighborhood(positions, cutoff=cutoff, pbc=pbc, cell=cell)
+
+    assert np.allclose(returned[:2], cell[:2])  # periodic rows are the physical ones
+    assert abs(returned[2] @ cell[0]) < 1e-9
+    assert abs(returned[2] @ cell[1]) < 1e-9
+    # and the gap it leaves, measured along the surface normal, is the full
+    # padding rather than a projection of it
+    normal = np.cross(cell[0], cell[1])
+    normal = normal / np.linalg.norm(normal)
+    spread = positions @ normal
+    assert np.isclose(
+        abs(returned[2] @ normal), spread.max() - spread.min() + 2 * cutoff + 1
+    )
+
+
+@pytest.mark.parametrize(
+    "pbc,cell",
+    [
+        ((False, False, False), np.zeros((3, 3))),
+        ((True, True, False), np.diag([3.0, 3.0, 20.0])),
+        ((True, True, False), np.array([[3.0, 0.0, 0.0], [1.5, 2.598, 0.0], [0.0, 0.0, 25.0]])),
+        ((False, False, True), np.diag([0.0, 0.0, 2.5])),
+    ],
+)
+def test_ordinary_cells_keep_their_cartesian_search_directions(pbc, cell):
+    # The direction is only rotated when a periodic vector reaches into a
+    # non-periodic axis. Everything built the usual way, molecules included,
+    # keeps the axis it had, so no returned cell and no neighbour list moves
+    # for them.
+    directions = _aperiodic_search_directions(pbc, cell)
+    identity = np.identity(3)
+    assert set(directions) == {dim for dim in range(3) if not pbc[dim]}
+    for dim, direction in directions.items():
+        assert np.allclose(direction, identity[dim])
 
 
 _NONORTHO_CELLS = {
