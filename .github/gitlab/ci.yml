@@ -113,10 +113,24 @@ stages:
     # and the GPU cases are the by-hand reproduction recipe recorded in that
     # file's module docstring. Removing this clause is not the way to fix that;
     # a separate, non-gating benchmark job would be.
+    # `tests/architecture` is ignored, and the reason is an install rather than
+    # a marker. That suite needs BOTH trees importable: the import contracts
+    # resolve each root package on the filesystem, and the observable
+    # completeness test imports `mace_core`. This job installs the legacy
+    # distribution only, so the directory fails at *collection*, before any
+    # marker expression gets to deselect it -- a marker on those tests would
+    # therefore not help. It is not lost coverage: `tests/architecture` is
+    # gated on every pull request by the `architecture` job in ci-core.yaml,
+    # which is the one place both trees are installed editable, and nothing in
+    # it is gpu-marked.
+    #
+    # Any later suite that needs the v1 stack belongs on this line too.
+    # `tests/parity` is the next one.
     - >
       MACE_REQUIRE_CAPS="$REQUIRE_CAPS"
       MACE_CI_ALLOW_NETWORK=1
       python -m pytest tests
+      --ignore=tests/architecture
       -m "($MARKER_EXPR) and not benchmark"
       -n 2 --timeout 1200 -ra
 

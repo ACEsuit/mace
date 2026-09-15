@@ -316,6 +316,11 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           tests: tests
+          # See the same flag in .github/gitlab/ci.yml: `tests/architecture`
+          # needs both trees importable and this job installs the legacy one,
+          # so the directory fails at collection rather than being deselected.
+          # It is gated per pull request by ci-core's `architecture` job.
+          extra-args: --ignore=tests/architecture
           markers: not gpu and not benchmark
           require-caps: network,cueq,polar,les,torchsim,schedulefree,magnetic,wandb
           allow-network: "true"
@@ -504,6 +509,9 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           tests: tests
+          # Same reason as coverage-full above: this job installs `dev` alone,
+          # so `tests/architecture` cannot be collected here.
+          extra-args: --ignore=tests/architecture
           allow-network: "true"
           store-durations: "true"
           timeout: "1200"
