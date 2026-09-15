@@ -24,6 +24,7 @@ from mace.data import (
     get_neighborhood,
     save_configurations_as_HDF5,
 )
+from mace.data.neighborhood import _aperiodic_search_directions
 from mace.tools import AtomicNumberTable, torch_geometric
 
 mace_path = REPO_ROOT
@@ -317,6 +318,353 @@ def test_partial_pbc_is_translation_invariant_along_the_vacuum_axis(offset):
         canonical_edges(ref_index, ref_unit_shifts),
         context=f"slab displaced {offset} A along vacuum",
     )
+
+
+# A slab whose periodic vectors reach out of the plane they span. The vacuum
+# axis of such a cell is not a Cartesian axis, which is what the search box has
+# to be built along.
+_OUT_OF_PLANE_SLAB_CELL = np.array(
+    [[3.1, 0.2, 0.1], [0.9, 2.8, -0.2], [0.0, 0.0, 0.0]]
+)
+
+
+@pytest.mark.parametrize("axis", [0, 1, 2])
+@pytest.mark.parametrize("offset", [0.0, 300.0])
+def test_tilted_slab_is_translation_invariant_along_every_axis(axis, offset):
+    # Moving the atoms into the box is only half of it. If the box is built
+    # along a Cartesian axis that a lattice vector reaches into, a periodic
+    # image carries them straight back out, so a displacement along a PERIODIC
+    # direction still corrupted the edge vectors even once the vacuum axis
+    # itself was handled.
+    cell = _OUT_OF_PLANE_SLAB_CELL
+    pbc = (True, True, False)
+    cutoff = 5.0
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0.0, 1.0, size=(6, 2)) @ cell[:2]
+    positions[:, 2] += rng.uniform(-0.3, 0.3, size=6)
+    positions[:, axis] += offset
+
+    edge_index, shifts, unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(edge_index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context=f"axis {axis} displaced {offset} A",
+    )
+    lengths = np.linalg.norm(
+        positions[edge_index[1]] - positions[edge_index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff), f"max |D| = {lengths.max():.3f} A"
+
+
+@pytest.mark.parametrize("angle", [0.0, 30.0, 45.0, 60.0])
+def test_rotated_1d_cell_is_correct_at_the_origin(angle):
+    # A one-dimensional cell leaves two non-periodic axes for a periodic image
+    # to push an atom out of, so this needs no displacement at all to go wrong:
+    # past roughly 45 degrees off the Cartesian axis the edge vectors came back
+    # three times the cutoff with the chain sitting at the origin.
+    theta = np.radians(angle)
+    a_1 = 3.0 * np.array([np.cos(theta), np.sin(theta), 0.0])
+    cell = np.array([a_1, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    pbc = (True, False, False)
+    # Not a whole multiple of |a_1|, so no self-image sits exactly on the
+    # cutoff where matscipy and the oracle can round apart.
+    cutoff = 5.5
+    rng = np.random.default_rng(11)
+    positions = np.linspace(0.0, 1.0, 6)[:, None] * a_1 + rng.uniform(
+        -0.4, 0.4, size=(6, 3)
+    )
+
+    edge_index, shifts, unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(edge_index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context=f"lattice vector {angle} deg off the axis",
+    )
+    lengths = np.linalg.norm(
+        positions[edge_index[1]] - positions[edge_index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff), f"max |D| = {lengths.max():.3f} A"
+
+
+def test_vacuum_row_is_orthogonal_to_the_periodic_vectors():
+    # The third row of this cell is all zeros, so the fictitious one is what
+    # comes back, and what comes back is read by more than the search: the
+    # stress divides by its determinant and the electrostatics use it as their
+    # k-space box. Along z the real separation between periodic images is only
+    # its projection on the surface normal, which is less vacuum than the
+    # padding asked for and a volume smaller than the slab's.
+    cell = _OUT_OF_PLANE_SLAB_CELL
+    pbc = (True, True, False)
+    cutoff = 5.0
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0.0, 1.0, size=(6, 2)) @ cell[:2]
+    positions[:, 2] += rng.uniform(-0.3, 0.3, size=6)
+
+    _, _, _, returned = get_neighborhood(positions, cutoff=cutoff, pbc=pbc, cell=cell)
+
+    assert np.allclose(returned[:2], cell[:2])  # periodic rows are the physical ones
+    assert abs(returned[2] @ cell[0]) < 1e-9
+    assert abs(returned[2] @ cell[1]) < 1e-9
+    # and the gap it leaves, measured along the surface normal, is the full
+    # padding rather than a projection of it
+    normal = np.cross(cell[0], cell[1])
+    normal = normal / np.linalg.norm(normal)
+    spread = positions @ normal
+    assert np.isclose(
+        abs(returned[2] @ normal), spread.max() - spread.min() + 2 * cutoff + 1
+    )
+
+
+@pytest.mark.parametrize(
+    "pbc,cell",
+    [
+        ((False, False, False), np.zeros((3, 3))),
+        ((True, True, False), np.diag([3.0, 3.0, 20.0])),
+        ((True, True, False), np.array([[3.0, 0.0, 0.0], [1.5, 2.598, 0.0], [0.0, 0.0, 25.0]])),
+        ((False, False, True), np.diag([0.0, 0.0, 2.5])),
+    ],
+)
+def test_ordinary_cells_keep_their_cartesian_search_directions(pbc, cell):
+    # The direction is only rotated when a periodic vector reaches into a
+    # non-periodic axis. Everything built the usual way, molecules included,
+    # keeps the axis it had, so no returned cell and no neighbour list moves
+    # for them.
+    directions = _aperiodic_search_directions(pbc, cell)
+    identity = np.identity(3)
+    assert set(directions) == {dim for dim in range(3) if not pbc[dim]}
+    for dim, direction in directions.items():
+        assert np.allclose(direction, identity[dim])
+
+
+# Cells the search box has to survive, from mildly sheared to barely a box:
+# sheared in the periodic plane, tilted out of it by three growing amounts, a
+# 20 degree acute angle, the vacuum on an axis other than z, and one-dimensional
+# cells whose single lattice vector points nowhere near an axis. What breaks a
+# skewed cell is a rigid translation, so each is checked after several.
+_SKEWED_CELLS = {
+    "sheared_in_plane": (
+        (True, True, False),
+        np.array([[3.0, 0.0, 0.0], [2.4, 1.9, 0.0], [0.0, 0.0, 0.0]]),
+    ),
+    "tilted_slightly": (
+        (True, True, False),
+        np.array([[3.1, 0.2, 0.1], [0.9, 2.8, -0.2], [0.0, 0.0, 0.0]]),
+    ),
+    "tilted_strongly": (
+        (True, True, False),
+        np.array([[3.2, 0.0, 1.6], [0.0, 3.1, -1.6], [0.0, 0.0, 0.0]]),
+    ),
+    "tilted_extremely": (
+        (True, True, False),
+        np.array([[3.0, 0.4, 2.6], [0.5, 2.9, -2.4], [0.0, 0.0, 0.0]]),
+    ),
+    "acute_20_degrees": (
+        (True, True, False),
+        np.array([[3.0, 0.0, 0.0], [2.82, 1.03, 0.4], [0.0, 0.0, 0.0]]),
+    ),
+    "vacuum_along_x": (
+        (False, True, True),
+        np.array([[0.0, 0.0, 0.0], [0.4, 3.0, 0.6], [0.3, 1.1, 3.2]]),
+    ),
+    "one_dimensional_rotated": (
+        (True, False, False),
+        np.array([[1.5, 2.598, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
+    ),
+    "one_dimensional_off_every_axis": (
+        (True, False, False),
+        np.array([[1.8, 1.7, 1.6], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
+    ),
+    "aspect_1_to_20": (
+        (True, True, False),
+        np.array([[60.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 0.0]]),
+    ),
+    "aspect_1_to_20_and_tilted": (
+        (True, True, False),
+        np.array([[60.0, 0.0, 1.5], [0.0, 3.0, -1.5], [0.0, 0.0, 0.0]]),
+    ),
+}
+
+# Zero, one per axis, and one that is large and awkward on all three at once.
+_TRANSLATIONS = [
+    (0.0, 0.0, 0.0),
+    (37.0, 0.0, 0.0),
+    (0.0, -91.0, 0.0),
+    (0.0, 0.0, 55.0),
+    (410.0, -260.0, 730.0),
+]
+
+_PBC_PATTERNS = [
+    (False, False, False),
+    (True, False, False),
+    (False, False, True),
+    (True, True, False),
+    (False, True, True),
+    (True, True, True),
+]
+
+
+def _positions_in(cell, pbc, n_atoms=6, seed=3):
+    """Atoms spread over one repeat of the periodic directions, thin elsewhere."""
+    rng = np.random.default_rng(seed)
+    periodic = np.array([cell[dim] for dim in range(3) if pbc[dim]])
+    if len(periodic) == 0:
+        return rng.uniform(-2.0, 2.0, size=(n_atoms, 3))
+    positions = rng.uniform(0.0, 1.0, size=(n_atoms, len(periodic))) @ periodic
+    for dim in range(3):
+        if not pbc[dim]:
+            positions[:, dim] += rng.uniform(-0.4, 0.4, size=n_atoms)
+    return positions
+
+
+@pytest.mark.parametrize("cell_name", list(_SKEWED_CELLS))
+@pytest.mark.parametrize("translation", _TRANSLATIONS)
+def test_skewed_cells_are_translation_invariant(cell_name, translation):
+    pbc, cell = _SKEWED_CELLS[cell_name]
+    cutoff = 4.0
+    positions = _positions_in(cell, pbc) + np.array(translation, dtype=float)
+
+    edge_index, shifts, unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(edge_index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context=f"{cell_name} translated by {translation}",
+    )
+    lengths = np.linalg.norm(
+        positions[edge_index[1]] - positions[edge_index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff), f"max |D| = {lengths.max():.3f} A"
+
+
+def test_randomly_skewed_cells_match_the_oracle_after_translation():
+    # Breadth rather than named shapes. Random skew on every periodicity
+    # pattern, displaced far enough to leave any box anchored at the origin,
+    # each compared edge by edge against the brute-force reference.
+    rng = np.random.default_rng(20260914)
+    cutoff = 4.0
+    failures = []
+    for trial in range(120):
+        pbc = _PBC_PATTERNS[trial % len(_PBC_PATTERNS)]
+        cell = np.diag([3.0, 3.2, 3.4]) + rng.uniform(-1.2, 1.2, size=(3, 3))
+        for dim in range(3):
+            if not pbc[dim]:
+                cell[dim] = 0.0
+        positions = _positions_in(cell, pbc, seed=trial)
+        positions = positions + rng.choice([0.0, 13.0, -97.0, 500.0], size=3)
+        passed = cell if cell.any() else None
+
+        edge_index, _, unit_shifts, _ = get_neighborhood(
+            positions, cutoff=cutoff, pbc=pbc, cell=passed
+        )
+        ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+            positions, cutoff, pbc, passed
+        )
+        if set(canonical_edges(edge_index, unit_shifts)) != set(
+            canonical_edges(ref_index, ref_unit_shifts)
+        ):
+            failures.append((trial, pbc, np.round(cell, 3).tolist()))
+    assert not failures, f"{len(failures)} of 120 disagree, first: {failures[:3]}"
+
+
+# Skew has no natural ceiling. Nested sampling walks the cell shape and reaches
+# aspect ratios of 1:20 and beyond, so the tests below drive it far past
+# anything a builder produces, using a check that has no ceiling either.
+_SHEAR_FACTORS = [1, 5, 20, 50, 200]
+
+_WELL_CONDITIONED_CELL = np.array(
+    [[3.4, 0.0, 0.0], [0.6, 3.1, 0.0], [0.2, 0.4, 3.3]]
+)
+
+
+@pytest.mark.parametrize("shear", _SHEAR_FACTORS)
+@pytest.mark.parametrize("pbc", [(True, True, True), (True, True, False)])
+def test_a_skewed_basis_for_the_same_lattice_gives_the_same_neighbours(shear, pbc):
+    """``a_2 -> k * a_1 + a_2`` is the same lattice written in a worse basis.
+
+    This needs no reference implementation, which is what lets it go as far as
+    the skew does: the neighbours of a lattice do not depend on the basis
+    chosen to name it, so the edge vectors must come back identical however
+    badly conditioned that basis is. The integer shifts legitimately differ,
+    since they count different vectors, so the comparison is on displacements.
+    """
+    cell = _WELL_CONDITIONED_CELL.copy()
+    if not all(pbc):
+        cell[2] = 0.0
+    rng = np.random.default_rng(7)
+    positions = rng.uniform(0.0, 1.0, size=(8, 3)) @ _WELL_CONDITIONED_CELL
+    cutoff = 5.0
+
+    def displacements(lattice):
+        edge_index, shifts, _, _ = get_neighborhood(
+            positions, cutoff=cutoff, pbc=pbc, cell=lattice
+        )
+        return canonical_edges_from_shifts(
+            edge_index, positions[edge_index[1]] - positions[edge_index[0]] + shifts
+        )
+
+    skewed = cell.copy()
+    skewed[1] = shear * cell[0] + cell[1]
+    assert displacements(skewed) == displacements(cell)
+
+
+def test_the_oracle_covers_a_heavily_sheared_cell():
+    """The reference has to survive the same skew, and it did not.
+
+    Its image range used to be searched for rather than computed: grown one
+    step at a time until two consecutive radii gave the same edge set. A
+    sheared cell needs a very different range on each axis, so that cubic
+    search can plateau on an incomplete set and stop. This cell made it return
+    a wrong reference with no error at all, which showed up as a false failure
+    of the code under test. The range is now derived from the reciprocal
+    lattice and is exact.
+    """
+    cell = np.array([[3.0, 0.0, 0.0], [20.0, 3.0, 0.0], [0.0, 20.0, 3.0]])
+    pbc = (True, True, True)
+    cutoff = 4.0
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0.0, 1.0, size=(6, 3)) @ cell
+
+    edge_index, shifts, unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(edge_index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context="cell sheared by 20 on two axes",
+    )
+    # every edge it reports is a real one, which is the half that needs no
+    # reference at all
+    lengths = np.linalg.norm(
+        positions[edge_index[1]] - positions[edge_index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff)
+
+
+def test_the_oracle_refuses_a_cell_it_cannot_cover():
+    # The exact bound can be enormous, and an oracle that quietly takes hours
+    # is no better than one that quietly lies. It raises instead.
+    cell = np.array([[3.0, 0.0, 0.0], [600.0, 3.0, 0.0], [0.0, 600.0, 3.0]])
+    with pytest.raises(RuntimeError, match="lattice images"):
+        brute_force_neighborhood(
+            np.zeros((2, 3)), 5.0, (True, True, True), cell
+        )
 
 
 _NONORTHO_CELLS = {

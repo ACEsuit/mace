@@ -1,7 +1,72 @@
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 from matscipy.neighbours import neighbour_list
+
+# A direction counts as free only if what is left of it after removing the
+# periodic span is a real direction rather than round-off.
+_DEGENERATE = 1e-8
+
+
+def _orthogonal_residual(
+    vector: np.ndarray, basis: list  # [3], list of orthonormal [3]
+) -> np.ndarray:
+    residual = np.array(vector, dtype=float)
+    for axis in basis:
+        residual = residual - (residual @ axis) * axis
+    return residual
+
+
+def _aperiodic_search_directions(
+    pbc: Tuple[bool, bool, bool],
+    cell: np.ndarray,  # [3, 3]
+) -> Dict[int, np.ndarray]:
+    """One unit vector per non-periodic axis, to build the fictitious box along.
+
+    Each is orthogonal to every periodic lattice vector, so no periodic image
+    can carry an atom along it. That is the property the search box needs: a
+    box the atoms can be moved out of gets them wrapped by matscipy, which
+    reports the wrap as a shift the caller's unwrapped positions know nothing
+    about. Along a Cartesian axis any lattice vector with a component there
+    does exactly that.
+
+    Whenever the Cartesian axis is already free, which covers every cell built
+    the usual way, it is the one returned, so the search and the returned cell
+    are unchanged for those.
+    """
+    aperiodic = [dim for dim in range(3) if not pbc[dim]]
+    if not aperiodic:
+        return {}
+
+    identity = np.identity(3, dtype=float)
+    if not any(pbc):
+        # Nothing can move an atom anywhere, so every axis is free. Worth its
+        # own line: it is the molecule case, and it is the common one.
+        return {dim: identity[dim] for dim in aperiodic}
+    # Orthonormal basis of the directions a periodic image can move an atom
+    # along. The non-periodic directions are then chosen outside its span, and
+    # each is added to it so two of them cannot come out parallel.
+    spanned: list = []
+    for dim in range(3):
+        if not pbc[dim]:
+            continue
+        residual = _orthogonal_residual(cell[dim], spanned)
+        scale = max(float(np.linalg.norm(cell[dim])), 1.0)
+        if np.linalg.norm(residual) > _DEGENERATE * scale:
+            spanned.append(residual / np.linalg.norm(residual))
+
+    directions: Dict[int, np.ndarray] = {}
+    for dim in aperiodic:
+        # The axis this row stands for first, then the other two as a fallback
+        # for a cell whose periodic vectors happen to span it.
+        for candidate in (identity[dim], identity[0], identity[1], identity[2]):
+            residual = _orthogonal_residual(candidate, spanned)
+            norm = float(np.linalg.norm(residual))
+            if norm > _DEGENERATE:
+                directions[dim] = residual / norm
+                spanned.append(directions[dim])
+                break
+    return directions
 
 
 def get_neighborhood(
@@ -20,20 +85,33 @@ def get_neighborhood(
     assert len(pbc) == 3 and all(isinstance(i, (bool, np.bool_)) for i in pbc)
     assert cell.shape == (3, 3)
 
-    identity = np.identity(3, dtype=float)
-
     # matscipy cannot bin atoms along a non-periodic axis, so we blow up the
-    # cell there just for the neighbour search. Size it from the actual atom
-    # extent (+ cutoff padding) rather than from max(abs(positions)): the old
-    # `max(abs(positions)) * 5 * cutoff` depended on the absolute coordinate
-    # origin and produced huge cells, which blow up PolarMACE's k-space
-    # electrostatics into GPU OOM. Extent-based padding gives identical
-    # neighbour lists at a fraction of the volume.
+    # cell there just for the neighbour search. Two properties of that box
+    # matter, and it needs both.
+    #
+    # Its size comes from the atom extent (+ cutoff padding) rather than from
+    # max(abs(positions)): the old `max(abs(positions)) * 5 * cutoff` depended
+    # on the absolute coordinate origin and produced huge cells, which blow up
+    # PolarMACE's k-space electrostatics into GPU OOM. Extent-based padding
+    # gives identical neighbour lists at a fraction of the volume.
+    #
+    # Its direction is orthogonal to every periodic lattice vector rather than
+    # along a Cartesian axis, and the atoms are moved into it. Both halves are
+    # needed to make the neighbour list independent of where the caller put the
+    # structure: the offset handles a structure that starts outside the box,
+    # the direction stops a periodic image from carrying one back out.
+    search_directions = _aperiodic_search_directions(pbc, cell)
+    search_positions = np.array(positions, dtype=float, copy=True)
     extended_cell = np.array(cell, dtype=float, copy=True)
-    for dim in range(3):
-        if not pbc[dim]:
-            extent = positions[:, dim].max() - positions[:, dim].min()
-            extended_cell[dim, :] = (extent + 2 * cutoff + 1) * identity[dim, :]
+    for dim, direction in search_directions.items():
+        projection = search_positions @ direction
+        extent = projection.max() - projection.min()
+        extended_cell[dim, :] = (extent + 2 * cutoff + 1) * direction
+        # A cutoff of clearance rather than flush against the wall: on the wall
+        # matscipy pays for the boundary bins and the search measurably slows
+        # down. The offset is rigid, so it changes no interatomic distance, and
+        # the caller's positions are untouched.
+        search_positions -= (projection.min() - cutoff) * direction
 
     # The neighbour search uses the blown-up cell, but we must not *return* it
     # when any axis is periodic: stress later normalizes by det(cell), so a
@@ -58,16 +136,6 @@ def get_neighborhood(
                 cell[dim] = extended_cell[dim]
     else:
         cell = extended_cell
-
-    # The search box is anchored at the origin, so atoms must be moved into it
-    # along the non-periodic axes: matscipy wraps whatever lies outside and
-    # reports the wrap in unit_shifts, which downstream is added back to the
-    # *unwrapped* positions (D = r_j - r_i + S.cell). The offset is rigid, so it
-    # changes no distance, and the caller's positions are untouched.
-    search_positions = np.array(positions, dtype=float, copy=True)
-    for dim in range(3):
-        if not pbc[dim]:
-            search_positions[:, dim] -= search_positions[:, dim].min()
 
     sender, receiver, unit_shifts = neighbour_list(
         quantities="ijS",
