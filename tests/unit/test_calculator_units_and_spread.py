@@ -130,20 +130,22 @@ def test_the_default_conversions_change_nothing(water):
     assert explicit["forces"] == pytest.approx(plain["forces"])
 
 
+@pytest.mark.parametrize("energy_factor", [1.0, ENERGY_FACTOR])
+@pytest.mark.parametrize("length_factor", [1.0, LENGTH_FACTOR])
 @pytest.mark.parametrize("num_models", [1, 2])
-def test_hessian_follows_energy_conversion(water, num_models):
+def test_hessian_follows_unit_conversion(water, num_models, energy_factor, length_factor):
     """Convert each member's Hessian without changing the single/committee API."""
     previous = torch.get_default_dtype()
     torch.set_default_dtype(torch.float64)
     try:
         results = []
-        for factor in (1.0, ENERGY_FACTOR):
+        for energy, length in ((1.0, 1.0), (energy_factor, length_factor)):
             calc = MACECalculator(
                 models=[_tiny_model(seed) for seed in range(num_models)],
                 device="cpu",
                 default_dtype="float64",
-                energy_units_to_eV=factor,
-                length_units_to_A=1.0,
+                energy_units_to_eV=energy,
+                length_units_to_A=length,
             )
             result = calc.get_hessian(water)
             assert isinstance(result, np.ndarray if num_models == 1 else list)
@@ -152,7 +154,9 @@ def test_hessian_follows_energy_conversion(water, num_models):
             assert all(h.shape == (3 * len(water), len(water), 3) for h in members)
             results.append(members)
         for plain, converted in zip(*results):
-            np.testing.assert_allclose(converted, plain * ENERGY_FACTOR, atol=1e-10)
+            np.testing.assert_allclose(
+                converted, plain * energy_factor / length_factor**2, atol=1e-10
+            )
     finally:
         torch.set_default_dtype(previous)
 
@@ -161,6 +165,8 @@ def test_hessian_follows_energy_conversion(water, num_models):
 @pytest.mark.parametrize("num_models", [1, 2])
 def test_hessian_matches_calculator_force_derivative(water, energy_factor, num_models):
     """Use force differences to check units independently of Hessian scaling."""
+    # Keep length conversion at one: input coordinates are currently passed
+    # through to the model without rescaling.
     previous = torch.get_default_dtype()
     torch.set_default_dtype(torch.float64)
     try:
