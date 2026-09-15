@@ -17,7 +17,11 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = [
+    "numpy>=1.23",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

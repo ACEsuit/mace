@@ -30,7 +30,8 @@ packages/mace-core/
 │   ├── __init__.py                     # re-exports public types/config/registries; does NOT import heavy submodules
 │   ├── _version.py                     # contract version (semver of the weights format/spec)
 │   │
-│   ├── types.py                        # MACEOutputs (typed dataclass, replaces the get_outputs dict); GRAPH_SCHEMA + GraphInfo/GraphView (rfc-03 flat-dict contract)
+│   ├── outputs.py                      # MACEOutput (typed dataclass generic over the tensor type, replaces the get_outputs dict)
+│   ├── types.py                        # GRAPH_SCHEMA + GraphInfo/GraphView (rfc-03 flat-dict contract)
 │   ├── graph.py                        # flat-dict contract {node_attrs,edge_index,positions,batch,cell,shifts,...} + shape/dtype validation
 │   │
 │   ├── config/
@@ -46,15 +47,14 @@ packages/mace-core/
 │   │   ├── number_table.py             # AtomicNumberTable (reimplemented; mirror of tools/utils.py, without dragging in train.py)
 │   │   └── default_keys.py             # DefaultKeys (reimplemented; mirror of tools/default_keys.py)
 │   │
-│   ├── observables/
-│   │   ├── __init__.py                 # OBSERVABLE_REGISTRY (declarative: name → spec)
-│   │   ├── base.py                     # Observable protocol: output irreps, how it's derived (readout | autograd | grad-strain)
-│   │   ├── energy.py                   # Energy, SiteEnergy (readout+scatter_sum)
-│   │   ├── forces.py                   # Forces (=-dE/dx via autograd) — spec only, the physics is executed by mace_torch/mace_jax
-│   │   ├── stress.py                   # Stress, Virials (grad w.r.t. strain; sign convention PINNED here)
-│   │   ├── dipole.py                   # Dipole, AtomicDipole
-│   │   ├── polarizability.py           # Polarizability (dielectric/polar)
-│   │   └── hessian.py                  # Hessian (second derivative)
+│   ├── observables/                    # a property is a row in a declarations file, not a module per property
+│   │   ├── __init__.py                 # the public surface of the package
+│   │   ├── spec.py                     # InputSpec, ObservableSpec, DerivativeSpec, ObservableCatalogue (pydantic)
+│   │   ├── grammar.py                  # the irreps string grammar: parse + validate + dimension (no algebra)
+│   │   ├── derivatives.py              # d_<q>_d_<x> naming, and the three special cases with their signs
+│   │   └── defaults.py                 # loader for a declarations file
+│   ├── defaults/
+│   │   └── observables.yaml            # energy + its position and cell derivatives: the row every observable copies
 │   │
 │   ├── kernels/
 │   │   ├── protocol.py                 # KernelBackend Protocol, generic over TensorT: make_* factories + capabilities (§3.1)
@@ -493,10 +493,10 @@ silently wrong forces); it stays usable for inference (`supports_double_backward
 
 ### 3.2 A new observable (config only)
 
-- **Extender touches:** a `mace_core/observables/myobs.py` file with an `Observable` (declares output irreps and derivation mode: `readout` | `autograd(energy, wrt=positions)` | `grad_strain`) + `@register_observable("myobs")`.
-- **Core touched:** zero existing files (only the new module is added). The model exposes it automatically because `BaseMACE` iterates over `config.observables`; `MACEOutputs` is a dataclass with optional fields populated by name.
-- **Enabling it:** `ModelConfig(observables=["energy","forces","myobs"])`.
-- **Test:** `mace_core/tests/test_observable_registry.py` validates irreps/derivation consistency (pure); if it is autograd-derived, `tests/parity` verifies finite-diff.
+- **Extender touches:** a declarations file: one `ObservableSpec` row giving `name`, `irreps`, `per_atom`, `units`, `normalization`, `default_loss_weight`, and the declared inputs to differentiate against. No module, no decorator. A derivative is named by the rule `d_<q>_d_<x>`, with `forces`, `stress` and `magforces` as the three special cases, so asking for a derivative against a newly declared input needs no code either.
+- **Core touched:** zero files. The model exposes the row automatically because `BaseMACE` iterates over the declared observables; `MACEOutput` carries the six core fields and everything else by name in `extras`.
+- **Enabling it:** list it in the model config's observables, or point the config at a declarations file that extends `defaults/observables.yaml`.
+- **Test:** `packages/mace-core/tests/test_observables.py` validates the grammar and the derivative naming (pure); if it is autograd-derived, `tests/parity` verifies finite-diff.
 
 ### 3.3 A new loss / transform (plugin registry)
 
