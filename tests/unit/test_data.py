@@ -261,6 +261,64 @@ def test_nonperiodic_cell_is_extent_based():
     assert np.allclose(np.diag(cell_near), extent + 2 * cutoff + 1)
 
 
+@pytest.mark.parametrize("offset", [0.0, 100.0, -250.0])
+def test_aperiodic_edges_are_translation_invariant(offset):
+    # The test above pins the size of the fictitious cell; this pins the edges.
+    # A molecule far from the origin fell outside its own box and was wrapped,
+    # turning bonds into edge vectors many times the cutoff -- at an unchanged
+    # edge count, so nothing that counts edges notices.
+    rng = np.random.default_rng(7)
+    positions = rng.uniform(-4.0, 4.0, size=(12, 3))
+    cutoff = 5.0
+
+    ref_index, _, ref_unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=(False, False, False)
+    )
+    index, shifts, unit_shifts, _ = get_neighborhood(
+        positions + offset, cutoff=cutoff, pbc=(False, False, False)
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context=f"translated by {offset} A",
+    )
+    # With no periodic axis there is nothing to wrap around, so every shift must
+    # be zero, and D as the caller forms it must respect the cutoff.
+    assert not unit_shifts.any()
+    translated = positions + offset
+    lengths = np.linalg.norm(
+        translated[index[1]] - translated[index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff), f"max |D| = {lengths.max():.3f} A"
+
+
+@pytest.mark.parametrize("offset", [0.0, 75.0])
+def test_partial_pbc_is_translation_invariant_along_the_vacuum_axis(offset):
+    # Only non-periodic axes are offset, so this pins the other half of the fix:
+    # the periodic axes keep their own coordinates and their real wrap-around
+    # shifts, while a displacement along the vacuum axis changes nothing.
+    cell = np.diag([6.0, 6.0, 30.0])
+    pbc = (True, True, False)
+    rng = np.random.default_rng(5)
+    positions = rng.uniform(0.0, 6.0, size=(8, 3))
+    positions[:, 2] = rng.uniform(-0.5, 0.5, size=8)
+    cutoff = 3.5
+
+    ref_index, _, ref_unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    shifted = positions.copy()
+    shifted[:, 2] += offset
+    index, _, unit_shifts, _ = get_neighborhood(
+        shifted, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context=f"slab displaced {offset} A along vacuum",
+    )
+
+
 _NONORTHO_CELLS = {
     # in-plane periodic vectors are non-orthogonal; vacuum along the 3rd axis
     "hexagonal": np.array([[3.0, 0.0, 0.0], [1.5, 2.598, 0.0], [0.0, 0.0, 0.0]]),
