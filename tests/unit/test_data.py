@@ -446,6 +446,132 @@ def test_ordinary_cells_keep_their_cartesian_search_directions(pbc, cell):
         assert np.allclose(direction, identity[dim])
 
 
+# Cells the search box has to survive, from mildly sheared to barely a box:
+# sheared in the periodic plane, tilted out of it by three growing amounts, a
+# 20 degree acute angle, the vacuum on an axis other than z, and one-dimensional
+# cells whose single lattice vector points nowhere near an axis. What breaks a
+# skewed cell is a rigid translation, so each is checked after several.
+_SKEWED_CELLS = {
+    "sheared_in_plane": (
+        (True, True, False),
+        np.array([[3.0, 0.0, 0.0], [2.4, 1.9, 0.0], [0.0, 0.0, 0.0]]),
+    ),
+    "tilted_slightly": (
+        (True, True, False),
+        np.array([[3.1, 0.2, 0.1], [0.9, 2.8, -0.2], [0.0, 0.0, 0.0]]),
+    ),
+    "tilted_strongly": (
+        (True, True, False),
+        np.array([[3.2, 0.0, 1.6], [0.0, 3.1, -1.6], [0.0, 0.0, 0.0]]),
+    ),
+    "tilted_extremely": (
+        (True, True, False),
+        np.array([[3.0, 0.4, 2.6], [0.5, 2.9, -2.4], [0.0, 0.0, 0.0]]),
+    ),
+    "acute_20_degrees": (
+        (True, True, False),
+        np.array([[3.0, 0.0, 0.0], [2.82, 1.03, 0.4], [0.0, 0.0, 0.0]]),
+    ),
+    "vacuum_along_x": (
+        (False, True, True),
+        np.array([[0.0, 0.0, 0.0], [0.4, 3.0, 0.6], [0.3, 1.1, 3.2]]),
+    ),
+    "one_dimensional_rotated": (
+        (True, False, False),
+        np.array([[1.5, 2.598, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
+    ),
+    "one_dimensional_off_every_axis": (
+        (True, False, False),
+        np.array([[1.8, 1.7, 1.6], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
+    ),
+}
+
+# Zero, one per axis, and one that is large and awkward on all three at once.
+_TRANSLATIONS = [
+    (0.0, 0.0, 0.0),
+    (37.0, 0.0, 0.0),
+    (0.0, -91.0, 0.0),
+    (0.0, 0.0, 55.0),
+    (410.0, -260.0, 730.0),
+]
+
+_PBC_PATTERNS = [
+    (False, False, False),
+    (True, False, False),
+    (False, False, True),
+    (True, True, False),
+    (False, True, True),
+    (True, True, True),
+]
+
+
+def _positions_in(cell, pbc, n_atoms=6, seed=3):
+    """Atoms spread over one repeat of the periodic directions, thin elsewhere."""
+    rng = np.random.default_rng(seed)
+    periodic = np.array([cell[dim] for dim in range(3) if pbc[dim]])
+    if len(periodic) == 0:
+        return rng.uniform(-2.0, 2.0, size=(n_atoms, 3))
+    positions = rng.uniform(0.0, 1.0, size=(n_atoms, len(periodic))) @ periodic
+    for dim in range(3):
+        if not pbc[dim]:
+            positions[:, dim] += rng.uniform(-0.4, 0.4, size=n_atoms)
+    return positions
+
+
+@pytest.mark.parametrize("cell_name", list(_SKEWED_CELLS))
+@pytest.mark.parametrize("translation", _TRANSLATIONS)
+def test_skewed_cells_are_translation_invariant(cell_name, translation):
+    pbc, cell = _SKEWED_CELLS[cell_name]
+    cutoff = 4.0
+    positions = _positions_in(cell, pbc) + np.array(translation, dtype=float)
+
+    edge_index, shifts, unit_shifts, _ = get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    assert_neighbourhoods_match(
+        canonical_edges(edge_index, unit_shifts),
+        canonical_edges(ref_index, ref_unit_shifts),
+        context=f"{cell_name} translated by {translation}",
+    )
+    lengths = np.linalg.norm(
+        positions[edge_index[1]] - positions[edge_index[0]] + shifts, axis=-1
+    )
+    assert np.all(lengths < cutoff), f"max |D| = {lengths.max():.3f} A"
+
+
+def test_randomly_skewed_cells_match_the_oracle_after_translation():
+    # Breadth rather than named shapes. Random skew on every periodicity
+    # pattern, displaced far enough to leave any box anchored at the origin,
+    # each compared edge by edge against the brute-force reference.
+    rng = np.random.default_rng(20260914)
+    cutoff = 4.0
+    failures = []
+    for trial in range(120):
+        pbc = _PBC_PATTERNS[trial % len(_PBC_PATTERNS)]
+        cell = np.diag([3.0, 3.2, 3.4]) + rng.uniform(-1.2, 1.2, size=(3, 3))
+        for dim in range(3):
+            if not pbc[dim]:
+                cell[dim] = 0.0
+        positions = _positions_in(cell, pbc, seed=trial)
+        positions = positions + rng.choice([0.0, 13.0, -97.0, 500.0], size=3)
+        passed = cell if cell.any() else None
+
+        edge_index, _, unit_shifts, _ = get_neighborhood(
+            positions, cutoff=cutoff, pbc=pbc, cell=passed
+        )
+        ref_index, _, ref_unit_shifts = brute_force_neighborhood(
+            positions, cutoff, pbc, passed
+        )
+        if set(canonical_edges(edge_index, unit_shifts)) != set(
+            canonical_edges(ref_index, ref_unit_shifts)
+        ):
+            failures.append((trial, pbc, np.round(cell, 3).tolist()))
+    assert not failures, f"{len(failures)} of 120 disagree, first: {failures[:3]}"
+
+
 _NONORTHO_CELLS = {
     # in-plane periodic vectors are non-orthogonal; vacuum along the 3rd axis
     "hexagonal": np.array([[3.0, 0.0, 0.0], [1.5, 2.598, 0.0], [0.0, 0.0, 0.0]]),
