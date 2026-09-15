@@ -110,4 +110,9 @@ def test_extras_may_not_shadow_a_core_field(key):
 
 
 def test_a_name_that_is_not_a_core_field_is_fine_in_extras():
-    assert MACEOutput(extras={"node_energy": np.zeros(3)}).names() == ("node_energy",)
+    """Deliberately not a near-miss of a field name. `node_energy` would be a
+    bad example here: it is the legacy spelling of `node_energies`, so using it
+    would read as an endorsement of putting the per-atom energy in `extras`
+    while the field that owns it stays `None`. v1 renames that key instead."""
+    out = MACEOutput(extras={"latent_charges": np.zeros(3)})
+    assert out.names() == ("latent_charges",)

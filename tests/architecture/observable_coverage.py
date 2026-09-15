@@ -34,6 +34,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
 
+from mace_core.observables import derivative_name
+
 from tests.golden import harness, surface_scan
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -100,12 +102,19 @@ class Spec:
         set_by: What the model supplies. Required with ``irreps_pattern``,
             because "it depends on the model" is not an answer until it says on
             what.
+        renamed_to: The v1 name, when it differs from the legacy key. Empty
+            means the key survives as it is. It matters beyond tidiness: a
+            legacy spelling that almost matches a core field of ``MACEOutput``
+            is the shape of a silent dual storage, where the value sits in
+            ``extras`` under the old name while the field it belongs in stays
+            ``None``.
         note: Anything about the row a reader would otherwise have to rederive.
     """
 
     irreps: str | None = None
     irreps_pattern: str | None = None
     set_by: str = ""
+    renamed_to: str = ""
     note: str = ""
 
 
@@ -147,7 +156,20 @@ Disposition = Union[Spec, Derivative, Drop]
 DISPOSITIONS: dict[str, Disposition] = {
     # --- energies ----------------------------------------------------------
     "energy": Spec(irreps="0e"),
-    "node_energy": Spec(irreps="0e"),
+    "node_energy": Spec(
+        irreps="0e",
+        renamed_to="node_energies",
+        note=(
+            "the core field of MACEOutput is plural, so v1 renames the key "
+            "rather than carrying both spellings. Keeping the singular would "
+            "leave `extras['node_energy']` able to sit beside a `node_energies` "
+            "field holding the same quantity, which is exactly the dual "
+            "storage MACEOutput refuses for the names it does know. Note the "
+            "model's spelling is the E0-inclusive quantity; the ase calculator "
+            "uses the same word for the E0-subtracted one, which is why the "
+            "golden harness aliases this key onto its `energies` channel."
+        ),
+    ),
     "interaction_energy": Spec(irreps="0e"),
     "les_energy": Spec(irreps="0e"),
     "electrostatic_energy": Spec(irreps="0e"),
@@ -458,6 +480,16 @@ def legacy_eval_keys() -> set[str]:
     """The names the evaluation CLI writes onto its structures, unprefixed."""
     scan, _stores = surface_scan.scan_eval_surface()
     return scan.all_keys
+
+
+def v1_name(key: str) -> str:
+    """The name ``key`` carries in v1: renamed, rule-derived, or unchanged."""
+    row = DISPOSITIONS[key]
+    if isinstance(row, Derivative):
+        return derivative_name(row.of, row.wrt)
+    if isinstance(row, Spec) and row.renamed_to:
+        return row.renamed_to
+    return key
 
 
 def channel_of(key: str) -> harness.Channel | None:

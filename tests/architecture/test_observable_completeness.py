@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 from mace_core.observables import ObservableSpec, derivative_name, derivative_sign
 
+from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE
+
 from tests.architecture.observable_coverage import (
     DECLARED_INPUTS,
     DISPOSITIONS,
@@ -28,6 +30,7 @@ from tests.architecture.observable_coverage import (
     legacy_eval_keys,
     legacy_model_keys,
     per_atom_of,
+    v1_name,
 )
 from tests.golden import surface_scan
 
@@ -93,7 +96,7 @@ def test_a_spec_row_builds_a_valid_observable_spec(key):
     channel = channel_of(key)
     assert channel is not None
     spec = ObservableSpec(
-        name=key,
+        name=v1_name(key),
         irreps=row.irreps,
         per_atom=per_atom,
         # The legacy unit, as the golden harness records it. This ticket does
@@ -263,3 +266,33 @@ def test_the_union_is_sixty_one_names():
     union = legacy_model_keys() | legacy_calculator_keys() | legacy_eval_keys()
     assert len(union) == 61
     assert "**61**" in SURFACE_DOC.read_text(encoding="utf-8")
+
+
+def test_every_core_field_of_the_output_is_claimed_by_exactly_one_key():
+    """`MACEOutput` has six named fields, and each has to be what some legacy
+    key becomes. A field nothing claims is a field no model fills. A field
+    claimed twice, or claimed under a near-miss spelling, is the silent dual
+    storage the type refuses for the names it knows: the value sits in `extras`
+    under the old name while the field stays `None`.
+
+    The per-atom energy is why this test exists. The field is `node_energies`
+    and the legacy key is `node_energy`, so without a recorded rename the row
+    would have specified an observable whose name misses the field by one
+    letter.
+    """
+    claims: dict[str, list[str]] = {name: [] for name in CORE_FIELD_NAMES}
+    for key in DISPOSITIONS:
+        if isinstance(DISPOSITIONS[key], Drop):
+            continue
+        name = v1_name(key)
+        field = FIELD_BY_OBSERVABLE.get(name, name)
+        if field in claims:
+            claims[field].append(key)
+    unclaimed = sorted(f for f, keys in claims.items() if not keys)
+    assert not unclaimed, (
+        f"{unclaimed} are fields of MACEOutput that no legacy key becomes. "
+        f"Either a row needs `renamed_to` pointing at the field, or the field "
+        f"is one nothing fills."
+    )
+    contested = {f: keys for f, keys in claims.items() if len(keys) > 1}
+    assert not contested, contested
