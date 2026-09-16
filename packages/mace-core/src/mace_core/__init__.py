@@ -1,7 +1,25 @@
 """Framework-agnostic contract and pure math for MACE v1.
 
-Re-exports the public surface of the lightweight submodules. Heavy ones (the
-Clebsch-Gordan basis, neighbours) are imported from their own modules.
+This package imports no framework: everything here is plain Python, numpy and
+ase, so the same types serve the torch and the jax implementations alike.
+
+The configuration system and the model metadata are re-exported here. The
+other submodules are imported from their own modules, because some of them are
+not cheap to import and a caller that only wants a unit constant should not
+pay for a file parser:
+
+``mace_core.data``
+    :class:`~mace_core.data.configuration.Configuration`, the boundary object
+    of the data layer, its key specification, and the parsing and splitting
+    functions over it.
+
+``mace_core.elements``
+    the default property keys and the element index table.
+
+``mace_core.units``
+    unit constants, and the single statement of each physics sign convention.
+
+Heavier ones still (the Clebsch-Gordan basis, neighbours) follow the same rule.
 """
 
 from importlib.metadata import PackageNotFoundError, version
