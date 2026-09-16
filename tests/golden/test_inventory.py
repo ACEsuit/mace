@@ -215,10 +215,63 @@ def test_the_specificity_floor_is_a_floor_and_not_a_ban_on_directories():
     for name in check_inventory.TOO_COARSE_TO_PIN:
         assert (check_inventory.REPO / name).is_dir(), name
 
-    # and the depth rule and the named list agree about the tiers
+    # and the depth rule and the named list agree about the tiers. The depth
+    # is counted from the suite root, so a v1 package's suite is compared
+    # against `tests` and not against `packages/<distribution>/tests`: from
+    # the repository root it would look two levels deeper than the legacy
+    # tier it is the analogue of, and the two rules would disagree about it.
     for name in check_inventory.TOO_COARSE_TO_PIN:
-        if name != "tests":
-            assert len(Path(name).parts) < check_inventory.MIN_PIN_DIRECTORY_DEPTH
+        relative = check_inventory._pin_root_relative(name)
+        if relative != "tests":
+            assert len(Path(relative).parts) < check_inventory.MIN_PIN_DIRECTORY_DEPTH
+
+
+def test_a_v1_package_suite_is_as_coarse_a_pin_as_a_legacy_tier():
+    """`packages/mace-core/tests` is the packages/ analogue of `tests/unit`.
+
+    The rewrite's tests do not live under `tests/`, so both halves of the pin
+    rules have to reach them: the path has to resolve, and a whole package
+    suite has to be rejected the way a whole legacy tier is.
+    """
+    legacy = "`tests/unit/test_data_utils.py::test_default_keys_are_exactly_these_thirteen`"
+    coarse = f"{legacy} + `packages/mace-core/tests`"
+    problems = check_inventory.check_pins([_row("x.a", pinned=coarse)])
+    assert any("mace-core suite" in p for p in problems), problems
+
+    specific = (
+        f"{legacy} + `packages/mace-core/tests/test_data_configuration.py"
+        "::test_the_default_keys_are_exactly_these_thirteen`"
+    )
+    assert check_inventory.check_pins([_row("x.a", pinned=specific)]) == []
+
+
+def test_a_v1_pin_may_not_stand_alone_in_a_cell():
+    """The second pin is evidence that the capability exists on the other
+    side, never a substitute for the first. This file is about what the frozen
+    tree does, and a test in the rewrite cannot say whether the rewrite still
+    matches it -- so a cell that opens with a v1 pin is claiming something it
+    is not able to check."""
+    alone = (
+        "`packages/mace-core/tests/test_data_configuration.py"
+        "::test_the_default_keys_are_exactly_these_thirteen`"
+    )
+    problems = check_inventory.check_pins([_row("x.a", pinned=alone)])
+    assert any("free text" in p for p in problems), problems
+
+
+def test_a_v1_pin_naming_a_test_that_does_not_exist_is_caught():
+    """A path outside `tests/` used to be skipped, which would have made every
+    v1 pin unverifiable -- coverage by assertion, which is what these rules
+    exist to prevent."""
+    legacy = "`tests/unit/test_data_utils.py::test_default_keys_are_exactly_these_thirteen`"
+
+    missing = f"{legacy} + `packages/mace-core/tests/test_data_configuration.py::test_nope`"
+    problems = check_inventory.check_pins([_row("x.a", pinned=missing)])
+    assert any("test_nope" in p for p in problems), problems
+
+    gone = f"{legacy} + `packages/mace-core/tests/test_not_a_file.py`"
+    problems = check_inventory.check_pins([_row("x.a", pinned=gone)])
+    assert any("does not exist on disk" in p for p in problems), problems
 
 
 def test_a_directory_pin_may_still_name_a_test_inside_it():
