@@ -41,7 +41,7 @@ You will need ``mace-torch`` version 0.3.16 or newer
 .. code-block:: bash
 
     pip install mace-torch
-    pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git@v0.4.0
+    pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git@v0.4.4
 
 ``graph_electrostatics`` provides the Python module namespace ``graph_longrange``, which PolarMACE requires at runtime.
 
@@ -63,8 +63,9 @@ Use the dedicated ``mace_polar`` loader, which handles model type and path resol
 
     calc = mace_polar(
         model="polar-1-m",
-        device="cpu",           # or "cuda"
-        default_dtype="float64" # use float32 for faster MD
+        device="cpu",            # or "cuda"
+        default_dtype="float64", # use float32 for faster MD
+        pbc_handling="auto",      # see below for the available modes
     )
 
     atoms.info["charge"] = 0
@@ -75,6 +76,14 @@ Use the dedicated ``mace_polar`` loader, which handles model type and path resol
     energy = atoms.get_potential_energy()
     forces = atoms.get_forces()
     stress = atoms.get_stress()
+
+When using a ``mace_polar`` model, specify the boundary conditions for the
+electrostatic operations. Available modes are ``pbc`` (Ewald summation), ``realspace`` (realspace sum),
+``slab`` (Ewald sum + dipole correction), and several other convenience modes. The ``auto`` mode
+uses ``atoms.pbc`` to select the boundary conditions. See the
+`graph_electrostatics documentation
+<https://github.com/WillBaldwin0/graph_electrostatics/blob/develop/docs/README.md>`_
+for more information.
 
 Reading Dipole and Charge Density
 ----------------------------------
