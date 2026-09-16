@@ -778,10 +778,10 @@ eleven `--loss` scheme names of §3.7 map onto these ten classes.
 
 ## 9. Calculator constructor and exports
 
-### 9.1 `__init__` parameters (26)
+### 9.1 `__init__` parameters (27)
 
-`MACECalculator.__init__` declares 22 parameters and reads three more out of `**kwargs`
-(`head`, `compute_atomic_stresses`, `model_path`); the 26th (`magmom_key`) is added by
+`MACECalculator.__init__` declares 23 parameters and reads three more out of `**kwargs`
+(`head`, `compute_atomic_stresses`, `model_path`); the 27th (`magmom_key`) is added by
 `MagneticMACECalculator`, a second `Calculator` subclass rather than a mode of the first, so its
 `__init__` is a second public surface. The set is the union of both signatures and both kwargs
 bags: a knob that exists on only one of the two calculators is still a knob, and so is one that
@@ -810,6 +810,8 @@ only the bag spells.
 | `calc.param.eps_infty` | `eps_infty` — MACECalculator | `mace/calculators/mace.py:124` | KEEP — high-frequency dielectric constant used by the field path | `tests/golden/test_tiny_maceles.py::test_the_field_surface_reproduces_its_reference` |
 | `calc.param.electric_field_unit` | `electric_field_unit` — MACECalculator | `mace/calculators/mace.py:125` | KEEP — unit convention for the applied field | `tests/golden/test_tiny_maceles.py::test_the_field_reference_records_the_settings_that_are_not_channels` |
 | `calc.param.keep_neutral` | `keep_neutral` — MACECalculator | `mace/calculators/mace.py:126` | KEEP — charge-neutrality enforcement in the field path | `tests/golden/test_tiny_maceles.py::test_keep_neutral_removes_exactly_a_uniform_field_force` + `tests/golden/test_tiny_maceles.py::test_keep_neutral_leaves_the_reported_bec_alone_and_repeats_identically` |
+| `calc.param.pbc_handling` | `pbc_handling` — MACECalculator | `mace/calculators/mace.py:128` | KEEP — Polar electrostatic boundary treatment can be selected independently of the physical `atoms.pbc` flags | `tests/extensions/polar/test_polar_conversion.py::test_calculator_constructor_propagates_pbc_handling` |
+| `calc.param.compute_stress` | `compute_stress` — MACECalculator | `mace/calculators/mace.py:129` | KEEP — fixed-cell simulations can skip the strain derivative and remove stress from the ASE interface | `tests/extensions/polar/test_polar_conversion.py::test_calculator_constructor_disables_stress` |
 | `calc.param.head` | `head` — read from `**kwargs` on MACECalculator | `mace/calculators/mace.py:297` | KEEP — which head of a multihead model the calculator evaluates | `tests/workflows/test_run_train.py::test_run_train_multihead` |
 | `calc.param.compute_atomic_stresses` | `compute_atomic_stresses` — read from `**kwargs` on MACECalculator | `mace/calculators/mace.py:216` | KEEP — decides whether `stresses` and `virials` are implemented properties at all | `tests/golden/test_tiny_anchors.py::test_the_two_per_atom_stress_routes_land_on_one_channel` |
 | `calc.param.model_path` | `model_path` — read from `**kwargs` on MACECalculator | `mace/calculators/mace.py:162` | DROP — deprecated singular alias for `model_paths`; it warns and forwards, and refuses when both are given | — |
@@ -1220,7 +1222,7 @@ file on every run.
 | 6. Model-level classes | 12 | class name |
 | 7. Registries | 21 | registry key |
 | 8. Loss classes | 10 | class name |
-| 9. Calculator constructor + exports | 23 + 9 | parameter name, `__all__` |
+| 9. Calculator constructor + exports | 27 + 9 | parameter name, `__all__` |
 | 10. Optional extras | 12 | extra name |
 | 11. Model output keys | 43 | dict key |
 | 12. Calculator + eval output keys | 31 + 13 | results key, written key |

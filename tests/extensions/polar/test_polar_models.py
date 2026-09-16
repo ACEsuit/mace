@@ -21,7 +21,7 @@ from mace.calculators import MACECalculator
 from mace.calculators.foundations_models import mace_polar
 from mace.modules import interaction_classes
 from mace.modules.extensions import PolarMACE
-from mace.tools import torch_geometric, utils
+from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.scripts_utils import get_optimizer, get_params_options
 
 # pylint: disable=redefined-outer-name
@@ -517,7 +517,8 @@ def _run_polar_slab(model, dtype, vacuum: float) -> dict:
     for key, value in batch.items():
         if torch.is_tensor(value) and value.dtype.is_floating_point:
             batch[key] = value.to(dtype)
-    out = model(batch, training=False, compute_force=True, compute_stress=True)
+    with torch_tools.default_dtype(dtype):
+        out = model(batch, training=False, compute_force=True, compute_stress=True)
     return {
         "energy": out["energy"].detach(),
         "forces": out["forces"].detach(),
