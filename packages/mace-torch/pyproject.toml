@@ -17,7 +17,13 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
 ]
-dependencies = ["mace-core"]
+dependencies = [
+    "mace-core",
+    # The first ticket to import a framework declares it (packages/README.md).
+    "torch",
+    # Covalent radii for the ZBL repulsion and the distance transforms.
+    "ase",
+]
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

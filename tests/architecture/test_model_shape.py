@@ -107,6 +107,18 @@ def test_no_jit_in_live_v1_path():
     assert not problems, "\n".join(problems)
 
 
+def test_no_e3nn_under_packages():
+    """e3nn is removed from v1 entirely, tests included: `packages/*/tests` are
+    scanned too, since a test that imports e3nn to check a v1 op against it has
+    quietly made the oracle a dependency. The live comparison against e3nn
+    lives in `tests/parity/`, the allowlisted double importer.
+    """
+    roots = [directory for directory in v1_surface.PACKAGES.glob("*/") if directory.is_dir()]
+    problems, scanned = v1_surface.scan(v1_surface.removed_dependency_violations, roots)
+    assert scanned > 0
+    assert not problems, "\n".join(problems)
+
+
 # ---------------------------------------------------------------------------
 # The detectors, tested against source they should reject
 #
@@ -277,3 +289,25 @@ def test_the_torchscript_detector_finds_the_legacy_tree_it_describes():
         f"only {len(problems)} TorchScript uses found in mace/modules/, which "
         f"has 52 @compile_mode decorators alone: the detector is broken"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import e3nn",
+        "import e3nn.o3 as o3",
+        "from e3nn import o3",
+        "from e3nn.util.jit import compile_mode",
+        "from e3nn.o3 import SphericalHarmonics as SH",
+    ],
+)
+def test_the_removed_dependency_detector_rejects_every_spelling(source):
+    assert v1_surface.removed_dependency_violations(source, "bad.py"), source
+
+
+def test_the_removed_dependency_detector_accepts_torch_and_prose():
+    source = '''"""e3nn is gone; this docstring may say so."""
+import torch
+from .e3nn_free import x
+'''
+    assert not v1_surface.removed_dependency_violations(source, "clean.py")
