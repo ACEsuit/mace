@@ -10,10 +10,38 @@ comparison that an empty set would satisfy.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from pathlib import Path
 
 import pytest
+
+# This module is the only thing under `tests/architecture` that imports the v1
+# stack, and four jobs run `pytest tests` over the whole tree with the legacy
+# distribution alone: the two GPU jobs of the MPCDF pipeline, and nightly's
+# coverage-full and durations-refresh. A module-level import of `mace_core`
+# fails there at *collection*, before any marker expression can deselect it, so
+# a capability marker on the tests below would not help.
+#
+# The guard has to live here rather than in the jobs, and the GPU pipeline is
+# why. For a pull request from a fork, `.github/workflows/ci-gpu-mpcdf.yaml`
+# takes the tested tree from the fork and the pipeline definition from the base
+# ref, deliberately, so that a fork cannot choose what runs on MPCDF hardware.
+# An `--ignore` added to `.github/gitlab/ci.yml` is therefore invisible to the
+# pull request that adds it. The tested tree is the only lever a fork has.
+#
+# `find_spec` and not `pytest.importorskip`: it resolves the module without
+# executing it, so "mace_core is not installed" skips while "mace_core is
+# installed and broken" still raises at the real import below. And the skip
+# cannot quietly hide the tests from the job that owes them, because the
+# `architecture` job runs `lint-imports` first and that step fails outright
+# when a root package is missing from the filesystem.
+if importlib.util.find_spec("mace_core") is None:  # pragma: no cover
+    pytest.skip(
+        "needs the v1 packages installed; run this suite from the architecture "
+        "job, or `pip install -e packages/mace-core`",
+        allow_module_level=True,
+    )
 from mace_core.observables import ObservableSpec, derivative_name, derivative_sign
 
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE

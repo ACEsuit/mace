@@ -263,12 +263,5 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           tests: tests
-          # See the same flag in .github/gitlab/ci.yml: `tests/architecture`
-          # needs both trees importable and this job installs the legacy one,
-          # so the directory fails at collection rather than being deselected
-          # by the marker expression. Gated per pull request by ci-core's
-          # `architecture` job. This job is paths-filtered, so the breakage
-          # would have waited for the first pull request touching backends.
-          extra-args: --ignore=tests/architecture
           markers: cueq and not gpu and not polar
           require-caps: cueq
