@@ -41,7 +41,7 @@ You will need ``mace-torch`` version 0.3.16 or newer
 .. code-block:: bash
 
     pip install mace-torch
-    pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git@v0.4.3
+    pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git@v0.4.4
 
 ``graph_electrostatics`` provides the Python module namespace ``graph_longrange``, which PolarMACE requires at runtime.
 
