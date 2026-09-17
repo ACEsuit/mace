@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -74,17 +76,21 @@ def test_no_module_reaches_a_framework_through_importlib(module):
         assert f"find_spec('{name}" not in source
 
 
-def test_importing_mace_core_pulls_in_no_framework():
-    """The runtime half. Run in this interpreter on purpose: by the time this
-    file is collected `mace_core` is already imported, so a lazy import inside a
-    function would have fired."""
-    import sys
+@pytest.mark.parametrize("library", ["e3nn", "cuequivariance", "torch", "jax"])
+def test_importing_mace_core_pulls_in_no_framework(library):
+    """Run in a fresh interpreter, and that is not fussiness.
 
-    import mace_core  # noqa: F401
-    import mace_core.clebsch_gordan  # noqa: F401
-
-    for name in ("e3nn", "cuequivariance"):
-        assert name not in sys.modules, f"importing mace_core pulled in {name}"
+    Asserting this in-process passes or fails on what else the session happened
+    to import, and this suite runs beside an oracle test that imports
+    `cuequivariance` on purpose. The first version of this test failed for
+    exactly that reason, which is the argument for the subprocess.
+    """
+    probe = (
+        "import sys, mace_core, mace_core.clebsch_gordan\n"
+        f"assert {library!r} not in sys.modules, "
+        f"'importing mace_core pulled in {library}'\n"
+    )
+    subprocess.run([sys.executable, "-c", probe], check=True)
 
 
 def test_the_basis_does_not_change_with_what_is_installed():
