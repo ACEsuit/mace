@@ -20,16 +20,18 @@ import numpy as np
 import pytest
 import torch
 from conftest import assert_close, fp64_only
-from mace_torch.nn.radial import (
-    AgnesiTransform,
+from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
     GaussianBasis,
     PolynomialCutoff,
+    polynomial_envelope,
+)
+from mace_torch.nn.radial import (
+    AgnesiTransform,
     RadialMLP,
     SoftTransform,
     ZBLBasis,
-    polynomial_envelope,
 )
 
 # ===========================================================================

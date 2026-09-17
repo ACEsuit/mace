@@ -23,7 +23,8 @@ from mace_torch.nn.embedding import (
     build_distance_transform,
     build_radial_basis,
 )
-from mace_torch.nn.radial import ChebyshevBasis, ZBLBasis
+from mace_torch.backends.radial import ChebyshevBasis
+from mace_torch.nn.radial import ZBLBasis
 
 from mace.modules.blocks import LinearNodeEmbeddingBlock as LegacyNodeEmbedding
 from mace.modules.blocks import RadialEmbeddingBlock as LegacyRadialEmbeddingBlock
