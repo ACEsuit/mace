@@ -42,7 +42,12 @@ import numpy as np
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps
 from mace_core.clebsch_gordan.real_basis import wigner_3j_real
 
-__all__ = ["path_count", "reduced_symmetric_tensor_product_basis"]
+__all__ = [
+    "full_symmetric_tensor_product_basis",
+    "path_count",
+    "reduced_symmetric_tensor_product_basis",
+    "symmetrize",
+]
 
 #: Below this, a symmetrized path is taken to lie in the span of the ones
 #: before it. The gap either side of it is many orders of magnitude on every
@@ -89,7 +94,7 @@ def _paths(irreps_in: Irreps, correlation: int, target: Irrep):
                 yield path
 
 
-def _symmetrize(path: np.ndarray, correlation: int) -> np.ndarray:
+def symmetrize(path: np.ndarray, correlation: int) -> np.ndarray:
     """Average a path over the permutations of its input axes.
 
     Axis 0 carries the output irrep and is held fixed; the remaining
@@ -141,7 +146,7 @@ def _basis_for(irreps_in_text: str, correlation: int, target_text: str) -> np.nd
     if not enumerated:
         shape = (0, target.dimension, *(irreps_in.dimension,) * correlation)
         return np.zeros(shape, dtype=np.float64)
-    symmetrized = [_symmetrize(p, correlation) for p in enumerated]
+    symmetrized = [symmetrize(p, correlation) for p in enumerated]
     flat = [s.reshape(-1) for s in symmetrized]
     kept = _independent(flat)
     basis = np.stack([_canonical(row.reshape(symmetrized[0].shape)) for row in kept])
@@ -203,3 +208,53 @@ def path_count(irreps_in: str | Irreps, correlation: int, keep_ir: str | Irreps)
     """
     basis = reduced_symmetric_tensor_product_basis(irreps_in, correlation, keep_ir)
     return sum(int(array.shape[0]) for array in basis.values())
+
+
+@cache
+def _full_basis_for(
+    irreps_in_text: str, correlation: int, target_text: str
+) -> np.ndarray:
+    irreps_in = Irreps.parse(irreps_in_text)
+    target = Irreps.parse(target_text).terms[0][1]
+    enumerated = list(_paths(irreps_in, correlation, target))
+    if not enumerated:
+        shape = (0, target.dimension, *(irreps_in.dimension,) * correlation)
+        return np.zeros(shape, dtype=np.float64)
+    shape = enumerated[0].shape
+    kept = _independent([p.reshape(-1) for p in enumerated])
+    basis = np.stack([_canonical(row.reshape(shape)) for row in kept])
+    basis.flags.writeable = False
+    return basis
+
+
+def full_symmetric_tensor_product_basis(
+    irreps_in: str | Irreps,
+    correlation: int,
+    keep_ir: str | Irreps,
+    dtype: str = "float64",
+) -> dict[str, np.ndarray]:
+    """The unreduced basis: every coupling path, before the symmetry is used.
+
+    Same enumeration, same order and same per-path normalization as
+    :func:`reduced_symmetric_tensor_product_basis`; what it skips is the step
+    that removes the paths the permutation symmetry makes redundant.
+
+    It exists for one reason. The typical checkpoint in the wild carries this
+    basis, because the legacy command line defaults the reduced flag to false,
+    so converting a full-basis artifact is the common path and not the exotic
+    one. Its extra directions are pure gauge: they span a larger space but
+    produce the same functions on symmetric inputs.
+
+    On the anchor ``0e+1o+2e+3o`` at correlation 3 summed over body orders, it
+    is 28 paths for ``0e``, 58 for ``1o`` and 73 for ``2e``, against 13, 16 and
+    20 reduced. The 86 of ``keep_ir=0e+1o`` against 29 is the gap that used to
+    open and close with what was installed.
+    """
+    if correlation < 1:
+        raise ValueError(f"correlation must be at least 1, got {correlation}")
+    text = str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
+    wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
+    return {
+        str(ir): _full_basis_for(text, correlation, str(ir)).astype(dtype, copy=True)
+        for _, ir in wanted
+    }

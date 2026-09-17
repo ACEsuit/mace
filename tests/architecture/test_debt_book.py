@@ -363,8 +363,8 @@ def test_debt_already_burned():
 
 
 def _run_pytest_in(directory: Path, *arguments: str):
-    import subprocess  # noqa: PLC0415
-    import sys  # noqa: PLC0415
+    import subprocess
+    import sys
 
     (directory / "pytest.ini").write_text(MECHANISM_INI, encoding="utf-8")
     (directory / "test_mechanism.py").write_text(MECHANISM_TEST, encoding="utf-8")
