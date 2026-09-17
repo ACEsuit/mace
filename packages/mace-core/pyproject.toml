@@ -48,6 +48,10 @@ matscipy = ["matscipy>=1.0"]
 # Discovered the same way a third-party backend is, through its entry point.
 matscipy = "mace_core.neighbors.matscipy_backend:MatscipyBackend"
 all_pairs = "mace_core.neighbors.all_pairs:AllPairsBackend"
+[project.entry-points."mace.data_backends"]
+# One backend is one module and one line here. A third-party wheel declares
+# into the same group and is discovered with no edit in this repository.
+xyz = "mace_core.data.backends.xyz:XYZBackend"
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

@@ -10,18 +10,38 @@ resolved here, at the parse, and goes no further.
 table whether or not it ever reads a file.
 """
 
+from mace_core.data.backend import (
+    DataBackend,
+    DataBackendError,
+    DatasetManifest,
+    DatasetStatistics,
+)
+from mace_core.data.backends.xyz import XYZBackend
 from mace_core.data.configuration import (
     DEFAULT_CONFIG_TYPE,
     DEFAULT_HEAD,
     Configuration,
 )
+from mace_core.data.conformance import data_backend_conformance
 from mace_core.data.keys import (
     ATOM_CONVENTION_NAMES,
     GRAPH_CONVENTION_NAMES,
     EmbeddingFeatureSpec,
     KeySpecification,
 )
+from mace_core.data.registry import (
+    ENTRY_POINT_GROUP,
+    AmbiguousFormatError,
+    UnknownBackendError,
+    available_backends,
+    open_dataset,
+)
 from mace_core.data.splitting import group_by_config_type, random_train_valid_split
+from mace_core.data.statistics import (
+    compute_statistics,
+    count_neighbours,
+    least_squares_atomic_energies,
+)
 from mace_core.data.xyz import (
     ISOLATED_ATOM_CONFIG_TYPE,
     ParsedConfigurations,
@@ -39,16 +59,30 @@ __all__ = [
     "DEFAULT_CONFIG_TYPE",
     "DEFAULT_HEAD",
     "GRAPH_CONVENTION_NAMES",
+    "ENTRY_POINT_GROUP",
     "ISOLATED_ATOM_CONFIG_TYPE",
+    "AmbiguousFormatError",
     "AtomicNumberTable",
     "Configuration",
+    "DataBackend",
+    "DataBackendError",
+    "DatasetManifest",
+    "DatasetStatistics",
     "DefaultKeys",
     "EmbeddingFeatureSpec",
     "KeySpecification",
     "ParsedConfigurations",
+    "UnknownBackendError",
+    "XYZBackend",
     "atomic_number_table_from_zs",
+    "available_backends",
+    "compute_statistics",
     "configuration_from_atoms",
+    "count_neighbours",
+    "data_backend_conformance",
     "group_by_config_type",
+    "least_squares_atomic_energies",
+    "open_dataset",
     "random_train_valid_split",
     "read_configurations",
 ]
