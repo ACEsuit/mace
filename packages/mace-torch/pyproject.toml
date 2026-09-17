@@ -17,7 +17,24 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
 ]
-dependencies = ["mace-core"]
+# torch enters here and nowhere else. `mace-core` stays framework-free, which
+# is what lets the same contract serve the jax implementation; this package is
+# the torch binding of it, so the dependency belongs at this level and is the
+# whole point of the package existing separately.
+#
+# The floor is 2.4 because `torch.library.custom_op` and its `register_fake` /
+# `register_autograd` arrived there, and the kernel dispatch is written against
+# them. Earlier releases have only the `autograd.Function` route, which
+# `torch.compile(fullgraph=True)` cannot see through without a graph break.
+dependencies = [
+    "mace-core",
+    "torch>=2.4",
+]
+
+[project.entry-points."mace.kernel_backends.torch"]
+# The mandatory reference backend, discovered the same way any third-party one
+# is: through an entry point, with nothing in `mace_core` naming it.
+reference = "mace_torch.backends.reference:ReferenceBackend"
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
