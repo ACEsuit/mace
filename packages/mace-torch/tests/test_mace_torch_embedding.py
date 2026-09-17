@@ -38,6 +38,7 @@ def _embedding_inputs():
 def _block(
     radial_basis: RadialBasisKind = "bessel",
     distance_transform: DistanceTransformKind = "none",
+    apply_cutoff: bool = True,
 ) -> RadialEmbeddingBlock:
     return RadialEmbeddingBlock(
         r_max=EMBEDDING_R_MAX,
@@ -45,6 +46,7 @@ def _block(
         num_polynomial_cutoff=6,
         radial_basis=radial_basis,
         distance_transform=distance_transform,
+        apply_cutoff=apply_cutoff,
     )
 
 
@@ -74,28 +76,46 @@ def test_node_embedding_initialisation_scale():
 
 
 # ---------------------------------------------------------------------------
-# RadialEmbeddingBlock: the two-tensor contract and the order of the three steps
+# RadialEmbeddingBlock: the two-tensor contract, --apply_cutoff, the three steps
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("radial_basis", RADIAL_BASES)
 @pytest.mark.parametrize("distance_transform", DISTANCE_TRANSFORMS)
-def test_block_returns_the_bare_basis_and_the_envelope(
+def test_block_returns_two_tensors_in_both_modes(
     radial_basis, distance_transform, dtype
 ):
-    """Two tensors, never their product: the basis `[n_edges, num_basis]` and
-    the envelope `[n_edges, 1]`, the latter equal to the cutoff module on the
-    raw lengths."""
-    block = _block(radial_basis=radial_basis, distance_transform=distance_transform)
+    """Features `[n_edges, num_basis]` and envelope `[n_edges, 1]`, whatever
+    the flag; the envelope is the cutoff module on the raw lengths."""
     lengths, node_atomic_numbers, edge_index = _embedding_inputs()
-    features, cutoff = block(lengths, node_atomic_numbers, edge_index)
-    assert features.shape == (3, 4)
-    assert cutoff.shape == (3, 1)
-    assert features.dtype == cutoff.dtype == dtype
-    assert block.num_basis == 4
-    assert torch.equal(cutoff, block.cutoff(lengths))
-    # the envelope is not all ones inside the cutoff, so the product differs
-    assert not torch.equal(features * cutoff, features)
+    for apply_cutoff in (True, False):
+        block = _block(radial_basis, distance_transform, apply_cutoff=apply_cutoff)
+        features, cutoff = block(lengths, node_atomic_numbers, edge_index)
+        assert features.shape == (3, 4)
+        assert cutoff.shape == (3, 1)
+        assert features.dtype == cutoff.dtype == dtype
+        assert block.num_basis == 4
+        assert torch.equal(cutoff, block.cutoff(lengths))
+
+
+@pytest.mark.parametrize("radial_basis", RADIAL_BASES)
+@pytest.mark.parametrize("distance_transform", DISTANCE_TRANSFORMS)
+def test_apply_cutoff_decides_whether_the_features_carry_the_envelope(
+    radial_basis, distance_transform
+):
+    """The default (the CLI default) pre-multiplies; the other mode hands the
+    bare basis over and the consumer's product is bit-for-bit the default."""
+    lengths, node_atomic_numbers, edge_index = _embedding_inputs()
+    assert _block().apply_cutoff is True
+    applied, _ = _block(radial_basis, distance_transform)(
+        lengths, node_atomic_numbers, edge_index
+    )
+    bare, cutoff = _block(radial_basis, distance_transform, apply_cutoff=False)(
+        lengths, node_atomic_numbers, edge_index
+    )
+    assert torch.equal(applied, bare * cutoff)
+    # the envelope is not all ones inside the cutoff
+    assert not torch.equal(applied, bare)
 
 
 @pytest.mark.parametrize("distance_transform", ["agnesi", "soft"])
@@ -114,7 +134,7 @@ def test_the_cutoff_is_computed_before_the_distance_transform(distance_transform
 
 def test_the_basis_sees_the_transformed_lengths():
     lengths, node_atomic_numbers, edge_index = _embedding_inputs()
-    block = _block(distance_transform="agnesi")
+    block = _block(distance_transform="agnesi", apply_cutoff=False)
     features, _ = block(lengths, node_atomic_numbers, edge_index)
     transformed = AgnesiTransform()(lengths, node_atomic_numbers, edge_index)
     reference = BesselBasis(r_max=EMBEDDING_R_MAX, num_basis=4)
@@ -131,15 +151,19 @@ def test_no_transform_is_an_explicit_none():
     )
 
 
-def test_a_padding_edge_has_an_exactly_zero_envelope():
-    """A self-loop edge shifted by 2*r_max has length 2*r_max: its envelope is
-    exactly zero, so whatever the consumer multiplies it into vanishes."""
+def test_a_padding_edge_contributes_exactly_nothing():
+    """A self-loop edge shifted by 2*r_max has length 2*r_max and embeds to
+    exactly zero: in the features in the default mode, through an exactly zero
+    envelope in the other."""
     padded = torch.tensor([[2 * EMBEDDING_R_MAX]])
     node_atomic_numbers = torch.tensor([1])
     edge_index = torch.tensor([[0], [0]])
     features, cutoff = _block()(padded, node_atomic_numbers, edge_index)
+    assert torch.equal(features, torch.zeros_like(features))
     assert torch.equal(cutoff, torch.zeros_like(cutoff))
-    assert torch.equal(features * cutoff, torch.zeros_like(features))
+    bare, cutoff = _block(apply_cutoff=False)(padded, node_atomic_numbers, edge_index)
+    assert torch.equal(cutoff, torch.zeros_like(cutoff))
+    assert (bare != 0).any()  # the bare basis itself does not vanish
 
 
 def test_unknown_kinds_are_errors_naming_the_value():

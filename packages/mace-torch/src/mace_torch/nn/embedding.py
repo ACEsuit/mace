@@ -71,8 +71,11 @@ class RadialEmbeddingBlock(torch.nn.Module):
     2. the distance transform, if configured, is applied to the lengths;
     3. the basis is evaluated on the (transformed) lengths.
 
-    The two results are returned side by side, never multiplied: where the
-    envelope enters is the consumer's decision, not this block's.
+    Both results are returned, always: the radial features ``[n_edges, num_basis]``
+    and the envelope ``[n_edges, 1]``. With ``apply_cutoff`` (legacy's
+    ``--apply_cutoff``, the default) the features are already ``basis * cutoff``;
+    without it they are the bare basis and the consumer multiplies the envelope
+    in later, after its radial MLP.
     """
 
     def __init__(
@@ -82,6 +85,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_polynomial_cutoff: int,
         radial_basis: RadialBasisKind = "bessel",
         distance_transform: DistanceTransformKind = "none",
+        apply_cutoff: bool = True,
     ):
         super().__init__()
         self.basis: torch.nn.Module
@@ -112,6 +116,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
             r_max=r_max, polynomial_order=num_polynomial_cutoff
         )
         self.num_basis = num_basis
+        self.apply_cutoff = apply_cutoff
 
     def forward(
         self,
@@ -122,8 +127,9 @@ class RadialEmbeddingBlock(torch.nn.Module):
         """``edge_lengths`` is ``[n_edges, 1]`` in Angstrom.
 
         Returns ``(edge_radial_features, edge_cutoff)``: the basis on the
-        (transformed) lengths, ``[n_edges, num_basis]``, and the envelope on
-        the raw lengths, ``[n_edges, 1]``.
+        (transformed) lengths, ``[n_edges, num_basis]``, multiplied by the
+        envelope when ``apply_cutoff`` is set, and the envelope on the raw
+        lengths, ``[n_edges, 1]``.
         """
         edge_cutoff = self.cutoff(edge_lengths)  # on the raw lengths, always
         if self.distance_transform is not None:
@@ -131,4 +137,6 @@ class RadialEmbeddingBlock(torch.nn.Module):
                 edge_lengths, node_atomic_numbers, edge_index
             )
         edge_radial_features = self.basis(edge_lengths)
+        if self.apply_cutoff:
+            edge_radial_features = edge_radial_features * edge_cutoff
         return edge_radial_features, edge_cutoff
