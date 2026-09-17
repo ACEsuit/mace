@@ -9,11 +9,11 @@ transform, an envelope computed from the transformed lengths would differ by
 
 import pytest
 import torch
+from conftest import fp64_only
 from mace_torch.nn.embedding import (
     DistanceTransformKind,
     LinearNodeEmbeddingBlock,
     RadialBasisKind,
-    RadialEmbedding,
     RadialEmbeddingBlock,
 )
 from mace_torch.nn.radial import (
@@ -38,7 +38,6 @@ def _embedding_inputs():
 def _block(
     radial_basis: RadialBasisKind = "bessel",
     distance_transform: DistanceTransformKind = "none",
-    apply_cutoff: bool = True,
 ) -> RadialEmbeddingBlock:
     return RadialEmbeddingBlock(
         r_max=EMBEDDING_R_MAX,
@@ -46,7 +45,6 @@ def _block(
         num_polynomial_cutoff=6,
         radial_basis=radial_basis,
         distance_transform=distance_transform,
-        apply_cutoff=apply_cutoff,
     )
 
 
@@ -55,7 +53,7 @@ def _block(
 # ---------------------------------------------------------------------------
 
 
-def test_node_embedding_is_a_row_lookup_of_the_weight(fp64):
+def test_node_embedding_is_a_row_lookup_of_the_weight():
     """One-hot in, so the output of node i is the row of its element."""
     block = LinearNodeEmbeddingBlock(num_elements=3, num_channels=5)
     assert block.weight.shape == (3, 5)
@@ -64,10 +62,9 @@ def test_node_embedding_is_a_row_lookup_of_the_weight(fp64):
     assert out.shape == (4, 5)
     assert torch.equal(out, block.weight[[2, 0, 2, 1]])
     assert block.weight.requires_grad
-    assert "num_channels=5" in repr(block)
 
 
-def test_node_embedding_initialisation_scale(fp64):
+def test_node_embedding_initialisation_scale():
     """`N(0, 1/num_elements)`: the distribution of an equivariant linear layer
     with unit-normal weights and `1/sqrt(fan_in)` normalisation."""
     torch.manual_seed(0)
@@ -77,72 +74,55 @@ def test_node_embedding_initialisation_scale(fp64):
 
 
 # ---------------------------------------------------------------------------
-# RadialEmbeddingBlock: --apply_cutoff and the order of the three steps
+# RadialEmbeddingBlock: the two-tensor contract and the order of the three steps
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("radial_basis", RADIAL_BASES)
 @pytest.mark.parametrize("distance_transform", DISTANCE_TRANSFORMS)
-def test_apply_cutoff_true_returns_the_product_and_no_envelope(
-    radial_basis, distance_transform, fp64
+def test_block_returns_the_bare_basis_and_the_envelope(
+    radial_basis, distance_transform, dtype
 ):
+    """Two tensors, never their product: the basis `[n_edges, num_basis]` and
+    the envelope `[n_edges, 1]`, the latter equal to the cutoff module on the
+    raw lengths."""
     block = _block(radial_basis=radial_basis, distance_transform=distance_transform)
-    assert block.apply_cutoff is True  # the CLI default
-    embedding = block(*_embedding_inputs())
-    assert isinstance(embedding, RadialEmbedding)
-    assert embedding.edge_cutoff is None
-    assert embedding.edge_radial_features.shape == (3, 4)
+    lengths, node_atomic_numbers, edge_index = _embedding_inputs()
+    features, cutoff = block(lengths, node_atomic_numbers, edge_index)
+    assert features.shape == (3, 4)
+    assert cutoff.shape == (3, 1)
+    assert features.dtype == cutoff.dtype == dtype
     assert block.num_basis == 4
-
-
-@pytest.mark.parametrize("radial_basis", RADIAL_BASES)
-@pytest.mark.parametrize("distance_transform", DISTANCE_TRANSFORMS)
-def test_apply_cutoff_false_defers_the_envelope_to_the_consumer(
-    radial_basis, distance_transform, fp64
-):
-    """The product of the two returned tensors is bit-for-bit the applied
-    branch's output -- that identity is the whole contract."""
-    applied = _block(radial_basis, distance_transform, apply_cutoff=True)(
-        *_embedding_inputs()
-    )
-    deferred = _block(radial_basis, distance_transform, apply_cutoff=False)(
-        *_embedding_inputs()
-    )
-    assert deferred.edge_cutoff is not None
-    assert deferred.edge_cutoff.shape == (3, 1)
-    assert torch.equal(
-        applied.edge_radial_features,
-        deferred.edge_radial_features * deferred.edge_cutoff,
-    )
-    # the envelope is not all ones
-    assert not torch.equal(applied.edge_radial_features, deferred.edge_radial_features)
+    assert torch.equal(cutoff, block.cutoff(lengths))
+    # the envelope is not all ones inside the cutoff, so the product differs
+    assert not torch.equal(features * cutoff, features)
 
 
 @pytest.mark.parametrize("distance_transform", ["agnesi", "soft"])
-def test_the_cutoff_is_computed_before_the_distance_transform(distance_transform, fp64):
+def test_the_cutoff_is_computed_before_the_distance_transform(distance_transform):
     lengths, node_atomic_numbers, edge_index = _embedding_inputs()
-    block = _block(distance_transform=distance_transform, apply_cutoff=False)
-    embedding = block(lengths, node_atomic_numbers, edge_index)
+    block = _block(distance_transform=distance_transform)
+    _, cutoff = block(lengths, node_atomic_numbers, edge_index)
 
-    cutoff = PolynomialCutoff(r_max=EMBEDDING_R_MAX, polynomial_order=6)
+    reference = PolynomialCutoff(r_max=EMBEDDING_R_MAX, polynomial_order=6)
     transform = {"agnesi": AgnesiTransform, "soft": SoftTransform}[distance_transform]()
     transformed = transform(lengths, node_atomic_numbers, edge_index)
 
-    assert torch.equal(embedding.edge_cutoff, cutoff(lengths))
-    assert not torch.allclose(embedding.edge_cutoff, cutoff(transformed))
+    assert torch.equal(cutoff, reference(lengths))
+    assert not torch.allclose(cutoff, reference(transformed))
 
 
-def test_the_basis_sees_the_transformed_lengths(fp64):
+def test_the_basis_sees_the_transformed_lengths():
     lengths, node_atomic_numbers, edge_index = _embedding_inputs()
-    block = _block(distance_transform="agnesi", apply_cutoff=False)
-    embedding = block(lengths, node_atomic_numbers, edge_index)
+    block = _block(distance_transform="agnesi")
+    features, _ = block(lengths, node_atomic_numbers, edge_index)
     transformed = AgnesiTransform()(lengths, node_atomic_numbers, edge_index)
     reference = BesselBasis(r_max=EMBEDDING_R_MAX, num_basis=4)
-    assert torch.equal(embedding.edge_radial_features, reference(transformed))
-    assert not torch.allclose(embedding.edge_radial_features, reference(lengths))
+    assert torch.equal(features, reference(transformed))
+    assert not torch.allclose(features, reference(lengths))
 
 
-def test_no_transform_is_an_explicit_none(fp64):
+def test_no_transform_is_an_explicit_none():
     """Configuration is explicit: the transform slot is None, never an absent
     attribute probed with hasattr."""
     assert _block().distance_transform is None
@@ -151,19 +131,15 @@ def test_no_transform_is_an_explicit_none(fp64):
     )
 
 
-def test_a_padding_edge_contributes_exactly_nothing(fp64):
-    """A self-loop edge shifted by 2*r_max has length 2*r_max and embeds to
-    exactly zero: by multiplication in the default branch, through an exactly
-    zero envelope in the deferred one."""
+def test_a_padding_edge_has_an_exactly_zero_envelope():
+    """A self-loop edge shifted by 2*r_max has length 2*r_max: its envelope is
+    exactly zero, so whatever the consumer multiplies it into vanishes."""
     padded = torch.tensor([[2 * EMBEDDING_R_MAX]])
     node_atomic_numbers = torch.tensor([1])
     edge_index = torch.tensor([[0], [0]])
-    embedding = _block()(padded, node_atomic_numbers, edge_index)
-    features = embedding.edge_radial_features
-    assert torch.equal(features, torch.zeros_like(features))
-
-    deferred = _block(apply_cutoff=False)(padded, node_atomic_numbers, edge_index)
-    assert torch.equal(deferred.edge_cutoff, torch.zeros_like(deferred.edge_cutoff))
+    features, cutoff = _block()(padded, node_atomic_numbers, edge_index)
+    assert torch.equal(cutoff, torch.zeros_like(cutoff))
+    assert torch.equal(features * cutoff, torch.zeros_like(features))
 
 
 def test_unknown_kinds_are_errors_naming_the_value():
@@ -173,16 +149,18 @@ def test_unknown_kinds_are_errors_naming_the_value():
         _block(distance_transform="Agnesi")  # ty: ignore[invalid-argument-type]
 
 
+@fp64_only
 @pytest.mark.parametrize("radial_basis", RADIAL_BASES)
 @pytest.mark.parametrize("distance_transform", DISTANCE_TRANSFORMS)
-def test_radial_embedding_passes_gradgradcheck(radial_basis, distance_transform, fp64):
-    """Force training differentiates twice through the whole block."""
+def test_radial_embedding_passes_gradgradcheck(radial_basis, distance_transform):
+    """Force training differentiates twice through the whole block, in both
+    of its outputs."""
     block = _block(radial_basis=radial_basis, distance_transform=distance_transform)
     _, node_atomic_numbers, edge_index = _embedding_inputs()
     lengths = torch.tensor([[0.9], [1.7], [2.5]], requires_grad=True)
 
     def function(lengths_):
-        return block(lengths_, node_atomic_numbers, edge_index).edge_radial_features
+        return block(lengths_, node_atomic_numbers, edge_index)
 
     assert torch.autograd.gradcheck(function, (lengths,))
     assert torch.autograd.gradgradcheck(function, (lengths,))

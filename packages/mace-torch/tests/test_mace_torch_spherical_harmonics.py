@@ -6,15 +6,15 @@ convention is pinned two ways: committed decimal literals produced by
 three fixed vectors, and the algebraic properties that single the convention
 out (component norm, the `(x, y, z)` order of the `l = 1` block, the parity of
 each block, rotation equivariance). The live comparison against the frozen
-legacy stack is `tests/parity/test_sph_harm_parity.py`.
+legacy stack is `tests/parity/test_spherical_harmonics_parity.py`.
 """
 
 import math
 
 import pytest
 import torch
-from conftest import assert_close
-from mace_torch.backends.reference.sph_harm import (
+from conftest import assert_close, fp64_only
+from mace_torch.backends.reference.spherical_harmonics import (
     E3NN_AXIS_ORDER,
     SphericalHarmonics,
     spherical_harmonics,
@@ -75,7 +75,7 @@ def test_reference_values_are_the_e3nn_convention():
             )
 
 
-def test_native_matches_the_committed_e3nn_values(fp64):
+def test_native_matches_the_committed_e3nn_values():
     vectors = torch.tensor(REFERENCE_VECTORS)
     assert_close(
         spherical_harmonics(vectors, REFERENCE_LMAX),
@@ -89,7 +89,7 @@ def test_native_matches_the_committed_e3nn_values(fp64):
     )
 
 
-def test_lower_lmax_is_a_prefix_of_higher_lmax(fp64):
+def test_lower_lmax_is_a_prefix_of_higher_lmax():
     vectors = torch.tensor(REFERENCE_VECTORS)
     full = spherical_harmonics(vectors, 6)
     for lmax in range(7):
@@ -99,7 +99,7 @@ def test_lower_lmax_is_a_prefix_of_higher_lmax(fp64):
 
 
 @pytest.mark.parametrize("lmax", [0, 1, 2, 3, 5, 8])
-def test_component_normalisation_and_shape(lmax, fp64):
+def test_component_normalisation_and_shape(lmax):
     torch.manual_seed(0)
     vectors = torch.randn(64, 3) * 2.0
     harmonics = spherical_harmonics(vectors, lmax)
@@ -113,7 +113,7 @@ def test_component_normalisation_and_shape(lmax, fp64):
         )
 
 
-def test_the_l1_block_is_the_unit_vector_in_xyz_order(fp64):
+def test_the_l1_block_is_the_unit_vector_in_xyz_order():
     """This is the e3nn convention in one line: y is the polar axis, and the
     l=1 block reads (x, y, z), not (y, z, x)."""
     torch.manual_seed(1)
@@ -129,7 +129,7 @@ def test_the_axis_order_is_the_permutation_develop_uses_for_sphericart():
     assert E3NN_AXIS_ORDER == (2, 0, 1)
 
 
-def test_input_is_normalised_so_scale_does_not_matter(fp64):
+def test_input_is_normalised_so_scale_does_not_matter():
     torch.manual_seed(2)
     vectors = torch.randn(32, 3)
     scales = torch.rand(32, 1) * 5 + 0.1
@@ -140,7 +140,7 @@ def test_input_is_normalised_so_scale_does_not_matter(fp64):
     )
 
 
-def test_without_normalisation_the_result_is_the_solid_harmonic(fp64):
+def test_without_normalisation_the_result_is_the_solid_harmonic():
     """`normalize=False` returns r^l Y^l of the direction: homogeneous of degree l."""
     torch.manual_seed(3)
     vectors = torch.randn(32, 3) * 2.0
@@ -155,7 +155,7 @@ def test_without_normalisation_the_result_is_the_solid_harmonic(fp64):
         )
 
 
-def test_a_zero_vector_maps_to_the_scalar_channel_alone(fp64):
+def test_a_zero_vector_maps_to_the_scalar_channel_alone():
     """e3nn forwards zeros (not nan) through the normalisation; so does this."""
     harmonics = spherical_harmonics(torch.zeros(2, 3), 3)
     expected = torch.zeros(2, 16)
@@ -164,7 +164,7 @@ def test_a_zero_vector_maps_to_the_scalar_channel_alone(fp64):
     assert torch.isfinite(harmonics).all()
 
 
-def test_blocks_have_parity_minus_one_to_the_l(fp64):
+def test_blocks_have_parity_minus_one_to_the_l():
     torch.manual_seed(4)
     vectors = torch.randn(16, 3)
     forward = spherical_harmonics(vectors, 5)
@@ -177,7 +177,7 @@ def test_blocks_have_parity_minus_one_to_the_l(fp64):
         )
 
 
-def test_rotation_equivariance_of_each_block(fp64):
+def test_rotation_equivariance_of_each_block():
     """Rotating the input by R rotates every l block by the same matrix D^l(R):
     checked through invariants, without importing a Wigner-D implementation.
     For a rotation R, the block norms are unchanged and the Gram matrix between
@@ -199,8 +199,9 @@ def test_rotation_equivariance_of_each_block(fp64):
         assert_close(rotated, original, f"Gram invariance l={degree}")
 
 
+@fp64_only
 @pytest.mark.parametrize("lmax", [1, 3, 5])
-def test_gradcheck_and_gradgradcheck(lmax, fp64):
+def test_gradcheck_and_gradgradcheck(lmax):
     """Force and stress training differentiate twice through the harmonics."""
     torch.manual_seed(6)
     vectors = (torch.randn(5, 3) * 1.5).requires_grad_(True)

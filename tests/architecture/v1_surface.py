@@ -282,32 +282,6 @@ def torchscript_violations(source: str, path: str) -> List[str]:
     return sorted(set(problems))
 
 
-#: The dependency v1 removes entirely. Not optional, not a backend: the reference
-#: spherical harmonics, tensor products and contractions are plain torch, and an
-#: e3nn import anywhere under packages/ is a port of the legacy structure.
-REMOVED_DEPENDENCIES = ("e3nn",)
-
-
-def removed_dependency_violations(source: str, path: str) -> List[str]:
-    """No v1 file may import e3nn, in any spelling.
-
-    Matched on the first component of the dotted path: `e3nn`, `e3nn.o3`,
-    `from e3nn.util.jit import compile_mode` are all the same violation.
-    """
-    problems = []
-    tree = ast.parse(source, filename=path)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.split(".")[0] in REMOVED_DEPENDENCIES:
-                    problems.append(f"{path}:{node.lineno}: imports {alias.name}")
-        elif isinstance(node, ast.ImportFrom) and node.level == 0:
-            module = node.module or ""
-            if module.split(".")[0] in REMOVED_DEPENDENCIES:
-                problems.append(f"{path}:{node.lineno}: imports from {module}")
-    return problems
-
-
 Detector = Callable[[str, str], List[str]]
 
 

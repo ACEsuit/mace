@@ -10,7 +10,7 @@ unit and non-unit vectors, and on the derivatives force training takes.
 import pytest
 import torch
 from e3nn import o3
-from mace_torch.backends.reference.sph_harm import spherical_harmonics
+from mace_torch.backends.reference.spherical_harmonics import spherical_harmonics
 
 from tests.golden.harness import tolerance
 

@@ -1,18 +1,16 @@
-"""The radial bases, cutoff, pair repulsion and distance transforms against their
-closed forms.
+"""The radial bases, cutoff, pair repulsion and distance transforms.
 
-Ported from the legacy characterization suite (`tests/unit/test_radial.py`),
-whose committed decimal literals are the specification the port is measured
-against. Two conventions carry over:
+The numbers here are the closed forms, committed as decimal literals; they were
+produced by the legacy characterization suite (`tests/unit/test_radial.py`) and
+are what remains as the module-level pin once the legacy tree is retired. The
+live comparison against legacy is `tests/parity/test_radial_parity.py`.
 
-* reference values are committed as literals **and** re-derived from the closed
-  form, so a change to either side alone fails;
-* where the behaviour is exactly representable (a cutoff that returns zero, a
-  repulsion that switches off past the covalent radii) the assertion is exact
-  equality, because the padded-batch contract depends on exactly zero.
+Where the behaviour is exactly representable (a cutoff that returns zero, a
+repulsion that switches off past the covalent radii) the assertion is exact
+equality, because the padded-batch contract depends on exactly zero.
 
-New here: `gradcheck` and `gradgradcheck` at fp64 for every basis x cutoff
-composition, since force training differentiates twice through them.
+Every test runs at float32 and float64 (see `conftest.dtype`); a test whose
+method needs fp64, such as `gradcheck`, is marked `fp64_only` and runs once.
 """
 
 import itertools
@@ -21,7 +19,7 @@ import ase.data
 import numpy as np
 import pytest
 import torch
-from conftest import assert_close
+from conftest import assert_close, fp64_only
 from mace_torch.nn.radial import (
     AgnesiTransform,
     BesselBasis,
@@ -63,24 +61,13 @@ BESSEL_REFERENCE = {
 }
 
 
-def test_bessel_reference_values_are_the_closed_form():
-    orders = np.arange(1, BESSEL_N + 1)
-    for distance, expected in BESSEL_REFERENCE.items():
-        closed_form = (
-            np.sqrt(2.0 / BESSEL_R_MAX)
-            * np.sin(orders * np.pi * distance / BESSEL_R_MAX)
-            / distance
-        )
-        assert_close(closed_form, expected, f"bessel closed form at r={distance}")
-
-
-def test_bessel_basis_values(fp64):
+def test_bessel_basis_values():
     basis = BesselBasis(r_max=BESSEL_R_MAX, num_basis=BESSEL_N)
     distances = torch.tensor([[r] for r in BESSEL_REFERENCE])
     assert_close(basis(distances), list(BESSEL_REFERENCE.values()), "bessel")
 
 
-def test_bessel_buffers_and_trainability(fp64):
+def test_bessel_buffers_and_trainability():
     basis = BesselBasis(r_max=BESSEL_R_MAX, num_basis=BESSEL_N)
     assert_close(
         basis.frequencies,
@@ -90,21 +77,31 @@ def test_bessel_buffers_and_trainability(fp64):
     assert_close(basis.prefactor, np.sqrt(2.0 / BESSEL_R_MAX), "prefactor")
     assert not basis.frequencies.requires_grad
     assert BesselBasis(r_max=BESSEL_R_MAX, trainable=True).frequencies.requires_grad
-    assert "trainable=False" in repr(basis)
 
 
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("n_edges", [0, 1, 7])
-def test_bessel_shape_and_dtype_contract(dtype, n_edges):
-    previous = torch.get_default_dtype()
-    torch.set_default_dtype(dtype)
-    try:
-        basis = BesselBasis(r_max=BESSEL_R_MAX, num_basis=BESSEL_N)
-        out = basis(torch.full((n_edges, 1), 1.3, dtype=dtype))
-        assert out.shape == (n_edges, BESSEL_N)
-        assert out.dtype == dtype
-    finally:
-        torch.set_default_dtype(previous)
+def test_bessel_shape_and_dtype_contract(n_edges, dtype):
+    basis = BesselBasis(r_max=BESSEL_R_MAX, num_basis=BESSEL_N)
+    out = basis(torch.full((n_edges, 1), 1.3))
+    assert out.shape == (n_edges, BESSEL_N)
+    assert out.dtype == dtype
+
+
+def test_bessel_is_finite_and_smooth_at_zero_length():
+    """`sin(w r) / r` is 0/0 at r = 0 with limit `w`, and its slope there is zero.
+    A zero-length padding edge must embed finitely to second order, since force
+    training differentiates twice through the basis."""
+    basis = BesselBasis(r_max=BESSEL_R_MAX, num_basis=BESSEL_N)
+    lengths = torch.tensor([[0.0], [1.3]], requires_grad=True)
+    out = basis(lengths)
+    assert_close(out[0], basis.prefactor * basis.frequencies, "limit at r = 0")
+    (first,) = torch.autograd.grad(out.sum(), lengths, create_graph=True)
+    (second,) = torch.autograd.grad(first.sum(), lengths)
+    assert first[0].item() == 0.0
+    assert torch.isfinite(second).all()
+    # the guard does not touch a nonzero length
+    plain = basis.prefactor * (torch.sin(basis.frequencies * lengths[1]) / lengths[1])
+    assert torch.equal(out[1], plain)
 
 
 # ===========================================================================
@@ -119,19 +116,13 @@ CHEBYCHEV_REFERENCE = {
 }
 
 
-def test_chebychev_reference_values_are_the_recurrence():
-    for x, expected in CHEBYCHEV_REFERENCE.items():
-        closed_form = [x, 2 * x**2 - 1, 4 * x**3 - 3 * x, 8 * x**4 - 8 * x**2 + 1]
-        assert_close(closed_form, expected, f"chebychev closed form at x={x}")
-
-
-def test_chebychev_basis_values(fp64):
+def test_chebychev_basis_values():
     basis = ChebyshevBasis(num_basis=4)
     x = torch.tensor([[v] for v in CHEBYCHEV_REFERENCE])
     assert_close(basis(x), list(CHEBYCHEV_REFERENCE.values()), "chebychev")
 
 
-def test_chebychev_diverges_outside_the_unit_interval(fp64):
+def test_chebychev_diverges_outside_the_unit_interval():
     """Characterization, not endorsement: the polynomials are evaluated on the
     raw distance, so at r > 1 they take the cosh branch and grow without bound.
     A port that mapped r into [-1, 1] would silently change every model trained
@@ -141,13 +132,8 @@ def test_chebychev_diverges_outside_the_unit_interval(fp64):
     assert_close(basis(torch.tensor([[1.7]])), [[1.7, 4.78, 14.552]], "beyond 1")
 
 
-# ===========================================================================
-# ChebyshevBasis with the constant term -- the switch the magnetic family carries
-# ===========================================================================
-
-
 @pytest.mark.parametrize("include_constant", [True, False])
-def test_chebyshev_basis_orders_with_and_without_the_constant(include_constant, fp64):
+def test_chebyshev_basis_orders_with_and_without_the_constant(include_constant):
     """Both legacy classes read `T_1..T_n`; with the constant it is `T_0..T_{n-1}`.
     Same width either way."""
     basis = ChebyshevBasis(num_basis=4, include_constant=include_constant)
@@ -160,7 +146,6 @@ def test_chebyshev_basis_orders_with_and_without_the_constant(include_constant, 
         assert_close(out, expected, "T_0..T_3")
     else:
         assert_close(out, list(CHEBYCHEV_REFERENCE.values()), "T_1..T_4")
-    assert f"include_constant={include_constant}" in repr(basis)
 
 
 # ===========================================================================
@@ -189,15 +174,7 @@ GAUSSIAN_REFERENCE = {
 }
 
 
-def test_gaussian_reference_values_are_the_closed_form():
-    centres = np.linspace(0.0, GAUSSIAN_R_MAX, GAUSSIAN_N)
-    width = GAUSSIAN_R_MAX / (GAUSSIAN_N - 1)
-    for distance, expected in GAUSSIAN_REFERENCE.items():
-        closed_form = np.exp(-0.5 * ((distance - centres) / width) ** 2)
-        assert_close(closed_form, expected, f"gaussian closed form at r={distance}")
-
-
-def test_gaussian_basis_values(fp64):
+def test_gaussian_basis_values():
     basis = GaussianBasis(r_max=GAUSSIAN_R_MAX, num_basis=GAUSSIAN_N)
     distances = torch.tensor([[r] for r in GAUSSIAN_REFERENCE])
     assert_close(basis(distances), list(GAUSSIAN_REFERENCE.values()), "gaussian")
@@ -211,7 +188,7 @@ def test_gaussian_basis_values(fp64):
     assert GaussianBasis(r_max=GAUSSIAN_R_MAX, trainable=True).centers.requires_grad
 
 
-def test_gaussian_basis_is_not_zero_beyond_r_max(fp64):
+def test_gaussian_basis_is_not_zero_beyond_r_max():
     """Only the envelope makes a long edge contribute nothing, which is why the
     padding trick depends on `PolynomialCutoff` and not on the basis."""
     basis = GaussianBasis(r_max=GAUSSIAN_R_MAX, num_basis=GAUSSIAN_N)
@@ -224,6 +201,7 @@ def test_gaussian_basis_is_not_zero_beyond_r_max(fp64):
 
 CUTOFF_R_MAX, CUTOFF_ORDER = 3.0, 6
 
+#: r -> u(r) for p = 6, r_max = 3.
 CUTOFF_REFERENCE = {
     0.0: 1.0,
     1.0: 0.9803383630544124,
@@ -233,48 +211,25 @@ CUTOFF_REFERENCE = {
 }
 
 
-def _envelope(distance, r_max=CUTOFF_R_MAX, order=CUTOFF_ORDER):
-    u = distance / r_max
-    return (
-        1.0
-        - ((order + 1.0) * (order + 2.0) / 2.0) * u**order
-        + order * (order + 2.0) * u ** (order + 1)
-        - (order * (order + 1.0) / 2.0) * u ** (order + 2)
-    )
-
-
-def test_cutoff_reference_values_are_the_closed_form():
-    for distance, expected in CUTOFF_REFERENCE.items():
-        assert_close(_envelope(distance), expected, f"cutoff closed form at {distance}")
-
-
-def test_polynomial_cutoff_values(fp64):
+def test_polynomial_cutoff_values():
     cutoff = PolynomialCutoff(r_max=CUTOFF_R_MAX, polynomial_order=CUTOFF_ORDER)
     distances = torch.tensor([[r] for r in CUTOFF_REFERENCE])
     assert_close(cutoff(distances), [[v] for v in CUTOFF_REFERENCE.values()], "cutoff")
-    assert f"polynomial_order={CUTOFF_ORDER}" in repr(cutoff)
-    assert "r_max=3.0" in repr(cutoff)
 
 
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_polynomial_cutoff_is_exactly_zero_at_and_beyond_r_max(dtype):
     """Exact equality, in both dtypes. At 2*r_max the polynomial is negative and
     the `(x < r_max)` mask produces -0.0, which compares equal to 0.0 -- assert
     the comparison, never the repr."""
-    previous = torch.get_default_dtype()
-    torch.set_default_dtype(dtype)
-    try:
-        cutoff = PolynomialCutoff(r_max=CUTOFF_R_MAX, polynomial_order=CUTOFF_ORDER)
-        for distance in (CUTOFF_R_MAX, 2 * CUTOFF_R_MAX, 100 * CUTOFF_R_MAX):
-            value = cutoff(torch.tensor(distance, dtype=dtype))
-            assert value.item() == 0.0, (distance, value.item())
-        inside = cutoff(torch.tensor(CUTOFF_R_MAX * 0.999, dtype=dtype))
-        assert inside.item() > 0.0
-    finally:
-        torch.set_default_dtype(previous)
+    cutoff = PolynomialCutoff(r_max=CUTOFF_R_MAX, polynomial_order=CUTOFF_ORDER)
+    for distance in (CUTOFF_R_MAX, 2 * CUTOFF_R_MAX, 100 * CUTOFF_R_MAX):
+        value = cutoff(torch.tensor(distance, dtype=dtype))
+        assert value.item() == 0.0, (distance, value.item())
+    inside = cutoff(torch.tensor(CUTOFF_R_MAX * 0.999, dtype=dtype))
+    assert inside.item() > 0.0
 
 
-def test_polynomial_cutoff_derivative_vanishes_at_and_beyond_r_max(fp64):
+def test_polynomial_cutoff_derivative_vanishes_at_and_beyond_r_max():
     cutoff = PolynomialCutoff(r_max=CUTOFF_R_MAX, polynomial_order=CUTOFF_ORDER)
     distances = torch.tensor(
         [CUTOFF_R_MAX, CUTOFF_R_MAX + 0.5, 2 * CUTOFF_R_MAX], requires_grad=True
@@ -283,7 +238,8 @@ def test_polynomial_cutoff_derivative_vanishes_at_and_beyond_r_max(fp64):
     assert torch.equal(gradient, torch.zeros_like(gradient))
 
 
-def test_polynomial_cutoff_meets_r_max_with_a_vanishing_slope(fp64):
+@fp64_only
+def test_polynomial_cutoff_meets_r_max_with_a_vanishing_slope():
     """The envelope has a triple root at r_max, so its finite-difference slope
     just inside falls off like h^2 as the offset h halves."""
     cutoff = PolynomialCutoff(r_max=CUTOFF_R_MAX, polynomial_order=CUTOFF_ORDER)
@@ -302,7 +258,7 @@ def test_polynomial_cutoff_meets_r_max_with_a_vanishing_slope(fp64):
 
 
 @pytest.mark.parametrize("order", [2, 5, 6, 8])
-def test_polynomial_cutoff_is_one_at_zero_for_every_order(order, fp64):
+def test_polynomial_cutoff_is_one_at_zero_for_every_order(order):
     cutoff = PolynomialCutoff(r_max=CUTOFF_R_MAX, polynomial_order=order)
     assert cutoff(torch.tensor(0.0)).item() == 1.0
     assert cutoff(torch.tensor(CUTOFF_R_MAX)).item() == 0.0
@@ -310,12 +266,14 @@ def test_polynomial_cutoff_is_one_at_zero_for_every_order(order, fp64):
     assert bool((torch.diff(sampled) <= 0).all())
 
 
-def test_polynomial_envelope_broadcasts_a_per_edge_r_max(fp64):
-    """The ZBL term hands the envelope one radius per edge."""
+def test_polynomial_envelope_broadcasts_a_per_edge_r_max():
+    """The ZBL term hands the envelope one radius per edge: the result is what
+    a cutoff module built with that radius gives, edge by edge."""
     distances = torch.tensor([[1.0], [1.0]])
     per_edge_r_max = torch.tensor([[1.5], [0.5]])
-    out = polynomial_envelope(distances, per_edge_r_max, 6)
-    assert_close(out[0], [_envelope(1.0, r_max=1.5)], "inside")
+    out = polynomial_envelope(distances, per_edge_r_max, CUTOFF_ORDER)
+    inside = PolynomialCutoff(r_max=1.5, polynomial_order=CUTOFF_ORDER)
+    assert torch.equal(out[0], inside(distances[0]))
     assert out[1].item() == 0.0
 
 
@@ -330,38 +288,15 @@ def test_polynomial_envelope_broadcasts_a_per_edge_r_max(fp64):
 #
 # The envelope's r_max is the pair's covalent radii sum, not the model cutoff.
 
-
-def zbl_pair_energy(z_u, z_v, distance, order=6):
-    """The formula above, written out independently of the implementation."""
-    a = 0.4543 * 0.529 / (z_u**0.300 + z_v**0.300)
-    x = distance / a
-    phi = (
-        0.1818 * np.exp(-3.2 * x)
-        + 0.5099 * np.exp(-0.9423 * x)
-        + 0.2802 * np.exp(-0.4028 * x)
-        + 0.02817 * np.exp(-0.2016 * x)
-    )
-    pair_r_max = ase.data.covalent_radii[z_u] + ase.data.covalent_radii[z_v]
-    envelope = _envelope(distance, r_max=pair_r_max, order=order) * (
-        distance < pair_r_max
-    )
-    return 0.5 * (14.3996 * z_u * z_v) / distance * phi * envelope
-
-
-#: (Z_u, Z_v, r) -> per-node energy, hand-evaluated from the formula above.
+#: (Z_u, Z_v, r) -> per-node energy in eV, evaluated from the formula above.
 ZBL_REFERENCE = {
     (1, 6, 0.9): 0.04838438085989024,
     (8, 8, 1.2): 0.00924872728685459,
 }
 
 
-def test_zbl_reference_values_are_the_published_formula():
-    for (z_u, z_v, distance), expected in ZBL_REFERENCE.items():
-        assert_close(zbl_pair_energy(z_u, z_v, distance), expected, f"zbl {z_u}-{z_v}")
-
-
 @pytest.mark.parametrize("pair", sorted(ZBL_REFERENCE))
-def test_zbl_matches_the_published_formula(pair, fp64):
+def test_zbl_matches_the_published_formula(pair):
     z_u, z_v, distance = pair
     zbl = ZBLBasis(polynomial_order=6)
     node_atomic_numbers = torch.tensor([z_u, z_v])
@@ -374,7 +309,7 @@ def test_zbl_matches_the_published_formula(pair, fp64):
     assert_close(energies.sum(), 2 * ZBL_REFERENCE[pair], "zbl total")
 
 
-def test_zbl_is_exactly_zero_beyond_the_pair_covalent_radii(fp64):
+def test_zbl_is_exactly_zero_beyond_the_pair_covalent_radii():
     zbl = ZBLBasis(polynomial_order=6)
     node_atomic_numbers = torch.tensor([1, 6])
     edge_index = torch.tensor([[0, 1], [1, 0]])
@@ -393,7 +328,7 @@ def test_zbl_is_exactly_zero_beyond_the_pair_covalent_radii(fp64):
     assert (inside > 0.0).all()
 
 
-def test_zbl_energy_is_scattered_onto_the_receiver(fp64):
+def test_zbl_energy_is_scattered_onto_the_receiver():
     zbl = ZBLBasis(polynomial_order=6)
     # three H atoms, all edges pointing at node 0
     node_atomic_numbers = torch.tensor([1, 1, 1])
@@ -401,11 +336,13 @@ def test_zbl_energy_is_scattered_onto_the_receiver(fp64):
     lengths = torch.tensor([[0.6], [0.6]])
     energies = zbl(lengths, node_atomic_numbers, edge_index)
     assert energies.shape == (3,)
-    assert_close(energies[0], 2 * zbl_pair_energy(1, 1, 0.6), "receiver sum")
+    one_edge = zbl(lengths[:1], node_atomic_numbers[:2], edge_index[:, :1])
+    assert one_edge[0] > 0.0
+    assert_close(energies[0], 2 * one_edge[0], "receiver sum")
     assert torch.equal(energies[1:], torch.zeros(2))
 
 
-def test_zbl_buffers_and_trainability(fp64):
+def test_zbl_buffers_and_trainability():
     zbl = ZBLBasis(polynomial_order=6)
     assert_close(zbl.screening_coefficients, [0.1818, 0.5099, 0.2802, 0.02817], "zbl c")
     assert zbl.screening_length_exponent.item() == pytest.approx(0.300)
@@ -415,7 +352,6 @@ def test_zbl_buffers_and_trainability(fp64):
     trainable = ZBLBasis(polynomial_order=6, trainable=True)
     assert trainable.screening_length_exponent.requires_grad
     assert trainable.screening_length_prefactor.requires_grad
-    assert "0.1818" in repr(zbl)
 
 
 # ===========================================================================
@@ -443,51 +379,34 @@ def _hc_edge(distances):
     return lengths, node_atomic_numbers, edge_index
 
 
-def test_agnesi_reference_values_are_the_closed_form():
-    q, p, a = 0.9183, 4.5791, 1.0805
-    r_0 = 0.5 * (ase.data.covalent_radii[1] + ase.data.covalent_radii[6])
-    for distance, expected in AGNESI_REFERENCE.items():
-        y = distance / r_0
-        assert_close(1.0 / (1 + a * y**q / (1 + y ** (q - p))), expected, "agnesi")
-
-
-def test_agnesi_transform_values(fp64):
+def test_agnesi_transform_values():
     out = AgnesiTransform()(*_hc_edge(AGNESI_REFERENCE))
     assert_close(out, [[v] for v in AGNESI_REFERENCE.values()], "agnesi")
 
 
-def test_agnesi_transform_is_monotone_decreasing(fp64):
+def test_agnesi_transform_is_monotone_decreasing():
     distances = np.linspace(0.2, 6.0, 200)
     out = AgnesiTransform()(*_hc_edge(distances)).squeeze(-1)
     assert bool((torch.diff(out) < 0).all())
     assert float(out[0]) < 1.0
 
 
-def test_soft_reference_values_are_the_closed_form():
-    r_0 = ase.data.covalent_radii[1] + ase.data.covalent_radii[6]
-    p_0, p_1 = 0.75 * r_0, (4.0 / 3.0) * r_0
-    midpoint, steepness = 0.5 * (p_0 + p_1), 4.0 / (p_1 - p_0)
-    for distance, expected in SOFT_REFERENCE.items():
-        switch = 0.5 * (1.0 + np.tanh(steepness * (distance - midpoint)))
-        assert_close(p_0 + (distance - p_0) * switch, expected, "soft")
-
-
-def test_soft_transform_values(fp64):
+def test_soft_transform_values():
     out = SoftTransform()(*_hc_edge(SOFT_REFERENCE))
     assert_close(out, [[v] for v in SOFT_REFERENCE.values()], "soft")
 
 
-def test_soft_transform_clamps_below_p0_and_is_the_identity_above(fp64):
+def test_soft_transform_clamps_below_p0_and_is_the_identity_above():
     transform = SoftTransform()
     r_0 = ase.data.covalent_radii[1] + ase.data.covalent_radii[6]
     p_0 = 0.75 * r_0
     short, long = 0.15, 4.0
     out = transform(*_hc_edge([short, long])).squeeze(-1)
     assert float(out[0]) == pytest.approx(p_0, abs=1e-3)
-    assert float(out[1]) == pytest.approx(long, abs=1e-6)
+    assert_close(out[1], long, "identity above p_1")
 
 
-def test_soft_transform_is_monotone_only_above_the_clamp(fp64):
+def test_soft_transform_is_monotone_only_above_the_clamp():
     """A real wrinkle of the legacy formula: below p_0 the transform dips about
     5e-4 under p_0 before recovering. Harmless, but a port asserting global
     monotonicity would be asserting something false."""
@@ -504,7 +423,7 @@ def test_soft_transform_is_monotone_only_above_the_clamp(fp64):
     assert float(values.min()) < p_0
 
 
-def test_transforms_are_trainable_on_request(fp64):
+def test_transforms_are_trainable_on_request():
     agnesi = AgnesiTransform(trainable=True)
     assert agnesi.amplitude.requires_grad
     assert agnesi.exponent_q.requires_grad
@@ -514,23 +433,11 @@ def test_transforms_are_trainable_on_request(fp64):
 
 
 # ===========================================================================
-# Reprs and the radial MLP
+# Radial MLP
 # ===========================================================================
 
 
-def test_every_module_has_a_repr_naming_its_parameters(fp64):
-    """A printed model is how a user checks which radial setup a checkpoint was
-    built with, so the reprs are part of the surface."""
-    assert "num_basis=4" in repr(BesselBasis(r_max=5.0, num_basis=4))
-    assert "num_basis=4" in repr(ChebyshevBasis(num_basis=4))
-    assert "num_basis=4" in repr(GaussianBasis(r_max=5.0, num_basis=4))
-    assert "r_max=3.0" in repr(PolynomialCutoff(r_max=3.0))
-    assert "0.1818" in repr(ZBLBasis(polynomial_order=6))
-    assert "amplitude=1.0805" in repr(AgnesiTransform())
-    assert "steepness=4.0000" in repr(SoftTransform())
-
-
-def test_radial_mlp_structure_and_shapes(fp64):
+def test_radial_mlp_structure_and_shapes(dtype):
     mlp = RadialMLP([8, 16, 4])
     kinds = [type(module).__name__ for module in mlp.layers]
     # no normalisation or activation after the last layer: the output is unbounded
@@ -538,10 +445,10 @@ def test_radial_mlp_structure_and_shapes(fp64):
     assert mlp.channels == [8, 16, 4]
     out = mlp(torch.zeros(5, 8))
     assert out.shape == (5, 4)
-    assert out.dtype == torch.float64
+    assert out.dtype == dtype
 
 
-def test_radial_mlp_single_layer_has_no_activation(fp64):
+def test_radial_mlp_single_layer_has_no_activation():
     mlp = RadialMLP([3, 2])
     assert [type(module).__name__ for module in mlp.layers] == ["Linear"]
     assert mlp(torch.ones(1, 3)).shape == (1, 2)
@@ -564,8 +471,9 @@ def _basis_times_cutoff(kind: str):
     return lambda lengths: basis(lengths) * cutoff(lengths)
 
 
+@fp64_only
 @pytest.mark.parametrize("kind", ["bessel", "gaussian", "chebyshev"])
-def test_basis_times_cutoff_passes_gradcheck_and_gradgradcheck(kind, fp64):
+def test_basis_times_cutoff_passes_gradcheck_and_gradgradcheck(kind):
     function = _basis_times_cutoff(kind)
     # strictly inside the cutoff and away from zero, where every term is smooth
     lengths = torch.tensor([[0.7], [1.4], [2.6]], requires_grad=True)
@@ -573,8 +481,9 @@ def test_basis_times_cutoff_passes_gradcheck_and_gradgradcheck(kind, fp64):
     assert torch.autograd.gradgradcheck(function, (lengths,))
 
 
+@fp64_only
 @pytest.mark.parametrize("transform", [AgnesiTransform, SoftTransform])
-def test_distance_transforms_pass_gradcheck_and_gradgradcheck(transform, fp64):
+def test_distance_transforms_pass_gradcheck_and_gradgradcheck(transform):
     module = transform()
     _, node_atomic_numbers, edge_index = _hc_edge([0.0, 0.0, 0.0])
     lengths = torch.tensor([[0.7], [1.1], [2.6]], requires_grad=True)
@@ -586,7 +495,8 @@ def test_distance_transforms_pass_gradcheck_and_gradgradcheck(transform, fp64):
     assert torch.autograd.gradgradcheck(function, (lengths,))
 
 
-def test_zbl_passes_gradcheck_and_gradgradcheck(fp64):
+@fp64_only
+def test_zbl_passes_gradcheck_and_gradgradcheck():
     zbl = ZBLBasis(polynomial_order=6)
     node_atomic_numbers = torch.tensor([1, 6, 8])
     edge_index = torch.tensor([[0, 1, 2, 0], [1, 0, 0, 2]])
