@@ -321,3 +321,89 @@ def _conv_backward(ctx, grad):
 
 
 channelwise_tp_conv.register_autograd(_conv_backward, setup_context=_conv_setup)
+
+
+# ---------------------------------------------------------------------------
+# equivariant_linear
+# ---------------------------------------------------------------------------
+
+
+@torch.library.custom_op("mace::equivariant_linear", mutates_args=())
+def equivariant_linear(
+    features: Tensor,
+    weights: Tensor,
+    row: Tensor,
+    column: Tensor,
+    source: Tensor,
+    bias: Tensor,
+    bias_row: Tensor,
+    dim_out: int,
+) -> Tensor:
+    """An equivariant linear map, plus a bias on the scalar outputs.
+
+    Args:
+        features: ``[n, dim_in]``.
+        weights: ``[n_weights]``, flat and canonical.
+        row: ``[n_entries]``, the output component each entry writes to.
+        column: ``[n_entries]``, the input component it reads from.
+        source: ``[n_entries]``, which weight it uses. One weight appears
+            ``2l+1`` times, once per component of its irrep, which is what
+            makes the map equivariant rather than a free matrix.
+        bias: ``[n_bias]``, added to the scalar outputs. Only ``0e`` may carry
+            one without breaking equivariance.
+        bias_row: ``[n_bias]``, which output component each bias adds to.
+        dim_out: The output width, as a plain int.
+
+    The structure travels as index tensors rather than as Python constants.
+    That is what lets one registered operator serve every irreps declaration in
+    a model: an op body cannot read a build-time table, and reading one from a
+    device tensor would be a host read on the hot path.
+    """
+    dense = features.new_zeros((dim_out, features.shape[-1]))
+    dense = dense.index_put((row, column), weights.index_select(0, source))
+    out = features @ dense.transpose(0, 1)
+    if bias.numel():
+        addition = out.new_zeros((dim_out,)).index_add(0, bias_row, bias)
+        out = out + addition
+    return out
+
+
+@equivariant_linear.register_fake
+def _(
+    features: Tensor,
+    weights: Tensor,
+    row: Tensor,
+    column: Tensor,
+    source: Tensor,
+    bias: Tensor,
+    bias_row: Tensor,
+    dim_out: int,
+) -> Tensor:
+    return features.new_empty((*features.shape[:-1], dim_out))
+
+
+def _linear_setup(ctx, inputs, output) -> None:
+    features, weights, row, column, source, bias, bias_row, _ = inputs
+    ctx.save_for_backward(features, weights, row, column, source, bias, bias_row)
+
+
+def _linear_backward(ctx, grad):
+    features, weights, row, column, source, bias, bias_row = ctx.saved_tensors
+    dense = features.new_zeros((grad.shape[-1], features.shape[-1]))
+    dense = dense.index_put((row, column), weights.index_select(0, source))
+
+    grad_features = grad @ dense
+    outer = grad.reshape(-1, grad.shape[-1]).transpose(0, 1) @ features.reshape(
+        -1, features.shape[-1]
+    )
+    per_entry = outer[row, column]
+    grad_weights = torch.zeros_like(weights).index_add(0, source, per_entry)
+    grad_bias = (
+        grad.reshape(-1, grad.shape[-1]).sum(0).index_select(0, bias_row)
+        if bias.numel()
+        else torch.zeros_like(bias)
+    )
+    return grad_features, grad_weights, None, None, None, grad_bias, None, None
+
+
+equivariant_linear.register_autograd(_linear_backward, setup_context=_linear_setup)
