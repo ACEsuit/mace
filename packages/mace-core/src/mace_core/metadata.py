@@ -16,7 +16,7 @@ import json
 from collections.abc import Iterable
 from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mace_core.config import ReforgeBaseConfig
 
@@ -27,6 +27,7 @@ __all__ = [
     "DataSourceSummary",
     "DataSummary",
     "E0Details",
+    "HeadSummary",
     "MetadataSchemaError",
     "ModelMetadata",
     "ParentModel",
@@ -82,9 +83,8 @@ class DataSourceSummary(_Record):
 
     Reference-quantity keys name the method that produced the reference as a
     prefix on the quantity: `pbe_energy`, `pbe_forces`, `r2scan_energy`.
-    `reference_keys` lists the keys this source was fitted to, under that
-    convention, so a reader can tell which level of theory each head
-    reproduces. Which heads a source feeds is in the resolved config.
+    `reference_keys` lists the keys this source provides, under that
+    convention. The heads a source fed name it in `ModelMetadata.heads`.
     """
 
     #: The data source's name in the config.
@@ -97,7 +97,8 @@ class DataSourceSummary(_Record):
 
 
 class DataSummary(_Record):
-    """One summary per data source; totals are sums over them, not stored."""
+    """One summary per data source, each once even when several heads share
+    it (`ModelMetadata` checks that); totals are sums over them, not stored."""
 
     sources: list[DataSourceSummary] = Field(default_factory=list)
 
@@ -119,6 +120,14 @@ class E0Details(_Record):
     values: dict[str, float] = Field(default_factory=dict)
 
 
+class HeadSummary(_Record):
+    """What one head was fitted on: its E0s and the data sources it consumed."""
+
+    e0: E0Details
+    #: Names in `DataSummary.sources`; a source feeding two heads appears in both.
+    sources: list[str] = Field(default_factory=list)
+
+
 class Citation(_Record):
     """One work users of the model are asked to cite."""
 
@@ -138,8 +147,8 @@ class ModelMetadata(_Record):
     config: ConfigRecord
     provenance: Provenance
     data: DataSummary = Field(default_factory=DataSummary)
-    #: Keyed by head name, as in the config; every head has its own E0 table.
-    e0: dict[str, E0Details] = Field(default_factory=dict)
+    #: Keyed by head name, as in the config; a single-head model has one entry.
+    heads: dict[str, HeadSummary] = Field(default_factory=dict)
     #: DOI of the model itself, not of the papers describing it.
     doi: str | None = None
     citations: list[Citation] = Field(default_factory=list)
@@ -148,10 +157,27 @@ class ModelMetadata(_Record):
     #: the whole lineage travels with the model.
     parents: list[ParentModel] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _heads_name_known_sources(self) -> ModelMetadata:
+        names = [source.name for source in self.data.sources]
+        if len(set(names)) != len(names):
+            raise ValueError(
+                f"data.sources names a source twice: {sorted(names)}; "
+                f"summarise each source once"
+            )
+        for head, summary in self.heads.items():
+            for name in summary.sources:
+                if name not in names:
+                    raise ValueError(
+                        f"heads.{head}.sources names {name!r}, which is not in "
+                        f"data.sources; add its summary or drop the name"
+                    )
+        return self
+
     def to_json(self, indent: int | None = 2) -> str:
-        """Serialise; raises `MetadataSchemaError` if the text would not read
-        back to an equal record, so a lossy value (a tuple that comes back as
-        a list, a datetime that comes back as a string) is never stored."""
+        """Serialise; raises `MetadataSchemaError` if the text reads back to a
+        different record, so a lossy value (a tuple that comes back as a list,
+        a datetime that comes back as a string) is never stored."""
         text = self.model_dump_json(indent=indent)
         if self.from_json(text) != self:
             raise MetadataSchemaError(
@@ -165,7 +191,9 @@ class ModelMetadata(_Record):
         """Parse a record written by `to_json()`.
 
         Raises `MetadataSchemaError` when the record carries a schema version
-        this code does not read, before any field is interpreted.
+        this code does not read, before any field is interpreted. Embedded
+        parent records are validated as fields, so a version mismatch inside
+        one is pydantic's error; a record only embeds parents it could read.
         """
         try:
             document = json.loads(text)

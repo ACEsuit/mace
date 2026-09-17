@@ -13,6 +13,7 @@ from mace_core.metadata import (
     DataSourceSummary,
     DataSummary,
     E0Details,
+    HeadSummary,
     MetadataSchemaError,
     ModelMetadata,
     ParentModel,
@@ -51,14 +52,20 @@ def full_record() -> ModelMetadata:
                 DataSourceSummary(name="ice", elements=["H", "O"]),
             ]
         ),
-        e0={
-            "pbe": E0Details(
-                source="estimated",
-                method="least_squares",
-                parameters={"reference_key": "pbe_energy"},
-                values={"H": -13.6, "O": -430.2},
+        heads={
+            "pbe": HeadSummary(
+                e0=E0Details(
+                    source="estimated",
+                    method="least_squares",
+                    parameters={"reference_key": "pbe_energy"},
+                    values={"H": -13.6, "O": -430.2},
+                ),
+                sources=["water", "ice"],
             ),
-            "r2scan": E0Details(source="explicit", values={"H": -13.7, "O": -431.0}),
+            "r2scan": HeadSummary(
+                e0=E0Details(source="explicit", values={"H": -13.7, "O": -431.0}),
+                sources=["ice"],
+            ),
         },
         doi="10.5281/zenodo.0000000",
         citations=[MACE_PAPER, Citation(title="A dataset paper", doi="10.1000/xyz")],
@@ -80,7 +87,18 @@ def test_minimal_record_round_trips_too():
         config=ConfigRecord(), provenance=Provenance(code_version="0.0.0")
     )
     assert ModelMetadata.from_json(record.to_json()) == record
-    assert record.e0 == {}
+    assert record.heads == {}
+
+
+def test_heads_must_name_summarised_sources():
+    record = full_record()
+    record.heads["pbe"].sources.append("vapour")
+    with pytest.raises(ValidationError, match=r"heads\.pbe\.sources names 'vapour'"):
+        ModelMetadata.model_validate(record.model_dump())
+    record = full_record()
+    record.data.sources.append(DataSourceSummary(name="ice"))
+    with pytest.raises(ValidationError, match="names a source twice"):
+        ModelMetadata.model_validate(record.model_dump())
 
 
 def test_config_and_provenance_are_mandatory():
@@ -90,7 +108,7 @@ def test_config_and_provenance_are_mandatory():
 
 def test_lossy_value_is_refused_rather_than_stored():
     record = full_record()
-    record.e0["pbe"].parameters["shape"] = (2, 3)  # JSON brings it back as a list
+    record.heads["pbe"].e0.parameters["shape"] = (2, 3)  # JSON brings it back as a list
     with pytest.raises(MetadataSchemaError, match="does not survive a JSON round trip"):
         record.to_json()
 
@@ -162,9 +180,9 @@ def test_infinity_survives_and_nan_is_refused():
     # pass the round-trip check; an E0 or a config value that is NaN is a bug
     # upstream, not something to store.
     record = full_record()
-    record.e0["pbe"].values["H"] = float("inf")
+    record.heads["pbe"].e0.values["H"] = float("inf")
     back = ModelMetadata.from_json(record.to_json())
-    assert back.e0["pbe"].values["H"] == float("inf")
+    assert back.heads["pbe"].e0.values["H"] == float("inf")
     record.config.resolved["cutoff"] = float("nan")
     with pytest.raises(MetadataSchemaError, match="does not survive"):
         record.to_json()
