@@ -56,6 +56,8 @@ LEGACY_TRANSFORM_NAME = {"none": "None", "agnesi": "Agnesi", "soft": "Soft"}
 def test_radial_embedding_block_parity(
     radial_basis, distance_transform, apply_cutoff, fp64
 ):
+    """`apply_cutoff` here is the *legacy* flag: it selects which of legacy's
+    two return shapes the two v1 tensors are compared against."""
     lengths, node_attrs, node_atomic_numbers, edge_index = _graph()
     legacy = LegacyRadialEmbeddingBlock(
         r_max=R_MAX,
@@ -71,15 +73,17 @@ def test_radial_embedding_block_parity(
         num_polynomial_cutoff=5,
         radial_basis=radial_basis,
         distance_transform=distance_transform,
-        apply_cutoff=apply_cutoff,
     )
     legacy_radial, legacy_cutoff = legacy(lengths, node_attrs, edge_index, SPECIES)
-    embedding = v1(lengths, node_atomic_numbers, edge_index)
-    assert_parity(embedding.edge_radial_features, legacy_radial, "radial features")
+    v1_radial, v1_cutoff = v1(lengths, node_atomic_numbers, edge_index)
+    # v1 always returns the bare basis and the envelope; legacy pre-multiplies
+    # them under --apply_cutoff and returns the envelope only when it does not.
     if apply_cutoff:
-        assert legacy_cutoff is None and embedding.edge_cutoff is None
+        assert legacy_cutoff is None
+        assert_parity(v1_radial * v1_cutoff, legacy_radial, "basis x cutoff")
     else:
-        assert_parity(embedding.edge_cutoff, legacy_cutoff, "deferred cutoff")
+        assert_parity(v1_radial, legacy_radial, "bare basis")
+        assert_parity(v1_cutoff, legacy_cutoff, "cutoff")
 
 
 def test_zbl_parity(fp64):

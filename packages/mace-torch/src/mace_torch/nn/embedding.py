@@ -2,14 +2,13 @@
 
 Both are the first thing a MACE model does with a graph. The node embedding
 maps each atom's element to a vector of scalar channels; the radial embedding
-maps each edge's length to a vector of radial features multiplied by a smooth
-cutoff envelope.
+maps each edge's length to a vector of radial features and the smooth cutoff
+envelope that goes with them.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from typing import Literal
 
 import torch
@@ -27,7 +26,6 @@ __all__ = [
     "DistanceTransformKind",
     "LinearNodeEmbeddingBlock",
     "RadialBasisKind",
-    "RadialEmbedding",
     "RadialEmbeddingBlock",
 ]
 
@@ -59,30 +57,13 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
         """``[n_nodes, num_elements]`` one-hot -> ``[n_nodes, num_channels]``."""
         return node_attributes @ self.weight
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(num_elements={self.num_elements}, "
-            f"num_channels={self.num_channels})"
-        )
-
-
-@dataclass(frozen=True)
-class RadialEmbedding:
-    """The radial embedding of every edge.
-
-    ``edge_radial_features`` is ``[n_edges, num_basis]``. When the block applied
-    the cutoff, it is already the product with the envelope and ``edge_cutoff``
-    is ``None``. Otherwise the features are the bare basis and ``edge_cutoff``
-    (``[n_edges, 1]``) is the envelope the consumer multiplies in later; the
-    product of the two is bit-for-bit the applied branch.
-    """
-
-    edge_radial_features: torch.Tensor
-    edge_cutoff: torch.Tensor | None
+    def extra_repr(self) -> str:
+        return f"num_elements={self.num_elements}, num_channels={self.num_channels}"
 
 
 class RadialEmbeddingBlock(torch.nn.Module):
-    """Basis x cutoff for every edge, with an optional distance transform.
+    """The radial basis and the cutoff envelope of every edge, with an optional
+    distance transform.
 
     The forward runs three steps in a fixed order that is load-bearing:
 
@@ -90,9 +71,8 @@ class RadialEmbeddingBlock(torch.nn.Module):
     2. the distance transform, if configured, is applied to the lengths;
     3. the basis is evaluated on the (transformed) lengths.
 
-    With ``apply_cutoff`` the block returns ``basis * cutoff``; otherwise it
-    returns the bare basis and the envelope side by side, for a consumer that
-    applies the envelope itself (``--apply_cutoff False``).
+    The two results are returned side by side, never multiplied: where the
+    envelope enters is the consumer's decision, not this block's.
     """
 
     def __init__(
@@ -102,7 +82,6 @@ class RadialEmbeddingBlock(torch.nn.Module):
         num_polynomial_cutoff: int,
         radial_basis: RadialBasisKind = "bessel",
         distance_transform: DistanceTransformKind = "none",
-        apply_cutoff: bool = True,
     ):
         super().__init__()
         self.basis: torch.nn.Module
@@ -133,17 +112,18 @@ class RadialEmbeddingBlock(torch.nn.Module):
             r_max=r_max, polynomial_order=num_polynomial_cutoff
         )
         self.num_basis = num_basis
-        self.apply_cutoff = apply_cutoff
 
     def forward(
         self,
         edge_lengths: torch.Tensor,
         node_atomic_numbers: torch.Tensor,
         edge_index: torch.Tensor,
-    ) -> RadialEmbedding:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """``edge_lengths`` is ``[n_edges, 1]`` in Angstrom.
 
-        See :class:`RadialEmbedding` for the two return shapes.
+        Returns ``(edge_radial_features, edge_cutoff)``: the basis on the
+        (transformed) lengths, ``[n_edges, num_basis]``, and the envelope on
+        the raw lengths, ``[n_edges, 1]``.
         """
         edge_cutoff = self.cutoff(edge_lengths)  # on the raw lengths, always
         if self.distance_transform is not None:
@@ -151,6 +131,4 @@ class RadialEmbeddingBlock(torch.nn.Module):
                 edge_lengths, node_atomic_numbers, edge_index
             )
         edge_radial_features = self.basis(edge_lengths)
-        if not self.apply_cutoff:
-            return RadialEmbedding(edge_radial_features, edge_cutoff)
-        return RadialEmbedding(edge_radial_features * edge_cutoff, None)
+        return edge_radial_features, edge_cutoff

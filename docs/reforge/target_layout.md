@@ -115,7 +115,7 @@ packages/mace-torch/
 │   ├── backends/
 │   │   ├── reference/
 │   │   │   ├── backend.py              # ReferenceBackend: implements KernelBackend in plain torch — NO e3nn (native TP/linear/contraction; the correctness oracle, CPU-ok)
-│   │   │   └── sph_harm.py             # spherical harmonics + reference radial basis (non-hot)
+│   │   │   └── spherical_harmonics.py             # spherical harmonics + reference radial basis (non-hot)
 │   │   ├── cueq/
 │   │   │   ├── backend.py              # CuEqBackend: wraps cuequivariance behind the Protocol (kills the types.MethodType monkeypatch)
 │   │   │   └── canonical.py            # to_canonical/load_canonical ONLY at the boundary (mul_ir↔ir_mul reshape; the canonical→fused-basis map is a scaled permutation applied once at build time, rfc-01 §2.4.1)

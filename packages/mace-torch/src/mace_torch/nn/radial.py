@@ -97,14 +97,27 @@ class BesselBasis(torch.nn.Module):
         return len(self.frequencies)
 
     def forward(self, edge_lengths: torch.Tensor) -> torch.Tensor:
-        """``[n_edges, 1]`` distances in Angstrom -> ``[n_edges, num_basis]``."""
-        numerator = torch.sin(self.frequencies * edge_lengths)
-        return self.prefactor * (numerator / edge_lengths)
+        """``[n_edges, 1]`` distances in Angstrom -> ``[n_edges, num_basis]``.
 
-    def __repr__(self) -> str:
+        ``sin(w r) / r`` is ``0 / 0`` at ``r = 0``, where its limit is ``w``. A
+        zero-length edge (a padding edge in a static-shape batch) takes that
+        limit through a masked division, so the value and every derivative
+        order stay finite there; for ``r > 0`` the arithmetic is unchanged.
+        ``torch.sinc`` is not used: its second derivative is NaN at zero, and
+        force training differentiates twice through the basis.
+        """
+        is_zero = edge_lengths == 0.0
+        safe_lengths = torch.where(is_zero, torch.ones_like(edge_lengths), edge_lengths)
+        return self.prefactor * torch.where(
+            is_zero,
+            self.frequencies,
+            torch.sin(self.frequencies * edge_lengths) / safe_lengths,
+        )
+
+    def extra_repr(self) -> str:
         return (
-            f"{self.__class__.__name__}(r_max={self.r_max.item()}, "
-            f"num_basis={self.num_basis}, trainable={self.frequencies.requires_grad})"
+            f"r_max={self.r_max.item()}, num_basis={self.num_basis}, "
+            f"trainable={self.frequencies.requires_grad}"
         )
 
 
@@ -148,11 +161,8 @@ class ChebyshevBasis(torch.nn.Module):
             polynomials[first_order : first_order + self.num_basis], dim=-1
         )
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(num_basis={self.num_basis}, "
-            f"include_constant={self.include_constant})"
-        )
+    def extra_repr(self) -> str:
+        return f"num_basis={self.num_basis}, include_constant={self.include_constant}"
 
 
 class GaussianBasis(torch.nn.Module):
@@ -183,11 +193,8 @@ class GaussianBasis(torch.nn.Module):
         offsets = edge_lengths - self.centers
         return torch.exp(self.exponent_coefficient * torch.pow(offsets, 2))
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(num_basis={self.num_basis}, "
-            f"trainable={self.centers.requires_grad})"
-        )
+    def extra_repr(self) -> str:
+        return f"num_basis={self.num_basis}, trainable={self.centers.requires_grad}"
 
 
 # ---------------------------------------------------------------------------
@@ -237,11 +244,8 @@ class PolynomialCutoff(torch.nn.Module):
         """Same shape as the input; values in ``[0, 1]``."""
         return polynomial_envelope(edge_lengths, self.r_max, self.polynomial_order)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(polynomial_order={self.polynomial_order}, "
-            f"r_max={self.r_max.item()})"
-        )
+    def extra_repr(self) -> str:
+        return f"polynomial_order={self.polynomial_order}, r_max={self.r_max.item()}"
 
 
 # ---------------------------------------------------------------------------
@@ -350,13 +354,10 @@ class ZBLBasis(torch.nn.Module):
         )
         return node_energies.index_add(0, edge_index[1], edge_energies.squeeze(-1))
 
-    def __repr__(self) -> str:
-        coefficients = ", ".join(
-            f"{c:.5g}" for c in self.screening_coefficients.tolist()
-        )
+    def extra_repr(self) -> str:
         return (
-            f"{self.__class__.__name__}(screening_coefficients=[{coefficients}], "
-            f"polynomial_order={self.polynomial_order})"
+            f"polynomial_order={self.polynomial_order}, "
+            f"trainable={self.screening_length_exponent.requires_grad}"
         )
 
 
@@ -425,11 +426,11 @@ class AgnesiTransform(torch.nn.Module):
             / (1.0 + torch.pow(scaled, self.exponent_q - self.exponent_p))
         )
 
-    def __repr__(self) -> str:
+    def extra_repr(self) -> str:
         return (
-            f"{self.__class__.__name__}(amplitude={self.amplitude.item():.4f}, "
+            f"amplitude={self.amplitude.item():.4f}, "
             f"exponent_q={self.exponent_q.item():.4f}, "
-            f"exponent_p={self.exponent_p.item():.4f})"
+            f"exponent_p={self.exponent_p.item():.4f}"
         )
 
 
@@ -479,8 +480,8 @@ class SoftTransform(torch.nn.Module):
         switch = 0.5 * (1.0 + torch.tanh(steepness * (edge_lengths - midpoint)))
         return lower_clamp + (edge_lengths - lower_clamp) * switch
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(steepness={self.steepness.item():.4f})"
+    def extra_repr(self) -> str:
+        return f"steepness={self.steepness.item():.4f}"
 
 
 # ---------------------------------------------------------------------------
