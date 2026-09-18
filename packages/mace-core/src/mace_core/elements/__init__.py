@@ -1,6 +1,7 @@
 """Element bookkeeping: the default property keys and the element index table."""
 
 from mace_core.elements.default_keys import DefaultKeys
+from mace_core.elements.e0s import ResolvedE0s
 from mace_core.elements.number_table import (
     AtomicNumberTable,
     atomic_number_table_from_zs,
@@ -9,5 +10,6 @@ from mace_core.elements.number_table import (
 __all__ = [
     "AtomicNumberTable",
     "DefaultKeys",
+    "ResolvedE0s",
     "atomic_number_table_from_zs",
 ]
