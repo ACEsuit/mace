@@ -69,11 +69,11 @@ PER_GRAPH_KINDS = frozenset(
     }
 )
 
-#: The inputs a derivative row may be taken against. ``pos`` and ``cell`` are
-#: the two every model has and are declared in the shipped defaults; ``magmom``
-#: is the third the frozen tree actually differentiates against, and is
-#: declared by whichever configuration turns the magnetic model on.
-DECLARED_INPUTS = frozenset({"pos", "cell", "magmom"})
+#: The inputs a derivative row may be taken against. ``pos`` and ``strain``
+#: are the two every model has and are declared in the shipped defaults;
+#: ``magmom`` is the third the frozen tree actually differentiates against, and
+#: is declared by whichever configuration turns the magnetic model on.
+DECLARED_INPUTS = frozenset({"pos", "strain", "magmom"})
 
 
 @dataclass(frozen=True)
@@ -215,7 +215,7 @@ DISPOSITIONS: dict[str, Disposition] = {
     "virials": Spec(
         irreps="0e+2e",
         note=(
-            "the NEGATED cell derivative, and the sign is not a detail: "
+            "the NEGATED strain derivative, and the sign is not a detail: "
             "`compute_forces_virials` computes the stress from the raw "
             "gradient and negates the virial only in its return statement "
             "(mace/modules/utils.py:107-115), so the frozen tree reports "
@@ -346,7 +346,7 @@ DISPOSITIONS: dict[str, Disposition] = {
     ),
     "stress": Derivative(
         of="energy",
-        wrt="cell",
+        wrt="strain",
         sign=+1,
         note=(
             "positive, and only because the stress is built from the raw "
@@ -404,8 +404,9 @@ DISPOSITIONS: dict[str, Disposition] = {
     ),
     "displacement": Drop(
         reason=(
-            "the symmetric strain handle the cell derivative is taken against. "
-            "It is created as zeros to attach the cell to the autograd graph "
+            "the symmetric strain the stress is the derivative against, the "
+            "`strain` input of the shipped declarations. It is created as "
+            "zeros to attach the positions and the cell to the autograd graph "
             "and nothing ever writes to it, so its value is identically zero "
             "on every structure. It belongs to the derivative engine, not to "
             "the output surface."

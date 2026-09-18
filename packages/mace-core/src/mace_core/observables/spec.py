@@ -9,9 +9,9 @@ has, say whether there is one per atom or one per structure, and it is declared.
 Three objects, and they do different jobs:
 
 ``InputSpec``
-    something the model is given -- positions, the cell, a magnetic moment, an
-    electronic temperature. Declared so that a derivative can be taken with
-    respect to it without new code.
+    a leaf a derivative can be taken against: positions, the strain, a magnetic
+    moment, an electronic temperature. Declaring one is what makes its
+    derivative reachable without new code.
 
 ``ObservableSpec``
     something the model produces and a loss can be written against.
@@ -75,11 +75,17 @@ def _check_name(value: str, kind: str) -> str:
 
 
 class InputSpec(BaseModel):
-    """Something the model is given, and can be differentiated against.
+    """Something a derivative can be taken against.
 
-    ``pos`` and ``cell`` are the two every model has. Anything else is declared
-    the same way, which is what makes ``d_energy_d_<feature>`` reachable for a
-    new feature without touching code.
+    ``pos`` and ``strain`` are the two every model has. Anything else is
+    declared the same way, which is what makes ``d_energy_d_<feature>``
+    reachable for a new feature without touching code.
+
+    An input is a leaf of the derivative graph, not necessarily a field read
+    from the data. ``pos`` is both. ``strain`` is only the first: the
+    derivative engine materialises it as zeros around the model call and
+    applies it to the positions and the cell, so nothing reads a strain from a
+    dataset and none is stored.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -87,7 +93,7 @@ class InputSpec(BaseModel):
     name: str
     irreps: str
     #: ``True`` for one value per atom (positions, magnetic moments), ``False``
-    #: for one per structure (the cell, a total charge). This is what decides
+    #: for one per structure (the strain, a total charge). This is what decides
     #: whether a derivative taken against the input is padded per node or per
     #: graph.
     per_atom: bool
@@ -122,7 +128,7 @@ class DerivativeRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _accept_bare_name(cls, value: object) -> object:
-        """``derivatives: [pos, cell]`` is the same as spelling out ``wrt``."""
+        """``derivatives: [pos, strain]`` is the same as spelling out ``wrt``."""
         if isinstance(value, str):
             return {"wrt": value}
         return value
