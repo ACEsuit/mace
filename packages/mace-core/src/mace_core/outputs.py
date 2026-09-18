@@ -60,8 +60,12 @@ class MACEOutput(Generic[TensorT]):
         forces: ``-d(energy)/d(positions)``, in eV/Å, shape ``(n_atoms, 3)``.
         stress: ``+d(energy)/d(strain) / volume``, in eV/Å³, shape
             ``(n_graphs, 3, 3)``.
-        virials: The same derivative before the volume division, in eV, shape
-            ``(n_graphs, 3, 3)``.
+        virials: ``-d(energy)/d(strain)``, in eV, shape ``(n_graphs, 3, 3)``.
+            Note the sign: this is the **negative** of the derivative the
+            stress is built from, so ``stress * volume == -virials`` rather
+            than ``+virials``. The two are easy to state as one quantity up to
+            a volume, and they are not; the `virials` row of the observable
+            inventory carries the measurement.
         dipole: Total dipole per graph, shape ``(n_graphs, 3)``.
         extras: Every other declared observable, keyed by its
             :class:`~mace_core.observables.ObservableSpec` name.
