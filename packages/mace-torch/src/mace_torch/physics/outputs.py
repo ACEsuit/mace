@@ -43,6 +43,11 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 import torch
+from mace_core.observables import InputSpec
+from mace_core.observables.derivatives import (
+    derivative_name,
+    derivative_sign,
+)
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
@@ -153,6 +158,7 @@ def prepare_inputs(
     graph: Mapping[str, Any],
     need_forces: bool = True,
     need_stress: bool = False,
+    leaves: Iterable[str] = (),
 ) -> tuple[dict[str, Any], Tensor, Tensor | None]:
     """Phase A: grad leaves, strain, shifts, edge vectors.
 
@@ -162,6 +168,9 @@ def prepare_inputs(
             given, which a caller sharing that dict sees.
         need_forces: Whether the positions become a graph leaf.
         need_stress: Whether a strain is injected at all.
+        leaves: Names of declared inputs that also become graph leaves. They
+            are made leaves here rather than in the model, which is what keeps
+            the model free of `requires_grad_`.
 
     Returns:
         A new dict, the positions leaf, and the displacement leaf or ``None``.
@@ -205,6 +214,12 @@ def prepare_inputs(
     prepared["shifts"] = shifts
     if displacement is not None:
         prepared["displacement"] = displacement
+    for name in leaves:
+        value = graph[name]
+        prepared[name] = (
+            value if value.requires_grad else value.clone().requires_grad_(True)
+        )
+
     sender, receiver = graph["edge_index"][0], graph["edge_index"][1]
     prepared["vectors"] = positions[receiver] - positions[sender] + shifts
     return prepared, positions, displacement
@@ -216,6 +231,11 @@ class DerivativeEngine(nn.Module):
     Args:
         backbone: The node-feature model.
         output_layer: The observable heads.
+        inputs: The declared model inputs beyond the positions and the cell.
+            The differentiable ones become graph leaves in phase A and can be
+            asked for by name. Nothing here knows what any of them mean: a
+            magnetic moment and an external field go through the same code, and
+            neither appears as a literal in it.
 
     The energy that is differentiated is always ``total_energy``, for both of
     the shapes the frozen tree has. Its plain model differentiates the total
@@ -225,10 +245,31 @@ class DerivativeEngine(nn.Module):
     ``autograd.grad`` never traverses it. One call covers both.
     """
 
-    def __init__(self, backbone: nn.Module, output_layer: nn.Module) -> None:
+    def __init__(
+        self,
+        backbone: nn.Module,
+        output_layer: nn.Module,
+        inputs: Iterable[InputSpec] = (),
+    ) -> None:
         super().__init__()
         self.backbone = backbone
         self.output_layer = output_layer
+        self.inputs = list(inputs)
+        self.differentiable_inputs = [
+            spec for spec in self.inputs if spec.differentiable
+        ]
+
+    def derivative_names(self) -> dict[str, str]:
+        """The name each declared input's energy derivative is reported under.
+
+        Derived, never declared. ``pos`` reports as ``forces`` and ``magmom``
+        as ``magforces`` because those pairs have names of their own; anything
+        else follows ``d_energy_d_<input>``.
+        """
+        return {
+            spec.name: derivative_name("energy", spec.name)
+            for spec in self.differentiable_inputs
+        }
 
     def forward(
         self,
@@ -246,17 +287,49 @@ class DerivativeEngine(nn.Module):
                 itself be differentiated, which is what force training needs.
         """
         wanted = set(compute)
-        unknown = sorted(wanted - {"forces", "stress", "virials", "edge_forces"})
+        by_input = self.derivative_names()
+        known = {"forces", "stress", "virials", "edge_forces"} | set(by_input.values())
+        unknown = sorted(wanted - known)
         if unknown:
+            undeclared = [
+                name
+                for name in unknown
+                if any(
+                    derivative_name("energy", spec.name) == name for spec in self.inputs
+                )
+            ]
+            if undeclared:
+                raise ValueError(
+                    f"{undeclared} would come from an input that is declared "
+                    f"but not differentiable. Set `differentiable: true` on it, "
+                    f"or stop asking for the derivative."
+                )
             raise ValueError(
                 f"{unknown} are not derivatives this computes. The choices are "
-                f"'forces', 'stress', 'virials' and 'edge_forces'."
+                f"{sorted(known)}."
             )
         need_strain = bool(wanted & {"stress", "virials"})
         need_forces = bool(wanted & {"forces", "edge_forces"}) or need_strain
+        # Only the inputs whose derivative was actually asked for. A leaf that
+        # nobody differentiates still holds the whole backward graph alive.
+        leaves = [
+            spec for spec in self.differentiable_inputs if by_input[spec.name] in wanted
+        ]
+        for spec in leaves:
+            if spec.name not in graph:
+                raise KeyError(
+                    f"{by_input[spec.name]!r} was requested, so the declared "
+                    f"input {spec.name!r} has to be in the graph, and it is "
+                    f"not. The keys present are {sorted(graph)}. Absence is "
+                    f"the key being absent; a value of all zeros is a present "
+                    f"input whose value is zero."
+                )
 
         prepared, positions, displacement = prepare_inputs(
-            graph, need_forces=need_forces, need_stress=need_strain
+            graph,
+            need_forces=need_forces,
+            need_stress=need_strain,
+            leaves=[spec.name for spec in leaves],
         )
         if "edge_forces" in wanted:
             # The edge vectors become the leaf themselves. Detaching first is
@@ -281,6 +354,9 @@ class DerivativeEngine(nn.Module):
         if "edge_forces" in wanted:
             targets.append(prepared["vectors"])
             order.append("vectors")
+        for spec in leaves:
+            targets.append(prepared[spec.name])
+            order.append(spec.name)
 
         energy = output.total_energy
         if energy is None:
@@ -323,6 +399,13 @@ class DerivativeEngine(nn.Module):
                     # AttributeError naming neither the key nor the caller.
                     graph["pbc"] if "pbc" in graph else None,  # noqa: SIM401
                 )
+        for spec in leaves:
+            name = by_input[spec.name]
+            gradient = by_name[spec.name]
+            if gradient is None:
+                gradient = torch.zeros_like(prepared[spec.name])
+            output.extras[name] = derivative_sign("energy", spec.name) * gradient
+
         if "edge_forces" in wanted:
             gradient = by_name["vectors"]
             # The sign is flipped once, here, so the deployment adapters do not

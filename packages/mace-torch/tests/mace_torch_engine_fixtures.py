@@ -11,7 +11,7 @@ import torch
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.neighbors import get_neighborhood
-from mace_core.observables import ObservableSpec
+from mace_core.observables import InputSpec, ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, MACEOutputs, ScaleShiftSpec
 from mace_torch.nn import MACEBackbone
@@ -24,7 +24,16 @@ ENERGY = ObservableSpec(
 )
 
 
-def build_engine(seed: int = 0) -> DerivativeEngine:
+#: A per-node differentiable input, used to exercise the declared-input path.
+#: Its name is the frozen tree's, so the alias rule that turns
+#: `d_energy_d_magmom` into `magforces` is exercised as well. Nothing in the
+#: engine or the backbone knows the name; only this fixture and its tests do.
+NODE_INPUT = InputSpec(
+    name="magmom", irreps="1o", per_atom=True, units="muB", differentiable=True
+)
+
+
+def build_engine(seed: int = 0, inputs=()) -> DerivativeEngine:
     """A backbone and output layer with weights, wired to the engine.
 
     The reference backend starts its contraction weights at zero, so an engine
@@ -43,6 +52,7 @@ def build_engine(seed: int = 0) -> DerivativeEngine:
         correlation=2,
         cutoff=CUTOFF,
         avg_num_neighbors=6.0,
+        node_inputs=[spec for spec in inputs if spec.per_atom],
     )
     head = EnergyOutputHead(
         ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
@@ -61,7 +71,7 @@ def build_engine(seed: int = 0) -> DerivativeEngine:
                         parameter.shape, generator=generator, dtype=parameter.dtype
                     )
                 )
-    return DerivativeEngine(backbone, outputs)
+    return DerivativeEngine(backbone, outputs, inputs=inputs)
 
 
 def build_graph(positions, numbers, cell=None, pbc=(False, False, False)) -> dict:
@@ -82,6 +92,11 @@ def build_graph(positions, numbers, cell=None, pbc=(False, False, False)) -> dic
         "cell": torch.tensor(np.asarray(effective, dtype=float)).reshape(1, 3, 3),
         "pbc": torch.tensor([list(pbc)]),
     }
+
+
+def node_input_values(count: int, seed: int = 7):
+    generator = np.random.default_rng(seed)
+    return torch.tensor(generator.normal(size=(count, 3)) * 0.4)
 
 
 def molecule():
