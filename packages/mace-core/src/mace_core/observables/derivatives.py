@@ -6,10 +6,10 @@ their own, and they are data in the table below rather than branches spread
 through the consumers that need them.
 
 The third special case is the reason this grammar is written over declared
-inputs rather than over positions and the cell. ``magforces`` is
+inputs rather than over positions and the strain. ``magforces`` is
 ``-dE/d(magmom)``, computed in the same autograd call as the forces, trained
 with its own loss term, and used by the magnetic self-consistent model to drive
-its fixed point. A grammar that knew only ``d_<q>_d_pos`` and ``d_<q>_d_cell``
+its fixed point. A grammar that knew only ``d_<q>_d_pos`` and ``d_<q>_d_strain``
 could not express it, and the magnetic work would have had to go around the
 abstraction that exists to prevent exactly that.
 
@@ -31,7 +31,7 @@ __all__ = [
 #: the ``d_<q>_d_<x>`` default. Everything else follows the rule.
 SPECIAL_CASES: dict[tuple[str, str], tuple[str, int]] = {
     ("energy", "pos"): ("forces", -1),
-    ("energy", "cell"): ("stress", +1),
+    ("energy", "strain"): ("stress", +1),
     ("energy", "magmom"): ("magforces", -1),
 }
 

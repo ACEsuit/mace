@@ -184,8 +184,8 @@ def test_the_three_named_derivatives_keep_their_legacy_names():
     and the two negated ones are the two the frozen tree negates."""
     assert derivative_name("energy", "pos") == "forces"
     assert derivative_sign("energy", "pos") == -1
-    assert derivative_name("energy", "cell") == "stress"
-    assert derivative_sign("energy", "cell") == +1
+    assert derivative_name("energy", "strain") == "stress"
+    assert derivative_sign("energy", "strain") == +1
     assert derivative_name("energy", "magmom") == "magforces"
     assert derivative_sign("energy", "magmom") == -1
     for name in ("forces", "stress", "magforces"):

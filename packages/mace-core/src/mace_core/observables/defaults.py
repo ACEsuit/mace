@@ -45,6 +45,6 @@ def load_catalogue(path: str | Path) -> ObservableCatalogue:
 
 
 def load_default_catalogue() -> ObservableCatalogue:
-    """The shipped declarations: energy plus its position and cell derivatives."""
+    """The shipped declarations: energy plus its position and strain derivatives."""
     resource = files("mace_core").joinpath(DEFAULTS_RESOURCE)
     return _catalogue_from_text(resource.read_text(encoding="utf-8"), DEFAULTS_RESOURCE)

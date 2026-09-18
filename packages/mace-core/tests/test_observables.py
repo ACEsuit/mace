@@ -29,7 +29,7 @@ inputs:
     irreps: "1o"
     per_atom: true
     units: "Å"
-  - name: cell
+  - name: strain
     irreps: "0e+2e"
     per_atom: false
     units: "1"
@@ -162,7 +162,7 @@ def test_units_may_not_be_empty():
     ("quantity", "wrt", "name", "sign"),
     [
         ("energy", "pos", "forces", -1),
-        ("energy", "cell", "stress", +1),
+        ("energy", "strain", "stress", +1),
         ("energy", "magmom", "magforces", -1),
     ],
 )
@@ -175,7 +175,7 @@ def test_the_three_special_cases_keep_their_names_and_signs(quantity, wrt, name,
     ("quantity", "wrt", "name"),
     [
         ("dipole", "pos", "d_dipole_d_pos"),
-        ("dipole", "cell", "d_dipole_d_cell"),
+        ("dipole", "strain", "d_dipole_d_strain"),
         ("polarizability", "pos", "d_polarizability_d_pos"),
         ("energy", "elec_temp", "d_energy_d_elec_temp"),
         ("quadrupole", "magmom", "d_quadrupole_d_magmom"),
@@ -194,7 +194,7 @@ def test_everything_else_follows_the_rule(quantity, wrt, name):
 def test_the_defaults_declare_energy_and_its_two_derivatives():
     catalogue = load_default_catalogue()
     assert catalogue.names() == ("energy", "forces", "stress")
-    assert [spec.name for spec in catalogue.inputs] == ["pos", "cell"]
+    assert [spec.name for spec in catalogue.inputs] == ["pos", "strain"]
 
 
 def test_the_default_forces_row_is_the_negative_position_gradient():
@@ -208,7 +208,7 @@ def test_the_default_forces_row_is_the_negative_position_gradient():
 
 
 def test_the_default_stress_row_is_the_positive_strain_gradient():
-    stress = load_default_catalogue().derivative("energy", "cell")
+    stress = load_default_catalogue().derivative("energy", "strain")
     assert stress.name == "stress"
     assert stress.sign == +1
     assert stress.per_atom is False
@@ -230,7 +230,7 @@ observables:
     units: "e*Å^2"
     normalization: "rms"
     default_loss_weight: 2.5
-    derivatives: [pos, cell]
+    derivatives: [pos, strain]
 """,
         tmp_path,
     )
@@ -241,13 +241,13 @@ observables:
     assert catalogue.names() == (
         "quadrupole",
         "d_quadrupole_d_pos",
-        "d_quadrupole_d_cell",
+        "d_quadrupole_d_strain",
     )
 
 
 def test_a_new_input_feature_makes_its_derivative_declarable(tmp_path):
     """`magmom` is the case that pays for the grammar being written over
-    declared inputs rather than over positions and the cell."""
+    declared inputs rather than over positions and the strain."""
     catalogue = catalogue_from(
         """
   - name: magmom
@@ -316,7 +316,7 @@ observables:
     message = str(caught.value)
     assert "energy" in message
     assert "elec_temp" in message
-    assert "['cell', 'pos']" in message
+    assert "['pos', 'strain']" in message
 
 
 def test_a_derived_name_may_not_collide_with_a_declared_observable(tmp_path):
@@ -385,7 +385,7 @@ def test_an_unknown_observable_or_input_says_what_is_declared():
     assert "['energy']" in str(caught.value)
     with pytest.raises(KeyError) as caught:
         catalogue.input("magmom")
-    assert "['cell', 'pos']" in str(caught.value)
+    assert "['pos', 'strain']" in str(caught.value)
 
 
 def test_a_derivative_can_be_named_without_having_been_requested():

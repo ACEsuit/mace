@@ -54,7 +54,7 @@ packages/mace-core/
 │   │   ├── derivatives.py              # d_<q>_d_<x> naming, and the three special cases with their signs
 │   │   └── defaults.py                 # loader for a declarations file
 │   ├── defaults/
-│   │   └── observables.yaml            # energy + its position and cell derivatives: the row every observable copies
+│   │   └── observables.yaml            # energy + its position and strain derivatives: the row every observable copies
 │   │
 │   ├── kernels/
 │   │   ├── protocol.py                 # KernelBackend Protocol, generic over TensorT: make_* factories + capabilities (§3.1)
