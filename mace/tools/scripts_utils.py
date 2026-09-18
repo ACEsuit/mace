@@ -380,6 +380,7 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         )
         config["field_norm_factor"] = model.field_norm_factor
         config["field_si"] = model.field_si
+        config["pbc_handling"] = getattr(model, "pbc_handling", "auto")
         config["fixedpoint_update_config"] = getattr(
             model, "_fixedpoint_update_config"
         ).copy()

@@ -1,0 +1,490 @@
+{
+  "backend": "e3nn",
+  "device": "cpu",
+  "dtype": "float64",
+  "fixtures": {
+    "mag_fe3_canted": {
+      "formula": "Fe3",
+      "inputs": {
+        "magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            3,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              -0.36191171,
+              2.56637199,
+              0.2067721
+            ],
+            [
+              -2.37517383,
+              -1.0358402,
+              0.21350496
+            ],
+            [
+              2.34565924,
+              -1.11771848,
+              -0.09267203
+            ]
+          ]
+        }
+      },
+      "metadata": {},
+      "n_atoms": 3,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            3
+          ],
+          "unit": "eV",
+          "value": [
+            -4.3156254553983775,
+            -4.368239556119729,
+            -4.460067089790318
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -13.143932101308424
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            3,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.035977650954021057,
+              0.044910686188112114,
+              0.04344560504406811
+            ],
+            [
+              0.06458190278227988,
+              0.0486365800388725,
+              -0.04188349926732525
+            ],
+            [
+              -0.028604251828258806,
+              -0.09354726622698462,
+              -0.0015621057767428656
+            ]
+          ]
+        },
+        "magforces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            3,
+            3
+          ],
+          "unit": "eV/muB",
+          "value": [
+            [
+              0.25335946647625474,
+              -1.2925716196298944,
+              -0.09098122591504901
+            ],
+            [
+              1.2695091751098873,
+              0.435191176823786,
+              -0.09499377056437466
+            ],
+            [
+              -1.228443651222978,
+              0.5507306376399408,
+              0.039300319653110885
+            ]
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "mag_fe_atom": {
+      "formula": "Fe",
+      "inputs": {
+        "magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              4.0
+            ]
+          ]
+        }
+      },
+      "metadata": {},
+      "n_atoms": 1,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            1
+          ],
+          "unit": "eV",
+          "value": [
+            -6.2114171778125264
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -6.2114171778125264
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              -0.0
+            ]
+          ]
+        },
+        "magforces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "eV/muB",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              -5.180033897320116
+            ]
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "mag_fe_dimer_afm": {
+      "formula": "Fe2",
+      "inputs": {
+        "magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              3.0
+            ],
+            [
+              0.0,
+              0.0,
+              -3.0
+            ]
+          ]
+        }
+      },
+      "metadata": {},
+      "n_atoms": 2,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            2
+          ],
+          "unit": "eV",
+          "value": [
+            -4.6021924525458715,
+            -4.6021924525458715
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -9.204384905091743
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              1.3537622433935814
+            ],
+            [
+              -0.0,
+              -0.0,
+              -1.3537622433935814
+            ]
+          ]
+        },
+        "magforces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "eV/muB",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              2.394914754077435
+            ],
+            [
+              -0.0,
+              -0.0,
+              -2.394914754077435
+            ]
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "mag_fe_dimer_fm": {
+      "formula": "Fe2",
+      "inputs": {
+        "magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              3.0
+            ],
+            [
+              0.0,
+              0.0,
+              3.0
+            ]
+          ]
+        }
+      },
+      "metadata": {},
+      "n_atoms": 2,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            2
+          ],
+          "unit": "eV",
+          "value": [
+            -4.506009039056943,
+            -4.603074776356902
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -9.109083815413845
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              0.9435280370166612
+            ],
+            [
+              -0.0,
+              -0.0,
+              -0.9435280370166612
+            ]
+          ]
+        },
+        "magforces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "eV/muB",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              2.6182359751896236
+            ],
+            [
+              -0.0,
+              -0.0,
+              3.1899015107569557
+            ]
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "mag_feo_cluster": {
+      "formula": "Fe2O2",
+      "inputs": {
+        "magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            4,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              3.5
+            ],
+            [
+              0.0,
+              0.0,
+              -3.5
+            ],
+            [
+              -0.21702656,
+              -0.16590615,
+              0.12399444
+            ],
+            [
+              -0.20408824,
+              0.14368627,
+              0.16643992
+            ]
+          ]
+        }
+      },
+      "metadata": {},
+      "n_atoms": 4,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            4
+          ],
+          "unit": "eV",
+          "value": [
+            -6.600579537011249,
+            -6.588578517390477,
+            -3.395401649958074,
+            -3.3950472955212803
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -19.97960699988108
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            4,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.04026236719309384,
+              0.0005904987619554519,
+              -0.17851008919943373
+            ],
+            [
+              0.02016573992344886,
+              -0.0016117242635407467,
+              0.20331806439034567
+            ],
+            [
+              0.012016664431156272,
+              -0.025090297717325155,
+              -0.012386579421365241
+            ],
+            [
+              0.008079962838488714,
+              0.026111523218910443,
+              -0.012421395769546685
+            ]
+          ]
+        },
+        "magforces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            4,
+            3
+          ],
+          "unit": "eV/muB",
+          "value": [
+            [
+              0.07277494140341076,
+              0.00046670476006328523,
+              2.8354509203979923
+            ],
+            [
+              -0.06710085655518702,
+              -0.0004153389933024758,
+              -2.9563115781702765
+            ],
+            [
+              6.682614721235687,
+              5.19284171990736,
+              -3.8047337979653895
+            ],
+            [
+              6.272793605092401,
+              -4.494518910981082,
+              -5.096377631575824
+            ]
+          ]
+        }
+      },
+      "periodic": false
+    }
+  },
+  "metadata": {
+    "model_class": "MagneticScaleShiftMACE"
+  },
+  "provenance": {
+    "description": "Tiny MagneticScaleShiftMACE: energy, the per-atom energies, forces and magforces (dE/dm) on the five moment-carrying fixtures. The moments are recorded as inputs and compared exactly, because a derivative with respect to an input is only meaningful at the value it was taken at.",
+    "evaluated_with": "tests/golden/magnetic_surfaces.py, the model forward, e3nn, CPU, float64",
+    "recipe": "tests/golden/build_magnetic_anchor.py",
+    "requires": "the `magnetic` extra (sphericart)",
+    "source": "tests/golden/models/tiny_magnetic.model",
+    "tolerance_row": "fp64_cpu_reference"
+  },
+  "schema_version": 1,
+  "units": {
+    "energy": "eV",
+    "length": "Ang"
+  }
+}

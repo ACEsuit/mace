@@ -180,6 +180,7 @@ def train(
     train_sampler: Optional[DistributedSampler] = None,
     rank: Optional[int] = 0,
     data_aug_magmom: Optional[bool] = False,
+    data_aug_magmom_mode: str = "non-soc",
 ):
     lowest_loss = np.inf
     valid_loss = np.inf
@@ -219,7 +220,9 @@ def train(
         # pylint: disable=cyclic-import
         from mace.data.augmentation import create_random_rotation_loader
 
-        train_loader = create_random_rotation_loader(train_loader)
+        train_loader = create_random_rotation_loader(
+            train_loader, mode=data_aug_magmom_mode
+        )
 
     while epoch < max_num_epochs:
         # LR scheduler and SWA update

@@ -7,7 +7,9 @@ import os
 import torch
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig, OEQConfig
+from mace.tools import deprecation
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import restores_default_dtype
 
 try:
     from mace.cli.convert_e3nn_cueq import transfer_symmetric_contractions
@@ -24,6 +26,7 @@ except ImportError:
     OEQ_AVAILABLE = False
 
 
+@restores_default_dtype
 def run(
     input_model,
     output_model="_hybrid.model",
@@ -114,9 +117,9 @@ def run(
     target_model.load_state_dict(target_dict)
 
     for i in range(num_layers):
-        target_model.interactions[i].avg_num_neighbors = source_model.interactions[
-            i
-        ].avg_num_neighbors
+        target_model.interactions[i].set_avg_num_neighbors(
+            source_model.interactions[i].avg_num_neighbors
+        )
 
     if return_model:
         return target_model
@@ -137,6 +140,7 @@ def _shapes_match_up_to_unsqueeze(a, b):
 
 
 def main():
+    deprecation.warn("ep.convert_e3nn_hybrid")
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input MACE model")
     parser.add_argument(

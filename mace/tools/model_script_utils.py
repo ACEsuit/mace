@@ -7,6 +7,7 @@ from e3nn import o3
 
 from mace import modules
 from mace.modules.wrapper_ops import CuEquivarianceConfig
+from mace.tools.deprecation import warn
 from mace.tools.finetuning_utils import load_foundations_elements, load_foundations_mdp
 from mace.tools.scripts_utils import extract_config_mace_model, resolve_m_max
 from mace.tools.torch_tools import dtype_dict
@@ -95,6 +96,9 @@ def configure_model(
         model_config_foundation = extract_config_mace_model(model_foundation)
         model_config_foundation["atomic_energies"] = atomic_energies
 
+        if args.embedding_specs:
+            model_config_foundation["embedding_specs"] = args.embedding_specs
+
         if args.foundation_model_elements:
             foundation_z_table = AtomicNumberTable(
                 [int(z) for z in model_foundation.atomic_numbers]
@@ -181,7 +185,8 @@ def configure_model(
                 layout="ir_mul",
                 group="O3_e3nn",
                 optimize_all=True,
-                conv_fusion=(args.device == "cuda"),
+                conv_fusion=args.cueq_conv_fusion
+                and torch.device(args.device).type == "cuda",
             )
 
         model_config = dict(
@@ -216,7 +221,7 @@ def configure_model(
                 model,
                 model_foundation,
                 z_table,
-                load_readout=args.foundation_filter_elements,
+                load_readout=args.foundation_model_readout,
                 max_L=args.max_L,
                 default_dtype=dtype_dict.get(args.default_dtype, torch.float64),
             )
@@ -282,6 +287,11 @@ def _build_model(
             "RealAgnosticDensityInteractionBlock",
             "RealAgnosticResidualNonLinearInteractionBlock",
         ]:
+            warn(
+                "pkg.first_block_coercion",
+                context=f"--interaction_first {args.interaction_first} is being "
+                "replaced by RealAgnosticInteractionBlock for --model MACE",
+            )
             args.interaction_first = "RealAgnosticInteractionBlock"
         return modules.ScaleShiftMACE(
             **model_config,

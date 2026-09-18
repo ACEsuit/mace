@@ -96,6 +96,18 @@ def test_default_parser_critical_defaults():
     assert args.virials_key == "REF_virials"
 
 
+def test_cueq_convolution_fusion_is_opt_in():
+    parser = build_default_arg_parser()
+
+    assert parser.parse_args(MINIMAL_ARGV).cueq_conv_fusion is False
+    assert (
+        parser.parse_args(
+            MINIMAL_ARGV + ["--cueq_conv_fusion", "True"]
+        ).cueq_conv_fusion
+        is True
+    )
+
+
 def test_stage_two_alias_maps_to_swa_dest():
     # --stage_two_* is the current spelling of the old --swa_* flags; both
     # must land in the same destination.

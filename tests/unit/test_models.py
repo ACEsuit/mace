@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 import torch.nn.functional
 from ase import build
@@ -7,6 +8,7 @@ from e3nn.util import jit
 from scipy.spatial.transform import Rotation as R
 
 from mace import data, modules, tools
+from mace.tools import scripts_utils  # noqa: F401  (tools.scripts_utils)
 from mace.tools import torch_geometric
 
 torch.set_default_dtype(torch.float64)
@@ -523,3 +525,249 @@ def test_stress_partial_pbc():
         f"sigma_yy finite difference {finite_diff} does not match "
         f"analytic stress {stress[1, 1]}"
     )
+
+
+def test_stress_zero_without_pbc():
+    """
+    A graph with no periodic direction has no volume to normalize a virial by:
+    the cell it carries is the box get_neighborhood pads around the atoms, so
+    its stress is exactly zero rather than virials/det(padding box). The energy
+    and the virial are identical whatever that box is, so the old behaviour was
+    an arbitrary number that merely shrank as the padding grew.
+    """
+    torch.set_default_dtype(torch.float64)
+    torch.manual_seed(7)
+
+    mixed_z_table = tools.AtomicNumberTable([1, 8, 14])
+    model = modules.ScaleShiftMACE(
+        r_max=5.0,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=3,
+        hidden_irreps=o3.Irreps("16x0e + 16x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=np.zeros(3),
+        avg_num_neighbors=8,
+        atomic_numbers=mixed_z_table.zs,
+        correlation=3,
+        radial_type="bessel",
+        atomic_inter_scale=1.0,
+        atomic_inter_shift=0.0,
+    )
+
+    def compute(atoms_list):
+        dataset = [
+            data.AtomicData.from_config(
+                data.config_from_atoms(atoms), z_table=mixed_z_table, cutoff=5.0
+            )
+            for atoms in atoms_list
+        ]
+        loader = torch_geometric.dataloader.DataLoader(
+            dataset=dataset, batch_size=len(dataset), shuffle=False, drop_last=False
+        )
+        batch = next(iter(loader)).to_dict()
+        output = model(
+            batch,
+            training=True,
+            compute_stress=True,
+            compute_virials=True,
+            compute_edge_forces=True,
+            compute_atomic_stresses=True,
+        )
+        return batch, output
+
+    molecule = build.molecule("H2O")
+    crystal = build.bulk("Si", "diamond", a=5.43)
+    crystal.set_cell(crystal.get_cell() @ (np.eye(3) * 1.02), scale_atoms=True)
+
+    _, molecule_only = compute([molecule])
+    assert torch.count_nonzero(molecule_only["stress"]) == 0
+    assert torch.count_nonzero(molecule_only["atomic_stresses"]) == 0
+    # The virial itself is untouched: it is the volume that is missing, not the
+    # strain derivative.
+    assert molecule_only["virials"].abs().max() > 0
+
+    # Enlarging the padding box cannot move a masked stress, whereas dividing
+    # by det(cell) would scale it by 1/L**3.
+    padded = molecule.copy()
+    padded.set_cell(np.eye(3) * 50.0)
+    padded.set_pbc(False)
+    _, padded_only = compute([padded])
+    assert torch.count_nonzero(padded_only["stress"]) == 0
+
+    # A periodic graph keeps its stress, and keeps it unchanged when batched
+    # next to an aperiodic one.
+    _, crystal_only = compute([crystal])
+    assert crystal_only["stress"].abs().max() > 0
+    _, mixed = compute([molecule, crystal])
+    assert torch.count_nonzero(mixed["stress"][0]) == 0
+    assert torch.allclose(mixed["stress"][1], crystal_only["stress"][0])
+
+    # The atomic stresses stay a decomposition of the total, per graph.
+    batch, mixed = compute([molecule, crystal])
+    summed = torch.zeros_like(mixed["stress"])
+    summed.index_add_(0, batch["batch"], mixed["atomic_stresses"])
+    assert torch.allclose(summed, mixed["stress"], atol=1e-9)
+
+
+# ===========================================================================
+# Two model-construction knobs no published checkpoint stores, and which
+# therefore have no golden: --use_edge_irreps_first and a non-linear first
+# interaction block. Both are KEEP for the rewrite, so each needs a case that
+# says what it does rather than only that it parses.
+# ===========================================================================
+
+
+def _energy_model_config(**overrides):
+    config_dict = dict(
+        r_max=5,
+        num_bessel=8,
+        num_polynomial_cutoff=6,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("16x0e + 16x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+        avg_num_neighbors=8,
+        atomic_numbers=table.zs,
+        correlation=3,
+        atomic_inter_scale=1.0,
+        atomic_inter_shift=0.0,
+    )
+    config_dict.update(overrides)
+    return config_dict
+
+
+def test_use_edge_irreps_first_narrows_the_first_interaction_block():
+    """`--use_edge_irreps_first` replaces the first layer's edge irreps with
+    the *scalar* part of `--edge_irreps` (`models.py:175-176`). Later layers
+    are untouched, and with `--edge_irreps` unset the flag does nothing.
+
+    The multiplicities here differ on purpose: 8 scalars on the edges against
+    16 in the hidden irreps. With the usual 128/128 setting the derived
+    `128x0e` equals the first layer's node features exactly and the flag is
+    unobservable -- a test at those numbers would pass whatever the flag did.
+    """
+    edge_irreps = o3.Irreps("8x0e + 8x1o")
+    off = modules.ScaleShiftMACE(
+        **_energy_model_config(edge_irreps=edge_irreps, use_edge_irreps_first=False)
+    )
+    on = modules.ScaleShiftMACE(
+        **_energy_model_config(edge_irreps=edge_irreps, use_edge_irreps_first=True)
+    )
+
+    # off: the block falls back to the node features, 16 scalars after the
+    # element embedding. on: the 0e count of edge_irreps.
+    assert off.interactions[0].edge_irreps == o3.Irreps("16x0e")
+    assert on.interactions[0].edge_irreps == o3.Irreps("8x0e")
+    # the first layer only -- later layers use edge_irreps in full either way
+    assert off.interactions[1].edge_irreps == edge_irreps
+    assert on.interactions[1].edge_irreps == edge_irreps
+    # and the narrower first layer really is a smaller model
+    assert sum(p.numel() for p in on.parameters()) < sum(
+        p.numel() for p in off.parameters()
+    )
+
+    # without edge_irreps there is nothing to derive from, so it is a no-op
+    plain_on = modules.ScaleShiftMACE(
+        **_energy_model_config(use_edge_irreps_first=True)
+    )
+    plain_off = modules.ScaleShiftMACE(
+        **_energy_model_config(use_edge_irreps_first=False)
+    )
+    assert (
+        plain_on.interactions[0].edge_irreps == plain_off.interactions[0].edge_irreps
+    )
+
+
+def test_use_edge_irreps_first_survives_the_checkpoint_config_round_trip():
+    """The flag is stored on the model and re-emitted by
+    `extract_config_mace_model`, which is what every conversion CLI rebuilds
+    from. If it were dropped there, a converted model would silently get a
+    wider first layer and the weights would not fit."""
+    model = modules.ScaleShiftMACE(
+        **_energy_model_config(
+            edge_irreps=o3.Irreps("8x0e + 8x1o"), use_edge_irreps_first=True
+        )
+    )
+    assert model.use_edge_irreps_first is True
+    extracted = tools.scripts_utils.extract_config_mace_model(model)
+    assert extracted["use_edge_irreps_first"] is True
+    rebuilt = modules.ScaleShiftMACE(**extracted)
+    assert rebuilt.interactions[0].edge_irreps == o3.Irreps("8x0e")
+    assert sum(p.numel() for p in rebuilt.parameters()) == sum(
+        p.numel() for p in model.parameters()
+    )
+
+
+def test_non_linear_first_interaction_block_runs_and_is_equivariant():
+    """`--interaction_first RealAgnosticResidualNonLinearInteractionBlock`:
+    a gated non-linearity inside the first layer only."""
+    model = modules.ScaleShiftMACE(
+        **_energy_model_config(
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticResidualNonLinearInteractionBlock"
+            ]
+        )
+    )
+    assert hasattr(model.interactions[0], "equivariant_nonlin")
+    assert not hasattr(model.interactions[1], "equivariant_nonlin")
+
+    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
+    rotated = data.AtomicData.from_config(config_rotated, z_table=table, cutoff=3.0)
+    batch = next(
+        iter(
+            torch_geometric.dataloader.DataLoader(
+                dataset=[atomic_data, rotated], batch_size=2, shuffle=False
+            )
+        )
+    )
+    output = model(batch.to_dict(), training=True)
+    assert output["energy"].shape == (2,)
+    assert torch.allclose(output["energy"][0], output["energy"][1])
+    assert output["forces"].shape == (6, 3)
+
+    extracted = tools.scripts_utils.extract_config_mace_model(model)
+    assert (
+        extracted["interaction_cls_first"]
+        is modules.interaction_classes["RealAgnosticResidualNonLinearInteractionBlock"]
+    )
+
+
+def test_non_linear_first_interaction_block_cannot_be_torchscripted():
+    """Characterization of a real limitation, not a wish: TorchScript cannot
+    resolve the `-> o3.Irreps` annotation on `GatedEquivariantBlock.irreps_in`
+    (`mace/modules/gate.py:205`), so a model with this block compiles nowhere
+    -- which rules out the LAMMPS export path, whose whole artifact is a
+    scripted module. Every other interaction block scripts fine, so this is
+    the block's property and not the model's.
+    """
+    model = modules.ScaleShiftMACE(
+        **_energy_model_config(
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticResidualNonLinearInteractionBlock"
+            ]
+        )
+    )
+    with pytest.raises(RuntimeError, match="o3.Irreps"):
+        jit.compile(model)
+
+    # the same model with the default first block scripts without complaint
+    assert jit.compile(modules.ScaleShiftMACE(**_energy_model_config())) is not None

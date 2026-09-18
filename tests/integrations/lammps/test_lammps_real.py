@@ -48,7 +48,12 @@ def test_lammps_mliap_energy_matches_python(mliap_artifact):
     import lammps
     from lammps.mliap import activate_mliappy
 
+    # `create_atoms ... single` silently discards a point that falls outside
+    # the box, and the cell's oxygen sits at y=-2. The cell is periodic, so
+    # wrapping moves it to y=2 without changing the energy either side
+    # computes -- it only keeps both sides on the same three atoms.
     atoms = water_unit_cell()
+    atoms.wrap()
 
     lmp = lammps.lammps(cmdargs=["-log", "none", "-screen", "none"])
     assert lmp.has_style("pair", "mliap"), "LAMMPS build lacks the ML-IAP package"
@@ -72,6 +77,10 @@ def test_lammps_mliap_energy_matches_python(mliap_artifact):
             f"create_atoms {type_of[num]} single {pos[0]} {pos[1]} {pos[2]} "
             "units box"
         )
+    assert lmp.get_natoms() == len(atoms), (
+        f"LAMMPS created {lmp.get_natoms()} of the {len(atoms)} atoms; a "
+        "dropped atom shows up only as a wrong energy further down"
+    )
     lmp.command(f"pair_style mliap unified {mliap_artifact} 0")
     lmp.command("pair_coeff * * O H")
     lmp.command("run 0")

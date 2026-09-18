@@ -1,0 +1,293 @@
+{
+  "backend": "e3nn",
+  "device": "cpu",
+  "dtype": "float64",
+  "fixtures": {
+    "mag_fe_atom": {
+      "formula": "Fe",
+      "inputs": {
+        "magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              4.0
+            ]
+          ]
+        }
+      },
+      "metadata": {
+        "scf_energy_history": [
+          -6.211417198181152,
+          -4.614192962646484,
+          -6.906680583953857,
+          -6.9088826179504395,
+          -6.908886909484863,
+          -6.908886909484863
+        ],
+        "scf_steps": 6
+      },
+      "n_atoms": 1,
+      "outputs": {
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -6.908886948663062
+        },
+        "equilibrated_magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              3.7336211670097614
+            ]
+          ]
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              -0.0
+            ]
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "mag_fe_dimer_afm": {
+      "formula": "Fe2",
+      "inputs": {
+        "magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              3.0
+            ],
+            [
+              0.0,
+              0.0,
+              -3.0
+            ]
+          ]
+        }
+      },
+      "metadata": {
+        "scf_energy_history": [
+          -9.204384803771973,
+          -12.545454978942871,
+          1046.4996337890625,
+          -11.230611801147461,
+          -13.17349910736084,
+          -13.827872276306152,
+          -14.240789413452148,
+          -14.596317291259766,
+          -14.662836074829102,
+          236.6410369873047,
+          -14.693203926086426,
+          -14.708373069763184,
+          -14.708380699157715
+        ],
+        "scf_steps": 13
+      },
+      "n_atoms": 2,
+      "outputs": {
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -14.708380427279705
+        },
+        "equilibrated_magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              3.7754944107092543
+            ],
+            [
+              0.0,
+              0.0,
+              -3.7754944107092543
+            ]
+          ]
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              -1.2624775660189365
+            ],
+            [
+              -0.0,
+              -0.0,
+              1.2624775660189365
+            ]
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "mag_fe_dimer_fm": {
+      "formula": "Fe2",
+      "inputs": {
+        "magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              3.0
+            ],
+            [
+              0.0,
+              0.0,
+              3.0
+            ]
+          ]
+        }
+      },
+      "metadata": {
+        "scf_energy_history": [
+          -9.109084129333496,
+          -12.706995010375977,
+          141.7022705078125,
+          -13.19787883758545,
+          -11.14469051361084,
+          -10.121296882629395,
+          -13.625357627868652,
+          -13.120851516723633,
+          11.80250358581543,
+          -13.657739639282227,
+          -20.353614807128906,
+          -21.61997413635254,
+          -19.610300064086914,
+          -22.371604919433594,
+          -21.762611389160156,
+          -22.40875816345215,
+          -22.410104751586914,
+          -22.410167694091797,
+          -22.410167694091797
+        ],
+        "scf_steps": 19
+      },
+      "n_atoms": 2,
+      "outputs": {
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -22.410167374549573
+        },
+        "equilibrated_magmom": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "muB",
+          "value": [
+            [
+              0.0,
+              0.0,
+              4.321198804682591
+            ],
+            [
+              0.0,
+              0.0,
+              6.522144768909776
+            ]
+          ]
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.0,
+              -0.0,
+              -304.681908721167
+            ],
+            [
+              -0.0,
+              -0.0,
+              304.681908721167
+            ]
+          ]
+        }
+      },
+      "periodic": false
+    }
+  },
+  "metadata": {
+    "model_class": "MagneticSCFMACE",
+    "scf_config": {
+      "n_scf_step": 200,
+      "scf_step_size": 1.0,
+      "scf_tol": 1e-10,
+      "use_collinear": false,
+      "use_scf": true
+    }
+  },
+  "provenance": {
+    "description": "The same model wrapped in MagneticSCFMACE: the converged fixed point. equilibrated_magmom, the energy and the forces are pinned; scf_steps and scf_energy_history are recorded as metadata, since they describe how LBFGS got there rather than where it is.",
+    "evaluated_with": "tests/golden/magnetic_surfaces.py, the model forward, e3nn, CPU, float64",
+    "recipe": "tests/golden/build_magnetic_anchor.py",
+    "requires": "the `magnetic` extra (sphericart)",
+    "source": "tests/golden/models/tiny_magnetic.model",
+    "tolerance_row": "fp64_cpu_reference"
+  },
+  "schema_version": 1,
+  "units": {
+    "energy": "eV",
+    "length": "Ang"
+  }
+}

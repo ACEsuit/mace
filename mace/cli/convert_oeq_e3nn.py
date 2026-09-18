@@ -4,9 +4,12 @@ import os
 
 import torch
 
+from mace.tools import deprecation
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import restores_default_dtype
 
 
+@restores_default_dtype
 def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True):
     # Load OEQ model
     if isinstance(input_model, str):
@@ -33,10 +36,9 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
             target_dict[key] = source_dict[key]
 
     for i in range(2):
-
-        target_model.interactions[i].avg_num_neighbors = source_model.interactions[
-            i
-        ].avg_num_neighbors
+        target_model.interactions[i].set_avg_num_neighbors(
+            source_model.interactions[i].avg_num_neighbors
+        )
 
     target_model.load_state_dict(target_dict)
 
@@ -53,6 +55,7 @@ def run(input_model, output_model="_e3nn.model", device="cpu", return_model=True
 
 
 def main():
+    deprecation.warn("ep.convert_oeq_e3nn")
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input oeq model")
     parser.add_argument(

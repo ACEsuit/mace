@@ -29,6 +29,7 @@ markers = [
     "magnetic: requires sphericart-torch (import name sphericart)",
     "torchsim: requires torch-sim-atomistic (python >= 3.12)",
     "schedulefree: requires the schedulefree optimizer package",
+    "wandb: requires the wandb client (offline mode is enough)",
     "benchmark: performance measurement; never part of correctness gates",
     "bin_lammps: requires an external LAMMPS installation",
     "timeout: per-test timeout (provided by pytest-timeout; registered here so collection works without the plugin)",

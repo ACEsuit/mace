@@ -1,4 +1,5 @@
 ###########################################################################################
+# pylint: disable=too-many-lines
 # The ASE Calculator for MACE
 # Authors: Ilyes Batatia, David Kovacs
 # This program is distributed under the MIT License (see MIT.md)
@@ -30,6 +31,8 @@ from mace.tools.compile import (
     simplify,
 )
 from mace.tools.default_keys import DefaultKeys
+from mace.tools.deprecation import warn
+from mace.tools.polar_conversion import validate_pbc_handling
 from mace.tools.scripts_utils import extract_model
 
 try:
@@ -55,13 +58,6 @@ try:
 except (ImportError, ModuleNotFoundError):
     HYBRID_AVAILABLE = False
     run_e3nn_to_hybrid = None
-
-try:
-    import intel_extension_for_pytorch as ipex
-
-    has_ipex = True
-except ImportError:
-    has_ipex = False
 
 _EDGE_PAD_MULTIPLE = 64
 _EDGE_PAD_HEADROOM = 1.25
@@ -96,6 +92,12 @@ class MACECalculator(Calculator):
                     EnergyDipoleMACE]
         For PolarMACE models, per-atom Fukui functions are returned in
         results["fukui_functions"] with shape (num_atoms, 2)
+        pbc_handling: Polar electrostatic mode. "auto" delegates boundary-condition
+            dispatch to the model and graph_longrange. Explicit modes
+            are realspace, pbc, slab, molecule_in_box, and mixed_periodic.
+        compute_stress: bool, whether to compute stress for energy models (default
+            True). Set False for fixed-cell MD; stress is then unavailable through
+            ASE and cannot be combined with compute_atomic_stresses=True.
 
     Dipoles are returned in units of Debye
     """
@@ -118,16 +120,20 @@ class MACECalculator(Calculator):
         enable_oeq=False,
         pad_num_atoms: int = 0,
         pad_num_edges: int = 0,
-        warmup: bool = False,
         compute_bec: bool = False,
         external_field: Union[list, None] = None,
         eps_infty: float = None,
         electric_field_unit: float = 1.0,
         keep_neutral: bool = True,
+        pbc_handling: str = "auto",
+        compute_stress: bool = True,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
         self.compute_bec = compute_bec
+        self.compute_stress = compute_stress
+        if not compute_stress and kwargs.get("compute_atomic_stresses", False):
+            raise ValueError("compute_atomic_stresses requires compute_stress=True")
         if external_field is not None:
             external_field = np.asarray(external_field, dtype=np.float64).reshape(
                 -1
@@ -171,7 +177,7 @@ class MACECalculator(Calculator):
                 "'model_path' argument is deprecated, please use 'model_paths'"
             )
             if model_paths is None:
-                logging.warning(f"{deprecation_message} in the future.")
+                warn("calc.param.model_path")
                 model_paths = kwargs["model_path"]
             else:
                 raise ValueError(
@@ -209,6 +215,15 @@ class MACECalculator(Calculator):
                 f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
+        # A list of this instance's own. `Calculator.implemented_properties` is a
+        # class attribute (`[]` on the ASE base), so extending it in place grew
+        # the list every calculator ever built shared: the second committee in a
+        # process advertised twenty properties, the third thirty, and a
+        # DipoleMACE built after a MACE claimed energy and stress it cannot
+        # produce. `MagneticMACECalculator` assigns its own list, which is what
+        # this now does too.
+        self.implemented_properties = []
+
         if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
             self.implemented_properties.extend(
                 [
@@ -225,7 +240,12 @@ class MACECalculator(Calculator):
                 self.compute_atomic_stresses = True
         if model_type == "PolarMACE":
             self.implemented_properties.extend(["fukui_functions"])
-        if model_type in ["EnergyDipoleMACE", "DipoleMACE", "DipolePolarizabilityMACE"]:
+        if model_type in [
+            "EnergyDipoleMACE",
+            "DipoleMACE",
+            "DipolePolarizabilityMACE",
+            "PolarMACE",
+        ]:
             self.implemented_properties.extend(["dipole"])
         if model_type == "DipolePolarizabilityMACE":
             self.implemented_properties.extend(
@@ -266,8 +286,18 @@ class MACECalculator(Calculator):
             logging.info(f"Running committee mace with {self.num_models} models")
 
             if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+                # All six, because all six are written: `forces_var` and
+                # `stress_comm` were produced and never advertised, so a caller
+                # consulting `implemented_properties` was told they do not exist.
                 self.implemented_properties.extend(
-                    ["energy_comm", "energy_var", "forces_comm", "stress_var"]
+                    [
+                        "energy_comm",
+                        "energy_var",
+                        "forces_comm",
+                        "forces_var",
+                        "stress_comm",
+                        "stress_var",
+                    ]
                 )
             if model_type in [
                 "DipoleMACE",
@@ -278,10 +308,6 @@ class MACECalculator(Calculator):
 
         for model in self.models:
             model.to(device)
-
-        if has_ipex and device == "xpu":
-            for model in self.models:
-                model = ipex.optimize(model)
 
         r_maxs = [model.r_max.cpu() for model in self.models]
         r_maxs = np.array(r_maxs)
@@ -369,6 +395,9 @@ class MACECalculator(Calculator):
                 for model in self.models
             ]
 
+        if self.model_type == "PolarMACE":
+            self.set_electrostatic_pbcs(pbc_handling)
+
         self.use_compile = False
         if compile_mode is not None:
             logging.info(f"Torch compile is enabled with mode: {compile_mode}")
@@ -414,9 +443,12 @@ class MACECalculator(Calculator):
         self.pad_num_atoms = max(int(pad_num_atoms), 0)
         self.pad_num_edges = max(int(pad_num_edges), 0)
         self._padding_initialized = self.pad_num_atoms > 0 and self.pad_num_edges > 0
-
-        if warmup and self.use_compile:
-            logging.info("Warmup requested -- will trigger on first calculate() call")
+        if not self.compute_stress:
+            self.implemented_properties = [
+                prop
+                for prop in self.implemented_properties
+                if prop not in ("stress", "stress_comm", "stress_var")
+            ]
 
     def check_state(self, atoms, tol: float = 1e-15) -> list:
         """
@@ -573,7 +605,9 @@ class MACECalculator(Calculator):
         )
 
     def _atoms_to_batch(self, atoms):
-        self.arrays_keys.update({self.charges_key: "charges"})
+        # arrays_keys maps property name -> atoms.arrays key, not the reverse:
+        # config_from_atoms reads atoms.arrays[value] into properties[key].
+        self.arrays_keys.update({"charges": self.charges_key})
         keyspec = mace_data.KeySpecification(
             info_keys=self.info_keys, arrays_keys=self.arrays_keys
         )
@@ -637,6 +671,41 @@ class MACECalculator(Calculator):
             batch_clone["positions"].requires_grad_(True)
         return batch_clone
 
+    def set_electrostatic_pbcs(self, pbc_handling: str) -> None:
+        """Set every Polar model's evaluator and invalidate cached ASE results.
+
+        ``auto`` delegates dispatch to the model and graph_longrange.
+        ``pbc`` also permits deliberately uncorrected periodic approximations.
+        """
+        validate_pbc_handling(pbc_handling)
+        for model in self.models:
+            model.set_electrostatic_pbcs(pbc_handling)
+        self.pbc_handling = pbc_handling
+        self.reset()
+
+    def _validate_electrostatic_pbcs(self, atoms) -> None:
+        """Check compatibility of geometry and pbc_handling. For pbc_handling in
+        [realspace, slab, molecule_in_box], checks that atoms.pbc is as exepected."""
+        flags = tuple(bool(flag) for flag in atoms.pbc)
+        supported_flags = (
+            (False, False, False),
+            (True, True, True),
+            (True, True, False),
+        )
+        mode = self.pbc_handling
+        expected = {
+            "realspace": (False, False, False),
+            "molecule_in_box": (False, False, False),
+            "slab": (True, True, False),
+        }
+        if mode in expected and flags != expected[mode]:
+            raise ValueError(f"pbc_handling={mode!r} is incompatible with PBC {flags}")
+        if mode in ("auto", "mixed_periodic") and flags not in supported_flags:
+            raise ValueError(
+                f"Unsupported Polar periodicity {flags}, you can force a"
+                + " periodic electrostatics calculation using pbc_handling=pbc"
+            )
+
     # pylint: disable=dangerous-default-value
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         """
@@ -648,11 +717,18 @@ class MACECalculator(Calculator):
         """
         Calculator.calculate(self, atoms)
 
+        if self.model_type == "PolarMACE":
+            self._validate_electrostatic_pbcs(self.atoms)
+
         batch_base = self._atoms_to_batch(atoms)
         num_real_atoms = len(atoms)
         is_padded = self.pad_num_atoms > 0 or self.pad_num_edges > 0
 
-        compute_stress = self.model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]
+        compute_stress = self.compute_stress and self.model_type in [
+            "MACE",
+            "EnergyDipoleMACE",
+            "PolarMACE",
+        ]
         # For oeq/hybrid + compile: create displacement outside the compiled
         # graph so autograd.grad (which runs as a graph break) can
         # differentiate energy w.r.t. displacement for stress.
@@ -766,19 +842,24 @@ class MACECalculator(Calculator):
                 self.results[results_key] = data * unit_conv
 
                 if self.num_models > 1 and results_key in results_store_ensemble:
-                    data = ret_tensors[results_key].cpu().numpy()
-                    data *= unit_conv
-                    self.results[results_key + "_comm"] = data
+                    ensemble = ret_tensors[results_key]
+                    # Scale a copy. `.numpy()` shares storage with a cpu tensor,
+                    # so multiplying in place rescaled `ensemble` itself, and the
+                    # variance below was then taken over already-converted values.
+                    self.results[results_key + "_comm"] = (
+                        ensemble.cpu().numpy() * unit_conv
+                    )
 
-                    data = torch.var(
-                        ret_tensors[results_key], dim=0, unbiased=False
-                    ).cpu()
+                    spread = torch.var(ensemble, dim=0, unbiased=False).cpu()
                     if ret_key in scalar_tensors:
-                        data = data.item()
+                        spread = spread.item()
                     else:
-                        data = data.numpy()
-                    data *= unit_conv
-                    self.results[results_key + "_var"] = data
+                        spread = spread.numpy()
+                    # A variance carries the square of whatever scales the values.
+                    # With the aliasing above it came out at unit_conv**3, so an
+                    # ensemble spread was wrong by that factor for any caller who
+                    # set a unit conversion -- silently, since the default is 1.
+                    self.results[results_key + "_var"] = spread * unit_conv**2
 
         # special cases
         if self.results.get("energy") is not None:
@@ -788,6 +869,23 @@ class MACECalculator(Calculator):
             self.results["node_energy"] -= node_e0
         if self.results.get("stress") is not None:
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
+        # The committee's stresses go with it. Leaving them 3x3 while `stress` is
+        # Voigt-6 meant a caller could not index a mean and its own spread the
+        # same way, and `MagneticMACECalculator` already converts its
+        # `stress_var`, so one key name carried two shapes depending on which
+        # calculator produced it. The helper broadcasts, so the committee axis of
+        # `stress_comm` survives: (n_models, 3, 3) becomes (n_models, 6).
+        # Written out rather than looped, because the golden surface scan follows
+        # literal keys: `self.results[key]` with a loop variable is a write it
+        # cannot attribute, and it refuses to let one pass unexplained.
+        if self.results.get("stress_comm") is not None:
+            self.results["stress_comm"] = full_3x3_to_voigt_6_stress(
+                self.results["stress_comm"]
+            )
+        if self.results.get("stress_var") is not None:
+            self.results["stress_var"] = full_3x3_to_voigt_6_stress(
+                self.results["stress_var"]
+            )
         if self.results.get("stresses") is not None:
             self.results["stresses"] = np.asarray(
                 [
@@ -1022,7 +1120,7 @@ class MagneticMACECalculator(Calculator):
                 "'model_path' argument is deprecated, please use 'model_paths'"
             )
             if model_paths is None:
-                logging.warning(f"{deprecation_message} in the future.")
+                warn("calc.param.model_path")
                 model_paths = kwargs["model_path"]
             else:
                 raise ValueError(
@@ -1418,7 +1516,8 @@ class MagneticMACECalculator(Calculator):
                     torch.var(ret_tensors["energies"], dim=0, unbiased=False)
                     .cpu()
                     .item()
-                    * self.energy_units_to_eV
+                    # squared: a variance carries the square of the conversion
+                    * self.energy_units_to_eV**2
                 )
                 self.results["forces_comm"] = (
                     ret_tensors["forces"].cpu().numpy()
@@ -1440,8 +1539,7 @@ class MagneticMACECalculator(Calculator):
                         torch.var(ret_tensors["stress"], dim=0, unbiased=False)
                         .cpu()
                         .numpy()
-                        * self.energy_units_to_eV
-                        / self.length_units_to_A**3
+                        * (self.energy_units_to_eV / self.length_units_to_A**3) ** 2
                     )
         if self.model_type in ["DipoleMACE", "EnergyDipoleMACE"]:
             self.results["dipole"] = (

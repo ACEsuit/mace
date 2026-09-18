@@ -1,0 +1,22 @@
+{
+  "interface": {
+    "dtype": "torch.float64",
+    "element_types": [
+      "H",
+      "C",
+      "O"
+    ],
+    "lammps_mliap_flag": true,
+    "ndescriptors": 1,
+    "nparams": 1,
+    "num_interactions": 2,
+    "num_species": 3,
+    "rcutfac": 1.75
+  },
+  "provenance": {
+    "description": "What LAMMPS reads off the ML-IAP artefact before it calls the model. The numerics are deliberately not pinned -- see tests/integrations/lammps/export_golden.py.",
+    "recipe": "tests/golden/regenerate.py --target lammps",
+    "source": "tests/golden/models/tiny_scaleshift.model"
+  },
+  "schema_version": 1
+}

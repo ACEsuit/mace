@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn.functional as F
 from e3nn import o3
@@ -85,7 +87,9 @@ class LoRAO3Linear(nn.Module):
         blocks = {}
         offset = 0
         for idx, instr in enumerate(linear.instructions):
-            size = instr.path_shape[0] * instr.path_shape[1]
+            if instr.i_in == -1:
+                continue
+            size = math.prod(instr.path_shape)
             block = linear.weight[offset : offset + size].reshape(instr.path_shape)
             blocks[idx] = block
             offset += size
@@ -102,6 +106,12 @@ class LoRAO3Linear(nn.Module):
             i_in_base = base_instr.i_in
             i_out_base = base_instr.i_out
             pw_base = base_instr.path_weight
+
+            # e3nn represents bias terms as instructions with no input. Their
+            # parameters live in ``linear.bias``, not ``linear.weight``, and
+            # LoRA must leave them unchanged.
+            if i_in_base == -1:
+                continue
 
             # Find corresponding lora_A instruction
             if i_in_base not in self._A_by_i_in:

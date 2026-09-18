@@ -23,12 +23,22 @@ else:
 
 class Random3DRotation(BaseTransform):
     """
-    Apply a random SO(3) rotation to all magnetic moments in a configuration.
-    A single rotation is applied per structure, preserving relative orientation.
+    Augment the magnetic moments with the symmetries the target model actually has.
 
-    This is how a spin-orbit-coupled model is taught the non-SOC symmetry: the
-    moments turn while the positions stay put, so training sees every
-    orientation of the spins against the same lattice.
+    Two modes, because spin rotation and time reversal are not equally valid:
+
+    ``mode="non-soc"`` (default) draws from the full O(3)_spin: a random proper
+    rotation, times a random sign. A non-SOC energy is invariant under rotating the
+    moments independently of the lattice, so both halves are genuine symmetries and
+    both are augmented.
+
+    ``mode="soc"`` applies ONLY the sign, m -> -m. With spin-orbit coupling the energy
+    depends on how the moments are oriented relative to the lattice, so a free spin
+    rotation is *not* a symmetry -- augmenting with it would teach the model an
+    invariance it must not have, washing out the coupling it is meant to learn. Time
+    reversal remains a symmetry at zero field, so the sign flip is kept.
+
+    A single transform is applied per structure, preserving relative orientation.
 
     Assigning to `data` below is deliberate and safe. Callers reach this through
     BaseTransform.__call__, which is `self.forward(copy.copy(data))`, so the
@@ -37,6 +47,12 @@ class Random3DRotation(BaseTransform):
     rebuilds via cls(), and AtomicData.__init__ takes 27 required arguments),
     and copying again would only cost a dict per sample per epoch.
     """
+
+    def __init__(self, mode: str = "non-soc"):
+        super().__init__()
+        if mode not in ("soc", "non-soc"):
+            raise ValueError(f"mode must be 'soc' or 'non-soc', got {mode!r}")
+        self.mode = mode
 
     def forward(self, data):
         if hasattr(data, "magmom") and data.magmom is not None:
@@ -74,6 +90,13 @@ class Random3DRotation(BaseTransform):
                 dtype=sample_dtype,
             ).to(dtype)
 
+            # SOC: the proper rotation is NOT a symmetry, so drop it and keep only the
+            # sign. non-SOC: keep both, i.e. draw from the full O(3)_spin.
+            if self.mode == "soc":
+                R = torch.eye(3, device=device, dtype=dtype)
+            if torch.rand((), device=device) < 0.5:
+                R = -R
+
             # === Step 3: Apply to magmom (shape [N, 3])
             data.magmom = torch.matmul(data.magmom, R.T)
             if hasattr(data, "magforces") and data.magforces is not None:
@@ -82,14 +105,14 @@ class Random3DRotation(BaseTransform):
         return data
 
 
-def create_random_rotation_loader(original_loader):
+def create_random_rotation_loader(original_loader, mode: str = "non-soc"):
     if not has_tg:
         raise ImportError(
             "torch_geometric is required for DataLoader functionality.\n"
             "Install it via: pip install torch-geometric"
         )
 
-    transform = Random3DRotation()
+    transform = Random3DRotation(mode=mode)
 
     # Apply transform to dataset
     dataset = original_loader.dataset

@@ -11,6 +11,7 @@ from e3nn.util import jit
 from mace.calculators import LAMMPS_MACE
 from mace.calculators.lammps_mliap_mace import LAMMPS_MLIAP_MACE
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+from mace.tools import deprecation
 
 
 def parse_args():
@@ -42,7 +43,9 @@ def parse_args():
         help="Old libtorch format, or new mliap format",
         default="libtorch",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    deprecation.warn_args("cli.create_lammps_model", parser)
+    return args
 
 
 def select_head(model):
@@ -106,6 +109,7 @@ def main():
     if args.format == "mliap":
         torch.save(lammps_model, model_path + "-mliap_lammps.pt")
     else:
+        deprecation.warn("lammps.torchscript_wrapper")
         lammps_model_compiled = jit.compile(lammps_model)
         lammps_model_compiled.save(model_path + "-lammps.pt")
 

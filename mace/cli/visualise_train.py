@@ -282,7 +282,12 @@ def plot_epoch_dependence(
             valid_data["epoch"],
             valid_data[key]["mean"] * 1e3,
             color=color,
-            label=label,
+            # `label` is the (key, axis label) pair this loop unpacks two lines
+            # above; passing the pair itself gave matplotlib two labels for one
+            # dataset, which it refuses, and `run_train` swallowed the refusal at
+            # DEBUG. The axis label is the readable half and the one already used
+            # for `set_ylabel`.
+            label=axis_label,
             linewidth=1,
         )
         main_ax.set_yscale("log")

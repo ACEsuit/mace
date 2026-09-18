@@ -44,6 +44,10 @@ from mace.modules.wrapper_ops import (
     OEQConfig,
     TransposeIrrepsLayoutWrapper,
 )
+from mace.tools.polar_conversion import (
+    ensure_polar_compatibility,
+    validate_pbc_handling,
+)
 from mace.tools.scatter import scatter_mean, scatter_sum
 from mace.tools.torch_tools import spherical_to_cartesian
 
@@ -305,6 +309,7 @@ class MACELES(ScaleShiftMACE):
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
+        pbc = ctx.pbc
         node_heads = ctx.node_heads
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
@@ -614,6 +619,7 @@ class MACELES(ScaleShiftMACE):
             displacement=displacement,
             vectors=vectors,
             cell=cell,
+            pbc=pbc,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -632,6 +638,7 @@ class MACELES(ScaleShiftMACE):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
         return {
             "energy": total_energy,
@@ -678,6 +685,7 @@ class PolarMACE(ScaleShiftMACE):
         field_norm_factor: Optional[float] = 0.02,
         fixedpoint_update_config: Optional[Dict[str, Any]] = None,
         field_readout_config: Optional[Dict[str, Any]] = None,
+        pbc_handling: str = "auto",
         **kwargs,
     ):
         if not GRAPH_LONGRANGE_AVAILABLE:
@@ -819,6 +827,7 @@ class PolarMACE(ScaleShiftMACE):
             include_self_interaction=field_si,
             quadrupole_feature_corrections=quadrupole_feature_corrections,
             integral_normalization="receiver",
+            pbc_handling=pbc_handling,
         )
         field_layout_target = (
             cueq_config.layout_str
@@ -937,13 +946,33 @@ class PolarMACE(ScaleShiftMACE):
             density_smearing_width=atomic_multipoles_smearing_width,
             kspace_cutoff=float(kspace_cutoff),
             include_self_interaction=include_electrostatic_self_interaction,
+            pbc_handling=pbc_handling,
         )
+        self.set_electrostatic_pbcs(pbc_handling)
         self.return_electrostatic_potentials = return_electrostatic_potentials
         self.layer_feature_mixer = MultiLayerFeatureMixer(
             node_feats_irreps=hidden_irreps,
             num_interactions=num_interactions,
             cueq_config=cueq_config,
         )
+
+    def __setstate__(self, state):
+        """Restore whole-model pickles, repairing known legacy electrostatic state."""
+        super().__setstate__(state)
+        ensure_polar_compatibility(self)
+
+    def set_electrostatic_pbcs(self, pbc_handling: str) -> None:
+        """Select the same electrostatic evaluator for features and energy.
+
+        ``auto`` preserves legacy batch dispatch. Use ``realspace`` for open
+        molecules, ``pbc`` for bulk, and ``slab`` for z-normal TTF slabs.
+        Explicit modes must match the input geometry; callers validate PBCs.
+        """
+        validate_pbc_handling(pbc_handling)
+        self.electric_potential_descriptor.set_pbc_handling(pbc_handling)
+        self.coulomb_energy.set_pbc_handling(pbc_handling)
+        self.pbc_handling = pbc_handling
+        self.electric_potential_descriptor.static_quantities = None
 
     def forward(
         self,
@@ -957,7 +986,6 @@ class PolarMACE(ScaleShiftMACE):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
-        use_pbc_evaluator: bool = False,
         fermi_level: Optional[torch.Tensor] = None,
         external_field: Optional[torch.Tensor] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
@@ -982,10 +1010,29 @@ class PolarMACE(ScaleShiftMACE):
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
+        pbc = ctx.pbc
         node_heads = ctx.node_heads
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
         lammps_class = interaction_kwargs.lammps_class
+
+        # prepare_graph retains the original position leaf in ctx for forces,
+        # but puts affinely strained positions in data for the local graph.
+        # Use that same geometry for every long-range contribution. Deriving
+        # reciprocal cell and volume from the strained cell lets autograd add
+        # the cell virial through the existing displacement derivative.
+        long_range_positions = data["positions"]
+        long_range_cell = cell.view(-1, 3, 3)
+        long_range_rcell = data["rcell"].view(-1, 3, 3)
+        long_range_volume = data["volume"]
+        if compute_virials or compute_stress or compute_displacement:
+            assert displacement is not None
+            strain = 0.5 * (displacement + displacement.transpose(-1, -2))
+            long_range_cell = long_range_cell + torch.matmul(long_range_cell, strain)
+            long_range_rcell = (
+                2 * torch.pi * torch.linalg.inv_ex(long_range_cell.transpose(-1, -2))[0]
+            )
+            long_range_volume = torch.linalg.det(long_range_cell).abs()
 
         if fermi_level is None:
             fermi_level = data["fermi_level"]
@@ -1063,27 +1110,36 @@ class PolarMACE(ScaleShiftMACE):
         node_inter_es = self.scale_shift(node_inter_es, node_heads)
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
-        # Build k-grid
-        (
-            k_vectors,
-            kv_norms_squared,
-            k_vectors_batch,
-            k_vectors_0mask,
-        ) = compute_k_vectors_flat(
-            self.kspace_cutoff, cell.view(-1, 3, 3), data["rcell"].view(-1, 3, 3)
-        )
+        # Only the compatibility mode inspects tensor PBCs for dispatch.
+        realspace = self.pbc_handling == "realspace"
+        if self.pbc_handling == "auto":
+            realspace = not bool(torch.any(pbc))
+        if realspace:
+            k_vectors = positions.new_empty((0, 3))
+            kv_norms_squared = positions.new_empty((0,))
+            k_vectors_batch = data["batch"].new_empty((0,))
+            k_vectors_0mask = positions.new_empty((0,))
+        else:
+            (
+                k_vectors,
+                kv_norms_squared,
+                k_vectors_batch,
+                k_vectors_0mask,
+            ) = compute_k_vectors_flat(
+                self.kspace_cutoff, long_range_cell, long_range_rcell
+            )
 
         field_feature_cache = self.electric_potential_descriptor.precompute_geometry(
             k_vectors=k_vectors,
             k_norm2=kv_norms_squared,
             k_vector_batch=k_vectors_batch,
             k0_mask=k_vectors_0mask,
-            node_positions=positions,
+            node_positions=long_range_positions,
             batch=data["batch"],
-            volume=data["volume"],
+            volume=long_range_volume,
             pbc=data["pbc"].view(-1, 3),
-            force_pbc_evaluator=use_pbc_evaluator,
         )
+        self.electric_potential_descriptor.static_quantities = None
 
         # SCF fixed point
         features_mixed = self.layer_feature_mixer(torch.stack(node_feats_list, dim=0))
@@ -1139,13 +1195,11 @@ class PolarMACE(ScaleShiftMACE):
                 source_feats_beta = charges_to_mul_ir(source_feats_beta)
             field_feats_alpha = self.electric_potential_descriptor.forward_dynamic(
                 cache=field_feature_cache,
-                source_feats=source_feats_alpha.unsqueeze(-2),
-                pbc=data["pbc"].view(-1, 3),
+                source_feats=source_feats_alpha,
             )
             field_feats_beta = self.electric_potential_descriptor.forward_dynamic(
                 cache=field_feature_cache,
-                source_feats=source_feats_beta.unsqueeze(-2),
-                pbc=data["pbc"].view(-1, 3),
+                source_feats=source_feats_beta,
             )
             field_from_mul_ir = getattr(self, "_field_from_mul_ir", None)
             if field_from_mul_ir is not None:
@@ -1155,14 +1209,14 @@ class PolarMACE(ScaleShiftMACE):
 
             # Add external field contribution and subtract barycenter for gauge invariance
             barycenter = scatter_mean(
-                src=safe_double(positions),
+                src=safe_double(long_range_positions),
                 index=data["batch"],
                 dim=0,
                 dim_size=num_graphs,
             ).to(positions.dtype)
             half_external_field = 0.5 * self.external_field_contribution(
                 data["batch"],
-                positions - barycenter[data["batch"], :],
+                long_range_positions - barycenter[data["batch"], :],
                 external_potential,
             )
             field_feats_alpha = (
@@ -1266,7 +1320,7 @@ class PolarMACE(ScaleShiftMACE):
             else spin_charge_density
         )
         total_charge, total_dipole = compute_total_charge_dipole_permuted(
-            charge_density_mul_ir, positions, data["batch"], num_graphs
+            charge_density_mul_ir, long_range_positions, data["batch"], num_graphs
         )
         electro_energy = self.coulomb_energy(
             k_vectors=k_vectors,
@@ -1274,11 +1328,10 @@ class PolarMACE(ScaleShiftMACE):
             k_vector_batch=k_vectors_batch,
             k0_mask=k_vectors_0mask,
             source_feats=charge_density_mul_ir,
-            node_positions=positions,
+            node_positions=long_range_positions,
             batch=data["batch"],
-            volume=data["volume"],
+            volume=long_range_volume,
             pbc=data["pbc"].view(-1, 3),
-            force_pbc_evaluator=use_pbc_evaluator,
         )
         total_energy = (
             total_energy
@@ -1292,6 +1345,7 @@ class PolarMACE(ScaleShiftMACE):
             displacement=displacement,
             vectors=vectors,
             cell=cell,
+            pbc=pbc,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -1312,6 +1366,7 @@ class PolarMACE(ScaleShiftMACE):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
 
         return {
@@ -1923,6 +1978,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
             displacement=displacement,
             vectors=vectors,
             cell=data["cell"],
+            pbc=data["pbc"] if "pbc" in data else None,
             magmoms=data["magmom"],
             training=training,
             compute_force=compute_force,
@@ -1942,6 +1998,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
                 num_atoms=data["positions"].shape[0],
                 batch=data["batch"],
                 cell=data["cell"],
+                pbc=data["pbc"] if "pbc" in data else None,
             )
         output = {
             "energy": total_energy,
@@ -2103,3 +2160,211 @@ class MagneticSCFMACE(torch.nn.Module):
         final_output["equilibrated_magmom"] = magmom.detach()
 
         return final_output
+
+
+class TimeReversalSymmetrizedMACE(torch.nn.Module):
+    r"""Exact time-reversal symmetrisation of a magnetic MACE model.
+
+    Evaluates the projection
+
+    .. math::
+        E_{\mathrm{TR}}(R, M) = \tfrac{1}{2}\left[E_\theta(R, M) + E_\theta(R, -M)\right]
+
+    with :math:`M \mapsto -M` reversing **all** per-atom moments globally, so
+    :math:`E_{\mathrm{TR}}(R, -M) = E_{\mathrm{TR}}(R, M)` holds exactly for any base
+    model. The base model's O(3) behaviour is untouched, so the axial law
+    :math:`E_{\mathrm{TR}}(QR, \det(Q)\,QM) = E_{\mathrm{TR}}(R, M)` still holds.
+
+    Base parameters are unchanged: an existing checkpoint is loaded and wrapped without
+    retraining. Symmetrisation is explicit, and persisted if the wrapped model is saved.
+
+    By default the two branches are stacked into a single batch and evaluated in ONE
+    forward pass, which parallelises better on GPU than two sequential passes. Set
+    ``batched=False`` to evaluate them sequentially (lower peak memory). Either way the
+    cost is roughly twice the base model.
+
+    Outputs are combined by time-reversal parity: energies, forces, virials and stresses
+    are even and averaged; magnetic forces are odd and antisymmetrised as
+    :math:`\tfrac{1}{2}[F_M(+M) - F_M(-M)]`, following this repository's
+    ``magforces = -dE/dM`` convention. Latent outputs have no established parity and are
+    taken from the ``+M`` branch.
+
+    .. note::
+        Compose as ``MagneticSCFMACE(TimeReversalSymmetrizedMACE(base))`` so the projection
+        acts on the energy surface before the SCF; the reverse order is rejected.
+
+    .. warning::
+        Tooling that dispatches on the model's class name does not see through the
+        wrapper. In particular
+        :func:`mace.tools.scripts_utils.extract_config_mace_model` returns an error dict
+        rather than raising, so the
+        calculator's ``compile_mode`` path and TorchScript export must be applied to the
+        unwrapped model (``wrapped.model``), with the wrapper re-applied afterwards.
+        ``torch.save`` / ``torch.load`` of the wrapped model work normally, as does the
+        eager :class:`~mace.calculators.MagneticMACECalculator` path via attribute
+        delegation.
+    """
+
+    _EVEN_KEYS = (
+        "energy",
+        "node_energy",
+        "interaction_energy",
+        "contributions",
+        "forces",
+        "edge_forces",
+        "virials",
+        "stress",
+        "atomic_virials",
+        "atomic_stresses",
+        "hessian",
+    )
+    _ODD_KEYS = ("magforces",)
+
+    def __init__(self, model: torch.nn.Module, batched: bool = True) -> None:
+        super().__init__()
+        if isinstance(model, TimeReversalSymmetrizedMACE):
+            raise ValueError("model is already time-reversal symmetrised")
+        if isinstance(model, MagneticSCFMACE):
+            raise ValueError(
+                "wrap the base model, not MagneticSCFMACE: the projection must act BEFORE "
+                "the SCF. Use MagneticSCFMACE(TimeReversalSymmetrizedMACE(base), ...)."
+            )
+        self.model = model
+        self.batched = batched
+
+    def __getattr__(self, name: str):
+        """Fall back to the wrapped model for anything this class does not define.
+
+        ``_modules`` is read out of ``__dict__`` deliberately: during unpickling
+        ``__getattr__`` can fire before it exists, and ``self.model`` would recurse.
+        Mirrors :class:`MagneticSCFMACE`.
+        """
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            inner = self.__dict__.get("_modules", {}).get("model")
+            if inner is None or name == "model":
+                raise
+            return getattr(inner, name)
+
+    @staticmethod
+    def stack_time_reversed(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a batch holding the structures twice, moments reversed in the second copy.
+
+        Node- and edge-level tensors are concatenated; ``edge_index``, ``batch`` and ``ptr``
+        are offset so the two copies stay disconnected graphs. Evaluating this in one
+        forward pass parallelises better than two sequential passes. The caller's tensors
+        are not modified.
+        """
+        n_nodes = data["positions"].shape[0]
+        n_graphs = data["ptr"].numel() - 1
+        out: Dict[str, torch.Tensor] = {}
+        for key, value in data.items():
+            if not isinstance(value, torch.Tensor) or value.ndim == 0:
+                # non-tensors and 0-dim scalars are graph-independent: pass through
+                out[key] = value
+            elif key == "magmom":
+                out[key] = torch.cat([value, -value], dim=0)
+            elif key == "edge_index":
+                out[key] = torch.cat([value, value + n_nodes], dim=1)
+            elif key == "batch":
+                out[key] = torch.cat([value, value + n_graphs], dim=0)
+            elif key == "ptr":
+                out[key] = torch.cat([value, value[1:] + n_nodes], dim=0)
+            else:
+                out[key] = torch.cat([value, value], dim=0)
+        return out
+
+    def unstack_time_reversed(
+        self,
+        out: Dict[str, Optional[torch.Tensor]],
+        n_nodes: int,
+        n_graphs: int,
+        n_edges: int,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        """Inverse of :meth:`stack_time_reversed`: split each doubled output and combine
+        the two halves by their time-reversal parity.
+
+        A doubled output is recognised by its leading dimension, which is twice the node,
+        edge, graph or cell-row count depending on the quantity. The Hessian is handled
+        separately because it is doubled in TWO dimensions, giving a block-diagonal
+        ``(3 * 2N, 2N, 3)`` tensor whose off-diagonal blocks vanish (the copies are
+        disconnected graphs); its diagonal blocks are extracted and combined. Anything
+        whose leading dimension matches no known count is passed through unchanged.
+        """
+        halves = {
+            2 * n_nodes: n_nodes,
+            2 * n_edges: n_edges,
+            2 * n_graphs: n_graphs,
+            6 * n_graphs: 3 * n_graphs,
+        }
+        result: Dict[str, Optional[torch.Tensor]] = {}
+        for key, value in out.items():
+            if not isinstance(value, torch.Tensor) or value.ndim == 0:
+                result[key] = value
+                continue
+            if key == "hessian" and value.shape[0] == 6 * n_nodes:
+                rows = 3 * n_nodes
+                result[key] = self._combine(
+                    key, value[:rows, :n_nodes], value[rows:, n_nodes:]
+                )
+                continue
+            half = halves.get(value.shape[0])
+            result[key] = (
+                value
+                if half is None
+                else self._combine(key, value[:half], value[half:])
+            )
+        return result
+
+    def _combine(self, key: str, a: torch.Tensor, b: torch.Tensor):
+        if key in self._ODD_KEYS:
+            return 0.5 * (a - b)
+        if key in self._EVEN_KEYS:
+            return 0.5 * (a + b)
+        return a
+
+    def forward(
+        self,
+        data: Dict[str, torch.Tensor],
+        training: bool = False,
+        **kwargs,
+    ) -> Dict[str, Optional[torch.Tensor]]:
+        magmom = data.get("magmom")
+        if magmom is None:
+            raise ValueError(
+                "TimeReversalSymmetrizedMACE requires per-atom moments under 'magmom'"
+            )
+
+        # Both branches must differentiate w.r.t. the same leaf: if the moments do not
+        # already require grad, the reversed copy becomes an independent leaf and
+        # d(E_TR)/dM sees only the +M half. The base model sets this flag itself, so this
+        # is the same side effect one step earlier; values are never modified.
+        if not magmom.requires_grad:
+            magmom.requires_grad_(True)
+
+        n_nodes = data["positions"].shape[0]
+        n_graphs = data["ptr"].numel() - 1
+
+        if self.batched:
+            stacked = self.model(
+                self.stack_time_reversed(dict(data)), training=training, **kwargs
+            )
+            return self.unstack_time_reversed(
+                stacked, n_nodes, n_graphs, data["edge_index"].shape[1]
+            )
+
+        data_plus = dict(data)
+        data_plus["magmom"] = magmom
+        data_minus = dict(data)
+        data_minus["magmom"] = -magmom
+        out_plus = self.model(data_plus, training=training, **kwargs)
+        out_minus = self.model(data_minus, training=training, **kwargs)
+        return {
+            key: (
+                value
+                if value is None or out_minus.get(key) is None
+                else self._combine(key, value, out_minus[key])
+            )
+            for key, value in out_plus.items()
+        }

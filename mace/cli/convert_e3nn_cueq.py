@@ -7,9 +7,11 @@ import torch
 from e3nn import o3
 
 from mace.modules.wrapper_ops import CuEquivarianceConfig
+from mace.tools import deprecation
 from mace.tools.cg import O3_e3nn
 from mace.tools.cg_cueq_tools import symmetric_contraction_proj
 from mace.tools.scripts_utils import extract_config_mace_model
+from mace.tools.torch_tools import restores_default_dtype
 
 try:
     import cuequivariance as cue
@@ -204,20 +206,22 @@ def transfer_weights(
                 )
     # Transfer avg_num_neighbors
     for i in range(num_layers):
-        target_model.interactions[i].avg_num_neighbors = source_model.interactions[
-            i
-        ].avg_num_neighbors
+        target_model.interactions[i].set_avg_num_neighbors(
+            source_model.interactions[i].avg_num_neighbors
+        )
 
     # Load state dict into target model
     target_model.load_state_dict(target_dict)
 
 
+@restores_default_dtype
 def run(
     input_model,
     output_model="_cueq.model",
     device="cpu",
     return_model=True,
     layout: str = "ir_mul",
+    conv_fusion: bool = True,
 ):
     # Setup logging
 
@@ -245,7 +249,7 @@ def run(
         layout=layout,
         group="O3_e3nn",
         optimize_all=True,
-        conv_fusion=(device == "cuda"),
+        conv_fusion=conv_fusion and torch.device(device).type == "cuda",
     )
 
     # Create new model with cuequivariance config
@@ -276,6 +280,7 @@ def run(
 
 
 def main():
+    deprecation.warn("ep.mace_e3nn_cueq")
     parser = argparse.ArgumentParser()
     parser.add_argument("input_model", help="Path to input MACE model")
     parser.add_argument(

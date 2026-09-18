@@ -1,0 +1,175 @@
+{
+  "backend": "e3nn",
+  "device": "cpu",
+  "dtype": "float64",
+  "fixtures": {
+    "dimer_short": {
+      "formula": "CO",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 2,
+      "outputs": {
+        "atomic_dipoles": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "Debye",
+          "value": [
+            [
+              0.0,
+              0.0,
+              0.028917307131035817
+            ],
+            [
+              0.0,
+              0.0,
+              0.04269522034740385
+            ]
+          ]
+        },
+        "dipole": {
+          "kind": "graph_vector",
+          "shape": [
+            3
+          ],
+          "unit": "Debye",
+          "value": [
+            0.0,
+            0.0,
+            0.07161252747843966
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "isolated_atom": {
+      "formula": "O",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 1,
+      "outputs": {
+        "atomic_dipoles": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "Debye",
+          "value": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "dipole": {
+          "kind": "graph_vector",
+          "shape": [
+            3
+          ],
+          "unit": "Debye",
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "water_cluster": {
+      "formula": "H6O3",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 9,
+      "outputs": {
+        "atomic_dipoles": {
+          "kind": "per_atom_vector",
+          "shape": [
+            9,
+            3
+          ],
+          "unit": "Debye",
+          "value": [
+            [
+              -0.0019203070937525851,
+              -0.007242562081987411,
+              -0.04566991536202078
+            ],
+            [
+              -0.03196771889961017,
+              0.041238254464994,
+              0.011654074493208537
+            ],
+            [
+              0.004330531534364629,
+              -0.06784642132113006,
+              -0.002845069664854113
+            ],
+            [
+              -0.0063743150865220154,
+              -0.011225495987818822,
+              -0.04956414614115287
+            ],
+            [
+              0.02613949125482905,
+              0.06755868159147943,
+              0.014112848060472517
+            ],
+            [
+              -0.007896316418087907,
+              -0.07167304538263178,
+              -0.004245504109796881
+            ],
+            [
+              0.012024517888578008,
+              -0.024696157878414282,
+              -0.04179221830684763
+            ],
+            [
+              0.0003059739817681772,
+              0.061936245212162816,
+              0.000303895075994692
+            ],
+            [
+              -0.002960983225061967,
+              -0.021370319950605746,
+              -0.03333521027084027
+            ]
+          ]
+        },
+        "dipole": {
+          "kind": "graph_vector",
+          "shape": [
+            3
+          ],
+          "unit": "Debye",
+          "value": [
+            -0.008319126063494784,
+            -0.03332082133395185,
+            -0.15138124622583682
+          ]
+        }
+      },
+      "periodic": false
+    }
+  },
+  "metadata": {
+    "model_class": "AtomicDipolesMACE"
+  },
+  "provenance": {
+    "description": "Directly instantiated AtomicDipolesMACE anchor: the graph dipole is the scatter-sum of the per-atom dipoles plus the fixed-charge baseline, on the molecular fixtures only.",
+    "evaluated_with": "AtomicDipolesMACE.forward via tests/golden/routes.ForwardRoute, e3nn, CPU, float64",
+    "recipe": "tests/golden/build_dipole_anchor.py",
+    "source": "tests/golden/models/tiny_dipoles.model",
+    "tolerance_row": "fp64_cpu_reference"
+  },
+  "schema_version": 1,
+  "units": {
+    "energy": "eV",
+    "length": "Ang"
+  }
+}

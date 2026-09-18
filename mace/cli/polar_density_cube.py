@@ -22,11 +22,13 @@ import torch
 from ase.io.cube import write_cube
 
 from mace.calculators.foundations_models import mace_polar
+from mace.tools import deprecation
 
 try:
     from graph_longrange.features import (
         apply_coulomb_kernel_batch,
         assemble_fourier_series_batch,
+        compute_coulomb_factor,
     )
     from graph_longrange.gto_utils import GTOBasis, gto_basis_kspace_cutoff
     from graph_longrange.kspace import (
@@ -312,9 +314,13 @@ class PotentialInterpolator:
             density_basis_fs=density_basis_fs,
             volume_per_k=volume_per_k,
         )
-        potential = apply_coulomb_kernel_batch(
+        k_factor_coulomb = compute_coulomb_factor(
             k_norm2=k_norm2,
+            k0_mask=k0_mask,
+        )
+        potential = apply_coulomb_kernel_batch(
             density=density,
+            k_factor_coulomb=k_factor_coulomb,
         )
 
         _, total_dipole = self._total_charge_dipole(multipoles, node_positions, batch)
@@ -582,7 +588,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="optional JSON path for cube quality metrics",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    deprecation.warn_args("cli.polar_density_cube", parser)
+    return args
 
 
 def run(args: argparse.Namespace) -> list[Path]:

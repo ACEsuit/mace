@@ -303,6 +303,7 @@ class MACE(torch.nn.Module):
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
+        pbc = ctx.pbc
         node_heads = ctx.node_heads.to(torch.int64)
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
@@ -405,6 +406,7 @@ class MACE(torch.nn.Module):
             displacement=displacement,
             vectors=vectors,
             cell=cell,
+            pbc=pbc,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -423,6 +425,7 @@ class MACE(torch.nn.Module):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
         return {
             "energy": total_energy,
@@ -483,6 +486,7 @@ class ScaleShiftMACE(MACE):
         vectors = ctx.vectors
         lengths = ctx.lengths
         cell = ctx.cell
+        pbc = ctx.pbc
         node_heads = ctx.node_heads.to(torch.int64)
         interaction_kwargs = ctx.interaction_kwargs
         lammps_natoms = interaction_kwargs.lammps_natoms
@@ -587,6 +591,7 @@ class ScaleShiftMACE(MACE):
             displacement=displacement,
             vectors=vectors,
             cell=cell,
+            pbc=pbc,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
@@ -605,6 +610,7 @@ class ScaleShiftMACE(MACE):
                 num_atoms=positions.shape[0],
                 batch=data["batch"],
                 cell=cell,
+                pbc=pbc,
             )
         return {
             "energy": total_energy,
@@ -1439,6 +1445,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             positions=data["positions"],
             displacement=displacement,
             cell=data["cell"],
+            pbc=data["pbc"] if "pbc" in data else None,
             training=training,
             compute_force=compute_force,
             compute_virials=compute_virials,
