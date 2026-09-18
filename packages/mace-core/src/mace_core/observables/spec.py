@@ -120,6 +120,12 @@ class InputSpec(ConfigSection):
     #: graph.
     per_atom: bool
     units: str = Field(min_length=1)
+    #: Whether the model may be differentiated against this input. Declaring it
+    #: is what makes the input a graph leaf, and it is declared rather than
+    #: inferred from whether some observable asks: a leaf costs memory for the
+    #: whole backward graph, so an input nobody differentiates should not
+    #: become one by accident.
+    differentiable: bool = False
 
     @model_validator(mode="after")
     def _validate(self) -> InputSpec:

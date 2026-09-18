@@ -11,6 +11,7 @@ from mace_core.config.base import (
     ConfigSection,
     read_config_file,
 )
+from mace_core.config.fixed_point import FixedPointSpec, SolverKind
 from mace_core.config.cli import apply_overrides, parse_overrides
 from mace_core.config.model import (
     AgnesiTransformConfig,
@@ -27,6 +28,8 @@ from mace_core.config.model import (
 )
 
 __all__ = [
+    "FixedPointSpec",
+    "SolverKind",
     "AgnesiTransformConfig",
     "BaseConfig",
     "BesselBasisConfig",

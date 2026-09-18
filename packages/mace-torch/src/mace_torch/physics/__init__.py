@@ -1,5 +1,6 @@
 """Derivatives, taken around the model rather than inside it."""
 
+from mace_torch.physics.fixed_point import FixedPointDriver
 from mace_torch.physics.outputs import (
     DerivativeEngine,
     cell_volume_and_mask,
@@ -9,6 +10,7 @@ from mace_torch.physics.outputs import (
 
 __all__ = [
     "DerivativeEngine",
+    "FixedPointDriver",
     "cell_volume_and_mask",
     "prepare_inputs",
     "stress_from_strain_gradient",

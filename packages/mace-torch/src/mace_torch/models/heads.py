@@ -15,52 +15,15 @@ different model.
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.observables import ObservableSpec
 from torch import Tensor, nn
 
-__all__ = ["ObservableHead", "channel_layout_index", "expanded_irreps"]
+from mace_torch.nn.layout import channel_layout_index, expanded_irreps
 
-
-def expanded_irreps(hidden: str, num_features: int) -> str:
-    """The declaration of ``num_features`` channels of ``hidden``, grouped.
-
-    The node features are held as ``[n, channel, component]``. Read as one flat
-    vector that is channel-major, and an equivariant linear map wants its input
-    grouped by irrep instead. This is the grouped declaration;
-    :func:`channel_layout_index` is the permutation that gets there.
-    """
-    parsed = Irreps.parse(hidden)
-    return "+".join(f"{num_features * mul}x{ir}" for mul, ir in parsed.terms)
-
-
-def channel_layout_index(hidden: str, num_features: int) -> np.ndarray:
-    """Where each entry of the grouped layout reads from the channel-major one.
-
-    Args:
-        hidden: One channel's declaration.
-        num_features: How many channels.
-
-    Returns:
-        ``[dim]`` of int64, to be used as ``flat[..., index]``.
-    """
-    parsed = Irreps.parse(hidden)
-    width = parsed.dimension
-    index = np.empty(num_features * width, dtype=np.int64)
-    target = 0
-    source_offset = 0
-    for mul, ir in parsed.terms:
-        span = ir.dimension
-        for channel in range(num_features):
-            for copy in range(mul):
-                start = channel * width + source_offset + copy * span
-                index[target : target + span] = np.arange(start, start + span)
-                target += span
-        source_offset += mul * span
-    return index
+__all__ = ["ObservableHead"]
 
 
 def _check_reachable(spec: ObservableSpec, hidden_irreps: str) -> None:
