@@ -273,7 +273,7 @@ def load_from_xyz(
         key_specification.arrays_keys["forces"] = "REF_forces"
         for atoms in atoms_list:
             try:
-                atoms.arrays["REF_forces"] = atoms.get_forces()
+                atoms.arrays["REF_forces"] = atoms.get_forces(apply_constraint=False)
             except Exception as e:  # pylint: disable=W0703
                 logging.error(f"Failed to extract forces: {e}")
                 atoms.arrays["REF_forces"] = None
