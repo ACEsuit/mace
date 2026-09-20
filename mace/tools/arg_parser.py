@@ -398,6 +398,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument(
+        "--compute_dipole_from_electric_field",
+        help="PolarMACE: compute dipole as dE/dF (energy derivative w.r.t. field)",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--compute_polarizability_from_electric_field",
+        help="PolarMACE: compute polarizability as d2E/dF2 (default off)",
+        type=str2bool,
+        default=False,
+    )
+    parser.add_argument(
         "--scaling",
         help="type of scaling to the output",
         type=str,
