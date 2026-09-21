@@ -245,19 +245,26 @@ def run_mace_train(
         cmd += [str(a) for a in extra_argv]
 
     print("Running command:", cmd)
-    if run_env.get("MACE_ENGINE") == "v1" and not capture_output:
+    if run_env.get("MACE_ENGINE") == "v1":
         # On the v1 engine a capability that has not been migrated is refused
         # cleanly, and a refusal is a skip rather than a failure. Seeing it
-        # means reading stderr, so it is captured here and printed back: the
+        # means reading stderr, so it is captured here whatever the caller
+        # asked for, and handed back in the shape the caller expects. The
         # alternative is an xfail on every unmigrated capability, which goes
         # green the day one of them breaks for a different reason.
+        #
+        # Every caller, not only the ones that let output through: a caller
+        # that captures output took the other branch and died on the refusal
+        # instead of skipping, which is how six plotting cases failed a run
+        # they should have sat out.
         finished = subprocess.run(
             cmd, env=run_env, check=False, capture_output=True, text=True, cwd=cwd
         )
-        if finished.stdout:
-            print(finished.stdout)
-        if finished.stderr:
-            print(finished.stderr, file=sys.stderr)
+        if not capture_output:
+            if finished.stdout:
+                print(finished.stdout)
+            if finished.stderr:
+                print(finished.stderr, file=sys.stderr)
         if finished.returncode != 0 and NOT_MIGRATED in (finished.stderr or ""):
             import pytest
 
@@ -268,6 +275,15 @@ def run_mace_train(
         if check and finished.returncode != 0:
             raise subprocess.CalledProcessError(
                 finished.returncode, cmd, finished.stdout, finished.stderr
+            )
+        if capture_output and not text:
+            # A caller that asked for bytes gets bytes, so `.stdout.decode()`
+            # keeps working.
+            return subprocess.CompletedProcess(
+                finished.args,
+                finished.returncode,
+                (finished.stdout or "").encode(),
+                (finished.stderr or "").encode(),
             )
         return finished
     return subprocess.run(
