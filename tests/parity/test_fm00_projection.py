@@ -157,7 +157,7 @@ def test_a_real_model_s_weights_keep_computing_the_same_function():
     features = generator.normal(size=(40, 16, 9))  # [nodes, channels, components]
 
     for order, weights in sorted(by_order.items()):
-        full = as_path_first(trained_basis[order], order)
+        full = as_path_first(trained_basis[order], order, 9)
         reduced = reduced_symmetric_tensor_product_basis(IRREPS_IN, order, "0e")["0e"]
         projected = project_weights(
             weights, IRREPS_IN, order, "0e", source=trained_basis[order]

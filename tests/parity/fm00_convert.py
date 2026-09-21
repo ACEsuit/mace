@@ -25,9 +25,15 @@ from __future__ import annotations
 
 import numpy as np
 
+from fm00_projection import project_weights
+
 from mace_core.clebsch_gordan.irreps import Irreps
 
-__all__ = ["linear_weights_to_canonical"]
+__all__ = [
+    "contraction_weights_to_canonical",
+    "fully_connected_tp_weights_to_canonical",
+    "linear_weights_to_canonical",
+]
 
 
 def linear_weights_to_canonical(legacy_linear, irreps_in: str, irreps_out: str):
@@ -75,3 +81,111 @@ def linear_weights_to_canonical(legacy_linear, irreps_in: str, irreps_out: str):
                     for in_copy in range(in_multiplicity)
                 )
     return np.asarray(ordered, dtype=float)
+
+
+def fully_connected_tp_weights_to_canonical(
+    legacy_tp, irreps_in1: str, irreps_out: str, num_scalars: int
+):
+    """The skip connection's weights, in the rewrite's order and unscaled.
+
+    The frozen tree's skip is a fully connected tensor product against the
+    element attributes, which are scalars, so it is a per-element linear map.
+    It stores one ``[multiplicity_in, elements, multiplicity_out]`` block per
+    instruction; the rewrite stores ``[elements, plan]`` with the plan running
+    output copies major.
+
+    The scale works out simpler than either side states it. e3nn's
+    per-instruction factor is ``sqrt(dim_out / (mul_in1 * mul_in2))`` and the
+    coupling of an irrep with a scalar carries ``1 / sqrt(dim_out)``, so the
+    output dimension cancels and what is left is ``1 / sqrt(mul_in1 * mul_in2)``.
+    It is read off the module rather than rebuilt from that identity, and a test
+    pins the two against each other.
+
+    Args:
+        legacy_tp: The trained module. Read, never mutated.
+        irreps_in1: Its first input declaration.
+        irreps_out: Its output declaration.
+        num_scalars: How many element attributes, the second input's width.
+
+    Returns:
+        ``[num_scalars, plan_size]`` of ``float64``.
+    """
+    source = Irreps.parse(irreps_in1)
+    target = Irreps.parse(irreps_out)
+
+    blocks: dict[tuple[int, int], np.ndarray] = {}
+    offset = 0
+    flat = legacy_tp.weight.detach().numpy().astype(float)
+    for instruction in legacy_tp.instructions:
+        first, second, out = instruction.path_shape
+        span = first * second * out
+        scale = instruction.path_weight / np.sqrt(
+            target.terms[instruction.i_out][1].dimension
+        )
+        blocks[(instruction.i_in1, instruction.i_out)] = (
+            flat[offset : offset + span].reshape(first, second, out) * scale
+        )
+        offset += span
+    if offset != flat.size:
+        raise ValueError(
+            f"the instructions account for {offset} weights and the module "
+            f"holds {flat.size}."
+        )
+
+    columns = []
+    for out_index, (out_multiplicity, out_irrep) in enumerate(target.terms):
+        for out_copy in range(out_multiplicity):
+            for in_index, (in_multiplicity, in_irrep) in enumerate(source.terms):
+                if in_irrep != out_irrep:
+                    continue
+                block = blocks[(in_index, out_index)]
+                for in_copy in range(in_multiplicity):
+                    columns.append(block[in_copy, :, out_copy])
+    return np.stack(columns, axis=1).astype(float)
+
+
+def contraction_weights_to_canonical(
+    legacy_contraction, irreps_in: str, target: str, correlation: int
+):
+    """One symmetric contraction's weights, per body order and reduced.
+
+    The frozen tree stores the highest body order first, under its own name,
+    and counts down through a list; the rewrite stores them ascending. It also
+    keeps them against the full basis, which travels with the module as its
+    coupling tables, so each order is projected onto the reduced basis on the
+    way across.
+
+    The evaluation differs and the function does not. The frozen tree folds the
+    orders into a Horner cascade, multiplying a running result by the features
+    once per step, while the rewrite sums each order separately. Measured on
+    the anchor, the two agree to 1.3e-15: the cascade is a cheaper way to
+    evaluate the same polynomial, not a different one.
+
+    Args:
+        legacy_contraction: The trained module. Read, never mutated.
+        irreps_in: One channel's input declaration.
+        target: The output irrep this contraction reads out.
+        correlation: The highest body order.
+
+    Returns:
+        One ``[elements, reduced_paths, channels]`` array per body order,
+        ascending.
+    """
+    by_order = {correlation: legacy_contraction.weights_max.detach().numpy()}
+    for offset, weight in enumerate(legacy_contraction.weights):
+        by_order[correlation - 1 - offset] = weight.detach().numpy()
+    if sorted(by_order) != list(range(1, correlation + 1)):
+        raise ValueError(
+            f"this contraction carries body orders {sorted(by_order)} and a "
+            f"correlation of {correlation} needs {list(range(1, correlation + 1))}."
+        )
+
+    converted = []
+    for order in range(1, correlation + 1):
+        basis = getattr(legacy_contraction, f"U_matrix_{order}").numpy()
+        converted.append(
+            project_weights(
+                by_order[order].astype(float), irreps_in, order, target, source=basis
+            )
+        )
+    return converted
