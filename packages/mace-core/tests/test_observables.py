@@ -93,7 +93,6 @@ def test_a_malformed_spec_names_the_observable_and_the_grammar():
             irreps="rank2",
             per_atom=True,
             units="e*Å^2",
-            normalization="none",
         )
     message = str(caught.value)
     assert "quadrupole" in message
@@ -106,22 +105,6 @@ def test_a_malformed_spec_names_the_observable_and_the_grammar():
 # ---------------------------------------------------------------------------
 
 
-def test_normalization_is_required_and_closed():
-    # Both calls are rejected by the type checker as well, which is the point:
-    # the field is a closed Literal, so a wrong value is caught statically and
-    # at runtime. The ignores are what let the runtime half be tested.
-    with pytest.raises(ValidationError):
-        ObservableSpec(name="q", irreps="0e", per_atom=False, units="eV")  # ty: ignore[missing-argument]
-    with pytest.raises(ValidationError):
-        ObservableSpec(
-            name="q",
-            irreps="0e",
-            per_atom=False,
-            units="eV",
-            normalization="minmax",  # ty: ignore[invalid-argument-type]
-        )
-
-
 def test_an_unknown_field_is_an_error_rather_than_ignored():
     with pytest.raises(ValidationError):
         ObservableSpec(
@@ -129,7 +112,6 @@ def test_an_unknown_field_is_an_error_rather_than_ignored():
             irreps="0e",
             per_atom=False,
             units="eV",
-            normalization="none",
             weight=3.0,  # ty: ignore[unknown-argument]
         )
 
@@ -141,16 +123,13 @@ def test_a_name_that_is_not_an_identifier_is_rejected():
             irreps="0e",
             per_atom=True,
             units="e",
-            normalization="none",
         )
     assert "identifier" in str(caught.value)
 
 
 def test_units_may_not_be_empty():
     with pytest.raises(ValidationError):
-        ObservableSpec(
-            name="q", irreps="0e", per_atom=False, units="", normalization="none"
-        )
+        ObservableSpec(name="q", irreps="0e", per_atom=False, units="")
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +183,6 @@ def test_the_default_forces_row_is_the_negative_position_gradient():
     assert forces.per_atom is True
     assert forces.irreps == "1o"
     assert forces.units == "eV/Å"
-    assert forces.default_loss_weight == 100.0
 
 
 def test_the_default_stress_row_is_the_positive_strain_gradient():
@@ -228,8 +206,6 @@ observables:
     irreps: "0e+2e"
     per_atom: true
     units: "e*Å^2"
-    normalization: "rms"
-    default_loss_weight: 2.5
     derivatives: [pos, strain]
 """,
         tmp_path,
@@ -237,7 +213,6 @@ observables:
     quadrupole = catalogue.observable("quadrupole")
     assert quadrupole.per_atom is True
     assert quadrupole.dimension == 6
-    assert quadrupole.default_loss_weight == 2.5
     assert catalogue.names() == (
         "quadrupole",
         "d_quadrupole_d_pos",
@@ -260,11 +235,9 @@ observables:
     irreps: "0e"
     per_atom: false
     units: "eV"
-    normalization: "std"
     derivatives:
       - wrt: magmom
         units: "eV/muB"
-        default_loss_weight: 10.0
 """,
         tmp_path,
     )
@@ -274,7 +247,6 @@ observables:
     assert magforces.per_atom is True
     # A magnetic moment is an axial vector, so its conjugate force is too.
     assert magforces.irreps == "1e"
-    assert magforces.default_loss_weight == 10.0
     assert catalogue.names() == ("energy", "magforces")
 
 
@@ -286,7 +258,6 @@ observables:
     irreps: "0e"
     per_atom: false
     units: "eV"
-    normalization: "std"
     derivatives: [pos]
 """,
         tmp_path,
@@ -308,7 +279,6 @@ observables:
     irreps: "0e"
     per_atom: false
     units: "eV"
-    normalization: "std"
     derivatives: [elec_temp]
 """,
             tmp_path,
@@ -328,12 +298,10 @@ observables:
     irreps: "1o"
     per_atom: true
     units: "eV/Å"
-    normalization: "rms"
   - name: energy
     irreps: "0e"
     per_atom: false
     units: "eV"
-    normalization: "std"
     derivatives: [pos]
 """,
             tmp_path,
@@ -350,12 +318,10 @@ observables:
     irreps: "0e"
     per_atom: false
     units: "eV"
-    normalization: "std"
   - name: energy
     irreps: "0e"
     per_atom: false
     units: "eV"
-    normalization: "none"
 """,
             tmp_path,
         )
@@ -371,7 +337,6 @@ observables:
     irreps: "0e"
     per_atom: false
     units: "eV"
-    normalization: "std"
     derivatives: [pos, pos]
 """,
             tmp_path,
@@ -398,7 +363,6 @@ def test_a_derivative_can_be_named_without_having_been_requested():
                 irreps="1o",
                 per_atom=False,
                 units="Debye",
-                normalization="rms",
             )
         ],
     )

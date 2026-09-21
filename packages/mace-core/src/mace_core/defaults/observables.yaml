@@ -31,22 +31,11 @@ observables:
     irreps: "0e"
     per_atom: false
     units: "eV"
-    # The std of the target, the successor of the legacy `std_scaling` entry.
-    # The legacy default was `rms_forces_scaling`, which scales the energy
-    # readout by the RMS of the *force* targets; that couples two observables
-    # through one number and cannot be written as a per-observable field. Which
-    # of the two v1 defaults to is a decision for the head, not for this file.
-    normalization: "std"
-    default_loss_weight: 1.0
     derivatives:
       # Named `forces`, reported as -dE/dpos.
       - wrt: pos
         units: "eV/Å"
-        normalization: "rms"
-        default_loss_weight: 100.0
       # Named `stress`, reported as +dE/dstrain, divided by the cell volume by
       # whatever computes it. The division is not part of the sign.
       - wrt: strain
         units: "eV/Å^3"
-        normalization: "none"
-        default_loss_weight: 1.0

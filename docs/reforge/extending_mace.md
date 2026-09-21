@@ -92,7 +92,6 @@ magforces:
   derivation: "autograd(energy, wrt=magmom)"   # -dE/dmagmom
   per_atom: true
   irreps: "1o"                                  # a 3-vector, same convention as magmom
-  default_loss_weight: 1.0
 ```
 
 ```toml
@@ -118,8 +117,6 @@ magnetic_moment:
   derivation: readout        # a learned equivariant readout over node features
   per_atom: true
   irreps: "1o"               # same convention as the magmom input
-  normalization: "component" # scale-only; a 1o vector can be scaled but not shifted
-  default_loss_weight: 1.0
 ```
 
 ```toml
@@ -129,9 +126,9 @@ observables = ["energy", "forces", "stress", "magforces", "magnetic_moment"]
 ```
 
 `MACEOutputs` would build the equivariant `1o` readout head automatically; the result appears as
-`output.extras["magnetic_moment"]`. **Zero code** — the head, its typed output, its `normalization`
-and its loss term are all derived from this one row. (`normalization` is a user knob: a non-scalar like
-`1o` can be scaled but not shifted; only scalars such as energy take the classic **scale-shift**.) That
+`output.extras["magnetic_moment"]`. **Zero code**: the head, its typed output and its loss term are
+all derived from this one row. The head's scaling is set in the model config, where a non-scalar like
+`1o` can be scaled but not shifted; only scalars such as energy take the classic **scale-shift**. That
 is the payoff of the declarative table: a genuinely new *predicted* property is a row, not a model
 change.
 
@@ -164,8 +161,8 @@ transforms = ["rotate_magmom"]     # legacy --data_aug_magmom
 
 ## 4. Loss — a term for `magforces` (config only)
 
-Because `magforces` is a declared observable, its loss term is **generated automatically** with its
-`default_loss_weight`; you only override the weights in config. Tuning the loss is never new code:
+Because `magforces` is a declared observable, its loss term is **generated automatically**, and its
+weight is a field in `LossConfig`. Tuning the loss is never new code:
 
 ```toml
 # config.toml

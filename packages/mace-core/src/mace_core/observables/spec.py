@@ -29,8 +29,6 @@ declared, or two rows whose derived names collide.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mace_core.observables.derivatives import derivative_name, derivative_sign
@@ -41,25 +39,12 @@ from mace_core.observables.grammar import (
 )
 
 __all__ = [
-    "NORMALIZATIONS",
     "DerivativeRequest",
     "DerivativeSpec",
     "InputSpec",
-    "Normalization",
     "ObservableCatalogue",
     "ObservableSpec",
 ]
-
-#: How a target is scaled before it reaches a head and a loss term. The
-#: per-observable successor of the legacy scaling registry, whose three entries
-#: were a global choice for the whole model. This package stores and validates
-#: the value; the head applies it in the output layer and the loss applies the
-#: matching term, both reading this one field, so there is never a second
-#: scaling mechanism to keep in step with it.
-Normalization = Literal["none", "std", "rms"]
-
-#: The accepted values, for error messages and for callers that enumerate them.
-NORMALIZATIONS: tuple[str, ...] = ("none", "std", "rms")
 
 _SCALAR = (IrrepTerm(multiplicity=1, degree=0, parity="e"),)
 
@@ -107,20 +92,18 @@ class InputSpec(BaseModel):
 
 
 class DerivativeRequest(BaseModel):
-    """A derivative an observable asks for, and the loss settings it carries.
+    """A derivative an observable asks for.
 
     The name and the sign are not here: they are derived, and letting a
     declaration override them would reintroduce the per-consumer naming this
-    abstraction removes. What a declaration does own is what a loss needs --
-    its weight, its normalization, and the unit string to report.
+    abstraction removes. What a declaration owns is which input to
+    differentiate against, and the unit string to report.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     #: The name of the declared input to differentiate against.
     wrt: str
-    default_loss_weight: float = Field(default=1.0, ge=0.0)
-    normalization: Normalization = "none"
     #: Left to the declaration. Deriving it would mean unit algebra over the
     #: quantity and the input, which this ticket does not own.
     units: str | None = None
@@ -154,12 +137,10 @@ class DerivativeSpec(BaseModel):
     #: general case is a tensor product and the algebra is not this module's.
     irreps: str | None
     units: str | None
-    normalization: Normalization
-    default_loss_weight: float
 
 
 class ObservableSpec(BaseModel):
-    """One declared property: what it is, what shape it has, how it is scaled.
+    """One declared property: what it is and what shape it has.
 
     Any atomic or total spherical-tensor property declared here becomes
     trainable with no new code: the spec drives the head, the loss term and the
@@ -178,8 +159,6 @@ class ObservableSpec(BaseModel):
     per_atom: bool
     #: Project convention: eV, Å.
     units: str = Field(min_length=1)
-    normalization: Normalization
-    default_loss_weight: float = Field(default=1.0, ge=0.0)
     #: The derivatives this observable asks for. Naming works for any declared
     #: input whether or not it is listed here; listing it is what says the
     #: model should compute it.
@@ -307,8 +286,6 @@ class ObservableCatalogue(BaseModel):
             per_atom=input_spec.per_atom,
             irreps=input_spec.irreps if spec.is_scalar else None,
             units=request.units,
-            normalization=request.normalization,
-            default_loss_weight=request.default_loss_weight,
         )
 
     def requested_derivatives(self) -> tuple[DerivativeSpec, ...]:
