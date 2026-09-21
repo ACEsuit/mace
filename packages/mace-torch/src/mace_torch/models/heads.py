@@ -21,7 +21,7 @@ from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.observables import ObservableSpec
 from torch import Tensor, nn
 
-from mace_torch.nn.layout import channel_layout_index, expanded_irreps
+from mace_torch.nn.layout import expanded_irreps
 
 __all__ = ["ObservableHead"]
 
@@ -123,8 +123,6 @@ class ObservableHead(nn.Module):
         precision: The dtype every op is built at.
     """
 
-    layout: Tensor
-
     def __init__(
         self,
         backend,
@@ -142,11 +140,6 @@ class ObservableHead(nn.Module):
         self.dimension = spec.dimension
         grouped = expanded_irreps(hidden_irreps, num_features)
         _check_reachable(spec, hidden_irreps)
-        self.register_buffer(
-            "layout",
-            torch.tensor(channel_layout_index(hidden_irreps, num_features)),
-            persistent=False,
-        )
 
         readouts: list[nn.Module] = []
         for layer in range(num_layers):
@@ -178,8 +171,7 @@ class ObservableHead(nn.Module):
         """
         values = []
         for features, readout in zip(layers, self.readouts, strict=True):
-            flat = features.reshape(features.shape[0], -1)[..., self.layout]
-            values.append(readout(flat))
+            values.append(readout(features))
         return values
 
     def forward(self, layers: list[Tensor]) -> Tensor:

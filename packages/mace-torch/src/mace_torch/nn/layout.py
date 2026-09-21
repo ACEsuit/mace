@@ -12,7 +12,12 @@ from __future__ import annotations
 import numpy as np
 from mace_core.clebsch_gordan.irreps import Irreps
 
-__all__ = ["channel_layout_index", "expanded_irreps", "inverse_layout_index"]
+__all__ = [
+    "channel_layout_index",
+    "expanded_irreps",
+    "inverse_layout_index",
+    "path_layout_index",
+]
 
 
 def expanded_irreps(hidden: str, num_features: int) -> str:
@@ -63,3 +68,29 @@ def inverse_layout_index(hidden: str, num_features: int) -> np.ndarray:
     inverse = np.empty_like(forward)
     inverse[forward] = np.arange(len(forward), dtype=forward.dtype)
     return inverse
+
+
+def path_layout_index(paths, num_features: int) -> np.ndarray:
+    """From the convolution's channel-major output to the linear's grouped one.
+
+    The convolution returns ``[nodes, channel, component]``, which read flat is
+    channel-major. The linear after it wants one contiguous block per path,
+    each holding that path's channels. This is the permutation, as
+    ``flat[..., index]``.
+
+    Args:
+        paths: The convolution's paths, in their pinned order.
+        num_features: The channel count.
+    """
+    per_channel = sum(path.irrep.dimension for path in paths)
+    index = np.empty(num_features * per_channel, dtype=np.int64)
+    target = 0
+    source_offset = 0
+    for path in paths:
+        span = path.irrep.dimension
+        for channel in range(num_features):
+            start = channel * per_channel + source_offset
+            index[target : target + span] = np.arange(start, start + span)
+            target += span
+        source_offset += span
+    return index
