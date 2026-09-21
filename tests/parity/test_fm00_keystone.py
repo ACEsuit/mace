@@ -202,3 +202,155 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
         abs(float(reference["energy"].detach()) - float(result.total_energy.detach()))
         < 1e-12
     )
+
+
+#: The fixtures these anchors can be run on: the three elements they were
+#: trained for, and every cell regime the graph builder distinguishes.
+TINY_FIXTURES = (
+    "dimer_short",
+    "isolated_atom",
+    "slab_vacuum",
+    "slab_zero_vacuum",
+    "triclinic_bulk",
+    "water_cluster",
+)
+
+
+@pytest.mark.parametrize("anchor", ["tiny_scaleshift.model", "tiny_mace.model"])
+@pytest.mark.parametrize("fixture", TINY_FIXTURES)
+def test_energy_forces_and_stress_match_on_every_tiny_fixture(
+    fp64, isolated, anchor, fixture
+):
+    """The whole fixture set, one case per cell regime.
+
+    Two of them are periodic in two directions only, which is the case that
+    separates the graph builder's three effective-cell regimes, and one is a
+    single atom, which is the case where every derivative is zero and a wrong
+    sign would hide.
+    """
+    legacy = load_anchor(anchor)
+    model, config = convert(legacy)
+    numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
+
+    atoms = ase.io.read(GOLDEN / f"fixtures/{fixture}.xyz", index=0)
+    reference = legacy(
+        legacy_batch(legacy, atoms).to_dict(),
+        training=False,
+        compute_force=True,
+        compute_stress=True,
+    )
+    result = DerivativeEngine(model)(
+        v1_graph(atoms, numbers, config["cutoff"]), compute=("forces", "stress")
+    )
+
+    energy = abs(
+        float(reference["energy"].detach()) - float(result.total_energy.detach())
+    )
+    force = float((reference["forces"].detach() - result.forces.detach()).abs().max())
+    assert energy < ENERGY_TOLERANCE, f"{fixture}: energy differs by {energy:.3e} eV"
+    assert force < FORCE_TOLERANCE, f"{fixture}: forces differ by {force:.3e} eV/A"
+
+    if reference.get("stress") is not None:
+        stress = float(
+            (
+                reference["stress"].detach().reshape(-1)
+                - result.stress.detach().reshape(-1)
+            )
+            .abs()
+            .max()
+        )
+        assert stress < ENERGY_TOLERANCE, f"{fixture}: stress differs by {stress:.3e}"
+        if not any(atoms.pbc):
+            assert float(result.stress.abs().max()) == 0.0, (
+                f"{fixture} has no periodic direction, so it has no volume to "
+                f"divide by and its stress has to be masked to zero"
+            )
+
+
+@pytest.mark.parametrize("anchor", ["tiny_scaleshift.model", "tiny_mace.model"])
+def test_both_stacks_take_the_same_training_step(fp64, isolated, anchor):
+    """Legacy and the converted model, one forward and one backward each.
+
+    Against each other rather than against the committed digest, which the
+    training-step test already covers. Two live stacks can only agree here by
+    computing the same thing; a committed number they could both have drifted
+    away from together.
+    """
+    from mace.modules.loss import WeightedEnergyForcesLoss
+    from tests.golden.anchors import anchor_batch, load_training_structures
+    from tests.golden.train_step import LOSS_WEIGHTS, N_STRUCTURES
+
+    legacy = load_anchor(anchor)
+    model, _ = convert(legacy)
+    numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
+    batch = anchor_batch(
+        legacy, load_training_structures(limit=N_STRUCTURES), torch.float64
+    )
+    loss_of = WeightedEnergyForcesLoss(**LOSS_WEIGHTS).to(torch.float64)
+
+    legacy.zero_grad(set_to_none=True)
+    their_loss = loss_of(
+        batch, legacy(batch.to_dict(), training=True, compute_force=True)
+    )
+    their_loss.backward()
+
+    graph = {
+        "positions": batch.positions,
+        "atomic_numbers": torch.tensor(
+            [numbers[index] for index in batch.node_attrs.argmax(1).tolist()]
+        ),
+        "element_index": batch.node_attrs.argmax(1),
+        "edge_index": batch.edge_index,
+        "shifts": batch.shifts,
+        "unit_shifts": batch.unit_shifts,
+        "cell": batch.cell.reshape(-1, 3, 3),
+        "batch": batch.batch,
+        "num_graphs": int(batch.num_graphs),
+        "head": torch.zeros(int(batch.num_graphs), dtype=torch.long),
+    }
+    output = DerivativeEngine(model)(graph, compute=("forces",), training=True)
+    our_loss = loss_of(batch, {"energy": output.total_energy, "forces": output.forces})
+    our_loss.backward()
+
+    assert abs(float(their_loss) - float(our_loss)) < 1e-12
+
+    # Only the radial networks: they are the parameters that transfer tensor
+    # for tensor, so a gradient of theirs is the same quantity on both sides.
+    # The rest are re-parametrized by the conversion and comparing them would
+    # be comparing weights.
+    compared = 0
+    for layer, source in enumerate(legacy.interactions):
+        for index in range(4):
+            theirs = getattr(source.conv_tp_weights, f"layer{index}").weight.grad
+            ours = model.backbone.interactions[layer].body.radial.weights[index].grad
+            assert theirs is not None and ours is not None
+            assert float(theirs.abs().max()) > 0.0, "the legacy gradient is flat"
+            assert float((theirs - ours).abs().max()) < 1e-12, (
+                f"interaction {layer} radial layer {index}: the two stacks "
+                f"differ by {float((theirs - ours).abs().max()):.3e}"
+            )
+            compared += 1
+    assert compared == 8
+
+
+def test_the_converted_energy_differentiates_twice(fp64, isolated):
+    """The path force training backpropagates through.
+
+    On the two-atom fixture, because `gradgradcheck` evaluates the model once
+    per degree of freedom per direction and the claim is about the derivative
+    rather than about the size of the structure.
+    """
+    legacy = load_anchor("tiny_scaleshift.model")
+    model, config = convert(legacy)
+    numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
+    atoms = ase.io.read(GOLDEN / "fixtures/dimer_short.xyz", index=0)
+    graph = v1_graph(atoms, numbers, config["cutoff"])
+
+    def energy(positions):
+        moving = dict(graph)
+        moving["positions"] = positions
+        return DerivativeEngine(model)(moving, compute=()).total_energy
+
+    start = graph["positions"].clone().requires_grad_(True)
+    assert torch.autograd.gradcheck(energy, (start,), eps=1e-6, atol=1e-7)
+    assert torch.autograd.gradgradcheck(energy, (start,), eps=1e-6, atol=1e-5)
