@@ -255,6 +255,41 @@ jobs:
           tests: tests/architecture
           numprocs: "0"
 
+  parity:
+    # The keystone gate: a trained legacy anchor converted into the v1 stack and
+    # compared against the frozen model evaluated in the same process.
+    #
+    # Its own job rather than a line in `architecture`, because a keystone gate
+    # that reports under another name is a gate nobody reads. And it is the one
+    # suite that has to be *run* rather than only linted: `tests/parity` has
+    # been in the ruff set since it appeared and in no pytest selection, so
+    # until now it was green by absence.
+    #
+    # Like `architecture`, it needs both trees installed editable, and for the
+    # same reason in reverse: this is the one place allowed to import them
+    # together, so a missing install shows up as a conversion that cannot find
+    # its oracle.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # hatch-vcs derives each package version from git describe.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev
+      - name: Install the v1 packages
+        run: |
+          python -m pip install -e packages/mace-core \
+                                -e packages/mace-torch \
+                                -e packages/mace-jax
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/parity
+          numprocs: "0"
+
   packages:
     # The v1 stack under packages/. It installs no legacy package and no
     # torch, and that is the point rather than a saving: mace_core, mace_torch
