@@ -6,9 +6,9 @@ from mace_core.observables.defaults import (
     load_default_catalogue,
 )
 from mace_core.observables.derivatives import (
-    SPECIAL_CASES,
-    derivative_name,
-    derivative_sign,
+    DEFAULT_SIGN,
+    default_derivative_name,
+    is_default_shaped_name,
 )
 from mace_core.observables.grammar import (
     IRREPS_GRAMMAR,
@@ -27,8 +27,8 @@ from mace_core.observables.spec import (
 
 __all__ = [
     "DEFAULTS_RESOURCE",
+    "DEFAULT_SIGN",
     "IRREPS_GRAMMAR",
-    "SPECIAL_CASES",
     "DerivativeRequest",
     "DerivativeSpec",
     "InputSpec",
@@ -36,9 +36,9 @@ __all__ = [
     "IrrepsGrammarError",
     "ObservableCatalogue",
     "ObservableSpec",
-    "derivative_name",
-    "derivative_sign",
+    "default_derivative_name",
     "irreps_dimension",
+    "is_default_shaped_name",
     "load_catalogue",
     "load_default_catalogue",
     "parse_irreps",

@@ -5,15 +5,18 @@ in YAML text and assert what comes out. If any of them needed a new branch in
 ``mace_core`` to pass, the abstraction would not be doing its job.
 """
 
+from importlib.resources import files
+
 import pytest
+import yaml
 from mace_core.observables import (
+    DEFAULTS_RESOURCE,
     DerivativeRequest,
     InputSpec,
     IrrepsGrammarError,
     ObservableCatalogue,
     ObservableSpec,
-    derivative_name,
-    derivative_sign,
+    default_derivative_name,
     irreps_dimension,
     load_catalogue,
     load_default_catalogue,
@@ -138,19 +141,6 @@ def test_units_may_not_be_empty():
 
 
 @pytest.mark.parametrize(
-    ("quantity", "wrt", "name", "sign"),
-    [
-        ("energy", "pos", "forces", -1),
-        ("energy", "strain", "stress", +1),
-        ("energy", "magmom", "magforces", -1),
-    ],
-)
-def test_the_three_special_cases_keep_their_names_and_signs(quantity, wrt, name, sign):
-    assert derivative_name(quantity, wrt) == name
-    assert derivative_sign(quantity, wrt) == sign
-
-
-@pytest.mark.parametrize(
     ("quantity", "wrt", "name"),
     [
         ("dipole", "pos", "d_dipole_d_pos"),
@@ -160,9 +150,62 @@ def test_the_three_special_cases_keep_their_names_and_signs(quantity, wrt, name,
         ("quadrupole", "magmom", "d_quadrupole_d_magmom"),
     ],
 )
-def test_everything_else_follows_the_rule(quantity, wrt, name):
-    assert derivative_name(quantity, wrt) == name
-    assert derivative_sign(quantity, wrt) == +1
+def test_an_undeclared_name_follows_the_rule(quantity, wrt, name):
+    assert default_derivative_name(quantity, wrt) == name
+    spec = ObservableSpec(name=quantity, irreps="0e", per_atom=False, units="eV")
+    assert spec.derivative_name(wrt) == name
+    assert spec.derivative_sign(wrt) == +1
+
+
+def test_a_declared_name_and_sign_win_over_the_rule():
+    """The whole point: a quantity with a name of its own says so in the file."""
+    spec = ObservableSpec(
+        name="energy",
+        irreps="0e",
+        per_atom=False,
+        units="eV",
+        derivatives=[{"wrt": "magmom", "name": "magforces", "sign": -1}],
+    )
+    assert spec.derivative_name("magmom") == "magforces"
+    assert spec.derivative_sign("magmom") == -1
+
+
+def test_an_input_that_was_not_requested_still_has_a_name():
+    """Naming works for any declared input, requested or not."""
+    spec = ObservableSpec(
+        name="energy",
+        irreps="0e",
+        per_atom=False,
+        units="eV",
+        derivatives=[{"wrt": "pos", "name": "forces", "sign": -1}],
+    )
+    assert spec.derivative_name("strain") == "d_energy_d_strain"
+    assert spec.derivative_sign("strain") == +1
+
+
+def test_a_name_without_a_sign_is_refused():
+    """A renamed derivative inheriting +1 in silence trains inverted forces."""
+    with pytest.raises(ValidationError, match="declares no sign"):
+        DerivativeRequest(wrt="pos", name="forces")
+
+
+@pytest.mark.parametrize("sign", [0, 2, -3])
+def test_a_sign_that_is_not_plus_or_minus_one_is_refused(sign):
+    with pytest.raises(ValidationError, match="A sign is \\+1 or -1"):
+        DerivativeRequest(wrt="pos", name="forces", sign=sign)
+
+
+def test_a_custom_name_may_not_imitate_the_generated_spelling():
+    """`d_<q>_d_<x>` states which quantity was differentiated. A custom name
+    wearing that spelling would be stating something that is not true."""
+    with pytest.raises(ValidationError, match="spelled like the grammar"):
+        DerivativeRequest(wrt="pos", name="d_dipole_d_pos", sign=+1)
+
+
+def test_a_sign_alone_needs_no_name():
+    request = DerivativeRequest(wrt="pos", sign=-1)
+    assert request.name is None
+    assert request.sign == -1
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +216,30 @@ def test_everything_else_follows_the_rule(quantity, wrt, name):
 def test_the_defaults_declare_energy_and_its_two_derivatives():
     catalogue = load_default_catalogue()
     assert catalogue.names() == ("energy", "forces", "stress")
+
+
+def test_the_shipped_names_and_signs_come_from_the_file_and_not_from_code():
+    """The reason the table was removed: this is now a property of the data.
+
+    If these were still special-cased in code, the assertion would pass with
+    the declarations file saying nothing at all.
+    """
+    catalogue = load_default_catalogue()
+    resolved = {spec.name: spec.sign for spec in catalogue.requested_derivatives()}
+    assert resolved == {"forces": -1, "stress": +1}
+
+    stripped = yaml.safe_load(
+        files("mace_core").joinpath(DEFAULTS_RESOURCE).read_text(encoding="utf-8")
+    )
+    for observable in stripped["observables"]:
+        for request in observable.get("derivatives", []):
+            request.pop("name", None)
+            request.pop("sign", None)
+    bare = ObservableCatalogue.model_validate(stripped)
+    assert {spec.name for spec in bare.requested_derivatives()} == {
+        "d_energy_d_pos",
+        "d_energy_d_strain",
+    }
     assert [spec.name for spec in catalogue.inputs] == ["pos", "strain"]
 
 
@@ -222,7 +289,12 @@ observables:
 
 def test_a_new_input_feature_makes_its_derivative_declarable(tmp_path):
     """`magmom` is the case that pays for the grammar being written over
-    declared inputs rather than over positions and the strain."""
+    declared inputs rather than over positions and the strain.
+
+    It is also the case that pays for the name and the sign living in the file.
+    `magforces` used to be a row in a table inside this package, and this
+    catalogue reaches it with no code at all.
+    """
     catalogue = catalogue_from(
         """
   - name: magmom
@@ -237,6 +309,8 @@ observables:
     units: "eV"
     derivatives:
       - wrt: magmom
+        name: magforces
+        sign: -1
         units: "eV/muB"
 """,
         tmp_path,
@@ -294,7 +368,7 @@ def test_a_derived_name_may_not_collide_with_a_declared_observable(tmp_path):
         catalogue_from(
             """
 observables:
-  - name: forces
+  - name: d_energy_d_pos
     irreps: "1o"
     per_atom: true
     units: "eV/Å"
@@ -303,6 +377,30 @@ observables:
     per_atom: false
     units: "eV"
     derivatives: [pos]
+""",
+            tmp_path,
+        )
+    assert "'d_energy_d_pos'" in str(caught.value)
+
+
+def test_a_declared_name_may_not_collide_with_a_declared_observable(tmp_path):
+    """The same guard, now reachable through a name the file chose itself."""
+    with pytest.raises(ValidationError) as caught:
+        catalogue_from(
+            """
+observables:
+  - name: forces
+    irreps: "1o"
+    per_atom: true
+    units: "eV/Å"
+  - name: energy
+    irreps: "0e"
+    per_atom: false
+    units: "eV"
+    derivatives:
+      - wrt: pos
+        name: forces
+        sign: -1
 """,
             tmp_path,
         )

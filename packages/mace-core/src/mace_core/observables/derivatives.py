@@ -1,65 +1,59 @@
-"""How a derivative of a declared quantity is named and signed.
+"""How a derivative of a declared quantity is named by default.
 
 The rule is one line: the derivative of a declared quantity ``q`` with respect
-to a declared input ``x`` is called ``d_<q>_d_<x>``. Three pairs have a name of
-their own, and they are data in the table below rather than branches spread
-through the consumers that need them.
+to a declared input ``x`` is called ``d_<q>_d_<x>`` and is reported with the
+gradient's own sign.
 
-The third special case is the reason this grammar is written over declared
-inputs rather than over positions and the strain. ``magforces`` is
-``-dE/d(magmom)``, computed in the same autograd call as the forces, trained
-with its own loss term, and used by the magnetic self-consistent model to drive
-its fixed point. A grammar that knew only ``d_<q>_d_pos`` and ``d_<q>_d_strain``
-could not express it, and the magnetic work would have had to go around the
-abstraction that exists to prevent exactly that.
+A quantity whose derivative has a name of its own, and a sign of its own, says
+so **in the declarations file**. It used to say so in a table here, and that
+table was the same fact written a third time: the machine-readable pair lived
+here, the prose lived in :mod:`mace_core.units`, and the declarations file
+carried it in a comment because the schema could not express it. A comment that
+says what a field would say is a missing field. It had also already drifted,
+holding a row for ``("energy", "magmom")`` that no shipped catalogue declares.
 
-The sign is the one the reported quantity carries, so that
-``reported = sign * d(quantity)/d(input)``. The volume division that turns the
-strain derivative into a stress is not a sign and is not here: it belongs to
-whatever computes the stress.
+The consequence that matters is not tidiness. With the names in code, a fourth
+one, torques as ``-dE/d(orientation)`` or a polarizability as
+``d(dipole)/d(field)``, meant editing this package, which is exactly what a
+declarative grammar exists to prevent.
 """
 
 from __future__ import annotations
 
+import re
+
 __all__ = [
-    "SPECIAL_CASES",
-    "derivative_name",
-    "derivative_sign",
+    "DEFAULT_SIGN",
+    "default_derivative_name",
+    "is_default_shaped_name",
 ]
 
-#: ``(quantity, input) -> (name, sign)`` for the three pairs whose name is not
-#: the ``d_<q>_d_<x>`` default. Everything else follows the rule.
-SPECIAL_CASES: dict[tuple[str, str], tuple[str, int]] = {
-    ("energy", "pos"): ("forces", -1),
-    ("energy", "strain"): ("stress", +1),
-    ("energy", "magmom"): ("magforces", -1),
-}
+#: A derivative is reported with the gradient's own sign unless its declaration
+#: says otherwise. ``reported = sign * d(quantity)/d(input)``.
+DEFAULT_SIGN: int = 1
+
+_DEFAULT_SHAPE = re.compile(r"^d_.+_d_.+$")
 
 
-def derivative_name(quantity: str, wrt: str) -> str:
-    """The canonical name of ``d(quantity)/d(wrt)``.
+def default_derivative_name(quantity: str, wrt: str) -> str:
+    """The name of ``d(quantity)/d(wrt)`` when the declaration gives none.
 
     Args:
         quantity: The name of the differentiated observable.
         wrt: The name of the declared input it is differentiated against.
 
     Returns:
-        The special-cased name if the pair has one, otherwise
         ``f"d_{quantity}_d_{wrt}"``.
     """
-    special = SPECIAL_CASES.get((quantity, wrt))
-    if special is not None:
-        return special[0]
     return f"d_{quantity}_d_{wrt}"
 
 
-def derivative_sign(quantity: str, wrt: str) -> int:
-    """The sign the reported derivative carries: ``reported = sign * dq/dx``.
+def is_default_shaped_name(name: str) -> bool:
+    """Whether ``name`` is spelled like one this rule would generate.
 
-    ``+1`` unless the pair is one of the two negated special cases, forces and
-    magnetic forces, which are both the negative gradient of the energy.
+    A declared name that is shaped like the grammar's own but belongs to a
+    different pair reads as a fact about which quantity was differentiated, and
+    is not one. The catalogue refuses it rather than letting the two spellings
+    mean different things.
     """
-    special = SPECIAL_CASES.get((quantity, wrt))
-    if special is not None:
-        return special[1]
-    return 1
+    return bool(_DEFAULT_SHAPE.match(name))
