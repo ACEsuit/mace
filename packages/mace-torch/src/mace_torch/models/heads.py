@@ -15,6 +15,8 @@ different model.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.descriptors import LinearDescriptor
@@ -24,6 +26,12 @@ from torch import Tensor, nn
 from mace_torch.nn.layout import expanded_irreps
 
 __all__ = ["ObservableHead"]
+
+
+def _is_reachable(spec: ObservableSpec, hidden_irreps: str) -> bool:
+    """Whether a layer's features carry every irrep this observable declares."""
+    available = {ir for _, ir in Irreps.parse(hidden_irreps).terms}
+    return all(ir in available for _, ir in Irreps.parse(spec.irreps).terms)
 
 
 def _check_reachable(spec: ObservableSpec, hidden_irreps: str) -> None:
@@ -114,9 +122,10 @@ class ObservableHead(nn.Module):
     Args:
         backend: The kernel backend. Consulted at construction only.
         spec: The declaration this head exists to satisfy.
-        hidden_irreps: One channel's node-feature declaration.
+        layer_irreps: One channel's node-feature declaration **per layer**.
+            They differ: the last layer of a trained model carries only its
+            invariants, which is why its width is not the others'.
         num_features: The channel width.
-        num_layers: How many layers of node features it will be given.
         nonlinear: Whether the last layer's readout carries a gate. The frozen
             tree makes exactly this choice, and only for the last layer.
         hidden_scalars: The width of the gated readout's middle.
@@ -127,9 +136,8 @@ class ObservableHead(nn.Module):
         self,
         backend,
         spec: ObservableSpec,
-        hidden_irreps: str,
+        layer_irreps: Sequence[str],
         num_features: int,
-        num_layers: int,
         nonlinear: bool = False,
         hidden_scalars: int = 16,
         precision: str = "float64",
@@ -138,12 +146,20 @@ class ObservableHead(nn.Module):
         self.spec = spec
         self.per_atom = spec.per_atom
         self.dimension = spec.dimension
-        grouped = expanded_irreps(hidden_irreps, num_features)
-        _check_reachable(spec, hidden_irreps)
+        self.layer_irreps = list(layer_irreps)
+        reachable = [
+            index
+            for index, irreps in enumerate(self.layer_irreps)
+            if _is_reachable(spec, irreps)
+        ]
+        if not reachable:
+            _check_reachable(spec, self.layer_irreps[-1])
+        self.reachable = reachable
 
         readouts: list[nn.Module] = []
-        for layer in range(num_layers):
-            last = layer == num_layers - 1
+        for index in reachable:
+            grouped = expanded_irreps(self.layer_irreps[index], num_features)
+            last = index == len(self.layer_irreps) - 1
             if nonlinear and last:
                 readouts.append(
                     _GatedReadout(
@@ -169,10 +185,12 @@ class ObservableHead(nn.Module):
         the sum over atoms are two different reductions and the energy head
         keeps them separate on purpose.
         """
-        values = []
-        for features, readout in zip(layers, self.readouts, strict=True):
-            values.append(readout(features))
-        return values
+        # Only the layers whose declaration can carry this observable. A layer
+        # that cannot contributes nothing, rather than a readout of zeros.
+        return [
+            readout(layers[index])
+            for index, readout in zip(self.reachable, self.readouts, strict=True)
+        ]
 
     def forward(self, layers: list[Tensor]) -> Tensor:
         """The per-atom value of this observable.

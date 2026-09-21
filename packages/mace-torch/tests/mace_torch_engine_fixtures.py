@@ -61,7 +61,7 @@ def build_engine(seed: int = 0, inputs=()) -> DerivativeEngine:
         ScaleShiftSpec("std", (1.0,), (0.0,)),
         PrecisionConfig(),
     )
-    outputs = MACEOutputs(backend, [ENERGY], "0e+1o", 4, 2, energy_head=head)
+    outputs = MACEOutputs(backend, [ENERGY], backbone.layer_irreps, 4, energy_head=head)
     generator = torch.Generator().manual_seed(seed + 1)
     with torch.no_grad():
         for module in (backbone, outputs):

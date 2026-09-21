@@ -40,9 +40,9 @@ class MACEOutputs(nn.Module):
     Args:
         backend: The kernel backend. Consulted at construction only.
         observables: The declarations. One head is built per entry.
-        hidden_irreps: One channel's node-feature declaration.
+        layer_irreps: One channel's node-feature declaration per layer, as the
+            backbone reports them.
         num_features: The channel width.
-        num_layers: How many layers of node features the backbone produces.
         energy_head: The energy head, required when ``energy`` is declared and
             rejected when it is not.
         nonlinear: Whether each head's last-layer readout carries a gate.
@@ -53,9 +53,8 @@ class MACEOutputs(nn.Module):
         self,
         backend,
         observables: Sequence[ObservableSpec],
-        hidden_irreps: str,
+        layer_irreps,
         num_features: int,
-        num_layers: int,
         energy_head: EnergyOutputHead | None = None,
         nonlinear: bool = True,
         precision: str = "float64",
@@ -88,9 +87,8 @@ class MACEOutputs(nn.Module):
                 spec.name: ObservableHead(
                     backend,
                     spec,
-                    hidden_irreps=hidden_irreps,
+                    layer_irreps=layer_irreps,
                     num_features=num_features,
-                    num_layers=num_layers,
                     nonlinear=nonlinear,
                     precision=precision,
                 )

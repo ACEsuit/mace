@@ -142,10 +142,13 @@ def test_the_virial_is_minus_the_strain_gradient():
 
 @fp64_only
 def test_the_stress_and_the_virial_are_opposite():
-    """``stress * V == -virials`` exactly, not to a tolerance.
+    """``stress * V == -virials``, to the rounding of one divide and multiply.
 
-    Both come from the same gradient in the same call, so the identity is
-    arithmetic and any deviation means one of them took a different path.
+    Both come from the same gradient in the same call, so the only thing
+    between them is dividing by the volume and multiplying it back. That is
+    not exact in floating point, so the bound is relative to the magnitudes
+    rather than zero: an earlier version of this test asserted exact equality
+    and passed only because those particular numbers happened to round back.
     """
     engine = build_engine()
     positions, numbers, cell = crystal()
@@ -153,10 +156,13 @@ def test_the_stress_and_the_virial_are_opposite():
         build_graph(positions, numbers, cell, PERIODIC), compute=("stress", "virials")
     )
     volume = float(np.linalg.det(cell))
-    residue = np.abs(
-        result.stress.detach().numpy() * volume + result.virials.detach().numpy()
-    ).max()
-    assert residue == 0.0, f"stress * V + virials is {residue:.3e}, not zero"
+    virials = result.virials.detach().numpy()
+    residue = np.abs(result.stress.detach().numpy() * volume + virials).max()
+    bound = 1e-12 * max(np.abs(virials).max(), 1.0)
+    assert residue < bound, (
+        f"stress * V + virials is {residue:.3e}, above the {bound:.3e} that one "
+        f"divide and multiply can account for"
+    )
 
 
 @fp64_only
