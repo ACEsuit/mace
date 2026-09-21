@@ -29,6 +29,7 @@ from mace_torch.serialization import (
     load_checkpoint,
     save_checkpoint,
 )
+from safetensors.torch import load_file, save_file
 
 SETTINGS = dict(
     atomic_numbers=[1, 8],
@@ -154,15 +155,51 @@ def test_tensors_the_sidecar_did_not_declare_are_refused(tmp_path):
 
 @fp64_only
 def test_a_model_of_a_different_shape_is_refused(tmp_path):
-    """A partial load leaves weights at their initial values and still runs."""
+    """A partial load leaves weights at their initial values and still runs.
+
+    A third layer changes more than the operator count. It also moves which
+    layer is last, and the last one carries only scalars, so the middle layer's
+    contraction changes shape too. The layout record catches that first and
+    names the operator, which is the more useful of the two refusals: an
+    operator count says something is different, a path count on a named
+    operator says what.
+    """
     model = trained()
     save_checkpoint(tmp_path / "anchor", model, dict(SETTINGS))
 
     def build_deeper(config):
         return MACEBackbone(ReferenceBackend(), **{**config, "num_layers": 3})
 
-    with pytest.raises(CheckpointError, match="do not hold the same operators"):
+    with pytest.raises(CheckpointError, match=r"products\.1\.contraction"):
         load_checkpoint(tmp_path / "anchor", build_deeper)
+
+
+@fp64_only
+def test_a_file_missing_an_operator_entirely_is_refused(tmp_path):
+    """The other half of the refusal, which the layout check deliberately skips.
+
+    Here every shared operator agrees, so only the operator set differs. That
+    one belongs to `load_canonical_state`, and this pins that it still fires
+    rather than being shadowed by the layout check.
+    """
+    model = trained()
+    save_checkpoint(tmp_path / "anchor", model, dict(SETTINGS))
+    sidecar = tmp_path / "anchor.json"
+    document = json.loads(sidecar.read_text())
+    dropped = "products.1.contraction"
+    document["layout"].pop(dropped)
+    document["tensors"] = [
+        entry for entry in document["tensors"] if entry["module"] != dropped
+    ]
+    sidecar.write_text(json.dumps(document))
+
+    tensors = load_file(str(tmp_path / "anchor.safetensors"))
+    for key in [key for key in tensors if key.startswith(f"{dropped}::")]:
+        tensors.pop(key)
+    save_file(tensors, str(tmp_path / "anchor.safetensors"))
+
+    with pytest.raises(CheckpointError, match="do not hold the same operators"):
+        load_checkpoint(tmp_path / "anchor", build)
 
 
 def energy_head(precision: str):
