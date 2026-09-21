@@ -24,6 +24,18 @@ reduced by a modified Gram-Schmidt **in enumeration order**, which is what makes
 the surviving set deterministic: an SVD would give the same span with an
 arbitrary basis inside it and a sign that moves between LAPACK versions.
 
+*Selection.* Which of the dependent paths survives is a free choice, and it is
+the one that order and normalization do not pin. Two implementations that
+enumerate differently span the same space with different vectors, and no
+reordering relates them: measured against ``cuequivariance`` on the grid the
+layout ticket uses, four of five points agree up to a signed permutation while
+the fifth needs two small dense blocks, of size 2 and 3, in the ``2e`` slot at
+body order three. So every surviving path carries its :class:`CouplingTree`,
+the sequence of consumed input slices and running intermediate irreps that
+produced it. A label names a path independently of where it sits, which is what
+lets a backend match by name instead of by position and say which trees
+disagreed when they do.
+
 *Normalization.* Each surviving path is scaled to unit Frobenius norm, and its
 sign fixed so that its first structurally non-zero entry is positive.
 
@@ -35,6 +47,7 @@ for ``keep_ir=0e+1o``. Those are the numbers the legacy cueq-only path produces.
 from __future__ import annotations
 
 import itertools
+from dataclasses import dataclass
 from functools import cache
 
 import numpy as np
@@ -43,11 +56,74 @@ from mace_core.clebsch_gordan.irreps import Irrep, Irreps
 from mace_core.clebsch_gordan.real_basis import wigner_3j_real
 
 __all__ = [
+    "CouplingTree",
+    "full_path_labels",
     "full_symmetric_tensor_product_basis",
     "path_count",
+    "path_labels",
     "reduced_symmetric_tensor_product_basis",
     "symmetrize",
 ]
+
+
+@dataclass(frozen=True, order=True)
+class CouplingTree:
+    """Which coupling path a basis vector came from.
+
+    A path couples the input factors one at a time, outermost last. Step ``k``
+    records the index of the input slice consumed at that step, counting the
+    slices of ``irreps_in`` in the order
+    :meth:`~mace_core.clebsch_gordan.irreps.Irreps.slices` yields them, and the
+    running intermediate irrep that coupling produced. The last step's irrep is
+    therefore the output irrep, and the number of steps is the body order.
+
+    The label is the path's identity in the file format. Positions move when a
+    backend segments the weights its own way; a label does not.
+
+    Attributes:
+        steps: One ``(slice_index, intermediate)`` pair per coupled factor.
+    """
+
+    steps: tuple[tuple[int, Irrep], ...]
+
+    @property
+    def correlation(self) -> int:
+        """How many input factors the path couples, written ``nu`` in the papers."""
+        return len(self.steps)
+
+    @property
+    def target(self) -> Irrep:
+        """The output irrep the path lands on."""
+        return self.steps[-1][1]
+
+    @property
+    def factors(self) -> tuple[int, ...]:
+        """The consumed input slices, innermost first."""
+        return tuple(index for index, _ in self.steps)
+
+    def __str__(self) -> str:
+        """``"0:0e|1:1o|2:2e"``: one ``slice:intermediate`` per step."""
+        return "|".join(f"{index}:{irrep}" for index, irrep in self.steps)
+
+    @classmethod
+    def parse(cls, text: str) -> CouplingTree:
+        """Read back what :meth:`__str__` writes.
+
+        Raises:
+            ValueError: If a step is not ``<slice index>:<irrep>``. The message
+                quotes the offending step.
+        """
+        steps = []
+        for piece in text.split("|"):
+            index, _, irrep = piece.partition(":")
+            if not _ or not index.strip().isdigit():
+                raise ValueError(
+                    f"{piece!r} is not a coupling step in {text!r}. Expected "
+                    f"'<slice index>:<irrep>', for example '1:1o'."
+                )
+            steps.append((int(index), Irreps.parse(irrep.strip()).terms[0][1]))
+        return cls(tuple(steps))
+
 
 #: Below this, a symmetrized path is taken to lie in the span of the ones
 #: before it. The gap either side of it is many orders of magnitude on every
@@ -70,20 +146,20 @@ def _reachable(irreps_in: Irreps, correlation: int) -> list[Irrep]:
 def _paths(irreps_in: Irreps, correlation: int, target: Irrep):
     """Every coupling path to ``target``, in the pinned enumeration order.
 
-    Yields arrays of shape ``(target.dimension,) + (irreps_in.dimension,) *
-    correlation``.
+    Yields ``(tree, array)``, the array of shape ``(target.dimension,) +
+    (irreps_in.dimension,) * correlation`` and the tree naming the path.
     """
     width = irreps_in.dimension
     if correlation == 1:
-        for piece, ir in irreps_in.slices():
+        for index, (piece, ir) in enumerate(irreps_in.slices()):
             if ir == target:
                 path = np.zeros((ir.dimension, width))
                 path[:, piece] = np.eye(ir.dimension)
-                yield path
+                yield CouplingTree(((index, target),)), path
         return
     for intermediate in _reachable(irreps_in, correlation - 1):
-        for left in _paths(irreps_in, correlation - 1, intermediate):
-            for piece, ir in irreps_in.slices():
+        for tree, left in _paths(irreps_in, correlation - 1, intermediate):
+            for index, (piece, ir) in enumerate(irreps_in.slices()):
                 if target not in set(intermediate.couple(ir)):
                     continue
                 coupling = wigner_3j_real(target.degree, intermediate.degree, ir.degree)
@@ -91,7 +167,7 @@ def _paths(irreps_in: Irreps, correlation: int, target: Irrep):
                     (target.dimension, *left.shape[1:], width), dtype=np.float64
                 )
                 path[..., piece] = np.einsum("oml,m...->o...l", coupling, left)
-                yield path
+                yield CouplingTree((*tree.steps, (index, target))), path
 
 
 def symmetrize(path: np.ndarray, correlation: int) -> np.ndarray:
@@ -106,16 +182,17 @@ def symmetrize(path: np.ndarray, correlation: int) -> np.ndarray:
     return total
 
 
-def _independent(rows: list[np.ndarray]) -> list[np.ndarray]:
-    """Modified Gram-Schmidt in order, keeping what is independent.
+def _independent(rows: list[np.ndarray]) -> list[int]:
+    """Modified Gram-Schmidt in order, returning which rows are independent.
 
-    Returns the kept rows as they were given, not the orthogonalized ones: the
-    basis this package stores is the natural one, and orthogonality is only the
-    test for whether a path added anything.
+    It returns positions rather than vectors for two reasons: the basis this
+    package stores is the natural one and not the orthogonalized one, so the
+    caller wants the row it passed in; and the surviving positions are what
+    carry each path's label across the reduction.
     """
-    kept: list[np.ndarray] = []
+    kept: list[int] = []
     orthogonal: list[np.ndarray] = []
-    for row in rows:
+    for position, row in enumerate(rows):
         residual = row.astype(np.float64).copy()
         for direction in orthogonal:
             residual -= float(residual @ direction) * direction
@@ -123,7 +200,7 @@ def _independent(rows: list[np.ndarray]) -> list[np.ndarray]:
         if norm <= _INDEPENDENCE_TOLERANCE:
             continue
         orthogonal.append(residual / norm)
-        kept.append(row)
+        kept.append(position)
     return kept
 
 
@@ -139,19 +216,21 @@ def _canonical(path: np.ndarray) -> np.ndarray:
 
 
 @cache
-def _basis_for(irreps_in_text: str, correlation: int, target_text: str) -> np.ndarray:
+def _basis_for(
+    irreps_in_text: str, correlation: int, target_text: str
+) -> tuple[np.ndarray, tuple[CouplingTree, ...]]:
     irreps_in = Irreps.parse(irreps_in_text)
     target = Irreps.parse(target_text).terms[0][1]
     enumerated = list(_paths(irreps_in, correlation, target))
     if not enumerated:
         shape = (0, target.dimension, *(irreps_in.dimension,) * correlation)
-        return np.zeros(shape, dtype=np.float64)
-    symmetrized = [symmetrize(p, correlation) for p in enumerated]
-    flat = [s.reshape(-1) for s in symmetrized]
-    kept = _independent(flat)
-    basis = np.stack([_canonical(row.reshape(symmetrized[0].shape)) for row in kept])
+        return np.zeros(shape, dtype=np.float64), ()
+    trees = [tree for tree, _ in enumerated]
+    symmetrized = [symmetrize(path, correlation) for _, path in enumerated]
+    kept = _independent([block.reshape(-1) for block in symmetrized])
+    basis = np.stack([_canonical(symmetrized[position]) for position in kept])
     basis.flags.writeable = False
-    return basis
+    return basis, tuple(trees[position] for position in kept)
 
 
 def reduced_symmetric_tensor_product_basis(
@@ -195,9 +274,39 @@ def reduced_symmetric_tensor_product_basis(
     wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
     out = {}
     for _, ir in wanted:
-        basis = _basis_for(text, correlation, str(ir))
+        basis, _labels = _basis_for(text, correlation, str(ir))
         out[str(ir)] = basis.astype(dtype, copy=True)
     return out
+
+
+def path_labels(
+    irreps_in: str | Irreps, correlation: int, keep_ir: str | Irreps
+) -> dict[str, tuple[CouplingTree, ...]]:
+    """The coupling tree of every path in the reduced basis, in path order.
+
+    One tuple per kept output irrep, aligned element for element with the
+    leading axis of :func:`reduced_symmetric_tensor_product_basis`, so
+    ``labels[ir][k]`` names the path whose weights sit at position ``k``.
+
+    This is what a checkpoint records beside the weights. A backend that
+    enumerates the same trees matches them by name and converts with a signed
+    permutation; one that keeps a different subset of the dependent paths
+    resolves the rest by a small solve, and can report which trees it did not
+    recognise instead of quietly reinterpreting the weights.
+
+    Args:
+        irreps_in: The input irreps, as a declaration string or an
+            :class:`~mace_core.clebsch_gordan.irreps.Irreps`.
+        correlation: How many factors the symmetric product couples.
+        keep_ir: Which output irreps to label.
+
+    Returns:
+        A mapping from each kept irrep's string form to its tuple of
+        :class:`CouplingTree`.
+    """
+    text = str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
+    wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
+    return {str(ir): _basis_for(text, correlation, str(ir))[1] for _, ir in wanted}
 
 
 def path_count(irreps_in: str | Irreps, correlation: int, keep_ir: str | Irreps) -> int:
@@ -213,18 +322,19 @@ def path_count(irreps_in: str | Irreps, correlation: int, keep_ir: str | Irreps)
 @cache
 def _full_basis_for(
     irreps_in_text: str, correlation: int, target_text: str
-) -> np.ndarray:
+) -> tuple[np.ndarray, tuple[CouplingTree, ...]]:
     irreps_in = Irreps.parse(irreps_in_text)
     target = Irreps.parse(target_text).terms[0][1]
     enumerated = list(_paths(irreps_in, correlation, target))
     if not enumerated:
         shape = (0, target.dimension, *(irreps_in.dimension,) * correlation)
-        return np.zeros(shape, dtype=np.float64)
-    shape = enumerated[0].shape
-    kept = _independent([p.reshape(-1) for p in enumerated])
-    basis = np.stack([_canonical(row.reshape(shape)) for row in kept])
+        return np.zeros(shape, dtype=np.float64), ()
+    trees = [tree for tree, _ in enumerated]
+    paths = [path for _, path in enumerated]
+    kept = _independent([path.reshape(-1) for path in paths])
+    basis = np.stack([_canonical(paths[position]) for position in kept])
     basis.flags.writeable = False
-    return basis
+    return basis, tuple(trees[position] for position in kept)
 
 
 def full_symmetric_tensor_product_basis(
@@ -255,6 +365,22 @@ def full_symmetric_tensor_product_basis(
     text = str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
     wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
     return {
-        str(ir): _full_basis_for(text, correlation, str(ir)).astype(dtype, copy=True)
+        str(ir): _full_basis_for(text, correlation, str(ir))[0].astype(dtype, copy=True)
         for _, ir in wanted
     }
+
+
+def full_path_labels(
+    irreps_in: str | Irreps, correlation: int, keep_ir: str | Irreps
+) -> dict[str, tuple[CouplingTree, ...]]:
+    """The coupling tree of every path in the unreduced basis, in path order.
+
+    The counterpart of :func:`path_labels` for
+    :func:`full_symmetric_tensor_product_basis`. The reduced labels are a
+    subsequence of these, which is what makes the projection between the two
+    bases readable: a reduced path keeps its own name rather than acquiring a
+    new index.
+    """
+    text = str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
+    wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
+    return {str(ir): _full_basis_for(text, correlation, str(ir))[1] for _, ir in wanted}
