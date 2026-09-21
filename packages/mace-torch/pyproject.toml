@@ -36,6 +36,9 @@ dependencies = [
     "vesin>=0.6.2",
     # Covalent radii for the ZBL repulsion and the distance transforms.
     "ase",
+    # The checkpoint format. Tensors only, no pickle, so a checkpoint carries
+    # no executable code and can be read without trusting its author.
+    "safetensors",
 ]
 
 [project.entry-points."mace.neighbor_backends"]

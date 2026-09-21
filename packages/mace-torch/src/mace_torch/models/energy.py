@@ -174,6 +174,32 @@ class EnergyOutputHead(nn.Module):
             f"accurate than the configuration asked for."
         )
 
+    def to_canonical(self) -> dict[str, Tensor]:
+        """The three constants, with the table kept at float64.
+
+        They are not trainable and they are not weights, but a model that
+        loaded without them would be wrong by an isolated-atom energy per atom,
+        so they travel in the checkpoint like everything else.
+        """
+        return {
+            "e0_table": self.e0_table.detach(),
+            "scale": self.scale.detach(),
+            "shift": self.shift.detach(),
+        }
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        if state["e0_table"].dtype != torch.float64:
+            raise ValueError(
+                f"the isolated-atom table arrived as "
+                f"{state['e0_table'].dtype} and it is held at float64 whatever "
+                f"the model computes in. Reading it at a narrower type rounds "
+                f"energies of thousands of eV before training starts."
+            )
+        with torch.no_grad():
+            self.e0_table.copy_(state["e0_table"])
+            self.scale.copy_(state["scale"])
+            self.shift.copy_(state["shift"])
+
     def forward(
         self,
         node_energy_layers: list[Tensor],
