@@ -5,6 +5,12 @@
 # row here (or in a project's own file) and needs no code: the spec drives the
 # head, the loss term, the derivative names and the per-atom/per-graph padding.
 #
+# A derivative with a name of its own declares it here, together with the sign
+# it is reported with, rather than being special-cased in code. Leave both out
+# and it is called `d_<quantity>_d_<input>` and carries the gradient's own
+# sign; give a name and the sign becomes required, because a renamed quantity
+# that silently inherited +1 is a model trained on inverted forces that runs.
+#
 # Units follow the project convention: eV and Å. The strain is dimensionless,
 # so its input row carries "1".
 
@@ -32,10 +38,14 @@ observables:
     per_atom: false
     units: "eV"
     derivatives:
-      # Named `forces`, reported as -dE/dpos.
       - wrt: pos
+        name: forces
+        sign: -1
         units: "eV/Å"
-      # Named `stress`, reported as +dE/dstrain, divided by the cell volume by
-      # whatever computes it. The division is not part of the sign.
+      # The volume division that turns the strain derivative into a stress is
+      # not a sign, and does not belong here. It is applied by whatever
+      # computes the stress.
       - wrt: strain
+        name: stress
+        sign: +1
         units: "eV/Å^3"

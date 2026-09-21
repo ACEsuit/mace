@@ -42,7 +42,12 @@ if importlib.util.find_spec("mace_core") is None:  # pragma: no cover
         "job, or `pip install -e packages/mace-core`",
         allow_module_level=True,
     )
-from mace_core.observables import ObservableSpec, derivative_name, derivative_sign
+from mace_core.observables import (
+    DEFAULT_SIGN,
+    ObservableSpec,
+    default_derivative_name,
+    load_default_catalogue,
+)
 
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE
 
@@ -163,30 +168,55 @@ def test_a_derivative_row_resolves_through_the_rule(key):
         f"declared observable or a derivative of one. A derivative chain has "
         f"to ground out in something declared."
     )
-    name = derivative_name(row.of, row.wrt)
+    name = row.name or default_derivative_name(row.of, row.wrt)
     assert name.isidentifier()
-    derived_sign = derivative_sign(row.of, row.wrt)
-    assert row.sign == derived_sign, (
-        f"{key!r} is reported with sign {row.sign:+d} by the frozen tree and "
-        f"the rule derives {derived_sign:+d}. There is no way to annotate that "
-        f"away, deliberately: either the row differentiates the wrong thing, "
-        f"or the grammar has a real gap. `hessian` was the first candidate for "
-        f"such a gap and turned out to be the former: it is a second "
-        f"derivative of the energy, not a first derivative of the forces."
+    if row.name:
+        # A row with a name of its own also carries the sign that goes with it,
+        # and a declaration is what supplies both. What the rule can still be
+        # checked against is that the pair is expressible: an `ObservableSpec`
+        # built from this row has to resolve to exactly these two values.
+        spec = ObservableSpec(
+            name=row.of,
+            irreps="0e",
+            per_atom=False,
+            units="1",
+            derivatives=[{"wrt": row.wrt, "name": row.name, "sign": row.sign}],
+        )
+        assert spec.derivative_name(row.wrt) == row.name
+        assert spec.derivative_sign(row.wrt) == row.sign
+        return
+    assert row.sign == DEFAULT_SIGN, (
+        f"{key!r} is reported with sign {row.sign:+d} by the frozen tree, and "
+        f"it carries no name of its own, so the rule derives "
+        f"{DEFAULT_SIGN:+d}. A negated quantity has a convention of its own "
+        f"and therefore a name of its own: give the row a `name`, or the row "
+        f"differentiates the wrong thing. `hessian` was the first candidate "
+        f"for a real gap in the grammar and turned out to be the latter: it "
+        f"is a second derivative of the energy, not a first derivative of the "
+        f"forces."
     )
 
 
-def test_the_three_named_derivatives_keep_their_legacy_names():
+def test_the_named_derivatives_keep_their_legacy_names():
     """forces, stress and magforces are the pairs that have a name of their own,
-    and the two negated ones are the two the frozen tree negates."""
-    assert derivative_name("energy", "pos") == "forces"
-    assert derivative_sign("energy", "pos") == -1
-    assert derivative_name("energy", "strain") == "stress"
-    assert derivative_sign("energy", "strain") == +1
-    assert derivative_name("energy", "magmom") == "magforces"
-    assert derivative_sign("energy", "magmom") == -1
+    and the two negated ones are the two the frozen tree negates.
+
+    The shipped declarations are the other side of this comparison, and they are
+    a genuinely separate source: this table is read off the frozen tree, and
+    that file is authored. Where both name a pair they have to agree, and a pair
+    the file does not ship yet, `magforces`, is simply absent rather than wrong.
+    """
+    declared = {
+        spec.name: spec for spec in load_default_catalogue().requested_derivatives()
+    }
     for name in ("forces", "stress", "magforces"):
-        assert isinstance(DISPOSITIONS[name], Derivative)
+        row = DISPOSITIONS[name]
+        assert isinstance(row, Derivative)
+        assert row.name == name
+        if name not in declared:
+            continue
+        assert (declared[name].of, declared[name].wrt) == (row.of, row.wrt)
+        assert declared[name].sign == row.sign
 
 
 def test_the_renamed_derivatives_are_renamed_and_not_lost():
@@ -204,7 +234,8 @@ def test_the_renamed_derivatives_are_renamed_and_not_lost():
     }
     for key, expected in renamed.items():
         row = DISPOSITIONS[key]
-        assert derivative_name(row.of, row.wrt) == expected
+        assert not row.name
+        assert default_derivative_name(row.of, row.wrt) == expected
     assert isinstance(DISPOSITIONS["BEC"], Spec)
 
 
@@ -216,7 +247,7 @@ def test_no_two_derivative_rows_resolve_to_one_name():
     for key, row in DISPOSITIONS.items():
         if not isinstance(row, Derivative):
             continue
-        name = derivative_name(row.of, row.wrt)
+        name = row.name or default_derivative_name(row.of, row.wrt)
         assert name not in seen, (
             f"{key!r} and {seen[name]!r} both resolve to {name!r}. If they are "
             f"one quantity, say so and drop one row; if they are not, one of "

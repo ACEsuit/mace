@@ -31,7 +31,11 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from mace_core.observables.derivatives import derivative_name, derivative_sign
+from mace_core.observables.derivatives import (
+    DEFAULT_SIGN,
+    default_derivative_name,
+    is_default_shaped_name,
+)
 from mace_core.observables.grammar import (
     IrrepTerm,
     irreps_dimension,
@@ -94,16 +98,28 @@ class InputSpec(BaseModel):
 class DerivativeRequest(BaseModel):
     """A derivative an observable asks for.
 
-    The name and the sign are not here: they are derived, and letting a
-    declaration override them would reintroduce the per-consumer naming this
-    abstraction removes. What a declaration owns is which input to
-    differentiate against, and the unit string to report.
+    Both the name and the sign belong to the declaration. Deriving them from a
+    table in code was the same fact written three times, and it meant a
+    quantity with a name of its own could not be added without editing this
+    package. The name is still decided **once**, here, and every consumer reads
+    it off the resolved spec, so nothing about this lets a consumer invent one.
+
+    Giving a ``name`` obliges the declaration to give a ``sign`` too. A renamed
+    derivative that silently inherited ``+1`` is a model trained on inverted
+    forces that runs perfectly well, which is a failure nothing downstream can
+    see.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     #: The name of the declared input to differentiate against.
     wrt: str
+    #: What the derivative is called. ``None`` takes the grammar's own
+    #: ``d_<quantity>_d_<input>``.
+    name: str | None = None
+    #: ``reported = sign * d(quantity)/d(input)``, either ``+1`` or ``-1``.
+    #: ``None`` takes the gradient's own sign.
+    sign: int | None = None
     #: Left to the declaration. Deriving it would mean unit algebra over the
     #: quantity and the input, which this ticket does not own.
     units: str | None = None
@@ -115,6 +131,34 @@ class DerivativeRequest(BaseModel):
         if isinstance(value, str):
             return {"wrt": value}
         return value
+
+    @model_validator(mode="after")
+    def _validate(self) -> DerivativeRequest:
+        if self.sign is not None and self.sign not in (1, -1):
+            raise ValueError(
+                f"the derivative with respect to {self.wrt!r} declares sign "
+                f"{self.sign!r}. A sign is +1 or -1; a scale factor is not a "
+                f"sign and belongs to whatever computes the quantity."
+            )
+        if self.name is not None:
+            _check_name(self.name, "derivative")
+            if self.sign is None:
+                raise ValueError(
+                    f"the derivative with respect to {self.wrt!r} is named "
+                    f"{self.name!r} but declares no sign. A name of its own "
+                    f"means a convention of its own, so state it: `sign: -1` "
+                    f"for a quantity reported as the negative gradient, "
+                    f"`sign: +1` otherwise."
+                )
+            if is_default_shaped_name(self.name):
+                raise ValueError(
+                    f"the derivative with respect to {self.wrt!r} is named "
+                    f"{self.name!r}, which is spelled like the grammar's own "
+                    f"`d_<quantity>_d_<input>`. That spelling states which "
+                    f"quantity was differentiated, so a custom name must not "
+                    f"use it. Drop `name` to get the generated one."
+                )
+        return self
 
 
 class DerivativeSpec(BaseModel):
@@ -188,13 +232,30 @@ class ObservableSpec(BaseModel):
         """Whether the declaration is a single ``0e``."""
         return parse_irreps(self.irreps, observable=self.name) == _SCALAR
 
+    def _request(self, wrt: str) -> DerivativeRequest | None:
+        """This observable's declared request against ``wrt``, if it made one.
+
+        Naming works for any declared input whether or not it was requested, so
+        this is allowed to find nothing.
+        """
+        for request in self.derivatives:
+            if request.wrt == wrt:
+                return request
+        return None
+
     def derivative_name(self, wrt: str) -> str:
         """The canonical name of this observable's derivative against ``wrt``."""
-        return derivative_name(self.name, wrt)
+        request = self._request(wrt)
+        if request is not None and request.name is not None:
+            return request.name
+        return default_derivative_name(self.name, wrt)
 
     def derivative_sign(self, wrt: str) -> int:
         """The sign that derivative is reported with."""
-        return derivative_sign(self.name, wrt)
+        request = self._request(wrt)
+        if request is not None and request.sign is not None:
+            return request.sign
+        return DEFAULT_SIGN
 
     def requested_derivatives(self) -> tuple[str, ...]:
         """The inputs this observable asked to be differentiated against."""
