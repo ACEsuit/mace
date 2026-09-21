@@ -431,6 +431,53 @@ def test_field_shapes_the_contract_cannot_keep_are_rejected_at_class_definition(
                 return 2 * self.seed
 
 
+# A class that names a class defined below it is incomplete at definition:
+# pydantic keeps the name, so the check cannot see through the field. The
+# first `load` resolves the name and checks the class then.
+
+
+class Forward(ConfigSection):
+    later: "Later | None" = None
+
+
+class Later(ConfigSection):
+    x: int = 1
+
+
+class ForwardConfig(ReforgeBaseConfig):
+    forward: Forward = Field(default_factory=Forward)
+
+
+class Leaking(ConfigSection):
+    plain: "PlainLater" = Field(default_factory=lambda: PlainLater())
+
+
+class PlainLater(BaseModel):  # not a ConfigSection: it would swallow a typo
+    a: int = 1
+
+
+class LeakingConfig(ReforgeBaseConfig):
+    leaking: Leaking = Field(default_factory=Leaking)
+
+
+def test_a_forward_reference_is_checked_and_walked_once_it_resolves(tmp_path):
+    assert not Forward.__pydantic_complete__
+    assert ForwardConfig.load().forward.later is None
+    config = ForwardConfig.load(cli_overrides=["--forward.later.x", "2"])
+    assert config.forward.later == Later(x=2)
+    path = tmp_path / "typo.json"
+    path.write_text(json.dumps({"forward": {"later": {"x": 2, "typo": 1}}}))
+    with pytest.raises(ConfigError, match=r"unknown config key 'forward.later.typo'"):
+        ForwardConfig.load(path)
+
+
+def test_a_lenient_section_behind_a_forward_reference_is_rejected():
+    with pytest.raises(
+        TypeError, match=r"Leaking.plain holds PlainLater, which is not a ConfigSection"
+    ):
+        LeakingConfig.load()
+
+
 def test_user_dict_holds_only_what_was_set(tmp_path):
     config = DemoConfig.load(
         write_config(tmp_path, ".json"), ["--model.num_interactions", "3"]

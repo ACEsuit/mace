@@ -237,6 +237,20 @@ _NONE_IS_A_KIND = (
 )
 
 
+def _complete(model: type[BaseModel]) -> None:
+    """Resolve the tree's forward references and check every section. The
+    rebuild of an outer model does not rebuild an inner one, so each section
+    is rebuilt where it is met; the check runs on every section, not only the
+    rebuilt ones, since a rebuild elsewhere (pydantic's own on first use)
+    completes a class without checking it."""
+    if not model.__pydantic_complete__:
+        model.model_rebuild()
+    _check_schema(model)
+    for field in model.model_fields.values():
+        for section, _ in _sections_in(field.annotation):
+            _complete(section)
+
+
 def _check_schema(model: type[BaseModel]) -> None:
     """Fail at class definition for a field shape the contract cannot keep.
 
@@ -257,6 +271,11 @@ def _check_schema(model: type[BaseModel]) -> None:
     factory (its kind is the default kind, read without running anything);
     every section is a `ConfigSection` (a plain `BaseModel` ignores unknown
     keys, so a typo would vanish, and skips these checks).
+
+    A class whose annotations still name a class defined later, a forward
+    reference, is incomplete at definition and is not checked here: its
+    fields cannot be seen through. `_complete` checks it when `load` first
+    resolves it.
     """
 
     def reject(name: str, reason: str) -> None:
@@ -368,7 +387,8 @@ class ConfigSection(BaseModel):
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         super().__pydantic_init_subclass__(**kwargs)
-        _check_schema(cls)
+        if cls.__pydantic_complete__:  # else a forward reference; `load` checks
+            _check_schema(cls)
 
     @model_validator(mode="before")
     @classmethod
@@ -430,6 +450,7 @@ class ReforgeBaseConfig(ConfigSection):
         or an unparsable override, and pydantic's `ValidationError` for a
         value of the wrong type.
         """
+        _complete(cls)
         values: dict[str, Any] = {}
         if config_file is not None:
             values = read_config_file(config_file)
