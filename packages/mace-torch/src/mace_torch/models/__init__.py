@@ -1,5 +1,6 @@
 """The output half of the two-layer model."""
 
+from mace_torch.models.base import BaseMACE
 from mace_torch.models.energy import (
     EnergyOutputHead,
     EnergyTerms,
@@ -7,14 +8,13 @@ from mace_torch.models.energy import (
     ScalingMethod,
 )
 from mace_torch.models.heads import ObservableHead
-from mace_torch.models.mace import MACEModel
 from mace_torch.models.outputs import ENERGY_OBSERVABLE, MACEOutputs
 
 __all__ = [
     "ENERGY_OBSERVABLE",
+    "BaseMACE",
     "EnergyOutputHead",
     "EnergyTerms",
-    "MACEModel",
     "MACEOutputs",
     "ObservableHead",
     "ScaleShiftSpec",
