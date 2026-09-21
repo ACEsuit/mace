@@ -10,10 +10,10 @@ call site is how a model ends up with the repulsion added in two different
 places, which is exactly the difference between the two model classes the
 frozen tree has.
 
-This is also the class a new model subclasses, and the hook belongs here rather
-than on the backbone for a reason that is forced: the term a model like
-``PolarMACE`` adds is an energy, and an energy does not exist until the output
-layer has run. The backbone produces node features and nothing else.
+This is also the class a new model subclasses. The backbone is not, and the
+reason is forced: a model like ``PolarMACE`` adds an energy, and an energy does
+not exist until the output layer has run. What the backbone produces is node
+features and nothing else.
 """
 
 from __future__ import annotations
@@ -30,10 +30,10 @@ from mace_torch.models.outputs import MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
 from mace_torch.nn.radial import ZBLBasis
 
-__all__ = ["BaseMACE"]
+__all__ = ["MACEModel"]
 
 
-class BaseMACE(nn.Module):
+class MACEModel(nn.Module):
     """Backbone, optional pair repulsion, and the output layer.
 
     Args:

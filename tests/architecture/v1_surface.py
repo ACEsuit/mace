@@ -43,7 +43,7 @@ def package_roots() -> list[Path]:
 
 
 #: Where a top-level model lives, relative to a package's import root.
-#: `docs/reforge/target_layout.md` puts `BaseMACE` in `models/base.py` and the
+#: `docs/reforge/target_layout.md` puts `MACEModel` in `models/base.py` and the
 #: factory in `models/build.py`.
 MODEL_SUBDIRECTORY = "models"
 
@@ -56,7 +56,12 @@ OUTPUT_TYPES = ("MACEOutput", "MACEOutputs")
 #: A class is a top-level model if its name ends in one of these, or if it
 #: derives from something that does. Blocks and readouts also define `forward`
 #: and legitimately return tensors, so "has a forward" is too wide a net.
-MODEL_NAME_SUFFIXES = ("MACE",)
+#:
+#: `MACEModel` is listed separately because it does not end in `MACE`, and the
+#: composed model is the one class these detectors most need to see. A bare
+#: `Model` suffix would be wrong in the other direction: base names count too,
+#: so it would catch every pydantic `BaseModel` in the stack.
+MODEL_NAME_SUFFIXES = ("MACE", "MACEModel")
 
 
 def python_files(roots: Sequence[Path]) -> Iterator[Path]:

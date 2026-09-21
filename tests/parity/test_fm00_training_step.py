@@ -33,7 +33,7 @@ from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import BaseMACE, EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 
 GOLDEN = Path(__file__).resolve().parents[1] / "golden"
@@ -68,7 +68,7 @@ def converted(legacy):
         ScaleShiftSpec("std", scale, shift),
         PrecisionConfig(),
     )
-    model = BaseMACE(
+    model = MACEModel(
         ReferenceBackend(), observables=[ENERGY], energy_head=head, **config
     )
     transfer_weights(legacy, model, config["correlation"])

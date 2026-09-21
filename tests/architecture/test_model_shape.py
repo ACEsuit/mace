@@ -184,7 +184,7 @@ def test_the_typed_output_detector_ignores_a_block():
 def test_the_typed_output_detector_follows_the_base_class():
     """A subclass of a model is a model, whatever it is called."""
     source = (
-        "class ElectrostaticHead(BaseMACE):\n"
+        "class ElectrostaticHead(MACEModel):\n"
         "    def forward(self, graph) -> dict:\n"
         "        return {}\n"
     )

@@ -25,7 +25,7 @@ from mace_core.kernels.precision import PrecisionConfig
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import BaseMACE, EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import load_checkpoint, save_checkpoint
 
@@ -67,7 +67,7 @@ def convert(legacy):
         PrecisionConfig(),
         zbl_in_scale_shift=getattr(legacy, "scale_shift", None) is not None,
     )
-    model = BaseMACE(
+    model = MACEModel(
         ReferenceBackend(), observables=[ENERGY], energy_head=head, **config
     )
     transfer_weights(legacy, model, config["correlation"])
@@ -185,7 +185,7 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
             ScaleShiftSpec("std", scale, shift),
             PrecisionConfig(),
         )
-        return BaseMACE(
+        return MACEModel(
             ReferenceBackend(), observables=[ENERGY], energy_head=head, **stored
         )
 
