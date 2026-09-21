@@ -248,10 +248,13 @@ class DerivativeEngine(nn.Module):
     def __init__(
         self,
         backbone: nn.Module,
-        output_layer: nn.Module,
+        output_layer: nn.Module | None = None,
         inputs: Iterable[InputSpec] = (),
     ) -> None:
         super().__init__()
+        # Either a backbone and an output layer, or one model that is already
+        # both. The engine brackets a model; that the model came in two pieces
+        # was an assumption, and a model with a pair repulsion in it does not.
         self.backbone = backbone
         self.output_layer = output_layer
         self.inputs = list(inputs)
@@ -338,7 +341,10 @@ class DerivativeEngine(nn.Module):
             # the positions' contribution rather than the edges'.
             prepared["vectors"] = prepared["vectors"].detach().requires_grad_(True)
 
-        output = self.output_layer(prepared, self.backbone(prepared))
+        if self.output_layer is None:
+            output = self.backbone(prepared)
+        else:
+            output = self.output_layer(prepared, self.backbone(prepared))
         if not wanted:
             return output
 

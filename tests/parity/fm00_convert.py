@@ -230,3 +230,123 @@ def energy_constants_to_canonical(legacy_model, heads=("default",)):
     scale = shift_block.scale.detach().reshape(-1).tolist()
     shift = shift_block.shift.detach().reshape(-1).tolist()
     return values, tuple(float(v) for v in scale), tuple(float(v) for v in shift)
+
+
+def build_config(legacy_model) -> dict:
+    """Everything needed to rebuild the model, read off the trained one.
+
+    Read rather than inferred. The frozen tree carries several settings whose
+    defaults disagree between the flag, the model class and the converter, so
+    anything taken from a default here is a coin toss about which model comes
+    out.
+    """
+    interaction = legacy_model.interactions[0]
+    radial = interaction.conv_tp_weights
+    hidden = str(legacy_model.products[0].linear.irreps_out)
+    per_channel = "+".join(
+        sorted(
+            {str(irrep) for _, irrep in Irreps.parse(hidden).terms},
+            key=lambda name: (int(name[:-1]), name[-1] != "e"),
+        )
+    )
+    repulsion = getattr(legacy_model, "pair_repulsion_fn", None)
+    return {
+        "atomic_numbers": [int(z) for z in legacy_model.atomic_numbers.tolist()],
+        "num_layers": len(legacy_model.interactions),
+        "num_features": Irreps.parse(hidden).terms[0][0],
+        "lmax": max(
+            irrep.degree
+            for _, irrep in Irreps.parse(str(interaction.conv_tp.irreps_in2)).terms
+        ),
+        "hidden_irreps": per_channel,
+        "num_radial": radial.layer0.weight.shape[0],
+        "cutoff": float(legacy_model.r_max),
+        "correlation": legacy_model.products[0]
+        .symmetric_contractions.contractions[0]
+        .correlation,
+        "avg_num_neighbors": float(interaction.avg_num_neighbors),
+        "pair_repulsion": repulsion is not None,
+        "cutoff_order": int(repulsion.p) if repulsion is not None else 6,
+        "readout_hidden": Irreps.parse(
+            str(legacy_model.readouts[-1].linear_1.irreps_out)
+        ).dimension,
+    }
+
+
+def transfer_weights(legacy_model, model, correlation: int) -> None:
+    """Copy every trained number into the rebuilt model.
+
+    Walks the two module trees side by side. It is written out rather than
+    driven by a name map because the two trees are not the same shape: what
+    corresponds is an operator, not a path.
+    """
+    import torch
+
+    def linear(source, destination):
+        destination.weight.copy_(
+            torch.tensor(
+                linear_weights_to_canonical(
+                    source, str(source.irreps_in), str(source.irreps_out)
+                ),
+                dtype=destination.weight.dtype,
+            )
+        )
+
+    with torch.no_grad():
+        linear(legacy_model.node_embedding.linear, model.backbone.node_embedding)
+
+        for index, source in enumerate(legacy_model.interactions):
+            block = model.backbone.interactions[index]
+            linear(source.linear_up, block.body.linear_up)
+            linear(source.linear, block.body.linear)
+            for layer, weight in enumerate(block.body.radial.weights):
+                weight.copy_(getattr(source.conv_tp_weights, f"layer{layer}").weight)
+            block.skip.weight.copy_(
+                torch.tensor(
+                    fully_connected_tp_weights_to_canonical(
+                        source.skip_tp,
+                        str(source.skip_tp.irreps_in1),
+                        str(source.skip_tp.irreps_out),
+                        Irreps.parse(str(source.skip_tp.irreps_in2)).dimension,
+                    ),
+                    dtype=block.skip.weight.dtype,
+                )
+            )
+
+        channel_in = "+".join(
+            sorted(
+                {
+                    str(irrep)
+                    for _, irrep in Irreps.parse(
+                        str(legacy_model.products[0].symmetric_contractions.irreps_in)
+                    ).terms
+                },
+                key=lambda name: (int(name[:-1]), name[-1] != "e"),
+            )
+        )
+        for index, source in enumerate(legacy_model.products):
+            product = model.backbone.products[index]
+            targets = [
+                str(irrep)
+                for _, irrep in Irreps.parse(str(source.linear.irreps_out)).terms
+            ]
+            for position, contraction in enumerate(
+                source.symmetric_contractions.contractions
+            ):
+                carried = contraction_weights_to_canonical(
+                    contraction, channel_in, targets[position], correlation
+                )
+                for order, weights in enumerate(carried):
+                    product.contraction.weights[
+                        position * correlation + order
+                    ].copy_(torch.tensor(weights, dtype=torch.float64))
+            linear(source.linear, product.linear)
+
+        head = model.outputs.heads["energy"]
+        for index, source in enumerate(legacy_model.readouts):
+            destination = head.readouts[index]
+            if hasattr(source, "linear_1"):
+                linear(source.linear_1, destination.first)
+                linear(source.linear_2, destination.second)
+            else:
+                linear(source.linear, destination)

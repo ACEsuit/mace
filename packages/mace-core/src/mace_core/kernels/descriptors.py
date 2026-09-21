@@ -427,6 +427,12 @@ class RadialBasisDescriptor(Descriptor):
 
     kind: RadialBasisKind = "bessel"
     num_basis: int = 8
+    #: The order of the polynomial envelope that takes the basis to zero at the
+    #: cutoff. It belongs to the model's cutoff setting rather than to the
+    #: basis, and defaulting it where a trained model set something else is a
+    #: silent change: measured on the tiny anchor, six where it wanted five
+    #: moves the energy by 6.3e-3 eV.
+    cutoff_order: int = 6
     cutoff: float = 5.0
     cutoff_order: int = 6
 
