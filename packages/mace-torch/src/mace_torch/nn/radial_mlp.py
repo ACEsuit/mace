@@ -97,3 +97,19 @@ class RadialMLP(nn.Module):
             if index != last:
                 activated = SECOND_MOMENT_SCALE * torch.nn.functional.silu(activated)
         return activated
+
+    def to_canonical(self) -> dict[str, Tensor]:
+        """One dense tensor per layer, unscaled, as they are held.
+
+        The ``1 / sqrt(fan_in)`` is applied in the forward, so what is stored is
+        what the optimizer sees.
+        """
+        return {
+            f"layer_{index}": weight.detach()
+            for index, weight in enumerate(self.weights)
+        }
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        with torch.no_grad():
+            for index, weight in enumerate(self.weights):
+                weight.copy_(state[f"layer_{index}"])
