@@ -213,3 +213,66 @@ def radial_mlp_initial_bound(fan_in: int) -> float:
     and its bias from, and so what the frozen tree's layers started at.
     """
     return float(fan_in) ** -0.5
+
+def contraction_path_order(
+    irreps_out: str, correlation: int
+) -> tuple[tuple[str, int], ...]:
+    """The order the per-``(output irrep, body order)`` pieces are joined in.
+
+    Output irreps in the order the declaration writes them, and body orders
+    ascending within each. It is stated here rather than left to whichever loop
+    happens to build the pieces, because it is the layout of the flat ``[Z, A,
+    mul]`` array and therefore the file format.
+
+    Args:
+        irreps_out: The kept output irreps, as a declaration string.
+        correlation: The body order the model builds up to.
+
+    Returns:
+        One ``(irrep, body order)`` pair per piece, in the joined order.
+    """
+    from mace_core.clebsch_gordan.irreps import Irreps
+
+    return tuple(
+        (str(ir), order)
+        for _, ir in Irreps.parse(irreps_out)
+        for order in range(1, correlation + 1)
+    )
+
+
+def contraction_path_labels(
+    irreps_in: str,
+    irreps_out: str,
+    correlation: int,
+    basis: str = "reduced",
+) -> tuple[str, ...]:
+    """The coupling-tree label of every path in the flat contraction weights.
+
+    Aligned element for element with the path axis of the canonical ``[Z, A,
+    mul]`` array, so ``labels[a]`` names the path whose weights sit at ``A =
+    a``. This is what a checkpoint records beside the weights: a reader that
+    enumerates paths differently detects it here instead of misreading the
+    numbers.
+
+    Args:
+        irreps_in: The node features being contracted.
+        irreps_out: The kept output irreps.
+        correlation: The body order.
+        basis: ``"reduced"`` or ``"full"``.
+
+    Returns:
+        One written coupling tree per path, in the canonical order.
+
+    Raises:
+        ValueError: If ``basis`` is neither name.
+    """
+    from mace_core.clebsch_gordan.reduced_basis import full_path_labels, path_labels
+
+    if basis not in ("reduced", "full"):
+        raise ValueError(f"basis must be 'reduced' or 'full', got {basis!r}")
+    read = path_labels if basis == "reduced" else full_path_labels
+    return tuple(
+        str(tree)
+        for target, order in contraction_path_order(irreps_out, correlation)
+        for tree in read(irreps_in, order, target)[target]
+    )
