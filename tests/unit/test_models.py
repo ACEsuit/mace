@@ -771,3 +771,127 @@ def test_non_linear_first_interaction_block_cannot_be_torchscripted():
 
     # the same model with the default first block scripts without complaint
     assert jit.compile(modules.ScaleShiftMACE(**_energy_model_config())) is not None
+
+
+# ===========================================================================
+# Translation invariance, end to end
+#
+# The neighbour list is what the model sees, so a structure that falls outside
+# its own search box does not raise: it comes back with edge vectors many times
+# the cutoff, which the radial cutoff then zeroes. The symptom is a different
+# energy and forces that are exactly zero, and only an energy check catches it.
+# ===========================================================================
+
+_TRANSLATION_CUTOFF = 5.0
+
+# Two molecules far enough apart to interact only through the second layer,
+# so the test exercises message passing rather than a single shell.
+_TRANSLATION_MOLECULES = np.array(
+    [
+        [0.0, 0.0, 0.0],
+        [0.96, 0.0, 0.0],
+        [-0.24, 0.93, 0.0],
+        [3.1, 0.2, 0.4],
+        [4.0, 0.4, 0.2],
+        [2.9, 1.1, 0.3],
+    ]
+)
+_TRANSLATION_NUMBERS = np.array([8, 1, 1, 8, 1, 1])
+
+_TRANSLATION_SLAB_CELLS = {
+    "tilted_out_of_plane": np.array(
+        [[3.2, 0.0, 1.6], [0.0, 3.1, -1.6], [0.0, 0.0, 0.0]]
+    ),
+    "acute_and_tilted": np.array(
+        [[3.0, 0.0, 0.0], [2.82, 1.03, 0.4], [0.0, 0.0, 0.0]]
+    ),
+}
+
+_TRANSLATIONS = [
+    (0.0, 0.0, 0.0),
+    (37.0, 0.0, 0.0),
+    (0.0, -91.0, 0.0),
+    (0.0, 0.0, 55.0),
+    (410.0, -260.0, 730.0),
+]
+
+
+@pytest.fixture(scope="module", name="translation_model")
+def fixture_translation_model():
+    torch.manual_seed(20260914)
+    return modules.MACE(
+        r_max=_TRANSLATION_CUTOFF,
+        num_bessel=8,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("16x0e + 16x1o"),
+        MLP_irreps=o3.Irreps("16x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+        avg_num_neighbors=8,
+        atomic_numbers=table.zs,
+        correlation=3,
+    )
+
+
+def _energy_and_forces(model, positions, cell=None, pbc=None):
+    configuration = data.Configuration(
+        atomic_numbers=_TRANSLATION_NUMBERS,
+        positions=positions,
+        properties={},
+        property_weights={},
+        cell=cell,
+        pbc=pbc,
+    )
+    atomic_data = data.AtomicData.from_config(
+        configuration, z_table=table, cutoff=_TRANSLATION_CUTOFF
+    )
+    loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data], batch_size=1, shuffle=False, drop_last=False
+    )
+    output = model(next(iter(loader)).to_dict(), training=False, compute_force=True)
+    return output["energy"].item(), output["forces"].detach().numpy()
+
+
+@pytest.mark.parametrize("offset", [0.0, -6.0, 100.0, -4321.0])
+def test_molecule_energy_is_translation_invariant(translation_model, offset):
+    # A molecule in vacuum, rigidly displaced. The offsets are the ones that
+    # used to matter: -6 A is barely outside the box for this cutoff, and it
+    # cost 10 eV on MACE-OFF small with forces exactly zero.
+    reference = _energy_and_forces(translation_model, _TRANSLATION_MOLECULES)
+    energy, forces = _energy_and_forces(
+        translation_model, _TRANSLATION_MOLECULES + offset
+    )
+    assert abs(energy - reference[0]) < 1e-9
+    assert np.abs(forces - reference[1]).max() < 1e-8
+
+
+@pytest.mark.parametrize("cell_name", list(_TRANSLATION_SLAB_CELLS))
+@pytest.mark.parametrize("translation", _TRANSLATIONS)
+def test_skewed_slab_energy_is_translation_invariant(
+    translation_model, cell_name, translation
+):
+    # The same check on a partially periodic cell whose periodic vectors reach
+    # out of the plane they span. Here the displacement that matters is along a
+    # PERIODIC direction: the periodic image is what carries the atom out of
+    # the vacuum box, so the vacuum axis alone being handled is not enough.
+    cell = _TRANSLATION_SLAB_CELLS[cell_name]
+    pbc = (True, True, False)
+    rng = np.random.default_rng(1)
+    positions = rng.uniform(0.0, 1.0, size=(6, 2)) @ cell[:2]
+    positions[:, 2] += rng.uniform(-0.3, 0.3, size=6)
+
+    reference = _energy_and_forces(translation_model, positions, cell, pbc)
+    energy, forces = _energy_and_forces(
+        translation_model, positions + np.array(translation, dtype=float), cell, pbc
+    )
+    assert abs(energy - reference[0]) < 1e-9
+    assert np.abs(forces - reference[1]).max() < 1e-8
