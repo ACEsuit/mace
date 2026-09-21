@@ -31,6 +31,32 @@ TESTS_ROOT = Path(__file__).parent
 run_train = REPO_ROOT / "mace" / "cli" / "run_train.py"
 preprocess_data = REPO_ROOT / "mace" / "cli" / "preprocess_data.py"
 
+# The launcher entry point each script path routes through, so a run can be
+# pointed at either engine. Keyed by path because the tests pass paths.
+LAUNCHER_ENTRY_POINTS = {
+    run_train: "run_train",
+    preprocess_data: "prepare_data",
+}
+
+#: Which engine the black-box suite runs against. Read once, here, rather than
+#: in each test: the tests are not rewritten for v1, they are re-run against it.
+MACE_ENGINE = os.environ.get("MACE_ENGINE", "legacy")
+
+#: What the launcher says when a capability has not been migrated. It is a
+#: clean refusal rather than a crash, which is what lets the suite skip instead
+#: of failing, and matching on it is why it is quoted rather than described.
+NOT_MIGRATED = "not yet available on v1 engine"
+
+
+def launcher_available() -> bool:
+    """Whether `mace_launcher` can be imported in this environment.
+
+    The legacy-only CI jobs do not install it, and there the tests invoke the
+    script path exactly as they always did. Routing through the launcher is an
+    addition, not a replacement, so those jobs are unaffected.
+    """
+    return importlib.util.find_spec("mace_launcher") is not None
+
 # ---------------------------------------------------------------------------
 # Canonical availability flags.
 #
@@ -198,7 +224,18 @@ def run_mace_train(
         run_env.update(env_extra)
     print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
-    cmd = [sys.executable, str(script)]
+    entry_point = LAUNCHER_ENTRY_POINTS.get(Path(script))
+    if entry_point is not None and launcher_available():
+        # One place, so the whole black-box suite can be pointed at either
+        # engine without a line changing in any test.
+        run_env.setdefault("MACE_ENGINE", MACE_ENGINE)
+        cmd = [
+            sys.executable,
+            "-c",
+            f"from mace_launcher import {entry_point}; {entry_point}()",
+        ]
+    else:
+        cmd = [sys.executable, str(script)]
     for k, v in mace_params.items():
         if v is None:
             cmd.append(f"--{k}")
@@ -208,6 +245,31 @@ def run_mace_train(
         cmd += [str(a) for a in extra_argv]
 
     print("Running command:", cmd)
+    if run_env.get("MACE_ENGINE") == "v1" and not capture_output:
+        # On the v1 engine a capability that has not been migrated is refused
+        # cleanly, and a refusal is a skip rather than a failure. Seeing it
+        # means reading stderr, so it is captured here and printed back: the
+        # alternative is an xfail on every unmigrated capability, which goes
+        # green the day one of them breaks for a different reason.
+        finished = subprocess.run(
+            cmd, env=run_env, check=False, capture_output=True, text=True, cwd=cwd
+        )
+        if finished.stdout:
+            print(finished.stdout)
+        if finished.stderr:
+            print(finished.stderr, file=sys.stderr)
+        if finished.returncode != 0 and NOT_MIGRATED in (finished.stderr or ""):
+            import pytest
+
+            pytest.skip(
+                f"the v1 engine does not carry this capability yet: "
+                f"{finished.stderr.strip().splitlines()[-1]}"
+            )
+        if check and finished.returncode != 0:
+            raise subprocess.CalledProcessError(
+                finished.returncode, cmd, finished.stdout, finished.stderr
+            )
+        return finished
     return subprocess.run(
         cmd,
         env=run_env,
