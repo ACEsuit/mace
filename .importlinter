@@ -30,8 +30,12 @@ forbidden_modules =
     mace
 ; `mace_launcher` is deliberately absent from the source modules: dispatching
 ; into both stacks is its entire job, and it is one of the two allowlisted
-; crossers. The other is `tests/parity/`, which does not exist until PAR-1
-; creates it and cannot be named here before then.
+; crossers. The other is `tests/parity/`, which exists now and is allowed for
+; the same reason in reverse: comparing the two stacks numerically is what it
+; is for, and a frozen tree nothing may import is a folder of JSON rather than
+; a live oracle. Neither is named as a source module here, and the list of two
+; is the whole allowance: `tests/architecture/test_import_direction.py` fails if
+; a third module acquires it.
 
 [importlinter:contract:no-v1-from-legacy]
 name = The frozen legacy package never imports the v1 stack

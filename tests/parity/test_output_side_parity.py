@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 import torch
 from fm00_convert import energy_constants_to_canonical, linear_weights_to_canonical
-
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_torch.backends.reference import ReferenceBackend
@@ -114,14 +113,16 @@ def test_the_short_range_repulsion_matches(fp64, anchor):
     lengths = torch.tensor([[0.35], [0.35], [0.5], [0.5], [0.75]], dtype=torch.float64)
 
     theirs = legacy(lengths, attributes, edge_index, numbers).detach().flatten()
-    mine = ZBLBasis(polynomial_order=int(legacy.p))(
-        lengths, numbers[attributes.argmax(dim=1)], edge_index
-    ).detach().flatten()
+    mine = (
+        ZBLBasis(polynomial_order=int(legacy.p))(
+            lengths, numbers[attributes.argmax(dim=1)], edge_index
+        )
+        .detach()
+        .flatten()
+    )
 
     assert float(theirs.abs().max()) > 1.0, "the repulsion is not switched on here"
-    assert torch.equal(theirs, mine), (
-        f"off by {float((theirs - mine).abs().max()):.3e}"
-    )
+    assert torch.equal(theirs, mine), f"off by {float((theirs - mine).abs().max()):.3e}"
 
 
 def test_the_energy_constants_transfer_without_conversion(fp64):

@@ -21,7 +21,6 @@ from fm00_convert import (
     fully_connected_tp_weights_to_canonical,
     linear_weights_to_canonical,
 )
-
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.descriptors import FullyConnectedTPDescriptor
 from mace_torch.backends.reference import ReferenceBackend
@@ -98,9 +97,9 @@ def test_the_scale_on_the_skip_is_just_the_two_multiplicities(fp64):
     legacy = load_anchor("tiny_scaleshift.model").interactions[0].skip_tp
     for instruction in legacy.instructions:
         first, second, _ = instruction.path_shape
-        dimension = Irreps.parse(str(legacy.irreps_out)).terms[
-            instruction.i_out
-        ][1].dimension
+        dimension = (
+            Irreps.parse(str(legacy.irreps_out)).terms[instruction.i_out][1].dimension
+        )
         net = instruction.path_weight / dimension**0.5
         assert net == pytest.approx((first * second) ** -0.5, rel=1e-12)
 
@@ -188,14 +187,10 @@ def test_the_orders_are_a_sum_and_the_frozen_tree_evaluates_them_as_a_cascade(fp
     values = features.numpy()
     summed = np.zeros((5, CHANNELS))
     for order in range(1, CORRELATION + 1):
-        basis = np.moveaxis(
-            getattr(contraction, f"U_matrix_{order}").numpy(), -1, 0
-        )
+        basis = np.moveaxis(getattr(contraction, f"U_matrix_{order}").numpy(), -1, 0)
         letters = "xyzuv"[:order]
         inputs = ",".join(f"nc{letter}" for letter in letters)
-        contracted = np.einsum(
-            f"p{letters},{inputs}->ncp", basis, *([values] * order)
-        )
+        contracted = np.einsum(f"p{letters},{inputs}->ncp", basis, *([values] * order))
         summed += np.einsum("ncp,pc->nc", contracted, by_order[order][0])
 
     assert np.abs(cascade).max() > 1e-3

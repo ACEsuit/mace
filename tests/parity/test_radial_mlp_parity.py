@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 import torch
-
 from mace_torch.nn.radial_mlp import (
     SECOND_MOMENT_SCALE,
     RadialMLP,
@@ -85,4 +84,4 @@ def test_the_activation_scale_is_the_sampled_one_and_that_is_deliberate():
         f"where 1.6e-3 was measured. Either the constant changed or the "
         f"quadrature did."
     )
-    assert SECOND_MOMENT_SCALE == pytest.approx(1.679176792398942, abs=0.0)
+    assert pytest.approx(1.679176792398942, abs=0.0) == SECOND_MOMENT_SCALE

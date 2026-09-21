@@ -29,7 +29,6 @@ from fm00_convert import (
     transfer_weights,
 )
 from fm00_projection import ProjectionError
-
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.observables import ObservableSpec
@@ -85,7 +84,6 @@ def converted(legacy):
 )
 def test_the_converted_model_takes_the_same_training_step(fp64, anchor, reference):
     from mace.modules.loss import WeightedEnergyForcesLoss
-
     from tests.golden.anchors import anchor_batch, load_training_structures
     from tests.golden.train_step import LOSS_WEIGHTS, N_STRUCTURES
 
@@ -157,9 +155,7 @@ def test_the_recorded_basis_is_read_and_not_guessed(fp64):
             product.symmetric_contractions.contractions
         ):
             assert (
-                recorded_basis(
-                    contraction, CHANNEL_IN, targets[position], correlation
-                )
+                recorded_basis(contraction, CHANNEL_IN, targets[position], correlation)
                 == "full"
             )
 
@@ -168,8 +164,9 @@ def test_a_basis_that_is_neither_is_refused(fp64):
     """Rather than converted into something that runs and is wrong."""
 
     class Unrecognised:
-        weights_max = torch.zeros(3, 7, 16)
-        weights = [torch.zeros(3, 2, 16), torch.zeros(3, 1, 16)]
+        def __init__(self):
+            self.weights_max = torch.zeros(3, 7, 16)
+            self.weights = [torch.zeros(3, 2, 16), torch.zeros(3, 1, 16)]
 
     with pytest.raises(ProjectionError, match="written against neither"):
         recorded_basis(Unrecognised(), CHANNEL_IN, "0e", 3)
