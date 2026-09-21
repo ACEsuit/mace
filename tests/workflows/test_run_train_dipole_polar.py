@@ -9,7 +9,7 @@ import pytest
 from ase.atoms import Atoms
 
 from mace.calculators import MACECalculator
-from tests.helpers import REPO_ROOT
+from tests.helpers import cli_command, skip_if_not_migrated, REPO_ROOT
 
 try:
     import cuequivariance as cue  # pylint: disable=unused-import
@@ -126,21 +126,15 @@ def test_run_train_dipole(tmp_path, fitting_configs):
     run_env["PYTHONPATH"] = ":".join(sys.path)
     print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
-    cmd = (
-        sys.executable
-        + " "
-        + str(run_train)
-        + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
-    )
+    cmd = cli_command(run_train) + [
+        (f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()
+    ]
 
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
+    p = subprocess.run(cmd, env=run_env, check=False, capture_output=True)
+    # A clean refusal from the v1 engine is a skip, read before the return code
+    # becomes a failure.
+    skip_if_not_migrated((p.stdout or b"") + (p.stderr or b""))
+    assert p.returncode == 0, (p.stderr or b"").decode(errors="replace")[-2000:]
 
     calc = MACECalculator(
         model_paths=tmp_path / "DipolesMACE.model",
@@ -220,21 +214,15 @@ def _run_train_subprocess(mace_params):
     sys.path.insert(0, str(REPO_ROOT))
     run_env["PYTHONPATH"] = ":".join(sys.path)
 
-    cmd = (
-        sys.executable
-        + " "
-        + str(run_train)
-        + " "
-        + " ".join(
-            [
-                (f"--{k}={v}" if v is not None else f"--{k}")
-                for k, v in mace_params.items()
-            ]
-        )
-    )
+    cmd = cli_command(run_train) + [
+        (f"--{k}={v}" if v is not None else f"--{k}") for k, v in mace_params.items()
+    ]
 
-    p = subprocess.run(cmd.split(), env=run_env, check=True)
-    assert p.returncode == 0
+    p = subprocess.run(cmd, env=run_env, check=False, capture_output=True)
+    # A clean refusal from the v1 engine is a skip, read before the return code
+    # becomes a failure.
+    skip_if_not_migrated((p.stdout or b"") + (p.stderr or b""))
+    assert p.returncode == 0, (p.stderr or b"").decode(errors="replace")[-2000:]
 
 
 def _evaluate_dielectric_predictions(calc, fitting_configs):

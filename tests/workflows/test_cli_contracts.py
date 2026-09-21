@@ -38,7 +38,7 @@ import numpy as np
 import pytest
 
 from tests.golden import harness
-from tests.helpers import REPO_ROOT, run_mace_train
+from tests.helpers import cli_command, REPO_ROOT, run_mace_train
 
 EVAL_CONFIGS = REPO_ROOT / "mace" / "cli" / "eval_configs.py"
 SELECT_HEAD = REPO_ROOT / "mace" / "cli" / "select_head.py"
@@ -848,7 +848,7 @@ def run_select_head(model: Path, *argv) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = ":".join([str(REPO_ROOT)] + sys.path)
     return subprocess.run(
-        [sys.executable, str(SELECT_HEAD), *[str(a) for a in argv], str(model)],
+        cli_command(SELECT_HEAD) + [*[str(a) for a in argv], str(model)],
         env=env,
         check=False,
         capture_output=True,

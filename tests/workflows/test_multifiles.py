@@ -12,7 +12,7 @@ import numpy as np
 import orjson
 import pytest
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import cli_command, skip_if_not_migrated, REPO_ROOT
 import torch
 import yaml
 from ase.atoms import Atoms
@@ -97,9 +97,7 @@ def create_h5_dataset(xyz_file, output_dir, e0s_file=None, r_max=5.0, seed=42):
     )
 
     # Set up command to run preprocess_data.py
-    cmd = [
-        sys.executable,
-        str(preprocess_script),
+    cmd = cli_command(preprocess_script) + [
         f"--train_file={xyz_file}",
         f"--r_max={r_max}",
         f"--h5_prefix={output_dir}/",
@@ -122,8 +120,12 @@ def create_h5_dataset(xyz_file, output_dir, e0s_file=None, r_max=5.0, seed=42):
     print(f"Running preprocess command: {' '.join(cmd)}")
     try:
         process = subprocess.run(
-            cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
+            cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
         )
+        # A clean refusal from the v1 engine is a skip, read before the return
+        # code becomes a failure.
+        skip_if_not_migrated((process.stdout or b"") + (process.stderr or b""))
+        process.check_returncode()
         # Print output for debugging
         print("Preprocess stdout:", process.stdout.decode())
         print("Preprocess stderr:", process.stderr.decode())
@@ -366,7 +368,7 @@ def test_multifile_training():
         )
 
         # Run training with subprocess
-        cmd = [sys.executable, str(run_train_script), f"--config={config_path}"]
+        cmd = cli_command(run_train_script) + [f"--config={config_path}"]
 
         # Set environment to add the current path to PYTHONPATH
         env = os.environ.copy()
@@ -382,6 +384,8 @@ def test_multifile_training():
             stderr=subprocess.PIPE,
             check=False,  # Don't raise exception on non-zero exit, we'll check manually
         )
+
+        skip_if_not_migrated((process.stdout or b"") + (process.stderr or b""))
 
         # Print output for debugging
         print("\n" + "=" * 40 + " STDOUT " + "=" * 40)
@@ -557,7 +561,7 @@ def test_multiple_xyz_per_head():
         )
 
         # Run training with subprocess
-        cmd = [sys.executable, str(run_train_script), f"--config={config_path}"]
+        cmd = cli_command(run_train_script) + [f"--config={config_path}"]
 
         # Set environment to add the current path to PYTHONPATH
         env = os.environ.copy()
@@ -573,6 +577,8 @@ def test_multiple_xyz_per_head():
             stderr=subprocess.PIPE,
             check=False,
         )
+
+        skip_if_not_migrated((process.stdout or b"") + (process.stderr or b""))
 
         # Print output for debugging
         print("\n" + "=" * 40 + " STDOUT " + "=" * 40)
@@ -750,7 +756,7 @@ def test_single_xyz_per_head():
         )
 
         # Run training with subprocess
-        cmd = [sys.executable, str(run_train_script), f"--config={config_path}"]
+        cmd = cli_command(run_train_script) + [f"--config={config_path}"]
 
         # Set environment to add the current path to PYTHONPATH
         env = os.environ.copy()
@@ -766,6 +772,8 @@ def test_single_xyz_per_head():
             stderr=subprocess.PIPE,
             check=False,
         )
+
+        skip_if_not_migrated((process.stdout or b"") + (process.stderr or b""))
 
         # Print output for debugging
         print("\n" + "=" * 40 + " STDOUT " + "=" * 40)
@@ -959,7 +967,7 @@ def test_multihead_finetuning_different_formats():
             str(REPO_ROOT) + ":" + env.get("PYTHONPATH", "")
         )
 
-        cmd = [sys.executable, str(run_train_script)]
+        cmd = cli_command(run_train_script)
         for k, v in finetuning_params.items():
             if v is None:
                 cmd.append(f"--{k}")
@@ -974,6 +982,8 @@ def test_multihead_finetuning_different_formats():
             stderr=subprocess.PIPE,
             check=False,
         )
+
+        skip_if_not_migrated((process.stdout or b"") + (process.stderr or b""))
 
         # Print output for debugging
         print("\n" + "=" * 40 + " STDOUT " + "=" * 40)

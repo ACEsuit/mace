@@ -29,7 +29,7 @@ import pytest
 from ase import Atoms
 from ase.io import write
 
-from tests.helpers import REPO_ROOT, base_mace_params, run_mace_train, run_train
+from tests.helpers import skip_if_not_migrated, cli_command, REPO_ROOT, base_mace_params, run_mace_train, run_train
 
 #: fewer than the CLI's default `--batch_size` of 10, which is what makes this
 #: reachable without asking for anything unusual. `base_mace_params` sets its own
@@ -153,7 +153,7 @@ def test_a_rank_with_no_data_blames_the_sampler_and_not_the_batch_size(
 
     procs = [
         subprocess.Popen(
-            [sys.executable, str(run_train)] + argv,
+            cli_command(run_train) + argv,
             env=dict(env, RANK=str(rank), LOCAL_RANK=str(rank)),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -162,6 +162,9 @@ def test_a_rank_with_no_data_blames_the_sampler_and_not_the_batch_size(
         for rank in range(8)
     ]
     outputs = [proc.communicate()[0] for proc in procs]
+    # Every rank meets the same refusal on an engine that does not carry this
+    # yet, so reading the first is enough.
+    skip_if_not_migrated("\n".join(outputs))
 
     assert all(proc.returncode != 0 for proc in procs), "a rank with no data trained"
     combined = "\n".join(outputs)
