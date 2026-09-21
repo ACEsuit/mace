@@ -24,6 +24,7 @@ from mace_core.observables import ObservableSpec
 from torch import Tensor, nn
 
 from mace_torch.nn.layout import expanded_irreps
+from mace_torch.nn.radial_mlp import SECOND_MOMENT_SCALE
 
 __all__ = ["ObservableHead"]
 
@@ -59,7 +60,7 @@ def _check_reachable(spec: ObservableSpec, hidden_irreps: str) -> None:
 
 
 class _Gate(nn.Module):
-    """Scalars through SiLU, everything else scaled by a sigmoid of its own.
+    """Scalars through a normalized SiLU, everything else scaled by a gate.
 
     The standard equivariant gate. A pointwise nonlinearity is only equivariant
     on scalars, so a higher irrep is instead multiplied by a scalar, which
@@ -103,7 +104,11 @@ class _Gate(nn.Module):
         return "+".join(pieces)
 
     def forward(self, features: Tensor) -> Tensor:
-        scalars = torch.nn.functional.silu(features[..., : self.scalar_dim])
+        # The same unit-second-moment multiplier the radial network carries.
+        # Trained readouts depend on it exactly as trained radial networks do.
+        scalars = SECOND_MOMENT_SCALE * torch.nn.functional.silu(
+            features[..., : self.scalar_dim]
+        )
         if not self.num_gates:
             return scalars
         gates = torch.sigmoid(
