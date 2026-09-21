@@ -46,6 +46,7 @@ class MACEOutputs(nn.Module):
         energy_head: The energy head, required when ``energy`` is declared and
             rejected when it is not.
         nonlinear: Whether each head's last-layer readout carries a gate.
+        hidden_scalars: The width of that gated readout's middle.
         precision: The dtype every op is built at.
     """
 
@@ -58,6 +59,7 @@ class MACEOutputs(nn.Module):
         energy_head: EnergyOutputHead | None = None,
         nonlinear: bool = True,
         precision: str = "float64",
+        hidden_scalars: int = 16,
     ) -> None:
         super().__init__()
         names = [spec.name for spec in observables]
@@ -90,6 +92,7 @@ class MACEOutputs(nn.Module):
                     layer_irreps=layer_irreps,
                     num_features=num_features,
                     nonlinear=nonlinear,
+                    hidden_scalars=hidden_scalars,
                     precision=precision,
                 )
                 for spec in observables
