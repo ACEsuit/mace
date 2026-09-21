@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,
@@ -74,19 +75,34 @@ def _design(basis: np.ndarray, directions: np.ndarray, order: int) -> np.ndarray
     return values.reshape(-1, basis.shape[0])
 
 
-def as_path_first(basis: np.ndarray, order: int) -> np.ndarray:
+def as_path_first(basis: np.ndarray, order: int, input_dim: int) -> np.ndarray:
     """Put a basis in ``[paths, components_out, d, ...]`` whatever it arrived as.
 
-    The frozen tree stores the path axis last, and drops the output-component
-    axis entirely when the target is a scalar, which is the flattening that
-    makes a scalar contraction look like one fewer dimension than it is.
+    The frozen tree stores the path axis **last**, and drops the
+    output-component axis entirely when the target is a scalar, which is the
+    flattening that makes a scalar contraction look like one fewer dimension
+    than it is. This package stores the path axis **first**.
+
+    Both can have ``order + 2`` axes, so the two are told apart by where the
+    input axes are rather than by counting: they are the only run of ``order``
+    axes all equal to ``input_dim``. Guessing from the shape alone silently
+    transposes a basis whose target happens to be a vector.
 
     Args:
-        basis: Either this package's layout or the frozen tree's.
+        basis: Either layout.
         order: The body order, which fixes how many input axes there are.
+        input_dim: One channel's input width, which identifies them.
     """
-    if basis.ndim == order + 2 and basis.shape[0] != basis.shape[-1]:
+    if basis.ndim == order + 2 and basis.shape[2:] == (input_dim,) * order:
         return basis
+    if basis.shape[-order - 1 : -1] != (input_dim,) * order and basis.shape[
+        -order:
+    ] != (input_dim,) * order:
+        raise ProjectionError(
+            f"a basis of shape {basis.shape} at order {order} has no run of "
+            f"{order} axes of width {input_dim}, so which axes are the inputs "
+            f"cannot be read off it."
+        )
     moved = np.moveaxis(basis, -1, 0)
     if moved.ndim == order + 1:
         moved = moved[:, None]
@@ -123,7 +139,11 @@ def projection_matrix(
     full = (
         full_symmetric_tensor_product_basis(irreps_in, order, target)[target]
         if source is None
-        else as_path_first(np.asarray(source, dtype=float), order)
+        else as_path_first(
+            np.asarray(source, dtype=float),
+            order,
+            Irreps.parse(irreps_in).dimension,
+        )
     )
     reduced = reduced_symmetric_tensor_product_basis(irreps_in, order, target)[target]
 
