@@ -20,6 +20,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from tests.helpers import NOT_MIGRATED
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BLACK_BOX = ("tests/workflows", "tests/integrations")
 
@@ -143,4 +145,39 @@ def test_the_shared_runner_knows_about_both_engines():
             continue
         assert "MACE_ENGINE" not in path.read_text(), (
             f"{path.name} reads the engine itself; it is chosen in one place"
+        )
+
+
+def test_the_refusal_is_a_skip_whatever_the_caller_asked_for(tmp_path, monkeypatch):
+    """A caller that captures output must skip too, not die on the refusal.
+
+    The first version of the routing only handled callers that let output
+    through. The ones that capture it took the other branch, met the launcher's
+    refusal as a failed process, and failed a run they should have sat out. Six
+    plotting cases went red that way, and they went red only in a full run,
+    which is the kind of gap a two-file sample does not show.
+    """
+    import pytest as pytest_module
+
+    from tests import helpers
+
+    monkeypatch.setenv("MACE_ENGINE", "v1")
+    if not helpers.launcher_available():
+        pytest_module.skip("the launcher is not installed in this environment")
+
+    for capture in (False, True):
+        with pytest_module.raises(BaseException) as raised:
+            helpers.run_mace_train(
+                {"name": "unmigrated", "train_file": str(tmp_path / "none.xyz")},
+                capture_output=capture,
+                text=True,
+                cwd=tmp_path,
+            )
+        # `pytest.skip` raises its own exception rather than returning, so
+        # catching it is how a caller of the runner observes the skip.
+        assert "Skipped" in type(raised.value).__name__ or NOT_MIGRATED in str(
+            raised.value
+        ), (
+            f"with capture_output={capture} the runner raised "
+            f"{type(raised.value).__name__} instead of skipping"
         )
