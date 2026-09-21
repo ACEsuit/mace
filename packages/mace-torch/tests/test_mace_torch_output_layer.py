@@ -118,9 +118,8 @@ def make_stack(observables=(ENERGY, DIPOLE, POLARIZABILITY), seed=0, **head_kwar
     outputs = MACEOutputs(
         backend,
         list(observables),
-        hidden_irreps=HIDDEN,
+        layer_irreps=backbone.layer_irreps,
         num_features=4,
-        num_layers=2,
         energy_head=head,
         precision=precision_name(),
     )
@@ -211,9 +210,9 @@ def test_an_observable_with_no_data_behind_it_is_an_error_naming_the_key():
 def test_an_energy_declaration_without_a_head_is_refused():
     backend = ReferenceBackend()
     with pytest.raises(ValueError, match="isolated-atom"):
-        MACEOutputs(backend, [ENERGY], HIDDEN, 4, 2, energy_head=None)
+        MACEOutputs(backend, [ENERGY], [HIDDEN, HIDDEN], 4, energy_head=None)
     with pytest.raises(ValueError, match="not declared"):
-        MACEOutputs(backend, [DIPOLE], HIDDEN, 4, 2, energy_head=energy_head())
+        MACEOutputs(backend, [DIPOLE], [HIDDEN, HIDDEN], 4, energy_head=energy_head())
 
 
 @fp64_only
@@ -225,13 +224,13 @@ def test_an_observable_the_features_cannot_carry_is_refused():
     anywhere.
     """
     with pytest.raises(ValueError, match="2e"):
-        MACEOutputs(ReferenceBackend(), [POLARIZABILITY], "0e+1o", 4, 2)
+        MACEOutputs(ReferenceBackend(), [POLARIZABILITY], ["0e+1o", "0e+1o"], 4)
 
 
 @fp64_only
 def test_a_repeated_declaration_is_refused():
     with pytest.raises(ValueError, match="dipole"):
-        MACEOutputs(ReferenceBackend(), [DIPOLE, DIPOLE], HIDDEN, 4, 2)
+        MACEOutputs(ReferenceBackend(), [DIPOLE, DIPOLE], [HIDDEN, HIDDEN], 4)
 
 
 # ---------------------------------------------------------------------------

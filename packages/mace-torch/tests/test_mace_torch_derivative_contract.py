@@ -201,7 +201,7 @@ def test_a_derivative_without_an_energy_says_what_is_missing():
     )
     without_energy = DerivativeEngine(
         engine.backbone,
-        MACEOutputs(ReferenceBackend(), [dipole], "0e+1o", 4, 2),
+        MACEOutputs(ReferenceBackend(), [dipole], engine.backbone.layer_irreps, 4),
     )
     positions, numbers = molecule()
     with pytest.raises(ValueError, match="total_energy"):
