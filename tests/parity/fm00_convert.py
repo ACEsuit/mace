@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from fm00_projection import project_weights
+from fm00_projection import ProjectionError, project_weights
 
 from mace_core.clebsch_gordan.irreps import Irreps
 
 __all__ = [
     "contraction_weights_to_canonical",
+    "recorded_basis",
     "energy_constants_to_canonical",
     "fully_connected_tp_weights_to_canonical",
     "linear_weights_to_canonical",
@@ -350,3 +351,57 @@ def transfer_weights(legacy_model, model, correlation: int) -> None:
                 linear(source.linear_2, destination.second)
             else:
                 linear(source.linear, destination)
+
+
+def recorded_basis(legacy_contraction, irreps_in: str, target: str, correlation: int):
+    """Which Clebsch-Gordan basis a trained contraction was written against.
+
+    Read off the artifact, never guessed. The frozen tree has three settings
+    that disagree about this, a command-line flag defaulting one way, a model
+    class defaulting the other, and a wrapper that forces it back when a
+    library is missing, so a converter that picks a default is picking which of
+    three models comes out.
+
+    Args:
+        legacy_contraction: The trained module.
+        irreps_in: One channel's input declaration.
+        target: The output irrep.
+        correlation: The highest body order.
+
+    Returns:
+        ``"full"`` or ``"reduced"``.
+
+    Raises:
+        ProjectionError: When the stored path counts match neither, so the
+            basis cannot be told from the artifact.
+    """
+    from mace_core.clebsch_gordan.reduced_basis import (
+        full_symmetric_tensor_product_basis,
+        reduced_symmetric_tensor_product_basis,
+    )
+
+    stored = [legacy_contraction.weights_max.shape[1]] + [
+        weight.shape[1] for weight in legacy_contraction.weights
+    ]
+    orders = list(range(correlation, 0, -1))
+    full = [
+        full_symmetric_tensor_product_basis(irreps_in, order, target)[target].shape[0]
+        for order in orders
+    ]
+    reduced = [
+        reduced_symmetric_tensor_product_basis(irreps_in, order, target)[
+            target
+        ].shape[0]
+        for order in orders
+    ]
+    if stored == full:
+        return "full"
+    if stored == reduced:
+        return "reduced"
+    raise ProjectionError(
+        f"this contraction stores {stored} path(s) per body order, and for "
+        f"{irreps_in!r} into {target!r} the full basis has {full} and the "
+        f"reduced one {reduced}. It was written against neither, so which "
+        f"basis it means cannot be read off it and converting it would be a "
+        f"guess."
+    )
