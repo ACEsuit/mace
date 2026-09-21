@@ -400,7 +400,7 @@ that come up a lot:
   code at all — its loss term appears automatically with a default weight you can override.
 - **A new property is a table row, not an add-on.** The framework is property-agnostic by
   construction: the observable table maps a property name to its mathematical structure (irreps,
-  per-atom vs total, units, normalization), and everything downstream (head, loss, derivatives) is
+  per-atom vs total, units), and everything downstream (head, loss, derivatives) is
   derived from that row.
 
 The sections below give the worked examples for each row of the ladder; for a single **end-to-end
@@ -493,14 +493,14 @@ silently wrong forces); it stays usable for inference (`supports_double_backward
 
 ### 3.2 A new observable (config only)
 
-- **Extender touches:** a declarations file: one `ObservableSpec` row giving `name`, `irreps`, `per_atom`, `units`, `normalization`, `default_loss_weight`, and the declared inputs to differentiate against. No module, no decorator. A derivative is named by the rule `d_<q>_d_<x>`, with `forces`, `stress` and `magforces` as the three special cases, so asking for a derivative against a newly declared input needs no code either.
+- **Extender touches:** a declarations file: one `ObservableSpec` row giving `name`, `irreps`, `per_atom`, `units`, and the declared inputs to differentiate against. The scaling of the head that produces it is set in the model config and its loss weight in `LossConfig`, both keyed by this name. No module, no decorator. A derivative is named by the rule `d_<q>_d_<x>`, with `forces`, `stress` and `magforces` as the three special cases, so asking for a derivative against a newly declared input needs no code either.
 - **Core touched:** zero files. The model exposes the row automatically because `BaseMACE` iterates over the declared observables; `MACEOutput` carries the six core fields and everything else by name in `extras`.
 - **Enabling it:** list it in the model config's observables, or point the config at a declarations file that extends `defaults/observables.yaml`.
 - **Test:** `packages/mace-core/tests/test_observables.py` validates the grammar and the derivative naming (pure); if it is autograd-derived, `tests/parity` verifies finite-diff.
 
 ### 3.3 A new loss / transform (plugin registry)
 
-- **Tuning an existing loss is config, not a new loss.** `LossConfig` carries the per-observable **weights** *and* the loss's own **parameters** (e.g. `params={"huber_delta": 0.02}`) — this preserves the legacy `--energy_weight`/`--forces_weight`/`--huber_delta` knobs as config fields. Changing a coefficient never needs a `@register_loss`. And a well-defined spherical-tensor observable needs **no** loss code at all — its term is generated from the observable table with `default_loss_weight`.
+- **Tuning an existing loss is config, not a new loss.** `LossConfig` carries the per-observable **weights** *and* the loss's own **parameters** (e.g. `params={"huber_delta": 0.02}`) — this preserves the legacy `--energy_weight`/`--forces_weight`/`--huber_delta` knobs as config fields. Changing a coefficient never needs a `@register_loss`. And a well-defined spherical-tensor observable needs **no** loss code at all — its term is generated from the observable table, with its weight read from `LossConfig`.
 - **A genuinely new loss:** `mace_torch/train/loss.py` (or an external package) with `@register_loss("myloss")` on a `torch.nn.Module`; select via `LossConfig(name="myloss", weights=..., params=...)`.
 - **Data transform:** `@register_transform("mytransform")` in `mace_torch/data/`; chained via `DataConfig(transforms=[...])`.
 - **Core touched:** the registries (`LOSS_REGISTRY`, `TRANSFORM_REGISTRY`) live in `mace_core.registries` as specs; **adding one does not edit the registry**, only the decorator populates it at import time. Zero core edits.

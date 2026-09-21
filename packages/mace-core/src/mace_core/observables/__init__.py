@@ -18,11 +18,9 @@ from mace_core.observables.grammar import (
     parse_irreps,
 )
 from mace_core.observables.spec import (
-    NORMALIZATIONS,
     DerivativeRequest,
     DerivativeSpec,
     InputSpec,
-    Normalization,
     ObservableCatalogue,
     ObservableSpec,
 )
@@ -30,14 +28,12 @@ from mace_core.observables.spec import (
 __all__ = [
     "DEFAULTS_RESOURCE",
     "IRREPS_GRAMMAR",
-    "NORMALIZATIONS",
     "SPECIAL_CASES",
     "DerivativeRequest",
     "DerivativeSpec",
     "InputSpec",
     "IrrepTerm",
     "IrrepsGrammarError",
-    "Normalization",
     "ObservableCatalogue",
     "ObservableSpec",
     "derivative_name",

@@ -131,9 +131,6 @@ def test_a_spec_row_builds_a_valid_observable_spec(key):
         # not canonicalise unit strings, so `Ang` is left as it is written
         # there rather than rewritten to `Å`.
         units=channel.unit,
-        # Neutral: which normalization each family wants is decided by the
-        # ticket that builds its head, not by this coverage table.
-        normalization="none",
     )
     assert spec.per_atom == per_atom
     assert spec.dimension >= 1
