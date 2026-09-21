@@ -20,7 +20,6 @@ import numpy as np
 import pytest
 import torch
 from fm00_convert import build_config, energy_constants_to_canonical, transfer_weights
-
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.neighbors import get_neighborhood
@@ -137,9 +136,7 @@ def test_a_converted_anchor_matches_the_live_legacy_model(fp64, anchor):
         reference = legacy(
             legacy_batch(legacy, atoms).to_dict(), training=False, compute_force=True
         )
-        result = engine(
-            v1_graph(atoms, numbers, config["cutoff"]), compute=("forces",)
-        )
+        result = engine(v1_graph(atoms, numbers, config["cutoff"]), compute=("forces",))
         worst_energy = max(
             worst_energy,
             abs(
@@ -149,9 +146,7 @@ def test_a_converted_anchor_matches_the_live_legacy_model(fp64, anchor):
         )
         worst_force = max(
             worst_force,
-            float(
-                (reference["forces"].detach() - result.forces.detach()).abs().max()
-            ),
+            float((reference["forces"].detach() - result.forces.detach()).abs().max()),
         )
 
     assert worst_energy < ENERGY_TOLERANCE, (
@@ -203,6 +198,7 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
     graph = v1_graph(atoms, numbers, config["cutoff"])
     result = DerivativeEngine(restored)(graph, compute=("forces",))
 
-    assert abs(
-        float(reference["energy"].detach()) - float(result.total_energy.detach())
-    ) < 1e-12
+    assert (
+        abs(float(reference["energy"].detach()) - float(result.total_energy.detach()))
+        < 1e-12
+    )

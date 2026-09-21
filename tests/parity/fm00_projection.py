@@ -38,7 +38,6 @@ which of infinitely many gauge representatives to invent.
 from __future__ import annotations
 
 import numpy as np
-
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
@@ -95,9 +94,10 @@ def as_path_first(basis: np.ndarray, order: int, input_dim: int) -> np.ndarray:
     """
     if basis.ndim == order + 2 and basis.shape[2:] == (input_dim,) * order:
         return basis
-    if basis.shape[-order - 1 : -1] != (input_dim,) * order and basis.shape[
-        -order:
-    ] != (input_dim,) * order:
+    if (
+        basis.shape[-order - 1 : -1] != (input_dim,) * order
+        and basis.shape[-order:] != (input_dim,) * order
+    ):
         raise ProjectionError(
             f"a basis of shape {basis.shape} at order {order} has no run of "
             f"{order} axes of width {input_dim}, so which axes are the inputs "

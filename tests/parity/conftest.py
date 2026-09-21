@@ -1,16 +1,17 @@
 """Fixtures for the in-process legacy-vs-v1 comparisons.
 
-`tests/parity/` is one of the two places allowed to import both stacks. The
-full harness with process-state snapshot and restore is PAR-1's; until it lands
-the tests here compare pure-math blocks whose only global is the default dtype,
-which the fixture below sets and restores.
+`tests/parity/` is one of the two places allowed to import both stacks, which
+is what makes the frozen tree a live oracle rather than a folder of JSON.
 
-The legacy jobs that collect the whole `tests/` tree install no v1 package, so
-without the v1 stack the directory is skipped rather than failing collection.
+Running the two in one process is only valid if the first leaves nothing
+behind. Every test here that touches the frozen tree runs inside `isolated`,
+which snapshots the process's globals and puts them back, and
+`test_process_state.py` asserts that it does rather than trusting it.
 """
 
 import pytest
 import torch
+from process_state import capture_state, restore_state, state_differences
 
 pytest.importorskip("mace_torch", reason="the v1 stack is not installed in this job")
 
@@ -24,3 +25,20 @@ def fixture_fp64():
         yield
     finally:
         torch.set_default_dtype(previous)
+
+
+@pytest.fixture(name="isolated")
+def fixture_isolated():
+    """Restore every global a legacy run can change, and say if one moved.
+
+    The restoration happens whatever the test did; the assertion afterwards is
+    about the fixture doing its job, so a test that leaks is a failure of the
+    harness rather than of the comparison it was making.
+    """
+    before = capture_state()
+    try:
+        yield before
+    finally:
+        restore_state(before)
+    leaked = state_differences(before, capture_state())
+    assert not leaked, "the harness failed to restore: " + "; ".join(leaked)

@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 import torch
 from fm00_convert import linear_weights_to_canonical
-
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_torch.backends.reference.backend import ReferenceLinear
@@ -41,9 +40,7 @@ def test_a_trained_linear_converts_exactly(fp64, anchor, layer, which):
     legacy = getattr(model.interactions[layer], which)
     irreps_in, irreps_out = str(legacy.irreps_in), str(legacy.irreps_out)
 
-    mine = ReferenceLinear(
-        LinearDescriptor(irreps_in=irreps_in, irreps_out=irreps_out)
-    )
+    mine = ReferenceLinear(LinearDescriptor(irreps_in=irreps_in, irreps_out=irreps_out))
     with torch.no_grad():
         mine.weight.copy_(
             torch.tensor(
@@ -72,8 +69,10 @@ def test_the_normalization_depends_on_the_fan_in(fp64):
     """
     model = load_anchor("tiny_scaleshift.model")
     weights = sorted(
-        {round(float(instruction.path_weight), 6)
-         for instruction in model.interactions[1].linear.instructions}
+        {
+            round(float(instruction.path_weight), 6)
+            for instruction in model.interactions[1].linear.instructions
+        }
     )
     assert weights == [
         pytest.approx(48**-0.5, abs=1e-6),

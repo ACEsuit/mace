@@ -26,7 +26,6 @@ from fm00_projection import (
     projection_matrix,
 )
 from independent_basis import symmetric_multiplicity
-
 from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,

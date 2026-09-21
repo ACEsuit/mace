@@ -24,17 +24,15 @@ scale is an op whose stored weights do not mean what they say.
 from __future__ import annotations
 
 import numpy as np
-
 from fm00_projection import ProjectionError, project_weights
-
 from mace_core.clebsch_gordan.irreps import Irreps
 
 __all__ = [
     "contraction_weights_to_canonical",
-    "recorded_basis",
     "energy_constants_to_canonical",
     "fully_connected_tp_weights_to_canonical",
     "linear_weights_to_canonical",
+    "recorded_basis",
 ]
 
 
@@ -338,9 +336,9 @@ def transfer_weights(legacy_model, model, correlation: int) -> None:
                     contraction, channel_in, targets[position], correlation
                 )
                 for order, weights in enumerate(carried):
-                    product.contraction.weights[
-                        position * correlation + order
-                    ].copy_(torch.tensor(weights, dtype=torch.float64))
+                    product.contraction.weights[position * correlation + order].copy_(
+                        torch.tensor(weights, dtype=torch.float64)
+                    )
             linear(source.linear, product.linear)
 
         head = model.outputs.heads["energy"]
@@ -389,9 +387,9 @@ def recorded_basis(legacy_contraction, irreps_in: str, target: str, correlation:
         for order in orders
     ]
     reduced = [
-        reduced_symmetric_tensor_product_basis(irreps_in, order, target)[
-            target
-        ].shape[0]
+        reduced_symmetric_tensor_product_basis(irreps_in, order, target)[target].shape[
+            0
+        ]
         for order in orders
     ]
     if stored == full:
