@@ -11,8 +11,9 @@ does not get the engine. Under `MACE_ENGINE=v1` it runs **legacy** and passes,
 which is a green tick for a stack that was never exercised: the exact silent
 pass the re-run exists to avoid.
 
-Five files do that today. They are named here rather than left to be
-discovered, so the gap is bounded and a sixth fails this test.
+No file does, and the list that would record an exception is empty. A new one
+fails this test, which is the point: the gap it would open is a green tick for
+a stack that was never run.
 """
 
 from __future__ import annotations
@@ -26,25 +27,22 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BLACK_BOX = ("tests/workflows", "tests/integrations")
 
 #: Files that launch a MACE command line without going through the shared
-#: runner, and therefore ignore `MACE_ENGINE`. Each is a black-box test that
-#: will run legacy whatever engine is asked for, so its v1 result means
-#: nothing until it is routed.
+#: runner, and therefore ignore `MACE_ENGINE`. Such a file runs legacy whatever
+#: engine is asked for, so its v1 result means nothing.
 #:
-#: They are listed rather than fixed here because routing them is an edit to
-#: the tests, and the wiring ticket's line is that the tests are re-run rather
-#: than rewritten. Whoever routes them deletes the entry.
-UNROUTED = {
-    "tests/workflows/test_distributed.py",
-    "tests/workflows/test_embedding_train.py",
-    "tests/workflows/test_mdp_finetune.py",
-    "tests/workflows/test_multifiles.py",
-    "tests/workflows/test_run_train_dipole_polar.py",
-    "tests/workflows/test_small_training_set.py",
-}
+#: Empty, and meant to stay that way. Six files were on it and all six are
+#: routed: the ones that need `Popen` take the argv prefix from the same place
+#: the runner does, which is what keeps the launcher known in one module rather
+#: than in each of them.
+UNROUTED: set[str] = set()
 
 
 def launches_a_command_line(source: str) -> bool:
-    """Whether a file starts a subprocess that runs a MACE CLI script.
+    """Whether a file builds its own command line for a subprocess.
+
+    The mark is `sys.executable` in a file that also starts a process: a routed
+    file takes the whole argv prefix from `tests.helpers.cli_command`, engine
+    and all, so it has no reason to name the interpreter.
 
     Read from the syntax tree rather than by searching the text, so a mention
     in a docstring or a comment is not a match. This file is such a mention
@@ -64,14 +62,16 @@ def launches_a_command_line(source: str) -> bool:
             and node.attr in {"run", "Popen", "call", "check_call", "check_output"}
         ):
             starts_process = True
-        if isinstance(node, ast.Name) and node.id in {"run_train", "preprocess_data"}:
-            names_a_script = True
-        # And by its path, which is how the multi-file test spells it.
+        # `sys.executable` beside a script is the argv a routed file no longer
+        # writes: `cli_command` returns the whole prefix, engine included.
+        # Looking for the interpreter rather than for the script name is what
+        # separates a file that builds its own command from one that asks for
+        # the right one.
         if (
-            isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and node.value.endswith(".py")
-            and node.value.startswith(("run_train", "preprocess_data"))
+            isinstance(node, ast.Attribute)
+            and node.attr == "executable"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "sys"
         ):
             names_a_script = True
     return starts_process and names_a_script

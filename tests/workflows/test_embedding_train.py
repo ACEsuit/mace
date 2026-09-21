@@ -1,4 +1,4 @@
-from tests.helpers import REPO_ROOT
+from tests.helpers import skip_if_not_migrated, cli_command, REPO_ROOT
 import os
 import subprocess
 import sys
@@ -116,7 +116,7 @@ embedding_specs:
     )
 
     # Build command
-    cmd_parts = [sys.executable, str(run_train)]
+    cmd_parts = cli_command(run_train)
     for k, v in mace_params.items():
         cmd_parts.append(f"--{k}={v}")
 
@@ -128,11 +128,17 @@ embedding_specs:
         completed_process = subprocess.run(
             cmd_parts,
             env=run_env,
-            check=True,
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+        # A clean refusal from the v1 engine is a skip, read before the
+        # return code is turned into a failure.
+        skip_if_not_migrated(
+            (completed_process.stdout or "") + (completed_process.stderr or "")
+        )
+        completed_process.check_returncode()
         print("STDOUT:", completed_process.stdout)
         print("STDERR:", completed_process.stderr)
     except subprocess.CalledProcessError as e:
@@ -313,7 +319,7 @@ embedding_specs:
     )
 
     # Build command
-    cmd_parts = [sys.executable, str(run_train)]
+    cmd_parts = cli_command(run_train)
     for k, v in mace_params.items():
         cmd_parts.append(f"--{k}={v}")
 
@@ -325,11 +331,17 @@ embedding_specs:
         completed_process = subprocess.run(
             cmd_parts,
             env=run_env,
-            check=True,
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+        # A clean refusal from the v1 engine is a skip, read before the
+        # return code is turned into a failure.
+        skip_if_not_migrated(
+            (completed_process.stdout or "") + (completed_process.stderr or "")
+        )
+        completed_process.check_returncode()
         print("STDOUT:", completed_process.stdout)
         print("STDERR:", completed_process.stderr)
     except subprocess.CalledProcessError as e:

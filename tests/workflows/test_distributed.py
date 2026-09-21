@@ -14,7 +14,7 @@ import sys
 
 import ase.io
 
-from tests.helpers import REPO_ROOT, base_mace_params, run_train
+from tests.helpers import skip_if_not_migrated, cli_command, REPO_ROOT, base_mace_params, run_train
 
 
 def _free_port() -> int:
@@ -62,7 +62,7 @@ def test_run_train_distributed_cpu(tmp_path, fitting_configs):
         env = dict(base_env, RANK=str(rank), LOCAL_RANK=str(rank))
         procs.append(
             subprocess.Popen(
-                [sys.executable, str(run_train)] + argv,
+                cli_command(run_train) + argv,
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -74,6 +74,7 @@ def test_run_train_distributed_cpu(tmp_path, fitting_configs):
     for proc in procs:
         out, _ = proc.communicate(timeout=800)
         outputs.append(out)
+    skip_if_not_migrated("\n".join(outputs))
 
     for rank, (proc, out) in enumerate(zip(procs, outputs)):
         assert proc.returncode == 0, (

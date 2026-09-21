@@ -17,7 +17,7 @@ import pytest
 import torch
 from ase.atoms import Atoms
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import skip_if_not_migrated, cli_command, REPO_ROOT
 
 run_train = REPO_ROOT / "mace" / "cli" / "run_train.py"
 
@@ -66,10 +66,18 @@ def _run_subprocess(params: dict, check: bool = True) -> subprocess.CompletedPro
     sys.path.insert(0, str(REPO_ROOT))
     run_env["PYTHONPATH"] = os.pathsep.join(sys.path)
 
-    cmd = [sys.executable, str(run_train)] + [
+    cmd = cli_command(run_train) + [
         f"--{k}={v}" if v is not None else f"--{k}" for k, v in params.items()
     ]
-    return subprocess.run(cmd, env=run_env, check=check, capture_output=True)
+    finished = subprocess.run(cmd, env=run_env, check=False, capture_output=True)
+    # On the v1 engine an unmigrated capability is refused cleanly, and a
+    # refusal is a skip. Read before `check`, or it arrives as a failure.
+    skip_if_not_migrated((finished.stdout or b"") + (finished.stderr or b""))
+    if check and finished.returncode != 0:
+        raise subprocess.CalledProcessError(
+            finished.returncode, cmd, finished.stdout, finished.stderr
+        )
+    return finished
 
 
 # ---------------------------------------------------------------------------
