@@ -31,6 +31,7 @@ from mace_core.clebsch_gordan.irreps import Irreps
 
 __all__ = [
     "contraction_weights_to_canonical",
+    "energy_constants_to_canonical",
     "fully_connected_tp_weights_to_canonical",
     "linear_weights_to_canonical",
 ]
@@ -189,3 +190,43 @@ def contraction_weights_to_canonical(
             )
         )
     return converted
+
+
+def energy_constants_to_canonical(legacy_model, heads=("default",)):
+    """The isolated-atom energies and the scale and shift, as they stand.
+
+    A straight transfer, with no refit and no conversion: the frozen tree holds
+    the same numbers in the same units. It is here because the transfer has to
+    happen and because doing it by reflection at load time is how the three
+    different defaults in the frozen tree leak into a converted model.
+
+    Args:
+        legacy_model: The trained model. Read, never mutated.
+        heads: The head names to file the energies under.
+
+    Returns:
+        ``(values, scale, shift)`` where ``values`` is the mapping
+        :class:`~mace_core.elements.ResolvedE0s` takes, and the other two are
+        one float per head.
+    """
+    table = legacy_model.atomic_energies_fn.atomic_energies.detach().numpy()
+    if table.ndim == 1:
+        table = table[None, :]
+    numbers = [int(z) for z in legacy_model.atomic_numbers.tolist()]
+    if table.shape != (len(heads), len(numbers)):
+        raise ValueError(
+            f"the isolated-atom table is {table.shape} and {len(heads)} head(s) "
+            f"over {len(numbers)} element(s) needs {(len(heads), len(numbers))}."
+        )
+    values = {
+        head: {z: float(table[index][position]) for position, z in enumerate(numbers)}
+        for index, head in enumerate(heads)
+    }
+
+    shift_block = getattr(legacy_model, "scale_shift", None)
+    if shift_block is None:
+        # The plain model has no scale-shift block at all: it is the identity.
+        return values, (1.0,) * len(heads), (0.0,) * len(heads)
+    scale = shift_block.scale.detach().reshape(-1).tolist()
+    shift = shift_block.shift.detach().reshape(-1).tolist()
+    return values, tuple(float(v) for v in scale), tuple(float(v) for v in shift)
