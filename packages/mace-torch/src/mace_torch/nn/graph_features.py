@@ -118,7 +118,7 @@ class GraphFeatureEmbedding(nn.Module):
 
         Args:
             graph: The flat dict, read only.
-            features: ``[n_atoms, channels, width]``.
+            features: ``[n_atoms, width]``, flat and grouped by irrep.
         """
         batch = graph["batch"]
         pieces = []

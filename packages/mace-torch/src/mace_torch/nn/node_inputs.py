@@ -16,12 +16,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-import torch
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.observables import InputSpec
 from torch import Tensor, nn
 
-from mace_torch.nn.layout import expanded_irreps, inverse_layout_index
+from mace_torch.nn.layout import expanded_irreps
 
 __all__ = ["NodeInputEmbedding"]
 
@@ -39,8 +38,6 @@ class NodeInputEmbedding(nn.Module):
         num_features: The channel width.
         precision: The dtype the maps are built at.
     """
-
-    layout: Tensor
 
     def __init__(
         self,
@@ -65,11 +62,6 @@ class NodeInputEmbedding(nn.Module):
             )
         self.specs = list(specs)
         grouped = expanded_irreps(hidden_irreps, num_features)
-        self.register_buffer(
-            "layout",
-            torch.tensor(inverse_layout_index(hidden_irreps, num_features)),
-            persistent=False,
-        )
         self.maps = nn.ModuleDict(
             {
                 spec.name: backend.make_linear(
@@ -88,7 +80,7 @@ class NodeInputEmbedding(nn.Module):
 
         Args:
             graph: The flat dict, read only.
-            features: ``[n_atoms, channels, width]``.
+            features: ``[n_atoms, width]``, flat and grouped by irrep.
         """
         total = None
         for spec in self.specs:
@@ -103,4 +95,4 @@ class NodeInputEmbedding(nn.Module):
             mapped = self.maps[spec.name](graph[spec.name].to(features.dtype))
             total = mapped if total is None else total + mapped
         assert total is not None
-        return features + total[..., self.layout].reshape(features.shape)
+        return features + total
