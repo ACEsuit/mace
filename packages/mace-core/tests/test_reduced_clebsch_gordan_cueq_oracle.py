@@ -20,18 +20,19 @@ must agree, and what is asserted here, is the subspace and its dimension:
 same rank, same span, no direction in one that the other cannot reach.
 """
 
-import importlib.util
-
 import numpy as np
 import pytest
 from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
 
-if importlib.util.find_spec("cuequivariance") is None:  # pragma: no cover
-    pytest.skip("needs cuequivariance as a second oracle", allow_module_level=True)
-
-import cuequivariance as cue
+# `importorskip` rather than a guard plus a plain import: the lint job installs
+# the packages and the toolchain and nothing else, so a module-level import of
+# an optional oracle is an unresolved import there even though the skip means
+# it never runs.
+cue = pytest.importorskip(
+    "cuequivariance", reason="needs cuequivariance as a second oracle"
+)
 
 pytestmark = pytest.mark.cueq
 
