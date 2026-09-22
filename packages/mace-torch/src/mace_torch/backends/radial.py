@@ -77,9 +77,19 @@ def radial_basis(
         width = cutoff / max(num_basis - 1, 1)
         values = torch.exp(-((lengths - centres) ** 2) / (2.0 * width**2))
     elif kind == "chebyshev":
-        orders = torch.arange(0, num_basis, dtype=lengths.dtype, device=lengths.device)
+        # By the recurrence, not by `cos(n * acos(x))`. The two are the same
+        # function, and the closed form routes every value through `acos`,
+        # whose derivative is singular at the endpoints. The first derivative
+        # survives that, because the clamp zeroes it there; the second does
+        # not, and it comes back NaN at a pair exactly at the cutoff, which
+        # the neighbour list admits. Force training differentiates the force,
+        # so a single such pair poisons the whole gradient. The recurrence is
+        # polynomial and smooth to every order.
         folded = torch.clamp(2.0 * lengths / cutoff - 1.0, -1.0, 1.0)
-        values = torch.cos(orders * torch.acos(folded))
+        polynomials = [torch.ones_like(folded), folded]
+        for _ in range(2, num_basis):
+            polynomials.append(2.0 * folded * polynomials[-1] - polynomials[-2])
+        values = torch.cat(polynomials[:num_basis], dim=-1)
     else:
         raise ValueError(
             f"{kind!r} is not a radial basis this backend builds. The kinds "

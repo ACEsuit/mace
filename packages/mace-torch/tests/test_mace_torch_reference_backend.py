@@ -344,3 +344,60 @@ def test_the_skip_connection_advertises_the_weights_it_holds(backend):
     operation = backend.make_fully_connected_tp(descriptor)
     assert descriptor.weight_numel == operation.weight.numel()
     assert descriptor.weight_numel == operation.to_canonical()["weight"].numel()
+
+
+# ---------------------------------------------------------------------------
+# The radial bases, differentiated twice
+# ---------------------------------------------------------------------------
+
+#: Where a pair can legitimately sit and the arithmetic is most exposed. The
+#: cutoff itself is reachable: the neighbour list admits a distance equal to it.
+RADIAL_PROBES = (1e-8, 0.5, 2.5, 5.0 - 1e-12, 5.0)
+
+
+@pytest.mark.parametrize("kind", ["bessel", "gaussian", "chebyshev"])
+@pytest.mark.parametrize("length", RADIAL_PROBES)
+def test_a_radial_basis_differentiates_twice_everywhere_it_is_reached(
+    backend, kind, length
+):
+    """Force training differentiates the force, so a second derivative that
+    comes back NaN at one pair poisons the whole gradient and reports nothing.
+
+    The Chebyshev basis is why this exists. Evaluated as ``cos(n * acos(x))``
+    it is smooth in value and in first derivative, because the clamp zeroes the
+    gradient at the endpoints, and its *second* derivative was NaN at a pair
+    exactly at the cutoff. The polynomial itself has no singularity there; the
+    closed form put one in.
+    """
+    operation = backend.make_radial_basis(
+        RadialBasisDescriptor(kind=kind, num_basis=8, cutoff=5.0)
+    )
+    lengths = torch.tensor([[length]], requires_grad=True)
+    values = operation(lengths)
+    assert torch.isfinite(values).all()
+
+    (first,) = torch.autograd.grad(values.sum(), lengths, create_graph=True)
+    assert torch.isfinite(first).all(), f"{kind} first derivative at {length}"
+    (second,) = torch.autograd.grad(first.sum(), lengths)
+    assert torch.isfinite(second).all(), f"{kind} second derivative at {length}"
+
+
+def test_the_chebyshev_basis_is_the_polynomial_it_claims_to_be(backend):
+    """The recurrence and the closed form are the same function, away from the
+    endpoints where the closed form can be evaluated at all.
+
+    So exchanging one for the other is a change of arithmetic and not of model:
+    a trained checkpoint computes the same numbers under either.
+    """
+    from mace_torch.backends.radial import polynomial_cutoff
+
+    operation = backend.make_radial_basis(
+        RadialBasisDescriptor(kind="chebyshev", num_basis=8, cutoff=5.0)
+    )
+    lengths = torch.linspace(0.05, 4.95, 40).reshape(-1, 1)
+    folded = torch.clamp(2.0 * lengths / 5.0 - 1.0, -1.0, 1.0)
+    orders = torch.arange(0, 8, dtype=lengths.dtype)
+    closed_form = torch.cos(orders * torch.acos(folded)) * polynomial_cutoff(
+        lengths, 5.0
+    )
+    assert torch.allclose(operation(lengths), closed_form, rtol=0, atol=1e-12)
