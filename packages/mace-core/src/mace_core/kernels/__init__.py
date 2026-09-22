@@ -17,13 +17,18 @@ tree does the other way round:
   ``forward`` in three places. Here a descriptor goes in, an op comes out, and
   the op is frozen into the module tree.
 * **One canonical weight layout.** The frozen tree has five conversion command
-  line tools because each backend stores weights its own way.
+  line tools because each backend stores weights its own way. The layout
+  carries its normalization folded into the weight, so the scales a fresh
+  draw uses are part of the format and are stated here too.
 """
 
 from mace_core.kernels.canonical import (
     CANONICAL_LAYOUT,
     KERNEL_SPEC_VERSION,
     canonical_weight_shape,
+    fully_connected_tp_weight_scale,
+    linear_weight_scale,
+    symmetric_contraction_weight_scale,
 )
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
@@ -42,7 +47,9 @@ from mace_core.kernels.descriptors import (
 from mace_core.kernels.precision import PRECISIONS, Precision
 from mace_core.kernels.protocol import (
     DISPATCHED_OPS,
+    INTERNAL_WEIGHT_OPS,
     REFERENCE_ONLY_OPS,
+    InternalWeights,
     KernelBackend,
 )
 from mace_core.kernels.registry import (
@@ -57,6 +64,7 @@ __all__ = [
     "CANONICAL_LAYOUT",
     "DISPATCHED_OPS",
     "ENTRY_POINT_GROUPS",
+    "INTERNAL_WEIGHT_OPS",
     "KERNEL_SPEC_VERSION",
     "PRECISIONS",
     "REFERENCE_ONLY_OPS",
@@ -66,6 +74,7 @@ __all__ = [
     "Descriptor",
     "DiscoveredBackend",
     "FullyConnectedTPDescriptor",
+    "InternalWeights",
     "KernelBackend",
     "LinearDescriptor",
     "Precision",
@@ -76,5 +85,8 @@ __all__ = [
     "UnsupportedDescriptorError",
     "available_backends",
     "canonical_weight_shape",
+    "fully_connected_tp_weight_scale",
     "get_backend",
+    "linear_weight_scale",
+    "symmetric_contraction_weight_scale",
 ]
