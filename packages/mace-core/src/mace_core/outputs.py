@@ -32,6 +32,7 @@ from typing import Generic, TypeVar
 __all__ = [
     "CORE_FIELD_NAMES",
     "FIELD_BY_OBSERVABLE",
+    "OBSERVABLE_BY_FIELD",
     "MACEOutput",
     "TensorT",
 ]
@@ -118,12 +119,25 @@ class MACEOutput(Generic[TensorT]):
         return self.extras.get(name)
 
     def names(self) -> tuple[str, ...]:
-        """Every name that carries a value, core fields first, then ``extras``.
+        """Every **observable** name that carries a value, core fields first.
 
         A core field holding ``None`` was not computed and is left out, so this
         is what the model actually produced rather than what it could produce.
+
+        The names are the ones a declaration uses, not the storage fields, so
+        ``total_energy`` appears here as ``energy``. That is what makes
+        ``set(catalogue.names()) & set(output.names())`` mean what it reads as:
+        yielding the field name instead put the two vocabularies one alias
+        apart, and the intersection dropped the energy in silence while
+        ``"energy" in output`` was `True` the whole time. Use :meth:`get` to
+        reach a value, which accepts either spelling; ``getattr`` over these is
+        the one thing they are not for.
         """
-        present = [name for name in CORE_FIELD_NAMES if getattr(self, name) is not None]
+        present = [
+            OBSERVABLE_BY_FIELD.get(name, name)
+            for name in CORE_FIELD_NAMES
+            if getattr(self, name) is not None
+        ]
         present.extend(self.extras)
         return tuple(present)
 
@@ -132,7 +146,10 @@ class MACEOutput(Generic[TensorT]):
 
 
 #: The six fields that are part of the type. Derived from the dataclass rather
-#: than written out again, so the two cannot disagree.
+#: than written out again, so the two cannot disagree. These are **storage**
+#: names: `total_energy` appears here and `energy` does not. Correlating them
+#: with a catalogue's observable names needs :data:`OBSERVABLE_BY_FIELD`, or
+#: :meth:`MACEOutput.names`, which has already applied it.
 CORE_FIELD_NAMES: tuple[str, ...] = tuple(
     f.name for f in fields(MACEOutput) if f.name != "extras"
 )
@@ -143,3 +160,10 @@ CORE_FIELD_NAMES: tuple[str, ...] = tuple(
 #: grammar's special cases are keyed on (``energy`` + positions -> ``forces``).
 #: Written down as one entry rather than left to each consumer to remember.
 FIELD_BY_OBSERVABLE: dict[str, str] = {"energy": "total_energy"}
+
+#: The same map read the other way, for going from storage back to the name a
+#: declaration uses. Inverted here rather than written out, so an entry added
+#: to one direction cannot be missing from the other.
+OBSERVABLE_BY_FIELD: dict[str, str] = {
+    field: observable for observable, field in FIELD_BY_OBSERVABLE.items()
+}
