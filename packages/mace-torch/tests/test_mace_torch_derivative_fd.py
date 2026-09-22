@@ -142,13 +142,15 @@ def test_the_virial_is_minus_the_strain_gradient():
 
 @fp64_only
 def test_the_stress_and_the_virial_are_opposite():
-    """``stress * V == -virials``, to the rounding of one divide and multiply.
+    """``stress * V == -virials`` to one ulp of each component.
 
-    Both come from the same gradient in the same call, so the only thing
-    between them is dividing by the volume and multiplying it back. That is
-    not exact in floating point, so the bound is relative to the magnitudes
-    rather than zero: an earlier version of this test asserted exact equality
-    and passed only because those particular numbers happened to round back.
+    Both come from the same gradient in the same call, so the identity is
+    arithmetic rather than physical and any real deviation means one of them
+    took a different path. It is not bit-exact, though: the stress is the
+    virial divided by the volume, and multiplying it back does not in general
+    recover the number that went in. The bound is per component, because the
+    off-diagonal entries of this cell are numerically zero and one ulp of them
+    is seventeen orders of magnitude below one ulp of the diagonal.
     """
     engine = build_engine()
     positions, numbers, cell = crystal()
@@ -156,12 +158,18 @@ def test_the_stress_and_the_virial_are_opposite():
         build_graph(positions, numbers, cell, PERIODIC), compute=("stress", "virials")
     )
     volume = float(np.linalg.det(cell))
+    stress = result.stress.detach().numpy()
     virials = result.virials.detach().numpy()
-    residue = np.abs(result.stress.detach().numpy() * volume + virials).max()
-    bound = 1e-12 * max(np.abs(virials).max(), 1.0)
-    assert residue < bound, (
-        f"stress * V + virials is {residue:.3e}, above the {bound:.3e} that one "
-        f"divide and multiply can account for"
+    residue = np.abs(stress * volume + virials)
+    # `spacing(0)` is the smallest denormal, so a component that is exactly
+    # zero gets the ulp of the largest one instead of a bound nothing can meet.
+    allowed = np.where(
+        virials == 0.0,
+        np.spacing(np.abs(virials).max()),
+        np.spacing(np.abs(virials)),
+    )
+    assert np.all(residue <= allowed), (
+        f"stress * V + virials is {residue.max():.3e}, over one ulp per component"
     )
 
 
