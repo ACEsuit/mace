@@ -108,38 +108,27 @@ def test_bessel_is_finite_and_smooth_at_zero_length():
 # ChebyshevBasis -- T_n(x) on the raw distance, no rescaling by r_max
 # ===========================================================================
 
-#: x -> T_1..T_4 evaluated by the standard recurrence.
+#: x -> T_1..T_4 evaluated by the standard recurrence. The entry at 1.7 is
+#: characterization, not endorsement: the polynomials are evaluated on the raw
+#: distance, so at r > 1 they take the cosh branch and grow without bound. A
+#: port that mapped r into [-1, 1] would silently change every model trained
+#: with `--radial_type chebyshev`.
 CHEBYCHEV_REFERENCE = {
     0.3: [0.3, -0.8200000000000001, -0.7919999999999999, 0.3448],
     -0.5: [-0.5, -0.5, 1.0, -0.5],
     0.9: [0.9, 0.6200000000000001, 0.2160000000000002, -0.2312000000000003],
+    1.7: [1.7, 4.779999999999999, 14.552, 44.696799999999996],
 }
 
 
-def test_chebychev_basis_values():
-    basis = ChebyshevBasis(num_basis=4)
-    x = torch.tensor([[v] for v in CHEBYCHEV_REFERENCE])
-    assert_close(basis(x), list(CHEBYCHEV_REFERENCE.values()), "chebychev")
-
-
-def test_chebychev_diverges_outside_the_unit_interval():
-    """Characterization, not endorsement: the polynomials are evaluated on the
-    raw distance, so at r > 1 they take the cosh branch and grow without bound.
-    A port that mapped r into [-1, 1] would silently change every model trained
-    with `--radial_type chebyshev`."""
-    basis = ChebyshevBasis(num_basis=3)
-    # T_n(1.7): 1.7, 2*1.7^2-1 = 4.78, 4*1.7^3-3*1.7 = 14.552
-    assert_close(basis(torch.tensor([[1.7]])), [[1.7, 4.78, 14.552]], "beyond 1")
-
-
 @pytest.mark.parametrize("include_constant", [True, False])
-def test_chebyshev_basis_orders_with_and_without_the_constant(include_constant):
+def test_chebyshev_basis_values_with_and_without_the_constant(include_constant):
     """Both legacy classes read `T_1..T_n`; with the constant it is `T_0..T_{n-1}`.
     Same width either way."""
     basis = ChebyshevBasis(num_basis=4, include_constant=include_constant)
     x = torch.tensor([[v] for v in CHEBYCHEV_REFERENCE])
     out = basis(x)
-    assert out.shape == (3, 4)
+    assert out.shape == (4, 4)
     if include_constant:
         # T_0..T_3: the constant column, then the first three literals
         expected = [[1.0, *values[:3]] for values in CHEBYCHEV_REFERENCE.values()]
@@ -455,44 +444,10 @@ def test_radial_mlp_single_layer_has_no_activation():
 
 
 # ===========================================================================
-# Differentiability: force training runs grad(grad(E)) through every one of these
+# Differentiability: force training runs grad(grad(E)) through the pair term.
+# The bases, cutoff and distance transforms are gradchecked as one composed
+# block in `test_mace_torch_embedding.py`.
 # ===========================================================================
-
-GRADCHECK_R_MAX = 3.0
-
-
-def _basis_times_cutoff(kind: str):
-    cutoff = PolynomialCutoff(r_max=GRADCHECK_R_MAX, polynomial_order=6)
-    basis = {
-        "bessel": lambda: BesselBasis(r_max=GRADCHECK_R_MAX, num_basis=4),
-        "gaussian": lambda: GaussianBasis(r_max=GRADCHECK_R_MAX, num_basis=5),
-        "chebyshev": lambda: ChebyshevBasis(num_basis=4),
-    }[kind]()
-    return lambda lengths: basis(lengths) * cutoff(lengths)
-
-
-@fp64_only
-@pytest.mark.parametrize("kind", ["bessel", "gaussian", "chebyshev"])
-def test_basis_times_cutoff_passes_gradcheck_and_gradgradcheck(kind):
-    function = _basis_times_cutoff(kind)
-    # strictly inside the cutoff and away from zero, where every term is smooth
-    lengths = torch.tensor([[0.7], [1.4], [2.6]], requires_grad=True)
-    assert torch.autograd.gradcheck(function, (lengths,))
-    assert torch.autograd.gradgradcheck(function, (lengths,))
-
-
-@fp64_only
-@pytest.mark.parametrize("transform", [AgnesiTransform, SoftTransform])
-def test_distance_transforms_pass_gradcheck_and_gradgradcheck(transform):
-    module = transform()
-    _, node_atomic_numbers, edge_index = _hc_edge([0.0, 0.0, 0.0])
-    lengths = torch.tensor([[0.7], [1.1], [2.6]], requires_grad=True)
-
-    def function(lengths_):
-        return module(lengths_, node_atomic_numbers, edge_index)
-
-    assert torch.autograd.gradcheck(function, (lengths,))
-    assert torch.autograd.gradgradcheck(function, (lengths,))
 
 
 @fp64_only

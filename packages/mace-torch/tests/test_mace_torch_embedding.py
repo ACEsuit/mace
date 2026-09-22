@@ -82,37 +82,30 @@ def test_node_embedding_initialisation_scale():
 
 @pytest.mark.parametrize("radial_basis", RADIAL_BASES)
 @pytest.mark.parametrize("distance_transform", DISTANCE_TRANSFORMS)
-def test_block_returns_two_tensors_in_both_modes(
+def test_apply_cutoff_decides_whether_the_features_carry_the_envelope(
     radial_basis, distance_transform, dtype
 ):
-    """Features `[n_edges, num_basis]` and envelope `[n_edges, 1]`, whatever
-    the flag; the envelope is the cutoff module on the raw lengths."""
-    lengths, node_atomic_numbers, edge_index = _embedding_inputs()
-    for apply_cutoff in (True, False):
-        block = _block(radial_basis, distance_transform, apply_cutoff=apply_cutoff)
-        features, cutoff = block(lengths, node_atomic_numbers, edge_index)
-        assert features.shape == (3, 4)
-        assert cutoff.shape == (3, 1)
-        assert features.dtype == cutoff.dtype == dtype
-        assert block.num_basis == 4
-        assert torch.equal(cutoff, block.cutoff(lengths))
-
-
-@pytest.mark.parametrize("radial_basis", RADIAL_BASES)
-@pytest.mark.parametrize("distance_transform", DISTANCE_TRANSFORMS)
-def test_apply_cutoff_decides_whether_the_features_carry_the_envelope(
-    radial_basis, distance_transform
-):
-    """The default (the CLI default) pre-multiplies; the other mode hands the
-    bare basis over and the consumer's product is bit-for-bit the default."""
+    """Features `[n_edges, num_basis]` and envelope `[n_edges, 1]` in both
+    modes, the envelope being the cutoff module on the raw lengths. The default
+    (the CLI default) pre-multiplies; the other mode hands the bare basis over
+    and the consumer's product is bit-for-bit the default."""
     lengths, node_atomic_numbers, edge_index = _embedding_inputs()
     assert _block().apply_cutoff is True
-    applied, _ = _block(radial_basis, distance_transform)(
-        lengths, node_atomic_numbers, edge_index
-    )
-    bare, cutoff = _block(radial_basis, distance_transform, apply_cutoff=False)(
-        lengths, node_atomic_numbers, edge_index
-    )
+    applying = _block(radial_basis, distance_transform)
+    deferring = _block(radial_basis, distance_transform, apply_cutoff=False)
+    applied, applied_cutoff = applying(lengths, node_atomic_numbers, edge_index)
+    bare, cutoff = deferring(lengths, node_atomic_numbers, edge_index)
+
+    for block, features, envelope in (
+        (applying, applied, applied_cutoff),
+        (deferring, bare, cutoff),
+    ):
+        assert features.shape == (3, 4)
+        assert envelope.shape == (3, 1)
+        assert features.dtype == envelope.dtype == dtype
+        assert block.num_basis == 4
+        assert torch.equal(envelope, block.cutoff(lengths))
+
     assert torch.equal(applied, bare * cutoff)
     # the envelope is not all ones inside the cutoff
     assert not torch.equal(applied, bare)

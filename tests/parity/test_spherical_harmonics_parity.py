@@ -39,18 +39,9 @@ def _vectors(seed: int, count: int = 200) -> torch.Tensor:
 
 
 @pytest.mark.parametrize("lmax", list(range(0, 8)))
-def test_values_match_on_non_unit_vectors(lmax, fp64):
-    vectors = _vectors(seed=lmax)
-    assert_parity(
-        spherical_harmonics(vectors, lmax),
-        legacy_spherical_harmonics(lmax)(vectors),
-        f"lmax={lmax}",
-    )
-
-
-@pytest.mark.parametrize("lmax", [1, 3, 5])
-def test_values_match_on_unit_vectors(lmax, fp64):
-    vectors = torch.nn.functional.normalize(_vectors(seed=10 + lmax), dim=-1)
+def test_values_match_on_unit_and_non_unit_vectors(lmax, fp64):
+    non_unit = _vectors(seed=lmax)
+    vectors = torch.cat([non_unit, torch.nn.functional.normalize(non_unit, dim=-1)])
     assert_parity(
         spherical_harmonics(vectors, lmax),
         legacy_spherical_harmonics(lmax)(vectors),
