@@ -24,6 +24,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from mace_torch import __version__
+from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train.data_stage import DEFAULT_PRECISION
@@ -53,6 +54,7 @@ def run_model_stage(
     *,
     precision: PrecisionConfig = DEFAULT_PRECISION,
     supports_float64: bool = True,
+    initialize: bool = True,
 ) -> BuiltModel[nn.Module, DataLoader]:
     """Build the model the configuration describes, scaled by the data.
 
@@ -64,6 +66,10 @@ def run_model_stage(
         precision: What the model computes and accumulates in.
         supports_float64: Whether the target device has float64 at all. A
             device that does not degrades the accumulation and says so.
+        initialize: Draw a fresh set of weights. ``False`` leaves every
+            weighted op at zero, which is what a model about to be loaded from
+            a checkpoint wants and what a model about to be trained must not
+            have: zeros multiply to zeros and so does the gradient.
 
     Returns:
         The model wrapped in its derivative engine, with the bundle it was
@@ -123,6 +129,12 @@ def run_model_stage(
             "differentiates an energy. A model without one is an inference "
             "path this stage does not build yet."
         )
+    if initialize:
+        # Seeded from the run, so the same configuration and the same seed
+        # rebuild the same model. The walk is over the model rather than the
+        # engine, so wrapping it in one more layer later cannot change a
+        # weight.
+        initialize_model_weights(model, config.runtime.seed)
     engine = DerivativeEngine(model, energy, None, inputs=catalogue.inputs)
     return BuiltModel(
         model=engine,
