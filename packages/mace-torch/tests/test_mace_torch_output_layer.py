@@ -33,13 +33,10 @@ E0S = ResolvedE0s({"default": {1: -13.6, 8: -2040.0}})
 
 
 def spec(name, irreps, per_atom=False, units="eV"):
-    return ObservableSpec(
-        name=name,
-        irreps=irreps,
-        per_atom=per_atom,
-        units=units,
-        normalization="none",
-    )
+    # No scaling field: a head's scale is `ScaleShiftSpec`'s, and a per-observable
+    # one could not express it anyway, since a derivative follows the scale of
+    # what it was differentiated from and has none of its own.
+    return ObservableSpec(name=name, irreps=irreps, per_atom=per_atom, units=units)
 
 
 ENERGY = spec("energy", "0e")
