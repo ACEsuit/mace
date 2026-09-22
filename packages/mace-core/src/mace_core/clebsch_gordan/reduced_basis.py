@@ -215,6 +215,23 @@ def _canonical(path: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(scaled)
 
 
+def _no_paths(
+    irreps_in: Irreps, correlation: int, target: Irrep
+) -> tuple[np.ndarray, tuple[CouplingTree, ...]]:
+    """A basis of no paths, in the shape the caller expects one in.
+
+    Two different situations reach it and neither is an error: the output irrep
+    is not reachable at all, or it is reachable and everything reaching it is
+    antisymmetric. Both mean the symmetric product does not carry it, and a
+    caller iterating over output irreps wants a zero-path array rather than an
+    exception from one slot of the loop.
+    """
+    shape = (0, target.dimension, *(irreps_in.dimension,) * correlation)
+    empty = np.zeros(shape, dtype=np.float64)
+    empty.flags.writeable = False
+    return empty, ()
+
+
 @cache
 def _basis_for(
     irreps_in_text: str, correlation: int, target_text: str
@@ -222,12 +239,20 @@ def _basis_for(
     irreps_in = Irreps.parse(irreps_in_text)
     target = Irreps.parse(target_text).terms[0][1]
     enumerated = list(_paths(irreps_in, correlation, target))
+    empty = _no_paths(irreps_in, correlation, target)
     if not enumerated:
-        shape = (0, target.dimension, *(irreps_in.dimension,) * correlation)
-        return np.zeros(shape, dtype=np.float64), ()
+        return empty
     trees = [tree for tree, _ in enumerated]
     symmetrized = [symmetrize(path, correlation) for _, path in enumerated]
     kept = _independent([block.reshape(-1) for block in symmetrized])
+    if not kept:
+        # Paths that exist and vanish under symmetrization. An irrep can be
+        # reachable and still be carried entirely by the antisymmetric part,
+        # `1o x 1o -> 1e` being the cross product, and a symmetric product has
+        # none of it. That is a basis of no paths, not a failure: a caller
+        # asking for such an output irrep has asked for something the symmetric
+        # product does not contain, and gets an answer saying so.
+        return empty
     basis = np.stack([_canonical(symmetrized[position]) for position in kept])
     basis.flags.writeable = False
     return basis, tuple(trees[position] for position in kept)
@@ -326,12 +351,14 @@ def _full_basis_for(
     irreps_in = Irreps.parse(irreps_in_text)
     target = Irreps.parse(target_text).terms[0][1]
     enumerated = list(_paths(irreps_in, correlation, target))
+    empty = _no_paths(irreps_in, correlation, target)
     if not enumerated:
-        shape = (0, target.dimension, *(irreps_in.dimension,) * correlation)
-        return np.zeros(shape, dtype=np.float64), ()
+        return empty
     trees = [tree for tree, _ in enumerated]
     paths = [path for _, path in enumerated]
     kept = _independent([path.reshape(-1) for path in paths])
+    if not kept:
+        return empty
     basis = np.stack([_canonical(paths[position]) for position in kept])
     basis.flags.writeable = False
     return basis, tuple(trees[position] for position in kept)
