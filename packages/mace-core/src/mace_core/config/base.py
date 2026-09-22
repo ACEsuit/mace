@@ -370,7 +370,10 @@ class ConfigSection(BaseModel):
     is held as given and exported under the variant's kind.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    # inf/nan are exported as floats (JSON constants Infinity, NaN) rather than
+    # pydantic's default null, which would store a different value in the model
+    # metadata; `metadata._Record` writes them the same way.
+    model_config = ConfigDict(extra="forbid", ser_json_inf_nan="constants")
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:

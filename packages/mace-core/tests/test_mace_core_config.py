@@ -2,6 +2,7 @@
 overrides without effect, and the resolved export's fixed point."""
 
 import json
+import math
 import re
 import subprocess
 import sys
@@ -574,6 +575,37 @@ def test_fixed_point_holds_through_toml_when_nothing_is_none(tmp_path):
     assert "null" not in json.dumps(first)
     for extension in (".toml", ".yaml", ".json"):
         assert_fixed_point(tmp_path, first, extension)
+
+
+def test_inf_and_nan_survive_the_exports_in_every_format(tmp_path):
+    # pydantic's JSON mode writes them as null by default, which would put a
+    # different value into the model metadata. Each format spells them its own
+    # way (JSON constants, YAML .inf/.nan, TOML inf/nan); nan != nan, so the
+    # round trip is compared as JSON text.
+    config = DemoConfig.load(
+        write_config(tmp_path, ".yaml"),
+        ["--model.radial.cutoff", "inf", "--stage_two.energy_weight", "nan"],
+    )
+    resolved = config.to_resolved_dict()
+    assert resolved["model"]["radial"]["cutoff"] == math.inf
+    assert math.isnan(resolved["stage_two"]["energy_weight"])
+    assert math.isnan(config.to_user_dict()["stage_two"]["energy_weight"])
+    text = json.dumps(resolved)
+    assert "null" not in text and "Infinity" in text and "NaN" in text
+    for extension, body in [
+        (".json", text),
+        (".yaml", yaml.safe_dump(resolved)),
+        (".toml", "[model.radial]\ncutoff = inf\n[stage_two]\nenergy_weight = nan\n"),
+    ]:
+        path = tmp_path / f"special{extension}"
+        path.write_text(body, encoding="utf-8")
+        second = DemoConfig.load(path).to_resolved_dict()
+        assert second["model"]["radial"]["cutoff"] == math.inf, extension
+        assert math.isnan(second["stage_two"]["energy_weight"]), extension
+    assert (
+        json.dumps(DemoConfig.load(tmp_path / "special.json").to_resolved_dict())
+        == text
+    )
 
 
 class LenientSection(BaseModel):
