@@ -39,14 +39,11 @@ from mace_core.config.runtime import RuntimeConfig
 from mace_core.config.section import FrozenSection
 from mace_core.config.training import TrainingConfig
 
-__all__ = ["ENERGYLESS_MODELS", "FinetuneConfig", "PseudolabelConfig", "ResolvedConfig"]
+__all__ = ["ENERGY_OBSERVABLE", "FinetuneConfig", "PseudolabelConfig", "ResolvedConfig"]
 
-#: Models with no atomic-energy term, which therefore cannot carry E0s. Named
-#: here rather than inferred, so adding one is a deliberate line and the error
-#: message can list them.
-ENERGYLESS_MODELS: frozenset[str] = frozenset(
-    {"AtomicDipolesMACE", "AtomicDielectricMACE"}
-)
+#: The observable an isolated-atom energy shifts. A model that does not declare
+#: it has no atomic-energy term for an E0 to reach, whatever it is called.
+ENERGY_OBSERVABLE = "energy"
 
 
 class PseudolabelConfig(FrozenSection):
@@ -120,7 +117,14 @@ class ResolvedConfig(ReforgeBaseConfig):
 
     @model_validator(mode="after")
     def _a_model_without_atomic_energies_cannot_carry_e0s(self) -> ResolvedConfig:
-        if self.model.model not in ENERGYLESS_MODELS:
+        """Read off the declared observables, not off the model's name.
+
+        Legacy asks which class it is about to build, so the rule is a list of
+        class names that goes stale the moment a model is added. What makes an
+        E0 meaningless is that there is no energy for it to shift, and the
+        declaration says that directly.
+        """
+        if ENERGY_OBSERVABLE in self.model.observables:
             return self
         offenders = sorted(
             f"data.heads.{name}.e0s"
@@ -129,10 +133,10 @@ class ResolvedConfig(ReforgeBaseConfig):
         )
         if offenders:
             raise ValueError(
-                f"model.model is {self.model.model!r}, which has no "
-                f"atomic-energy term, and {offenders} set isolated-atom "
-                f"energies. There is nothing for them to shift. The models "
-                f"that cannot carry E0s are {sorted(ENERGYLESS_MODELS)}."
+                f"{offenders} set isolated-atom energies and "
+                f"model.observables does not declare {ENERGY_OBSERVABLE!r}, so "
+                f"there is no energy for them to shift. Declare it, or drop "
+                f"the E0s."
             )
         return self
 
