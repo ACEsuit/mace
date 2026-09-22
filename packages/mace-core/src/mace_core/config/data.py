@@ -18,13 +18,14 @@ module's.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field
 
 from mace_core.config.e0s import E0sIsolatedAtoms, E0Spec
 from mace_core.config.section import FrozenSection
 
-__all__ = ["DataConfig", "GraphInputKeys", "HeadDataConfig"]
+__all__ = ["DataConfig", "GraphInputKeys", "HeadDataConfig", "TransformSpec"]
 
 
 class GraphInputKeys(FrozenSection):
@@ -43,6 +44,23 @@ class GraphInputKeys(FrozenSection):
     elec_temp: str = "elec_temp"
     total_spin: str = "total_spin"
     total_charge: str = "total_charge"
+
+
+class TransformSpec(FrozenSection):
+    """One data transform, by the name it is registered under.
+
+    A name and a settings mapping rather than a kind written as a key, because
+    the transforms are an open registry: a package this schema never heard of
+    registers one, and a closed union could not name it.
+
+    Args:
+        name: The registered name.
+        settings: What to pass the transform's factory. Validated by the
+            factory when the run is configured, not when the data is read.
+    """
+
+    name: str
+    settings: dict[str, Any] = Field(default_factory=dict)
 
 
 class HeadDataConfig(FrozenSection):
@@ -90,6 +108,9 @@ class DataConfig(FrozenSection):
             for a derivative against.
         num_workers: Loader worker processes.
         pin_memory: Whether the loader pins its batches.
+        transforms: The data transforms, in the order they apply. Order is
+            part of the meaning: shifting energies and then masking on a
+            threshold is not the same run as masking and then shifting.
         skip_evaluate_heads: Heads left out of the evaluation tables, for a
             replay head whose errors are not the run's subject.
     """
@@ -103,3 +124,4 @@ class DataConfig(FrozenSection):
     num_workers: int = 0
     pin_memory: bool = True
     skip_evaluate_heads: tuple[str, ...] = ()
+    transforms: tuple[TransformSpec, ...] = ()

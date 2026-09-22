@@ -18,15 +18,29 @@ from mace_torch.data.graphs import (
     target_specs,
     targets_from_configuration,
 )
+from mace_torch.data.transforms import (
+    TRANSFORM_REGISTRY,
+    Transform,
+    TransformError,
+    UnknownTransformError,
+    apply_transforms,
+    register_transform,
+)
 
 __all__ = [
+    "TRANSFORM_REGISTRY",
     "GraphDataset",
     "MissingTargetError",
     "TargetSpec",
     "TrainingBatch",
+    "Transform",
+    "TransformError",
+    "UnknownTransformError",
+    "apply_transforms",
     "collate_training",
     "graph_from_configuration",
     "make_loader",
+    "register_transform",
     "target_specs",
     "targets_from_configuration",
 ]

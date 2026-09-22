@@ -37,6 +37,7 @@ from mace_core.stages import DataBundle
 from torch.utils.data import DataLoader
 
 from mace_torch.data import GraphDataset, make_loader, target_specs
+from mace_torch.data.transforms import apply_transforms
 
 __all__ = ["DEFAULT_PRECISION", "DataStageError", "run_data_stage"]
 
@@ -219,6 +220,14 @@ def _read_head(
         raise DataStageError(f"head {name!r} read {head.train_file} and it is empty.")
     if pseudolabel is not None:
         train = list(pseudolabel(train))
+    # Before the split and before the statistics. A scale computed from
+    # energies that are about to be shifted is wrong by the shift, and a
+    # validation set taken before the transform would be scored on a different
+    # target than the one the model trains on.
+    train = apply_transforms(
+        train,
+        [(spec.name, spec.settings) for spec in config.data.transforms],
+    )
 
     if head.valid_file is not None:
         valid = list(_open(head.valid_file, name, key_spec).iter_range())
