@@ -32,6 +32,7 @@ from mace_core.config.training import (
     StageConfig,
 )
 from mace_core.stages import EpochRecord, TrainedModel
+from mace_core.tables import Row, error_table
 from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
@@ -44,12 +45,14 @@ from mace_torch.train.ema import ExponentialMovingAverage
 from mace_torch.train.loss import build_loss
 from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
 from mace_torch.train.optimizers import build_optimizer, build_scheduler
+from mace_torch.train.tracking import Tracker, epoch_values, open_tracker
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "evaluate",
     "evaluate_heads",
+    "report_errors",
     "run_train_stage",
     "selection_loss",
     "train_one_epoch",
@@ -199,6 +202,7 @@ def run_train_stage(
     requested = _requested_names(built)
     specs = metric_specs(built.outputs)
     loss = build_loss(built.outputs, config.loss)
+    tracker = open_tracker(config)
     optimizer = build_optimizer(model, config.training)
     scheduler = build_scheduler(optimizer, config.training.scheduler)
     ema = (
@@ -270,6 +274,7 @@ def run_train_stage(
                     compute=requested.derivatives,
                 )
                 _log_validation(epoch, per_head)
+                tracker.log(epoch_values(per_head), step=epoch)
                 valid_loss = selection_loss(per_head, config.training.checkpoint_metric)
                 if best_loss is None or valid_loss < best_loss:
                     best_loss, best_epoch, since_best = valid_loss, epoch, 0
@@ -312,6 +317,8 @@ def run_train_stage(
             ):
                 parameter.copy_(shadow)
 
+    report_errors(config, built, model, loss, specs, tracker, device=device)
+    tracker.finish()
     return TrainedModel(
         model=model,
         metadata=built.metadata,
@@ -319,6 +326,82 @@ def run_train_stage(
         best_epoch=best_epoch,
         checkpoint_path=written,
     )
+
+
+def report_errors(
+    config: ResolvedConfig,
+    built: TorchBuiltModel,
+    model: nn.Module,
+    loss: torch.nn.Module,
+    specs: Sequence[MetricSpec],
+    tracker: Tracker,
+    *,
+    device: str = "cpu",
+) -> str:
+    """Evaluate every reported loader once and log the table.
+
+    Returns the rendered table as well as logging it, so a caller that wants
+    to write it beside the model does not evaluate the run a second time to
+    get it.
+
+    The test sets get their own table, as they do in the frozen tree: they are
+    not rows of the same table because a reader comparing a validation row
+    against a test row across a table boundary is doing it deliberately.
+    """
+    requested = _requested_names(built)
+    rows = [
+        Row(
+            name=name,
+            head=name.split("_", 1)[1],
+            metrics=evaluate(
+                model,
+                batches,
+                loss,
+                specs,
+                device=device,
+                compute=requested.derivatives,
+            ),
+        )
+        for name, batches in built.data.reported_loaders().items()
+    ]
+    table = error_table(
+        config.runtime.error_table,
+        rows,
+        skip_heads=config.runtime.skip_evaluate_heads,
+    )
+    logger.info("Errors on the training and validation sets:\n%s", table)
+    tracker.summary(
+        {
+            f"final_{row.name}_{name}": value
+            for row in rows
+            for name, value in row.metrics.items()
+        }
+    )
+    if built.data.test_loaders:
+        test_rows = [
+            Row(
+                name=name,
+                head=name,
+                metrics=evaluate(
+                    model,
+                    batches,
+                    loss,
+                    specs,
+                    device=device,
+                    compute=requested.derivatives,
+                ),
+            )
+            for name, batches in built.data.test_loaders.items()
+        ]
+        logger.info(
+            "Errors on the test sets:\n%s",
+            error_table(
+                config.runtime.error_table,
+                test_rows,
+                skip_heads=config.runtime.skip_evaluate_heads,
+            ),
+        )
+    return table
 
 
 @dataclass(frozen=True)

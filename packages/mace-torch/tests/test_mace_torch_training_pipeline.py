@@ -373,3 +373,67 @@ def test_a_two_head_run_trains(tmp_path):
     trained = run_train_stage(config, built)
     assert len(trained.history) == 2
     assert trained.best_epoch is not None
+
+
+@fp64_only
+def test_a_finished_run_prints_an_error_table(tmp_path, caplog):
+    """The end-to-end contract: a run says how well it did, per loader."""
+    config = two_head_configuration(tmp_path)
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    with caplog.at_level("INFO"):
+        run_train_stage(config, built)
+    printed = "\n".join(record.message for record in caplog.records)
+    assert "RMSE E / meV / atom" in printed
+    for row in ("train_small", "train_large", "valid_small", "valid_large"):
+        assert row in printed
+
+
+@fp64_only
+def test_a_skipped_head_is_left_out_of_the_table(tmp_path, caplog):
+    config = two_head_configuration(tmp_path)
+    config = config.model_copy(
+        update={
+            "runtime": config.runtime.model_copy(
+                update={"skip_evaluate_heads": ("small",)}
+            )
+        }
+    )
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    with caplog.at_level("INFO"):
+        run_train_stage(config, built)
+    printed = "\n".join(record.message for record in caplog.records)
+    assert "valid_large" in printed
+    assert "valid_small" not in printed
+
+
+@fp64_only
+def test_every_validation_log_line_names_its_head(tmp_path, caplog):
+    """Named on every line, because the lines are read next to the other
+    heads' and next to the next epoch's."""
+    config = two_head_configuration(tmp_path)
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    with caplog.at_level("INFO"):
+        run_train_stage(config, built)
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("epoch ")
+    ]
+    assert lines
+    assert all("head small" in line or "head large" in line for line in lines)
+
+
+def test_an_unknown_error_table_is_refused_when_the_run_is_configured():
+    """Not when the table is rendered, which is after the training it reports
+    on."""
+    with pytest.raises(ValueError, match="is not an error table"):
+        ResolvedConfig.model_validate(
+            {
+                "runtime": {"error_table": "PerAtomQ95"},
+                "data": {"heads": {"a": {"train_file": "x.xyz"}}},
+                "model": {"observables": ["energy"]},
+            }
+        )

@@ -46,6 +46,12 @@ dependencies = [
 # torch whenever torch is installed, so it is registered from here.
 vesin = "mace_torch.neighbors.vesin_backend:VesinBackend"
 
+[project.optional-dependencies]
+# Reporting a run to Weights and Biases. Optional in the sense that matters:
+# the import happens inside the tracker's constructor, so a run with tracking
+# off never touches the package.
+wandb = ["wandb"]
+
 [project.entry-points."mace.kernel_backends.torch"]
 # The mandatory reference backend, discovered the same way any third-party one
 # is: through an entry point, with nothing in `mace_core` naming it.

@@ -19,7 +19,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+from pydantic import field_validator
+
 from mace_core.config.section import FrozenSection
+from mace_core.config.tracking import WandbConfig
+from mace_core.tables import TABLE_TYPES
 
 __all__ = ["LOG_LEVELS", "WORK_DIR_LAYOUT", "RuntimeConfig"]
 
@@ -55,11 +59,17 @@ class RuntimeConfig(FrozenSection):
         launcher: How a distributed run was launched, when that has to be
             recorded to reconstruct the environment.
         log_level: Verbosity of the run's own logging.
-        error_table: Which error table the evaluation prints.
+        error_table: Which error table the evaluation prints. Validated here
+            rather than where it is rendered, because the render happens after
+            the training it reports on.
+        skip_evaluate_heads: Heads left out of the error table. Matched against
+            the head and not against the row's name, so a head whose name is
+            part of another's does not take it with it.
         plot: Whether to write training curves.
         plot_frequency: Epochs between plots. ``0`` means only at the end,
             which is what makes a separate "plot at all" flag worth keeping:
             the two answer different questions.
+        wandb: Reporting to an experiment tracker, off by default.
         restart_latest: Resume from the newest checkpoint in the run directory.
         keep_checkpoints: How many checkpoints to retain. ``None`` keeps all.
         save_all_checkpoints: Retain every epoch's checkpoint regardless of
@@ -75,11 +85,22 @@ class RuntimeConfig(FrozenSection):
     launcher: str | None = None
     log_level: LogLevel = "INFO"
     error_table: str = "PerAtomRMSE"
+    skip_evaluate_heads: tuple[str, ...] = ()
     plot: bool = False
     plot_frequency: int = 0
+    wandb: WandbConfig = WandbConfig()
     restart_latest: bool = False
     keep_checkpoints: int | None = None
     save_all_checkpoints: bool = False
+
+    @field_validator("error_table")
+    @classmethod
+    def _known_error_table(cls, value: str) -> str:
+        if value not in TABLE_TYPES:
+            raise ValueError(
+                f"{value!r} is not an error table. They are {sorted(TABLE_TYPES)}."
+            )
+        return value
 
     def directory(self, which: str) -> Path:
         """One of the run's output directories, by its name in the layout.
