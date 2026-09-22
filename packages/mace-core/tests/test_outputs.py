@@ -11,7 +11,13 @@ import sys
 
 import numpy as np
 import pytest
-from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
+from mace_core.observables import load_default_catalogue
+from mace_core.outputs import (
+    CORE_FIELD_NAMES,
+    FIELD_BY_OBSERVABLE,
+    OBSERVABLE_BY_FIELD,
+    MACEOutput,
+)
 
 
 def test_the_six_core_fields_are_the_declared_ones():
@@ -38,12 +44,13 @@ def test_core_fields_round_trip_numpy_arrays():
     output = MACEOutput(total_energy=np.array([-1.5]), forces=forces)
     assert output.get("total_energy") is output.total_energy
     assert output.get("forces") is forces
-    assert output.names() == ("total_energy", "forces")
+    assert output.names() == ("energy", "forces")
 
 
 def test_energy_reaches_the_total_energy_field_under_either_name():
     """The one place an observable name and a field name differ."""
     assert FIELD_BY_OBSERVABLE == {"energy": "total_energy"}
+    assert OBSERVABLE_BY_FIELD == {"total_energy": "energy"}
     output = MACEOutput(total_energy=np.array([2.0]))
     assert output.get("energy") is output.get("total_energy")
     assert "energy" in output
@@ -116,3 +123,35 @@ def test_a_name_that_is_not_a_core_field_is_fine_in_extras():
     while the field that owns it stays `None`. v1 renames that key instead."""
     out = MACEOutput(extras={"latent_charges": np.zeros(3)})
     assert out.names() == ("latent_charges",)
+
+
+def test_membership_and_listing_agree_on_every_name():
+    """The two accessors have to use one vocabulary.
+
+    They did not: `"energy" in output` resolved the alias and `names()` yielded
+    the storage field, so a consumer intersecting a catalogue's names with an
+    output's dropped the energy while membership said it was there. Asserted
+    over both directions rather than over the one alias, so a second entry in
+    `FIELD_BY_OBSERVABLE` cannot reopen it.
+    """
+    output = MACEOutput(
+        total_energy=np.array([-1.5]),
+        forces=np.zeros((4, 3)),
+        extras={"latent_charges": np.zeros(4)},
+    )
+    for name in output.names():
+        assert name in output, name
+        assert output.get(name) is not None, name
+    for observable, field in FIELD_BY_OBSERVABLE.items():
+        assert field not in output.names()
+        if getattr(output, field) is not None:
+            assert observable in output.names()
+
+
+def test_a_catalogue_name_finds_its_value_in_an_output():
+    """The correlation the two vocabularies exist to allow."""
+    catalogue = load_default_catalogue()
+    output = MACEOutput(total_energy=np.array([-1.5]), forces=np.zeros((4, 3)))
+    shared = set(catalogue.names()) & set(output.names())
+    assert shared == {"energy", "forces"}
+    assert all(output.get(name) is not None for name in shared)
