@@ -34,7 +34,9 @@ __all__ = [
 Scaling = Literal["std", "rms_forces", "rms_dipoles"]
 
 
-def _shift_counts(cell: np.ndarray, pbc: Sequence[bool], cutoff: float) -> np.ndarray:
+def _shift_counts(
+    cell: np.ndarray | None, pbc: Sequence[bool], cutoff: float
+) -> np.ndarray:
     """How many periodic images to search along each lattice vector.
 
     The spacing between lattice planes normal to reciprocal vector ``b`` is
