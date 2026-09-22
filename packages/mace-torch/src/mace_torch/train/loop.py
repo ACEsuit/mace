@@ -35,7 +35,7 @@ from mace_torch.data import TrainingBatch
 from mace_torch.train.checkpoint import RunState, read_run_state, write_model
 from mace_torch.train.checkpoint import write_run_state as _write_run_state
 from mace_torch.train.ema import ExponentialMovingAverage
-from mace_torch.train.loss import WeightedLoss, weighted_loss
+from mace_torch.train.loss import build_loss
 from mace_torch.train.optimizers import build_optimizer, build_scheduler
 
 __all__ = ["evaluate", "run_train_stage", "train_one_epoch"]
@@ -44,7 +44,7 @@ __all__ = ["evaluate", "run_train_stage", "train_one_epoch"]
 def train_one_epoch(
     model: nn.Module,
     batches: Iterable[TrainingBatch],
-    loss: WeightedLoss,
+    loss: torch.nn.Module,
     optimizer: Optimizer,
     *,
     device: str = "cpu",
@@ -84,7 +84,7 @@ def train_one_epoch(
 def evaluate(
     model: nn.Module,
     batches: Iterable[TrainingBatch],
-    loss: WeightedLoss,
+    loss: torch.nn.Module,
     *,
     device: str = "cpu",
     compute: tuple[str, ...] = ("forces",),
@@ -132,7 +132,7 @@ def run_train_stage(
     """
     model = built.model.to(device)
     requested = _requested_names(built)
-    loss = weighted_loss(config.loss, requested.names, requested.per_atom)
+    loss = build_loss(built.outputs, config.loss)
     optimizer = build_optimizer(model, config.training)
     scheduler = build_scheduler(optimizer, config.training.scheduler)
     ema = (
@@ -171,9 +171,7 @@ def run_train_stage(
     for epoch in range(state.epoch, config.training.max_num_epochs):
         if _starts_stage_two(config, epoch) and stage == "one":
             stage = "two"
-            loss = weighted_loss(
-                config.loss, requested.names, requested.per_atom, stage_two=True
-            )
+            loss = build_loss(built.outputs, config.loss, stage_two=True)
             for group in optimizer.param_groups:
                 group["lr"] = config.training.stage_two.lr
 

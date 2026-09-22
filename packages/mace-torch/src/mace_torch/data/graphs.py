@@ -34,7 +34,7 @@ __all__ = [
 
 
 class MissingTargetError(KeyError):
-    """A declared observable the structure carries no value for."""
+    """A declared observable no structure in the dataset carries a value for."""
 
 
 @dataclass(frozen=True)
@@ -136,31 +136,40 @@ def graph_from_configuration(
 
 
 def targets_from_configuration(
-    configuration: Configuration, specs: Sequence[TargetSpec]
-) -> dict[str, np.ndarray]:
-    """The reference values, shaped so a batch is a concatenation.
+    configuration: Configuration, specs: Sequence[TargetSpec], num_atoms: int
+) -> tuple[dict[str, np.ndarray], dict[str, float]]:
+    """The reference values and how much each counts, for one structure.
 
     A per-graph value gets a leading axis of one, so every target joins along
     axis zero whether it is one number per structure or three per atom. Without
     it the two kinds need two code paths in the collation, and the one that is
     wrong stays quiet.
 
-    Raises:
-        MissingTargetError: Naming the key and what declared it. Training a
-            head against a property the file does not carry is the failure this
-            replaces, and on the frozen tree it shows up as a loss term that is
-            always zero.
+    **A property this structure does not carry becomes zeros with weight
+    zero**, rather than an error. A fitting database that labels energies for
+    everything and forces for a tenth of it is ordinary, and refusing it would
+    mean splitting it into two runs. The weight is what makes the term
+    contribute nothing: not a mask a loss has to remember to apply, and not a
+    NaN. A property no structure anywhere carries is a different thing, and the
+    stage that reads the dataset refuses that one.
+
+    Returns:
+        The values, and the weight each carries for this structure. The weight
+        is the configuration's own when it names one, one when it does not, and
+        zero when the value is absent.
     """
     values: dict[str, np.ndarray] = {}
+    weights: dict[str, float] = {}
     properties: Mapping[str, object] = configuration.properties
     for spec in specs:
         value = properties.get(spec.name)
         if value is None:
-            raise MissingTargetError(
-                f"{spec.name!r} is declared and this structure carries no such "
-                f"property. It has {sorted(properties)}. Either declare the "
-                f"observable away or supply the value."
+            values[spec.name] = np.zeros(
+                (num_atoms, 3) if spec.per_atom else (1,), dtype=float
             )
+            weights[spec.name] = 0.0
+            continue
         array = np.asarray(value, dtype=float)
         values[spec.name] = array if spec.per_atom else array.reshape(1, *array.shape)
-    return values
+        weights[spec.name] = float(configuration.property_weights.get(spec.name, 1.0))
+    return values, weights

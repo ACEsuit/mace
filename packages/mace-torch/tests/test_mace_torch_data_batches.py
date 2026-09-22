@@ -15,7 +15,6 @@ from mace_core.elements import AtomicNumberTable
 from mace_core.observables import load_default_catalogue, resolve_requested
 from mace_torch.data import (
     GraphDataset,
-    MissingTargetError,
     collate_training,
     graph_from_configuration,
     make_loader,
@@ -89,14 +88,32 @@ def test_an_element_the_model_was_not_built_for_is_refused_at_the_graph():
         graph_from_configuration(carbon, cutoff=CUTOFF, z_table=Z_TABLE)
 
 
-def test_a_declared_observable_the_data_lacks_is_refused():
+def test_a_structure_missing_a_property_is_masked_rather_than_refused():
+    """A database that labels energies for everything and forces for a tenth
+    of it is ordinary. The weight is what makes the term contribute nothing,
+    so no loss has to remember which values are absent."""
     unlabelled = Configuration(
         atomic_numbers=np.array([8, 1, 1]),
         positions=WATER,
         properties={"energy": -2067.0},
     )
-    with pytest.raises(MissingTargetError, match="forces"):
-        targets_from_configuration(unlabelled, SPECS)
+    targets, weights = targets_from_configuration(unlabelled, SPECS, 3)
+    assert weights == {"energy": 1.0, "forces": 0.0}
+    assert targets["forces"].shape == (3, 3)
+    assert not targets["forces"].any()
+
+
+def test_a_structure_can_weigh_one_of_its_properties_down():
+    """The same mechanism as the mask, and the reason it is a weight rather
+    than a boolean."""
+    weighted = Configuration(
+        atomic_numbers=np.array([8, 1, 1]),
+        positions=WATER,
+        properties={"energy": -2067.0, "forces": np.zeros((3, 3))},
+        property_weights={"forces": 0.25},
+    )
+    _, weights = targets_from_configuration(weighted, SPECS, 3)
+    assert weights == {"energy": 1.0, "forces": 0.25}
 
 
 def test_a_batch_joins_the_labels_the_way_it_joins_the_nodes():
@@ -105,6 +122,7 @@ def test_a_batch_joins_the_labels_the_way_it_joins_the_nodes():
         [water(0), water(1)], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
     )
     batch = collate_training([dataset[0], dataset[1]], z_table=Z_TABLE)
+    assert batch.property_weights["energy"].tolist() == [1.0, 1.0]
     assert batch.targets["energy"].shape == (2,)
     assert batch.targets["forces"].shape == (6, 3)
     assert batch.graph["num_graphs"] == 2

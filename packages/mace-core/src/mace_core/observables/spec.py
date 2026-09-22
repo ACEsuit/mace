@@ -161,6 +161,11 @@ class DerivativeRequest(ConfigSection):
     #: Left to the declaration. Deriving it would mean unit algebra over the
     #: quantity and the input, which this ticket does not own.
     units: str | None = None
+    #: Whether the quantity grows with the structure, so that a loss compares
+    #: it per atom. It is a property of the derivative rather than of what it
+    #: came from: a stress is intensive and a virial is the same derivative
+    #: times a volume, so the two answer this differently.
+    extensive: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -254,6 +259,12 @@ class ObservableSpec(ConfigSection):
     #: input whether or not it is listed here; listing it is what says the
     #: model should compute it.
     derivatives: tuple[DerivativeRequest, ...] = ()
+    #: Whether the quantity grows with the structure. An extensive one is
+    #: compared per atom in a loss, so that a large structure does not weigh
+    #: more than a small one for being large. The frozen tree hardcodes which
+    #: quantities these are, one loss class at a time; a declaration is what
+    #: lets a new observable get the same treatment with no new loss code.
+    extensive: bool = False
 
     @model_validator(mode="after")
     def _validate(self) -> ObservableSpec:

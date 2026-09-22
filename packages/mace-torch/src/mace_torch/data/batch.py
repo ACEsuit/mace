@@ -15,7 +15,7 @@ batch whose last graph has no nodes.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import torch
@@ -49,10 +49,15 @@ class TrainingBatch:
             graph count is a plain ``int``, which is what makes it stay
             symbolic under tracing rather than becoming a host read.
         targets: Reference values by name, joined along the first axis.
+        property_weights: How much each structure's value of each property
+            counts, ``[n_graphs]`` per name. Zero where a structure carries no
+            such value, which is what makes a partially labelled dataset train
+            without a mask anyone has to remember.
     """
 
     graph: dict[str, Tensor | int]
     targets: dict[str, Tensor]
+    property_weights: dict[str, Tensor] = field(default_factory=dict)
 
     def to(self, device: str | torch.device) -> TrainingBatch:
         """The same batch on another device."""
@@ -62,11 +67,16 @@ class TrainingBatch:
                 for name, value in self.graph.items()
             },
             targets={name: value.to(device) for name, value in self.targets.items()},
+            property_weights={
+                name: value.to(device) for name, value in self.property_weights.items()
+            },
         )
 
 
 def collate_training(
-    items: Sequence[tuple[Mapping[str, np.ndarray], Mapping[str, np.ndarray]]],
+    items: Sequence[
+        tuple[Mapping[str, np.ndarray], Mapping[str, np.ndarray], Mapping[str, float]]
+    ],
     *,
     z_table: AtomicNumberTable,
     float_dtype: str = "float64",
@@ -74,7 +84,7 @@ def collate_training(
     """Join structures into one batch.
 
     Args:
-        items: Pairs of graph and targets, as
+        items: Triples of graph, targets and per-property weights, as
             :mod:`mace_torch.data.graphs` builds them.
         z_table: The model's element table, used for the element index.
         float_dtype: What the floating fields are bound at.
@@ -91,7 +101,7 @@ def collate_training(
     # tensor it would be a host read in every one of them.
     graph["num_graphs"] = int(tensors["ptr"].numel() - 1)
 
-    names = items[0][1].keys() if items else ()
+    names = list(items[0][1]) if items else []
     targets = {
         name: torch.as_tensor(
             np.concatenate([np.asarray(item[1][name]) for item in items], axis=0),
@@ -99,7 +109,13 @@ def collate_training(
         )
         for name in names
     }
-    return TrainingBatch(graph=graph, targets=targets)
+    weights = {
+        name: torch.as_tensor(
+            [float(item[2][name]) for item in items], dtype=DTYPES[float_dtype]
+        )
+        for name in names
+    }
+    return TrainingBatch(graph=graph, targets=targets, property_weights=weights)
 
 
 class GraphDataset(Dataset):
@@ -131,7 +147,7 @@ class GraphDataset(Dataset):
 
     def __getitem__(
         self, index: int
-    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], dict[str, float]]:
         configuration = self.configurations[index]
         head = self.head_index.get(configuration.head, 0)
         graph = graph_from_configuration(
@@ -141,7 +157,10 @@ class GraphDataset(Dataset):
             head=head,
             weight=float(configuration.weight),
         )
-        return graph, targets_from_configuration(configuration, self.targets)
+        targets, weights = targets_from_configuration(
+            configuration, self.targets, len(configuration.atomic_numbers)
+        )
+        return graph, targets, weights
 
 
 def make_loader(
@@ -157,7 +176,13 @@ def make_loader(
     """A loader whose batches are :class:`TrainingBatch`."""
 
     def collate(
-        items: Iterable[tuple[Mapping[str, np.ndarray], Mapping[str, np.ndarray]]],
+        items: Iterable[
+            tuple[
+                Mapping[str, np.ndarray],
+                Mapping[str, np.ndarray],
+                Mapping[str, float],
+            ]
+        ],
     ) -> TrainingBatch:
         return collate_training(
             list(items), z_table=dataset.z_table, float_dtype=float_dtype
