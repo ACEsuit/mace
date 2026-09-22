@@ -26,7 +26,12 @@ from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import load_default_catalogue
 from mace_core.stages import TrainedModel
 
-from mace_torch.train import run_data_stage, run_model_stage, run_train_stage
+from mace_torch.train import (
+    run_data_stage,
+    run_model_stage,
+    run_train_stage,
+    setup_logging,
+)
 
 __all__ = ["NOT_MIGRATED", "main", "parse", "run"]
 
@@ -100,9 +105,7 @@ def run(config: ResolvedConfig) -> TrainedModel:
 def main(argv: Sequence[str] | None = None) -> int:
     """The console entry point. Returns a process exit status."""
     config = parse(argv)
-    logging.basicConfig(
-        level=config.runtime.log_level, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    setup_logging(config.runtime)
     trained = run(config)
     if trained.best is None:
         logging.info(

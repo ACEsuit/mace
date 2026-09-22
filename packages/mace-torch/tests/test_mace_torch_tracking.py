@@ -1,9 +1,10 @@
 """Where a run reports itself, and what it costs a run that reports nowhere.
 
-The wandb client is not installed in this environment and is not meant to be:
-what these assert is that a run with tracking off never reaches it, and that a
-run with tracking on and the package missing says which extra to install rather
-than raising from inside a constructor.
+What these assert is that a run with tracking off never reaches the client, and
+that a run with tracking on and the package missing says which extra to install
+rather than raising from inside a constructor. Neither depends on whether the
+client happens to be installed where the suite runs, since it is installed
+beside the frozen tree and not beside this package.
 """
 
 from __future__ import annotations
@@ -30,8 +31,12 @@ def test_tracking_is_off_by_default():
 
 
 def test_a_run_without_tracking_never_imports_the_client():
+    """Asked as "did this call import it", not "is it imported": the suite
+    runs beside the frozen tree, which has its own wandb integration, so
+    something else may well have imported it already."""
+    before = "wandb" in sys.modules
     open_tracker(configuration())
-    assert "wandb" not in sys.modules
+    assert ("wandb" in sys.modules) == before
 
 
 def test_the_null_tracker_answers_the_whole_interface():
@@ -44,9 +49,10 @@ def test_the_null_tracker_answers_the_whole_interface():
     tracker.finish()
 
 
-def test_asking_for_a_client_that_is_not_installed_names_the_extra():
-    if "wandb" in sys.modules:
-        pytest.skip("wandb is installed here, so the missing-import path is not live")
+def test_asking_for_a_client_that_is_not_installed_names_the_extra(monkeypatch):
+    """The import is made to fail rather than the package uninstalled, so the
+    message is asserted wherever the suite runs."""
+    monkeypatch.setitem(sys.modules, "wandb", None)
     with pytest.raises(ImportError, match=r"mace-torch\[wandb\]"):
         open_tracker(configuration(enabled=True))
 

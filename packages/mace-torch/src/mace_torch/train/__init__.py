@@ -26,6 +26,7 @@ from mace_torch.train.loaders import (
     TrainingLoader,
     build_training_loader,
 )
+from mace_torch.train.logs import LOG_FORMAT, setup_logging
 from mace_torch.train.loop import (
     evaluate,
     evaluate_heads,
@@ -62,6 +63,7 @@ from mace_torch.train.tracking import (
 
 __all__ = [
     "DEFAULT_PRECISION",
+    "LOG_FORMAT",
     "LOSS_REGISTRY",
     "BalancedLoader",
     "DataStageError",
@@ -98,6 +100,7 @@ __all__ = [
     "run_model_stage",
     "run_train_stage",
     "selection_loss",
+    "setup_logging",
     "terms_for",
     "train_one_epoch",
     "write_model",
