@@ -178,9 +178,22 @@ class DataBackend(Protocol):
 
     @classmethod
     def open(
-        cls, source: str | Path, *, key_spec: KeySpecification, head: str = "Default"
+        cls,
+        source: str | Path,
+        *,
+        key_spec: KeySpecification,
+        head: str = "Default",
+        keep_isolated_atoms: bool = False,
     ) -> DataBackend:
-        """Open a dataset. Raises :class:`DataBackendError` if it cannot."""
+        """Open a dataset. Raises :class:`DataBackendError` if it cannot.
+
+        ``keep_isolated_atoms`` leaves the single-atom reference structures in
+        the dataset. They are dropped by default because they are references
+        rather than training structures, and a caller that resolves the
+        isolated-atom energies itself needs them present: reading them off a
+        table the backend built instead would take whatever that backend does
+        with an unlabelled one.
+        """
         ...
 
     def __len__(self) -> int:

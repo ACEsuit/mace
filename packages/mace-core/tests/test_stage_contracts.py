@@ -16,6 +16,7 @@ from mace_core.data.backend import DatasetStatistics
 from mace_core.data.e0_resolution import E0Provenance
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
+from mace_core.observables import RequestedOutputs
 
 Z_TABLE = AtomicNumberTable([1, 8])
 
@@ -80,7 +81,9 @@ def test_the_boundary_objects_are_immutable():
 def test_there_is_one_statistics_object_and_the_model_reads_the_bundle_s():
     """Recomputing is what this identity check exists to forbid."""
     data = bundle()
-    built = BuiltModel(model=object(), observables=(), data=data, metadata=metadata())
+    built = BuiltModel(
+        model=object(), outputs=RequestedOutputs(), data=data, metadata=metadata()
+    )
     assert built.statistics is data.statistics
 
 
@@ -88,7 +91,7 @@ def test_the_bundle_travels_with_the_model_rather_than_beside_it():
     """The training stage takes one argument, so it cannot be given a bundle
     the model was not built from."""
     built = BuiltModel(
-        model=object(), observables=(), data=bundle(), metadata=metadata()
+        model=object(), outputs=RequestedOutputs(), data=bundle(), metadata=metadata()
     )
     assert isinstance(built.data, DataBundle)
 

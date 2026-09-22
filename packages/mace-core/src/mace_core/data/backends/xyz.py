@@ -53,6 +53,7 @@ class XYZBackend:
         *,
         key_spec: KeySpecification,
         head: str = "Default",
+        keep_isolated_atoms: bool = False,
     ) -> XYZBackend:
         text = str(source)
         if not Path(text).is_file():
@@ -63,6 +64,7 @@ class XYZBackend:
                 key_spec,
                 head_name=head,
                 extract_isolated_atom_energies=True,
+                keep_isolated_atoms=keep_isolated_atoms,
             )
         except DataBackendError:
             raise

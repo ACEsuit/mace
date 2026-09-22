@@ -1,0 +1,306 @@
+"""The training loop, written out.
+
+No framework, no callbacks, no hooks. What happens in an epoch is the body of
+one function, so a power user can read it and reproduce it as a script, and so
+that the order of the four things that interact, the optimizer step, the
+average's update, the evaluation and the checkpoint, is visible rather than
+distributed across a registry.
+
+Three orderings are load-bearing and each is silent when wrong:
+
+- the average is updated **after** the optimizer step, so it averages the
+  weights the run actually took;
+- the validation loss is measured **through** the averaged weights when there
+  is an average, because those are the weights the checkpoint will hold;
+- the second stage's switch happens **before** the epoch it applies to, so the
+  epoch that changes the loss weights is trained with them.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from contextlib import nullcontext
+from dataclasses import dataclass
+from pathlib import Path
+
+import torch
+from mace_core.config.resolved import ResolvedConfig
+from mace_core.stages import BuiltModel, EpochRecord, TrainedModel
+from torch import nn
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
+from torch.utils.data import DataLoader
+
+from mace_torch.data import TrainingBatch
+from mace_torch.train.checkpoint import RunState, read_run_state, write_model
+from mace_torch.train.checkpoint import write_run_state as _write_run_state
+from mace_torch.train.ema import ExponentialMovingAverage
+from mace_torch.train.loss import WeightedLoss, weighted_loss
+from mace_torch.train.optimizers import build_optimizer, build_scheduler
+
+__all__ = ["evaluate", "run_train_stage", "train_one_epoch"]
+
+
+def train_one_epoch(
+    model: nn.Module,
+    batches: Iterable[TrainingBatch],
+    loss: WeightedLoss,
+    optimizer: Optimizer,
+    *,
+    device: str = "cpu",
+    compute: tuple[str, ...] = ("forces",),
+    clip_grad: float | None = None,
+    ema: ExponentialMovingAverage | None = None,
+) -> float:
+    """One pass over the training batches. Returns the mean loss.
+
+    ``training=True`` on the forward is what keeps the derivative's own graph
+    alive, and without it a force term has no gradient at all: the loss goes
+    down, the forces do not, and nothing says so.
+    """
+    model.train()
+    total, seen = 0.0, 0
+    for batch in batches:
+        batch = batch.to(device)
+        optimizer.zero_grad(set_to_none=True)
+        output = model(batch.graph, compute=compute, training=True)
+        value = loss(output, batch)
+        value.backward()
+        if clip_grad is not None:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad)
+        optimizer.step()
+        if ema is not None:
+            ema.update()
+        total += float(value.detach())
+        seen += 1
+    if seen == 0:
+        raise ValueError(
+            "the training loader yielded no batches. A run with nothing to "
+            "step on finishes and reports an untrained model."
+        )
+    return total / seen
+
+
+def evaluate(
+    model: nn.Module,
+    batches: Iterable[TrainingBatch],
+    loss: WeightedLoss,
+    *,
+    device: str = "cpu",
+    compute: tuple[str, ...] = ("forces",),
+) -> float:
+    """The mean loss over a loader.
+
+    No ``no_grad``: a force is a gradient, so switching it off would evaluate a
+    model that cannot produce the quantity it is being scored on. The graph is
+    dropped per batch instead, by not asking for a second derivative.
+    """
+    model.eval()
+    total, seen = 0.0, 0
+    for batch in batches:
+        batch = batch.to(device)
+        output = model(batch.graph, compute=compute, training=False)
+        total += float(loss(output, batch).detach())
+        seen += 1
+    if seen == 0:
+        raise ValueError("the validation loader yielded no batches.")
+    return total / seen
+
+
+def run_train_stage(
+    config: ResolvedConfig,
+    built: BuiltModel[nn.Module, DataLoader],
+    *,
+    device: str = "cpu",
+    checkpoint_path: str | Path | None = None,
+    resume: bool = False,
+) -> TrainedModel[nn.Module]:
+    """Train the model, and leave behind what the run produced.
+
+    Args:
+        config: The resolved configuration.
+        built: The model and the data it was built from.
+        device: Where to train.
+        checkpoint_path: Where the best model is written. ``None`` writes
+            nothing, which is what a smoke test wants.
+        resume: Continue a run written at ``checkpoint_path`` rather than
+            starting one.
+
+    Returns:
+        The trained model, with the averaged weights in place when the run
+        averaged, since those are the ones the best checkpoint holds.
+    """
+    model = built.model.to(device)
+    requested = _requested_names(built)
+    loss = weighted_loss(config.loss, requested.names, requested.per_atom)
+    optimizer = build_optimizer(model, config.training)
+    scheduler = build_scheduler(optimizer, config.training.scheduler)
+    ema = (
+        ExponentialMovingAverage(model.parameters(), config.training.ema.decay)
+        if config.training.ema.enabled
+        else None
+    )
+
+    state = RunState(epoch=0)
+    if resume:
+        if checkpoint_path is None:
+            raise ValueError(
+                "a resume was asked for and no checkpoint path was given, so "
+                "there is nothing to resume from."
+            )
+        state = read_run_state(
+            checkpoint_path, optimizer=optimizer, scheduler=scheduler, ema=ema
+        )
+
+    if config.training.dry_run:
+        # Before any epoch and before any file: the point of the flag is to
+        # prove the configuration builds a model, and a dry run that wrote one
+        # would be indistinguishable from a run of length zero.
+        return TrainedModel(model=model, metadata=built.metadata)
+
+    # A resumed run's earlier epochs belong to the run that wrote them:
+    # inventing records for them would put numbers in the history that were
+    # never measured here.
+    history: list[EpochRecord] = []
+    best_loss = state.best_valid_loss
+    best_epoch = state.best_epoch
+    written: Path | None = None
+    since_best = 0
+    stage = "one"
+
+    for epoch in range(state.epoch, config.training.max_num_epochs):
+        if _starts_stage_two(config, epoch) and stage == "one":
+            stage = "two"
+            loss = weighted_loss(
+                config.loss, requested.names, requested.per_atom, stage_two=True
+            )
+            for group in optimizer.param_groups:
+                group["lr"] = config.training.stage_two.lr
+
+        train_loss = train_one_epoch(
+            model,
+            built.data.train_loader,
+            loss,
+            optimizer,
+            device=device,
+            compute=requested.derivatives,
+            clip_grad=config.training.clip_grad,
+            ema=ema,
+        )
+
+        valid_loss: float | None = None
+        if epoch % config.training.eval_interval == 0:
+            context = ema.average_parameters() if ema is not None else nullcontext()
+            with context:
+                valid_loss = evaluate(
+                    model,
+                    built.data.valid_loader,
+                    loss,
+                    device=device,
+                    compute=requested.derivatives,
+                )
+                if best_loss is None or valid_loss < best_loss:
+                    best_loss, best_epoch, since_best = valid_loss, epoch, 0
+                    if checkpoint_path is not None:
+                        written = write_model(checkpoint_path, model, built.metadata)
+                else:
+                    since_best += 1
+            if checkpoint_path is not None:
+                _write_run_state(
+                    checkpoint_path,
+                    RunState(epoch + 1, best_loss, best_epoch),
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    ema=ema,
+                )
+
+        _step_schedule(scheduler, valid_loss)
+        history.append(
+            EpochRecord(
+                epoch=epoch,
+                train_loss=train_loss,
+                valid_loss=valid_loss,
+                learning_rate=float(optimizer.param_groups[0]["lr"]),
+                stage=stage,
+                evaluated_with_ema=valid_loss is not None and ema is not None,
+            )
+        )
+        if since_best >= config.training.patience:
+            break
+
+    if ema is not None:
+        # The run's model is the averaged one. Leaving the stepped weights in
+        # place would return a model that differs from the checkpoint beside
+        # it and from every number the run reported.
+        with torch.no_grad():
+            for parameter, shadow in zip(
+                (p for p in model.parameters() if p.requires_grad),
+                ema.shadow,
+                strict=True,
+            ):
+                parameter.copy_(shadow)
+
+    return TrainedModel(
+        model=model,
+        metadata=built.metadata,
+        history=tuple(history),
+        best_epoch=best_epoch,
+        checkpoint_path=written,
+    )
+
+
+@dataclass(frozen=True)
+class _Requested:
+    """The names the loss scores and the derivatives the engine computes."""
+
+    names: tuple[str, ...]
+    per_atom: tuple[bool, ...]
+    derivatives: tuple[str, ...]
+
+
+def _requested_names(built: BuiltModel[nn.Module, DataLoader]) -> _Requested:
+    """What was asked for, read off the built model rather than the config.
+
+    The model is the authority here: it was built from the request, and reading
+    the configuration again would let the two drift for a run that overrode
+    something between the stages.
+    """
+    outputs = built.outputs
+    names: list[str] = []
+    per_atom: list[bool] = []
+    for spec in outputs.observables:
+        names.append(spec.name)
+        per_atom.append(spec.per_atom)
+        for request in spec.derivatives:
+            name = spec.derivative_name(request.wrt)
+            if name not in outputs.derivatives:
+                continue
+            names.append(name)
+            per_atom.append(request.wrt == "pos")
+    return _Requested(tuple(names), tuple(per_atom), outputs.derivatives)
+
+
+def _starts_stage_two(config: ResolvedConfig, epoch: int) -> bool:
+    """Whether this epoch is the one the second stage begins at."""
+    stage_two = config.training.stage_two
+    return (
+        stage_two.enabled
+        and stage_two.start_epoch is not None
+        and epoch >= stage_two.start_epoch
+    )
+
+
+def _step_schedule(scheduler: LRScheduler | None, valid_loss: float | None) -> None:
+    """Advance the schedule, with the plateau one given its metric.
+
+    A plateau schedule stepped without a metric raises, and stepped with the
+    training loss would react to a different curve than the one it is meant to
+    watch. So it is stepped only on an epoch that evaluated.
+    """
+    if scheduler is None:
+        return
+    if isinstance(scheduler, ReduceLROnPlateau):
+        if valid_loss is not None:
+            scheduler.step(valid_loss)
+        return
+    scheduler.step()

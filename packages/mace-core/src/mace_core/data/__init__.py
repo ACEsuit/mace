@@ -16,6 +16,7 @@ from mace_core.data.backend import (
     DatasetManifest,
     DatasetStatistics,
 )
+from mace_core.data.backends.memory import InMemoryBackend
 from mace_core.data.backends.xyz import XYZBackend
 from mace_core.data.configuration import (
     DEFAULT_CONFIG_TYPE,
@@ -79,6 +80,7 @@ __all__ = [
     "E0ResolutionError",
     "EmbeddingFeatureSpec",
     "EnergyPredictor",
+    "InMemoryBackend",
     "KeySpecification",
     "ParsedConfigurations",
     "UnknownBackendError",

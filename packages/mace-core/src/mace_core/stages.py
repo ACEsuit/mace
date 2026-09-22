@@ -37,7 +37,7 @@ from mace_core.data.backend import DatasetStatistics
 from mace_core.data.e0_resolution import E0Provenance
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.metadata import ModelMetadata
-from mace_core.observables import ObservableSpec
+from mace_core.observables import RequestedOutputs
 
 __all__ = [
     "BuiltModel",
@@ -90,9 +90,11 @@ class BuiltModel(Generic[Model, Loader]):
 
     Attributes:
         model: The model itself, on its device and in its precision.
-        observables: What it reads out, as declared. The loss terms and the
-            error tables are derived from this rather than from a model class
-            name.
+        outputs: What it produces, as resolved: the observables it reads out
+            and the derivatives it was asked to compute. The loss terms and the
+            error tables come from here rather than from a model class name,
+            and the derivatives are carried rather than re-derived because an
+            observable declares more of them than any one run asks for.
         data: The bundle it was built from. Carried so the training stage takes
             one argument and cannot be handed a bundle from another run.
         metadata: The record that is written beside the weights. Complete at
@@ -100,7 +102,7 @@ class BuiltModel(Generic[Model, Loader]):
     """
 
     model: Model
-    observables: tuple[ObservableSpec, ...]
+    outputs: RequestedOutputs
     data: DataBundle[Loader]
     metadata: ModelMetadata
 
