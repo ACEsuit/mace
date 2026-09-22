@@ -98,13 +98,38 @@ TOO_COARSE_TO_PIN = {
     "tests/integrations": "the whole integrations tier",
     "tests/benchmarks": "the whole benchmark tier",
     "tests/golden": "the whole golden tier",
+    # A v1 package's whole suite, the packages/ equivalent of `tests/unit`.
+    # Named rather than left to the depth rule: `packages/<dist>/tests` is
+    # already three parts deep, so the depth rule would let it through.
+    "packages/mace-core/tests": "the whole mace-core suite",
+    "packages/mace-torch/tests": "the whole mace-torch suite",
+    "packages/mace-jax/tests": "the whole mace-jax suite",
+    "packages/mace-launcher/tests": "the whole mace-launcher suite",
 }
 
-#: How deep under `tests/` a directory pin has to sit: `tests/a/b` passes,
+#: A v1 test path: `packages/<distribution>/tests/...`. The rewrite's tests do
+#: not live under `tests/`, so without this a pin naming one would be skipped
+#: by `check_pins` and never resolved -- which is the "reads as coverage"
+#: failure the pin rules exist to prevent, reintroduced by the tree layout.
+V1_TEST_PATH = re.compile(r"packages/[^/]+/tests(/|$)")
+
+#: How deep under a suite root a directory pin has to sit: `tests/a/b` passes,
 #: `tests/a` does not. A file pin is exempt — a file is specific by
 #: construction, and `tests/conftest.py` is a legitimate pin for the shared
 #: fixtures even though it sits one level down.
+#:
+#: Depth is counted from the suite root, not from the repository root, which
+#: is why `_pin_root_relative` strips a `packages/<distribution>/` prefix
+#: first. Counting from the repository root would make a v1 package's whole
+#: suite look two levels deeper than the legacy tier it is the analogue of,
+#: and `packages/mace-core/tests` would pass a rule written to reject exactly
+#: that kind of pin.
 MIN_PIN_DIRECTORY_DEPTH = 3
+
+
+def _pin_root_relative(path: str) -> str:
+    """`path` with any `packages/<distribution>/` prefix removed."""
+    return V1_TEST_PATH.sub("tests/", path, count=1).rstrip("/") if V1_TEST_PATH.match(path) else path
 
 NON_TEST_PINS = {
     "the suite itself": (
@@ -902,8 +927,9 @@ def _too_coarse(path: str) -> str | None:
     named = TOO_COARSE_TO_PIN.get(path)
     if named is not None:
         return named
-    if len(Path(path).parts) < MIN_PIN_DIRECTORY_DEPTH:
-        return f"only {len(Path(path).parts)} levels deep"
+    depth = len(Path(_pin_root_relative(path)).parts)
+    if depth < MIN_PIN_DIRECTORY_DEPTH:
+        return f"only {depth} levels deep"
     return None
 
 
@@ -930,7 +956,8 @@ def check_pins(rows: list[Row]) -> list[str]:
             # `tests` with no slash is caught here too: it resolves on disk,
             # so leaving it to the free-text rule below would reject it for
             # the wrong reason.
-            if span.rstrip("/") != "tests" and not span.startswith("tests/"):
+            legacy_path = span.rstrip("/") == "tests" or span.startswith("tests/")
+            if not legacy_path and not V1_TEST_PATH.match(span):
                 continue  # flag and command names quoted inside gap prose
             file_part, _, node_id = span.partition("::")
             target = REPO / file_part
