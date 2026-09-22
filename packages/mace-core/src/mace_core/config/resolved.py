@@ -37,7 +37,7 @@ from mace_core.config.loss import LossConfig
 from mace_core.config.model import ModelConfig
 from mace_core.config.runtime import RuntimeConfig
 from mace_core.config.section import FrozenSection
-from mace_core.config.training import TrainingConfig
+from mace_core.config.training import StageConfig, TrainingConfig
 
 __all__ = ["ENERGY_OBSERVABLE", "FinetuneConfig", "PseudolabelConfig", "ResolvedConfig"]
 
@@ -97,6 +97,26 @@ class ResolvedConfig(ReforgeBaseConfig):
     loss: LossConfig = LossConfig()
     training: TrainingConfig = TrainingConfig()
     finetune: FinetuneConfig = FinetuneConfig()
+
+    def schedule(self) -> tuple[StageConfig, ...]:
+        """The stages this run goes through, with their loss weights filled in.
+
+        The short two-stage spelling keeps its weights in the loss section,
+        because that is where every other weight lives, and a stage carries its
+        own. Reconciling the two needs both sections, which is why it happens
+        here rather than in either of them: a stage written the short way and a
+        loss section that names second-stage weights are one thing said in two
+        places, and the loop should meet it already joined.
+        """
+        stages = self.training.schedule()
+        if not self.loss.stage_two_weights:
+            return stages
+        return tuple(
+            stage.model_copy(update={"loss_weights": dict(self.loss.stage_two_weights)})
+            if stage.name == "stage_two" and not stage.loss_weights
+            else stage
+            for stage in stages
+        )
 
     @model_validator(mode="after")
     def _e0s_that_read_a_foundation_model_need_one(self) -> ResolvedConfig:

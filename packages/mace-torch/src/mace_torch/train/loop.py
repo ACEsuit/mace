@@ -18,13 +18,14 @@ Three orderings are load-bearing and each is silent when wrong:
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
 from mace_core.config.resolved import ResolvedConfig
+from mace_core.config.training import InheritOptimizer, StageConfig
 from mace_core.stages import BuiltModel, EpochRecord, TrainedModel
 from torch import nn
 from torch.optim import Optimizer
@@ -166,14 +167,19 @@ def run_train_stage(
     best_epoch = state.best_epoch
     written: Path | None = None
     since_best = 0
-    stage = "one"
+    stage = ""
 
+    schedule = config.schedule()
     for epoch in range(state.epoch, config.training.max_num_epochs):
-        if _starts_stage_two(config, epoch) and stage == "one":
-            stage = "two"
-            loss = build_loss(built.outputs, config.loss, stage_two=True)
-            for group in optimizer.param_groups:
-                group["lr"] = config.training.stage_two.lr
+        # Before the epoch it applies to, so the epoch that changes the loss
+        # weights is trained with them. The stage is looked up rather than
+        # switched into, which is what lets a resume land mid-schedule.
+        entering = _stage_at(schedule, epoch)
+        if entering.name != stage:
+            stage = entering.name
+            loss, optimizer, scheduler = _enter_stage(
+                entering, config, built, model, optimizer, scheduler
+            )
 
         train_loss = train_one_epoch(
             model,
@@ -278,14 +284,48 @@ def _requested_names(built: BuiltModel[nn.Module, DataLoader]) -> _Requested:
     return _Requested(tuple(names), tuple(per_atom), outputs.derivatives)
 
 
-def _starts_stage_two(config: ResolvedConfig, epoch: int) -> bool:
-    """Whether this epoch is the one the second stage begins at."""
-    stage_two = config.training.stage_two
-    return (
-        stage_two.enabled
-        and stage_two.start_epoch is not None
-        and epoch >= stage_two.start_epoch
-    )
+def _stage_at(schedule: Sequence[StageConfig], epoch: int) -> StageConfig:
+    """Which stage an epoch belongs to.
+
+    Looked up rather than advanced through, so a run resumed at epoch fifty
+    lands in the stage epoch fifty belongs to rather than in the first one.
+    """
+    current = schedule[0]
+    for stage in schedule:
+        if stage.start_epoch <= epoch:
+            current = stage
+    return current
+
+
+def _enter_stage(
+    stage: StageConfig,
+    config: ResolvedConfig,
+    built: BuiltModel[nn.Module, DataLoader],
+    model: nn.Module,
+    optimizer: Optimizer,
+    scheduler: LRScheduler | None,
+) -> tuple[torch.nn.Module, Optimizer, LRScheduler | None]:
+    """The loss, optimizer and schedule a stage runs with.
+
+    Everything the stage does not name it keeps. An optimizer it does not name
+    is the one already running, with its state: rebuilding it would throw away
+    the moments, which is a different run from the one the configuration asks
+    for.
+    """
+    loss = build_loss(built.outputs, config.loss, stage)
+    if not isinstance(stage.optimizer, InheritOptimizer):
+        optimizer = build_optimizer(
+            model, config.training.model_copy(update={"optimizer": stage.optimizer})
+        )
+        scheduler = build_scheduler(
+            optimizer, stage.scheduler or config.training.scheduler
+        )
+    elif stage.scheduler is not None:
+        scheduler = build_scheduler(optimizer, stage.scheduler)
+    if stage.lr is not None:
+        for group in optimizer.param_groups:
+            group["lr"] = stage.lr
+    return loss, optimizer, scheduler
 
 
 def _step_schedule(scheduler: LRScheduler | None, valid_loss: float | None) -> None:

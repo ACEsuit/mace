@@ -26,6 +26,7 @@ from dataclasses import dataclass
 import torch
 import torch.distributed as dist
 from mace_core.config.loss import LossConfig
+from mace_core.config.training import StageConfig
 from mace_core.observables import RequestedOutputs
 from mace_core.outputs import MACEOutput
 from torch import Tensor
@@ -120,15 +121,26 @@ class LossTerm:
 
 
 def terms_for(
-    requested: RequestedOutputs, config: LossConfig, *, stage_two: bool = False
+    requested: RequestedOutputs,
+    config: LossConfig,
+    stage: StageConfig | None = None,
 ) -> tuple[LossTerm, ...]:
-    """A term per requested output, with everything read off a declaration."""
+    """A term per requested output, with everything read off a declaration.
+
+    A stage's own weights replace the run's for the quantities it names, and
+    only those: a stage that raises the energy weight says only that.
+    """
+    overrides = {} if stage is None else stage.loss_weights
+
+    def weight_of(name: str) -> float:
+        return overrides.get(name, config.weights.get(name, 1.0))
+
     terms: list[LossTerm] = []
     for observable in requested.observables:
         terms.append(
             LossTerm(
                 observable.name,
-                config.weight(observable.name, stage_two=stage_two),
+                weight_of(observable.name),
                 observable.per_atom,
                 observable.extensive,
             )
@@ -140,7 +152,7 @@ def terms_for(
             terms.append(
                 LossTerm(
                     name,
-                    config.weight(name, stage_two=stage_two),
+                    weight_of(name),
                     request.wrt == "pos",
                     request.extensive,
                 )
@@ -182,7 +194,9 @@ class GeneratedLoss(torch.nn.Module):
 
 
 def build_loss(
-    requested: RequestedOutputs, config: LossConfig, *, stage_two: bool = False
+    requested: RequestedOutputs,
+    config: LossConfig,
+    stage: StageConfig | None = None,
 ) -> torch.nn.Module:
     """The loss a run scores on: a registered one, or the generated one.
 
@@ -191,7 +205,7 @@ def build_loss(
     """
     kind = config.kind.kind
     if kind == "weighted":
-        return GeneratedLoss(terms_for(requested, config, stage_two=stage_two))
+        return GeneratedLoss(terms_for(requested, config, stage))
     if kind not in LOSS_REGISTRY:
         raise UnknownLossError(
             f"{kind!r} is not a registered loss. The registered names are "

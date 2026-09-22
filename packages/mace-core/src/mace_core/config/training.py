@@ -37,6 +37,7 @@ __all__ = [
     "ScheduleFreeOptimizer",
     "ScheduleKind",
     "SchedulerConfig",
+    "StageConfig",
     "StageOptimizerKind",
     "StageTwoConfig",
     "TrainingConfig",
@@ -186,6 +187,39 @@ class EMAConfig(FrozenSection):
     decay: float = 0.99
 
 
+class StageConfig(FrozenSection):
+    """One stage of a run: where it starts and what changes when it does.
+
+    A run is a sequence of these. The frozen tree has exactly two, and the
+    second one is written into the loop: it swaps the loss and steps a
+    different scheduler from a hardcoded epoch. Two is enough until it is not,
+    and what it costs is that a third is a code change rather than a line of
+    configuration.
+
+    Everything here is an override. What a stage does not name it keeps from
+    the settings around it, so a stage that only lowers the learning rate says
+    only that.
+
+    Args:
+        name: What it is called, in the log and in the run's history.
+        start_epoch: The epoch it begins at. Stages are ordered by it, and the
+            first one starts at zero whatever it says.
+        lr: Its learning rate. ``None`` keeps the previous one.
+        optimizer: Its optimizer. Inheriting is a kind rather than an absence.
+        scheduler: Its learning-rate schedule. ``None`` keeps the previous one.
+        loss_weights: Per-observable weights that replace the run's for this
+            stage. An observable it does not name keeps its weight, so a stage
+            that only raises the energy weight says only that.
+    """
+
+    name: str = "main"
+    start_epoch: int = 0
+    lr: float | None = None
+    optimizer: StageOptimizerKind = InheritOptimizer()
+    scheduler: SchedulerConfig | None = None
+    loss_weights: dict[str, float] = Field(default_factory=dict)
+
+
 class StageTwoConfig(FrozenSection):
     """The second stage, which legacy spells SWA.
 
@@ -224,7 +258,10 @@ class TrainingConfig(FrozenSection):
         clip_grad: Gradient-norm clip. ``None`` does not clip.
         scheduler: The learning-rate schedule.
         ema: The weight average.
-        stage_two: The second stage.
+        stage_two: The second stage, as the short spelling of a two-stage
+            list. `schedule()` expands it.
+        stages: The stages, when a run wants more than two or wants to name
+            what changes at each. Mutually exclusive with `stage_two`.
         dry_run: Build everything and stop before the first step.
     """
 
@@ -240,4 +277,48 @@ class TrainingConfig(FrozenSection):
     scheduler: SchedulerConfig = SchedulerConfig()
     ema: EMAConfig = EMAConfig()
     stage_two: StageTwoConfig = StageTwoConfig()
+    stages: tuple[StageConfig, ...] = ()
     dry_run: bool = False
+
+    def schedule(self) -> tuple[StageConfig, ...]:
+        """The stages this run goes through, in order, starting at zero.
+
+        The two-stage setting is a stage list written the short way, so it is
+        expanded here rather than read separately by the loop: a loop that knew
+        about both would be the special case this exists to remove. Naming both
+        is refused, because the two would have to be reconciled and there is no
+        reading of that which is obviously right.
+
+        Raises:
+            ConfigError: If both spellings are used. An enabled second stage
+                that names no start is refused earlier, when the resolved
+                configuration is built.
+        """
+        from mace_core.config.base import ConfigError
+
+        if self.stages and self.stage_two.enabled:
+            raise ConfigError(
+                "both `training.stages` and `training.stage_two` are set. The "
+                "second is the short spelling of a two-stage list, so writing "
+                "both leaves two schedules to reconcile. Keep one."
+            )
+        if self.stages:
+            ordered = sorted(self.stages, key=lambda stage: stage.start_epoch)
+            return tuple(
+                stage if index else stage.model_copy(update={"start_epoch": 0})
+                for index, stage in enumerate(ordered)
+            )
+        if not self.stage_two.enabled:
+            return (StageConfig(name="main", start_epoch=0),)
+        # An enabled second stage with no start is refused when the resolved
+        # configuration is built, so by here it has one.
+        assert self.stage_two.start_epoch is not None
+        return (
+            StageConfig(name="main", start_epoch=0),
+            StageConfig(
+                name="stage_two",
+                start_epoch=self.stage_two.start_epoch,
+                lr=self.stage_two.lr,
+                optimizer=self.stage_two.optimizer,
+            ),
+        )
