@@ -143,3 +143,91 @@ def test_a_legacy_command_line_on_v1_says_it_has_not_moved(tmp_path):
     finished = on_v1("--name", "tiny", "--train_file", str(tmp_path / "absent.xyz"))
     assert finished.returncode != 0
     assert "not yet available on v1 engine" in finished.stderr
+
+
+MULTIHEAD_CONFIG = """
+runtime: {{work_dir: {work_dir}, name: tiny, seed: 1, error_table: PerAtomRMSE}}
+data:
+  heads:
+    small: {{train_file: {small_file}, e0s: {{isolated_atoms: {{}}}}}}
+    large: {{train_file: {large_file}, e0s: {{isolated_atoms: {{}}}}}}
+  valid_fraction: 0.25
+  pin_memory: false
+model:
+  observables: [energy, forces]
+  r_max: 5.0
+  num_interactions: 2
+  num_channels: 4
+  hidden_irreps: 0e+1o
+  max_ell: 1
+  correlation: 2
+  readout: {{mlp_irreps: 4x0e}}
+training:
+  max_num_epochs: 2
+  batch_size: 2
+  valid_batch_size: 2
+  lr: 0.02
+  head_balancing: balanced
+  scheduler: {{kind: {{constant: {{}}}}}}
+loss: {{weights: {{energy: 1.0, forces: 10.0}}}}
+"""
+
+
+def write_frames(path: Path, count: int, seed: int) -> Path:
+    """A few waters and the two isolated atoms they reference."""
+    generator = np.random.default_rng(seed)
+    frames = []
+    for number, energy in ((1, HYDROGEN), (8, OXYGEN)):
+        atom = Atoms(numbers=[number], positions=[[0.0, 0.0, 0.0]])
+        atom.info["REF_energy"] = energy
+        atom.info["config_type"] = "IsolatedAtom"
+        atom.arrays["REF_forces"] = np.zeros((1, 3))
+        frames.append(atom)
+    for index in range(count):
+        molecule = Atoms(
+            "OH2", positions=WATER + generator.normal(scale=0.03, size=(3, 3))
+        )
+        molecule.info["REF_energy"] = 2 * HYDROGEN + OXYGEN + 0.05 * index
+        molecule.arrays["REF_forces"] = generator.normal(scale=0.1, size=(3, 3))
+        frames.append(molecule)
+    write(path, frames)
+    return path
+
+
+def multihead_task(directory: Path) -> Path:
+    """Two heads whose training files differ in size by a factor of four."""
+    config = directory / "multihead.yaml"
+    config.write_text(
+        MULTIHEAD_CONFIG.format(
+            work_dir=directory,
+            small_file=write_frames(directory / "small.xyz", 4, seed=0),
+            large_file=write_frames(directory / "large.xyz", 16, seed=1),
+        )
+    )
+    return config
+
+
+@needs_the_v1_engine
+def test_a_multihead_task_trains_on_the_v1_engine(tmp_path):
+    finished = on_v1("--config", str(multihead_task(tmp_path)))
+    assert finished.returncode == 0, finished.stderr
+    assert (tmp_path / "tiny.safetensors").is_file()
+
+
+@needs_the_v1_engine
+def test_a_multihead_run_reports_every_head_separately(tmp_path):
+    """One averaged row cannot say which head got worse, so there is a row per
+    head per split and the epoch lines name the head they are about."""
+    finished = on_v1("--config", str(multihead_task(tmp_path)))
+    assert finished.returncode == 0, finished.stderr
+    for row in ("train_small", "train_large", "valid_small", "valid_large"):
+        assert row in finished.stderr
+    assert "head small" in finished.stderr
+    assert "head large" in finished.stderr
+
+
+@needs_the_v1_engine
+def test_a_multihead_run_prints_an_error_table(tmp_path):
+    finished = on_v1("--config", str(multihead_task(tmp_path)))
+    assert finished.returncode == 0, finished.stderr
+    assert "RMSE E / meV / atom" in finished.stderr
