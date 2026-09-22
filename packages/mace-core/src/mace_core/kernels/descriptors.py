@@ -171,16 +171,38 @@ class SymmetricContractionDescriptor(Descriptor):
 
 @dataclass(frozen=True)
 class FullyConnectedTPDescriptor(Descriptor):
-    """The skip connection's tensor product against the element attributes."""
+    """The skip connection's tensor product against the element attributes.
+
+    Attributes:
+        irreps_in1: The node features.
+        irreps_in2: The element attributes, which are scalars.
+        irreps_out: What it produces.
+    """
 
     irreps_in1: str = "0e"
     irreps_in2: str = "0e"
     irreps_out: str = "0e"
-    weight_count: int = 0
 
     @property
     def weight_numel(self) -> int:
-        return self.weight_count
+        """Derived from the irreps, like every other descriptor's.
+
+        The second input is scalars, so the product is one equivariant linear
+        map per attribute: the matching multiplicity pairs between the first
+        input and the output, times how many attributes there are. Taking it
+        from the caller instead made it a number nobody checked, and a
+        capability filter or a checkpoint sized against it would have been
+        wrong by whatever the caller happened to pass.
+        """
+        source = Irreps.parse(self.irreps_in1)
+        target = Irreps.parse(self.irreps_out)
+        pairs = sum(
+            in_mul * out_mul
+            for out_mul, out_ir in target
+            for in_mul, in_ir in source
+            if in_ir == out_ir
+        )
+        return pairs * Irreps.parse(self.irreps_in2).dimension
 
 
 @dataclass(frozen=True)

@@ -7,23 +7,16 @@ carry a differentiable backward or the second derivative is silently wrong, and
 training on forces is exactly that second derivative.
 """
 
+import importlib.metadata
 import importlib.util
-from pathlib import Path
 
 import pytest
-
-# `tomllib` is 3.11+, and this file runs on the 3.10 leg of the matrix too.
-# pytest declares `tomli` there, and this file is collected by pytest or not at
-# all, so the fallback always resolves; a bare import breaks collection.
-try:  # pragma: no cover - one branch per interpreter
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib  # type: ignore[no-redef]
 
 if importlib.util.find_spec("torch") is None:  # pragma: no cover
     pytest.skip("the reference backend needs torch", allow_module_level=True)
 
 import torch
+from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels import (
     ChannelwiseTPConvDescriptor,
     FullyConnectedTPDescriptor,
@@ -35,8 +28,6 @@ from mace_core.kernels import (
     UnsupportedDescriptorError,
 )
 from mace_torch.backends.reference import ReferenceBackend
-
-PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
@@ -268,14 +259,20 @@ def test_the_linear_weights_round_trip_too(backend):
 
 def test_the_reference_is_declared_as_an_entry_point_that_resolves():
     """Discovery must work for the mandatory backend exactly as it does for a
-    third-party one: `mace_core` names no backend anywhere."""
-    metadata = tomllib.loads((PACKAGE_ROOT / "pyproject.toml").read_text())
-    group = metadata["project"]["entry-points"]["mace.kernel_backends.torch"]
-    assert group["reference"] == "mace_torch.backends.reference:ReferenceBackend"
+    third-party one: `mace_core` names no backend anywhere.
 
-    module_name, _, attribute = group["reference"].partition(":")
-    module = importlib.import_module(module_name)
-    assert getattr(module, attribute) is ReferenceBackend
+    Read from the installed metadata rather than from `pyproject.toml`, because
+    what the registry searches is what pip wrote. A declaration this package
+    ships and the install does not carry would pass a reading of the file and
+    fail every discovery.
+    """
+    entries = importlib.metadata.entry_points(group="mace.kernel_backends.torch")
+    declared = {entry.name: entry for entry in entries}
+    assert "reference" in declared, sorted(declared)
+    assert declared["reference"].value == (
+        "mace_torch.backends.reference:ReferenceBackend"
+    )
+    assert declared["reference"].load() is ReferenceBackend
 
 
 def test_the_skip_connection_refuses_a_non_scalar_second_input(backend):
@@ -287,3 +284,63 @@ def test_the_skip_connection_refuses_a_non_scalar_second_input(backend):
                 irreps_in1="4x0e", irreps_in2="1x1o", irreps_out="4x0e"
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Output irreps the contraction has to cover
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("irreps_out", ["0e", "1o", "0e+1o", "0e+1o+2e", "1o+1e"])
+def test_the_contraction_builds_every_output_the_layers_ask_for(backend, irreps_out):
+    """A mixed output is the normal case, not an exotic one.
+
+    Each output irrep has its own component count, so one stacked basis over
+    all of them is a join of arrays whose second axis differs: `0e+1o` did not
+    build at all. Two same-sized irreps are worse than that, because they join
+    without complaint and then write into one shared slice instead of adjacent
+    ones, which is a model that trains and is wrong.
+    """
+    descriptor = SymmetricContractionDescriptor(
+        irreps_in="0e+1o",
+        irreps_out=irreps_out,
+        correlation=3,
+        num_elements=2,
+        num_features=4,
+    )
+    operation = backend.make_symmetric_contraction(descriptor)
+    operation.initialize_weights(3)
+    features = torch.randn(5, 4, Irreps.parse("0e+1o").dimension)
+    elements = torch.randint(0, 2, (5,))
+    assert operation(features, elements).shape == (
+        5,
+        4,
+        Irreps.parse(irreps_out).dimension,
+    )
+
+
+def test_an_output_irrep_no_body_order_reaches_is_still_built(backend):
+    """`2e` is unreachable from `0e+1o` at body order one, so that order's
+    basis is empty. Inferring its trailing extent with `-1` cannot work on an
+    empty array, and the whole contraction failed to build over it."""
+    descriptor = SymmetricContractionDescriptor(
+        irreps_in="0e+1o",
+        irreps_out="2e",
+        correlation=2,
+        num_elements=1,
+        num_features=2,
+    )
+    operation = backend.make_symmetric_contraction(descriptor)
+    assert operation.weights[0].shape[1] == 0
+    assert operation.weights[1].shape[1] > 0
+
+
+def test_the_skip_connection_advertises_the_weights_it_holds(backend):
+    """The descriptor's count is what a capability filter reads and what sizes
+    a checkpoint, and it used to be whatever the caller passed."""
+    descriptor = FullyConnectedTPDescriptor(
+        irreps_in1="4x0e+4x1o", irreps_in2="2x0e", irreps_out="4x0e+4x1o"
+    )
+    operation = backend.make_fully_connected_tp(descriptor)
+    assert descriptor.weight_numel == operation.weight.numel()
+    assert descriptor.weight_numel == operation.to_canonical()["weight"].numel()

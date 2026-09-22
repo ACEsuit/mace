@@ -32,7 +32,7 @@ from mace_torch.kernels import initialize_model_weights, op_seed
 BACKEND = ReferenceBackend()
 LINEAR = LinearDescriptor(irreps_in="4x0e+4x1o", irreps_out="4x0e+4x1o", has_bias=True)
 SKIP = FullyConnectedTPDescriptor(
-    irreps_in1="4x0e+4x1o", irreps_in2="2x0e", irreps_out="4x0e+4x1o", weight_count=32
+    irreps_in1="4x0e+4x1o", irreps_in2="2x0e", irreps_out="4x0e+4x1o"
 )
 CONTRACTION = SymmetricContractionDescriptor(
     irreps_in="0e+1o", irreps_out="0e", correlation=2, num_elements=2, num_features=4
