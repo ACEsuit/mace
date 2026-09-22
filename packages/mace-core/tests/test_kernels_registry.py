@@ -9,6 +9,7 @@ import importlib.util
 import subprocess
 import sys
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 from mace_core.kernels import (
@@ -45,7 +46,9 @@ def test_a_descriptor_is_hashable_so_it_can_key_a_cache():
     assert hash(first) == hash(second)
     assert len({first, second}) == 1
     with pytest.raises(AttributeError):
-        first.irreps_in = "1x0e"
+        # Through `setattr`, because the assignment is the thing being tested
+        # and a checker is right to reject it written out.
+        setattr(first, "irreps_in", "1x0e")  # noqa: B010
 
 
 def test_the_linear_weight_count_is_the_matching_multiplicities():
@@ -81,7 +84,7 @@ def test_the_symmetric_contraction_weight_count_is_the_canonical_shape():
 def test_the_basis_is_a_recorded_field_and_changes_the_count():
     """The defect this contract removes: on the frozen tree this number changes
     with what happens to be installed. Here it changes only with the field."""
-    common = {
+    common: dict[str, Any] = {
         "irreps_in": "0e+1o+2e+3o",
         "irreps_out": "0e+1o",
         "correlation": 3,
