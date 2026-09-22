@@ -12,6 +12,7 @@ import pickle
 import subprocess
 import sys
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pytest
@@ -108,7 +109,7 @@ def test_the_backend_survives_being_sent_to_a_worker(dataset, key_spec):
 class PretendEntry:
     name: str
     factory: object = None
-    failure: object = None
+    failure: BaseException | None = None
 
     def load(self):
         if self.failure is not None:
@@ -270,8 +271,11 @@ def test_a_scaling_with_no_data_says_so_rather_than_returning_one(tmp_path, key_
 
 def test_an_unknown_scaling_names_the_ones_there_are(dataset, key_spec):
     backend = XYZBackend.open(dataset, key_spec=key_spec)
+    # Through a variable, because an unknown scaling is the thing being tested
+    # and a checker is right to reject the literal against the enumeration.
+    unknown: Any = "minmax"
     with pytest.raises(ValueError, match="'rms_forces'"):
-        compute_statistics(backend, [1], 3.0, {1: -1.0}, scaling="minmax")
+        compute_statistics(backend, [1], 3.0, {1: -1.0}, scaling=unknown)
 
 
 def test_the_least_squares_fit_recovers_an_exact_reference(key_spec):
