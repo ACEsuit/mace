@@ -30,6 +30,7 @@ from mace_torch.train.logs import LOG_FORMAT, setup_logging
 from mace_torch.train.loop import (
     evaluate,
     evaluate_heads,
+    log_validation,
     report_errors,
     run_train_stage,
     selection_loss,
@@ -89,6 +90,7 @@ __all__ = [
     "epoch_values",
     "evaluate",
     "evaluate_heads",
+    "log_validation",
     "metric_specs",
     "open_tracker",
     "parameter_groups",

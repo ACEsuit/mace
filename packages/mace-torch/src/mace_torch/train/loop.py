@@ -52,6 +52,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "evaluate",
     "evaluate_heads",
+    "log_validation",
     "report_errors",
     "run_train_stage",
     "selection_loss",
@@ -273,7 +274,7 @@ def run_train_stage(
                     device=device,
                     compute=requested.derivatives,
                 )
-                _log_validation(epoch, per_head)
+                log_validation(epoch, per_head)
                 tracker.log(epoch_values(per_head), step=epoch)
                 valid_loss = selection_loss(per_head, config.training.checkpoint_metric)
                 if best_loss is None or valid_loss < best_loss:
@@ -447,12 +448,21 @@ def _drops_tail(stage: StageConfig) -> bool:
     return not isinstance(stage.optimizer, LBFGSOptimizer)
 
 
-def _log_validation(epoch: int, per_head: Mapping[str, dict[str, float]]) -> None:
+def log_validation(epoch: int, per_head: Mapping[str, dict[str, float]]) -> None:
     """One line per head, with the head named on every one of them.
 
-    Named on every line rather than once per block: the lines are read in a
-    log next to the other heads' and next to the next epoch's, where a heading
+    Named on every line rather than once per block: the lines are read in a log
+    next to the other heads' and next to the next epoch's, where a heading
     several lines up has stopped applying.
+
+    **The line does not depend on the error table.** It reports what the run
+    measured, so no configuration can silence it and no branch can go
+    unreached. The frozen tree writes one branch per table type, with no
+    fallback: ``DipoleMAE`` matches none of them and prints nothing at all, and
+    the two stress-or-virials branches are guarded on a lookup into a
+    ``defaultdict``, so the stress branch is taken whether or not a stress was
+    measured and the virials one below it is dead. Both are pinned in
+    ``tests/unit/test_valid_err_log.py``.
     """
     for head, metrics in per_head.items():
         reported = ", ".join(

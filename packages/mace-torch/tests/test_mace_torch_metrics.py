@@ -24,6 +24,7 @@ from mace_torch.data import GraphDataset, collate_training, target_specs
 from mace_torch.train import (
     RunningMetrics,
     build_loss,
+    log_validation,
     metric_specs,
     selection_loss,
 )
@@ -296,3 +297,43 @@ def test_the_frozen_trees_rule_is_reachable_and_is_not_the_default():
 def test_an_unknown_rule_is_refused():
     with pytest.raises(ValueError, match="selection rule"):
         selection_loss(PER_HEAD, "best_head")
+
+
+# ---------------------------------------------------------------------------
+# The per-epoch validation line
+# ---------------------------------------------------------------------------
+
+
+MEASURED = {
+    "water": {"loss": 0.5, "rmse_energy_per_atom": 0.002, "rmse_forces": 0.05},
+    "salt": {"loss": 0.7, "rmse_energy_per_atom": 0.004, "rmse_forces": 0.09},
+}
+
+
+def test_there_is_one_line_per_head_and_each_names_its_own(caplog):
+    with caplog.at_level("INFO"):
+        log_validation(3, MEASURED)
+    printed = [record.getMessage() for record in caplog.records]
+    assert len(printed) == 2
+    assert "head water" in printed[0]
+    assert "head salt" in printed[1]
+
+
+def test_the_line_does_not_depend_on_an_error_table(caplog):
+    """`log_validation` takes no table type, so no configuration can silence
+    it. The frozen tree writes one branch per type with no fallback, so
+    `DipoleMAE` prints nothing at all and the virials branches are unreachable;
+    both are pinned in `tests/unit/test_valid_err_log.py`."""
+    import inspect
+
+    from mace_torch.train import log_validation as function
+
+    assert set(inspect.signature(function).parameters) == {"epoch", "per_head"}
+
+
+def test_the_line_reports_what_was_measured(caplog):
+    with caplog.at_level("INFO"):
+        log_validation(3, {"water": MEASURED["water"]})
+    printed = caplog.records[0].getMessage()
+    assert "loss=0.5" in printed
+    assert "rmse_forces=0.05" in printed
