@@ -21,7 +21,6 @@ import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import pytest
 
@@ -31,7 +30,7 @@ ARCHITECTURE = Path(__file__).parent
 
 #: The five columns, in order. The schema is asserted rather than assumed: a
 #: sixth column, or a renamed one, changes what every reader below means.
-COLUMNS: Tuple[str, ...] = (
+COLUMNS: tuple[str, ...] = (
     "debt_id",
     "description",
     "burn-step (ticket)",
@@ -72,7 +71,7 @@ class DebtRow:
         return match.group("param") or ""
 
 
-def _ledger_lines() -> List[str]:
+def _ledger_lines() -> list[str]:
     """The rows of the ledger table, as raw markdown lines.
 
     The file holds two tables: the mechanics table in the prose above, and the
@@ -89,19 +88,19 @@ def _ledger_lines() -> List[str]:
     ]
 
 
-def _cells(line: str) -> List[str]:
+def _cells(line: str) -> list[str]:
     return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
 
-def header() -> List[str]:
+def header() -> list[str]:
     """The ledger's column names, as written."""
     return _cells(_ledger_lines()[0])
 
 
-def rows() -> Dict[str, DebtRow]:
+def rows() -> dict[str, DebtRow]:
     """The open debt rows, keyed by `debt_id`, in the order the book lists them."""
     lines = _ledger_lines()
-    result: Dict[str, DebtRow] = {}
+    result: dict[str, DebtRow] = {}
     for line in lines[2:]:  # [0] header, [1] the |---| separator
         cells = _cells(line)
         if len(cells) != len(COLUMNS):
@@ -119,7 +118,7 @@ def rows() -> Dict[str, DebtRow]:
     return result
 
 
-def open_debt(debt_id: str) -> "pytest.MarkDecorator":
+def open_debt(debt_id: str) -> pytest.MarkDecorator:
     """Mark a fitness test `xfail(strict=True)` while its debt row is open.
 
     Returns a mark decorator, so the same call serves both shapes the ledger
@@ -154,7 +153,7 @@ def open_debt(debt_id: str) -> "pytest.MarkDecorator":
     )
 
 
-def debt_claims() -> Dict[str, List[str]]:
+def debt_claims() -> dict[str, list[str]]:
     """Every `open_debt(...)` id claimed in `tests/architecture`, and where.
 
     Read by syntax tree from the test sources rather than by importing them:
@@ -169,7 +168,7 @@ def debt_claims() -> Dict[str, List[str]]:
     Resolving the f-string would mean evaluating it; matching its constant
     head is enough to tell a claimed row from an unclaimed one.
     """
-    found: Dict[str, List[str]] = {}
+    found: dict[str, list[str]] = {}
     for path in sorted(ARCHITECTURE.glob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
@@ -202,9 +201,9 @@ def _claims(claim: str, debt_id: str) -> bool:
     return claim == debt_id
 
 
-def defined_test_functions() -> Dict[str, str]:
+def defined_test_functions() -> dict[str, str]:
     """Test function name -> the file that defines it, over `tests/architecture`."""
-    found: Dict[str, str] = {}
+    found: dict[str, str] = {}
     for path in sorted(ARCHITECTURE.glob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in tree.body:
@@ -219,9 +218,9 @@ def defined_test_functions() -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def problems() -> List[str]:
+def problems() -> list[str]:
     """Everything wrong with the debt book, as sentences."""
-    found: List[str] = []
+    found: list[str] = []
 
     if header() != list(COLUMNS):
         found.append(
