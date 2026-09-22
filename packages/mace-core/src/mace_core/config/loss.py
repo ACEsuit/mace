@@ -17,13 +17,21 @@ the schema.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
 from mace_core.config.section import FrozenSection
 
-__all__ = ["HuberLoss", "LossConfig", "LossKind", "UniversalLoss", "WeightedLoss"]
+__all__ = [
+    "HuberLoss",
+    "L1L2Loss",
+    "LossConfig",
+    "LossKind",
+    "RegisteredLoss",
+    "UniversalLoss",
+    "WeightedLoss",
+]
 
 
 class WeightedLoss(FrozenSection):
@@ -55,11 +63,39 @@ class UniversalLoss(FrozenSection):
     delta: float = 0.01
 
 
+class L1L2Loss(FrozenSection):
+    """Absolute error on the scalars, vector norm on the per-atom quantities.
+
+    Neither is a squared error, so a force wrong by ``(3, 4, 0)`` costs five
+    rather than twenty-five. It carries no settings of its own.
+    """
+
+    kind: Literal["l1l2"] = "l1l2"
+
+
+class RegisteredLoss(FrozenSection):
+    """A loss from the registry, by the name it registered under.
+
+    The escape from a closed union into an open registry. The kinds above are
+    the ones this schema knows the settings of, so they can be validated; a
+    loss from another package cannot be, and naming it with its settings is the
+    honest way to say that.
+
+    Args:
+        name: The registered name.
+        settings: What to pass its constructor. Validated by the loss itself.
+    """
+
+    kind: Literal["registered"] = "registered"
+    name: str
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
 #: The loss and, with it, its own hyperparameters. Written kind-as-key, so a
 #: file says `[loss.kind.huber]` and `delta` underneath it, and a delta cannot
 #: be set on a loss that has none.
 LossKind = Annotated[
-    WeightedLoss | HuberLoss | UniversalLoss,
+    WeightedLoss | HuberLoss | UniversalLoss | L1L2Loss | RegisteredLoss,
     Field(discriminator="kind"),
 ]
 

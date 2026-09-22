@@ -22,10 +22,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 import torch.distributed as dist
-from mace_core.config.loss import LossConfig
+from mace_core.config.loss import LossConfig, RegisteredLoss
 from mace_core.config.training import StageConfig
 from mace_core.observables import RequestedOutputs
 from mace_core.outputs import MACEOutput
@@ -36,7 +37,11 @@ from mace_torch.data import TrainingBatch
 __all__ = [
     "LOSS_REGISTRY",
     "GeneratedLoss",
+    "HuberLoss",
+    "L1L2Loss",
     "LossTerm",
+    "TermwiseLoss",
+    "UniversalLoss",
     "UnknownLossError",
     "build_loss",
     "reduce_loss",
@@ -150,8 +155,14 @@ def terms_for(
     return tuple(terms)
 
 
-class GeneratedLoss(torch.nn.Module):
-    """The weighted sum of one squared-error term per requested quantity."""
+class TermwiseLoss(torch.nn.Module):
+    """The weighted sum of one term per requested quantity.
+
+    What every loss here shares: which quantities are scored, how a residual is
+    normalised, and how the two per-structure weights reach it. What a subclass
+    chooses is the one thing that actually differs between the frozen tree's
+    ten classes, which is how a residual becomes a number.
+    """
 
     def __init__(self, terms: Sequence[LossTerm]) -> None:
         super().__init__()
@@ -161,6 +172,10 @@ class GeneratedLoss(torch.nn.Module):
                 "requested outputs, so an empty one means none were requested."
             )
         self.terms = tuple(terms)
+
+    def elementwise(self, residual: Tensor, term: LossTerm) -> Tensor:
+        """The per-element cost of a residual. Squared error by default."""
+        return residual.square()
 
     def forward(self, output: MACEOutput[Tensor], batch: TrainingBatch) -> Tensor:
         """The total, as a scalar."""
@@ -176,11 +191,16 @@ class GeneratedLoss(torch.nn.Module):
                 # squared term, which is the frozen tree's and squares the
                 # normalisation with it.
                 residual = residual / _broadcast(counts, residual)
-            weights = _weights(batch, term, residual)
-            total_term = term.weight * reduce_loss(weights * residual.square())
+            cost = self.elementwise(residual, term)
+            weights = _weights(batch, term, cost)
+            total_term = term.weight * reduce_loss(weights * cost)
             total = total_term if total is None else total + total_term
         assert total is not None
         return total
+
+
+class GeneratedLoss(TermwiseLoss):
+    """Squared error, which is what every weighted legacy loss reduces to."""
 
 
 def build_loss(
@@ -193,21 +213,44 @@ def build_loss(
     Raises:
         UnknownLossError: Naming the value and listing what is registered.
     """
-    kind = config.kind.kind
-    if kind == "weighted":
-        return GeneratedLoss(terms_for(requested, config, stage))
+    terms = terms_for(requested, config, stage)
+    if isinstance(config.kind, RegisteredLoss):
+        # The escape from the closed union into the open registry. The kinds
+        # the schema names are the ones whose settings it can validate; a loss
+        # from another package cannot be, so its settings travel as written and
+        # it validates them itself.
+        return _build(config.kind.name, terms, dict(config.kind.settings))
+    if config.kind.kind == "weighted":
+        return GeneratedLoss(terms)
+    settings = {
+        name: value
+        for name, value in config.kind.model_dump().items()
+        if name != "kind"
+    }
+    return _build(config.kind.kind, terms, settings)
+
+
+def _build(
+    kind: str, terms: Sequence[LossTerm], settings: dict[str, Any]
+) -> torch.nn.Module:
+    """One registered loss, built.
+
+    Raises:
+        UnknownLossError: Naming the value and listing what is registered.
+    """
     if kind not in LOSS_REGISTRY:
         raise UnknownLossError(
             f"{kind!r} is not a registered loss. The registered names are "
             f"{sorted(LOSS_REGISTRY)}, and 'weighted' is the generated one. "
             f"Register yours with @register_loss."
         )
-    settings = {
-        name: value
-        for name, value in config.kind.model_dump().items()
-        if name != "kind"
-    }
-    return LOSS_REGISTRY[kind](**settings)
+    loss = LOSS_REGISTRY[kind]
+    # A loss built on the shared term machinery is handed the terms; one
+    # written from scratch is handed only what it asked for. Which of the two
+    # it is, is a question about its own type rather than about its name.
+    if isinstance(loss, type) and issubclass(loss, TermwiseLoss):
+        return loss(terms, **settings)
+    return loss(**settings)
 
 
 def _atom_counts(batch: TrainingBatch) -> Tensor:
@@ -260,3 +303,100 @@ def _predicted(output: MACEOutput[Tensor], name: str) -> Tensor:
     if not isinstance(value, torch.Tensor):
         raise TypeError(f"{name!r} came back as {type(value)!r} rather than a tensor.")
     return value
+
+
+@register_loss("huber")
+class HuberLoss(TermwiseLoss):
+    """Huber, term by term, on the same normalised residuals.
+
+    Quadratic below ``delta`` and linear above it, so a single bad label costs
+    what it is worth rather than what its square is worth. The frozen tree has
+    one class per property combination that uses it; here it is the reduction
+    and the quantities are whatever was declared.
+    """
+
+    def __init__(self, terms: Sequence[LossTerm], delta: float = 0.01) -> None:
+        super().__init__(terms)
+        self.delta = delta
+
+    def elementwise(self, residual: Tensor, term: LossTerm) -> Tensor:
+        return _huber(residual, self.delta)
+
+
+@register_loss("universal")
+class UniversalLoss(TermwiseLoss):
+    """Huber whose crossover falls where the reference force is large.
+
+    The foundation-model recipe. A structure with forces of several hundred eV
+    per Angstrom is either a very repulsive geometry or a broken calculation,
+    and both deserve less of the model's attention than a near-equilibrium one:
+    the crossover drops in bands, so a large reference force is scored almost
+    linearly.
+
+    The banding reads the **reference** force, not the predicted one, so what a
+    structure costs does not move while the model learns.
+    """
+
+    #: The multipliers on ``delta``, for reference force norms under 100, under
+    #: 200, under 300 and above. The frozen tree's numbers.
+    BANDS = (1.0, 0.7, 0.4, 0.1)
+    EDGES = (100.0, 200.0, 300.0)
+
+    def __init__(self, terms: Sequence[LossTerm], delta: float = 0.01) -> None:
+        super().__init__(terms)
+        self.delta = delta
+        self._reference: dict[str, Tensor] = {}
+
+    def forward(self, output: MACEOutput[Tensor], batch: TrainingBatch) -> Tensor:
+        # The band is a property of the reference, so it is read here and used
+        # by `elementwise`, which only sees the residual.
+        self._reference = dict(batch.targets)
+        try:
+            return super().forward(output, batch)
+        finally:
+            self._reference = {}
+
+    def elementwise(self, residual: Tensor, term: LossTerm) -> Tensor:
+        reference = self._reference.get(term.name)
+        if reference is None or not term.per_atom or reference.dim() < 2:
+            return _huber(residual, self.delta)
+        norms = torch.linalg.vector_norm(reference.to(residual.dtype), dim=-1)
+        # From the widest band inwards, so the narrowest one that matches is
+        # the one written last. Going the other way leaves every row holding
+        # the last band it fell into rather than the first.
+        delta = torch.full_like(norms, self.delta * self.BANDS[-1])
+        for edge, band in zip(
+            reversed(self.EDGES), reversed(self.BANDS[:-1]), strict=True
+        ):
+            delta = torch.where(norms < edge, self.delta * band, delta)
+        return _huber(residual, delta.unsqueeze(-1))
+
+
+@register_loss("l1l2")
+class L1L2Loss(TermwiseLoss):
+    """Absolute error on the scalars, vector norm on the per-atom quantities.
+
+    Neither term is a squared error, which is what makes this a registered
+    loss rather than a generated one: an energy costs its absolute deviation
+    and a force costs the length of its error vector, so a force wrong by
+    ``(3, 4, 0)`` costs five rather than twenty-five.
+    """
+
+    def elementwise(self, residual: Tensor, term: LossTerm) -> Tensor:
+        if term.per_atom and residual.dim() > 1:
+            return torch.linalg.vector_norm(residual, dim=-1)
+        return residual.abs()
+
+
+def _huber(residual: Tensor, delta: Tensor | float) -> Tensor:
+    """Huber of a residual, elementwise, with a per-element crossover allowed.
+
+    Written out rather than taken from `torch.nn.functional.huber_loss`, which
+    takes one scalar delta: the banded variant needs a different crossover per
+    row, and two spellings of the same formula is how the two drift.
+    """
+    magnitude = residual.abs()
+    crossover = torch.as_tensor(delta, dtype=residual.dtype, device=residual.device)
+    quadratic = 0.5 * residual.square()
+    linear = crossover * (magnitude - 0.5 * crossover)
+    return torch.where(magnitude <= crossover, quadratic, linear)

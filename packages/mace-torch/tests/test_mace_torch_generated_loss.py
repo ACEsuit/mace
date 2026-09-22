@@ -17,7 +17,10 @@ import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
-from mace_core.config.loss import LossConfig
+from mace_core.config.loss import HuberLoss as HuberLossConfig
+from mace_core.config.loss import L1L2Loss as L1L2LossConfig
+from mace_core.config.loss import LossConfig, RegisteredLoss
+from mace_core.config.loss import UniversalLoss as UniversalLossConfig
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
 from mace_core.observables import (
@@ -27,7 +30,13 @@ from mace_core.observables import (
 )
 from mace_core.outputs import MACEOutput
 from mace_torch.data import GraphDataset, collate_training, target_specs
-from mace_torch.train import GeneratedLoss, build_loss, register_loss, terms_for
+from mace_torch.train import (
+    GeneratedLoss,
+    UnknownLossError,
+    build_loss,
+    register_loss,
+    terms_for,
+)
 
 CATALOGUE = load_default_catalogue()
 REQUESTED = resolve_requested(["energy", "forces"], CATALOGUE)
@@ -371,3 +380,135 @@ def test_a_declared_observable_needs_no_loss_code_at_all():
     requested, _ = extended_batch(dipole=np.zeros(3), virials=np.zeros((3, 3)))
     names = {term.name for term in terms_for(requested, LossConfig())}
     assert {"energy", "forces", "dipole", "virials"} <= names
+
+
+# ---------------------------------------------------------------------------
+# The three legacy classes that are genuinely different reductions
+# ---------------------------------------------------------------------------
+
+
+def loss_with(kind, batch, output, **weights):
+    config = LossConfig(kind=kind, weights=weights)
+    return float(build_loss(REQUESTED, config)(output, batch))
+
+
+@fp64_only
+def test_the_huber_loss_is_quadratic_below_the_crossover_and_linear_above():
+    """`0.125 + 0.25`, from `test_weighted_huber_energy_forces_stress_loss`.
+
+    The energy is off by one over two atoms, so its normalised residual of 0.5
+    is inside the crossover and costs half its square. A force is off by two,
+    outside it, and costs the linear tail.
+    """
+    batch = batch_of(structure())
+    output = prediction(batch, energy_off=1.0, force_off=2.0)
+    assert loss_with(
+        HuberLossConfig(delta=1.0), batch, output, energy=1.0, forces=1.0
+    ) == pytest.approx(0.125 + 0.25)
+
+
+@fp64_only
+def test_the_huber_weights_scale_each_term_independently():
+    """`8 * 0.125 + 4 * 0.25`, from the same test."""
+    batch = batch_of(structure())
+    output = prediction(batch, energy_off=1.0, force_off=2.0)
+    assert loss_with(
+        HuberLossConfig(delta=1.0), batch, output, energy=8.0, forces=4.0
+    ) == pytest.approx(8.0 * 0.125 + 4.0 * 0.25)
+
+
+@fp64_only
+def test_the_universal_loss_bands_its_crossover_by_the_reference_force():
+    """`0.125 / 6`, from `test_universal_loss`.
+
+    The reference force is zero, which is the first band, so the crossover is
+    the delta itself and a residual of 0.5 stays quadratic.
+    """
+    batch = batch_of(structure())
+    output = prediction(batch, force_off=0.5)
+    assert loss_with(
+        UniversalLossConfig(delta=1.0), batch, output, energy=1.0, forces=1.0
+    ) == pytest.approx(0.125 / 6.0)
+
+
+@fp64_only
+def test_the_band_is_read_off_the_reference_and_not_the_prediction():
+    """Otherwise what a structure costs moves while the model learns, and the
+    same structure is scored differently at two points of one run."""
+    large = Configuration(
+        atomic_numbers=np.array([1, 1]),
+        positions=POSITIONS,
+        properties={"energy": 10.0, "forces": np.full((2, 3), 250.0)},
+    )
+    batch = batch_of(large)
+    output = prediction(batch, force_off=1.0)
+    # |F_ref| is 433, the fourth band, so the crossover is a tenth of delta.
+    scored = loss_with(
+        UniversalLossConfig(delta=1.0), batch, output, energy=0.0, forces=1.0
+    )
+    assert scored == pytest.approx(0.1 * (1.0 - 0.05) / 6.0)
+
+
+@fp64_only
+def test_the_l1l2_loss_costs_a_length_rather_than_a_square():
+    """`1.5 + 2.5`, from `test_weighted_energy_forces_l1l2_loss`.
+
+    The energy is off by three over two atoms and costs 1.5 rather than its
+    square. One atom's force error is `(3, 4, 0)`, which costs five rather
+    than twenty-five, and the mean over the two atoms is 2.5.
+    """
+    batch = batch_of(structure(energy=1.0))
+    energies = batch.targets["energy"].clone()
+    energies[0] = energies[0] + 3.0
+    forces = batch.targets["forces"].clone()
+    forces[0] = torch.tensor([3.0, 4.0, 0.0], dtype=forces.dtype)
+    output = MACEOutput(total_energy=energies, forces=forces)
+    assert loss_with(
+        L1L2LossConfig(), batch, output, energy=1.0, forces=1.0
+    ) == pytest.approx(1.5 + 2.5)
+
+
+@fp64_only
+def test_the_l1l2_weights_scale_their_terms():
+    """`2 * 1.5 + 0.4 * 2.5`, from the same test."""
+    batch = batch_of(structure(energy=1.0))
+    energies = batch.targets["energy"].clone()
+    energies[0] = energies[0] + 3.0
+    forces = batch.targets["forces"].clone()
+    forces[0] = torch.tensor([3.0, 4.0, 0.0], dtype=forces.dtype)
+    output = MACEOutput(total_energy=energies, forces=forces)
+    assert loss_with(
+        L1L2LossConfig(), batch, output, energy=2.0, forces=0.4
+    ) == pytest.approx(3.0 + 1.0)
+
+
+@fp64_only
+def test_a_loss_from_another_package_is_selectable_without_touching_the_schema(
+    clean_registry,
+):
+    """The acceptance criterion. The kinds the schema knows are the ones whose
+    settings it can validate; a loss from elsewhere cannot be, so it is named
+    with its settings and the loss validates them itself."""
+
+    @register_loss("probe_outside")
+    class Outside(torch.nn.Module):
+        def __init__(self, scale: float = 1.0) -> None:
+            super().__init__()
+            self.scale = scale
+
+        def forward(self, output, batch):
+            return torch.as_tensor(self.scale)
+
+    batch = batch_of(structure())
+    config = LossConfig(
+        kind=RegisteredLoss(name="probe_outside", settings={"scale": 7.0})
+    )
+    loss = build_loss(REQUESTED, config)
+    assert float(loss(prediction(batch), batch)) == pytest.approx(7.0)
+
+
+@fp64_only
+def test_a_registered_name_nobody_registered_lists_what_there_is():
+    config = LossConfig(kind=RegisteredLoss(name="no_such_loss"))
+    with pytest.raises(UnknownLossError, match="huber"):
+        build_loss(REQUESTED, config)
