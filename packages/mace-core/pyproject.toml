@@ -17,7 +17,13 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = [
+    # The basis is numpy arrays end to end. Declared rather than inherited from
+    # whatever a developer happens to have: the packages job installs this
+    # distribution alone, so an undeclared import is an unresolved one there
+    # and passes on any machine that has it for another reason.
+    "numpy>=1.23",
+]
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

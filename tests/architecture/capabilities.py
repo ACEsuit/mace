@@ -21,9 +21,9 @@ Both migrate, so both are here, and the meta-tests hold each to its own rules.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Tuple
 
 # tomllib is 3.11+. pytest declares tomli on 3.10, and every environment that
 # runs this file runs it under pytest or beside it, so the fallback always
@@ -39,14 +39,14 @@ MANIFEST = Path(__file__).with_name("capabilities.toml")
 
 #: The migration states, in order. A capability moves forwards through them and
 #: never backwards; the order is what lets a test ask "at least v1-default".
-STATES: Tuple[str, ...] = ("legacy", "v1-optin", "v1-default", "retired")
+STATES: tuple[str, ...] = ("legacy", "v1-optin", "v1-default", "retired")
 
 #: The states in which the v1 stack is what a user gets by default. A
 #: capability outside this set still owes a default flip, and that debt is
 #: what its fitness test xfails on.
 V1_BY_DEFAULT = frozenset({"v1-default", "retired"})
 
-KINDS: Tuple[str, ...] = ("probe", "axis")
+KINDS: tuple[str, ...] = ("probe", "axis")
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ class CiFilter:
     """A paths-filter entry: the extension job this capability starts."""
 
     name: str
-    paths: Tuple[str, ...]
+    paths: tuple[str, ...]
     path_notes: Mapping[str, str] = field(default_factory=dict)
 
 
@@ -80,10 +80,10 @@ class Capability:
     state: str
     summary: str
     burn_step: str
-    owned_by: Optional[str] = None
-    legacy_surface: Tuple[str, ...] = ()
-    ci_filter: Optional[CiFilter] = None
-    coverage_floors: Tuple[CoverageFloor, ...] = ()
+    owned_by: str | None = None
+    legacy_surface: tuple[str, ...] = ()
+    ci_filter: CiFilter | None = None
+    coverage_floors: tuple[CoverageFloor, ...] = ()
 
     @property
     def is_probe(self) -> bool:
@@ -102,7 +102,7 @@ def _load_document() -> dict:
     return tomllib.loads(MANIFEST.read_text(encoding="utf-8"))
 
 
-def load() -> Dict[str, Capability]:
+def load() -> dict[str, Capability]:
     """Every capability, keyed by name, in the order the manifest declares.
 
     Declaration order is preserved deliberately: the generated CI fragments are
@@ -110,7 +110,7 @@ def load() -> Dict[str, Capability]:
     dictionary reshuffle rather than on a real change.
     """
     document = _load_document()
-    result: Dict[str, Capability] = {}
+    result: dict[str, Capability] = {}
     for name, entry in document["capabilities"].items():
         ci_entry = entry.get("ci")
         ci_filter = None
@@ -137,29 +137,29 @@ def load() -> Dict[str, Capability]:
     return result
 
 
-def declared_states() -> Tuple[str, ...]:
+def declared_states() -> tuple[str, ...]:
     """The state vocabulary as the manifest spells it, for cross-checking."""
     return tuple(_load_document()["meta"]["states"])
 
 
-def shared_ci_paths() -> Tuple[str, ...]:
+def shared_ci_paths() -> tuple[str, ...]:
     return tuple(_load_document()["shared_ci_paths"]["paths"])
 
 
-def probes() -> Dict[str, Capability]:
+def probes() -> dict[str, Capability]:
     return {name: cap for name, cap in load().items() if cap.is_probe}
 
 
-def axes() -> Dict[str, Capability]:
+def axes() -> dict[str, Capability]:
     return {name: cap for name, cap in load().items() if cap.is_axis}
 
 
-def ci_filters() -> List[CiFilter]:
+def ci_filters() -> list[CiFilter]:
     """The paths-filter entries, in manifest order."""
     return [cap.ci_filter for cap in load().values() if cap.ci_filter is not None]
 
 
-def coverage_floors() -> List[CoverageFloor]:
+def coverage_floors() -> list[CoverageFloor]:
     """Every per-file coverage floor, in manifest order."""
     return [floor for cap in load().values() for floor in cap.coverage_floors]
 
@@ -173,9 +173,9 @@ def coverage_floors() -> List[CoverageFloor]:
 # ---------------------------------------------------------------------------
 
 
-def problems() -> List[str]:
+def problems() -> list[str]:
     """Everything wrong with the manifest, as sentences."""
-    found: List[str] = []
+    found: list[str] = []
     document = _load_document()
     capabilities = load()
 
@@ -224,7 +224,7 @@ def problems() -> List[str]:
                 f"behaviour moved to packages/, move the floor with it"
             )
 
-    seen_floor_paths: Dict[str, str] = {}
+    seen_floor_paths: dict[str, str] = {}
     for floor in coverage_floors():
         if floor.path in seen_floor_paths:
             found.append(
@@ -233,7 +233,7 @@ def problems() -> List[str]:
             )
         seen_floor_paths[floor.path] = floor.owner
 
-    seen_filters: Dict[str, str] = {}
+    seen_filters: dict[str, str] = {}
     for cap in capabilities.values():
         if cap.ci_filter is None:
             continue

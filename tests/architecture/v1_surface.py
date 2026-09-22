@@ -21,13 +21,13 @@ this very module.
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
-from typing import Callable, Iterator, List, Sequence, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
 
-def package_roots() -> List[Path]:
+def package_roots() -> list[Path]:
     """The import root of each v1 distribution: `<directory>/src/<import name>`.
 
     Derived from the tree rather than listed, so a fifth package is scanned
@@ -72,7 +72,7 @@ def _relative(path: Path) -> str:
         return str(path)
 
 
-def _annotation_names(node: ast.AST | None) -> List[str]:
+def _annotation_names(node: ast.AST | None) -> list[str]:
     """Every identifier appearing in an annotation, subscripts included."""
     if node is None:
         return []
@@ -81,7 +81,7 @@ def _annotation_names(node: ast.AST | None) -> List[str]:
     ]
 
 
-def _base_names(node: ast.ClassDef) -> List[str]:
+def _base_names(node: ast.ClassDef) -> list[str]:
     names = []
     for base in node.bases:
         if isinstance(base, ast.Name):
@@ -98,7 +98,7 @@ def is_model_class(node: ast.ClassDef) -> bool:
     )
 
 
-def model_classes(source: str, path: str) -> List[ast.ClassDef]:
+def model_classes(source: str, path: str) -> list[ast.ClassDef]:
     tree = ast.parse(source, filename=path)
     return [
         node
@@ -124,7 +124,7 @@ def _method(node: ast.ClassDef, name: str):
 # ---------------------------------------------------------------------------
 
 
-def typed_output_violations(source: str, path: str) -> List[str]:
+def typed_output_violations(source: str, path: str) -> list[str]:
     """A model's `forward` must be annotated as returning the typed output."""
     problems = []
     for node in model_classes(source, path):
@@ -146,7 +146,7 @@ def typed_output_violations(source: str, path: str) -> List[str]:
     return problems
 
 
-def config_construction_violations(source: str, path: str) -> List[str]:
+def config_construction_violations(source: str, path: str) -> list[str]:
     """A model is built from one config object, not from a list of kwargs.
 
     The legacy shape this rules out is `configure_model`, which reads about a
@@ -186,7 +186,7 @@ def config_construction_violations(source: str, path: str) -> List[str]:
     return problems
 
 
-def torch_geometric_violations(source: str, path: str) -> List[str]:
+def torch_geometric_violations(source: str, path: str) -> list[str]:
     """No v1 file may import `torch_geometric`, vendored or upstream.
 
     The legacy `AtomicData` subclasses `torch_geometric.data.Data`, so the
@@ -240,7 +240,7 @@ def _is_jit_attribute(node: ast.AST) -> bool:
     return False
 
 
-def torchscript_violations(source: str, path: str) -> List[str]:
+def torchscript_violations(source: str, path: str) -> list[str]:
     """No `jit.*` and no `@compile_mode` in the live v1 path.
 
     TorchScript is banned under `packages/` rather than discouraged. It is
@@ -282,17 +282,17 @@ def torchscript_violations(source: str, path: str) -> List[str]:
     return sorted(set(problems))
 
 
-Detector = Callable[[str, str], List[str]]
+Detector = Callable[[str, str], list[str]]
 
 
-def scan(detector: Detector, roots: Sequence[Path]) -> Tuple[List[str], int]:
+def scan(detector: Detector, roots: Sequence[Path]) -> tuple[list[str], int]:
     """Run one detector over every python file under `roots`.
 
     Returns the problems and the number of files scanned. The count is
     returned, and asserted by the caller, because "no problems" and "no files"
     are the same answer otherwise, and today they are both true.
     """
-    problems: List[str] = []
+    problems: list[str] = []
     scanned = 0
     for path in python_files(roots):
         scanned += 1
@@ -300,7 +300,7 @@ def scan(detector: Detector, roots: Sequence[Path]) -> Tuple[List[str], int]:
     return problems, scanned
 
 
-def model_interface_roots() -> List[Path]:
+def model_interface_roots() -> list[Path]:
     """The directories a top-level model may live in, where they exist yet."""
     return [
         root / MODEL_SUBDIRECTORY
