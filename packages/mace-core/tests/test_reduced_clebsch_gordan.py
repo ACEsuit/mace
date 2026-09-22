@@ -13,6 +13,7 @@ import pytest
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.clebsch_gordan.real_basis import real_basis_change, wigner_3j_real
 from mace_core.clebsch_gordan.reduced_basis import (
+    full_symmetric_tensor_product_basis,
     path_count,
     reduced_symmetric_tensor_product_basis,
 )
@@ -144,3 +145,48 @@ def test_the_irrep_order_is_the_documented_one():
         Irrep(1, -1),
         Irrep(2, 1),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Output irreps the symmetric product does not carry
+# ---------------------------------------------------------------------------
+
+
+def test_an_irrep_carried_only_by_the_antisymmetric_part_has_no_paths():
+    """`1o x 1o -> 1e` is the cross product, and it is antisymmetric.
+
+    The paths to it exist, which is why the unreduced basis has one; they
+    cancel under symmetrization. That is a basis of no paths rather than a
+    failure, and the difference matters because the two are reached by
+    different code: an unreachable irrep yields nothing to enumerate, and this
+    one enumerates something that then vanishes.
+    """
+    reduced = reduced_symmetric_tensor_product_basis("1o", 2, "1e")["1e"]
+    unreduced = full_symmetric_tensor_product_basis("1o", 2, "1e")["1e"]
+    assert reduced.shape == (0, 3, 3, 3)
+    assert unreduced.shape[0] == 1
+    assert path_count("1o", 2, "1e") == 0
+
+
+def test_an_unreachable_irrep_answers_the_same_way():
+    """The other route to no paths, so the two agree on the answer's shape."""
+    assert reduced_symmetric_tensor_product_basis("1o", 1, "2e")["2e"].shape == (
+        0,
+        5,
+        3,
+    )
+    assert path_count("1o", 1, "2e") == 0
+
+
+def test_a_mixed_request_keeps_the_irreps_that_do_have_paths():
+    """The case the crash was reached through: one slot of a loop over irreps.
+
+    A caller asking for several output irreps at once gets a zero-path entry
+    for the ones the symmetric product does not carry, and real bases for the
+    rest, rather than an exception that says nothing about which irrep caused
+    it.
+    """
+    basis = reduced_symmetric_tensor_product_basis("1o", 2, "0e+1e+2e")
+    assert basis["1e"].shape[0] == 0
+    assert basis["0e"].shape[0] == 1
+    assert basis["2e"].shape[0] == 1
