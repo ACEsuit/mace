@@ -18,11 +18,39 @@ The canonical form is stated here once:
 
 The reference backend holds the canonical form directly, so for it both
 functions are views.
+
+**The canonical form carries its normalization folded into the weight.** The
+frozen tree keeps a weight drawn from a standard normal and multiplies it by a
+per-path factor inside the operation; here the factor is already in the number,
+so an operation is a plain contraction and a checkpoint means the same thing
+whatever reads it. That makes the factor part of the format rather than part of
+an implementation, which is why the scales are stated here and used by every
+backend that draws a fresh set of weights.
+
+The factors are what the frozen tree's ``e3nn`` operations apply:
+
+* a **linear** map divides by the square root of the total input multiplicity
+  feeding the output irrep;
+* the **skip connection's** tensor product against the element attributes
+  divides by the square root of the product of the two input multiplicities,
+  because ``e3nn``'s per-instruction factor and the coupling of an irrep with a
+  scalar cancel the output dimension between them;
+* the **symmetric contraction** applies none, so a fresh weight there is a
+  standard normal.
 """
 
 from __future__ import annotations
 
-__all__ = ["CANONICAL_LAYOUT", "KERNEL_SPEC_VERSION", "canonical_weight_shape"]
+from mace_core.clebsch_gordan.irreps import Irrep, Irreps
+
+__all__ = [
+    "CANONICAL_LAYOUT",
+    "KERNEL_SPEC_VERSION",
+    "canonical_weight_shape",
+    "fully_connected_tp_weight_scale",
+    "linear_weight_scale",
+    "symmetric_contraction_weight_scale",
+]
 
 #: The version of this contract. A backend records it, and a checkpoint carries
 #: it, so a format change is a loud mismatch rather than a silent misread.
@@ -42,3 +70,42 @@ def canonical_weight_shape(
     and joining them is free.
     """
     return (num_elements, path_count, num_features)
+
+
+def linear_weight_scale(irreps_in: str, irrep_out: Irrep) -> float:
+    """The factor a fresh linear weight writing to ``irrep_out`` carries.
+
+    An equivariant linear map connects a term only to a term of the same irrep,
+    so the fan-in of an output copy is the total multiplicity of the inputs
+    that share its irrep.
+
+    Returns:
+        ``1 / sqrt(fan_in)``, or ``1.0`` when nothing feeds the irrep, which is
+        an output the map cannot produce and whose weights do not exist.
+    """
+    fan_in = sum(
+        multiplicity
+        for multiplicity, irrep in Irreps.parse(irreps_in)
+        if irrep == irrep_out
+    )
+    return 1.0 if fan_in == 0 else float(fan_in) ** -0.5
+
+
+def fully_connected_tp_weight_scale(
+    multiplicity_in1: int, multiplicity_in2: int
+) -> float:
+    """The factor a fresh skip-connection weight carries.
+
+    Args:
+        multiplicity_in1: The node features' multiplicity for this path.
+        multiplicity_in2: How many element attributes, the second input's
+            width.
+    """
+    product = multiplicity_in1 * multiplicity_in2
+    return 1.0 if product == 0 else float(product) ** -0.5
+
+
+def symmetric_contraction_weight_scale() -> float:
+    """One. Stated as a function so that a backend reads a scale for every op
+    rather than remembering which of the three is the exception."""
+    return 1.0

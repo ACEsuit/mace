@@ -17,6 +17,14 @@ backends, and it does not grow to accommodate one. Two of them are
 reference-only: spherical harmonics and the radial basis are cheap closed forms
 that a backend *may* override and is not required to, and declining is a normal
 answer rather than a failure.
+
+**Three of the ops hold their own weights**, and those three have a contract of
+their own: they read and write the canonical layout, and they can draw a fresh
+set. The last of the three is not an optimization. An op that allocates zeros
+and waits to be loaded is correct for every use that loads a checkpoint, and it
+builds a model that cannot be trained from scratch: the product of zero-valued
+tensors is zero, so is its gradient, and the run finishes and reports a model
+that never moved.
 """
 
 from __future__ import annotations
@@ -34,7 +42,14 @@ from mace_core.kernels.descriptors import (
     SymmetricContractionDescriptor,
 )
 
-__all__ = ["DISPATCHED_OPS", "REFERENCE_ONLY_OPS", "KernelBackend", "TensorT"]
+__all__ = [
+    "DISPATCHED_OPS",
+    "INTERNAL_WEIGHT_OPS",
+    "REFERENCE_ONLY_OPS",
+    "InternalWeights",
+    "KernelBackend",
+    "TensorT",
+]
 
 #: The array type a framework binds. Unbound for the same reason `MACEOutput`
 #: leaves it unbound: a structural bound would be a claim about torch and jax
@@ -54,6 +69,44 @@ DISPATCHED_OPS: frozenset[str] = frozenset(
 
 #: The ops a backend may decline, leaving them to the reference.
 REFERENCE_ONLY_OPS: frozenset[str] = frozenset({"spherical_harmonics", "radial_basis"})
+
+#: The ops that hold weights, and therefore implement :class:`InternalWeights`.
+#: The other two dispatched ops take theirs from outside, or have none.
+INTERNAL_WEIGHT_OPS: frozenset[str] = frozenset(
+    {"linear", "symmetric_contraction", "fully_connected_tp"}
+)
+
+
+@runtime_checkable
+class InternalWeights(Protocol):
+    """What an op that owns its weights provides beyond computing.
+
+    The canonical pair is called only at the checkpoint boundary, never in
+    ``forward``. The draw is called once, when a model is built to be trained
+    rather than loaded.
+    """
+
+    def to_canonical(self) -> Any:
+        """This op's weights in the canonical layout, as a mapping of names."""
+        ...
+
+    def load_canonical(self, state: Any) -> None:
+        """Put canonical weights back. The inverse of :meth:`to_canonical`."""
+        ...
+
+    def initialize_weights(self, seed: int) -> None:
+        """Draw a fresh set, in the canonical layout and at the canonical scale.
+
+        The scales are :mod:`mace_core.kernels.canonical`'s, so two backends
+        initialised from the same seed differ in their draw and not in the size
+        of what they drew. A backend that used its own scale would train at a
+        different effective learning rate than the checkpoint format implies.
+
+        Args:
+            seed: Chosen by the caller per op, so that two ops of the same shape
+                in one model do not receive the same weights.
+        """
+        ...
 
 
 @runtime_checkable

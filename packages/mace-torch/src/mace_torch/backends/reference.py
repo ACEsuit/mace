@@ -22,6 +22,10 @@ from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,
 )
+from mace_core.kernels.canonical import (
+    fully_connected_tp_weight_scale,
+    linear_weight_scale,
+)
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
@@ -77,8 +81,61 @@ def _linear_plan(descriptor: LinearDescriptor):
     return rows, columns, sources, weight, bias_rows
 
 
+def _linear_weight_scales(irreps_in: str, irreps_out: str) -> list[float]:
+    """The canonical scale of every weight of a linear plan, in plan order.
+
+    One entry per weight, so the draw is a multiplication rather than a loop
+    over paths. The order is `_linear_plan`'s: output copies outermost, and
+    within one output copy the matching input copies in declaration order.
+    """
+    source = Irreps.parse(irreps_in)
+    target = Irreps.parse(irreps_out)
+    scales: list[float] = []
+    for out_multiplicity, out_irrep in target:
+        scale = linear_weight_scale(irreps_in, out_irrep)
+        for _ in range(out_multiplicity):
+            for in_multiplicity, in_irrep in source:
+                if in_irrep != out_irrep:
+                    continue
+                scales.extend([scale] * in_multiplicity)
+    return scales
+
+
+def _skip_weight_scales(descriptor: FullyConnectedTPDescriptor) -> list[float]:
+    """The same, for the skip connection, whose fan-in counts both inputs."""
+    source = Irreps.parse(descriptor.irreps_in1)
+    target = Irreps.parse(descriptor.irreps_out)
+    num_scalars = Irreps.parse(descriptor.irreps_in2).dimension
+    scales: list[float] = []
+    for out_multiplicity, out_irrep in target:
+        for _ in range(out_multiplicity):
+            for in_multiplicity, in_irrep in source:
+                if in_irrep != out_irrep:
+                    continue
+                scale = fully_connected_tp_weight_scale(in_multiplicity, num_scalars)
+                scales.extend([scale] * in_multiplicity)
+    return scales
+
+
+def _draw(shape: tuple[int, ...], seed: int, dtype: torch.dtype) -> Tensor:
+    """A standard normal of the given shape, from a seed and nothing else.
+
+    Its own generator rather than the global one: a model's weights must not
+    depend on how many random numbers anything else drew first, which is what
+    makes a run reproducible from its recorded seed.
+    """
+    generator = torch.Generator().manual_seed(seed)
+    return torch.randn(shape, generator=generator, dtype=torch.float64).to(dtype)
+
+
 class ReferenceLinear(nn.Module):
     """An equivariant linear map with first-class bias."""
+
+    row: Tensor
+    column: Tensor
+    source: Tensor
+    bias_row: Tensor
+    weight_scale: Tensor
 
     def __init__(self, descriptor: LinearDescriptor) -> None:
         super().__init__()
@@ -92,6 +149,14 @@ class ReferenceLinear(nn.Module):
         self.register_buffer("bias_row", torch.tensor(bias_rows, dtype=torch.long))
         self.weight = nn.Parameter(torch.zeros(count, dtype=dtype))
         self.bias = nn.Parameter(torch.zeros(len(bias_rows), dtype=dtype))
+        self.register_buffer(
+            "weight_scale",
+            torch.tensor(
+                _linear_weight_scales(descriptor.irreps_in, descriptor.irreps_out),
+                dtype=dtype,
+            ),
+            persistent=False,
+        )
 
     def forward(self, features: Tensor) -> Tensor:
         return equivariant_linear(
@@ -104,6 +169,19 @@ class ReferenceLinear(nn.Module):
             self.bias_row,
             self.dim_out,
         )
+
+    def initialize_weights(self, seed: int) -> None:
+        """A standard normal, scaled per path. The bias starts at zero.
+
+        A bias is an offset on the scalar outputs, and starting it anywhere
+        other than zero would shift the model's energy before it has seen a
+        structure. The frozen tree's linear does the same.
+        """
+        with torch.no_grad():
+            self.weight.copy_(
+                _draw(self.weight.shape, seed, self.weight.dtype) * self.weight_scale
+            )
+            self.bias.zero_()
 
     def to_canonical(self) -> dict[str, Tensor]:
         """A view. The reference holds the canonical layout already."""
@@ -152,6 +230,19 @@ class ReferenceSymmetricContraction(nn.Module):
                 )
             )
         self.weights = nn.ParameterList(weights)
+
+    def initialize_weights(self, seed: int) -> None:
+        """A standard normal, unscaled.
+
+        The symmetric contraction is the one weighted op the canonical layout
+        applies no factor to, so the draw is the frozen tree's own: one normal
+        per element, path and channel.
+        """
+        with torch.no_grad():
+            for order, parameter in enumerate(self.weights):
+                parameter.copy_(
+                    _draw(tuple(parameter.shape), seed + order, parameter.dtype)
+                )
 
     def _bases(self) -> list[Tensor]:
         return [getattr(self, f"basis_{order}") for order in range(1, self.orders + 1)]
@@ -252,6 +343,7 @@ class ReferenceFullyConnectedTP(nn.Module):
     row: Tensor
     column: Tensor
     source: Tensor
+    weight_scale: Tensor
 
     """The skip connection's tensor product against the element attributes.
 
@@ -287,6 +379,11 @@ class ReferenceFullyConnectedTP(nn.Module):
         self.register_buffer("column", torch.tensor(columns, dtype=torch.long))
         self.register_buffer("source", torch.tensor(sources, dtype=torch.long))
         self.weight = nn.Parameter(torch.zeros(self.num_scalars, count, dtype=dtype))
+        self.register_buffer(
+            "weight_scale",
+            torch.tensor(_skip_weight_scales(descriptor), dtype=dtype),
+            persistent=False,
+        )
 
     def forward(self, features: Tensor, attributes: Tensor) -> Tensor:
         empty = features.new_zeros(0)
@@ -309,6 +406,18 @@ class ReferenceFullyConnectedTP(nn.Module):
             )
             total = total + mapped * attributes[:, scalar : scalar + 1]
         return total
+
+    def initialize_weights(self, seed: int) -> None:
+        """A standard normal, scaled by the fan-in of both inputs.
+
+        The skip connection sees every element attribute, so its fan-in counts
+        them as well as the node features' multiplicity.
+        """
+        with torch.no_grad():
+            self.weight.copy_(
+                _draw(tuple(self.weight.shape), seed, self.weight.dtype)
+                * self.weight_scale
+            )
 
     def to_canonical(self) -> dict[str, Tensor]:
         return {"weight": self.weight.detach()}
