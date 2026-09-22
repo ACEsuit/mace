@@ -120,15 +120,24 @@ def _skip_weight_scales(descriptor: FullyConnectedTPDescriptor) -> list[float]:
     return scales
 
 
-def _draw(shape: tuple[int, ...], seed: int, dtype: torch.dtype) -> Tensor:
-    """A standard normal of the given shape, from a seed and nothing else.
+def _draw(like: Tensor, seed: int) -> Tensor:
+    """A standard normal shaped, typed and placed like ``like``.
 
     Its own generator rather than the global one: a model's weights must not
     depend on how many random numbers anything else drew first, which is what
     makes a run reproducible from its recorded seed.
+
+    Drawn on the host and moved, never drawn on the device. A device generator
+    seeded the same way produces different numbers, so drawing where the model
+    happens to live would make a recorded seed rebuild a different model on a
+    different machine. It is moved rather than left behind because a model that
+    has been sent to a device has its buffers there, and multiplying a host
+    tensor by one of them is a device mismatch.
     """
     generator = torch.Generator().manual_seed(seed)
-    return torch.randn(shape, generator=generator, dtype=torch.float64).to(dtype)
+    return torch.randn(like.shape, generator=generator, dtype=torch.float64).to(
+        device=like.device, dtype=like.dtype
+    )
 
 
 class ReferenceLinear(nn.Module):
@@ -181,9 +190,7 @@ class ReferenceLinear(nn.Module):
         structure. The frozen tree's linear does the same.
         """
         with torch.no_grad():
-            self.weight.copy_(
-                _draw(self.weight.shape, seed, self.weight.dtype) * self.weight_scale
-            )
+            self.weight.copy_(_draw(self.weight, seed) * self.weight_scale)
             self.bias.zero_()
 
     def to_canonical(self) -> dict[str, Tensor]:
@@ -276,9 +283,7 @@ class ReferenceSymmetricContraction(nn.Module):
         """
         with torch.no_grad():
             for position, parameter in enumerate(self.weights):
-                parameter.copy_(
-                    _draw(tuple(parameter.shape), seed + position, parameter.dtype)
-                )
+                parameter.copy_(_draw(parameter, seed + position))
 
     def _group(self, position: int) -> list[Tensor]:
         """One output irrep's weights, by integer index.
@@ -305,22 +310,40 @@ class ReferenceSymmetricContraction(nn.Module):
         return torch.cat(pieces, dim=-1)
 
     def to_canonical(self) -> dict[str, Tensor]:
-        """The flat ``[Z, A, mul]`` array, joined over the body orders.
+        """The flat ``[Z, A, mul]`` array, in the pinned path order.
 
-        The per-order tensors are contiguous slices of it in the pinned path
-        order, so this is a concatenate rather than a conversion.
+        **Body order outermost, output irrep within it**, which is the order
+        the path enumeration walks and therefore the order on disk. The weights
+        are stored the other way round, output irrep outermost, because that is
+        how the forward consumes them, so this reorders rather than simply
+        concatenating. Emitting the storage order instead would write a file
+        whose paths are the canonical ones permuted, and the round trip through
+        this same object would not notice: it splits by the counts it wrote.
         """
+        ordered = self._canonical_order()
         return {
-            "weight": torch.cat([w.detach() for w in self.weights], dim=1),
-            "path_counts": torch.tensor([w.shape[1] for w in self.weights]),
+            "weight": torch.cat([w.detach() for w in ordered], dim=1),
+            "path_counts": torch.tensor([w.shape[1] for w in ordered]),
         }
 
     def load_canonical(self, state: dict[str, Tensor]) -> None:
         counts = [int(n) for n in state["path_counts"]]
         pieces = torch.split(state["weight"], counts, dim=1)
         with torch.no_grad():
-            for parameter, piece in zip(self.weights, pieces, strict=True):
+            for parameter, piece in zip(self._canonical_order(), pieces, strict=True):
                 parameter.copy_(piece)
+
+    def _canonical_order(self) -> list[Tensor]:
+        """The weight tensors in the order the file has them.
+
+        Body order ascending, and within one body order the output irreps in
+        declaration order. `self.weights` is the transpose of this.
+        """
+        return [
+            self.weights[position * self.orders + order]
+            for order in range(self.orders)
+            for position in range(len(self.targets))
+        ]
 
 
 def _coupling_coefficients(descriptor: ChannelwiseTPConvDescriptor) -> np.ndarray:
@@ -466,10 +489,7 @@ class ReferenceFullyConnectedTP(nn.Module):
         them as well as the node features' multiplicity.
         """
         with torch.no_grad():
-            self.weight.copy_(
-                _draw(tuple(self.weight.shape), seed, self.weight.dtype)
-                * self.weight_scale
-            )
+            self.weight.copy_(_draw(self.weight, seed) * self.weight_scale)
 
     def to_canonical(self) -> dict[str, Tensor]:
         return {"weight": self.weight.detach()}

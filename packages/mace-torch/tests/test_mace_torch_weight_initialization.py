@@ -179,3 +179,79 @@ def test_the_derived_seed_is_stable_across_processes():
 
 def test_a_model_with_no_weighted_ops_says_so():
     assert initialize_model_weights(torch.nn.Linear(2, 2), seed=0) == ()
+
+
+# ---------------------------------------------------------------------------
+# After the model has been moved
+# ---------------------------------------------------------------------------
+
+#: A non-host device to move to, if this machine has one. The failure is about
+#: two tensors on different devices, so any second device shows it.
+OTHER_DEVICE = (
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else None
+)
+
+#: The same three ops at float32. Metal has no float64 at all, so a float64
+#: module cannot even be moved there; the device question is the same at either
+#: precision.
+NARROW_LINEAR = LinearDescriptor(
+    irreps_in="4x0e+4x1o",
+    irreps_out="4x0e+4x1o",
+    has_bias=True,
+    precision="float32",
+)
+
+
+def built_narrow() -> dict[str, Any]:
+    return {
+        "linear": BACKEND.make_linear(NARROW_LINEAR),
+        "fully_connected_tp": BACKEND.make_fully_connected_tp(
+            FullyConnectedTPDescriptor(
+                irreps_in1="4x0e+4x1o",
+                irreps_in2="2x0e",
+                irreps_out="4x0e+4x1o",
+                precision="float32",
+            )
+        ),
+        "symmetric_contraction": BACKEND.make_symmetric_contraction(
+            SymmetricContractionDescriptor(
+                irreps_in="0e+1o",
+                irreps_out="0e",
+                correlation=2,
+                num_elements=2,
+                num_features=4,
+                precision="float32",
+            )
+        ),
+    }
+
+
+@pytest.mark.skipif(OTHER_DEVICE is None, reason="this machine has one device")
+def test_a_moved_model_still_draws_its_weights():
+    """A model is built, moved, and then initialised, in that order.
+
+    The draw happens on the host, because a device generator seeded the same
+    way gives different numbers and a recorded seed has to rebuild the same
+    model anywhere. So the drawn tensor has to be moved to where the parameter
+    is. The contraction is the one that would hide this, since it applies no
+    scale and its copy crosses devices without complaint.
+    """
+    for name, op in built_narrow().items():
+        op.to(OTHER_DEVICE).initialize_weights(3)
+        for parameter in op.parameters():
+            assert parameter.device.type == OTHER_DEVICE, name
+
+
+@pytest.mark.skipif(OTHER_DEVICE is None, reason="this machine has one device")
+def test_the_weights_do_not_depend_on_where_the_model_was_built():
+    """Same seed, two devices, same numbers. Otherwise a run is reproducible
+    only on the machine that produced it."""
+    host = BACKEND.make_linear(NARROW_LINEAR)
+    host.initialize_weights(11)
+    moved = BACKEND.make_linear(NARROW_LINEAR).to(OTHER_DEVICE)
+    moved.initialize_weights(11)
+    assert torch.allclose(host.weight, moved.weight.cpu())
