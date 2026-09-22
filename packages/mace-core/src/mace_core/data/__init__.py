@@ -23,6 +23,12 @@ from mace_core.data.configuration import (
     Configuration,
 )
 from mace_core.data.conformance import data_backend_conformance
+from mace_core.data.e0_resolution import (
+    E0Provenance,
+    E0ResolutionError,
+    EnergyPredictor,
+    resolve_e0s,
+)
 from mace_core.data.keys import (
     ATOM_CONVENTION_NAMES,
     GRAPH_CONVENTION_NAMES,
@@ -69,7 +75,10 @@ __all__ = [
     "DatasetManifest",
     "DatasetStatistics",
     "DefaultKeys",
+    "E0Provenance",
+    "E0ResolutionError",
     "EmbeddingFeatureSpec",
+    "EnergyPredictor",
     "KeySpecification",
     "ParsedConfigurations",
     "UnknownBackendError",
@@ -85,4 +94,5 @@ __all__ = [
     "open_dataset",
     "random_train_valid_split",
     "read_configurations",
+    "resolve_e0s",
 ]
