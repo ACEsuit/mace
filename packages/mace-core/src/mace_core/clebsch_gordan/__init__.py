@@ -10,7 +10,7 @@ against 86 on the measured grid point.
 The weight format, stated once
 ------------------------------
 
-Three conventions are fixed here, and together they *are* the on-disk format of
+Four conventions are fixed here, and together they *are* the on-disk format of
 the symmetric-contraction weights. Changing any of them changes every
 checkpoint, so each is chosen deliberately and written down rather than left to
 whatever a library happened to do.
@@ -29,7 +29,24 @@ An SVD would give the same span with an arbitrary basis inside it and a sign
 that moves between LAPACK builds, which is not a file format.
 
 **Normalization.** Each surviving path carries unit Frobenius norm, with its
-sign fixed so the first structurally non-zero entry is positive.
+sign fixed so the first structurally non-zero entry is positive. The norm is one
+rule for every output irrep rather than ``sqrt(ir.dim)``, so weights on disk have
+a comparable scale across irreps; the factor a given backend wants lives in its
+converter, and an initializer that wants to match the legacy scale carries it
+explicitly.
+
+**Naming.** Every surviving path carries its
+:class:`~mace_core.clebsch_gordan.reduced_basis.CouplingTree`, the sequence of
+consumed input slices and running intermediate irreps that produced it. Order
+and normalization alone do not pin the layout: the enumerated paths are
+dependent, so *which* of them survives is a free choice, and two
+implementations that resolve it differently span the same space with vectors no
+reordering relates. Measured against ``cuequivariance``, four of the five grid
+points the layout ticket uses agree up to a signed permutation and the fifth
+needs two small dense blocks, of size 2 and 3, in the ``2e`` slot at body order
+three. A label names a path wherever it sits, so a backend matches by name and
+can say which trees it did not recognise instead of quietly reinterpreting the
+weights.
 
 **Layout** is ``mul_ir``: the multiplicity index varies slowest.
 
@@ -62,22 +79,28 @@ from mace_core.clebsch_gordan.conversion import (
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.clebsch_gordan.real_basis import real_basis_change, wigner_3j_real
 from mace_core.clebsch_gordan.reduced_basis import (
+    CouplingTree,
+    full_path_labels,
     full_symmetric_tensor_product_basis,
     path_count,
+    path_labels,
     reduced_symmetric_tensor_product_basis,
 )
 
 __all__ = [
+    "CouplingTree",
     "Irrep",
     "Irreps",
     "IrrepsError",
     "clebsch_gordan",
     "from_canonical",
+    "full_path_labels",
     "full_symmetric_tensor_product_basis",
     "full_to_reduced",
     "ir_mul_to_mul_ir",
     "mul_ir_to_ir_mul",
     "path_count",
+    "path_labels",
     "real_basis_change",
     "reduced_symmetric_tensor_product_basis",
     "reduced_to_full",

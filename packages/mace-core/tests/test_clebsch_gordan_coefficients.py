@@ -5,18 +5,22 @@ and is not the code under test. It is a test-only dependency: `mace_core` must
 not acquire it, and the suite skips rather than fails where it is absent.
 """
 
-import importlib.util
 import math
 
 import numpy as np
 import pytest
 from mace_core.clebsch_gordan import clebsch_gordan, wigner_3j_complex
 
-if importlib.util.find_spec("sympy") is None:  # pragma: no cover
-    pytest.skip("needs sympy as an independent oracle", allow_module_level=True)
-
-from sympy.physics.quantum.cg import CG
-from sympy.physics.wigner import wigner_3j as sympy_3j
+# `importorskip` rather than a guard plus a plain import: the lint job installs
+# the packages and the toolchain and nothing else, so a module-level import of
+# an optional oracle is an unresolved import there even though the skip means
+# it never runs.
+CG = pytest.importorskip(
+    "sympy.physics.quantum.cg", reason="needs sympy as an independent oracle"
+).CG
+sympy_3j = pytest.importorskip(
+    "sympy.physics.wigner", reason="needs sympy as an independent oracle"
+).wigner_3j
 
 # One unit in the last place at fp64. These coefficients are a closed form, so
 # the bar is the closed-form row of the project's tolerance table, not the
