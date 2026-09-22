@@ -1,93 +1,44 @@
-"""The base class every v1 configuration schema derives from.
+"""The config base: files and dotted command-line overrides into one validated
+pydantic tree, and the tree back out as a dict.
 
-A configuration is a tree of fields. A field holds either one value (`seed`,
-`cutoff`) or a named group of further fields; such a group is a *section*.
-The root of the tree subclasses `ReforgeBaseConfig`, every section
-subclasses `ConfigSection`:
+`load` turns every file (any number, in order) and every override into leaf
+updates `(path, value, source)`, walks each path once through the schema (the
+one schema-dependent step: unknown keys and wrong shapes are rejected with full
+dotted paths, a bare kind name at a kinds field becomes its `kind`, and the
+kinds fields the path enters are recorded on the update), merges them
+set-at-path into one plain dict, validates that dict once, and finally warns
+for each override that lost its effect. Precedence is defaults < files in
+order < overrides in order. Nothing else feeds a config: no environment, no
+dotenv.
 
-    class RadialSection(ConfigSection):
-        num_bessel: int = 8
-        cutoff: float = 5.0
+Wire form of a kinds field (`Annotated[A | B, Field(discriminator="kind")]`):
+a mapping with a kind name holding that kind's settings (`huber: {delta: 0.1}`,
+any number of them) and `kind: huber` selecting the one that runs; a bare
+`huber` is `{kind: huber}`; a single kind key selects itself; `{}` keeps the
+schema default. Two or more kind keys without a selection, a required kinds
+field with nothing written, and the tag under a kind are the one kinds error,
+rendered with the path, the fix and the source of each kind key. The exports
+write the kind that ran as `{huber: {fields}}`, without the tag. `kind` is the
+tag only under a kinds field: the same class as a plain section field keeps
+`kind` as an ordinary key on input and export.
 
-    class ModelSection(ConfigSection):
-        num_interactions: int = 2
-        radial: RadialSection = RadialSection()
-
-    class TrainConfig(ReforgeBaseConfig):
-        seed: int = 1
-        model: ModelSection = ModelSection()
-
-Here `model` and `radial` are sections. In a TOML file a section is a table
-(`[model.radial]`), in YAML/JSON a nested mapping, and on the command line a
-dotted prefix (`--model.radial.cutoff 5.0`). Values come from three layers,
-lowest precedence first:
-
-    schema defaults < one config file (.toml/.yaml/.yml/.json) < dotted CLI overrides
-
-Nothing else feeds a config: no environment variables, no dotenv files, so a
-run is reproducible from its file and its command line alone.
-
-A field may hold a section of one of several *kinds*: a discriminated union
-whose tag field names the kind.
-
-    class HuberLoss(ConfigSection):
-        kind: Literal["huber"] = "huber"
-        delta: float = 0.01
-
-    Loss = Annotated[WeightedLoss | HuberLoss, Field(discriminator="kind")]
-
-    class TrainConfig(ReforgeBaseConfig):
-        loss: Loss = WeightedLoss()
-
-Code sees the union: `config.loss` is a `WeightedLoss` or a `HuberLoss`. A
-file and the command line never write the tag; they write the kind as the
-key the section sits under, or as a bare name, which is that kind with
-nothing set under it:
-
-    loss: huber                     --loss huber
-    loss: {huber: {delta: 0.1}}     --loss.huber.delta 0.1
-
-The file and each override merge in order. A bare name on top of a section
-of the same kind keeps that section's keys; a different kind replaces it:
-`--loss weighted` on top of a file with a huber section runs the weighted
-loss and warns (`ConfigWarning`) that the huber section is ignored. Two
-kinds written in one place, one file or one override, is an error, and so
-is `null` at a kinds field or under a kind: a kinds field always holds a
-kind. When none of the kinds is a valid choice, that is a kind too, an
-empty variant such as `class NoLoss(ConfigSection): kind: Literal["none"]`,
-written `loss: none`. A kinds field with no kind written takes the kind of
-its default. The resolved and user dicts are written the same way, kind as
-key.
-
-The tagged dict, `{kind: huber, delta: 0.1}`, is pydantic's internal form:
-what `model_validate` takes and what `model_json_schema` describes. It is
-not a file format; `load()` refuses it. Code builds sections as instances
-(`HuberLoss(delta=0.1)`) and never meets either dict form.
-
-Unknown keys are hard errors. A CLI key is checked against the schema's
-dotted paths before anything is built; a key in the file, or inside a
-JSON-valued override, is caught by pydantic (`extra="forbid"` on every level
-of the tree). Either way the message names the key by its dotted path and,
-when there is one, the nearest valid neighbour.
-
-Field types are restricted to what survives a JSON round trip unchanged, so
-that the resolved export is a fixed point: `set` and `frozenset` fields are
-rejected when the schema class is defined, because their element order is not
-stable across interpreter runs. Use a list.
+An override loses its effect in two ways, and only these warn (a file never
+does): a later override writes at its path, above it, or below a value of its
+that was not a mapping (`{}` never clears a mapping); or it wrote under a kind
+that does not run at its kinds field.
 """
 
 from __future__ import annotations
 
+import copy
 import difflib
 import json
+import sys
 import warnings
-from collections.abc import Callable, Iterator, Sequence
-from itertools import cycle
+from collections.abc import Collection, Iterable
 from pathlib import Path
-from types import UnionType
-from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
+from typing import Any, NamedTuple, TypeVar, get_args, get_origin
 
-import tomli
 import yaml
 from pydantic import (
     BaseModel,
@@ -97,734 +48,571 @@ from pydantic import (
     model_serializer,
     model_validator,
 )
-from pydantic.fields import FieldInfo
+from pydantic_core import (
+    ErrorDetails,
+    PydanticCustomError,
+    PydanticUndefined,
+)
+from typing_extensions import Self
 
-if TYPE_CHECKING:
-    from typing_extensions import Self
+from mace_core.config._schema_rules import (
+    check_fields,
+    check_model_config,
+    is_section,
+    kinds_fields_of,
+    kinds_of,
+    members_of,
+    reachable_sections,
+    unwrap,
+)
 
-__all__ = [
-    "ConfigError",
-    "ConfigSection",
-    "ConfigWarning",
-    "ReforgeBaseConfig",
-    "read_config_file",
-]
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
-#: Config file extensions this module reads, keyed to their parsers.
-_FILE_PARSERS = {
-    ".toml": tomli.loads,
+_PARSERS = {
+    ".toml": tomllib.loads,
     ".yaml": yaml.safe_load,
     ".yml": yaml.safe_load,
     ".json": json.loads,
 }
-
-#: A dotted path as its parts; a list index is a part too.
-_Path = tuple[str, ...]
-
-#: Where a value came from: the layer's index and its name ("the config file"
-#: or the override as typed). Comparing two origins compares their order.
-_Origin = tuple[int, str]
-
-#: What runs at a kinds field during a walk: gets the field's value (any
-#: shape), the field and its path, returns the value to go on with.
-_KindsAction = Callable[[Any, FieldInfo, _Path], Any]
-
-
-# ---------------------------------------------------------------------------
-# Schema introspection
-
-
-def _sections_in(
-    annotation: Any, inside: bool = False
-) -> Iterator[tuple[type[BaseModel], bool]]:
-    """Every section class a field annotation can hold (`Radial`, `Radial | None`,
-    `list[Radial]`, `Annotated[A | B, ...]`), with whether it sits inside a
-    dict/list/tuple, where an error location has a key or index before the
-    section's own field names."""
-    origin = get_origin(annotation)  # `list` for `list[X]`; None for a plain class
-    if origin is None:
-        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            yield annotation, inside
-    elif origin is Annotated:
-        yield from _sections_in(get_args(annotation)[0], inside)
-    elif origin in (Union, UnionType):
-        for arg in get_args(annotation):
-            yield from _sections_in(arg, inside)
-    elif origin in (dict, list, tuple):
-        for arg in get_args(annotation):
-            yield from _sections_in(arg, True)
-
-
-def _arms(annotation: Any) -> Iterator[Any]:
-    """The alternatives of a union, through `Annotated`; else the annotation."""
-    origin = get_origin(annotation)
-    if origin is Annotated:
-        yield from _arms(get_args(annotation)[0])
-    elif origin in (Union, UnionType):
-        for arg in get_args(annotation):
-            yield from _arms(arg)
-    else:
-        yield annotation
-
-
-def _section_of(annotation: Any) -> tuple[type[BaseModel] | None, bool]:
-    """The one section a field can hold, and whether it is inside a collection."""
-    found = dict(_sections_in(annotation))
-    return next(iter(found.items())) if found else (None, False)
-
-
-def _tag_of(field: FieldInfo) -> str | None:
-    """The tag field name of a kinds field, else None. Also found through an
-    outer union, `Annotated[...] | None`, which keeps it in the `Annotated`
-    metadata, so that `_check_schema` can reject that spelling by name."""
-    found: Any = field.discriminator
-    if found is None and get_origin(field.annotation) in (Union, UnionType):
-        for arg in get_args(field.annotation):
-            if get_origin(arg) is Annotated:
-                for meta in get_args(arg)[1:]:
-                    if isinstance(meta, FieldInfo) and meta.discriminator is not None:
-                        found = meta.discriminator
-    return found if isinstance(found, str) else None
-
-
-def _tag_values(section: type[BaseModel], tag: str) -> tuple[Any, ...]:
-    """The `Literal` values of a variant's tag field; empty if not a Literal."""
-    tag_field = section.model_fields.get(tag)
-    if tag_field is None or get_origin(tag_field.annotation) is not Literal:
-        return ()
-    return get_args(tag_field.annotation)
-
-
-def _kinds_of(field: FieldInfo) -> dict[str, type[BaseModel]]:
-    """Kind name -> section class of a kinds field, in declaration order."""
-    tag = _tag_of(field)
-    if tag is None:
-        return {}
-    return {
-        _tag_values(section, tag)[0]: section
-        for section, _ in _sections_in(field.annotation)
-    }
-
-
-def _default_kind(field: FieldInfo) -> str | None:
-    """The kind of the field's default section; None for a required field."""
-    tag = _tag_of(field)
-    default = field.get_default(call_default_factory=True)
-    if tag is None or not isinstance(default, BaseModel):
-        return None
-    return getattr(default, tag)
-
-
-def _kinds_text(field: FieldInfo) -> str:
-    return ", ".join(_kinds_of(field))
-
-
-def _admits_none(annotation: Any) -> bool:
-    """`X | None`, `Optional[X]`, `Any`, `object`, also under `Annotated`."""
-    return any(arm in (type(None), Any, object) for arm in _arms(annotation))
-
-
-def _contains_a_set(annotation: Any) -> bool:
-    """A bare `set`, a `set[X]`, or a set anywhere inside, e.g. `list[set[int]]`."""
-    if annotation in (set, frozenset) or get_origin(annotation) in (set, frozenset):
-        return True
-    return any(_contains_a_set(arg) for arg in get_args(annotation))
-
-
-_NONE_IS_A_KIND = (
-    "default to a variant, or for none of the kinds add an empty variant, "
-    'kind: Literal["none"], and default to that'
-)
-
-
-def _complete(model: type[BaseModel]) -> None:
-    """Resolve the tree's forward references and check every section. The
-    rebuild of an outer model does not rebuild an inner one, so each section
-    is rebuilt where it is met; the check runs on every section, not only the
-    rebuilt ones, since a rebuild elsewhere (pydantic's own on first use)
-    completes a class without checking it."""
-    if not model.__pydantic_complete__:
-        model.model_rebuild()
-    _check_schema(model)
-    for field in model.model_fields.values():
-        for section, _ in _sections_in(field.annotation):
-            _complete(section)
-
-
-def _check_schema(model: type[BaseModel]) -> None:
-    """Fail at class definition for a field shape the contract cannot keep.
-
-    Each rule protects one guarantee: no sets (order is not stable across
-    runs, so the export would not be a fixed point); no aliases or computed
-    fields (the export would not validate back); no `None` default on a type
-    that does not admit `None` (pydantic does not validate defaults, so the
-    export would not validate back; a default factory is not run here, so
-    what it returns is not checked); several sections under one field only
-    as kinds, i.e. a discriminated union, and not inside a collection (a
-    value must not become whichever alternative happens to accept it, and
-    the CLI addresses a collection only as a whole); nothing beside the
-    variants of a kinds field, not even `None` (a kinds field always holds a
-    kind; "none of them" is an empty variant, so it can be written, named
-    among the kinds and warned about like any other); a tag that is one
-    string other than the tag's own name (it is the key the kind is written
-    under); a default that is a variant written as an instance, not a
-    factory (its kind is the default kind, read without running anything);
-    every section is a `ConfigSection` (a plain `BaseModel` ignores unknown
-    keys, so a typo would vanish, and skips these checks).
-
-    A class whose annotations still name a class defined later, a forward
-    reference, is incomplete at definition and is not checked here: its
-    fields cannot be seen through. `_complete` checks it when `load` first
-    resolves it.
-    """
-
-    def reject(name: str, reason: str) -> None:
-        raise TypeError(f"{model.__name__}.{name} {reason}")
-
-    for name in model.model_computed_fields:
-        reject(name, "is a computed field; the export must validate back, so drop it")
-    for name, field in model.model_fields.items():
-        if field.alias or field.validation_alias or field.serialization_alias:
-            reject(name, "has an alias; config keys are field names, so drop it")
-        if _contains_a_set(field.annotation):
-            reject(
-                name,
-                "is typed as a set; set order is not stable across runs. Use a list",
-            )
-        sections = dict(_sections_in(field.annotation))
-        tag = _tag_of(field)
-        # `default` is undefined, not None, for a required field or a factory;
-        # a factory is not run here, so what it returns is not checked
-        if field.default is None and tag is not None:
-            reject(name, f"defaults to None, which is not a kind; {_NONE_IS_A_KIND}")
-        if field.default is None and not _admits_none(field.annotation):
-            reject(
-                name, "defaults to None but its type does not admit None; add | None"
-            )
-        if len(sections) > 1 and any(sections.values()):
-            reject(
-                name,
-                "is a union of sections inside a dict, list or tuple; the CLI "
-                "addresses such a field only as a whole. Put the union in a "
-                "field of the section that is the element",
-            )
-        if len(sections) > 1 and tag is None:
-            reject(
-                name,
-                "is a union of sections without a discriminator; spell it "
-                'Annotated[A | B, Field(discriminator="kind")] with a '
-                '`kind: Literal["a"]` field in each',
-            )
-        for section in sections:
-            if not issubclass(section, ConfigSection):
-                reject(
-                    name,
-                    f"holds {section.__name__}, which is not a ConfigSection; "
-                    f"subclass it",
-                )
-        if tag is None:
-            continue
-        others = [arm for arm in _arms(field.annotation) if arm not in sections]
-        if type(None) in others:
-            reject(name, f"admits None, which is not a kind; {_NONE_IS_A_KIND}")
-        if others:
-            reject(
-                name,
-                f"mixes its kinds with {getattr(others[0], '__name__', others[0])}; "
-                f"a kinds field holds its variants only",
-            )
-        for section in sections:
-            values = _tag_values(section, tag)
-            if len(values) != 1 or not isinstance(values[0], str):
-                reject(
-                    name,
-                    f"has variant {section.__name__} whose {tag} must be a Literal "
-                    f"of exactly one string; a config names the kind by it",
-                )
-            if values[0] == tag:
-                reject(
-                    name,
-                    f"has variant {section.__name__} whose kind is named {tag!r} like "
-                    f"the tag; a config could not tell the two apart. Rename it",
-                )
-        example = f"{next(iter(sections)).__name__}()"
-        if field.default_factory is not None:
-            reject(
-                name,
-                f"has a default_factory; write the default as an instance, e.g. "
-                f"{example} (pydantic copies it per instance)",
-            )
-        if not field.is_required() and not isinstance(field.default, tuple(sections)):
-            reject(
-                name,
-                f"has a default that is not one of its variants; write e.g. {example}",
-            )
+#: The one error `_to_tagged_form` raises through pydantic; `load` renders it.
+_KINDS_ERROR = "kinds"
 
 
 class ConfigError(ValueError):
-    """A config file or override the schema rejects.
-
-    Raised for a missing, unparsable or malformed file, an unknown key or
-    kind, an override the CLI parser cannot make sense of, two kinds of one
-    section written in one place, and `null` at or under a kind. The
-    message names the file or the
-    offending key by its dotted path, and suggests the nearest valid key
-    when there is a close match.
-    """
+    """A file or command line the schema cannot take; the message names the
+    key and the fix."""
 
 
 class ConfigWarning(UserWarning):
-    """A section of one kind is ignored because a later layer selected another
-    kind. `warnings.simplefilter("error", ConfigWarning)` makes it an error."""
+    """An override that had no effect on the config that runs."""
+
+
+class KindEntered(NamedTuple):
+    """A kinds field an update's path passes through under one of its kind
+    keys: the field's path, its kind names and the key entered."""
+
+    field: tuple[Any, ...]
+    kinds: tuple[str, ...]
+    key: str
+
+
+class Update(NamedTuple):
+    """One leaf update; `source` is the file's path or the override as typed.
+    The walk fills `under_kinds` with every kinds field the path enters under a
+    kind key, and `selects` with the kinds field whose tag the path ends at."""
+
+    path: tuple[Any, ...]
+    value: Any
+    source: str
+    under_kinds: tuple[KindEntered, ...] = ()
+    selects: tuple[Any, ...] | None = None
+
+
+#: The node for the `kind` slot under a kinds field.
+_TAG = object()
+
+
+class _KindPosition(NamedTuple):
+    """A variant class reached through its kinds field, where `kind` is the
+    tag and not a key. The same class as a plain field is walked as a section."""
+
+    variant: type[ConfigSection]
+
+
+def _narrowed(node: Any) -> Any:
+    """`Annotated` stripped and `X | None` stepped through to `X`."""
+    members = [m for m in members_of(node) if m is not type(None)]
+    return unwrap(members[0]) if len(members) == 1 else unwrap(node)
+
+
+def _step(node: Any, key: Any) -> tuple[Any, list[Any] | None]:
+    """One step of the walk: the child node under `key` (None when the key
+    is not valid there) and the keys valid at `node` (None when any key is,
+    `[]` when the node is written whole)."""
+    node = unwrap(node)
+    if isinstance(node, _KindPosition):
+        fields = node.variant.model_fields
+        keys = [name for name in fields if name != "kind"]
+        return (fields[key].annotation if key in keys else None), keys
+    if (kinds := kinds_of(node)) is not None:
+        keys = ["kind", *kinds]
+        if key == "kind":
+            return _TAG, keys
+        return (_KindPosition(kinds[key]) if key in kinds else None), keys
+    if is_section(node):
+        fields = node.model_fields
+        return (fields[key].annotation if key in fields else None), list(fields)
+    node = _narrowed(node)
+    origin = get_origin(node)
+    if origin is dict:
+        return get_args(node)[1], None
+    if node in (Any, object, dict):
+        return Any, None
+    if origin in (list, tuple) or node in (list, tuple):
+        if not isinstance(key, int):
+            return None, []
+        args = get_args(node)
+        if origin is tuple and Ellipsis not in args and args:
+            return (args[key] if key < len(args) else Any), []
+        return (args[0] if args else Any), []
+    return None, []
+
+
+def _dotted(path: tuple[Any, ...]) -> str:
+    return ".".join(map(str, path))
+
+
+def _as_shown(value: Any) -> str:
+    """JSON where it can, `str` where it cannot (a TOML date, a YAML set)."""
+    return json.dumps(value, default=str)
+
+
+def _as_typed(value: Any) -> str:
+    """A command-line value as typed (a str), anything else as JSON."""
+    return value if isinstance(value, str) else _as_shown(value)
+
+
+def _unknown_key(
+    parent: Any, keys: list[Any] | None, path: tuple[Any, ...]
+) -> ConfigError:
+    """D1: the key by its dotted path, then the nearest neighbour, the kinds
+    of a kinds field, or why the tag is not a key under a kind."""
+    message = f"unknown config key '{_dotted(path)}'"
+    above = _dotted(path[:-1])
+    if keys == []:
+        return ConfigError(
+            f"{message}; {above} is written whole and takes no keys under it"
+        )
+    nearest = difflib.get_close_matches(
+        str(path[-1]), [str(k) for k in keys or []], n=1
+    )
+    if nearest:
+        message += f"; did you mean '{_dotted((*path[:-1], nearest[0]))}'?"
+    parent = unwrap(parent)
+    if (kinds := kinds_of(parent)) is not None:
+        message += f"; the kinds of {above} are {', '.join(kinds)}"
+    elif isinstance(parent, _KindPosition) and path[-1] == "kind":
+        message += f"; the key {path[-2]} already names the kind"
+    return ConfigError(message)
+
+
+def _flatten(value: Any, path: tuple[Any, ...], source: str) -> list[Update]:
+    """Leaf updates of a parsed document: a non-empty mapping recurses, anything
+    else (a scalar, a whole list, an empty mapping) is a leaf. Each leaf is a
+    copy, so a YAML anchor shared under two keys becomes two values (G4)."""
+    if isinstance(value, dict) and value:
+        return [
+            u
+            for key, item in value.items()
+            for u in _flatten(item, (*path, key), source)
+        ]
+    return [Update(path, copy.deepcopy(value), source)]
+
+
+def _resolve(
+    root: type[ConfigSection], update: Update, problems: list[str]
+) -> Update | None:
+    """Walk one update's path through the schema. A bare kind name at a kinds
+    field comes back as its `kind` update; a list value is checked item by item
+    but stays whole. A `ConfigError` is recorded under the update's source and
+    the update dropped, so that every problem of one load is reported together."""
+    path, value, source = update.path, update.value, update.source
+    under_kinds: list[KindEntered] = []
+    try:
+        parent, node = None, root
+        for depth, key in enumerate(path):
+            child, keys = _step(node, key)
+            if child is None:
+                raise _unknown_key(node, keys, path[: depth + 1])
+            if isinstance(child, _KindPosition):
+                kinds = tuple(kinds_of(unwrap(node)) or ())
+                under_kinds.append(KindEntered(path[:depth], kinds, key))
+            parent, node = node, child
+        if node is _TAG:
+            kinds = kinds_of(unwrap(parent)) or {}
+            if not isinstance(value, str):
+                raise ConfigError(
+                    f"{_dotted(path)} must name a kind, one of {', '.join(kinds)}; "
+                    f"got {_as_shown(value)}"
+                )
+            path, node = path[:-1], parent
+        node = unwrap(node)
+        if (kinds := kinds_of(node)) is not None:
+            if isinstance(value, str):
+                if value not in kinds:
+                    raise _unknown_key(node, ["kind", *kinds], (*path, value))
+                return Update((*path, "kind"), value, source, tuple(under_kinds), path)
+            if value != {}:
+                raise ConfigError(
+                    f"{_dotted(path)} must be the name of a kind or a mapping under "
+                    f"one, one of {', '.join(kinds)}; got {_as_shown(value)}"
+                )
+        elif isinstance(node, _KindPosition) or is_section(node):
+            if not isinstance(value, dict):
+                raise ConfigError(
+                    f"{_dotted(path)} must be a mapping of its keys; "
+                    f"got {_as_shown(value)}"
+                )
+        else:
+            node = _narrowed(node)
+            is_list = get_origin(node) in (list, tuple) or node in (list, tuple)
+            if is_list and isinstance(value, list):
+                for index, item in enumerate(value):
+                    for item_update in _flatten(item, (*path, index), source):
+                        _resolve(root, item_update, problems)
+        return Update(path, value, source, tuple(under_kinds))
+    except ConfigError as error:
+        problems.append(f"{source}: {error}")
+        return None
+
+
+def _resolve_all(root: type[ConfigSection], updates: list[Update]) -> list[Update]:
+    problems: list[str] = []
+    resolved = [_resolve(root, update, problems) for update in updates]
+    if problems:
+        raise ConfigError("\n".join(problems))
+    return [update for update in resolved if update is not None]
+
+
+def _set_at_path(mapping: dict[Any, Any], path: tuple[Any, ...], value: Any) -> None:
+    """Set `value` at `path`, creating mappings on the way; an empty mapping
+    never clears a mapping already there, and is stored as a fresh one so that
+    later writes under it leave the update's value alone."""
+    if not path:
+        return
+    for key in path[:-1]:
+        if not isinstance(mapping.get(key), dict):
+            mapping[key] = {}
+        mapping = mapping[key]
+    if value != {} or not isinstance(mapping.get(path[-1]), dict):
+        mapping[path[-1]] = {} if value == {} else value
+
+
+def read_config_file(config_file: str | Path) -> dict[str, Any]:
+    """Parse one file by its extension (`.toml`, `.yaml`, `.yml`, `.json`, in
+    any case).
+
+    A `ConfigError` names the file for an unknown extension, a file that cannot
+    be read or parsed, and a top level that is not a table. An empty or
+    comment-only file is `{}`. Non-string YAML keys (`1:`) stay as parsed;
+    quote them where the schema wants strings.
+    """
+    path = Path(config_file)
+    parser = _PARSERS.get(path.suffix.lower())
+    if parser is None:
+        raise ConfigError(
+            f"unknown extension '{path.suffix}' of config file {path}; use .toml, "
+            f".yaml, .yml or .json"
+        )
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ConfigError(f"cannot read config file {path}: {error}") from error
+    try:
+        document = parser(text)
+    except (ValueError, yaml.YAMLError) as error:
+        raise ConfigError(f"cannot parse config file {path}: {error}") from error
+    if document is None:
+        document = {}
+    if not isinstance(document, dict):
+        raise ConfigError(
+            f"config file {path} must have a table of keys at the top level, not "
+            f"{type(document).__name__}"
+        )
+    return document
+
+
+def _parse_overrides(tokens: Iterable[str]) -> list[Update]:
+    """`--a.b.c value` or `--a.b.c=value`, in order. A value that is `null` or
+    starts with `[` or `{` is JSON (and flattened like a file); any other value
+    stays a string for pydantic to coerce. Keys match exactly."""
+    argv = list(tokens)
+    updates = []
+    position = 0
+    while position < len(argv):
+        token = argv[position]
+        position += 1
+        key, has_inline_value, value = token[2:].partition("=")
+        if not token.startswith("--") or not key:
+            raise ConfigError(
+                f"unknown config option '{token}'; options are --key.path value"
+            )
+        if not has_inline_value:
+            if position == len(argv):
+                raise ConfigError(f"override {token} is missing its value")
+            value = argv[position]
+            position += 1
+        source = token if has_inline_value else f"{token} {value}"
+        parsed: Any = value
+        if value == "null" or value[:1] in ("[", "{"):
+            try:
+                parsed = json.loads(value)
+            except ValueError as error:
+                raise ConfigError(
+                    f"override {token} is not valid JSON: {error}"
+                ) from error
+        updates.extend(_flatten(parsed, tuple(key.split(".")), source))
+    return updates
 
 
 class ConfigSection(BaseModel):
-    """A nested section of a configuration: a table in the file, a dotted
-    prefix on the command line. Unknown keys are errors here too."""
+    """A node of a config tree: unknown keys are errors, and the schema rules
+    of `_schema_rules` are checked when a subclass is defined (or, behind a
+    forward reference, on the first `load`).
+
+    A kinds field takes the wire form `{kind: X, X: {...}, Y: {...}}`, `{X:
+    {...}}`, `"X"` or `{}` and dumps as `{X: {fields}}`; internally pydantic
+    sees the tagged form `{kind: X, ...X's fields}`, which `model_validate` and
+    direct construction accept as well. An instance of a subclass of a variant
+    is held as given and exported under the variant's kind.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         super().__pydantic_init_subclass__(**kwargs)
-        if cls.__pydantic_complete__:  # else a forward reference; `load` checks
-            _check_schema(cls)
+        check_model_config(cls)
+        if cls.__pydantic_complete__:
+            check_fields(cls)
 
     @model_validator(mode="before")
     @classmethod
-    def _kinds_from_keys(cls, values: Any) -> Any:
-        """`{huber: {delta: 0.1}}` under a kinds field becomes the
-        `{kind: huber, delta: 0.1}` pydantic's discriminator reads."""
-        if not isinstance(values, dict):
-            return values
-        values = dict(values)
-        for name, field in cls.model_fields.items():
-            tag, value = _tag_of(field), values.get(name)
-            if tag is not None and isinstance(value, dict) and len(value) == 1:
-                ((kind, inner),) = value.items()
-                if isinstance(inner, dict) and tag not in value:
-                    values[name] = {**inner, tag: kind}
-        return values
+    def _kinds_fields_to_tagged_form(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        for name, kinds in kinds_fields_of(cls).items():
+            if name in data:
+                data = {**data, name: _to_tagged_form(cls, name, data[name], kinds)}
+        return data
 
+    # No return annotation: with one, the serialization JSON schema collapses.
     @model_serializer(mode="wrap")
-    def _kinds_as_keys(self, handler: SerializerFunctionWrapHandler):
-        """The dump with every kinds field written kind-as-key. The kind is read
-        from the instance: an unset default tag is absent from a user dict.
-        No return annotation: pydantic would take it as the JSON schema."""
+    def _kinds_fields_under_their_name(self, handler: SerializerFunctionWrapHandler):
         dumped = handler(self)
-        for name, field in type(self).model_fields.items():
-            tag = _tag_of(field)
-            if tag is not None and isinstance(dumped.get(name), dict):
-                inner = {key: v for key, v in dumped[name].items() if key != tag}
-                dumped[name] = {getattr(getattr(self, name), tag): inner}
+        for name, kinds in kinds_fields_of(type(self)).items():
+            if name in dumped:  # absent under exclude_unset
+                variant = getattr(self, name)
+                if not isinstance(variant, tuple(kinds.values())):
+                    raise TypeError(
+                        f"{type(self).__name__}.{name} holds {type(variant).__name__}, "
+                        f"which is not one of its variants"
+                    )
+                settings = {k: v for k, v in dumped[name].items() if k != "kind"}
+                dumped[name] = {variant.kind: settings}
         return dumped
 
 
-class ReforgeBaseConfig(ConfigSection):
-    """Root of a configuration tree. Subclass it; nest `ConfigSection`s in it.
+def _selected_kind(value: dict[str, Any], kinds: Collection[str]) -> str | None:
+    """The kind a kinds field's wire mapping runs: its `kind` scalar, else its
+    sole kind key; None when nothing selects one (an empty mapping runs the
+    schema default, several kind keys need a selection)."""
+    selected = value.get("kind")
+    if isinstance(selected, str):
+        return selected
+    written = [key for key in value if key in kinds]
+    return written[0] if len(written) == 1 else None
 
-    `load()` reads a file and applies overrides. Constructing the class
-    directly behaves like a plain Pydantic model.
-    """
+
+def _kinds_error(
+    field: str, kinds: list[str], under: str | None = None
+) -> PydanticCustomError:
+    """The kinds error: `field` needs a kind (one of `kinds`), or the tag was
+    written under the kind `under`. `load` renders it with the path, the fix
+    and the sources (`_kind_error_message`)."""
+    choices = " or ".join(f"kind: {kind}" for kind in kinds)
+    template = (
+        "{field} needs a kind; write {choices}"
+        if under is None
+        else "{field}.{under}.kind is not a key; {under} already names the kind"
+    )
+    context = {"field": field, "kinds": kinds, "under": under, "choices": choices}
+    return PydanticCustomError(_KINDS_ERROR, template, context)
+
+
+def _to_tagged_form(
+    cls: type[ConfigSection], name: str, value: Any, kinds: dict[str, type[Any]]
+) -> Any:
+    """Wire form of one kinds field to pydantic's tagged form. Shapes the
+    schema cannot take are returned unchanged for pydantic to report; the
+    shapes it would misreport raise the kinds error, among them a `kind` inside
+    the selected kind's settings, which is not a key there."""
+    if isinstance(value, str):
+        return {"kind": value}
+    if not isinstance(value, dict) or not isinstance(value.get("kind", ""), str):
+        return value
+    selected = _selected_kind(value, kinds)
+    if selected is None:
+        written = [key for key in value if key in kinds]
+        if written:
+            raise _kinds_error(name, written)
+        if value:
+            return value
+        default = cls.model_fields[name].get_default(call_default_factory=True)
+        if default is PydanticUndefined:
+            raise _kinds_error(name, list(kinds))
+        if type(default) not in kinds.values():
+            example = next(iter(kinds.values())).__name__
+            raise TypeError(
+                f"{cls.__name__}.{name} has a default factory whose result is not "
+                f"one of its variants; return e.g. {example}()"
+            )
+        return {"kind": default.kind, **default.model_dump(exclude_unset=True)}
+    settings = value.get(selected, {})
+    if not isinstance(settings, dict):
+        return value
+    if "kind" in settings:
+        raise _kinds_error(name, list(kinds), under=selected)
+    rest = {k: v for k, v in value.items() if k not in kinds and k != "kind"}
+    return {**rest, **settings, "kind": selected}
+
+
+_ConfigT = TypeVar("_ConfigT", bound="ReforgeBaseConfig")
+
+
+class ReforgeBaseConfig(ConfigSection):
+    """The root of a config tree: `load` builds it from files and the command
+    line; the two exports write it back as JSON-native dicts."""
 
     @classmethod
     def load(
         cls,
-        config_file: str | Path | None = None,
-        cli_overrides: Sequence[str] = (),
+        config_files: str | Path | Iterable[str | Path] | None = (),
+        cli_overrides: Iterable[str] = (),
     ) -> Self:
-        """Build the config from defaults, then the file, then the overrides.
+        """Build the config from `config_files` in order, then `cli_overrides`
+        in order (`sys.argv[1:]`-style tokens); a lone path is one file, None
+        is no file.
 
-        `cli_overrides` is the argument list after the program name, e.g.
-        `["--model.num_interactions", "3", "--seed=7"]`: a dotted path names
-        a field at any depth. A value starting with `[` or `{`, or the word
-        `null`, is JSON, so a whole section, a list or a dict can be given;
-        any other value is a string pydantic converts to the field's type.
-        An override merges into the file, and into earlier overrides, like a
-        section does: a dict-valued field gains or replaces entries, so an
-        entry cannot be removed from the command line; a list-valued field
-        is replaced whole. Under a kinds field the kind written last wins
-        and the others are dropped with a `ConfigWarning`.
-
-        Raises `ConfigError` for an unknown key or kind, an unreadable file
-        or an unparsable override, and pydantic's `ValidationError` for a
-        value of the wrong type.
+        Raises `ConfigError` for a file or override the schema cannot take
+        (every unknown key of the load together, each under its file or
+        override), pydantic's `ValidationError` for a value of the wrong type,
+        and warns `ConfigWarning` for each override that had no effect on the
+        config that runs.
         """
-        _complete(cls)
-        values: dict[str, Any] = {}
-        if config_file is not None:
-            values = read_config_file(config_file)
-        layers = [(values, "the config file"), *_parse_overrides(cls, cli_overrides)]
+        if isinstance(cli_overrides, str):
+            raise TypeError(
+                "cli_overrides is a string; pass the tokens as a list, "
+                "like sys.argv[1:]"
+            )
+        for section in reachable_sections(cls):
+            check_fields(section)
+        if config_files is None:
+            config_files = ()
+        files = (
+            [config_files]
+            if isinstance(config_files, (str, Path))
+            else list(config_files)
+        )
+        from_files = [
+            update
+            for file in files
+            for update in _flatten(read_config_file(file), (), str(Path(file)))
+        ]
+        updates = _resolve_all(cls, [*from_files, *_parse_overrides(cli_overrides)])
         merged: dict[str, Any] = {}
-        origins: dict[_Path, _Origin] = {}
-        for index, (layer, source) in enumerate(layers):
-            layer = _at_kinds(layer, cls, _name_as_mapping)
-            merged = _deep_update(merged, layer)
-            _record_origins(origins, layer, (index, source))
-        merged = _at_kinds(merged, cls, _KindSelector(origins))
-        try:
-            return cls.model_validate(merged)
-        except ValidationError as error:
-            unknown = _unknown_key_messages(cls, error)
-            if not unknown:
-                raise
-            raise ConfigError("\n".join(unknown)) from error
+        for update in updates:
+            _set_at_path(merged, update.path, update.value)
+        config = _validated(cls, merged, updates)
+        overrides = updates[len(from_files) :]
+        messages = [
+            _override_without_effect(update, overrides[position + 1 :], merged)
+            for position, update in enumerate(overrides)
+        ]
+        for message in dict.fromkeys(m for m in messages if m is not None):
+            warnings.warn(message, ConfigWarning, stacklevel=2)
+        return config
 
     def to_resolved_dict(self) -> dict[str, Any]:
-        """Every field, defaults included, as JSON-native values, in schema
-        order, a kinds field as `{kind: {...}}`. Loading the result back and
-        resolving again gives the same dict. (TOML has no null, so a `None`
-        can only go out as YAML or JSON.)"""
+        """Every field with defaults filled, JSON-native, in declaration order;
+        loading it back gives an equal config and the same dict. A kinds field
+        holding a subclass of its variant is written as the variant, so a
+        field the subclass added is not written."""
         return self.model_dump(mode="json")
 
     def to_user_dict(self) -> dict[str, Any]:
-        """Only the fields the file and the overrides set, as JSON-native
-        values: what the user wrote, for the model metadata."""
+        """Only what the files and the overrides set, in the same shape; the
+        kind that ran is recorded even when it was chosen by default."""
         return self.model_dump(mode="json", exclude_unset=True)
 
 
-def read_config_file(path: str | Path) -> dict[str, Any]:
-    """Parse one config file, choosing the parser by extension.
-
-    An empty TOML or YAML file is an empty config. Raises `ConfigError` for a missing
-    file, an unknown extension, a file its parser rejects, or a file whose
-    top level is not a table.
-    """
-    path = Path(path)
-    parser = _FILE_PARSERS.get(path.suffix.lower())
-    if parser is None:
-        raise ConfigError(
-            f"cannot read config file {path}: unknown extension {path.suffix!r}; "
-            f"expected one of {', '.join(_FILE_PARSERS)}"
-        )
+def _validated(
+    cls: type[_ConfigT], merged: dict[str, Any], updates: list[Update]
+) -> _ConfigT:
+    """Validate once; a kinds error comes out as one `ConfigError`, and a load
+    without a kinds error passes pydantic's `ValidationError` through (D3). A
+    kinds error ends the validation of its class, so the other errors of that
+    class are reported on the next load."""
     try:
-        values = parser(path.read_text(encoding="utf-8"))
-    except OSError as error:
-        raise ConfigError(
-            f"cannot read config file {path}: {error.strerror}"
-        ) from error
-    except (ValueError, yaml.YAMLError) as error:  # tomli/json errors are ValueErrors
-        raise ConfigError(f"cannot parse config file {path}: {error}") from error
-    if values is None:
-        return {}
-    # TOML always yields a table, but a YAML or JSON file can hold a list or a
-    # scalar, which would crash the merge with the overrides instead of
-    # naming the file.
-    if not isinstance(values, dict):
-        raise ConfigError(
-            f"config file {path} must hold a table of keys at the top level, "
-            f"not a {type(values).__name__}"
-        )
-    return values
+        return cls.model_validate(merged)
+    except ValidationError as error:
+        kind_errors = [e for e in error.errors() if e["type"] == _KINDS_ERROR]
+        if not kind_errors:
+            raise
+        lines = [_kind_error_message(e, updates) for e in kind_errors]
+        raise ConfigError("\n".join(lines)) from error
 
 
-# ---------------------------------------------------------------------------
-# Merging
+def _wrote(update: Update, target: tuple[Any, ...]) -> bool:
+    """Whether the update wrote at or under `target`, or a whole list holding it."""
+    depth = len(update.path)
+    if depth >= len(target):
+        return update.path[: len(target)] == target
+    return update.path == target[:depth] and isinstance(update.value, list)
 
 
-def _deep_update(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
-    """`base` overlaid with `update`, recursing where both hold a dict."""
-    merged = dict(base)
-    for key, value in update.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _deep_update(merged[key], value)
-        else:
-            merged[key] = value
-    return merged
-
-
-def _record_origins(
-    origins: dict[_Path, _Origin], values: Any, origin: _Origin, path: _Path = ()
-) -> None:
-    """Note `origin` for every path a layer writes, sections included."""
-    items: Any = ()
-    if isinstance(values, dict):
-        items = values.items()
-    elif isinstance(values, list):
-        items = enumerate(values)
-    for key, value in items:
-        origins[(*path, str(key))] = origin
-        _record_origins(origins, value, origin, (*path, str(key)))
-
-
-def _parse_overrides(
-    model: type[BaseModel], cli_overrides: Sequence[str]
-) -> list[tuple[dict[str, Any], str]]:
-    """Each `--a.b value` or `--a.b=value` pair as a mapping nested under its
-    path, with the override as typed, in order."""
-    valid = list(_dotted_paths(model))
-    valid_set = set(valid)
-    unknown: list[str] = []
-    tokens = iter(cli_overrides)
-    layers = []
-
-    for token in tokens:
-        option = token.removeprefix("--")
-        if "=" in option:
-            name, value = option.split("=", 1)
-        else:
-            name, value = option, None
-        if not token.startswith("--") or not name:
-            raise ConfigError(
-                f"unknown config option {token!r}; overrides are written --key value"
-            )
-        source = token
-        if value is None:
-            value = next(tokens, None)
-            if value is None:
-                raise ConfigError(f"override --{name} is missing its value")
-            source = f"{token} {value}"
-
-        if name not in valid_set:
-            unknown.append(_unknown_key_message(name, valid))
-            continue
-
-        if value == "null" or value.startswith(("[", "{")):
-            try:
-                value = json.loads(value)
-            except ValueError as error:
-                raise ConfigError(
-                    f"override --{name} is not valid JSON: {error}"
-                ) from error
-
-        override: Any = value
-        for section in reversed(name.split(".")):
-            override = {section: override}
-        layers.append((override, source))
-
-    if unknown:
-        raise ConfigError("\n".join(unknown))
-
-    return layers
-
-
-def _dotted_paths(model: type[BaseModel], prefix: str = "") -> Iterator[str]:
-    """Every field of the tree as a dotted path, sections included. A kinds
-    field lists each kind as a key with the kind's fields under it, without
-    the tag field: the key names the kind.
-
-    A section inside a dict or list is not descended into: the CLI addresses
-    such a field only as a whole, with a JSON value.
-    """
-    for name, field in model.model_fields.items():
-        path = f"{prefix}{name}"
-        yield path
-        kinds = _kinds_of(field)
-        for kind, variant in kinds.items():
-            yield f"{path}.{kind}"
-            for sub_path in _dotted_paths(variant, f"{path}.{kind}."):
-                if sub_path != f"{path}.{kind}.{_tag_of(field)}":
-                    yield sub_path
-        section, inside_collection = _section_of(field.annotation)
-        if section is not None and not inside_collection and not kinds:
-            yield from _dotted_paths(section, f"{path}.")
-
-
-# ---------------------------------------------------------------------------
-# Kinds: a walk over the values against the schema, with an action at every
-# kinds field. The action sees and returns the kind-as-key form.
-
-
-def _at_kinds(
-    values: Any, section: type[BaseModel] | None, action: _KindsAction, path: _Path = ()
-) -> Any:
-    """`values`, a mapping for `section`, with `action` applied at each kinds
-    field and every section under it walked in turn."""
-    if section is None or not isinstance(values, dict):
-        return values
-    out = dict(values)
-    for key, value in values.items():
-        field = section.model_fields.get(key)
-        if field is None:
-            continue
-        kinds = _kinds_of(field)
-        if not kinds:
-            out[key] = _under(value, field.annotation, action, (*path, key))
-            continue
-        value = action(value, field, (*path, key))
-        if isinstance(value, dict):
-            value = {
-                kind: _at_kinds(inner, kinds.get(kind), action, (*path, key, kind))
-                for kind, inner in value.items()
-            }
-        out[key] = value
-    return out
-
-
-def _under(value: Any, annotation: Any, action: _KindsAction, path: _Path) -> Any:
-    """`value` with `_at_kinds` applied to every section the annotation reaches
-    through unions, dicts, lists and tuples. A value whose shape the annotation
-    does not describe is returned as is, for pydantic to report."""
-    origin = get_origin(annotation)
-    if origin is None:
-        return _at_kinds(value, _section_of(annotation)[0], action, path)
-    if origin is Annotated:
-        return _under(value, get_args(annotation)[0], action, path)
-    if origin in (Union, UnionType):  # at most one arm takes a dict or a list
-        for arm in get_args(annotation):
-            value = _under(value, arm, action, path)
-        return value
-    if origin is dict and isinstance(value, dict):
-        value_type = get_args(annotation)[1]
-        return {
-            k: _under(v, value_type, action, (*path, str(k))) for k, v in value.items()
-        }
-    if origin in (list, tuple) and isinstance(value, list):
-        item_types = [a for a in get_args(annotation) if a is not Ellipsis]
-        return [
-            _under(v, t, action, (*path, str(i)))
-            for i, (v, t) in enumerate(zip(value, cycle(item_types), strict=False))
-        ]
-    return value
-
-
-def _shown(value: Any) -> str:
-    """A value as the user could have written it; a date or a YAML set as text."""
-    return json.dumps(value, default=str)
-
-
-def _name_as_mapping(value: Any, field: FieldInfo, path: _Path) -> Any:
-    """A bare kind name is that kind with its defaults, `{huber: {}}`, so that
-    it merges into an earlier section of the same kind instead of replacing it."""
-    return {value: {}} if isinstance(value, str) else value
-
-
-class _KindSelector:
-    """At a kinds field after the merge: keep the kind written last, drop the
-    others with a warning, fill in the default kind, and check the shape."""
-
-    def __init__(self, origins: dict[_Path, _Origin]) -> None:
-        self.origins = origins
-
-    def __call__(self, value: Any, field: FieldInfo, path: _Path) -> Any:
-        dotted = ".".join(path)
-        tag, kinds, named = _tag_of(field), _kinds_of(field), _kinds_text(field)
-        if value is None:
-            raise ConfigError(
-                f"{dotted} does not take null; write a kind, one of {named}"
-            )
-        if not isinstance(value, dict):
-            raise ConfigError(
-                f"{dotted} must be the name of a kind or a mapping under one, "
-                f"one of {named}; got {_shown(value)}"
-            )
-        if tag in value:
-            raise ConfigError(
-                f"{dotted}.{tag} is not a key; write the kind as the key the "
-                f"section sits under, {dotted}: {{{_shown(value[tag])}: {{...}}}}"
-            )
-        nulled = [k for k, inner in value.items() if inner is None and k in kinds]
-        if nulled:
-            raise ConfigError(
-                f"{dotted}.{nulled[0]} does not take null; set the keys wanted "
-                f"under it, or write another kind"
-            )
-        if not value:
-            default = _default_kind(field)
-            if default is None:
-                raise ConfigError(f"{dotted} needs a kind; one of {named}")
-            return {default: {}}
-        present = value
-        origin_of = {k: self.origins[(*path, str(k))] for k in present}
-        by_origin = sorted(present, key=origin_of.__getitem__)
-        kind = by_origin[-1]
-        index, source = origin_of[kind]
-        tied = [k for k in by_origin if origin_of[k][0] == index]
-        if len(tied) > 1:
-            raise ConfigError(
-                f"{dotted} is given as several kinds ({', '.join(tied)}) in "
-                f"{source}; keep one"
-            )
-        if kind not in kinds:
-            valid = [f"{dotted}.{k}" for k in kinds]
-            raise ConfigError(
-                _unknown_key_message(f"{dotted}.{kind}", valid)
-                + f"; the kinds of {dotted} are {named}"
-            )
-        for loser in by_origin[:-1]:
-            warnings.warn(
-                f"{dotted}.{loser} from {origin_of[loser][1]} is "
-                f"ignored: {source} selects {dotted}.{kind}",
-                ConfigWarning,
-                stacklevel=2,
-            )
-        inner = present[kind]
-        if not isinstance(inner, dict):
-            raise ConfigError(
-                f"{dotted}.{kind} must be a mapping of the kind's keys; "
-                f"got {_shown(inner)}"
-            )
-        if tag in inner:
-            raise ConfigError(
-                f"{dotted}.{kind}.{tag} is not a key; the kind is given by the "
-                f"key {kind!r}"
-            )
-        return {kind: inner}
-
-
-# ---------------------------------------------------------------------------
-# Error messages
-
-
-def _unknown_key_message(key: str, candidates: Sequence[str]) -> str:
-    message = f"unknown config key {key!r}"
-    closest = difflib.get_close_matches(key, candidates, n=1)
-    if closest:
-        message += f"; did you mean {closest[0]!r}?"
+def _kind_error_message(error: ErrorDetails, updates: list[Update]) -> str:
+    """Pydantic's location is the section that raised, and the field is in the
+    context. The dotted fix is left out inside a list item, where the walk
+    would reject it; each kind that was written is named with the source that
+    first wrote it. The tag under a kind is rejected by the walk before
+    validation; should it arrive, pydantic's own sentence is kept."""
+    ctx = error.get("ctx") or {}
+    if ctx.get("under") is not None:
+        return error["msg"]
+    path = (*error["loc"], ctx["field"])
+    kinds = ctx["kinds"]
+    message = f"{_dotted(path)} needs a kind; write {ctx['choices']} in a file"
+    if not any(isinstance(part, int) for part in path):
+        message += f", or pass --{_dotted(path)} {kinds[0]}"
+    writers = []
+    for kind in kinds:
+        writer = next((u for u in updates if _wrote(u, (*path, kind))), None)
+        if writer is not None:
+            writers.append(f"{kind} from {writer.source}")
+    if writers:
+        message += f"; {', '.join(writers)}"
     return message
 
 
-def _locate(
-    model: type[BaseModel], location: Sequence[Any]
-) -> tuple[list[str], list[str]]:
-    """Pydantic's error location as the names of a dotted path, and the keys
-    valid where it ends. A field name moves into its section; a kind moves
-    into its variant, whose tag field is not offered since the key names the
-    kind; a dict key or list index stays in the section; the class name
-    pydantic inserts under a `Section | scalar` field is dropped."""
-    section: type[BaseModel] | None = model
-    kinds: dict[str, type[BaseModel]] | None = None
-    hidden: str | None = None
-    inside_collection = False
-    names = []
-    for part in map(str, location):
-        if kinds is not None:
-            names.append(part)
-            section, kinds = kinds.get(part), None
+def _override_without_effect(
+    update: Update, later: list[Update], merged: dict[str, Any]
+) -> str | None:
+    """C11, the two ways an override loses its effect: a later override writes
+    at its path, above it, or below a value of its that was not a mapping (`{}`
+    never clears a mapping); or it wrote under a kind that does not run at its
+    kinds field, decided from the merged dict as `_to_tagged_form` decides it.
+    Never raises."""
+    for other in reversed(later):
+        depth = min(len(update.path), len(other.path))
+        if other.value == {} or update.path[:depth] != other.path[:depth]:
             continue
-        if inside_collection:
-            names.append(part)
-            inside_collection = False
+        if len(other.path) > len(update.path) and update.value == {}:
             continue
-        if section is not None and part == section.__name__:
-            continue
-        names.append(part)
-        if section is not None and part in section.model_fields:
-            field = section.model_fields[part]
-            hidden = _tag_of(field)
-            if hidden is not None:
-                kinds = _kinds_of(field)
-            else:
-                section, inside_collection = _section_of(field.annotation)
-        else:
-            section = None
-    candidates = list(section.model_fields) if section is not None else []
-    return names, [c for c in candidates if c != hidden]
-
-
-def _unknown_key_messages(model: type[BaseModel], error: ValidationError) -> list[str]:
-    """Pydantic's unknown-key errors as messages that name the full dotted
-    path and the closest valid key at that level."""
-    messages = []
-    for item in error.errors():
-        # pydantic's error code for a key that matches no field (extra="forbid").
-        # Every other code, e.g. a wrong type, is left for `load()` to re-raise.
-        if item["type"] != "extra_forbidden":
-            continue
-        *location, key = item["loc"]
-        names, candidates = _locate(model, location)
-        prefix = "".join(f"{name}." for name in names)
-        messages.append(
-            _unknown_key_message(f"{prefix}{key}", [f"{prefix}{c}" for c in candidates])
-        )
-    return messages
+        if other.selects is not None:
+            field, running = _dotted(other.selects), _as_typed(other.value)
+            return f"{update.source} is overridden: {field} runs {running}"
+        at, value = _dotted(other.path), _as_typed(other.value)
+        return f"{update.source} is overridden: {at} is {value}"
+    for field, kinds, key in update.under_kinds:
+        mapping: Any = merged
+        for step in field:
+            mapping = mapping.get(step) if isinstance(mapping, dict) else None
+        running = _selected_kind(mapping, kinds) if isinstance(mapping, dict) else None
+        if running is not None and running != key:
+            at = _dotted(field)
+            return f"{update.source}: {at}.{key} has no effect, {at} runs {running}"
+    return None

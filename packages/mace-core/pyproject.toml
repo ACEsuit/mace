@@ -22,7 +22,9 @@ dependencies = [
     # releases.
     "pydantic>=2.7",
     "pyyaml>=6.0",
-    "tomli>=2.0",
+    "tomli>=2.0; python_version < '3.11'",
+    # `typing.Self` is 3.11+; the floor is 3.10.
+    "typing-extensions>=4.4",
 ]
 
 [project.urls]
