@@ -1,9 +1,12 @@
 """A field of several kinds of section (a discriminated union) under the file
-and dotted-override contract. A config writes the kind as the key the section
-sits under (`loss: {huber: {delta: 0.1}}`, `--loss.huber.delta 0.1`) or as a
-bare name for the kind with its defaults; code sees the union. The file and
-every override merge in order, the kind written last wins, the others are
-dropped with a warning, two kinds in one place is an error."""
+and dotted-override contract. A config writes each kind's settings under the
+kind's name (`loss: {huber: {delta: 0.1}}`, `--loss.huber.delta 0.1`); the
+settings of every kind are kept across files and overrides. Which kind runs is
+selected by `kind: huber`, `--loss.kind huber` or the bare name `--loss huber`;
+a single kind key selects itself; the last selection wins. An override that
+changed nothing about the config that runs warns, a file never warns; two kinds
+with no selection is an error. `kind` is the tag only under a kinds field: a
+plain section field of the same class keeps it as a key. Code sees the union."""
 
 import json
 import re
@@ -18,6 +21,9 @@ from mace_core.config import (
     ReforgeBaseConfig,
 )
 from pydantic import BaseModel, Field, ValidationError
+
+#: A warning the test did not ask for is a failure.
+pytestmark = pytest.mark.filterwarnings("error")
 
 # ---------------------------------------------------------------------------
 # The schema: a loss of three kinds, one of which holds a field of two kinds;
@@ -122,8 +128,20 @@ def error(*fragments):
     return Raises(ConfigError, *fragments)
 
 
-def ignored(loser, source, winner_source, winner):
-    return f"{loser} from {source} is ignored: {winner_source} selects {winner}"
+def no_effect(source, field, kind, running):
+    return f"{source}: {field}.{kind} has no effect, {field} runs {running}"
+
+
+def overridden(source, field, running):
+    return f"{source} is overridden: {field} runs {running}"
+
+
+def needs_kind(field, *kinds):
+    """The kinds error up to the sources; the first kind is the example."""
+    choices = " or ".join(f"kind: {kind}" for kind in kinds)
+    return (
+        f"{field} needs a kind; write {choices} in a file, or pass --{field} {kinds[0]}"
+    )
 
 
 def huber(delta=0.01, sub=SubX, **sub_fields):
@@ -172,44 +190,33 @@ HUBER_FILE = {"choice": {"huber": {"delta": 0.5}}}
 
 SWITCHING = {
     "file kind, no cli": (HUBER_FILE, "", huber(0.5)),
-    "cli name switches kind, file section dropped with a warning": (
+    "cli name selects; the file's settings of the other kind stay unused": (
         HUBER_FILE,
         "--choice weighted",
-        Warns(
-            weighted(),
-            ignored(
-                "choice.huber",
-                "the config file",
-                "--choice weighted",
-                "choice.weighted",
-            ),
-        ),
+        weighted(),
     ),
-    "cli dotted key switches kind": (
+    "cli key of a second kind without a selection is an error": (
         HUBER_FILE,
         "--choice.weighted.stress_weight 5",
-        Warns(
-            weighted(5.0),
-            ignored(
-                "choice.huber",
-                "the config file",
-                "--choice.weighted.stress_weight 5",
-                "choice.weighted",
-            ),
+        error(
+            needs_kind("choice", "huber", "weighted"),
+            "; huber from ",
+            "config.json, weighted from --choice.weighted.stress_weight 5",
         ),
     ),
-    "cli json switches kind": (
+    "cli json of a second kind without a selection is an error": (
         HUBER_FILE,
         '--choice {"universal": {"huber_delta": 3}}',
-        Warns(
-            universal(3.0),
-            ignored(
-                "choice.huber",
-                "the config file",
-                '--choice {"universal": {"huber_delta": 3}}',
-                "choice.universal",
-            ),
+        error(
+            needs_kind("choice", "huber", "universal"),
+            'config.json, universal from --choice {"universal": {"huber_delta": 3}}',
         ),
+    ),
+    "the tag alone selects on the cli": ({}, '--choice {"kind": "huber"}', huber()),
+    "the tag beside the settings selects in the file": (
+        {"choice": {"kind": "weighted", "huber": {"delta": 0.5}, "weighted": {}}},
+        "",
+        weighted(),
     ),
     "cli name of the file's kind keeps the file's keys": (
         HUBER_FILE,
@@ -221,29 +228,30 @@ SWITCHING = {
         "--choice.huber.sub y",
         huber(0.5, SubY),
     ),
-    "switch away and back keeps the file's keys": (
+    "a selection, then a key of another kind: the key warns": (
         HUBER_FILE,
         "--choice weighted --choice.huber.sub y",
         Warns(
-            huber(0.5, SubY),
-            ignored(
-                "choice.weighted",
-                "--choice weighted",
-                "--choice.huber.sub y",
-                "choice.huber",
-            ),
+            weighted(),
+            no_effect("--choice.huber.sub y", "choice", "huber", "weighted"),
         ),
     ),
-    "two kinds on the cli, the later wins": (
+    "keys of two kinds on the cli without a selection is an error": (
         {},
         "--choice.huber.delta 2 --choice.weighted.stress_weight 5",
+        error(
+            needs_kind("choice", "huber", "weighted")
+            + "; huber from --choice.huber.delta 2, "
+            "weighted from --choice.weighted.stress_weight 5"
+        ),
+    ),
+    "keys of two kinds on the cli, then a selection": (
+        {},
+        "--choice.huber.delta 2 --choice.weighted.stress_weight 5 --choice huber",
         Warns(
-            weighted(5.0),
-            ignored(
-                "choice.huber",
-                "--choice.huber.delta 2",
-                "--choice.weighted.stress_weight 5",
-                "choice.weighted",
+            huber(2.0),
+            no_effect(
+                "--choice.weighted.stress_weight 5", "choice", "weighted", "huber"
             ),
         ),
     ),
@@ -261,38 +269,21 @@ SWITCHING = {
         "--choice.huber.delta 2",
         huber(2.0),
     ),
-    "bare name in the file, cli other kind": (
+    "bare name in the file, cli key of another kind warns": (
         {"choice": "huber"},
         "--choice.weighted.stress_weight 5",
         Warns(
-            weighted(5.0),
-            ignored(
-                "choice.huber",
-                "the config file",
-                "--choice.weighted.stress_weight 5",
-                "choice.weighted",
+            huber(),
+            no_effect(
+                "--choice.weighted.stress_weight 5", "choice", "weighted", "huber"
             ),
         ),
     ),
     "= form": (HUBER_FILE, "--choice.huber.delta=2", huber(2.0)),
-    "three kinds in a row": (
+    "three selections in a row: the last runs, the lost cli one warns": (
         HUBER_FILE,
         "--choice weighted --choice universal",
-        Warns(
-            universal(),
-            ignored(
-                "choice.huber",
-                "the config file",
-                "--choice universal",
-                "choice.universal",
-            ),
-            ignored(
-                "choice.weighted",
-                "--choice weighted",
-                "--choice universal",
-                "choice.universal",
-            ),
-        ),
+        Warns(universal(), overridden("--choice weighted", "choice", "universal")),
     ),
 }
 
@@ -301,14 +292,19 @@ ERRORS = {
         {"choice": {"huber": {}, "weighted": {}}},
         "",
         error(
-            "choice is given as several kinds (huber, weighted) in the config "
-            "file; keep one"
+            needs_kind("choice", "huber", "weighted"),
+            "; huber from ",
+            "config.json, weighted from ",
         ),
     ),
     "two kinds in one json override": (
         {},
         '--choice {"huber": {}, "weighted": {}}',
-        error("choice is given as several kinds (huber, weighted) in", "keep one"),
+        error(
+            needs_kind("choice", "huber", "weighted")
+            + '; huber from --choice {"huber": {}, "weighted": {}}, '
+            'weighted from --choice {"huber": {}, "weighted": {}}'
+        ),
     ),
     "unknown kind in the file": (
         {"choice": {"hubr": {}}},
@@ -332,44 +328,48 @@ ERRORS = {
         {},
         "--choice.hubr.delta 2",
         error(
-            "unknown config key 'choice.hubr.delta'; did you mean 'choice.huber.delta'?"
+            "unknown config key 'choice.hubr'; did you mean 'choice.huber'?; "
+            f"the kinds of choice are {KINDS}"
         ),
     ),
-    "key of another kind on the cli is unknown": (
+    "a setting beside the kinds is unknown and the kinds are listed": (
         {},
         "--choice.delta 2",
-        error("unknown config key 'choice.delta'; did you mean 'choice.huber.delta'?"),
+        error(f"unknown config key 'choice.delta'; the kinds of choice are {KINDS}"),
     ),
     "key of another kind in the file": (
         {"choice": {"weighted": {"delta": 2}}},
         "",
-        error(
-            "unknown config key 'choice.weighted.delta'; did you mean "
-            "'choice.weighted.stress_weight'?"
-        ),
+        error("unknown config key 'choice.weighted.delta'"),
     ),
     "the tag is not a key, on the cli": (
         {},
         "--choice.huber.kind huber",
-        error("unknown config key 'choice.huber.kind'"),
+        error(
+            "unknown config key 'choice.huber.kind'; the key huber already names "
+            "the kind"
+        ),
     ),
     "the tag is not a key, in the file": (
         {"choice": {"huber": {"kind": "weighted"}}},
         "",
-        error("choice.huber.kind is not a key; the kind is given by the key 'huber'"),
-    ),
-    "the tagged form is refused with the key form as the fix": (
-        {"choice": {"kind": "huber", "delta": 2}},
-        "",
         error(
-            "choice.kind is not a key; write the kind as the key the section "
-            'sits under, choice: {"huber": {...}}'
+            "unknown config key 'choice.huber.kind'; the key huber already names "
+            "the kind"
         ),
     ),
-    "the tagged form on the cli": (
+    "the flat form fails on the setting beside the tag": (
+        {"choice": {"kind": "huber", "delta": 2}},
+        "",
+        error(f"unknown config key 'choice.delta'; the kinds of choice are {KINDS}"),
+    ),
+    "a selection that is not a kind": (
         {},
-        '--choice {"kind": "huber"}',
-        error("choice.kind is not a key"),
+        "--choice.kind hubr",
+        error(
+            "unknown config key 'choice.hubr'; did you mean 'choice.huber'?; "
+            f"the kinds of choice are {KINDS}"
+        ),
     ),
     "a list at a kinds field": (
         {"choice": [1]},
@@ -390,41 +390,36 @@ ERRORS = {
     "a scalar under a kind": (
         {"choice": {"huber": 3}},
         "",
-        error("choice.huber must be a mapping of the kind's keys; got 3"),
+        error("choice.huber must be a mapping of its keys; got 3"),
     ),
-    "null at a kinds field that does not admit it": (
+    "null at a kinds field": (
         {"choice": None},
         "",
-        error(f"choice does not take null; write a kind, one of {KINDS}"),
+        error(
+            "choice must be the name of a kind or a mapping under one, one of "
+            f"{KINDS}; got null"
+        ),
     ),
-    "a dropped section is not validated": (
+    "settings of a kind that does not run are still checked": (
         {"choice": {"huber": {"nonsense": 1}}},
         "--choice weighted",
-        Warns(
-            weighted(),
-            ignored(
-                "choice.huber",
-                "the config file",
-                "--choice weighted",
-                "choice.weighted",
-            ),
-        ),
+        error("unknown config key 'choice.huber.nonsense'"),
     ),
 }
 
 NULL = {
-    "null override then a key starts the section afresh": (
+    "null at a kinds field is an error even when a key follows": (
         HUBER_FILE,
         "--choice null --choice.huber.sub y",
-        huber(0.01, SubY),
+        error(
+            "choice must be the name of a kind or a mapping under one, one of "
+            f"{KINDS}; got null"
+        ),
     ),
     "null under a kind, on the cli": (
         HUBER_FILE,
         "--choice.huber null",
-        error(
-            "choice.huber does not take null; set the keys wanted under it, "
-            "or write another kind"
-        ),
+        error("choice.huber must be a mapping of its keys; got null"),
     ),
     "null under an unknown kind is an unknown kind": (
         {"choice": {"hubr": None}},
@@ -434,7 +429,7 @@ NULL = {
     "null under a kind, in the file": (
         {"choice": {"huber": {"delta": 0.5}, "weighted": None}},
         "",
-        error("choice.weighted does not take null"),
+        error("choice.weighted must be a mapping of its keys; got null"),
     ),
 }
 
@@ -445,21 +440,20 @@ NONE_KIND = {
     "none kind, file null": (
         {"opt": None},
         "",
-        error(f"opt does not take null; write a kind, one of {OPT_KINDS}"),
+        error(
+            "opt must be the name of a kind or a mapping under one, one of "
+            f"{OPT_KINDS}; got null"
+        ),
     ),
     "none kind, cli null after the file": (
         {"opt": {"huber": {}}},
         "--opt null",
-        error(f"opt does not take null; write a kind, one of {OPT_KINDS}"),
-    ),
-    "none kind, back to none with a warning": (
-        {"opt": {"huber": {}}},
-        "--opt none",
-        Warns(
-            opt(NoChoice),
-            ignored("opt.huber", "the config file", "--opt none", "opt.none"),
+        error(
+            "opt must be the name of a kind or a mapping under one, one of "
+            f"{OPT_KINDS}; got null"
         ),
     ),
+    "none kind, back to none": ({"opt": {"huber": {}}}, "--opt none", opt(NoChoice)),
 }
 
 NESTED = {
@@ -474,17 +468,17 @@ NESTED = {
         "--choice.huber.sub.y.b 7",
         huber(0.01, SubY, b=7.0),
     ),
-    "nested switch warns": (
+    "nested selection runs; the file's settings of the other kind stay unused": (
         {"choice": {"huber": {"sub": {"y": {"b": 3}}}}},
         "--choice.huber.sub x",
+        huber(0.01, SubX),
+    ),
+    "nested key of another kind on the cli warns": (
+        {"choice": {"huber": {"sub": {"kind": "y", "y": {"b": 3}}}}},
+        "--choice.huber.sub.x.a 5",
         Warns(
-            huber(0.01, SubX),
-            ignored(
-                "choice.huber.sub.y",
-                "the config file",
-                "--choice.huber.sub x",
-                "choice.huber.sub.x",
-            ),
+            huber(0.01, SubY, b=3.0),
+            no_effect("--choice.huber.sub.x.a 5", "choice.huber.sub", "x", "y"),
         ),
     ),
     "nested empty section is its default kind": (
@@ -492,18 +486,10 @@ NESTED = {
         "",
         huber(0.01, SubX),
     ),
-    "outer switch drops the nested section silently": (
+    "outer selection: the nested settings stay unused": (
         {"choice": {"huber": {"sub": {"y": {"b": 3}}}}},
         "--choice weighted",
-        Warns(
-            weighted(),
-            ignored(
-                "choice.huber",
-                "the config file",
-                "--choice weighted",
-                "choice.weighted",
-            ),
-        ),
+        weighted(),
     ),
     "unknown nested kind": (
         {"choice": {"huber": {"sub": {"z": {}}}}},
@@ -516,10 +502,7 @@ NESTED = {
     "unknown key under a nested kind": (
         {"choice": {"huber": {"sub": {"y": {"a": 1}}}}},
         "",
-        error(
-            "unknown config key 'choice.huber.sub.y.a'; did you mean "
-            "'choice.huber.sub.y.b'?"
-        ),
+        error("unknown config key 'choice.huber.sub.y.a'"),
     ),
 }
 
@@ -539,16 +522,21 @@ COLLECTIONS = {
         '--per_head {"h": {"loss": "huber"}}',
         per_head("h", Huber, delta=2.0),
     ),
-    "kind inside a dict value, json switches with a warning": (
+    "kind inside a dict value, json selects another kind": (
         {"per_head": {"h": {"loss": {"huber": {"delta": 2}}}}},
         '--per_head {"h": {"loss": "weighted"}}',
+        per_head("h", Weighted),
+    ),
+    "kind inside a dict value, dotted key of another kind warns": (
+        {"per_head": {"h": {"loss": {"kind": "huber", "huber": {"delta": 2}}}}},
+        "--per_head.h.loss.weighted.stress_weight 5",
         Warns(
-            per_head("h", Weighted),
-            ignored(
-                "per_head.h.loss.huber",
-                "the config file",
-                '--per_head {"h": {"loss": "weighted"}}',
-                "per_head.h.loss.weighted",
+            per_head("h", Huber, delta=2.0),
+            no_effect(
+                "--per_head.h.loss.weighted.stress_weight 5",
+                "per_head.h.loss",
+                "weighted",
+                "huber",
             ),
         ),
     ),
@@ -560,10 +548,7 @@ COLLECTIONS = {
     "unknown key inside a dict value names the kind": (
         {"per_head": {"h": {"loss": {"huber": {"stress_weight": 1}}}}},
         "",
-        error(
-            "unknown config key 'per_head.h.loss.huber.stress_weight'; did you mean "
-            "'per_head.h.loss.huber.delta'?"
-        ),
+        error("unknown config key 'per_head.h.loss.huber.stress_weight'"),
     ),
     "kind inside a list item": (
         {"layers": [{"loss": "huber"}, {"loss": {"universal": {"huber_delta": 3}}}]},
@@ -578,31 +563,74 @@ COLLECTIONS = {
     "unknown key inside a list item": (
         {"layers": [{"loss": {"huber": {"stress_weight": 1}}}]},
         "",
+        error("unknown config key 'layers.0.loss.huber.stress_weight'"),
+    ),
+    "unknown kind inside a list item": (
+        {"layers": [{"loss": {"hubr": {}}}]},
+        "",
         error(
-            "unknown config key 'layers.0.loss.huber.stress_weight'; did you mean "
-            "'layers.0.loss.huber.delta'?"
+            "unknown config key 'layers.0.loss.hubr'; did you mean "
+            f"'layers.0.loss.huber'?; the kinds of layers.0.loss are {KINDS}"
         ),
     ),
     "list item cannot be addressed by a dotted key": (
         {},
         "--layers.0.loss huber",
-        error("unknown config key 'layers.0.loss'"),
+        error("unknown config key 'layers.0'; layers is written whole"),
+    ),
+}
+
+WARNINGS = {
+    "a selection lost to a later one warns, the settings stay": (
+        {},
+        "--choice huber --choice.huber.delta 2 --choice weighted",
+        Warns(
+            weighted(),
+            overridden("--choice huber", "choice", "weighted"),
+            no_effect("--choice.huber.delta 2", "choice", "huber", "weighted"),
+        ),
+    ),
+    "a selection by the tag lost to a later one warns": (
+        {},
+        "--choice.kind huber --choice weighted",
+        Warns(weighted(), overridden("--choice.kind huber", "choice", "weighted")),
+    ),
+    "a json override that selects one kind and tunes another warns once": (
+        {},
+        '--choice {"kind": "weighted", "huber": {"delta": 1, "sub": "y"}}',
+        Warns(
+            weighted(),
+            '--choice {"kind": "weighted", "huber": {"delta": 1, "sub": "y"}}: '
+            "choice.huber has no effect, choice runs weighted",
+        ),
+    ),
+    "the same selection twice: the first is overridden": (
+        {},
+        "--choice huber --choice huber",
+        Warns(huber(), overridden("--choice huber", "choice", "huber")),
+    ),
+    "a setting of the running kind is silent": (
+        {"choice": "huber"},
+        "--choice.huber.delta 3",
+        huber(3.0),
+    ),
+    "an empty mapping before a setting is silent": (
+        {},
+        "--choice {} --choice.huber.delta 1",
+        huber(1.0),
+    ),
+    "a file tuning several kinds never warns": (
+        {"choice": {"kind": "huber", "huber": {"delta": 0.5}, "weighted": {}}},
+        "--energy_weight 2",
+        lambda c: c.energy_weight == 2.0 and huber(0.5)(c),
     ),
 }
 
 OTHER = {
-    "keys of other fields are untouched by a switch": (
+    "keys of other fields are untouched by a selection": (
         {"energy_weight": 3.0, **HUBER_FILE},
         "--choice weighted",
-        Warns(
-            lambda c: c.energy_weight == 3.0 and weighted()(c),
-            ignored(
-                "choice.huber",
-                "the config file",
-                "--choice weighted",
-                "choice.weighted",
-            ),
-        ),
+        lambda c: c.energy_weight == 3.0 and weighted()(c),
     ),
     "a required key of the kind supplied by the cli": (
         {"choice": {"huber": {}}},
@@ -616,7 +644,15 @@ OTHER = {
     ),
 }
 
-ROWS = {**SWITCHING, **ERRORS, **NULL, **NONE_KIND, **NESTED, **COLLECTIONS}
+ROWS = {
+    **SWITCHING,
+    **ERRORS,
+    **NULL,
+    **NONE_KIND,
+    **NESTED,
+    **COLLECTIONS,
+    **WARNINGS,
+}
 
 
 def split_cli(cli):
@@ -743,6 +779,24 @@ def test_user_dict_holds_the_kind_and_only_what_was_set(tmp_path):
     }
 
 
+def test_the_empty_mapping_keeps_the_default_instance_with_its_settings(tmp_path):
+    class Tuned(ReforgeBaseConfig):
+        choice: Choice = Weighted(stress_weight=2.0)
+        made: Choice = Field(default_factory=lambda: Huber(delta=9.0, sub=SubY(b=4.0)))
+
+    config = load(tmp_path, Tuned, {"choice": {}, "made": {}}, "")
+    assert config == Tuned()
+    assert config.to_user_dict() == {
+        "choice": {"weighted": {"stress_weight": 2.0}},
+        "made": {"huber": {"delta": 9.0, "sub": {"y": {"b": 4.0}}}},
+    }
+    assert load(tmp_path, Tuned, config.to_user_dict(), "") == config
+    # A kind key with no settings runs the class defaults, not the instance's.
+    assert load(tmp_path, Tuned, {"choice": {"weighted": {}}}, "").choice == Weighted()
+    tuned = load(tmp_path, Tuned, {"choice": {}}, "--choice.weighted.stress_weight 3")
+    assert tuned.choice == Weighted(stress_weight=3.0)
+
+
 def test_json_schema_is_produced_in_both_modes():
     for mode in ("validation", "serialization"):
         schema = LossConfig.model_json_schema(mode=mode)
@@ -755,6 +809,19 @@ def test_code_sees_the_union_and_may_construct_it_either_way():
     assert LossConfig(choice=Huber(delta=2)).choice == Huber(delta=2)
     assert LossConfig.model_validate(by_key).choice == Huber(delta=2)
     assert LossConfig.model_validate(by_tag).choice == Huber(delta=2)
+
+
+def test_a_variant_class_as_a_plain_field_keeps_kind_as_a_key(tmp_path):
+    class Reuse(ReforgeBaseConfig):
+        direct: Huber = Huber()
+
+    resolved = {"direct": {"kind": "huber", "delta": 0.01, "sub": {"x": {"a": 1.0}}}}
+    assert Reuse().to_resolved_dict() == resolved
+    assert load(tmp_path, Reuse, resolved, "").to_resolved_dict() == resolved
+    config = load(tmp_path, Reuse, {}, "--direct.kind huber --direct.sub y")
+    assert config.direct == Huber(sub=SubY())
+    with pytest.raises(ValidationError, match=r"direct\.kind"):
+        load(tmp_path, Reuse, {}, "--direct.kind weighted")
 
 
 # ---------------------------------------------------------------------------
@@ -774,6 +841,13 @@ def test_union_shapes_the_contract_cannot_keep_are_rejected_at_class_definition(
 
     class NamedLikeTheTag(ConfigSection):
         kind: Literal["kind"] = "kind"
+
+    class Colliding(ConfigSection):
+        """In the flat form `{kind: c, weighted: 9}`, the field would read as
+        the settings of the sibling kind."""
+
+        kind: Literal["c"] = "c"
+        weighted: float = 3.0
 
     shapes = {
         r"choice defaults to None, which is not a kind; default to a variant": (
@@ -812,9 +886,9 @@ def test_union_shapes_the_contract_cannot_keep_are_rejected_at_class_definition(
             Choice,
             Plain(),
         ),
-        r"choice has a default_factory; write the default as an instance": (
-            Weighted | Huber,
-            Field(discriminator="kind", default_factory=Weighted),
+        r"choice has variant Colliding with a field named like the kind weighted; ": (
+            Annotated[Weighted | Colliding, Field(discriminator="kind")],
+            Weighted(),
         ),
         r"choice mixes its kinds with dict; a kinds field holds its variants only": (
             Choice | dict[str, int],
@@ -839,9 +913,73 @@ def test_a_required_kinds_field_is_accepted():
         made: int = Field(default_factory=lambda: factory_calls.append(1) or 1)
 
     assert factory_calls == [], "the schema check must not run default factories"
-    with pytest.raises(ConfigError, match="choice needs a kind; one of"):
+    with pytest.raises(ConfigError) as excinfo:
         Required.load(cli_overrides=["--choice", "{}"])
+    # Nothing wrote a kind, so no source is named.
+    assert str(excinfo.value) == (
+        "choice needs a kind; write kind: weighted or kind: huber or kind: universal "
+        "in a file, or pass --choice weighted"
+    )
     assert isinstance(Required.load(cli_overrides=["--choice", "huber"]).choice, Huber)
+
+
+def test_a_default_factory_that_returns_no_variant_is_reported(tmp_path):
+    class Broken(ReforgeBaseConfig):
+        # The wrong result is the point; ty sees only the factory type.
+        choice: Choice = Field(default_factory=lambda: None)  # ty: ignore[invalid-assignment]
+
+    with pytest.raises(
+        TypeError, match=r"Broken\.choice has a default factory whose result is not"
+    ):
+        load(tmp_path, Broken, {"choice": {}}, "")
+
+
+def test_several_kinds_inside_a_list_item_names_only_the_file_fix(tmp_path):
+    file_values = {"layers": [{"loss": {"huber": {}, "weighted": {}}}]}
+    with pytest.raises(ConfigError) as excinfo:
+        load(tmp_path, LossConfig, file_values, "")
+    path = tmp_path / "config.json"
+    assert str(excinfo.value) == (
+        "layers.0.loss needs a kind; write kind: huber or kind: weighted in a file; "
+        f"huber from {path}, weighted from {path}"
+    )
+
+
+def test_several_files_each_writing_one_kind_are_named(tmp_path):
+    defaults = tmp_path / "defaults.json"
+    defaults.write_text(json.dumps({"choice": {"huber": {"delta": 2}}}))
+    user = tmp_path / "user.json"
+    user.write_text(json.dumps({"choice": {"weighted": {}}}))
+    with pytest.raises(ConfigError) as excinfo:
+        LossConfig.load([defaults, user])
+    assert str(excinfo.value) == (
+        "choice needs a kind; write kind: huber or kind: weighted in a file, or "
+        f"pass --choice huber; huber from {defaults}, weighted from {user}"
+    )
+
+
+def test_the_tag_inside_a_kind_is_an_error_under_model_validate():
+    # Not a silent switch to the other kind: the tag is not a key under a kind.
+    message = r"choice\.huber\.kind is not a key; huber already names the kind"
+    with pytest.raises(ValidationError, match=message):
+        LossConfig.model_validate({"choice": {"huber": {"kind": "weighted"}}})
+    with pytest.raises(ValidationError, match=message):
+        LossConfig.model_validate(
+            {"choice": {"kind": "huber", "huber": {"kind": "huber", "delta": 2}}}
+        )
+
+
+def test_a_subclass_of_a_variant_exports_under_the_variant_kind(tmp_path):
+    class SubHuber(Huber):
+        extra_knob: int = 5
+
+    config = LossConfig(choice=SubHuber(delta=3.0))
+    resolved = config.to_resolved_dict()
+    assert resolved["choice"] == {"huber": {"delta": 3.0, "sub": {"x": {"a": 1.0}}}}
+    assert config.to_user_dict() == {"choice": {"huber": {"delta": 3.0}}}
+    reloaded = load(tmp_path, LossConfig, resolved, "")
+    assert reloaded.choice == Huber(delta=3.0)
+    assert reloaded.to_resolved_dict() == resolved
 
 
 def test_a_kind_named_like_a_class_still_reads_as_a_kind_in_error_paths():
@@ -860,13 +998,20 @@ def test_a_kind_named_like_a_class_still_reads_as_a_kind_in_error_paths():
 
 def test_a_collection_key_named_like_the_element_class_stays_in_error_paths():
     with pytest.raises(
-        ConfigError, match=r"'heads\.Plain\.q'; did you mean 'heads\.Plain\.p'"
+        ConfigError, match=r"'heads\.Plain\.pp'; did you mean 'heads\.Plain\.p'"
     ):
-        LossConfig.load(cli_overrides=["--heads", '{"Plain": {"q": 1}}'])
+        LossConfig.load(cli_overrides=["--heads", '{"Plain": {"pp": 1}}'])
 
 
 def test_warning_can_be_turned_into_an_error(tmp_path):
     with warnings.catch_warnings():
         warnings.simplefilter("error", ConfigWarning)
-        with pytest.raises(ConfigWarning, match=r"choice\.huber from the config file"):
-            load(tmp_path, LossConfig, HUBER_FILE, "--choice weighted")
+        with pytest.raises(
+            ConfigWarning, match=r"choice\.weighted has no effect, choice runs huber"
+        ):
+            load(
+                tmp_path,
+                LossConfig,
+                {"choice": "huber"},
+                "--choice.weighted.stress_weight 5",
+            )

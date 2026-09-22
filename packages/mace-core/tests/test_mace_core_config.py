@@ -1,15 +1,25 @@
 """`ReforgeBaseConfig`: file formats, precedence, dotted overrides, unknown keys,
-and the resolved export's fixed point."""
+overrides without effect, and the resolved export's fixed point."""
 
 import json
+import re
 import subprocess
 import sys
-from typing import Annotated
+import warnings
+from typing import Annotated, Any
 
 import pytest
 import yaml
-from mace_core.config import ConfigError, ConfigSection, ReforgeBaseConfig
-from pydantic import BaseModel, Field, ValidationError, computed_field
+from mace_core.config import (
+    ConfigError,
+    ConfigSection,
+    ConfigWarning,
+    ReforgeBaseConfig,
+)
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, computed_field
+
+#: A warning the test did not ask for is a failure.
+pytestmark = pytest.mark.filterwarnings("error")
 
 # ---------------------------------------------------------------------------
 # The demo schema: two levels of nesting, a list, an optional, a Literal.
@@ -44,8 +54,8 @@ class DemoConfig(ReforgeBaseConfig):
     default_dtype: str = "float64"
     model: ModelSection = ModelSection()
     data: DataSection = DataSection()
-    #: An optional section: absent unless the file or the CLI opens it.
-    stage_two: StageTwoSection | None = None
+    #: A section left at its defaults unless a file or the CLI writes into it.
+    stage_two: StageTwoSection = StageTwoSection()
 
 
 #: One config, as a dict. Each format test writes it out and loads it back.
@@ -77,8 +87,8 @@ def dump(values, extension):
     return yaml.safe_dump(values)
 
 
-def write_config(tmp_path, extension, values=FILE_VALUES):
-    path = tmp_path / f"config{extension}"
+def write_config(tmp_path, extension, values=FILE_VALUES, name="config"):
+    path = tmp_path / f"{name}{extension}"
     path.write_text(dump(values, extension), encoding="utf-8")
     return path
 
@@ -96,6 +106,12 @@ def test_same_config_loads_identically_from_every_format(tmp_path, extension):
     assert config.model.radial.num_bessel == 8
 
 
+def test_extension_is_matched_in_any_case(tmp_path):
+    path = tmp_path / "CONFIG.YAML"
+    path.write_text("seed: 5\n", encoding="utf-8")
+    assert DemoConfig.load(path).seed == 5
+
+
 def test_unknown_extension_is_an_error(tmp_path):
     path = tmp_path / "config.ini"
     path.write_text("seed = 1", encoding="utf-8")
@@ -106,6 +122,12 @@ def test_unknown_extension_is_an_error(tmp_path):
 def test_empty_file_is_all_defaults(tmp_path):
     path = tmp_path / "empty.yaml"
     path.write_text("", encoding="utf-8")
+    assert DemoConfig.load(path) == DemoConfig()
+
+
+def test_comment_only_file_is_all_defaults(tmp_path):
+    path = tmp_path / "comments.yaml"
+    path.write_text("# nothing set yet\n", encoding="utf-8")
     assert DemoConfig.load(path) == DemoConfig()
 
 
@@ -121,6 +143,13 @@ def test_missing_file_is_a_config_error(tmp_path):
         DemoConfig.load(tmp_path / "nope.yaml")
 
 
+def test_unreadable_file_is_a_config_error(tmp_path):
+    path = tmp_path / "latin.yaml"
+    path.write_bytes(b"name: caf\xe9\n")
+    with pytest.raises(ConfigError, match=r"cannot read config file .*latin\.yaml"):
+        DemoConfig.load(path)
+
+
 @pytest.mark.parametrize(
     ("extension", "text"),
     [(".toml", "seed = \n"), (".yaml", "seed: [1\n"), (".json", "{")],
@@ -133,7 +162,7 @@ def test_malformed_file_is_a_config_error(tmp_path, extension, text):
 
 
 # ---------------------------------------------------------------------------
-# Precedence: defaults < file < CLI. The legacy behaviour this pins is
+# Precedence: defaults < files in order < CLI. The legacy behaviour this pins is
 # tests/unit/test_arg_parser.py::test_cli_flag_overrides_yaml_config.
 
 
@@ -141,6 +170,7 @@ def test_no_inputs_gives_the_defaults():
     config = DemoConfig.load()
     assert config == DemoConfig()
     assert config.model.num_interactions == 2
+    assert DemoConfig.load(None) == DemoConfig()  # an optional path, unset
 
 
 def test_file_overrides_defaults(tmp_path):
@@ -160,6 +190,19 @@ def test_cli_overrides_file_which_overrides_defaults(tmp_path):
     assert config.default_dtype == "float64"
 
 
+def test_files_apply_in_order_before_the_overrides(tmp_path):
+    first = write_config(tmp_path, ".yaml", name="defaults")
+    second = write_config(
+        tmp_path, ".toml", {"seed": 8, "model": {"radial": {"num_bessel": 6}}}, "site"
+    )
+    config = DemoConfig.load([first, second], ["--model.num_interactions", "3"])
+    assert config.seed == 8  # the second file beats the first
+    assert config.name == "water"  # the first file's other values survive
+    assert config.model.radial == RadialSection(num_bessel=6, cutoff=4.5)
+    assert config.model.num_interactions == 3  # the CLI beats both
+    assert DemoConfig.load([]) == DemoConfig()
+
+
 # ---------------------------------------------------------------------------
 # Dotted CLI overrides
 
@@ -170,10 +213,10 @@ def test_dotted_override_reaches_a_two_level_nested_field():
     assert config.model.radial.num_bessel == 8
 
 
-def test_dotted_override_opens_an_optional_section():
+def test_dotted_override_reaches_a_section_left_at_its_defaults():
     config = DemoConfig.load(cli_overrides=["--stage_two.start_epoch", "50"])
     assert config.stage_two == StageTwoSection(start_epoch=50)
-    assert DemoConfig.load().stage_two is None
+    assert DemoConfig.load().stage_two == StageTwoSection()
 
 
 def test_override_forms_and_types():
@@ -213,20 +256,52 @@ def test_value_starting_with_dashes_works_in_both_forms():
     assert DemoConfig.load(cli_overrides=["--name", "--odd"]).name == "--odd"
 
 
-def test_dict_valued_field_takes_json_and_is_not_dotted_into():
+@pytest.mark.parametrize("token", ["--", "--=5"])
+def test_bare_dashes_are_an_unknown_option_not_a_key(token):
+    with pytest.raises(ConfigError, match=rf"unknown config option '{token}'"):
+        DemoConfig.load(cli_overrides=[token, "--seed", "5"])
+
+
+def test_overrides_given_as_one_string_are_refused():
+    with pytest.raises(TypeError, match="cli_overrides is a string"):
+        DemoConfig.load(cli_overrides="--seed 5")
+
+
+def test_dict_valued_field_takes_json_and_dotted_paths_into_its_entries():
     class Sources(ReforgeBaseConfig):
         by_name: dict[str, RadialSection] = Field(default_factory=dict)
 
     config = Sources.load(cli_overrides=["--by_name", '{"pbe": {"cutoff": 4.0}}'])
     assert config.by_name == {"pbe": RadialSection(cutoff=4.0)}
-    with pytest.raises(ConfigError, match=r"unknown config key 'by_name\.pbe\.cutoff'"):
-        Sources.load(cli_overrides=["--by_name.pbe.cutoff", "4.0"])
+    dotted = Sources.load(cli_overrides=["--by_name.pbe.cutoff", "4.0"])
+    assert dotted.by_name == {"pbe": RadialSection(cutoff=4.0)}
     # Inside an entry, the neighbour is still found: the key passes through.
     with pytest.raises(
         ConfigError,
         match=r"'by_name\.pbe\.cutof'; did you mean 'by_name\.pbe\.cutoff'\?",
     ):
         Sources.load(cli_overrides=["--by_name", '{"pbe": {"cutof": 4.0}}'])
+
+
+def test_collections_behind_none_or_annotated_keep_their_dotted_paths(tmp_path):
+    class Collections(ReforgeBaseConfig):
+        counts: dict[str, int] | None = None
+        documented: dict[str, Annotated[RadialSection, Field(description="d")]] = Field(
+            default_factory=dict
+        )
+        pair: tuple[int, RadialSection] | None = None
+
+    assert Collections.load(cli_overrides=["--counts.x", "1"]).counts == {"x": 1}
+    with pytest.raises(
+        ConfigError,
+        match=r"'documented\.a\.cutof'; did you mean 'documented\.a\.cutoff'",
+    ):
+        Collections.load(cli_overrides=["--documented", '{"a": {"cutof": 4.0}}'])
+    path = write_config(tmp_path, ".json", {"pair": [1, {"cutof": 4.0}]})
+    with pytest.raises(
+        ConfigError, match=r"'pair\.1\.cutof'; did you mean 'pair\.1\.cutoff'"
+    ):
+        Collections.load(path)
 
 
 def test_dict_override_merges_entries_but_list_override_replaces(tmp_path):
@@ -245,13 +320,11 @@ def test_dict_override_merges_entries_but_list_override_replaces(tmp_path):
 
 
 def test_overrides_apply_in_order_on_top_of_the_file(tmp_path):
-    # Closing a section with null and reopening it drops what the file set
-    # in it; a dotted value followed by the whole section keeps both.
+    # A dotted value merges into what the file set in the section; a dotted
+    # value followed by the whole section keeps both.
     config = DemoConfig.load(
         write_config(tmp_path, ".yaml", {"stage_two": {"energy_weight": 5.0}}),
         cli_overrides=[
-            "--stage_two",
-            "null",
             "--stage_two.start_epoch",
             "5",
             "--model.radial.cutoff",
@@ -260,8 +333,94 @@ def test_overrides_apply_in_order_on_top_of_the_file(tmp_path):
             '{"num_interactions": 3}',
         ],
     )
-    assert config.stage_two == StageTwoSection(start_epoch=5)
+    assert config.stage_two == StageTwoSection(start_epoch=5, energy_weight=5.0)
     assert (config.model.num_interactions, config.model.radial.cutoff) == (3, 4.0)
+
+
+def test_a_yaml_anchor_does_not_share_an_override(tmp_path):
+    class Two(ReforgeBaseConfig):
+        a: dict[str, Any] = Field(default_factory=dict)
+        b: dict[str, Any] = Field(default_factory=dict)
+
+    path = tmp_path / "anchors.yaml"
+    path.write_text("a: &empty {}\nb: *empty\n", encoding="utf-8")
+    config = Two.load(path, ["--a.x", "1"])
+    assert (config.a, config.b) == ({"x": "1"}, {})
+
+
+# ---------------------------------------------------------------------------
+# An override that had no effect on the config that runs is a warning; a file
+# never warns.
+
+
+class Extras(ReforgeBaseConfig):
+    seed: int = 1
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+WITHOUT_EFFECT = {
+    "a later override at the same path": (
+        ["--seed", "1", "--seed", "2"],
+        ["--seed 1 is overridden: seed is 2"],
+    ),
+    "a later override above it": (
+        ["--extra.a.b", "2", "--extra.a", "5"],
+        ["--extra.a.b 2 is overridden: extra.a is 5"],
+    ),
+    "a later json override above it": (
+        ["--extra.a.b", "2", "--extra.a", "[1]"],
+        ["--extra.a.b 2 is overridden: extra.a is [1]"],
+    ),
+    "part of a json override replaced": (
+        ["--extra", '{"a": {"b": 1}}', "--extra.a.b", "2"],
+        ['--extra {"a": {"b": 1}} is overridden: extra.a.b is 2'],
+    ),
+    "a later override below a scalar of it": (
+        ["--extra.a", "5", "--extra.a.b", "2"],
+        ["--extra.a 5 is overridden: extra.a.b is 2"],
+    ),
+    "the same override twice: the first is overridden": (
+        ["--seed", "2", "--seed", "2"],
+        ["--seed 2 is overridden: seed is 2"],
+    ),
+    "the same json override twice: the first is overridden": (
+        ["--extra", '{"a": 1}', "--extra", '{"a": 1}'],
+        ['--extra {"a": 1} is overridden: extra.a is 1'],
+    ),
+    "the last of three at one path is named, once": (
+        ["--seed", "1", "--seed", "1", "--seed", "3"],
+        ["--seed 1 is overridden: seed is 3"],
+    ),
+    "a plain key named kind is a key, not a selection": (
+        ["--extra.kind", "a", "--extra.kind", "b"],
+        ["--extra.kind a is overridden: extra.kind is b"],
+    ),
+    "an empty mapping above a later key is a merge": (
+        ["--extra.a.b", "2", "--extra.a", "{}"],
+        [],
+    ),
+    "an empty mapping below a later key is a merge": (
+        ["--extra.a", "{}", "--extra.a.b", "2"],
+        [],
+    ),
+}
+
+
+@pytest.mark.parametrize("row", WITHOUT_EFFECT, ids=WITHOUT_EFFECT)
+def test_an_override_without_effect_warns(row):
+    tokens, expected = WITHOUT_EFFECT[row]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Extras.load(cli_overrides=tokens)
+    assert [str(w.message) for w in caught] == expected
+    assert all(issubclass(w.category, ConfigWarning) for w in caught)
+
+
+def test_a_file_value_the_cli_replaces_does_not_warn(tmp_path):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ConfigWarning)
+        config = DemoConfig.load(write_config(tmp_path, ".yaml"), ["--seed", "9"])
+    assert config.seed == 9
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +453,21 @@ def test_every_unknown_key_is_reported_at_once(tmp_path):
     assert "'model.num_interaction'" in str(excinfo.value)
 
 
+def test_unknown_keys_are_reported_under_their_file_or_override(tmp_path):
+    first = write_config(tmp_path, ".yaml", {"sead": 1}, "first")
+    second = write_config(
+        tmp_path, ".json", {"model": {"num_interaction": 3}}, "second"
+    )
+    with pytest.raises(ConfigError) as excinfo:
+        DemoConfig.load([first, second], ["--nmae", "x"])
+    assert str(excinfo.value).splitlines() == [
+        f"{first}: unknown config key 'sead'; did you mean 'seed'?",
+        f"{second}: unknown config key 'model.num_interaction'; "
+        "did you mean 'model.num_interactions'?",
+        "--nmae x: unknown config key 'nmae'; did you mean 'name'?",
+    ]
+
+
 def test_unknown_key_without_a_close_neighbour_still_names_it(tmp_path):
     path = tmp_path / "far.yaml"
     path.write_text("zzzzzz: 1\n", encoding="utf-8")
@@ -309,7 +483,7 @@ def test_unknown_dotted_override_names_the_neighbour():
         DemoConfig.load(cli_overrides=["--model.num_interaction", "3"])
 
 
-def test_unknown_key_inside_an_optional_section():
+def test_unknown_key_inside_a_nested_section():
     with pytest.raises(
         ConfigError,
         match=r"'stage_two\.start'; did you mean 'stage_two\.start_epoch'\?",
@@ -317,15 +491,17 @@ def test_unknown_key_inside_an_optional_section():
         DemoConfig.load(cli_overrides=["--stage_two.start", "50"])
 
 
-def test_unknown_key_under_a_section_or_scalar_field_drops_the_tag():
-    class SectionOrInt(ReforgeBaseConfig):
-        radial: RadialSection | int = 3
+def test_every_bad_list_item_is_reported(tmp_path):
+    class Layers(ReforgeBaseConfig):
+        layers: list[RadialSection] = Field(default_factory=list)
 
-    # pydantic tags the location with the member's class name; not a key.
-    with pytest.raises(
-        ConfigError, match=r"'radial\.cutof'; did you mean 'radial\.cutoff'\?"
-    ):
-        SectionOrInt.load(cli_overrides=["--radial", '{"cutof": 4.0}'])
+    path = write_config(tmp_path, ".json", {"layers": [{"cutof": 1}, {"nb": 2}]})
+    with pytest.raises(ConfigError) as excinfo:
+        Layers.load(path)
+    assert re.findall(r"unknown config key '([^']*)'", str(excinfo.value)) == [
+        "layers.0.cutof",
+        "layers.1.nb",
+    ]
 
 
 def test_help_flag_is_an_error_not_an_exit():
@@ -365,7 +541,7 @@ def test_resolved_dict_has_every_default_in_declaration_order(tmp_path):
         "data",
         "stage_two",
     ]
-    assert resolved["stage_two"] is None
+    assert resolved["stage_two"] == {"start_epoch": 100, "energy_weight": 1000.0}
     assert list(resolved["model"]) == ["num_interactions", "hidden_irreps", "radial"]
     assert resolved["model"]["radial"] == {"num_bessel": 8, "cutoff": 5.0}
     assert resolved["data"]["train_file"] is None
@@ -382,15 +558,16 @@ def assert_fixed_point(tmp_path, first, extension):
 @pytest.mark.parametrize("extension", [".yaml", ".json"])
 def test_file_to_resolved_to_file_to_resolved_is_a_fixed_point(tmp_path, extension):
     first = DemoConfig.load(
-        write_config(tmp_path, ".toml"), ["--model.num_interactions", "3"]
+        write_config(tmp_path, ".toml"),
+        ["--model.num_interactions", "3", "--data.train_file", "null"],
     ).to_resolved_dict()
-    assert first["stage_two"] is None  # a None is part of what has to survive
+    assert first["data"]["train_file"] is None  # a None is part of what has to survive
     assert_fixed_point(tmp_path, first, extension)
 
 
 def test_fixed_point_holds_through_toml_when_nothing_is_none(tmp_path):
-    # TOML has no null, so the optional section is opened and the optional
-    # file name set; the resolved dict then goes through all three formats.
+    # TOML has no null, so the file sets the optional file name; the resolved
+    # dict then goes through all three formats.
     first = DemoConfig.load(
         write_config(tmp_path, ".yaml"), ["--stage_two.start_epoch", "50"]
     ).to_resolved_dict()
@@ -405,17 +582,25 @@ class LenientSection(BaseModel):
 
 def test_field_shapes_the_contract_cannot_keep_are_rejected_at_class_definition():
     # Each shape would break a guarantee: set order varies with the hash
-    # seed; aliases and computed fields do not validate back; a union of
-    # sections would let a value pick its section; a lenient section would
-    # swallow typos.
+    # seed; aliases, excluded and computed fields do not validate back; a
+    # union of sections would let a value pick its section; a lenient section
+    # would swallow typos; a section is never optional.
     shapes = {
         r"tags is typed as a set.*Use a list": ("tags", list[set[str]]),
         r"num has an alias": ("num", Annotated[int, Field(alias="n")]),
+        r"vnum has an alias": ("vnum", Annotated[int, Field(validation_alias="n")]),
+        r"snum has an alias": ("snum", Annotated[int, Field(serialization_alias="n")]),
+        r"hidden is excluded from dumps": (
+            "hidden",
+            Annotated[int, Field(exclude=True)],
+        ),
         r"either is a union of sections": ("either", RadialSection | StageTwoSection),
         r"radial holds LenientSection, which is not a ConfigSection": (
             "radial",
             LenientSection | None,
         ),
+        r"radial mixes its kinds with int": ("radial", RadialSection | int),
+        r"stage admits None": ("stage", StageTwoSection | None),
     }
     for message, (name, annotation) in shapes.items():
         with pytest.raises(TypeError, match=message):
@@ -431,13 +616,21 @@ def test_field_shapes_the_contract_cannot_keep_are_rejected_at_class_definition(
                 return 2 * self.seed
 
 
+def test_a_section_cannot_reopen_extra():
+    with pytest.raises(TypeError, match=r"Loose sets extra='allow'; a section keeps"):
+
+        class Loose(ConfigSection):
+            model_config = ConfigDict(extra="allow")
+            seed: int = 1
+
+
 # A class that names a class defined below it is incomplete at definition:
 # pydantic keeps the name, so the check cannot see through the field. The
 # first `load` resolves the name and checks the class then.
 
 
 class Forward(ConfigSection):
-    later: "Later | None" = None
+    later: "Later" = Field(default_factory=lambda: Later())
 
 
 class Later(ConfigSection):
@@ -462,7 +655,7 @@ class LeakingConfig(ReforgeBaseConfig):
 
 def test_a_forward_reference_is_checked_and_walked_once_it_resolves(tmp_path):
     assert not Forward.__pydantic_complete__
-    assert ForwardConfig.load().forward.later is None
+    assert ForwardConfig.load().forward.later == Later()
     config = ForwardConfig.load(cli_overrides=["--forward.later.x", "2"])
     assert config.forward.later == Later(x=2)
     path = tmp_path / "typo.json"
@@ -491,7 +684,7 @@ def test_user_dict_holds_only_what_was_set(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Nothing but the file and the CLI feeds a config.
+# Nothing but the files and the CLI feed a config.
 
 
 def test_environment_variables_are_ignored(monkeypatch):
