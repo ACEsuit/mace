@@ -43,9 +43,12 @@ __all__ = [
     "TermwiseLoss",
     "UniversalLoss",
     "UnknownLossError",
+    "atom_counts",
     "build_loss",
+    "predicted",
     "reduce_loss",
     "register_loss",
+    "row_weights",
     "terms_for",
 ]
 
@@ -179,12 +182,12 @@ class TermwiseLoss(torch.nn.Module):
 
     def forward(self, output: MACEOutput[Tensor], batch: TrainingBatch) -> Tensor:
         """The total, as a scalar."""
-        counts = _atom_counts(batch)
+        counts = atom_counts(batch)
         total: Tensor | None = None
         for term in self.terms:
-            predicted = _predicted(output, term.name)
-            reference = batch.targets[term.name].to(predicted.dtype)
-            residual = predicted - reference.reshape(predicted.shape)
+            value = predicted(output, term.name)
+            reference = batch.targets[term.name].to(value.dtype)
+            residual = value - reference.reshape(value.shape)
             if term.extensive:
                 # Per atom, so a structure twice the size is not twice the
                 # error. The division is on the residual and not on the
@@ -192,7 +195,7 @@ class TermwiseLoss(torch.nn.Module):
                 # normalisation with it.
                 residual = residual / _broadcast(counts, residual)
             cost = self.elementwise(residual, term)
-            weights = _weights(batch, term, cost)
+            weights = row_weights(batch, term.name, term.per_atom, cost)
             total_term = term.weight * reduce_loss(weights * cost)
             total = total_term if total is None else total + total_term
         assert total is not None
@@ -253,7 +256,7 @@ def _build(
     return loss(**settings)
 
 
-def _atom_counts(batch: TrainingBatch) -> Tensor:
+def atom_counts(batch: TrainingBatch) -> Tensor:
     """How many atoms each structure has, from `ptr` and never from `batch`."""
     pointer = batch.graph["ptr"]
     assert isinstance(pointer, Tensor)
@@ -266,8 +269,10 @@ def _broadcast(per_graph: Tensor, like: Tensor) -> Tensor:
     return value.reshape(-1, *([1] * (like.dim() - 1)))
 
 
-def _weights(batch: TrainingBatch, term: LossTerm, like: Tensor) -> Tensor:
-    """The two per-structure weights, spread over the rows of a term.
+def row_weights(
+    batch: TrainingBatch, name: str, per_atom: bool, like: Tensor
+) -> Tensor:
+    """The two per-structure weights, spread over the rows of a quantity.
 
     The structure's own weight and its weight for this property. The second is
     what makes a missing value contribute nothing: it is zero where the
@@ -275,18 +280,18 @@ def _weights(batch: TrainingBatch, term: LossTerm, like: Tensor) -> Tensor:
     """
     graph_weight = batch.graph["weight"]
     assert isinstance(graph_weight, Tensor)
-    property_weight = batch.property_weights.get(term.name)
+    property_weight = batch.property_weights.get(name)
     combined = graph_weight.to(like.dtype)
     if property_weight is not None:
         combined = combined * property_weight.to(like.dtype)
-    if term.per_atom:
+    if per_atom:
         node = batch.graph["batch"]
         assert isinstance(node, Tensor)
         combined = combined[node]
     return combined.reshape(-1, *([1] * (like.dim() - 1)))
 
 
-def _predicted(output: MACEOutput[Tensor], name: str) -> Tensor:
+def predicted(output: MACEOutput[Tensor], name: str) -> Tensor:
     """One quantity off the typed output, by its requested name.
 
     Through the output's own accessor rather than a table here. A second table

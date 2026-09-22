@@ -14,7 +14,7 @@ batch whose last graph has no nodes.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -34,8 +34,10 @@ from mace_torch.graph import DTYPES, to_tensors
 
 __all__ = [
     "GraphDataset",
+    "Item",
     "TrainingBatch",
     "collate_training",
+    "make_collate",
     "make_loader",
 ]
 
@@ -73,10 +75,14 @@ class TrainingBatch:
         )
 
 
+#: One structure as a dataset hands it over: its graph, its reference values,
+#: and how much each of those counts. Named because three modules pass it
+#: around and the tuple written out three times is the thing that drifts.
+Item = tuple[Mapping[str, np.ndarray], Mapping[str, np.ndarray], Mapping[str, float]]
+
+
 def collate_training(
-    items: Sequence[
-        tuple[Mapping[str, np.ndarray], Mapping[str, np.ndarray], Mapping[str, float]]
-    ],
+    items: Sequence[Item],
     *,
     z_table: AtomicNumberTable,
     float_dtype: str = "float64",
@@ -145,9 +151,7 @@ class GraphDataset(Dataset):
     def __len__(self) -> int:
         return len(self.configurations)
 
-    def __getitem__(
-        self, index: int
-    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], dict[str, float]]:
+    def __getitem__(self, index: int) -> Item:
         configuration = self.configurations[index]
         head = self.head_index.get(configuration.head, 0)
         graph = graph_from_configuration(
@@ -163,6 +167,22 @@ class GraphDataset(Dataset):
         return graph, targets, weights
 
 
+def make_collate(
+    z_table: AtomicNumberTable, float_dtype: str = "float64"
+) -> Callable[[Iterable[Item]], TrainingBatch]:
+    """The collate function a loader over this element table needs.
+
+    Separate from :func:`make_loader` because a loader over several heads\'
+    datasets has no single dataset to read the table off, and the table is the
+    model\'s rather than any one dataset\'s.
+    """
+
+    def collate(items: Iterable[Item]) -> TrainingBatch:
+        return collate_training(list(items), z_table=z_table, float_dtype=float_dtype)
+
+    return collate
+
+
 def make_loader(
     dataset: GraphDataset,
     *,
@@ -174,25 +194,11 @@ def make_loader(
     drop_last: bool = False,
 ) -> DataLoader:
     """A loader whose batches are :class:`TrainingBatch`."""
-
-    def collate(
-        items: Iterable[
-            tuple[
-                Mapping[str, np.ndarray],
-                Mapping[str, np.ndarray],
-                Mapping[str, float],
-            ]
-        ],
-    ) -> TrainingBatch:
-        return collate_training(
-            list(items), z_table=dataset.z_table, float_dtype=float_dtype
-        )
-
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=collate,
+        collate_fn=make_collate(dataset.z_table, float_dtype),
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,

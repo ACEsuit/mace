@@ -7,8 +7,10 @@ through.
 
 from mace_torch.data.batch import (
     GraphDataset,
+    Item,
     TrainingBatch,
     collate_training,
+    make_collate,
     make_loader,
 )
 from mace_torch.data.graphs import (
@@ -30,6 +32,7 @@ from mace_torch.data.transforms import (
 __all__ = [
     "TRANSFORM_REGISTRY",
     "GraphDataset",
+    "Item",
     "MissingTargetError",
     "TargetSpec",
     "TrainingBatch",
@@ -39,6 +42,7 @@ __all__ = [
     "apply_transforms",
     "collate_training",
     "graph_from_configuration",
+    "make_collate",
     "make_loader",
     "register_transform",
     "target_specs",

@@ -258,6 +258,12 @@ class TrainingConfig(FrozenSection):
         clip_grad: Gradient-norm clip. ``None`` does not clip.
         scheduler: The learning-rate schedule.
         ema: The weight average.
+        head_balancing: How a multi-head epoch is made up. ``balanced``
+            up-samples every head to the largest, so each contributes the same
+            number of steps whatever its size. ``proportional`` is the frozen
+            tree's single shuffled pool, where a head is visited in proportion
+            to its size; it is what a comparison against legacy needs. With one
+            head the two are the same sequence.
         stage_two: The second stage, as the short spelling of a two-stage
             list. `schedule()` expands it.
         stages: The stages, when a run wants more than two or wants to name
@@ -276,6 +282,7 @@ class TrainingConfig(FrozenSection):
     clip_grad: float | None = 10.0
     scheduler: SchedulerConfig = SchedulerConfig()
     ema: EMAConfig = EMAConfig()
+    head_balancing: Literal["balanced", "proportional"] = "balanced"
     stage_two: StageTwoConfig = StageTwoConfig()
     stages: tuple[StageConfig, ...] = ()
     dry_run: bool = False

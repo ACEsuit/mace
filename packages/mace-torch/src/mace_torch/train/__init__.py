@@ -19,6 +19,13 @@ from mace_torch.train.data_stage import (
     run_data_stage,
 )
 from mace_torch.train.ema import ExponentialMovingAverage
+from mace_torch.train.loaders import (
+    BalancedLoader,
+    IndexSharder,
+    ProportionalLoader,
+    TrainingLoader,
+    build_training_loader,
+)
 from mace_torch.train.loop import evaluate, run_train_stage, train_one_epoch
 from mace_torch.train.loss import (
     LOSS_REGISTRY,
@@ -30,6 +37,7 @@ from mace_torch.train.loss import (
     register_loss,
     terms_for,
 )
+from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
 from mace_torch.train.model_stage import ModelStageError, run_model_stage
 from mace_torch.train.optimizers import (
     UnsupportedOptimizerError,
@@ -41,18 +49,26 @@ from mace_torch.train.optimizers import (
 __all__ = [
     "DEFAULT_PRECISION",
     "LOSS_REGISTRY",
+    "BalancedLoader",
     "DataStageError",
     "ExponentialMovingAverage",
     "GeneratedLoss",
+    "IndexSharder",
     "LossTerm",
+    "MetricSpec",
     "ModelStageError",
+    "ProportionalLoader",
     "RunState",
+    "RunningMetrics",
+    "TrainingLoader",
     "UnknownLossError",
     "UnsupportedOptimizerError",
     "build_loss",
     "build_optimizer",
     "build_scheduler",
+    "build_training_loader",
     "evaluate",
+    "metric_specs",
     "parameter_groups",
     "read_run_state",
     "reduce_loss",
