@@ -11,7 +11,14 @@ import importlib.util
 from pathlib import Path
 
 import pytest
-import tomllib
+
+# `tomllib` is 3.11+, and this file runs on the 3.10 leg of the matrix too.
+# pytest declares `tomli` there, and this file is collected by pytest or not at
+# all, so the fallback always resolves; a bare import breaks collection.
+try:  # pragma: no cover - one branch per interpreter
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib  # type: ignore[no-redef]
 
 if importlib.util.find_spec("torch") is None:  # pragma: no cover
     pytest.skip("the reference backend needs torch", allow_module_level=True)
