@@ -38,7 +38,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from mace_core.config.base import ConfigSection
+from mace_core.config.section import FrozenSection
 
 __all__ = [
     "E0Spec",
@@ -57,7 +57,7 @@ __all__ = [
 MissingElementPolicy = Literal["error", "average", "zero"]
 
 
-class E0sTable(ConfigSection):
+class E0sTable(FrozenSection):
     """Energies given outright, which is also the parsed form of a JSON file.
 
     Args:
@@ -70,7 +70,7 @@ class E0sTable(ConfigSection):
     values: dict[int, float]
 
 
-class E0sIsolatedAtoms(ConfigSection):
+class E0sIsolatedAtoms(FrozenSection):
     """Read from the ``IsolatedAtom`` structures in the head's training file.
 
     The default, because it is what legacy reaches for first.
@@ -86,7 +86,7 @@ class E0sIsolatedAtoms(ConfigSection):
     on_missing_energy: Literal["error", "zero"] = "error"
 
 
-class E0sAverage(ConfigSection):
+class E0sAverage(FrozenSection):
     """Least squares over the head's training energies.
 
     There is deliberately no fallback field. A singular system means the
@@ -98,7 +98,7 @@ class E0sAverage(ConfigSection):
     kind: Literal["average"] = "average"
 
 
-class E0sFromFoundation(ConfigSection):
+class E0sFromFoundation(FrozenSection):
     """Copied from a foundation model's recorded metadata.
 
     From the artifact's metadata, never read back out of a loaded module's
@@ -118,7 +118,7 @@ class E0sFromFoundation(ConfigSection):
     missing: MissingElementPolicy = "error"
 
 
-class E0sEstimated(ConfigSection):
+class E0sEstimated(FrozenSection):
     """Least squares corrected by a foundation model's own energies.
 
     Args:

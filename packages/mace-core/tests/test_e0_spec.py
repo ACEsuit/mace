@@ -7,7 +7,7 @@ keep a run going on silently wrong energies are gone.
 """
 
 import pytest
-from mace_core.config.base import ConfigError, ConfigSection, ReforgeBaseConfig
+from mace_core.config.base import ConfigError, ReforgeBaseConfig
 from mace_core.config.e0s import (
     FOUNDATION_E0_KINDS,
     E0sAverage,
@@ -17,10 +17,11 @@ from mace_core.config.e0s import (
     E0Spec,
     E0sTable,
 )
+from mace_core.config.section import FrozenSection
 from pydantic import ValidationError
 
 
-class Head(ConfigSection):
+class Head(FrozenSection):
     e0s: E0Spec = E0sIsolatedAtoms()
 
 
@@ -30,7 +31,7 @@ class Root(ReforgeBaseConfig):
 
 #: Every kind, with a file body that satisfies it. The `table` body is not
 #: empty because its `values` is required.
-KINDS: dict[str, tuple[type[ConfigSection], dict]] = {
+KINDS = {
     "table": (E0sTable, {"values": {1: -13.6}}),
     "isolated_atoms": (E0sIsolatedAtoms, {}),
     "average": (E0sAverage, {}),
@@ -48,8 +49,9 @@ def test_every_kind_parses_through_the_discriminator(kind):
 
 
 def test_the_default_is_the_one_legacy_reaches_for_first():
-    assert Root().head.e0s == E0sIsolatedAtoms()
-    assert Root().head.e0s.on_missing_energy == "error"
+    e0s = Root().head.e0s
+    assert isinstance(e0s, E0sIsolatedAtoms)
+    assert e0s.on_missing_energy == "error"
 
 
 def test_a_kind_is_written_as_its_own_key():
@@ -82,7 +84,7 @@ def test_a_setting_that_belongs_to_another_kind_is_refused():
 def test_a_table_has_to_carry_values():
     """An empty table is the all-zero state the other kinds refuse."""
     with pytest.raises(ValidationError):
-        E0sTable()
+        E0sTable.model_validate({})
 
 
 def test_the_isolated_atom_fallback_is_a_choice_and_defaults_to_refusing():
@@ -115,7 +117,7 @@ def test_a_foundation_kind_takes_a_head_and_refuses_to_guess(kind):
     answer; what makes it an error to omit on a multi-head one is the
     cross-section validator, which needs the foundation section to know.
     """
-    expected, _body = KINDS[kind]
+    expected = E0sFromFoundation if kind == "foundation" else E0sEstimated
     assert expected().head is None
     assert expected(head="mp").head == "mp"
     assert expected().missing == "error"
