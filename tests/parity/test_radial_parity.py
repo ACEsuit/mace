@@ -13,7 +13,6 @@ from mace_torch.nn.radial import ChebyshevBasis, ZBLBasis
 from mace.modules.blocks import LinearNodeEmbeddingBlock as LegacyNodeEmbedding
 from mace.modules.blocks import RadialEmbeddingBlock as LegacyRadialEmbeddingBlock
 from mace.modules.extensions import ChebyshevBasisGeneral as LegacyChebyshevBasisGeneral
-from mace.modules.radial import ChebychevBasis as LegacyChebychevBasis
 from mace.modules.radial import ZBLBasis as LegacyZBLBasis
 from tests.golden.harness import tolerance
 
@@ -98,7 +97,9 @@ def test_zbl_parity(fp64):
 def test_chebyshev_basis_parity_at_the_magnetic_configuration(include_constant, fp64):
     """Legacy `ChebyshevBasisGeneral` at `r_max=0.0`, the configuration the
     magnetic family constructs; the input is a transformed magnetic-moment
-    length on [-1, 1]. v1 has one Chebyshev class, so the switch is tested on it."""
+    length on [-1, 1]. v1 has one Chebyshev class, so the switch is tested on it.
+    The `--radial_type chebyshev` class, `ChebychevBasis`, is covered by the
+    block parity above at `radial_basis="chebyshev"`."""
     generator = torch.Generator().manual_seed(2)
     x = torch.rand(20, 1, generator=generator) * 2.0 - 1.0
     legacy = LegacyChebyshevBasisGeneral(
@@ -107,18 +108,6 @@ def test_chebyshev_basis_parity_at_the_magnetic_configuration(include_constant, 
     v1 = ChebyshevBasis(num_basis=7, include_constant=include_constant)
     assert_parity(
         v1(x), legacy(x), f"ChebyshevBasis include_constant={include_constant}"
-    )
-
-
-def test_chebyshev_basis_parity_with_the_radial_type_class(fp64):
-    """Legacy `ChebychevBasis`, the `--radial_type chebyshev` class, is the same
-    function as the general one without the constant; v1 keeps a single class.
-    Distances beyond 1 Angstrom exercise the divergent branch legacy evaluates."""
-    lengths, _, _, _ = _graph(seed=3)
-    legacy = LegacyChebychevBasis(r_max=R_MAX, num_basis=6)
-    v1 = ChebyshevBasis(num_basis=6)
-    assert_parity(
-        v1(lengths), legacy(lengths), "ChebyshevBasis vs legacy ChebychevBasis"
     )
 
 

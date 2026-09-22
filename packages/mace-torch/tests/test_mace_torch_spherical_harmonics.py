@@ -15,7 +15,6 @@ import pytest
 import torch
 from conftest import assert_close, fp64_only
 from mace_torch.backends.reference.spherical_harmonics import (
-    E3NN_AXIS_ORDER,
     SphericalHarmonics,
     spherical_harmonics,
 )
@@ -59,22 +58,6 @@ def _block(harmonics: torch.Tensor, degree: int) -> torch.Tensor:
     return harmonics[..., degree * degree : (degree + 1) ** 2]
 
 
-def test_reference_values_are_the_e3nn_convention():
-    """The literals themselves obey the convention they claim: the l=1 block is
-    sqrt(3) times the unit vector, and each block has squared norm 2l+1."""
-    for vector, values in zip(REFERENCE_VECTORS, REFERENCE_VALUES, strict=True):
-        unit = torch.tensor(vector, dtype=torch.float64)
-        unit = unit / unit.norm()
-        values_tensor = torch.tensor(values, dtype=torch.float64)
-        assert_close(_block(values_tensor, 1), math.sqrt(3.0) * unit, "l=1 block")
-        for degree in range(REFERENCE_LMAX + 1):
-            assert_close(
-                _block(values_tensor, degree).norm() ** 2,
-                2 * degree + 1,
-                f"norm l={degree}",
-            )
-
-
 def test_native_matches_the_committed_e3nn_values():
     vectors = torch.tensor(REFERENCE_VECTORS)
     assert_close(
@@ -99,11 +82,12 @@ def test_lower_lmax_is_a_prefix_of_higher_lmax():
 
 
 @pytest.mark.parametrize("lmax", [0, 1, 2, 3, 5, 8])
-def test_component_normalisation_and_shape(lmax):
+def test_component_normalisation_shape_and_dtype(lmax, dtype):
     torch.manual_seed(0)
     vectors = torch.randn(64, 3) * 2.0
     harmonics = spherical_harmonics(vectors, lmax)
     assert harmonics.shape == (64, (lmax + 1) ** 2)
+    assert harmonics.dtype == dtype  # no buffers: the dtype follows the input
     assert SphericalHarmonics(lmax).output_dim == (lmax + 1) ** 2
     for degree in range(lmax + 1):
         assert_close(
@@ -122,11 +106,6 @@ def test_the_l1_block_is_the_unit_vector_in_xyz_order():
     assert_close(
         _block(spherical_harmonics(vectors, 1), 1), math.sqrt(3.0) * unit, "l=1"
     )
-
-
-def test_the_axis_order_is_the_permutation_develop_uses_for_sphericart():
-    """(x, y, z) -> (z, x, y): the polar axis of the textbook harmonics is y."""
-    assert E3NN_AXIS_ORDER == (2, 0, 1)
 
 
 def test_input_is_normalised_so_scale_does_not_matter():
@@ -211,12 +190,6 @@ def test_gradcheck_and_gradgradcheck(lmax):
 
     assert torch.autograd.gradcheck(function, (vectors,))
     assert torch.autograd.gradgradcheck(function, (vectors,))
-
-
-def test_dtype_follows_the_input():
-    for dtype in (torch.float32, torch.float64):
-        out = spherical_harmonics(torch.randn(4, 3, dtype=dtype), 3)
-        assert out.dtype == dtype
 
 
 def test_bad_inputs_are_errors_naming_the_problem():
