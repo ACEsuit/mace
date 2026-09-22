@@ -44,16 +44,6 @@ __all__ = [
     "terms_for",
 ]
 
-#: Where each requested name is found on the typed output. A name absent from
-#: this map is read out of `extras`, which is what a declared observable with
-#: no core field lands in.
-_FIELDS = {
-    "energy": "total_energy",
-    "forces": "forces",
-    "stress": "stress",
-    "virials": "virials",
-}
-
 #: Custom losses, by the name a configuration selects them with. The decorator
 #: is the registration: an external package registers the same way and this
 #: file is not edited.
@@ -254,9 +244,14 @@ def _weights(batch: TrainingBatch, term: LossTerm, like: Tensor) -> Tensor:
 
 
 def _predicted(output: MACEOutput[Tensor], name: str) -> Tensor:
-    """One quantity off the typed output, by its requested name."""
-    field = _FIELDS.get(name)
-    value = getattr(output, field) if field is not None else output.extras.get(name)
+    """One quantity off the typed output, by its requested name.
+
+    Through the output's own accessor rather than a table here. A second table
+    of which names are core fields is the thing that drifts: it would agree
+    until someone adds a field, and then a loss term would read an empty
+    `extras` entry for a quantity the model did produce.
+    """
+    value = output.get(name)
     if value is None:
         raise KeyError(
             f"the model produced no {name!r}, and the loss has a term for it. "

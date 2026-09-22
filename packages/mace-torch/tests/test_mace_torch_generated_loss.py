@@ -20,7 +20,11 @@ from conftest import fp64_only
 from mace_core.config.loss import LossConfig
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
-from mace_core.observables import load_default_catalogue, resolve_requested
+from mace_core.observables import (
+    ObservableCatalogue,
+    load_default_catalogue,
+    resolve_requested,
+)
 from mace_core.outputs import MACEOutput
 from mace_torch.data import GraphDataset, collate_training, target_specs
 from mace_torch.train import GeneratedLoss, build_loss, register_loss, terms_for
@@ -223,3 +227,147 @@ def test_registering_one_name_twice_is_refused(clean_registry):
         @register_loss("probe_duplicate")
         class Second(torch.nn.Module):
             pass
+
+
+# ---------------------------------------------------------------------------
+# Quantities the catalogue does not ship, declared here and nowhere else
+# ---------------------------------------------------------------------------
+
+#: An energy whose strain derivative is called `virials` rather than `stress`,
+#: plus a dipole. Neither needs a line of loss code: the declaration says the
+#: shape and the extensivity, and the term follows. This is the claim the ten
+#: legacy loss classes cannot make, and it is checked against their numbers.
+EXTENDED = ObservableCatalogue(
+    inputs=[
+        {"name": "pos", "irreps": "1o", "per_atom": True, "units": "A"},
+        {"name": "strain", "irreps": "0e+2e", "per_atom": False, "units": "1"},
+    ],
+    observables=[
+        {
+            "name": "energy",
+            "irreps": "0e",
+            "per_atom": False,
+            "units": "eV",
+            "extensive": True,
+            "derivatives": [
+                {"wrt": "pos", "name": "forces", "sign": -1, "units": "eV/A"},
+                # A virial is extensive where a stress is not, which is the
+                # whole reason extensivity is asked of the derivative.
+                {
+                    "wrt": "strain",
+                    "name": "virials",
+                    "sign": 1,
+                    "units": "eV",
+                    "extensive": True,
+                },
+            ],
+        },
+        {
+            "name": "dipole",
+            "irreps": "1o",
+            "per_atom": False,
+            "units": "eA",
+            "extensive": True,
+        },
+    ],
+)
+
+
+def extended_batch(**properties):
+    """One structure of two atoms carrying whatever the test declares."""
+    values = {"energy": 10.0, "forces": np.zeros((2, 3)), **properties}
+    configuration = Configuration(
+        atomic_numbers=np.array([1, 1]), positions=POSITIONS, properties=values
+    )
+    requested = resolve_requested(list(values), EXTENDED)
+    dataset = GraphDataset(
+        [configuration],
+        cutoff=0.5,
+        z_table=Z_TABLE,
+        targets=target_specs(requested),
+    )
+    return requested, collate_training([dataset[0]], z_table=Z_TABLE)
+
+
+@fp64_only
+def test_a_virial_is_compared_per_atom_and_a_stress_is_not():
+    """`(4/2)^2 / 9 = 4/9`, from `test_weighted_mean_squared_virials`.
+
+    The same derivative of the same energy against the same input, and the two
+    differ only in a declaration.
+    """
+    requested, batch = extended_batch(virials=np.zeros((3, 3)))
+    predicted = batch.targets["virials"].clone()
+    predicted[0, 1, 1] = 4.0
+    output = MACEOutput(
+        total_energy=batch.targets["energy"].clone(),
+        forces=batch.targets["forces"].clone(),
+        virials=predicted,
+    )
+    loss = build_loss(requested, LossConfig(weights={"virials": 1.0}))
+    assert float(loss(output, batch)) == pytest.approx(4.0 / 9.0)
+
+
+@fp64_only
+def test_the_virial_weight_scales_it():
+    """`virials_weight = 9` gives `4.0`, from the same file."""
+    requested, batch = extended_batch(virials=np.zeros((3, 3)))
+    predicted = batch.targets["virials"].clone()
+    predicted[0, 2, 2] = 4.0
+    output = MACEOutput(
+        total_energy=batch.targets["energy"].clone(),
+        forces=batch.targets["forces"].clone(),
+        virials=predicted,
+    )
+    loss = build_loss(requested, LossConfig(weights={"virials": 9.0}))
+    assert float(loss(output, batch)) == pytest.approx(4.0)
+
+
+@fp64_only
+def test_a_dipole_is_compared_per_atom():
+    """`(2/2)^2 / 3 = 1/3`, from `test_weighted_mean_squared_error_dipole`.
+
+    Where this deliberately differs from the frozen tree is documented in the
+    test below: there the dipole term ignores the structure's own weight and
+    carries a hardcoded factor of one hundred.
+    """
+    requested, batch = extended_batch(dipole=np.zeros(3))
+    predicted = batch.targets["dipole"].clone()
+    predicted[0, 0] = 2.0
+    output = MACEOutput(
+        total_energy=batch.targets["energy"].clone(),
+        forces=batch.targets["forces"].clone(),
+        dipole=predicted,
+    )
+    loss = build_loss(requested, LossConfig(weights={"dipole": 1.0}))
+    assert float(loss(output, batch)) == pytest.approx(1.0 / 3.0)
+
+
+@fp64_only
+def test_the_hundred_the_frozen_tree_hides_in_its_dipole_loss_is_a_weight():
+    """`DipoleSingleLoss` multiplies by 100.0, commented `scale adjustment`.
+
+    It is a weight written where a weight cannot be configured, so asking for
+    one hundred reaches the same number and says so. The same term also ignores
+    the structure's weight there, which is not reproduced: a weight that
+    applies to every term except one is a rule nobody can state.
+    """
+    requested, batch = extended_batch(dipole=np.zeros(3))
+    predicted = batch.targets["dipole"].clone()
+    predicted[0, 0] = 2.0
+    output = MACEOutput(
+        total_energy=batch.targets["energy"].clone(),
+        forces=batch.targets["forces"].clone(),
+        dipole=predicted,
+    )
+    loss = build_loss(requested, LossConfig(weights={"dipole": 100.0}))
+    assert float(loss(output, batch)) == pytest.approx(100.0 / 3.0)
+
+
+@fp64_only
+def test_a_declared_observable_needs_no_loss_code_at_all():
+    """The acceptance criterion, as one assertion: a quantity this package
+    ships no term for gets one from its declaration."""
+    requested, _ = extended_batch(dipole=np.zeros(3), virials=np.zeros((3, 3)))
+    names = {term.name for term in terms_for(requested, LossConfig())}
+    assert {"energy", "forces", "dipole", "virials"} <= names
