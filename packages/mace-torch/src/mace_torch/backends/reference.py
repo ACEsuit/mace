@@ -14,6 +14,9 @@ by holding it.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import cast
+
 import numpy as np
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
@@ -193,8 +196,37 @@ class ReferenceLinear(nn.Module):
             self.bias.copy_(state["bias"])
 
 
+class _ConstantTensors(nn.Module):
+    """A device-following list of constant tables.
+
+    Buffers move with the module and parameters do not fit, since these carry
+    no gradient. A list of plain tensors would go stale the first time the
+    model is moved to a device, so they are held as buffers and iterated in
+    the order they were given.
+    """
+
+    def __init__(self, tensors: list[Tensor]) -> None:
+        super().__init__()
+        self.count = len(tensors)
+        for position, tensor in enumerate(tensors):
+            self.register_buffer(f"table_{position}", tensor, persistent=False)
+
+    def __len__(self) -> int:
+        return self.count
+
+    def __iter__(self) -> Iterator[Tensor]:
+        return iter(getattr(self, f"table_{p}") for p in range(self.count))
+
+
 class ReferenceSymmetricContraction(nn.Module):
-    """The many-body contraction, over the basis the descriptor records."""
+    """The many-body contraction, over the basis the descriptor records.
+
+    One contraction per output irrep, concatenated on the component axis. They
+    cannot share a stacked basis: each output irrep has its own component count,
+    so stacking them would be joining arrays whose second axis differs. The
+    frozen tree reaches the same shape by holding one `Contraction` per output
+    irrep, and this is that, with the loop kept explicit.
+    """
 
     def __init__(self, descriptor: SymmetricContractionDescriptor) -> None:
         super().__init__()
@@ -206,51 +238,71 @@ class ReferenceSymmetricContraction(nn.Module):
             else full_symmetric_tensor_product_basis
         )
         self.orders = descriptor.correlation
-        weights = []
-        for order in range(1, descriptor.correlation + 1):
-            stacked = [
-                array
-                for array in build(
-                    descriptor.irreps_in, order, descriptor.irreps_out
-                ).values()
-            ]
-            basis = np.concatenate(stacked, axis=0) if stacked else np.zeros((0, 1, 1))
-            flat = basis.reshape(basis.shape[0], basis.shape[1], -1)
-            self.register_buffer(
-                f"basis_{order}", torch.tensor(flat, dtype=dtype), persistent=False
-            )
-            weights.append(
-                nn.Parameter(
-                    torch.zeros(
-                        descriptor.num_elements,
-                        flat.shape[0],
-                        descriptor.num_features,
-                        dtype=dtype,
+        self.targets = [str(ir) for _, ir in Irreps.parse(descriptor.irreps_out)]
+        weights, bases = [], []
+        for target in self.targets:
+            group, tables = [], []
+            for order in range(1, descriptor.correlation + 1):
+                array = build(descriptor.irreps_in, order, target)[target]
+                # The trailing extent is computed rather than inferred with
+                # `-1`: an output irrep no path of this body order reaches has
+                # zero paths, and numpy cannot infer a dimension of an empty
+                # array. A `2e` output is exactly that at body order one.
+                trailing = int(np.prod(array.shape[2:])) if array.ndim > 2 else 1
+                flat = array.reshape(array.shape[0], array.shape[1], trailing)
+                tables.append(torch.tensor(flat, dtype=dtype))
+                group.append(
+                    nn.Parameter(
+                        torch.zeros(
+                            descriptor.num_elements,
+                            flat.shape[0],
+                            descriptor.num_features,
+                            dtype=dtype,
+                        )
                     )
                 )
-            )
+            weights.extend(group)
+            bases.append(_ConstantTensors(tables))
         self.weights = nn.ParameterList(weights)
+        self.bases = nn.ModuleList(bases)
 
     def initialize_weights(self, seed: int) -> None:
         """A standard normal, unscaled.
 
         The symmetric contraction is the one weighted op the canonical layout
         applies no factor to, so the draw is the frozen tree's own: one normal
-        per element, path and channel.
+        per element, path and channel. Each tensor of the flat list gets its
+        own offset, or the body orders of one output irrep would start equal.
         """
         with torch.no_grad():
-            for order, parameter in enumerate(self.weights):
+            for position, parameter in enumerate(self.weights):
                 parameter.copy_(
-                    _draw(tuple(parameter.shape), seed + order, parameter.dtype)
+                    _draw(tuple(parameter.shape), seed + position, parameter.dtype)
                 )
 
-    def _bases(self) -> list[Tensor]:
-        return [getattr(self, f"basis_{order}") for order in range(1, self.orders + 1)]
+    def _group(self, position: int) -> list[Tensor]:
+        """One output irrep's weights, by integer index.
+
+        Flat storage with integer indexing rather than a slice of the
+        `ParameterList`: slicing one goes through `slice.indices`, a C builtin
+        that `torch.compile` cannot trace, and the break lands in the middle of
+        the backbone rather than here.
+        """
+        base = position * self.orders
+        return [self.weights[base + order] for order in range(self.orders)]
 
     def forward(self, features: Tensor, element: Tensor) -> Tensor:
-        return symmetric_contraction(
-            features, list(self.weights), self._bases(), element
-        )
+        # `nn.ModuleList` erases what it holds, so the element type has to be
+        # said here. It is the one thing put into `self.bases`, two lines of
+        # the constructor away.
+        bases = cast("list[_ConstantTensors]", list(self.bases))
+        pieces = [
+            symmetric_contraction(
+                features, self._group(position), list(tables), element
+            )
+            for position, tables in enumerate(bases)
+        ]
+        return torch.cat(pieces, dim=-1)
 
     def to_canonical(self) -> dict[str, Tensor]:
         """The flat ``[Z, A, mul]`` array, joined over the body orders.
