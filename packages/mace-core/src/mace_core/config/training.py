@@ -258,6 +258,10 @@ class TrainingConfig(FrozenSection):
         clip_grad: Gradient-norm clip. ``None`` does not clip.
         scheduler: The learning-rate schedule.
         ema: The weight average.
+        checkpoint_metric: Which number the best checkpoint is chosen by, out
+            of the per-head validation losses. ``mean_over_heads`` averages
+            them unweighted. ``last_head`` is the frozen tree's, and it depends
+            on the order the heads happen to be listed in.
         head_balancing: How a multi-head epoch is made up. ``balanced``
             up-samples every head to the largest, so each contributes the same
             number of steps whatever its size. ``proportional`` is the frozen
@@ -282,6 +286,7 @@ class TrainingConfig(FrozenSection):
     clip_grad: float | None = 10.0
     scheduler: SchedulerConfig = SchedulerConfig()
     ema: EMAConfig = EMAConfig()
+    checkpoint_metric: Literal["mean_over_heads", "last_head"] = "mean_over_heads"
     head_balancing: Literal["balanced", "proportional"] = "balanced"
     stage_two: StageTwoConfig = StageTwoConfig()
     stages: tuple[StageConfig, ...] = ()

@@ -38,6 +38,8 @@ from torch.utils.data import DataLoader
 
 from mace_torch.data import GraphDataset, make_loader, target_specs
 from mace_torch.data.transforms import apply_transforms
+from mace_torch.train.contracts import TorchDataBundle
+from mace_torch.train.loaders import build_training_loader
 
 __all__ = ["DEFAULT_PRECISION", "DataStageError", "run_data_stage"]
 
@@ -59,7 +61,7 @@ def run_data_stage(
     foundation_e0s: dict[int, float] | None = None,
     pseudolabel: Callable[[Sequence[Configuration]], Sequence[Configuration]]
     | None = None,
-) -> DataBundle[DataLoader]:
+) -> TorchDataBundle:
     """Read the data, resolve the E0s once, and measure the dataset.
 
     Args:
@@ -151,18 +153,30 @@ def run_data_stage(
 
     specs = target_specs(requested)
     head_names = tuple(heads)
-    loaders = {
-        "train": _loader(
-            train, config, z_table, specs, head_names, precision, shuffle=True
-        ),
-        "valid": _loader(
-            valid, config, z_table, specs, head_names, precision, shuffle=False
-        ),
-    }
-    test_loader = (
-        _loader(test, config, z_table, specs, head_names, precision, shuffle=False)
-        if test
-        else None
+
+    def build(items: Sequence[Configuration]) -> GraphDataset:
+        return GraphDataset(
+            list(items),
+            cutoff=config.model.r_max,
+            z_table=z_table,
+            targets=specs,
+            heads=head_names,
+        )
+
+    # Per head, because that is what the balancing decides between and what an
+    # error table has a row for. The concatenation the frozen tree trains on is
+    # one of the two modes, rebuilt from these rather than being the only
+    # shape the stage can produce.
+    train_sets = {name: build(_of_head(train, name)) for name in head_names}
+    train_loader = build_training_loader(
+        train_sets,
+        mode=config.training.head_balancing,
+        z_table=z_table,
+        batch_size=config.training.batch_size,
+        seed=config.runtime.seed,
+        float_dtype=precision.model,
+        num_workers=config.data.num_workers,
+        pin_memory=config.data.pin_memory,
     )
     return DataBundle(
         z_table=z_table,
@@ -170,10 +184,25 @@ def run_data_stage(
         e0s=resolved,
         e0_provenance=provenance,
         statistics=statistics,
-        train_loader=loaders["train"],
-        valid_loader=loaders["valid"],
-        test_loader=test_loader,
+        train_loader=train_loader,
+        valid_loaders={
+            name: _evaluation_loader(build(_of_head(valid, name)), config, precision)
+            for name in head_names
+        },
+        train_eval_loaders={
+            name: _evaluation_loader(train_sets[name], config, precision)
+            for name in head_names
+        },
+        test_loaders={
+            name: _evaluation_loader(build(_of_head(test, name)), config, precision)
+            for name in head_names
+            if _of_head(test, name)
+        },
     )
+
+
+def _of_head(items: Sequence[Configuration], head: str) -> list[Configuration]:
+    return [item for item in items if item.head == head]
 
 
 def _heads(data: DataConfig) -> dict[str, HeadDataConfig]:
@@ -275,29 +304,18 @@ def _average_e0s(
     }
 
 
-def _loader(
-    configurations: Sequence[Configuration],
-    config: ResolvedConfig,
-    z_table: AtomicNumberTable,
-    specs,
-    heads: tuple[str, ...],
-    precision: PrecisionConfig,
-    *,
-    shuffle: bool,
+def _evaluation_loader(
+    dataset: GraphDataset, config: ResolvedConfig, precision: PrecisionConfig
 ) -> DataLoader:
-    dataset = GraphDataset(
-        configurations,
-        cutoff=config.model.r_max,
-        z_table=z_table,
-        targets=specs,
-        heads=heads,
-    )
+    """One plain pass over a dataset, in file order.
+
+    No shuffling and no balancing: an evaluation visits every structure once,
+    and the order it visits them in cannot change a mean.
+    """
     return make_loader(
         dataset,
-        batch_size=(
-            config.training.batch_size if shuffle else config.training.valid_batch_size
-        ),
-        shuffle=shuffle,
+        batch_size=config.training.valid_batch_size,
+        shuffle=False,
         float_dtype=precision.model,
         num_workers=config.data.num_workers,
         pin_memory=config.data.pin_memory,

@@ -119,7 +119,7 @@ def test_the_reference_structures_leave_the_training_set(pipeline):
     with no neighbours whose energy the model is asked to reproduce on top of
     the reference it just became."""
     _, data, _ = pipeline
-    kept = data.train_loader.dataset.configurations
+    kept = data.train_loader.datasets["default"].configurations
     assert all(len(item.atomic_numbers) > 1 for item in kept)
 
 
@@ -172,7 +172,7 @@ def test_the_same_seed_builds_the_same_model(tmp_path):
 def test_the_model_produces_the_observables_that_were_requested(pipeline):
     _, data, built = pipeline
     assert built.outputs.derivatives == ("forces",)
-    batch = next(iter(data.valid_loader))
+    batch = next(iter(data.valid_loaders["default"]))
     output = built.model(batch.graph, compute=("forces",))
     assert output.total_energy is not None
     assert output.forces is not None
@@ -272,3 +272,104 @@ def test_the_average_is_what_the_run_is_judged_and_left_with(tmp_path):
 @fp64_only
 def test_a_run_state_knows_where_it_stopped():
     assert RunState(epoch=3, best_valid_loss=0.5, best_epoch=2).epoch == 3
+
+
+# ---------------------------------------------------------------------------
+# Two heads, which is what the balancing is for
+# ---------------------------------------------------------------------------
+
+
+def two_head_configuration(tmp_path, **training):
+    """A small head and a large one, from two files of very different sizes."""
+    settings = {
+        "max_num_epochs": 2,
+        "batch_size": 2,
+        "valid_batch_size": 2,
+        "lr": 0.02,
+        "scheduler": {"kind": {"kind": "constant"}},
+        **training,
+    }
+    return ResolvedConfig.model_validate(
+        {
+            "runtime": {"work_dir": str(tmp_path), "seed": 1},
+            "data": {
+                "heads": {
+                    "small": {
+                        "train_file": str(
+                            write_dataset(tmp_path / "small.xyz", count=4)
+                        ),
+                        "e0s": {"kind": "isolated_atoms"},
+                    },
+                    "large": {
+                        "train_file": str(
+                            write_dataset(tmp_path / "large.xyz", count=20)
+                        ),
+                        "e0s": {"kind": "isolated_atoms"},
+                    },
+                },
+                "valid_fraction": 0.25,
+                "pin_memory": False,
+            },
+            "model": {
+                "observables": ["energy", "forces"],
+                "r_max": 3.0,
+                "num_channels": 4,
+                "max_ell": 1,
+                "num_interactions": 1,
+                "correlation": 2,
+            },
+            "training": settings,
+        }
+    )
+
+
+def head_counts(loader, epoch: int = 0) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for batch in loader.batches(epoch, drop_last=False):
+        for head in batch.graph["head"].reshape(-1).tolist():
+            counts[head] = counts.get(head, 0) + 1
+    return counts
+
+
+@fp64_only
+def test_a_balanced_run_visits_the_two_heads_equally(tmp_path):
+    """The small head is a fifth of the large one in the file and an equal
+    share of the epoch."""
+    config = two_head_configuration(tmp_path)
+    data = run_data_stage(config, CATALOGUE)
+    counts = head_counts(data.train_loader)
+    assert len(counts) == 2
+    assert len(set(counts.values())) == 1
+
+
+@fp64_only
+def test_a_proportional_run_visits_them_in_proportion(tmp_path):
+    """The frozen tree's schedule, reachable as a mode."""
+    config = two_head_configuration(tmp_path, head_balancing="proportional")
+    data = run_data_stage(config, CATALOGUE)
+    counts = head_counts(data.train_loader)
+    assert counts[0] * 3 < counts[1]
+
+
+@fp64_only
+def test_each_head_keeps_its_own_validation_loader(tmp_path):
+    """Averaged into one, a run cannot say which head got worse."""
+    config = two_head_configuration(tmp_path)
+    data = run_data_stage(config, CATALOGUE)
+    assert set(data.valid_loaders) == {"small", "large"}
+    assert set(data.reported_loaders()) == {
+        "train_small",
+        "train_large",
+        "valid_small",
+        "valid_large",
+    }
+
+
+@fp64_only
+def test_a_two_head_run_trains(tmp_path):
+    config = two_head_configuration(tmp_path)
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    trained = run_train_stage(config, built)
+    assert len(trained.history) == 2
+    assert trained.best_epoch is not None

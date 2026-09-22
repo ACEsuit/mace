@@ -21,7 +21,12 @@ from mace_core.elements import AtomicNumberTable
 from mace_core.observables import load_default_catalogue, resolve_requested
 from mace_core.outputs import MACEOutput
 from mace_torch.data import GraphDataset, collate_training, target_specs
-from mace_torch.train import RunningMetrics, build_loss, metric_specs
+from mace_torch.train import (
+    RunningMetrics,
+    build_loss,
+    metric_specs,
+    selection_loss,
+)
 
 CATALOGUE = load_default_catalogue()
 REQUESTED = resolve_requested(["energy", "forces"], CATALOGUE)
@@ -255,3 +260,39 @@ def test_scoring_nothing_is_refused():
     loss = build_loss(REQUESTED, LossConfig())
     with pytest.raises(ValueError, match="no structure was scored"):
         RunningMetrics(metric_specs(REQUESTED), loss).compute()
+
+
+# ---------------------------------------------------------------------------
+# The number a checkpoint is chosen by
+# ---------------------------------------------------------------------------
+
+
+PER_HEAD = {"small": {"loss": 1.0}, "large": {"loss": 3.0}}
+
+
+def test_the_default_rule_averages_the_heads():
+    assert selection_loss(PER_HEAD, "mean_over_heads") == pytest.approx(2.0)
+
+
+def test_the_average_is_unweighted():
+    """Weighting by structure count would hand the checkpoint to the largest
+    head, which is the thing the balancing exists to stop."""
+    assert selection_loss(PER_HEAD, "mean_over_heads") == selection_loss(
+        {name: dict(value) for name, value in reversed(list(PER_HEAD.items()))},
+        "mean_over_heads",
+    )
+
+
+def test_the_frozen_trees_rule_is_reachable_and_is_not_the_default():
+    """It selects on the last head alone, so it depends on the order the
+    configuration lists the heads in."""
+    assert selection_loss(PER_HEAD, "last_head") == 3.0
+    assert (
+        selection_loss({"large": {"loss": 3.0}, "small": {"loss": 1.0}}, "last_head")
+        == 1.0
+    )
+
+
+def test_an_unknown_rule_is_refused():
+    with pytest.raises(ValueError, match="selection rule"):
+        selection_loss(PER_HEAD, "best_head")

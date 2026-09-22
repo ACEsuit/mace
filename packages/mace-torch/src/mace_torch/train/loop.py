@@ -18,28 +18,42 @@ Three orderings are load-bearing and each is silent when wrong:
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+import logging
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.config.training import InheritOptimizer, StageConfig
-from mace_core.stages import BuiltModel, EpochRecord, TrainedModel
+from mace_core.config.training import (
+    InheritOptimizer,
+    LBFGSOptimizer,
+    StageConfig,
+)
+from mace_core.stages import EpochRecord, TrainedModel
 from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
-from torch.utils.data import DataLoader
 
 from mace_torch.data import TrainingBatch
 from mace_torch.train.checkpoint import RunState, read_run_state, write_model
 from mace_torch.train.checkpoint import write_run_state as _write_run_state
+from mace_torch.train.contracts import TorchBuiltModel
 from mace_torch.train.ema import ExponentialMovingAverage
 from mace_torch.train.loss import build_loss
+from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
 from mace_torch.train.optimizers import build_optimizer, build_scheduler
 
-__all__ = ["evaluate", "run_train_stage", "train_one_epoch"]
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "evaluate",
+    "evaluate_heads",
+    "run_train_stage",
+    "selection_loss",
+    "train_one_epoch",
+]
 
 
 def train_one_epoch(
@@ -86,31 +100,81 @@ def evaluate(
     model: nn.Module,
     batches: Iterable[TrainingBatch],
     loss: torch.nn.Module,
+    specs: Sequence[MetricSpec],
     *,
     device: str = "cpu",
     compute: tuple[str, ...] = ("forces",),
-) -> float:
-    """The mean loss over a loader.
+) -> dict[str, float]:
+    """Every error one loader measures, including the loss.
 
     No ``no_grad``: a force is a gradient, so switching it off would evaluate a
     model that cannot produce the quantity it is being scored on. The graph is
     dropped per batch instead, by not asking for a second derivative.
     """
     model.eval()
-    total, seen = 0.0, 0
+    metrics = RunningMetrics(specs, loss)
+    seen = 0
     for batch in batches:
         batch = batch.to(device)
         output = model(batch.graph, compute=compute, training=False)
-        total += float(loss(output, batch).detach())
+        metrics.update(output, batch)
         seen += 1
     if seen == 0:
         raise ValueError("the validation loader yielded no batches.")
-    return total / seen
+    return metrics.compute()
+
+
+def evaluate_heads(
+    model: nn.Module,
+    loaders: Mapping[str, Iterable[TrainingBatch]],
+    loss: torch.nn.Module,
+    specs: Sequence[MetricSpec],
+    *,
+    device: str = "cpu",
+    compute: tuple[str, ...] = ("forces",),
+) -> dict[str, dict[str, float]]:
+    """One evaluation per head, keyed by head name.
+
+    Kept apart rather than averaged into one number, because a multi-head run
+    whose heads are reported as one row cannot say which head got worse.
+    """
+    return {
+        head: evaluate(model, batches, loss, specs, device=device, compute=compute)
+        for head, batches in loaders.items()
+    }
+
+
+def selection_loss(per_head: Mapping[str, dict[str, float]], rule: str) -> float:
+    """The one number a checkpoint is chosen by, out of the per-head losses.
+
+    The frozen tree uses the **last** head's loss and nothing else
+    (``mace/tools/train.py:214``, with the comment saying so). That is a choice
+    rather than an oversight, and it is a strange one: which head is last is
+    the order the configuration happens to list them in. So it stays reachable
+    and it is not the default.
+
+    ``mean_over_heads`` averages them unweighted. Weighting by structure count
+    would give the largest head the checkpoint, which is the thing the
+    balancing above exists to stop.
+
+    Raises:
+        ValueError: On a rule nobody implements, naming the two.
+    """
+    losses = [metrics["loss"] for metrics in per_head.values()]
+    if rule == "mean_over_heads":
+        return sum(losses) / len(losses)
+    if rule == "last_head":
+        return losses[-1]
+    raise ValueError(
+        f"{rule!r} is not a checkpoint selection rule. They are "
+        f"'mean_over_heads', which averages the heads, and 'last_head', which "
+        f"is the frozen tree's and depends on the order the heads are listed."
+    )
 
 
 def run_train_stage(
     config: ResolvedConfig,
-    built: BuiltModel[nn.Module, DataLoader],
+    built: TorchBuiltModel,
     *,
     device: str = "cpu",
     checkpoint_path: str | Path | None = None,
@@ -133,6 +197,7 @@ def run_train_stage(
     """
     model = built.model.to(device)
     requested = _requested_names(built)
+    specs = metric_specs(built.outputs)
     loss = build_loss(built.outputs, config.loss)
     optimizer = build_optimizer(model, config.training)
     scheduler = build_scheduler(optimizer, config.training.scheduler)
@@ -183,7 +248,7 @@ def run_train_stage(
 
         train_loss = train_one_epoch(
             model,
-            built.data.train_loader,
+            built.data.train_loader.batches(epoch, drop_last=_drops_tail(entering)),
             loss,
             optimizer,
             device=device,
@@ -196,13 +261,16 @@ def run_train_stage(
         if epoch % config.training.eval_interval == 0:
             context = ema.average_parameters() if ema is not None else nullcontext()
             with context:
-                valid_loss = evaluate(
+                per_head = evaluate_heads(
                     model,
-                    built.data.valid_loader,
+                    built.data.valid_loaders,
                     loss,
+                    specs,
                     device=device,
                     compute=requested.derivatives,
                 )
+                _log_validation(epoch, per_head)
+                valid_loss = selection_loss(per_head, config.training.checkpoint_metric)
                 if best_loss is None or valid_loss < best_loss:
                     best_loss, best_epoch, since_best = valid_loss, epoch, 0
                     if checkpoint_path is not None:
@@ -262,7 +330,7 @@ class _Requested:
     derivatives: tuple[str, ...]
 
 
-def _requested_names(built: BuiltModel[nn.Module, DataLoader]) -> _Requested:
+def _requested_names(built: TorchBuiltModel) -> _Requested:
     """What was asked for, read off the built model rather than the config.
 
     The model is the authority here: it was built from the request, and reading
@@ -284,6 +352,34 @@ def _requested_names(built: BuiltModel[nn.Module, DataLoader]) -> _Requested:
     return _Requested(tuple(names), tuple(per_atom), outputs.derivatives)
 
 
+def _drops_tail(stage: StageConfig) -> bool:
+    """Whether this stage drops the epoch's ragged last batch.
+
+    A full-batch optimizer steps once an epoch through a closure over
+    everything it was given, so a dropped tail is a slice of the dataset it
+    never sees. A mini-batch one drops it, because a short last batch is a
+    noisier gradient with the same learning rate behind it. The frozen tree
+    spells the same distinction as ``drop_last=(not args.lbfgs)``.
+    """
+    return not isinstance(stage.optimizer, LBFGSOptimizer)
+
+
+def _log_validation(epoch: int, per_head: Mapping[str, dict[str, float]]) -> None:
+    """One line per head, with the head named on every one of them.
+
+    Named on every line rather than once per block: the lines are read in a
+    log next to the other heads' and next to the next epoch's, where a heading
+    several lines up has stopped applying.
+    """
+    for head, metrics in per_head.items():
+        reported = ", ".join(
+            f"{name}={value:.4g}"
+            for name, value in sorted(metrics.items())
+            if name == "loss" or name.startswith(("rmse_", "mae_"))
+        )
+        logger.info("epoch %d, head %s: %s", epoch, head, reported)
+
+
 def _stage_at(schedule: Sequence[StageConfig], epoch: int) -> StageConfig:
     """Which stage an epoch belongs to.
 
@@ -300,7 +396,7 @@ def _stage_at(schedule: Sequence[StageConfig], epoch: int) -> StageConfig:
 def _enter_stage(
     stage: StageConfig,
     config: ResolvedConfig,
-    built: BuiltModel[nn.Module, DataLoader],
+    built: TorchBuiltModel,
     model: nn.Module,
     optimizer: Optimizer,
     scheduler: LRScheduler | None,

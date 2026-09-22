@@ -36,7 +36,7 @@ def metadata() -> ModelMetadata:
     )
 
 
-def bundle() -> DataBundle[list[int]]:
+def bundle() -> DataBundle[list[int], list[int]]:
     return DataBundle(
         z_table=Z_TABLE,
         heads=("default",),
@@ -44,7 +44,8 @@ def bundle() -> DataBundle[list[int]]:
         e0_provenance={"default": E0Provenance(kind="table")},
         statistics=STATISTICS,
         train_loader=[1, 2],
-        valid_loader=[3],
+        valid_loaders={"default": [3]},
+        train_eval_loaders={"default": [1, 2]},
     )
 
 
@@ -62,9 +63,15 @@ def test_the_bundle_carries_what_the_model_stage_needs_and_no_more():
         "e0_provenance",
         "statistics",
         "train_loader",
-        "valid_loader",
-        "test_loader",
+        "valid_loaders",
+        "train_eval_loaders",
+        "test_loaders",
     }
+
+
+def test_the_reported_rows_name_the_head_and_the_split():
+    """An error table row is one loader, and its name says which."""
+    assert set(bundle().reported_loaders()) == {"train_default", "valid_default"}
 
 
 def test_the_boundary_objects_are_immutable():

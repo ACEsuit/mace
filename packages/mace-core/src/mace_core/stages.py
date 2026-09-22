@@ -23,13 +23,20 @@ a bundle the model was not built from, and nothing downstream could notice.
 The framework objects are type parameters. A dataloader and a model are the two
 things this package cannot name, and leaving them as ``Any`` would give every
 consumer an untyped attribute at the exact point the stage contract exists to
-type.
+type. There are two loader parameters rather than one because the two are not
+the same thing: what a run steps on joins the heads and decides how often each
+is seen, while what it evaluates on is one plain pass over one head.
+
+**The evaluation loaders are per head, and that is not a convenience.** A
+multi-head run whose heads are reported as one averaged row cannot say which
+head got worse, and the frozen tree keeps per-head loaders for exactly this and
+then selects its checkpoint on the last head alone.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Generic, TypeVar
 
@@ -46,15 +53,19 @@ __all__ = [
     "TrainedModel",
 ]
 
-#: A batched dataloader, whatever the framework calls one.
+#: A plain pass over one dataset, whatever the framework calls one.
 Loader = TypeVar("Loader")
+
+#: What the loop steps on: the heads joined, in the order and the proportion
+#: the configuration asked for.
+TrainLoader = TypeVar("TrainLoader")
 
 #: A built model, whatever the framework calls one.
 Model = TypeVar("Model")
 
 
 @dataclass(frozen=True)
-class DataBundle(Generic[Loader]):
+class DataBundle(Generic[TrainLoader, Loader]):
     """Everything the data stage resolved, and nothing the model stage decides.
 
     Attributes:
@@ -68,10 +79,16 @@ class DataBundle(Generic[Loader]):
             the same numbers and mean different things.
         statistics: Average neighbour count, and the mean and spread of the
             interaction energy, taken against ``e0s``.
-        train_loader: The batches the loop steps on.
-        valid_loader: The batches it evaluates on.
-        test_loader: Structures evaluated once after training, when the
-            configuration named any.
+        train_loader: The batches the loop steps on, with the heads already
+            joined.
+        valid_loaders: One pass per head, for the per-epoch evaluation and for
+            the error table.
+        train_eval_loaders: One pass per head over the *training* structures,
+            for the error table only. The loop never steps on these: they are
+            the same structures in a plain order, which is what an error table
+            row needs and what an optimizer step does not.
+        test_loaders: Structures evaluated once after training, keyed by the
+            name the configuration gave each set.
     """
 
     z_table: AtomicNumberTable
@@ -79,13 +96,27 @@ class DataBundle(Generic[Loader]):
     e0s: ResolvedE0s
     e0_provenance: Mapping[str, E0Provenance]
     statistics: DatasetStatistics
-    train_loader: Loader
-    valid_loader: Loader
-    test_loader: Loader | None = None
+    train_loader: TrainLoader
+    valid_loaders: Mapping[str, Loader]
+    train_eval_loaders: Mapping[str, Loader] = field(default_factory=dict)
+    test_loaders: Mapping[str, Loader] = field(default_factory=dict)
+
+    def reported_loaders(self) -> dict[str, Loader]:
+        """Every loader an error table has a row for, in the legacy order.
+
+        Keyed ``train_<head>`` and ``valid_<head>``, which is the naming the
+        frozen tree's table sorts on and the plot subcommand reads back.
+        """
+        rows: dict[str, Loader] = {}
+        for head, loader in self.train_eval_loaders.items():
+            rows[f"train_{head}"] = loader
+        for head, loader in self.valid_loaders.items():
+            rows[f"valid_{head}"] = loader
+        return rows
 
 
 @dataclass(frozen=True)
-class BuiltModel(Generic[Model, Loader]):
+class BuiltModel(Generic[Model, TrainLoader, Loader]):
     """A model, its data, and the record of how both were arrived at.
 
     Attributes:
@@ -103,7 +134,7 @@ class BuiltModel(Generic[Model, Loader]):
 
     model: Model
     outputs: RequestedOutputs
-    data: DataBundle[Loader]
+    data: DataBundle[TrainLoader, Loader]
     metadata: ModelMetadata
 
     @property

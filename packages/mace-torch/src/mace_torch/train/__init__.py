@@ -26,7 +26,13 @@ from mace_torch.train.loaders import (
     TrainingLoader,
     build_training_loader,
 )
-from mace_torch.train.loop import evaluate, run_train_stage, train_one_epoch
+from mace_torch.train.loop import (
+    evaluate,
+    evaluate_heads,
+    run_train_stage,
+    selection_loss,
+    train_one_epoch,
+)
 from mace_torch.train.loss import (
     LOSS_REGISTRY,
     GeneratedLoss,
@@ -68,6 +74,7 @@ __all__ = [
     "build_scheduler",
     "build_training_loader",
     "evaluate",
+    "evaluate_heads",
     "metric_specs",
     "parameter_groups",
     "read_run_state",
@@ -76,6 +83,7 @@ __all__ = [
     "run_data_stage",
     "run_model_stage",
     "run_train_stage",
+    "selection_loss",
     "terms_for",
     "train_one_epoch",
     "write_model",

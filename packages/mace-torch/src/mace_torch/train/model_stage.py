@@ -19,14 +19,13 @@ from mace_core.kernels.precision import PrecisionConfig
 from mace_core.kernels.registry import get_backend
 from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
 from mace_core.observables import ObservableCatalogue, resolve_requested
-from mace_core.stages import BuiltModel, DataBundle
-from torch import nn
-from torch.utils.data import DataLoader
+from mace_core.stages import BuiltModel
 
 from mace_torch import __version__
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
+from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
 
 __all__ = ["DEFAULT_HIDDEN_IRREPS", "ModelStageError", "run_model_stage"]
@@ -49,13 +48,13 @@ class ModelStageError(RuntimeError):
 
 def run_model_stage(
     config: ResolvedConfig,
-    data: DataBundle[DataLoader],
+    data: TorchDataBundle,
     catalogue: ObservableCatalogue,
     *,
     precision: PrecisionConfig = DEFAULT_PRECISION,
     supports_float64: bool = True,
     initialize: bool = True,
-) -> BuiltModel[nn.Module, DataLoader]:
+) -> TorchBuiltModel:
     """Build the model the configuration describes, scaled by the data.
 
     Args:
@@ -170,7 +169,7 @@ def _readout_hidden(config: ResolvedConfig) -> int:
     return irreps_dimension(config.model.readout.mlp_irreps)
 
 
-def _metadata(config: ResolvedConfig, data: DataBundle[DataLoader]) -> ModelMetadata:
+def _metadata(config: ResolvedConfig, data: TorchDataBundle) -> ModelMetadata:
     """The record written beside the weights.
 
     The resolved configuration goes in whole. A checkpoint that carried only
