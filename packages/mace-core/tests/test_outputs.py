@@ -16,6 +16,7 @@ from mace_core.outputs import (
     CORE_FIELD_NAMES,
     FIELD_BY_OBSERVABLE,
     OBSERVABLE_BY_FIELD,
+    RETIRED_NAMES,
     MACEOutput,
 )
 
@@ -161,3 +162,43 @@ def test_a_catalogue_name_finds_its_value_in_an_output():
     shared = set(catalogue.names()) & set(output.names())
     assert shared == {"energy", "forces"}
     assert all(output.get(name) is not None for name in shared)
+
+
+def test_a_retired_spelling_cannot_sit_beside_the_field_that_replaced_it():
+    """The half a rename cannot enforce on its own.
+
+    `node_energy` is the frozen tree's spelling and v1 carries `node_energies`
+    instead, deliberately: keeping both would let the same quantity be stored
+    twice. The rename alone does not stop it, because `extras` accepts any key
+    the guard does not know, so `extras["node_energy"]` sat happily beside a
+    filled `node_energies` field.
+    """
+    with pytest.raises(ValueError, match="retired"):
+        MACEOutput(node_energies=np.zeros(4), extras={"node_energy": np.ones(4)})
+
+
+def test_a_retired_spelling_is_still_not_a_name_this_type_answers_to():
+    """Refusing it as an `extras` key is not the same as reviving it.
+
+    Carrying both spellings is what the rename decided against, so `get` must
+    keep missing it. Otherwise the guard above would have quietly turned the
+    retired name back into a working alias.
+    """
+    output = MACEOutput(node_energies=np.zeros(4))
+    assert output.get("node_energy") is None
+    assert "node_energy" not in output
+    assert output.names() == ("node_energies",)
+    assert set(RETIRED_NAMES) & set(CORE_FIELD_NAMES) == set()
+    assert set(RETIRED_NAMES) & set(FIELD_BY_OBSERVABLE) == set()
+
+
+def test_a_retired_spelling_is_free_as_an_extras_key_when_nothing_replaced_it():
+    """The guard is about the collision, not about the word.
+
+    A file that carries the legacy spelling and no `node_energies` is still
+    refused, because the point is that the two names mean one quantity and only
+    one of them is this type's. Stated as its own case so a later relaxation to
+    "only when the field is filled" is a deliberate change rather than a slip.
+    """
+    with pytest.raises(ValueError, match="retired"):
+        MACEOutput(extras={"node_energy": np.ones(4)})
