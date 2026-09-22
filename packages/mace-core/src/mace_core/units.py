@@ -14,12 +14,12 @@ is what keeps "follows ase" from meaning "changes without anyone noticing".
 Sign conventions
 ----------------
 
-**This module is the single source for them.** A convention restated next to
-the code that applies it is a second copy that can disagree with the first, so
-consumers import the constants below and cite them; they do not paraphrase
-them. Every statement is reproduced verbatim from the characterization suite
-that pinned it against finite differences, and a test asserts the two texts are
-still character-for-character identical:
+**This module is the single source for the prose, and only for the prose.** A
+convention restated next to the code that applies it is a second copy that can
+disagree with the first, so consumers import the constants below and cite them;
+they do not paraphrase them. Every statement is reproduced verbatim from the
+characterization suite that pinned it against finite differences, and a test
+asserts the two texts are still character-for-character identical:
 
 * forces = -dE/d(positions), in eV/Ang.
 * stress = (1/V) dE/d(strain), in eV/Ang^3, with V = |det(cell)|.
@@ -28,6 +28,13 @@ still character-for-character identical:
 The asymmetry is deliberate and is the thing most likely to be normalised away
 by a port: of the three, the stress is the only one that is *not* negated, and
 the virial is the negative of the very quantity the stress is built from.
+
+**The machine-readable sign is not here.** A ``+1`` or ``-1`` that code can act
+on belongs to the declaration of the quantity it governs, beside its name and
+its units, and the observables work brings that. Prose cannot be derived from a
+number, which is why this half stays, but the two are copies of one fact and a
+test has to hold them together the moment both exist in one tree. Until then,
+what this module owns is the wording.
 
 The fourth statement is the magnetic family's, taken from the autograd pass
 that produces it beside the forces. Legacy fixes no unit for a magnetic moment,

@@ -28,6 +28,7 @@ from mace_core.data.configuration import (
     Configuration,
 )
 from mace_core.data.keys import KeySpecification
+from mace_core.elements.default_keys import DefaultKeys
 
 __all__ = [
     "ISOLATED_ATOM_CONFIG_TYPE",
@@ -52,9 +53,16 @@ class _ReservedKey:
             happens, but the two are different things: one is ase's calculator
             property, the other is what this stack calls the label.
         rewritten: What the key is rewritten to for the duration of the parse.
+            Read off the default key table rather than spelled again: the
+            rewrite has to land on a key the parser then reads, and a second
+            copy of ``REF_energy`` here would go on working while the table
+            moved underneath it.
         getter: The ``Atoms`` method that recovers the value ase moved into
             the calculator.
-        stored_in: Which of ``info`` / ``arrays`` the value belongs in.
+        stored_in: Which of ``info`` / ``arrays`` the value belongs in. ase's
+            own two words, because this is the attribute the value is read from
+            and written to; the format-neutral spelling of the same split is
+            ``graph`` and ``atom``, in :mod:`mace_core.data.keys`.
     """
 
     reserved: str
@@ -68,9 +76,11 @@ class _ReservedKey:
 #: ``atoms.calc.results`` instead of into ``atoms.info``, so a parser looking
 #: in ``info`` finds nothing at all.
 _RESERVED_KEYS: dict[str, _ReservedKey] = {
-    "energy": _ReservedKey("energy", "REF_energy", "get_potential_energy", "info"),
-    "forces": _ReservedKey("forces", "REF_forces", "get_forces", "arrays"),
-    "stress": _ReservedKey("stress", "REF_stress", "get_stress", "info"),
+    "energy": _ReservedKey(
+        "energy", DefaultKeys.ENERGY.value, "get_potential_energy", "info"
+    ),
+    "forces": _ReservedKey("forces", DefaultKeys.FORCES.value, "get_forces", "arrays"),
+    "stress": _ReservedKey("stress", DefaultKeys.STRESS.value, "get_stress", "info"),
 }
 
 
@@ -119,11 +129,11 @@ def configuration_from_atoms(
         for name in key_spec.property_names()
     }
 
-    for name, file_key in key_spec.info_keys.items():
+    for name, file_key in key_spec.graph_keys.items():
         properties[name] = atoms.info.get(file_key)
         if file_key not in atoms.info:
             property_weights[name] = 0.0
-    for name, file_key in key_spec.arrays_keys.items():
+    for name, file_key in key_spec.atom_keys.items():
         properties[name] = atoms.arrays.get(file_key)
         if file_key not in atoms.arrays:
             property_weights[name] = 0.0
@@ -186,14 +196,14 @@ def read_configurations(
 
     _check_something_is_labelled(resolved, atoms_list, str(path), no_data_ok)
 
-    head_key = resolved.info_keys.get("head", "head")
+    head_key = resolved.graph_keys.get("head", "head")
     for atoms in atoms_list:
         atoms.info[head_key] = head_name
 
     isolated_atom_energies: dict[int, float] = {}
     if extract_isolated_atom_energies:
         isolated_atom_energies = _extract_isolated_atom_energies(
-            atoms_list, resolved.info_keys["energy"]
+            atoms_list, resolved.graph_keys["energy"]
         )
         if isolated_atom_energies:
             logger.info(
@@ -232,9 +242,9 @@ def _rewrite_reserved_keys(
     """
     for name, reserved in _RESERVED_KEYS.items():
         store = (
-            key_spec.arrays_keys
+            key_spec.atom_keys
             if reserved.stored_in == "arrays"
-            else key_spec.info_keys
+            else key_spec.graph_keys
         )
         if store.get(name) != reserved.reserved:
             continue
@@ -270,17 +280,17 @@ def _check_something_is_labelled(
     path: str,
     no_data_ok: bool,
 ) -> None:
-    if "energy" not in key_spec.info_keys or "forces" not in key_spec.arrays_keys:
+    if "energy" not in key_spec.graph_keys or "forces" not in key_spec.atom_keys:
         raise ValueError(
             "the key specification names no energy key, no forces key, or "
             "neither, so there is nothing to look for in the file. Build it "
             "with KeySpecification.from_defaults() and override from there."
         )
-    energy_key = key_spec.info_keys["energy"]
-    forces_key = key_spec.arrays_keys["forces"]
+    energy_key = key_spec.graph_keys["energy"]
+    forces_key = key_spec.atom_keys["forces"]
     # A specification with no dipole entry still has to name a key in the
     # message below, and this is the name legacy reports.
-    dipole_key = key_spec.info_keys.get("dipole", "REF_dipole")
+    dipole_key = key_spec.graph_keys.get("dipole", "REF_dipole")
 
     has_energy = any(energy_key in atoms.info for atoms in atoms_list)
     has_forces = any(forces_key in atoms.arrays for atoms in atoms_list)

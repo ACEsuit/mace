@@ -1,11 +1,18 @@
 """Which file key each convention name is read from.
 
 Two dictionaries, because a structure file stores two kinds of thing and they
-are looked up in different places: per-structure values (an energy, a stress, a
-total charge) and per-atom arrays (forces, charges, magnetic moments). The
-split is not cosmetic. Asking for ``forces`` among the per-structure values
+are looked up in different places: one value per structure (an energy, a
+stress, a total charge) and one per atom (forces, charges, magnetic moments).
+The split is not cosmetic. Asking for ``forces`` among the per-structure values
 finds nothing and reports it as a missing label, which is indistinguishable
 from a file that genuinely has no forces.
+
+**The two halves are called ``graph`` and ``atom`` throughout**, which is the
+same pair of words a user writes in an embedding feature's ``per:``. They were
+once ``info`` and ``arrays`` here and ``graph`` and ``atom`` there, which is one
+distinction under two names with a hand-written translation between them.
+``info`` and ``arrays`` are ase's words for ase's two stores, and they now
+appear only in :mod:`mace_core.data.xyz`, where ase is actually touched.
 
 This object is the only place a file key appears. Everything downstream of
 parsing is keyed by convention name -- see
@@ -16,43 +23,32 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import Any
 
-from mace_core.elements.default_keys import DefaultKeys
+from mace_core.elements.default_keys import DefaultKeys, Storage
 
 __all__ = [
-    "ARRAYS_CONVENTION_NAMES",
-    "INFO_CONVENTION_NAMES",
+    "ATOM_CONVENTION_NAMES",
+    "GRAPH_CONVENTION_NAMES",
     "EmbeddingFeatureSpec",
     "KeySpecification",
 ]
 
-#: The default convention names stored once per structure.
-INFO_CONVENTION_NAMES: frozenset[str] = frozenset(
-    {
-        "energy",
-        "stress",
-        "virials",
-        "dipole",
-        "polarizability",
-        "head",
-        "elec_temp",
-        "total_charge",
-        "total_spin",
-    }
-)
+#: The default convention names stored once per structure. Read off the key
+#: table rather than listed again: a name in the table and in neither of these
+#: is never parsed, and a name in one of these and not in the table can be
+#: given a file key it will never be read with.
+GRAPH_CONVENTION_NAMES: frozenset[str] = DefaultKeys.names_stored_per("graph")
 
 #: The default convention names stored once per atom. ``magmom`` and
 #: ``magforces`` are here, on the default path, and not behind a magnetic
 #: switch: they are part of the default key table, so every parse resolves
 #: them and a magnetically labelled file reads without any flag being set.
-ARRAYS_CONVENTION_NAMES: frozenset[str] = frozenset(
-    {"forces", "charges", "magmom", "magforces"}
-)
+ATOM_CONVENTION_NAMES: frozenset[str] = DefaultKeys.names_stored_per("atom")
 
 
 def _known_convention_names() -> frozenset[str]:
-    return INFO_CONVENTION_NAMES | ARRAYS_CONVENTION_NAMES
+    return GRAPH_CONVENTION_NAMES | ATOM_CONVENTION_NAMES
 
 
 @dataclass(frozen=True)
@@ -70,7 +66,7 @@ class EmbeddingFeatureSpec:
         key: The file key to read it from. Defaults to the feature's own name.
     """
 
-    per: Literal["atom", "graph"]
+    per: Storage
     key: str | None = None
 
     @classmethod
@@ -102,12 +98,12 @@ class KeySpecification:
     """Convention name to file key, split by where the value is stored.
 
     Args:
-        info_keys: Per-structure properties.
-        arrays_keys: Per-atom properties.
+        graph_keys: Per-structure properties.
+        atom_keys: Per-atom properties.
     """
 
-    info_keys: dict[str, str] = field(default_factory=dict)
-    arrays_keys: dict[str, str] = field(default_factory=dict)
+    graph_keys: dict[str, str] = field(default_factory=dict)
+    atom_keys: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_defaults(cls) -> KeySpecification:
@@ -117,19 +113,19 @@ class KeySpecification:
     def copy(self) -> KeySpecification:
         """An independent copy. Rewriting keys on it cannot reach the original."""
         return replace(
-            self, info_keys=dict(self.info_keys), arrays_keys=dict(self.arrays_keys)
+            self, graph_keys=dict(self.graph_keys), atom_keys=dict(self.atom_keys)
         )
 
     def update(
         self,
-        info_keys: Mapping[str, str] | None = None,
-        arrays_keys: Mapping[str, str] | None = None,
+        graph_keys: Mapping[str, str] | None = None,
+        atom_keys: Mapping[str, str] | None = None,
     ) -> KeySpecification:
         """Merge explicit keys in, by convention name. Returns ``self``."""
-        if info_keys is not None:
-            self.info_keys.update(info_keys)
-        if arrays_keys is not None:
-            self.arrays_keys.update(arrays_keys)
+        if graph_keys is not None:
+            self.graph_keys.update(graph_keys)
+        if atom_keys is not None:
+            self.atom_keys.update(atom_keys)
         return self
 
     def apply_overrides(self, overrides: Mapping[str, Any]) -> KeySpecification:
@@ -147,10 +143,10 @@ class KeySpecification:
             if not setting.endswith("_key"):
                 continue
             name = setting[: -len("_key")]
-            if name in INFO_CONVENTION_NAMES:
-                self.info_keys[name] = value
-            elif name in ARRAYS_CONVENTION_NAMES:
-                self.arrays_keys[name] = value
+            if name in GRAPH_CONVENTION_NAMES:
+                self.graph_keys[name] = value
+            elif name in ATOM_CONVENTION_NAMES:
+                self.atom_keys[name] = value
             else:
                 unknown.append(setting)
         if unknown:
@@ -176,15 +172,15 @@ class KeySpecification:
                 if isinstance(spec, EmbeddingFeatureSpec)
                 else EmbeddingFeatureSpec.from_mapping(name, spec)
             )
-            target = self.arrays_keys if feature.per == "atom" else self.info_keys
+            target = self.atom_keys if feature.per == "atom" else self.graph_keys
             target[name] = feature.file_key(name)
         return self
 
     def property_names(self) -> tuple[str, ...]:
-        """Every convention name this specification resolves, arrays first.
+        """Every convention name this specification resolves, per-atom first.
 
         The order is the one the legacy weight loop used, and it is the order
         ``property_weights`` is built in. It matters only for reproducibility
         of iteration, not for correctness.
         """
-        return (*self.arrays_keys, *self.info_keys)
+        return (*self.atom_keys, *self.graph_keys)
