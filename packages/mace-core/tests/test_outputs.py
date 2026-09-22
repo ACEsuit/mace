@@ -134,7 +134,13 @@ def test_membership_and_listing_agree_on_every_name():
     over both directions rather than over the one alias, so a second entry in
     `FIELD_BY_OBSERVABLE` cannot reopen it.
     """
-    output = MACEOutput(
+    # Pinned to `np.ndarray` rather than left to inference. numpy types an
+    # array's shape, so inferring the parameter from a 1-D energy beside a 2-D
+    # force array makes it a union, and `dict` is invariant in its value type:
+    # the `extras` literal is then unassignable. Nothing about the class, and
+    # widening `extras` to a `Mapping` to quiet it would make a result object
+    # mutable-looking to fix a test.
+    output: MACEOutput[np.ndarray] = MACEOutput(
         total_energy=np.array([-1.5]),
         forces=np.zeros((4, 3)),
         extras={"latent_charges": np.zeros(4)},
