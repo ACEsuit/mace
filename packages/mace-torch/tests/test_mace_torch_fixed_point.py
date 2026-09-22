@@ -376,3 +376,43 @@ def test_it_still_evaluates_without_derivatives():
     driver, _, positions = coupled_setup(variational=False)
     graph = {"positions": positions, VARIABLE: torch.zeros(4, 3)}
     assert driver(graph, compute=()).total_energy is not None
+
+
+@fp64_only
+def test_the_force_agrees_with_differentiating_through_the_iterations():
+    """The other half of the argument, from the opposite direction.
+
+    A finite difference says the reported force is the derivative of the
+    relaxed energy. This says the same thing analytically: a solve whose every
+    step stays in the graph, differentiated end to end, reaches the same
+    number. Between them the detach is shown to lose nothing rather than to
+    lose something the finite difference was too coarse to see.
+
+    The unrolled solve is plain gradient descent rather than the driver's
+    LBFGS, which is the point: what the two agree on is the fixed point, not
+    the path to it.
+    """
+    driver, engine, positions = coupled_setup()
+    reported = driver(
+        {"positions": positions.clone(), VARIABLE: torch.zeros(4, 3)},
+        compute=("forces",),
+    ).forces.detach()
+
+    moving = positions.clone().requires_grad_(True)
+    variable = torch.zeros(4, 3, dtype=torch.float64)
+    for _ in range(400):
+        graph = {"positions": moving, VARIABLE: variable}
+        gradient = -engine(graph, compute=("magforces",), training=True).extras[
+            "magforces"
+        ]
+        # Kept in the graph on purpose: this is the trajectory the driver
+        # detaches, and differentiating through it is what makes the two
+        # answers independent.
+        variable = variable - 0.5 * gradient
+
+    energy = engine(
+        {"positions": moving, VARIABLE: variable}, compute=()
+    ).total_energy.sum()
+    (unrolled,) = torch.autograd.grad(energy, moving)
+
+    assert torch.allclose(reported, -unrolled, rtol=0, atol=1e-9)
