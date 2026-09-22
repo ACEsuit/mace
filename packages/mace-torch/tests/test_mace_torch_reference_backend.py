@@ -17,6 +17,9 @@ if importlib.util.find_spec("torch") is None:  # pragma: no cover
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.clebsch_gordan.reduced_basis import (
+    reduced_symmetric_tensor_product_basis,
+)
 from mace_core.kernels import (
     ChannelwiseTPConvDescriptor,
     FullyConnectedTPDescriptor,
@@ -401,3 +404,54 @@ def test_the_chebyshev_basis_is_the_polynomial_it_claims_to_be(backend):
         lengths, 5.0
     )
     assert torch.allclose(operation(lengths), closed_form, rtol=0, atol=1e-12)
+
+
+def test_the_contraction_writes_its_paths_in_the_enumerated_order(backend):
+    """The canonical path order is body order outermost, output irrep within.
+
+    The weights are stored the other way round, because that is how the forward
+    consumes them, so a file that took the storage order would hold the
+    canonical paths permuted. The round trip through one object cannot catch
+    it, since it splits by the counts it wrote itself: what catches it is
+    deriving the counts from the basis, the way another backend would.
+    """
+    descriptor = SymmetricContractionDescriptor(
+        irreps_in="0e+1o",
+        irreps_out="0e+1o",
+        correlation=3,
+        num_elements=2,
+        num_features=4,
+    )
+    operation = backend.make_symmetric_contraction(descriptor)
+    operation.initialize_weights(5)
+
+    derived = [
+        int(array.shape[0])
+        for order in range(1, descriptor.correlation + 1)
+        for array in reduced_symmetric_tensor_product_basis(
+            descriptor.irreps_in, order, descriptor.irreps_out
+        ).values()
+    ]
+    written = [int(count) for count in operation.to_canonical()["path_counts"]]
+    assert written == derived
+    assert sum(written) == descriptor.path_count
+
+
+def test_a_mixed_contraction_round_trips_through_a_fresh_instance(backend):
+    """The round trip that matters is into another object, not back into the
+    one that wrote the file."""
+    descriptor = SymmetricContractionDescriptor(
+        irreps_in="0e+1o",
+        irreps_out="0e+1o",
+        correlation=3,
+        num_elements=2,
+        num_features=4,
+    )
+    written = backend.make_symmetric_contraction(descriptor)
+    written.initialize_weights(7)
+    restored = backend.make_symmetric_contraction(descriptor)
+    restored.load_canonical(written.to_canonical())
+
+    features = torch.randn(6, 4, Irreps.parse("0e+1o").dimension)
+    elements = torch.randint(0, 2, (6,))
+    assert torch.equal(written(features, elements), restored(features, elements))
