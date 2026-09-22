@@ -33,6 +33,7 @@ __all__ = [
     "CORE_FIELD_NAMES",
     "FIELD_BY_OBSERVABLE",
     "OBSERVABLE_BY_FIELD",
+    "RETIRED_NAMES",
     "MACEOutput",
     "TensorT",
 ]
@@ -104,6 +105,17 @@ class MACEOutput(Generic[TensorT]):
                 f"keys of `extras`: a consumer reading the field would see "
                 f"nothing. Assign them as fields instead."
             )
+        retired = sorted(name for name in self.extras if name in RETIRED_NAMES)
+        if retired:
+            replacements = ", ".join(
+                f"{name} -> {RETIRED_NAMES[name]}" for name in retired
+            )
+            raise ValueError(
+                f"{retired} are spellings this type retired and cannot be keys "
+                f"of `extras`: the value would sit beside the field holding the "
+                f"same quantity, which is the dual storage the rename exists to "
+                f"prevent. Assign the field instead ({replacements})."
+            )
 
     def get(self, name: str) -> TensorT | None:
         """The value stored under ``name``, or ``None`` if there is none.
@@ -153,6 +165,16 @@ class MACEOutput(Generic[TensorT]):
 CORE_FIELD_NAMES: tuple[str, ...] = tuple(
     f.name for f in fields(MACEOutput) if f.name != "extras"
 )
+
+#: A legacy spelling this type does not carry, and the field that replaced it.
+#: These are **not** resolvable names: :meth:`MACEOutput.get` does not find a
+#: field through them, because carrying both spellings is exactly what the
+#: rename decided against. What they are is refused as ``extras`` keys, which
+#: is the half a rename cannot enforce on its own: without this, `extras`
+#: ``node_energy`` sits happily beside a filled ``node_energies`` field and the
+#: two hold the same quantity, which is the case the shadowing guard above
+#: exists to make impossible for the names it does know.
+RETIRED_NAMES: dict[str, str] = {"node_energy": "node_energies"}
 
 #: The one place an observable's name and its storage field differ. The field
 #: says "total" because the type also carries per-atom energies, while the
