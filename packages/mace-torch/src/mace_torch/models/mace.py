@@ -43,7 +43,10 @@ class MACEModel(nn.Module):
             trained model set something else moves the energy by 6.3e-3 eV and
             the repulsion by 0.41 eV.
         node_inputs: Declared per-node input streams.
-        readout_hidden: The width of the last readout's middle.
+        readout_hidden: The width of the last readout's middle, per head.
+        num_heads: How many levels of theory the model reads out. They share
+            the backbone and nothing after it: each has its own readout, and
+            the energy head carries one row of constants per head.
         The rest are the backbone's.
     """
 
@@ -67,6 +70,7 @@ class MACEModel(nn.Module):
         cutoff_order: int = 6,
         node_inputs: Sequence[InputSpec] = (),
         readout_hidden: int = 16,
+        num_heads: int = 1,
     ) -> None:
         super().__init__()
         self.backbone = MACEBackbone(
@@ -93,6 +97,7 @@ class MACEModel(nn.Module):
             energy_head=energy_head,
             precision=precision,
             hidden_scalars=readout_hidden,
+            num_heads=num_heads,
         )
         self.repulsion = (
             ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None

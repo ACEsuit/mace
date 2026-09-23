@@ -251,6 +251,9 @@ def build_config(legacy_model) -> dict:
         )
     )
     repulsion = getattr(legacy_model, "pair_repulsion_fn", None)
+    # The frozen tree widens a multi-head readout's middle by the head count
+    # and masks it per head, so one head's width is the total over the heads.
+    num_heads = len(getattr(legacy_model, "heads", ["default"]))
     return {
         "atomic_numbers": [int(z) for z in legacy_model.atomic_numbers.tolist()],
         "num_layers": len(legacy_model.interactions),
@@ -270,7 +273,9 @@ def build_config(legacy_model) -> dict:
         "cutoff_order": int(repulsion.p) if repulsion is not None else 6,
         "readout_hidden": Irreps.parse(
             str(legacy_model.readouts[-1].linear_1.irreps_out)
-        ).dimension,
+        ).dimension
+        // num_heads,
+        "num_heads": num_heads,
     }
 
 
