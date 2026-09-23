@@ -61,10 +61,11 @@ class RuntimeConfig(FrozenSection):
             which is what makes a separate "plot at all" flag worth keeping:
             the two answer different questions.
         restart_latest: Resume from the newest checkpoint in the run directory.
-        keep_checkpoints: How many checkpoints to retain. ``None`` keeps all.
-        save_all_checkpoints: Retain every epoch's checkpoint regardless of
-            ``keep_checkpoints``, which is the shape legacy has and is kept
-            because the two are read by different retention paths.
+        keep_checkpoints: Keep every checkpoint an improving epoch wrote,
+            rather than only the newest. Off, a new checkpoint replaces the
+            one before it, as legacy does by default.
+        save_all_checkpoints: Keep a checkpoint of every epoch, improving or
+            not.
     """
 
     name: str = "mace"
@@ -78,7 +79,7 @@ class RuntimeConfig(FrozenSection):
     plot: bool = False
     plot_frequency: int = 0
     restart_latest: bool = False
-    keep_checkpoints: int | None = None
+    keep_checkpoints: bool = False
     save_all_checkpoints: bool = False
 
     def directory(self, which: str) -> Path:
