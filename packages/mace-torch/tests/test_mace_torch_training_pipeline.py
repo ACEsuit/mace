@@ -227,6 +227,88 @@ def test_a_resume_continues_rather_than_restarting(tmp_path):
     assert [record.epoch for record in continued.history] == [2, 3]
 
 
+#: Two stages whose second one weighs the energy as legacy's second stage does
+#: by default, which puts its losses on a scale a hundred times the first's.
+HEAVIER_SECOND_STAGE = [
+    {"name": "main"},
+    {"name": "stage_two", "start_epoch": 3, "loss_weights": {"energy": 1000.0}},
+]
+
+
+@fp64_only
+def test_a_later_stage_is_judged_against_its_own_epochs(tmp_path):
+    """Compared against the first stage's losses, no epoch of the second one
+    would ever be the best, and the run would end on a model the second stage
+    never touched."""
+    config = configuration(tmp_path, stages=HEAVIER_SECOND_STAGE)
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    trained = run_train_stage(config, built)
+    losses = {
+        stage: [
+            r.valid_loss
+            for r in trained.history
+            if r.stage == stage and r.valid_loss is not None
+        ]
+        for stage in ("main", "stage_two")
+    }
+    assert min(losses["stage_two"]) > max(losses["main"]), "meant to be two scales"
+    assert trained.best_epoch is not None and trained.best_epoch >= 3
+
+
+#: A first stage that cannot improve, since it does not move the weights, and
+#: a second one that can.
+STALLED_FIRST_STAGE = [
+    {"name": "main", "lr": 0.0},
+    {"name": "stage_two", "start_epoch": 4, "lr": 0.02},
+]
+
+
+@fp64_only
+def test_an_earlier_stage_out_of_patience_moves_the_run_to_the_next(tmp_path):
+    config = configuration(
+        tmp_path, max_num_epochs=6, patience=1, stages=STALLED_FIRST_STAGE
+    )
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    trained = run_train_stage(config, built)
+    epochs = [(record.epoch, record.stage) for record in trained.history]
+    assert epochs[:3] == [(0, "main"), (1, "main"), (4, "stage_two")]
+
+
+@fp64_only
+def test_the_last_stage_out_of_patience_ends_the_run(tmp_path):
+    config = configuration(tmp_path, max_num_epochs=6, patience=1, lr=0.0)
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    trained = run_train_stage(config, built)
+    assert [record.epoch for record in trained.history] == [0, 1]
+
+
+@fp64_only
+def test_a_resume_after_the_move_continues_in_the_next_stage(tmp_path):
+    """The state records the epoch the run moved to, not the one after the
+    epoch that ran out of patience, which still belongs to the first stage."""
+    stalled = configuration(
+        tmp_path, max_num_epochs=4, patience=1, stages=STALLED_FIRST_STAGE
+    )
+    data = run_data_stage(stalled, CATALOGUE)
+    built = run_model_stage(stalled, data, CATALOGUE)
+    first = run_train_stage(stalled, built, checkpoint_path=tmp_path / "model")
+    assert [record.epoch for record in first.history] == [0, 1]
+
+    later = configuration(
+        tmp_path, max_num_epochs=6, patience=1, stages=STALLED_FIRST_STAGE
+    )
+    continued = run_train_stage(
+        later, built, checkpoint_path=tmp_path / "model", resume=True
+    )
+    assert (continued.history[0].epoch, continued.history[0].stage) == (
+        4,
+        "stage_two",
+    )
+
+
 @fp64_only
 def test_a_resume_with_nothing_to_resume_from_says_so(tmp_path):
     config = configuration(tmp_path)
