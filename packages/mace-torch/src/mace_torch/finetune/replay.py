@@ -130,8 +130,8 @@ def replay_key_specification() -> KeySpecification:
     for a file this project did not write.
     """
     return KeySpecification.from_defaults().update(
-        info_keys={"energy": "energy", "stress": "stress"},
-        arrays_keys={"forces": "forces"},
+        graph_keys={"energy": "energy", "stress": "stress"},
+        atom_keys={"forces": "forces"},
     )
 
 
