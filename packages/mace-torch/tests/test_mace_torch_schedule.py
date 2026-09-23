@@ -23,7 +23,7 @@ from mace_core.config.training import (
     StageTwoConfig,
     TrainingConfig,
 )
-from mace_torch.train.loop import _stage_at
+from mace_torch.train.loop import _following_epoch, _stage_at
 from pydantic import ValidationError
 
 
@@ -147,3 +147,43 @@ def test_three_stages_need_no_code():
         "polish",
         "polish",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Where a run goes when a stage stops improving
+# ---------------------------------------------------------------------------
+
+
+def test_a_stage_still_improving_trains_the_next_epoch():
+    schedule = resolved(
+        stage_two=StageTwoConfig(enabled=True, start_epoch=4)
+    ).schedule()
+    assert _following_epoch(schedule, 1, exhausted=False) == 2
+
+
+def test_an_earlier_stage_out_of_patience_hands_over_to_the_next():
+    """As the frozen tree moves to its second stage rather than stopping, so
+    the stage the configuration asked for is not skipped."""
+    schedule = resolved(
+        stage_two=StageTwoConfig(enabled=True, start_epoch=4)
+    ).schedule()
+    assert _following_epoch(schedule, 1, exhausted=True) == 4
+
+
+def test_the_next_stage_is_the_nearest_one_ahead():
+    schedule = resolved(
+        stages=(
+            StageConfig(name="warm"),
+            StageConfig(name="main", start_epoch=5),
+            StageConfig(name="polish", start_epoch=8),
+        )
+    ).schedule()
+    assert _following_epoch(schedule, 2, exhausted=True) == 5
+    assert _following_epoch(schedule, 6, exhausted=True) == 8
+
+
+def test_the_last_stage_out_of_patience_ends_the_run():
+    schedule = resolved(
+        stage_two=StageTwoConfig(enabled=True, start_epoch=4)
+    ).schedule()
+    assert _following_epoch(schedule, 6, exhausted=True) is None
