@@ -9,6 +9,7 @@ loss goes down, and the checkpoint carries enough to rebuild what wrote it.
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import numpy as np
 import pytest
@@ -18,6 +19,7 @@ from ase.io import write
 from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import load_default_catalogue
+from mace_torch.models import MACEOutputs, ObservableHead
 from mace_torch.train import (
     RunState,
     run_data_stage,
@@ -394,9 +396,7 @@ def test_a_skipped_head_is_left_out_of_the_table(tmp_path, caplog):
     config = two_head_configuration(tmp_path)
     config = config.model_copy(
         update={
-            "runtime": config.runtime.model_copy(
-                update={"skip_evaluate_heads": ("small",)}
-            )
+            "data": config.data.model_copy(update={"skip_evaluate_heads": ("small",)})
         }
     )
     data = run_data_stage(config, CATALOGUE)
@@ -437,3 +437,25 @@ def test_an_unknown_error_table_is_refused_when_the_run_is_configured():
                 "model": {"observables": ["energy"]},
             }
         )
+
+
+@fp64_only
+def test_a_model_built_for_two_heads_gives_each_its_own_readout(tmp_path):
+    """Two levels of theory share the backbone and nothing after it, so a
+    head that is a different level of theory has weights of its own to fit."""
+    config = configuration(tmp_path)
+    head = config.data.heads["default"]
+    config = config.model_copy(
+        update={
+            "data": config.data.model_copy(
+                update={"heads": {"first": head, "second": head}}
+            )
+        }
+    )
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    outputs = built.model.get_submodule("backbone.outputs")
+    assert isinstance(outputs, MACEOutputs)
+    assert cast(ObservableHead, outputs.heads["energy"]).num_heads == 2
+    assert outputs.energy_head is not None
+    assert outputs.energy_head.e0_table.shape[0] == 2
