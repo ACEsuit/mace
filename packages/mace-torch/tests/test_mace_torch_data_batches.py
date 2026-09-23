@@ -180,3 +180,33 @@ def test_a_loader_yields_batches_of_the_asked_for_size():
     loader = make_loader(dataset, batch_size=2, shuffle=False)
     sizes = [batch.graph["num_graphs"] for batch in loader]
     assert sizes == [2, 2, 1]
+
+
+def slab(third_row):
+    """Four atoms periodic in two directions, with the given third cell row."""
+    return Configuration(
+        atomic_numbers=np.array([8, 1, 1, 8]),
+        positions=np.array(
+            [[0.3, 0.4, 0.2], [2.3, 0.5, 0.3], [0.5, 2.3, 1.5], [2.5, 2.6, 1.1]]
+        ),
+        cell=np.array([[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], third_row]),
+        pbc=(True, True, False),
+    )
+
+
+def test_a_slab_with_no_vacuum_keeps_a_volume():
+    """Its third cell row is all zeros. The neighbour search inflates that row
+    so the volume is not zero, and the graph has to carry the inflated cell:
+    with the zero row, the stress is a division by zero and is masked away,
+    where the frozen tree reports a stress for the same structure."""
+    graph = graph_from_configuration(
+        slab([0.0, 0.0, 0.0]), cutoff=CUTOFF, z_table=Z_TABLE
+    )
+    assert abs(float(np.linalg.det(graph["cell"]))) > 0.0
+
+
+def test_a_slab_with_vacuum_keeps_its_physical_cell():
+    graph = graph_from_configuration(
+        slab([0.0, 0.0, 20.0]), cutoff=CUTOFF, z_table=Z_TABLE
+    )
+    assert np.array_equal(graph["cell"], np.diag([4.0, 4.0, 20.0]))
