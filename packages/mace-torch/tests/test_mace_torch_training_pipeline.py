@@ -322,7 +322,7 @@ def test_the_run_ends_on_the_model_it_wrote(tmp_path):
     """
     from mace_torch.serialization import canonical_state, read_canonical_state
 
-    config = configuration(tmp_path, max_num_epochs=6, lr=0.2)
+    config = configuration(tmp_path, max_num_epochs=8, lr=0.05)
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
     trained = run_train_stage(config, built, checkpoint_path=tmp_path / "model")
