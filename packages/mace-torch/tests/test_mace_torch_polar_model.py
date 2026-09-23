@@ -70,6 +70,7 @@ def build_model(profile="molecular", steps=2, **overrides) -> PolarModel:
         cutoff=5.0,
         correlation=2,
         readout_hidden=4,
+        element_agnostic_product=True,
         **overrides,
     )
     initialize_model_weights(model, seed=3)

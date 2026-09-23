@@ -48,7 +48,12 @@ from mace_torch.finetune.subselect import SelectionError, select, split_by_filte
 from mace_torch.train.contracts import TorchDataBundle
 from mace_torch.train.loaders import build_training_loader
 
-__all__ = ["DEFAULT_PRECISION", "DataStageError", "run_data_stage"]
+__all__ = [
+    "DEFAULT_PRECISION",
+    "DataStageError",
+    "graph_inputs_of",
+    "run_data_stage",
+]
 
 #: What a run computes in until a precision section exists to say otherwise.
 #: It is frozen, so one instance serves as every caller's default.
@@ -183,6 +188,7 @@ def run_data_stage(
 
     specs = target_specs(requested)
     head_names = tuple(heads)
+    graph_inputs = graph_inputs_of(config.model.model)
 
     def build(items: Sequence[Configuration]) -> GraphDataset:
         return GraphDataset(
@@ -191,6 +197,7 @@ def run_data_stage(
             z_table=z_table,
             targets=specs,
             heads=head_names,
+            graph_inputs=graph_inputs,
         )
 
     # Per head, because that is what the balancing decides between and what an
@@ -231,6 +238,19 @@ def run_data_stage(
     )
 
 
+def graph_inputs_of(model: str) -> tuple[str, ...]:
+    """The per-structure inputs a registered model reads, by its name.
+
+    Written into every graph built for it, from the file or from their
+    defaults, and into no other model's, which reads none.
+    """
+    if model == "polar":
+        from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS
+
+        return POLAR_GRAPH_INPUTS
+    return ()
+
+
 def _of_head(items: Sequence[Configuration], head: str) -> list[Configuration]:
     return [item for item in items if item.head == head]
 
@@ -254,6 +274,7 @@ def _key_spec(data: DataConfig) -> KeySpecification:
             "elec_temp": keys.elec_temp,
             "total_spin": keys.total_spin,
             "total_charge": keys.total_charge,
+            "external_field": keys.external_field,
         }
     )
 

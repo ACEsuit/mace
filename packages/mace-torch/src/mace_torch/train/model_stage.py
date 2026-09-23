@@ -22,6 +22,7 @@ from mace_core.kernels.precision import PrecisionConfig
 from mace_core.kernels.registry import get_backend
 from mace_core.metadata import (
     ConfigRecord,
+    ElectrostaticsRecord,
     HeadSummary,
     ModelMetadata,
     ParentModel,
@@ -39,6 +40,7 @@ from mace_torch.finetune.foundation import Foundation
 from mace_torch.finetune.transfer import readout_sources, transfer_foundation
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
+from mace_torch.models.electrostatics import PolarModel, PolarSettings
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
@@ -60,6 +62,10 @@ DEFAULT_HIDDEN_IRREPS = "0e+1o"
 #: The two differ by about 77 eV on a probe geometry, so it is a fact about a
 #: trained model rather than a preference.
 _ZBL_INSIDE = {"scale_shift": True, "plain": False}
+
+#: Every registered model name. The charge-aware one scales and shifts its
+#: local energy as the scale-shift model does.
+_MODELS = frozenset({*_ZBL_INSIDE, "polar"})
 
 #: The model settings this stage builds one way only, and what that way is.
 #: The configuration can name others, since the schema covers every setting a
@@ -139,6 +145,11 @@ def run_model_stage(
         initialize=initialize,
     )
     metadata = _metadata(config, data)
+    model = engine.get_submodule("backbone")
+    if isinstance(model, PolarModel):
+        metadata = metadata.model_copy(
+            update={"electrostatics": ElectrostaticsRecord(**model.solver_record())}
+        )
     if foundation is not None:
         transfer_foundation(
             foundation.model,
@@ -253,14 +264,15 @@ def build_model(
             "the configuration declares no observable, so the model would "
             "read out nothing. Declare at least one under `model.observables`."
         )
-    if config.model.model not in _ZBL_INSIDE:
+    if config.model.model not in _MODELS:
         raise ModelStageError(
-            f"{config.model.model!r} is not a model spelling. The choices are "
-            f"{sorted(_ZBL_INSIDE)}, and they differ in where the short-range "
-            f"repulsion is added."
+            f"{config.model.model!r} is not a registered model. The choices are "
+            f"{sorted(_MODELS)}: the two energy models differ in where the "
+            f"short-range repulsion is added, and `polar` carries a "
+            f"self-consistent density and a long-range term."
         )
     _refuse_unbuilt(config)
-    _refuse_electrostatics(config)
+    _check_electrostatics(config)
 
     energy = next(
         (spec for spec in requested.observables if spec.name == "energy"), None
@@ -277,9 +289,23 @@ def build_model(
         z_table,
         _scale_shift(config, statistics, len(heads)),
         precision,
-        zbl_in_scale_shift=_ZBL_INSIDE[config.model.model],
+        zbl_in_scale_shift=_ZBL_INSIDE.get(config.model.model, True),
         supports_float64=supports_float64,
     )
+    if config.model.model == "polar":
+        model = _polar_model(
+            config,
+            requested,
+            energy_head,
+            z_table=z_table,
+            heads=heads,
+            statistics=statistics,
+            precision=precision,
+            trains_derivatives=initialize and bool(requested.derivatives),
+        )
+        if initialize:
+            initialize_model_weights(model, config.runtime.seed)
+        return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
     model = MACEModel(
         get_backend(config.model.backend),
         atomic_numbers=list(z_table.zs),
@@ -311,6 +337,71 @@ def build_model(
     return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
 
 
+def _polar_model(
+    config: ResolvedConfig,
+    requested: RequestedOutputs,
+    energy_head: EnergyOutputHead,
+    *,
+    z_table: AtomicNumberTable,
+    heads: tuple[str, ...],
+    statistics: DatasetStatistics,
+    precision: PrecisionConfig,
+    trains_derivatives: bool,
+) -> PolarModel:
+    """The charge-aware model, with its long-range ops from the named solver.
+
+    Its dipole is the density's, so a declared ``dipole`` observable is read
+    off the model rather than given a head.
+    """
+    polar = config.model.polar
+    electrostatics = config.electrostatics
+    settings = PolarSettings(
+        multipole_max_l=polar.multipole_max_l,
+        multipole_width=polar.multipole_width,
+        feature_max_l=polar.feature_max_l,
+        feature_widths=tuple(polar.feature_widths),
+        feature_norms=None
+        if polar.feature_norms is None
+        else tuple(polar.feature_norms),
+        num_recursion_steps=polar.num_recursion_steps,
+        kspace_cutoff_factor=electrostatics.kspace_cutoff_factor,
+        feature_self_interaction=polar.feature_self_interaction,
+        energy_self_interaction=polar.energy_self_interaction,
+        add_local_electron_energy=polar.add_local_electron_energy,
+        quadrupole_feature_corrections=polar.quadrupole_feature_corrections,
+        fukui_hidden=_readout_hidden(config),
+        periodicity_profile=electrostatics.periodicity_profile,
+        slab_normal=electrostatics.slab_normal,
+    )
+    return PolarModel(
+        get_backend(config.model.backend),
+        atomic_numbers=list(z_table.zs),
+        observables=[
+            spec
+            for spec in requested.observables
+            if spec.name not in PolarModel.PRODUCED
+        ],
+        energy_head=energy_head,
+        settings=settings,
+        solver=electrostatics.solver,
+        trains_derivatives=trains_derivatives,
+        num_layers=config.model.num_interactions,
+        num_features=config.model.num_channels,
+        lmax=config.model.max_ell,
+        hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
+        num_radial=config.model.num_radial_basis,
+        cutoff=config.model.r_max,
+        correlation=config.model.correlation,
+        avg_num_neighbors=statistics.avg_num_neighbors,
+        radial_kind=config.model.radial_type,
+        precision=precision.model,
+        cutoff_order=config.model.num_cutoff_basis,
+        readout_hidden=_readout_hidden(config),
+        num_heads=len(heads),
+        element_agnostic_product=config.model.use_agnostic_product,
+    )
+
+
 def _refuse_unbuilt(config: ResolvedConfig) -> None:
     """Refuse every model setting this stage would not build as written.
 
@@ -319,7 +410,16 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
             built instead.
     """
     unbuilt = []
-    for path, choices in _BUILT_ONE_WAY.items():
+    built = dict(_BUILT_ONE_WAY)
+    if config.model.model == "polar":
+        # Built both ways for the charge-aware model: the published ones share
+        # one set of product weights, and the frozen tree's command line
+        # defaults to one per element.
+        built["use_agnostic_product"] = (False, True)
+        # The frozen tree computes the repulsion of this model and never adds
+        # it, so the only faithful build is the one without it.
+        built["pair_repulsion"] = (False,)
+    for path, choices in built.items():
         value: object = config.model
         for name in path.split("."):
             value = getattr(value, name)
@@ -335,28 +435,39 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
         )
 
 
-def _refuse_electrostatics(config: ResolvedConfig) -> None:
-    """Resolve the named solver, then refuse: no model here carries the term.
+def _check_electrostatics(config: ResolvedConfig) -> None:
+    """The long-range section and the model have to agree.
 
-    Resolved first, so a solver that is not registered or did not import is
-    named as such rather than hidden behind the second refusal.
+    The solver is resolved first, so one that is not registered or did not
+    import is named as such rather than hidden behind a mismatch.
 
     Raises:
         SolverNotAvailableError: If the solver cannot be delivered.
-        ModelStageError: Whenever the section is enabled, since training the
-            model without the long-range term it asked for is another model.
+        ModelStageError: If the section is enabled for a model that carries no
+            long-range term, which would train one without it, or the polar
+            model is asked for with the section off, which would leave its
+            solver and its systems unsaid.
     """
     settings = config.electrostatics
-    if not settings.enabled:
-        return
-    from mace_core.electrostatics import get_solver
+    polar = config.model.model == "polar"
+    if settings.enabled:
+        from mace_core.electrostatics import get_solver
 
-    get_solver(settings.solver)
-    raise ModelStageError(
-        "electrostatics.enabled is set, and no model built here carries a "
-        "long-range term yet, so the run would train one without it. Leave "
-        "the section out for now."
-    )
+        get_solver(settings.solver)
+    if settings.enabled and not polar:
+        raise ModelStageError(
+            f"electrostatics.enabled is set and model.model is "
+            f"{config.model.model!r}, which carries no long-range term, so the "
+            f"run would train one without it. Use the `polar` model, or leave "
+            f"the section out."
+        )
+    if polar and not settings.enabled:
+        raise ModelStageError(
+            "model.model is `polar`, whose long-range term is computed by the "
+            "solver the electrostatics section names. Set "
+            "electrostatics.enabled, with the solver and the systems it is set "
+            "up for."
+        )
 
 
 def _scale_shift(

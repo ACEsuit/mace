@@ -99,7 +99,7 @@ CASES = {
 }
 
 
-def legacy_polar():
+def legacy_polar(agnostic=True):
     from e3nn import o3
 
     from mace.modules import interaction_classes
@@ -142,7 +142,7 @@ def legacy_polar():
             "nonlinearity_cls": "MLPNonLinearity",
         },
         field_readout_config={"type": "OneBodyMLPFieldReadout"},
-        use_agnostic_product=True,
+        use_agnostic_product=agnostic,
     )
     # Every weight away from zero, including the biases the frozen tree
     # starts at zero, so a bias that is dropped or misplaced shows.
@@ -237,10 +237,10 @@ def v1_graph(atoms, numbers, cutoff):
     }
 
 
-def evaluate(name):
+def evaluate(name, agnostic=True):
     atoms, (profile, normal), inputs = CASES[name]
     atoms = with_inputs(atoms, *inputs)
-    legacy = legacy_polar()
+    legacy = legacy_polar(agnostic)
     model, config = convert(legacy, profile, normal)
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     reference = legacy(legacy_batch(legacy, atoms), training=False, compute_force=True)
@@ -255,9 +255,15 @@ def gap(a, b) -> float:
     )
 
 
+@pytest.mark.parametrize("agnostic", [True, False], ids=["agnostic", "per_element"])
 @pytest.mark.parametrize("name", sorted(CASES))
-def test_the_converted_model_matches_the_live_legacy_model(fp64, isolated, name):
-    _, _, _, reference, result = evaluate(name)
+def test_the_converted_model_matches_the_live_legacy_model(
+    fp64, isolated, name, agnostic
+):
+    """Both product bases: the published models share one set of weights
+    across elements, and the frozen tree's command line defaults to one per
+    element."""
+    _, _, _, reference, result = evaluate(name, agnostic)
     extras = result.extras
     compared = {
         "energy": (reference["energy"], result.total_energy),

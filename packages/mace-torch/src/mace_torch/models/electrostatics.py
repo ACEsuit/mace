@@ -62,7 +62,7 @@ from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
 from mace_torch.nn.layout import expanded_irreps
 
-__all__ = ["POLAR_EXTRA_ROWS", "PolarModel", "PolarSettings"]
+__all__ = ["POLAR_EXTRA_ROWS", "POLAR_GRAPH_INPUTS", "PolarModel", "PolarSettings"]
 
 #: What each quantity the model adds to ``extras`` has a row for.
 POLAR_EXTRA_ROWS: dict[str, str] = {
@@ -75,6 +75,11 @@ POLAR_EXTRA_ROWS: dict[str, str] = {
     "spin_charge_density": "atom",
     "fukui_functions": "atom",
 }
+
+
+#: The per-structure inputs the model reads, which the data stage writes into
+#: every graph it builds for it.
+POLAR_GRAPH_INPUTS: tuple[str, ...] = ("total_charge", "total_spin", "external_field")
 
 
 def _spherical(max_l: int, copies: int = 1) -> str:
@@ -187,12 +192,17 @@ class PolarModel(MACEModel):
             from.
         trains_derivatives: Whether the model is trained on forces or stress,
             which needs the solver differentiable twice.
-        The rest are :class:`MACEModel`'s. The last layer keeps every irrep,
-        the product basis is element agnostic and the harmonics read the edge
-        as ``(y, z, x)``, always: the density's dipoles are read off the last
-        layer in the solver's component order, and every published model of
-        this kind was built that way.
+        element_agnostic_product: One set of product weights for every
+            element. A choice, not a requirement: every published model of
+            this kind sets it, and the frozen tree's command line defaults it
+            off.
+        The rest are :class:`MACEModel`'s. The last layer keeps every irrep and
+        the harmonics read the edge as ``(y, z, x)``, always: the density's
+        dipoles are read off the last layer in the solver's component order.
     """
+
+    #: What the model computes itself, from its density, so it has no head.
+    PRODUCED: frozenset[str] = frozenset({"dipole"})
 
     field_norms: Tensor
     #: Whichever solver built it: ``prepare(geometry)`` once per forward, then
@@ -222,8 +232,11 @@ class PolarModel(MACEModel):
         cutoff_order: int = 6,
         readout_hidden: int = 16,
         num_heads: int = 1,
+        element_agnostic_product: bool = False,
     ) -> None:
-        produced = sorted(spec.name for spec in observables if spec.name in {"dipole"})
+        produced = sorted(
+            spec.name for spec in observables if spec.name in self.PRODUCED
+        )
         if produced:
             raise ValueError(
                 f"{produced} is computed from the model's density, so it has no "
@@ -248,7 +261,7 @@ class PolarModel(MACEModel):
             readout_hidden=readout_hidden,
             num_heads=num_heads,
             full_last_layer=True,
-            element_agnostic_product=True,
+            element_agnostic_product=element_agnostic_product,
             # The density's dipoles are read off the degree one features, and
             # the solver holds a dipole as (y, z, x).
             edge_axes=(1, 2, 0),
@@ -329,6 +342,20 @@ class PolarModel(MACEModel):
                 self.descriptor, solver=solver, trains_derivatives=trains_derivatives
             )
         self.solver = solver
+
+    def solver_record(self) -> dict[str, Any]:
+        """What a checkpoint records about the long-range solver.
+
+        The solver's name, whether it reproduces the reference bit for bit,
+        and the solve as data. See :class:`mace_core.metadata.ElectrostaticsRecord`.
+        """
+        from mace_core.electrostatics import descriptor_record, get_solver
+
+        return {
+            "solver": self.solver,
+            "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
+            "descriptor": descriptor_record(self.descriptor),
+        }
 
     def _fix_totals(
         self,

@@ -17,13 +17,16 @@ from mace_core.electrostatics.descriptor import (
     PeriodicityProfile,
     RealspaceMethod,
     ScfSpec,
+    descriptor_record,
 )
 from mace_core.electrostatics.registry import (
     ENTRY_POINT_GROUPS,
     DiscoveredSolver,
     SolverNotAvailableError,
+    SolverSubstitutionError,
     available_solvers,
     get_solver,
+    solver_to_load,
 )
 
 __all__ = [
@@ -38,7 +41,10 @@ __all__ = [
     "ScfSpec",
     "SolverCapabilities",
     "SolverNotAvailableError",
+    "SolverSubstitutionError",
     "UnsupportedSolveError",
     "available_solvers",
+    "descriptor_record",
     "get_solver",
+    "solver_to_load",
 ]

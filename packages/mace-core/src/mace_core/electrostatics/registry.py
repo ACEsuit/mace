@@ -20,8 +20,10 @@ __all__ = [
     "ENTRY_POINT_GROUPS",
     "DiscoveredSolver",
     "SolverNotAvailableError",
+    "SolverSubstitutionError",
     "available_solvers",
     "get_solver",
+    "solver_to_load",
 ]
 
 #: One group per framework, parallel to the kernel backends' groups.
@@ -33,6 +35,11 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
 
 class SolverNotAvailableError(RuntimeError):
     """A solver was asked for by name and could not be delivered."""
+
+
+class SolverSubstitutionError(RuntimeError):
+    """A model was asked to load with a solver other than its own, and the
+    swap would change its numbers."""
 
 
 @dataclass(frozen=True)
@@ -99,3 +106,45 @@ def get_solver(name: str, framework: str = "torch") -> Any:
             f"it, because another solver is another set of numbers."
         )
     return solver.factory()
+
+
+def solver_to_load(
+    recorded: str,
+    recorded_bit_parity: bool,
+    requested: str | None = None,
+    framework: str = "torch",
+) -> str:
+    """Which solver a trained model is rebuilt with.
+
+    The one it recorded, unless another is asked for. A swap is allowed only
+    between two solvers that both reproduce the reference bit for bit, since
+    then no number moves. Any other swap changes the model's predictions, in
+    either direction, and is refused rather than made quietly.
+
+    Args:
+        recorded: The solver the checkpoint says the model was trained with.
+        recorded_bit_parity: Whether that solver declared bit parity with the
+            reference. Recorded rather than looked up, so the rule holds on a
+            machine where the recorded solver is not installed.
+        requested: The solver the caller asks for, or ``None`` for the
+            recorded one.
+        framework: Which framework's registry to look the requested one up in.
+
+    Raises:
+        SolverSubstitutionError: Naming both solvers and why the swap would
+            change the model.
+        SolverNotAvailableError: If the requested solver cannot be delivered.
+    """
+    if requested is None or requested == recorded:
+        return recorded
+    parity = bool(get_solver(requested, framework).capabilities.bit_parity)
+    if recorded_bit_parity and parity:
+        return requested
+    moved = recorded if not recorded_bit_parity else requested
+    raise SolverSubstitutionError(
+        f"the model was trained with the electrostatics solver {recorded!r} and "
+        f"is being loaded with {requested!r}. {moved!r} does not reproduce the "
+        f"reference solver bit for bit, so the swap changes the model's "
+        f"predictions. Load it with {recorded!r}, or retrain with the solver "
+        f"you want."
+    )

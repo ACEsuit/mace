@@ -38,6 +38,7 @@ def polar_backbone_config(legacy, build_config) -> dict:
     # The anchor's reader takes the envelope order from the repulsion, which a
     # charge-aware model does not carry; the radial envelope has the same one.
     config["cutoff_order"] = int(legacy.radial_embedding.cutoff_fn.p)
+    config["element_agnostic_product"] = bool(legacy.products[0].use_agnostic_product)
     return config
 
 

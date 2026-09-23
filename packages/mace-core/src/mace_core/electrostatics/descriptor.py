@@ -11,8 +11,8 @@ in ``forward``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal, get_args
+from dataclasses import asdict, dataclass, field
+from typing import Any, Literal, get_args
 
 from mace_core.kernels.precision import Precision
 
@@ -24,6 +24,7 @@ __all__ = [
     "PeriodicityProfile",
     "RealspaceMethod",
     "ScfSpec",
+    "descriptor_record",
 ]
 
 #: Which systems a solve is set up for.
@@ -177,3 +178,23 @@ class ElectrostaticsSolverDescriptor:
                 f"kspace_cutoff is {self.kspace_cutoff} and smearing_width is "
                 f"{self.smearing_width}; both have to be positive."
             )
+
+
+def descriptor_record(descriptor: ElectrostaticsSolverDescriptor) -> dict[str, Any]:
+    """The solve as plain JSON data: sets sorted, tuples as lists.
+
+    What a checkpoint records, and what a rebuilt model's solve is compared
+    against, so that a default that moved between versions is caught rather
+    than silently changing a trained model's numbers.
+    """
+
+    def plain(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: plain(item) for key, item in value.items()}
+        if isinstance(value, frozenset | set):
+            return sorted(plain(item) for item in value)
+        if isinstance(value, tuple | list):
+            return [plain(item) for item in value]
+        return value
+
+    return plain(asdict(descriptor))

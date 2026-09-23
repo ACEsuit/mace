@@ -234,8 +234,11 @@ _MODEL: dict[str, Disposition] = {
         "compute_polarizability",
         "compute_atomic_dipole",
         "compute_magforces",
-        "return_electrostatic_potentials",
         applied=True,
+    ),
+    "return_electrostatic_potentials": Dropped(
+        "the frozen polar model returns None for it whatever it is set to, so "
+        "there is no quantity behind it to carry"
     ),
     "use_so3": Dropped("an SO(3) variant with no trained artifact and no consumer"),
 }
@@ -436,23 +439,29 @@ _FINETUNE: dict[str, Disposition] = {
 
 #: Sections another ticket owns entirely.
 _EXTRAS: dict[str, Disposition] = {
-    **_reserved(
-        "model.electrostatics",
-        "the electrostatics tickets",
-        "kspace_cutoff_factor",
-        "atomic_multipoles_max_l",
-        "atomic_multipoles_smearing_width",
-        "field_feature_max_l",
+    **_kept(
+        kspace_cutoff_factor="electrostatics.kspace_cutoff_factor",
+        atomic_multipoles_max_l="model.polar.multipole_max_l",
+        atomic_multipoles_smearing_width="model.polar.multipole_width",
+        field_feature_max_l="model.polar.feature_max_l",
+        num_recursion_steps="model.polar.num_recursion_steps",
+        field_si="model.polar.feature_self_interaction",
+        include_electrostatic_self_interaction="model.polar.energy_self_interaction",
+        add_local_electron_energy="model.polar.add_local_electron_energy",
+        quadrupole_feature_corrections="model.polar.quadrupole_feature_corrections",
+    ),
+    **_merged(
+        "model.polar",
+        "written as Python literals on the frozen command line, parsed here",
         "field_feature_widths",
         "field_feature_norms",
-        "num_recursion_steps",
-        "field_si",
-        "include_electrostatic_self_interaction",
-        "add_local_electron_energy",
-        "quadrupole_feature_corrections",
-        "field_norm_factor",
         "fixedpoint_update_config",
         "field_readout_config",
+        applied=True,
+    ),
+    "field_norm_factor": Dropped(
+        "the frozen polar model stores it as a buffer and never reads it: its "
+        "energy is the same at 1 and at 5"
     ),
     **_reserved(
         "model.magnetic",
@@ -516,7 +525,6 @@ _COMPUTE_FLAGS: dict[str, str] = {
     "compute_polarizability": "polarizability",
     "compute_atomic_dipole": "dipole",
     "compute_magforces": "magforces",
-    "return_electrostatic_potentials": "electrostatic_potential",
 }
 
 #: The hyperparameters each optimizer takes, as legacy dest to v1 field.
@@ -624,6 +632,7 @@ def _collapse(namespace: Any, values: dict[str, Any]) -> None:
     a reader can check one against the flags it replaces.
     """
     _collapse_model(namespace, values)
+    _collapse_polar(namespace, values)
     _collapse_observables(namespace, values)
     _collapse_loss(namespace, values)
     _collapse_optimizer(namespace, values)
@@ -644,8 +653,61 @@ def _collapse_model(namespace: Any, values: dict[str, Any]) -> None:
             _set(values, f"model.readout.{field}", value)
 
 
+#: The one field-update and the one field-readout block the frozen tree has,
+#: by the class name its command line takes and the name v1 records.
+_FIELD_UPDATES = {"AgnosticEmbeddedOneBodyVariableUpdate": "embedded_one_body"}
+_FIELD_READOUTS = {"OneBodyMLPFieldReadout": "one_body_mlp"}
+_POTENTIAL_EMBEDDINGS = {"AgnosticChargeBiasedLinearPotentialEmbedding"}
+
+
+def _literal(value: Any) -> Any:
+    """A flag the frozen command line takes as a Python literal in a string."""
+    import ast
+
+    return ast.literal_eval(value) if isinstance(value, str) else value
+
+
+def _collapse_polar(namespace: Any, values: dict[str, Any]) -> None:
+    """The charge-aware flags that arrive as literals, and the two block choices.
+
+    ``nonlinearity_cls`` inside ``--fixedpoint_update_config`` is not carried:
+    the frozen update block discards it (``field_blocks.py:480``), so every
+    value of it builds the same model.
+
+    Raises:
+        LegacyFlagError: For a block the frozen tree could name and v1 does not
+            build, since building the one that exists would be another model.
+    """
+    if (widths := _literal(_read(namespace, "field_feature_widths"))) is not None:
+        _set(values, "model.polar.feature_widths", [float(w) for w in widths])
+    if (norms := _literal(_read(namespace, "field_feature_norms"))) is not None:
+        _set(values, "model.polar.feature_norms", [float(n) for n in norms])
+    update = _literal(_read(namespace, "fixedpoint_update_config")) or {}
+    readout = _literal(_read(namespace, "field_readout_config")) or {}
+    kind = update.get("type", "AgnosticEmbeddedOneBodyVariableUpdate")
+    embedding = update.get(
+        "potential_embedding_cls", "AgnosticChargeBiasedLinearPotentialEmbedding"
+    )
+    reading = readout.get("type", "OneBodyMLPFieldReadout")
+    unknown = [
+        f"{flag} names {name!r}; the blocks are {sorted(known)}"
+        for flag, name, known in (
+            ("--fixedpoint_update_config", kind, _FIELD_UPDATES),
+            ("--fixedpoint_update_config", embedding, _POTENTIAL_EMBEDDINGS),
+            ("--field_readout_config", reading, _FIELD_READOUTS),
+        )
+        if name not in known
+    ]
+    if unknown:
+        raise LegacyFlagError("; ".join(unknown) + ".")
+    if update:
+        _set(values, "model.polar.field_update", _FIELD_UPDATES[kind])
+    if readout:
+        _set(values, "model.polar.field_readout", _FIELD_READOUTS[reading])
+
+
 def _collapse_observables(namespace: Any, values: dict[str, Any]) -> None:
-    """The six `--compute_*` booleans become the declared output list.
+    """The five `--compute_*` booleans become the declared output list.
 
     The energy is not among them: legacy has no `--compute_energy`, because
     every model it can build produces one.

@@ -50,18 +50,20 @@ class GraphInputKeys(FrozenSection):
     """File keys of the graph-level inputs, when a dataset spells them its way.
 
     Only the inputs. A label's key is the data contract's and is not settable
-    per run; these three are declared features, and a feature nobody declared
+    per run; these are declared features, and a feature nobody declared
     is not read.
 
     Args:
         elec_temp: Electronic temperature, per structure.
         total_spin: Total spin, per structure.
         total_charge: Total charge, per structure.
+        external_field: The applied electric field, per structure.
     """
 
     elec_temp: str = "elec_temp"
     total_spin: str = "total_spin"
     total_charge: str = "total_charge"
+    external_field: str = "external_field"
 
 
 class TransformSpec(FrozenSection):
