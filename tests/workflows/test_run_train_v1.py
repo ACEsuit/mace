@@ -367,3 +367,24 @@ def test_a_mini_batch_run_continued_under_lbfgs_says_its_optimizer_is_new(tmp_pa
     assert "Resumed with a new optimizer" in resumed.stderr
     assert "written by Adam and the run resumes with LBFGS" in resumed.stderr
     assert evaluated_epochs(resumed.stderr) == [2, 3]
+
+
+@needs_the_v1_engine
+def test_an_averaged_run_continued_under_lbfgs_starts_from_the_average(tmp_path):
+    """The frozen tree's usual pair: an averaged mini-batch run, then L-BFGS,
+    which refuses an average, from the model the first run ended on."""
+    config = tiny_task(tmp_path)
+    first = on_v1(
+        "--config",
+        str(config),
+        "--training.max_num_epochs",
+        "2",
+        "--training.ema.enabled",
+        "true",
+    )
+    assert first.returncode == 0, first.stderr
+
+    resumed = on_v1("--config", str(config), *LBFGS, "--runtime.restart_latest", "true")
+    assert resumed.returncode == 0, resumed.stderr
+    assert "training continues from the averaged weights" in resumed.stderr
+    assert evaluated_epochs(resumed.stderr) == [2, 3]

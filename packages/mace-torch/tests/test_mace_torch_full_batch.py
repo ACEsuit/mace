@@ -19,9 +19,15 @@ from ase.io import write
 from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import load_default_catalogue
+from mace_torch.serialization import CheckpointError
 from mace_torch.train import run_data_stage, run_model_stage, run_train_stage
-from mace_torch.train.checkpoint import latest_run_checkpoint, read_run_state
+from mace_torch.train.checkpoint import (
+    latest_run_checkpoint,
+    read_run_checkpoint,
+    read_run_state,
+)
 from mace_torch.train.ddp import DistributedContext
+from mace_torch.train.ema import ExponentialMovingAverage
 from mace_torch.train.full_batch import accumulate, full_batch_step, set_totals
 from mace_torch.train.loss import TermwiseLoss, build_loss
 from mace_torch.train.optimizers import build_optimizer
@@ -334,3 +340,47 @@ def test_resuming_a_mini_batch_run_under_lbfgs_starts_the_optimizer_afresh(
         )
     assert "written by Adam and the run resumes with LBFGS" in caplog.text
     assert [record.epoch for record in continued.history] == [2]
+
+
+@fp64_only
+def test_an_averaged_run_continued_under_lbfgs_continues_from_the_average(tmp_path):
+    """The averaged weights are the model the mini-batch run ended on, and
+    L-BFGS, which does not average, carries on from them."""
+    config, built = built_task(
+        tmp_path, max_num_epochs=2, ema={"enabled": True, "decay": 0.9}
+    )
+    run_train_stage(config, built, checkpoint_path=tmp_path / "model")
+    latest = latest_run_checkpoint(tmp_path, "model")
+    assert latest is not None
+
+    _, averaged = built_task(tmp_path, ema={"enabled": True, "decay": 0.9})
+    adam = build_optimizer(averaged.model, config.training)
+    ema = ExponentialMovingAverage(averaged.model.parameters(), 0.9)
+    read_run_checkpoint(latest, model=averaged.model, optimizer=adam, ema=ema)
+
+    lbfgs_config, resumed = built_task(tmp_path, optimizer=LBFGS)
+    lbfgs = build_optimizer(resumed.model, lbfgs_config.training)
+    outcome = read_run_checkpoint(latest, model=resumed.model, optimizer=lbfgs)
+    assert outcome.optimizer_state == "reinitialized"
+    assert outcome.reason is not None and "averaged weights" in outcome.reason
+    trainable = [p for p in resumed.model.parameters() if p.requires_grad]
+    for parameter, average in zip(trainable, ema.shadow, strict=True):
+        assert torch.equal(parameter.detach(), average)
+
+
+@fp64_only
+def test_an_averaged_run_resumed_with_the_same_optimizer_still_has_to_average(
+    tmp_path,
+):
+    """Only a fresh optimizer makes continuing from the average meaningful.
+    With the same one, its moments belong to the stepped weights."""
+    config, built = built_task(
+        tmp_path, max_num_epochs=2, ema={"enabled": True, "decay": 0.9}
+    )
+    run_train_stage(config, built, checkpoint_path=tmp_path / "model")
+    latest = latest_run_checkpoint(tmp_path, "model")
+    assert latest is not None
+    plain_config, plain = built_task(tmp_path)
+    adam = build_optimizer(plain.model, plain_config.training)
+    with pytest.raises(CheckpointError, match="averaged"):
+        read_run_checkpoint(latest, model=plain.model, optimizer=adam)

@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+import torch
 from mace_core.metadata import ModelMetadata
 from safetensors import SafetensorError
 from safetensors.torch import load_file, save_file
@@ -354,7 +355,8 @@ def read_run_checkpoint(
     Raises:
         CheckpointError: If the files disagree, the model and the checkpoint
             hold different operators, or the saved run and this one disagree
-            about averaging.
+            about averaging. A run that stops averaging while its optimizer
+            starts afresh is not refused: it continues from the average.
     """
     sidecar = Path(path)
     document = _read_sidecar(sidecar)
@@ -375,15 +377,6 @@ def read_run_checkpoint(
         _, module, tensor_name = key.split(_SEPARATOR)
         weights.setdefault(module, {})[tensor_name] = tensors[key]
     load_canonical_state(model, weights)
-
-    if (ema is None) != (document["ema"] is None):
-        raise CheckpointError(
-            "the saved run and this one disagree about whether the weights are "
-            "averaged. Resuming either way continues from parameters the other "
-            "half of the run never used."
-        )
-    if ema is not None:
-        ema.load_state_dict(_decode(document["ema"], tensors))
 
     saved = document["optimizer"]["topology"]
     current = _topology(optimizer)
@@ -410,7 +403,27 @@ def read_run_checkpoint(
             f"{[len(group) for group in current]} now), so the weights were "
             f"loaded and the optimizer and schedule start afresh"
         )
-    else:
+
+    averaged = document["ema"]
+    if ema is None and averaged is not None and outcome == "reinitialized":
+        # A run that starts its optimizer afresh and stops averaging, as one
+        # finished with L-BFGS after an averaged mini-batch run does, carries
+        # on from the model the earlier run ended on, which is the average.
+        _continue_from_average(model, _decode(averaged, tensors)["shadow"])
+        reason = (
+            f"{reason}, and training continues from the averaged weights, "
+            f"which are the model the checkpointed run ended on"
+        )
+    elif (ema is None) != (averaged is None):
+        raise CheckpointError(
+            "the saved run and this one disagree about whether the weights are "
+            "averaged. Resuming either way continues from parameters the other "
+            "half of the run never used."
+        )
+    if ema is not None:
+        ema.load_state_dict(_decode(averaged, tensors))
+
+    if outcome == "restored":
         optimizer.load_state_dict(_decode(document["optimizer"]["state"], tensors))
         if scheduler is not None and document["scheduler"] is not None:
             scheduler.load_state_dict(_decode(document["scheduler"], tensors))
@@ -420,6 +433,27 @@ def read_run_checkpoint(
         optimizer_state=outcome,
         reason=reason,
     )
+
+
+def _continue_from_average(model: nn.Module, shadow: list[Tensor]) -> None:
+    """Put the average in place of the stepped weights.
+
+    Raises:
+        CheckpointError: If the average covers another set of parameters than
+            the ones that train now.
+    """
+    trainable = [
+        parameter for parameter in model.parameters() if parameter.requires_grad
+    ]
+    if len(trainable) != len(shadow):
+        raise CheckpointError(
+            f"the saved average covers {len(shadow)} tensor(s) and "
+            f"{len(trainable)} train now, so which weights it averaged cannot "
+            f"be told."
+        )
+    with torch.no_grad():
+        for parameter, average in zip(trainable, shadow, strict=True):
+            parameter.copy_(average)
 
 
 def retain_run_checkpoints(
