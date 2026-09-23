@@ -231,3 +231,61 @@ def test_a_multihead_run_prints_an_error_table(tmp_path):
     finished = on_v1("--config", str(multihead_task(tmp_path)))
     assert finished.returncode == 0, finished.stderr
     assert "RMSE E / meV / atom" in finished.stderr
+
+
+FINETUNE_CONFIG = """
+runtime: {{work_dir: {work_dir}, name: tuned, seed: 2, error_table: PerAtomRMSE}}
+finetune: {{foundation_model: {foundation}}}
+data:
+  heads:
+    replay: {{train_file: {replay_file}, e0s: {{foundation: {{}}}}, weight: 0.5}}
+    target: {{train_file: {target_file}, e0s: {{isolated_atoms: {{}}}}}}
+  valid_fraction: 0.25
+  pin_memory: false
+  skip_evaluate_heads: [replay]
+model:
+  observables: [energy, forces]
+training:
+  max_num_epochs: 2
+  batch_size: 2
+  valid_batch_size: 2
+  lr: 0.01
+  scheduler: {{kind: {{constant: {{}}}}}}
+"""
+
+
+def fine_tune(directory: Path) -> subprocess.CompletedProcess:
+    """A foundation trained through the console script, then a fine-tune of
+    it through the same script, from a configuration file naming it."""
+    foundation = directory / "foundation"
+    foundation.mkdir()
+    trained = on_v1("--config", str(tiny_task(foundation)))
+    assert trained.returncode == 0, trained.stderr
+    config = directory / "tune.yaml"
+    config.write_text(
+        FINETUNE_CONFIG.format(
+            work_dir=directory,
+            foundation=foundation / "tiny.safetensors",
+            replay_file=foundation / "train.xyz",
+            target_file=write_frames(directory / "target.xyz", 8, seed=4),
+        )
+    )
+    return on_v1("--config", str(config))
+
+
+@needs_the_v1_engine
+def test_a_fine_tune_runs_from_the_console_script(tmp_path):
+    finished = fine_tune(tmp_path)
+    assert finished.returncode == 0, finished.stderr
+    sidecar = json.loads((tmp_path / "tuned.json").read_text())
+    record = sidecar["config"]
+    assert [parent["role"] for parent in record["parents"]] == ["initial_weights"]
+    assert set(record["heads"]) == {"replay", "target"}
+
+
+@needs_the_v1_engine
+def test_a_fine_tune_leaves_the_replay_head_out_of_its_table(tmp_path):
+    finished = fine_tune(tmp_path)
+    assert finished.returncode == 0, finished.stderr
+    assert "valid_target" in finished.stderr
+    assert "valid_replay" not in finished.stderr

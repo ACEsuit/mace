@@ -26,6 +26,7 @@ from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import load_default_catalogue
 from mace_core.stages import TrainedModel
 
+from mace_torch.finetune.foundation import read_foundation
 from mace_torch.train import (
     run_data_stage,
     run_model_stage,
@@ -89,11 +90,29 @@ def run(config: ResolvedConfig) -> TrainedModel:
 
     The three stages and the objects between them. A stage takes the previous
     stage's object and nothing else, so there is no state here for them to
-    disagree about.
+    disagree about. A fine-tune reads its foundation model first, and hands
+    the data stage what it needs of it and the model stage the rest.
     """
     catalogue = load_default_catalogue()
-    data = run_data_stage(config, catalogue)
-    built = run_model_stage(config, data, catalogue)
+    foundation = (
+        read_foundation(config.finetune.foundation_model, catalogue)
+        if config.finetune.foundation_model is not None
+        else None
+    )
+    samples_by_descriptor = any(
+        head.subselect is not None and head.subselect.method == "fps"
+        for head in config.data.heads.values()
+    )
+    data = run_data_stage(
+        config,
+        catalogue,
+        foundation=(
+            foundation.context(describe=samples_by_descriptor)
+            if foundation is not None
+            else None
+        ),
+    )
+    built = run_model_stage(config, data, catalogue, foundation=foundation)
     return run_train_stage(
         config,
         built,
