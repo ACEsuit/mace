@@ -172,6 +172,7 @@ def make_loader(
     num_workers: int = 0,
     pin_memory: bool = False,
     drop_last: bool = False,
+    seed: int | None = None,
 ) -> DataLoader:
     """A loader whose batches are :class:`TrainingBatch`."""
 
@@ -192,6 +193,11 @@ def make_loader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
+        # Its own generator, seeded by the run, so the order is the run's to
+        # reproduce and not whatever the global one has drawn before. The
+        # frozen tree seeds its training loader the same way
+        # (`mace/cli/run_train.py:778`).
+        generator=torch.Generator().manual_seed(seed) if seed is not None else None,
         collate_fn=collate,
         num_workers=num_workers,
         pin_memory=pin_memory,

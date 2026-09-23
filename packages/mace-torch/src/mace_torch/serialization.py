@@ -40,6 +40,7 @@ __all__ = [
     "canonical_state",
     "load_canonical_state",
     "load_checkpoint",
+    "read_canonical_state",
     "save_checkpoint",
 ]
 
@@ -208,6 +209,13 @@ def load_checkpoint(
             sidecar disagree, or if the model and the file hold different
             operators.
     """
+    document = read_sidecar(_refuse_pickle(path))
+    model = build(dict(document["config"]))
+    load_canonical_state(model, read_canonical_state(path))
+    return model
+
+
+def _refuse_pickle(path: str | Path) -> Path:
     source = Path(path)
     if source.suffix in {".pt", ".pth", ".ckpt"}:
         raise CheckpointError(
@@ -215,6 +223,20 @@ def load_checkpoint(
             f"whatever it contains, which is why it is not a format this reads. "
             f"Convert it first."
         )
+    return source
+
+
+def read_canonical_state(path: str | Path) -> dict[str, dict[str, Tensor]]:
+    """The tensors of a checkpoint, by operator, checked against the sidecar.
+
+    For a caller that already holds a model and wants a written state back in
+    it, which is what a run does to end on its best epoch.
+
+    Raises:
+        CheckpointError: If the file is not this format, or the tensors and
+            the sidecar disagree.
+    """
+    source = _refuse_pickle(path)
     document = read_sidecar(source)
     flat = load_file(str(source.with_suffix(".safetensors")))
 
@@ -238,7 +260,4 @@ def load_checkpoint(
                 f"file and the sidecar says {wanted}."
             )
         state.setdefault(entry["module"], {})[entry["name"]] = value
-
-    model = build(dict(document["config"]))
-    load_canonical_state(model, state)
-    return model
+    return state

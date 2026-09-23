@@ -309,3 +309,49 @@ def test_the_record_carries_each_heads_energies_and_how_they_were_obtained(tmp_p
     assert record.values == {"H": HYDROGEN, "O": OXYGEN}
     assert record.source == "estimated"
     assert record.method == "isolated_atoms"
+
+
+@fp64_only
+def test_the_run_ends_on_the_model_it_wrote(tmp_path):
+    """The model a run returns is the checkpoint beside it, tensor for tensor.
+
+    The checkpoint is written on an improvement, so it holds the best epoch.
+    A run that returned its last epoch instead would hand back a model that is
+    not the one on disk, and report errors for the wrong one. The frozen tree
+    ends by loading that checkpoint back.
+    """
+    from mace_torch.serialization import canonical_state, read_canonical_state
+
+    config = configuration(tmp_path, max_num_epochs=6, lr=0.2)
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    trained = run_train_stage(config, built, checkpoint_path=tmp_path / "model")
+    assert trained.best_epoch is not None
+    written = read_canonical_state(tmp_path / "model")
+    held = canonical_state(trained.model)
+    assert set(written) == set(held)
+    for path in held:
+        for name, value in held[path].items():
+            assert torch.equal(value, written[path][name]), f"{path}:{name}"
+    assert trained.best_epoch != len(trained.history) - 1, (
+        "the best epoch is the last one, so this run cannot tell the two apart; "
+        "change the settings until it is not"
+    )
+
+
+@fp64_only
+def test_the_same_configuration_trains_the_same_run(tmp_path):
+    """The shuffle is seeded by the run, not drawn from the global generator,
+    so two runs of one configuration step on the same batches in the same
+    order and report the same losses to the last bit."""
+
+    def history(directory):
+        config = configuration(directory, max_num_epochs=3)
+        data = run_data_stage(config, CATALOGUE)
+        built = run_model_stage(config, data, CATALOGUE)
+        return [record.valid_loss for record in run_train_stage(config, built).history]
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    assert history(first) == history(second)
