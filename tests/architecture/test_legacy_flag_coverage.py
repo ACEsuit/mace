@@ -207,3 +207,26 @@ def test_a_hard_freeze_is_refused_until_it_has_a_home():
     namespace = parser.parse_args(["--name", "run", "--freeze", "5"])
     with pytest.raises(legacy.LegacyFlagError, match="--freeze"):
         legacy.from_namespace(namespace, defaults=parser_defaults())
+
+
+@pytest.mark.parametrize(
+    "argv,keep,save_all",
+    [
+        ([], False, False),
+        (["--keep_checkpoints"], True, False),
+        (["--save_all_checkpoints"], False, True),
+    ],
+)
+def test_the_checkpoint_retention_flags_mean_what_they_meant(argv, keep, save_all):
+    """`--keep_checkpoints` is legacy's "keep all": set, no checkpoint is
+    deleted; unset, each one replaces the last. A count would read the flag
+    as "keep one" and the default as "keep every one", both the wrong way."""
+    from mace_core.config.resolved import ResolvedConfig
+
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(["--name", "run", "--train_file", "t.xyz", *argv])
+    config = ResolvedConfig.model_validate(
+        legacy.from_namespace(namespace, defaults=parser_defaults())
+    )
+    assert config.runtime.keep_checkpoints is keep
+    assert config.runtime.save_all_checkpoints is save_all
