@@ -104,3 +104,53 @@ def test_a_flag_with_no_v1_home_is_refused_on_a_real_command_line():
     namespace = parser.parse_args(["--name", "run", "--default_dtype", "float32"])
     with pytest.raises(legacy.LegacyFlagError, match="default_dtype"):
         legacy.from_namespace(namespace, defaults=parser_defaults())
+
+
+def test_the_plainest_real_command_line_validates_into_a_configuration():
+    """Not only carried across: validated. A mapping that the schema then
+    refuses is a shim that translates nothing, however right its keys look."""
+    from mace_core.config.resolved import ResolvedConfig
+
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(["--name", "run", "--train_file", "train.xyz"])
+    ResolvedConfig.model_validate(
+        legacy.from_namespace(namespace, defaults=parser_defaults())
+    )
+
+
+def test_a_soft_freeze_reaches_the_parameter_group_it_names():
+    """`--lr_params_factors` is JSON in a string, keyed `<group>_lr_factor`;
+    the groups here are named without the suffix. A factor that does not
+    arrive under the group's own name is a freeze that freezes nothing."""
+    from mace_core.config.resolved import ResolvedConfig
+
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(
+        [
+            "--name",
+            "run",
+            "--train_file",
+            "train.xyz",
+            "--lr_params_factors",
+            '{"embedding_lr_factor": 0.0, "interactions_lr_factor": 1.0, '
+            '"products_lr_factor": 0.5, "readouts_lr_factor": 1.0}',
+        ]
+    )
+    config = ResolvedConfig.model_validate(
+        legacy.from_namespace(namespace, defaults=parser_defaults())
+    )
+    assert config.training.scheduler.group_factors == {
+        "embedding": 0.0,
+        "interactions": 1.0,
+        "products": 0.5,
+        "readouts": 1.0,
+    }
+
+
+def test_the_default_factors_write_nothing():
+    """Every factor at one is no factor at all, and saying so in the recorded
+    configuration would make a legacy run look tuned when it was not."""
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(["--name", "run", "--train_file", "train.xyz"])
+    values = legacy.from_namespace(namespace, defaults=parser_defaults())
+    assert "group_factors" not in values.get("training", {}).get("scheduler", {})
