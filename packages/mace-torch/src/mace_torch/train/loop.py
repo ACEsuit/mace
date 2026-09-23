@@ -33,11 +33,16 @@ from mace_core.config.training import (
 )
 from mace_core.stages import EpochRecord, TrainedModel
 from mace_core.tables import Row, error_table
-from torch import nn
+from torch import Tensor, nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
 
 from mace_torch.data import TrainingBatch
+from mace_torch.serialization import (
+    canonical_state,
+    load_canonical_state,
+    read_canonical_state,
+)
 from mace_torch.train.checkpoint import RunState, read_run_state, write_model
 from mace_torch.train.checkpoint import write_run_state as _write_run_state
 from mace_torch.train.contracts import TorchBuiltModel
@@ -213,6 +218,7 @@ def run_train_stage(
     )
 
     state = RunState(epoch=0)
+    best_state: dict[str, dict[str, Tensor]] | None = None
     if resume:
         if checkpoint_path is None:
             raise ValueError(
@@ -222,6 +228,10 @@ def run_train_stage(
         state = read_run_state(
             checkpoint_path, optimizer=optimizer, scheduler=scheduler, ema=ema
         )
+        # The best epoch so far belongs to the run that wrote it. Taken from
+        # its file, so a resumed run that never improves still ends on it.
+        if Path(checkpoint_path).with_suffix(".safetensors").is_file():
+            best_state = read_canonical_state(checkpoint_path)
 
     if config.training.dry_run:
         # Before any epoch and before any file: the point of the flag is to
@@ -279,6 +289,9 @@ def run_train_stage(
                 valid_loss = selection_loss(per_head, config.training.checkpoint_metric)
                 if best_loss is None or valid_loss < best_loss:
                     best_loss, best_epoch, since_best = valid_loss, epoch, 0
+                    # Inside the average's context, so what is kept is what
+                    # was scored, which is also what the checkpoint holds.
+                    best_state = _snapshot(model)
                     if checkpoint_path is not None:
                         written = write_model(checkpoint_path, model, built.metadata)
                 else:
@@ -306,7 +319,14 @@ def run_train_stage(
         if since_best >= config.training.patience:
             break
 
-    if ema is not None:
+    if best_state is not None:
+        # The run ends on its best epoch, as the frozen tree does by loading
+        # its last checkpoint, which it writes only on an improvement. Ending
+        # on the last epoch instead returns a model that is not the one on
+        # disk, and every number reported after training describes the
+        # wrong one of the two.
+        load_canonical_state(model, best_state)
+    elif ema is not None:
         # The run's model is the averaged one. Leaving the stepped weights in
         # place would return a model that differs from the checkpoint beside
         # it and from every number the run reported.
@@ -368,7 +388,7 @@ def report_errors(
     table = error_table(
         config.runtime.error_table,
         rows,
-        skip_heads=config.runtime.skip_evaluate_heads,
+        skip_heads=config.data.skip_evaluate_heads,
     )
     logger.info("Errors on the training and validation sets:\n%s", table)
     tracker.summary(
@@ -399,7 +419,7 @@ def report_errors(
             error_table(
                 config.runtime.error_table,
                 test_rows,
-                skip_heads=config.runtime.skip_evaluate_heads,
+                skip_heads=config.data.skip_evaluate_heads,
             ),
         )
     return table
@@ -515,6 +535,14 @@ def _enter_stage(
         for group in optimizer.param_groups:
             group["lr"] = stage.lr
     return loss, optimizer, scheduler
+
+
+def _snapshot(model: nn.Module) -> dict[str, dict[str, Tensor]]:
+    """Every operator's canonical tensors, copied, so later steps leave them."""
+    return {
+        path: {name: value.detach().clone() for name, value in tensors.items()}
+        for path, tensors in canonical_state(model).items()
+    }
 
 
 def _step_schedule(scheduler: LRScheduler | None, valid_loss: float | None) -> None:

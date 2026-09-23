@@ -477,4 +477,5 @@ def _evaluation_loader(
         float_dtype=precision.model,
         num_workers=config.data.num_workers,
         pin_memory=config.data.pin_memory,
+        seed=config.runtime.seed if shuffle else None,
     )
