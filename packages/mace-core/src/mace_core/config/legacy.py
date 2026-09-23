@@ -36,6 +36,7 @@ source line in front of whoever made it.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -691,9 +692,49 @@ def _collapse_schedule(namespace: Any, values: dict[str, Any]) -> None:
         if (value := _read(namespace, dest)) is not None
     }
     _set(values, "training.scheduler.kind", {kind: settings})
-    factors = _read(namespace, "lr_params_factors")
+    factors = _group_factors(_read(namespace, "lr_params_factors"))
     if factors:
         _set(values, "training.scheduler.group_factors", factors)
+
+
+#: The suffix every key of the legacy factor mapping carries, and the groups
+#: here do not.
+_FACTOR_SUFFIX = "_lr_factor"
+
+
+def _group_factors(raw: Any) -> dict[str, float]:
+    """The per-group factors, keyed by the group names this schema uses.
+
+    Legacy takes JSON in a string, keyed ``embedding_lr_factor`` and so on,
+    and always has a value: its default sets all four to one. So the value is
+    parsed, the suffix dropped, and a mapping of ones dropped altogether,
+    since every factor at one is no factor and recording it would make a run
+    look tuned when it was not.
+
+    Raises:
+        LegacyFlagError: On a key without the suffix, which names no group,
+            and on JSON that is not a mapping.
+    """
+    if not raw:
+        return {}
+    parsed = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(parsed, Mapping):
+        raise LegacyFlagError(
+            f"--lr_params_factors is {raw!r}, which is not a mapping of "
+            f"'<group>{_FACTOR_SUFFIX}' to a factor."
+        )
+    factors: dict[str, float] = {}
+    for key, value in parsed.items():
+        if not key.endswith(_FACTOR_SUFFIX):
+            raise LegacyFlagError(
+                f"--lr_params_factors names {key!r}, which is not a group. The "
+                f"keys are '<group>{_FACTOR_SUFFIX}', for example "
+                f"'embedding{_FACTOR_SUFFIX}'."
+            )
+        factors[key[: -len(_FACTOR_SUFFIX)]] = float(value)
+    if all(value == 1.0 for value in factors.values()):
+        return {}
+    return factors
 
 
 def _collapse_stage_two(namespace: Any, values: dict[str, Any]) -> None:
