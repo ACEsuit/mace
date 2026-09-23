@@ -17,10 +17,15 @@ from ase.data import chemical_symbols
 from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
+from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.kernels.registry import get_backend
 from mace_core.metadata import ConfigRecord, HeadSummary, ModelMetadata, Provenance
-from mace_core.observables import ObservableCatalogue, resolve_requested
+from mace_core.observables import (
+    ObservableCatalogue,
+    RequestedOutputs,
+    resolve_requested,
+)
 from mace_core.stages import BuiltModel
 
 from mace_torch import __version__
@@ -30,7 +35,12 @@ from mace_torch.physics import DerivativeEngine
 from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
 
-__all__ = ["DEFAULT_HIDDEN_IRREPS", "ModelStageError", "run_model_stage"]
+__all__ = [
+    "DEFAULT_HIDDEN_IRREPS",
+    "ModelStageError",
+    "build_model",
+    "run_model_stage",
+]
 
 #: What one channel carries when the configuration does not say. The frozen
 #: tree spells the same choice as `--max_L 1`, which it then expands into a
@@ -76,6 +86,47 @@ def run_model_stage(
         The model wrapped in its derivative engine, with the bundle it was
         built from and the record that travels with the weights.
     """
+    engine, requested = build_model(
+        config,
+        catalogue,
+        z_table=data.z_table,
+        heads=data.heads,
+        e0s=data.e0s,
+        statistics=data.statistics,
+        precision=precision,
+        supports_float64=supports_float64,
+        initialize=initialize,
+    )
+    return BuiltModel(
+        model=engine,
+        outputs=requested,
+        data=data,
+        metadata=_metadata(config, data),
+    )
+
+
+def build_model(
+    config: ResolvedConfig,
+    catalogue: ObservableCatalogue,
+    *,
+    z_table: AtomicNumberTable,
+    heads: tuple[str, ...],
+    e0s: ResolvedE0s,
+    statistics: DatasetStatistics,
+    precision: PrecisionConfig = DEFAULT_PRECISION,
+    supports_float64: bool = True,
+    initialize: bool = True,
+) -> tuple[DerivativeEngine, RequestedOutputs]:
+    """The model a configuration describes, over an element table and heads.
+
+    Apart from :func:`run_model_stage` because rebuilding a model from its
+    checkpoint needs it without any data: the element table, the heads and the
+    energies come from the record, and every constant the statistics would
+    have set is put back from the tensors afterwards.
+
+    Returns:
+        The model wrapped in its derivative engine, and what it reads out.
+    """
     requested = resolve_requested(config.model.observables, catalogue)
     if not requested.observables:
         raise ModelStageError(
@@ -92,22 +143,24 @@ def run_model_stage(
     energy = next(
         (spec for spec in requested.observables if spec.name == "energy"), None
     )
-    energy_head = (
-        None
-        if energy is None
-        else EnergyOutputHead(
-            data.e0s,
-            data.heads,
-            data.z_table,
-            _scale_shift(config, data.statistics, len(data.heads)),
-            precision,
-            zbl_in_scale_shift=_ZBL_INSIDE[config.model.model],
-            supports_float64=supports_float64,
+    if energy is None:
+        raise ModelStageError(
+            "no `energy` observable is declared, and the derivative engine "
+            "differentiates an energy. A model without one is an inference "
+            "path this stage does not build yet."
         )
+    energy_head = EnergyOutputHead(
+        e0s,
+        heads,
+        z_table,
+        _scale_shift(config, statistics, len(heads)),
+        precision,
+        zbl_in_scale_shift=_ZBL_INSIDE[config.model.model],
+        supports_float64=supports_float64,
     )
     model = MACEModel(
         get_backend(config.model.backend),
-        atomic_numbers=list(data.z_table.zs),
+        atomic_numbers=list(z_table.zs),
         observables=requested.observables,
         energy_head=energy_head,
         num_layers=config.model.num_interactions,
@@ -117,7 +170,7 @@ def run_model_stage(
         num_radial=config.model.num_radial_basis,
         cutoff=config.model.r_max,
         correlation=config.model.correlation,
-        avg_num_neighbors=data.statistics.avg_num_neighbors,
+        avg_num_neighbors=statistics.avg_num_neighbors,
         radial_kind=config.model.radial_type,
         precision=precision.model,
         pair_repulsion=config.model.pair_repulsion,
@@ -125,27 +178,15 @@ def run_model_stage(
         readout_hidden=_readout_hidden(config),
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
-        num_heads=len(data.heads),
+        num_heads=len(heads),
     )
-    if energy is None:
-        raise ModelStageError(
-            "no `energy` observable is declared, and the derivative engine "
-            "differentiates an energy. A model without one is an inference "
-            "path this stage does not build yet."
-        )
     if initialize:
         # Seeded from the run, so the same configuration and the same seed
         # rebuild the same model. The walk is over the model rather than the
         # engine, so wrapping it in one more layer later cannot change a
         # weight.
         initialize_model_weights(model, config.runtime.seed)
-    engine = DerivativeEngine(model, energy, None, inputs=catalogue.inputs)
-    return BuiltModel(
-        model=engine,
-        outputs=requested,
-        data=data,
-        metadata=_metadata(config, data),
-    )
+    return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
 
 
 def _scale_shift(
