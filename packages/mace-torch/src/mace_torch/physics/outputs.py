@@ -48,11 +48,24 @@ from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 __all__ = [
+    "ENGINE_EXTRA_ROWS",
     "DerivativeEngine",
+    "atomic_virials_and_stresses",
     "cell_volume_and_mask",
+    "hessian_of_energy",
     "prepare_inputs",
     "stress_from_strain_gradient",
 ]
+
+
+#: What each quantity this engine adds to ``extras`` has a row for. The
+#: Hessian is not here: it couples every atom with every other, so it has no
+#: row per atom to cut, and it is taken on a batch with no padding.
+ENGINE_EXTRA_ROWS: dict[str, str] = {
+    "edge_forces": "edge",
+    "atomic_virials": "atom",
+    "atomic_stresses": "atom",
+}
 
 
 def cell_volume_and_mask(
@@ -102,6 +115,80 @@ def stress_from_strain_gradient(
     # The near-degenerate backstop. A cell that is not quite singular divides
     # to something finite and enormous, which the mask above does not catch.
     return torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
+
+
+def atomic_virials_and_stresses(
+    edge_forces: Tensor,
+    edge_index: Tensor,
+    vectors: Tensor,
+    batch: Tensor,
+    cell: Tensor,
+    pbc: Tensor | None = None,
+) -> tuple[Tensor, Tensor]:
+    """The virial and the stress of each atom, from the forces on its edges.
+
+    Each edge's contribution to the strain derivative, ``dE/dv (x) v``, is
+    split evenly between its two atoms and symmetrised, so the atoms' shares
+    add up to the whole structure's: their virials to ``virials`` and their
+    stresses to ``stress``, with the same signs and the same masking of a
+    structure that has no volume. The frozen tree's split, which it takes from
+    an edge force of the opposite sign.
+
+    Args:
+        edge_forces: ``-dE/dv`` per edge, ``[n_edges, 3]``, as the engine
+            reports them.
+        edge_index: ``[2, n_edges]``, sender then receiver.
+        vectors: The edge vectors, ``[n_edges, 3]``.
+        batch: ``[n_atoms]``, which structure each atom belongs to.
+        cell: ``[n_graphs, 3, 3]``.
+        pbc: ``[n_graphs, 3]`` of bool, or ``None``.
+
+    Returns:
+        ``(virials, stresses)``, each ``[n_atoms, 3, 3]``.
+    """
+    num_atoms = int(batch.shape[0])
+    per_edge = -torch.einsum("ei,ej->eij", edge_forces, vectors)
+    shares = torch.zeros(
+        (num_atoms, 3, 3), dtype=per_edge.dtype, device=per_edge.device
+    )
+    shares = shares.index_add(0, edge_index[0], per_edge)
+    shares = shares.index_add(0, edge_index[1], per_edge) / 2
+    shares = (shares + shares.transpose(-1, -2)) / 2
+    volume, periodic = cell_volume_and_mask(cell, pbc)
+    stresses = shares / volume[batch].view(-1, 1, 1)
+    stresses = torch.where(
+        periodic[batch].view(-1, 1, 1), stresses, torch.zeros_like(stresses)
+    )
+    stresses = torch.where(
+        torch.abs(stresses) < 1e10, stresses, torch.zeros_like(stresses)
+    )
+    return -shares, stresses
+
+
+def hessian_of_energy(forces: Tensor, positions: Tensor) -> Tensor:
+    """``d2E / dr dr``, one row per force component.
+
+    Returns:
+        ``[3 * n_atoms, n_atoms, 3]``: row ``3 * i + a`` is the gradient of
+        the ``a`` component of ``-forces[i]`` against every position, which is
+        the frozen tree's layout.
+    """
+    flat = -forces.reshape(-1)
+    rows = torch.eye(flat.shape[0], dtype=flat.dtype, device=flat.device)
+    try:
+        (hessian,) = torch.autograd.grad(
+            [flat], [positions], [rows], retain_graph=True, is_grads_batched=True
+        )
+    except RuntimeError:
+        # An operator without a batching rule. Row by row gives the same
+        # numbers, only slower.
+        hessian = torch.stack(
+            [
+                torch.autograd.grad([flat[index]], [positions], retain_graph=True)[0]
+                for index in range(flat.shape[0])
+            ]
+        )
+    return hessian
 
 
 def _symmetric_strain(
@@ -283,13 +370,22 @@ class DerivativeEngine(nn.Module):
         Args:
             graph: The flat dict, read only.
             compute: Any of ``forces``, ``stress``, ``virials``,
-                ``edge_forces``.
+                ``edge_forces``, ``atomic_virials``, ``atomic_stresses`` and
+                ``hessian``.
             training: ``True`` keeps the graph alive so the derivative can
                 itself be differentiated, which is what force training needs.
         """
         wanted = set(compute)
         by_input = self.derivative_names()
-        known = {"forces", "stress", "virials", "edge_forces"} | set(by_input.values())
+        per_atom_strain = {"atomic_virials", "atomic_stresses"}
+        known = {
+            "forces",
+            "stress",
+            "virials",
+            "edge_forces",
+            "hessian",
+            *per_atom_strain,
+        } | set(by_input.values())
         unknown = sorted(wanted - known)
         if unknown:
             undeclared = [
@@ -311,7 +407,11 @@ class DerivativeEngine(nn.Module):
                 f"{sorted(known)}."
             )
         need_strain = bool(wanted & {"stress", "virials"})
-        need_forces = bool(wanted & {"forces", "edge_forces"}) or need_strain
+        need_edges = "edge_forces" in wanted or bool(wanted & per_atom_strain)
+        need_hessian = "hessian" in wanted
+        need_forces = (
+            bool(wanted & {"forces"}) or need_edges or need_strain or need_hessian
+        )
         # Only the inputs whose derivative was actually asked for. A leaf that
         # nobody differentiates still holds the whole backward graph alive.
         leaves = [
@@ -349,7 +449,7 @@ class DerivativeEngine(nn.Module):
             assert displacement is not None
             targets.append(displacement)
             order.append("displacement")
-        if "edge_forces" in wanted:
+        if need_edges:
             targets.append(prepared["vectors"])
             order.append("vectors")
         for spec in leaves:
@@ -367,13 +467,15 @@ class DerivativeEngine(nn.Module):
             outputs=[energy],
             inputs=targets,
             grad_outputs=[torch.ones_like(energy)],
-            retain_graph=training or len(targets) > 1,
-            create_graph=training,
+            retain_graph=training or need_hessian or len(targets) > 1,
+            # The Hessian differentiates the forces again, so they have to
+            # carry their own graph.
+            create_graph=training or need_hessian,
             allow_unused=True,
         )
         by_name = dict(zip(order, gradients, strict=True))
 
-        if "forces" in wanted:
+        if "forces" in wanted or need_hessian:
             gradient = by_name["positions"]
             # A completely dissociated structure has no edges, so the energy
             # does not depend on the positions at all and the gradient comes
@@ -404,11 +506,34 @@ class DerivativeEngine(nn.Module):
                 gradient = torch.zeros_like(prepared[spec.name])
             output.extras[name] = self.energy.derivative_sign(spec.name) * gradient
 
-        if "edge_forces" in wanted:
+        if need_edges:
             gradient = by_name["vectors"]
             # The sign is flipped once, here, so the deployment adapters do not
             # each flip it again on their own.
-            output.extras["edge_forces"] = (
+            edge_forces = (
                 torch.zeros_like(prepared["vectors"]) if gradient is None else -gradient
             )
+            if "edge_forces" in wanted:
+                output.extras["edge_forces"] = edge_forces
+            if wanted & per_atom_strain:
+                virials, stresses = atomic_virials_and_stresses(
+                    edge_forces,
+                    prepared["edge_index"],
+                    prepared["vectors"],
+                    prepared["batch"],
+                    prepared["cell"],
+                    graph["pbc"] if "pbc" in graph else None,  # noqa: SIM401
+                )
+                if "atomic_virials" in wanted:
+                    output.extras["atomic_virials"] = virials
+                if "atomic_stresses" in wanted:
+                    output.extras["atomic_stresses"] = stresses
+        if need_hessian:
+            assert output.forces is not None
+            hessian = hessian_of_energy(output.forces, positions)
+            output.extras["hessian"] = hessian if training else hessian.detach()
+            if "forces" not in wanted:
+                output.forces = None
+            elif not training:
+                output.forces = output.forces.detach()
         return output

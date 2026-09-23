@@ -28,10 +28,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field, fields
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 __all__ = [
     "CORE_FIELD_NAMES",
+    "CORE_FIELD_ROWS",
     "FIELD_BY_OBSERVABLE",
     "OBSERVABLE_BY_FIELD",
     "RETIRED_NAMES",
@@ -204,6 +205,19 @@ class MACEOutput(Generic[TensorT]):
 CORE_FIELD_NAMES: tuple[str, ...] = tuple(
     f.name for f in fields(MACEOutput) if f.name != "extras"
 )
+
+#: What each core field has a row for, as its shape above states: one per atom
+#: or one per structure. Declared beside the fields, so whatever cuts a batch
+#: back into its structures reads it here instead of keeping its own list of
+#: which names are which.
+CORE_FIELD_ROWS: dict[str, Literal["atom", "graph"]] = {
+    "total_energy": "graph",
+    "node_energies": "atom",
+    "forces": "atom",
+    "stress": "graph",
+    "virials": "graph",
+    "dipole": "graph",
+}
 
 #: A legacy spelling this type does not carry, and the field that replaced it.
 #: These are **not** resolvable names: :meth:`MACEOutput.get` does not find a

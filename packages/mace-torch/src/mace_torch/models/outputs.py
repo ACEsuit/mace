@@ -27,12 +27,18 @@ from mace_torch.kernels import segment_sum
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.heads import ObservableHead
 
-__all__ = ["ENERGY_OBSERVABLE", "MACEOutputs"]
+__all__ = ["ENERGY_EXTRA_ROWS", "ENERGY_OBSERVABLE", "MACEOutputs"]
 
 #: The one observable whose head is not a plain readout. Its site energies go
 #: through the energy head, which owns the isolated-atom energies, the scale and
 #: shift, and the two-reduction structure.
 ENERGY_OBSERVABLE = "energy"
+
+#: What each quantity the energy head adds to ``extras`` has a row for.
+ENERGY_EXTRA_ROWS: dict[str, str] = {
+    "interaction_energy": "graph",
+    "node_interaction_energy": "atom",
+}
 
 
 class MACEOutputs(nn.Module):
@@ -177,6 +183,7 @@ class MACEOutputs(nn.Module):
                 fields["total_energy"] = terms.total_energy
                 fields["node_energies"] = terms.node_energy
                 extras["interaction_energy"] = terms.interaction_energy
+                extras["node_interaction_energy"] = terms.node_interaction_energy
                 continue
 
             value = head(features, node_head)

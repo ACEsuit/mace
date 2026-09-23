@@ -177,58 +177,18 @@ def read_foundation(
             written before heads were recorded, or heads that disagree about
             the elements.
     """
-    from ase.data import atomic_numbers as numbers_of
-    from mace_core.data.backend import DatasetStatistics
-    from mace_core.elements import ResolvedE0s
+    from mace_torch.deploy.loader import DeployError, load_deployed
 
-    from mace_torch.serialization import load_checkpoint, read_sidecar
-    from mace_torch.train.model_stage import DEFAULT_PRECISION, build_model
-
-    document = read_sidecar(path)
-    metadata = ModelMetadata.model_validate(document["config"])
-    config = ResolvedConfig.model_validate(metadata.config.resolved)
-    heads = tuple(config.data.heads)
-    missing = [head for head in heads if head not in metadata.heads]
-    if not heads or missing:
-        raise FoundationError(
-            f"{path} records no isolated-atom energies for heads "
-            f"{missing or list(heads)}, so the model cannot be rebuilt: its "
-            f"element table and its energies both come from that record."
-        )
-    e0s = {
-        head: {
-            int(numbers_of[symbol]): float(energy)
-            for symbol, energy in metadata.heads[head].e0.values.items()
-        }
-        for head in heads
-    }
-    tables = {tuple(sorted(values)) for values in e0s.values()}
-    if len(tables) != 1:
-        raise FoundationError(
-            f"{path} records energies over different elements per head: "
-            f"{sorted(tables)}. One model has one element table."
-        )
-    z_table = AtomicNumberTable(list(tables.pop()))
-
-    def build(_: object) -> nn.Module:
-        engine, _ = build_model(
-            config,
-            catalogue,
-            z_table=z_table,
-            heads=heads,
-            e0s=ResolvedE0s(e0s),
-            statistics=DatasetStatistics(),
-            precision=precision or DEFAULT_PRECISION,
-            initialize=False,
-        )
-        return engine
-
+    try:
+        deployed = load_deployed(path, catalogue=catalogue, precision=precision)
+    except DeployError as error:
+        raise FoundationError(str(error)) from error
     return Foundation(
-        engine=load_checkpoint(path, build),
-        config=config,
-        metadata=metadata,
-        z_table=z_table,
-        heads=heads,
-        e0s=e0s,
+        engine=deployed.engine,
+        config=deployed.config,
+        metadata=deployed.metadata,
+        z_table=deployed.z_table,
+        heads=deployed.heads,
+        e0s=deployed.e0s,
         name=str(path),
     )

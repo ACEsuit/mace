@@ -213,7 +213,7 @@ def test_an_unknown_derivative_name_lists_the_ones_that_exist():
     engine = build_engine()
     positions, numbers = molecule()
     with pytest.raises(ValueError, match="edge_forces"):
-        engine(build_graph(positions, numbers), compute=("hessian",))
+        engine(build_graph(positions, numbers), compute=("curvature",))
 
 
 @fp64_only
@@ -278,3 +278,50 @@ def test_a_batch_mixing_a_molecule_with_a_crystal_keeps_the_crystal_stress():
 
     assert not bool(periodic[0]) and bool(periodic[1])
     assert float(volume[0]) == 1.0 and float(volume[1]) == 64.0
+
+
+@fp64_only
+def test_the_hessian_is_the_derivative_of_minus_the_forces():
+    """Against central differences of the forces, which is what it is."""
+    engine = build_engine()
+    positions, numbers = molecule()
+    result = engine(build_graph(positions, numbers), compute=("forces", "hessian"))
+    hessian = result.extras["hessian"]
+    count = positions.shape[0]
+    assert hessian.shape == (3 * count, count, 3)
+    step = 1e-5
+    for atom, axis in ((0, 0), (1, 2)):
+        shifted = []
+        for sign in (1.0, -1.0):
+            moved = np.array(positions, dtype=float)
+            moved[atom, axis] += sign * step
+            forces = engine(build_graph(moved, numbers), compute=("forces",)).forces
+            shifted.append(forces)
+        column = -(shifted[0] - shifted[1]) / (2 * step)
+        # Column (atom, axis) of the Hessian is row (atom, axis) by symmetry.
+        torch.testing.assert_close(
+            hessian[3 * atom + axis], column, rtol=1e-6, atol=1e-8
+        )
+
+
+@fp64_only
+def test_the_atoms_shares_add_up_to_the_structure_s_virials_and_stress():
+    engine = build_engine()
+    positions, numbers, cell = crystal()
+    graph = build_graph(positions, numbers, cell=cell, pbc=(True, True, True))
+    result = engine(
+        graph,
+        compute=("forces", "stress", "virials", "atomic_virials", "atomic_stresses"),
+    )
+    torch.testing.assert_close(
+        result.extras["atomic_virials"].sum(dim=0),
+        result.virials[0],
+        rtol=1e-10,
+        atol=1e-12,
+    )
+    torch.testing.assert_close(
+        result.extras["atomic_stresses"].sum(dim=0),
+        result.stress[0],
+        rtol=1e-10,
+        atol=1e-12,
+    )
