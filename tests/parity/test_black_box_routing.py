@@ -139,9 +139,11 @@ def test_the_shared_runner_knows_about_both_engines():
         "the engine is read in tests/helpers.py and nowhere else"
     )
     for path in black_box_files():
-        # The launcher's own test is about the engine, so naming it there is
-        # the subject rather than a second place choosing it.
-        if path.name == "test_launcher_engine_parity.py":
+        # Two files have the engine as their subject rather than as something
+        # they happen to choose: the launcher's own parity test, and the one
+        # that exercises the v1 side specifically. Everything else is re-run on
+        # whichever engine the suite was asked for, and must not decide.
+        if path.name in ("test_launcher_engine_parity.py", "test_run_train_v1.py"):
             continue
         assert "MACE_ENGINE" not in path.read_text(), (
             f"{path.name} reads the engine itself; it is chosen in one place"

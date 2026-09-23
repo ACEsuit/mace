@@ -1,0 +1,212 @@
+"""From structures to batches, and what a batch has to satisfy.
+
+The properties worth pinning are the ones whose failure is silent: a graph and
+its labels drifting out of alignment, a per-graph field joined as if it were
+per-atom, and a declared observable the data does not carry.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+import torch
+from mace_core.data.configuration import Configuration
+from mace_core.elements import AtomicNumberTable
+from mace_core.observables import load_default_catalogue, resolve_requested
+from mace_torch.data import (
+    GraphDataset,
+    collate_training,
+    graph_from_configuration,
+    make_loader,
+    target_specs,
+    targets_from_configuration,
+)
+
+
+def field(batch, name) -> torch.Tensor:
+    """One graph field as a tensor. `num_graphs` is the one that is not."""
+    value = batch.graph[name]
+    assert isinstance(value, torch.Tensor)
+    return value
+
+
+CATALOGUE = load_default_catalogue()
+REQUESTED = resolve_requested(["energy", "forces"], CATALOGUE)
+SPECS = target_specs(REQUESTED)
+Z_TABLE = AtomicNumberTable([1, 8])
+CUTOFF = 5.0
+
+WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
+
+
+def water(seed: int = 0, head: str = "default") -> Configuration:
+    generator = np.random.default_rng(seed)
+    return Configuration(
+        atomic_numbers=np.array([8, 1, 1]),
+        positions=WATER + generator.normal(scale=0.01, size=(3, 3)),
+        properties={
+            "energy": -2067.0 + 0.1 * seed,
+            "forces": generator.normal(size=(3, 3)),
+        },
+        head=head,
+    )
+
+
+def test_a_structure_becomes_the_fields_the_schema_declares():
+    graph = graph_from_configuration(water(), cutoff=CUTOFF, z_table=Z_TABLE)
+    assert set(graph) == {
+        "positions",
+        "atomic_numbers",
+        "edge_index",
+        "shifts",
+        "unit_shifts",
+        "cell",
+        "pbc",
+        "weight",
+        "head",
+    }
+
+
+def test_the_per_graph_fields_carry_no_leading_axis_before_collation():
+    """The collation stacks them, so a leading one would make a batch of
+    shape [n, 1] that indexes as if every graph had one of everything."""
+    graph = graph_from_configuration(water(), cutoff=CUTOFF, z_table=Z_TABLE)
+    assert graph["cell"].shape == (3, 3)
+    assert graph["pbc"].shape == (3,)
+    assert graph["head"].shape == ()
+
+
+def test_an_element_the_model_was_not_built_for_is_refused_at_the_graph():
+    """Otherwise it indexes out of the one-hot at the first forward, where
+    nothing names the structure it came from."""
+    carbon = Configuration(
+        atomic_numbers=np.array([6]),
+        positions=np.zeros((1, 3)),
+        properties={"energy": 0.0, "forces": np.zeros((1, 3))},
+    )
+    with pytest.raises(ValueError, match=r"\[6\]"):
+        graph_from_configuration(carbon, cutoff=CUTOFF, z_table=Z_TABLE)
+
+
+def test_a_structure_missing_a_property_is_masked_rather_than_refused():
+    """A database that labels energies for everything and forces for a tenth
+    of it is ordinary. The weight is what makes the term contribute nothing,
+    so no loss has to remember which values are absent."""
+    unlabelled = Configuration(
+        atomic_numbers=np.array([8, 1, 1]),
+        positions=WATER,
+        properties={"energy": -2067.0},
+    )
+    targets, weights = targets_from_configuration(unlabelled, SPECS, 3)
+    assert weights == {"energy": 1.0, "forces": 0.0}
+    assert targets["forces"].shape == (3, 3)
+    assert not targets["forces"].any()
+
+
+def test_a_structure_can_weigh_one_of_its_properties_down():
+    """The same mechanism as the mask, and the reason it is a weight rather
+    than a boolean."""
+    weighted = Configuration(
+        atomic_numbers=np.array([8, 1, 1]),
+        positions=WATER,
+        properties={"energy": -2067.0, "forces": np.zeros((3, 3))},
+        property_weights={"forces": 0.25},
+    )
+    _, weights = targets_from_configuration(weighted, SPECS, 3)
+    assert weights == {"energy": 1.0, "forces": 0.25}
+
+
+def test_a_batch_joins_the_labels_the_way_it_joins_the_nodes():
+    """One energy per structure, one force per atom, in the same order."""
+    dataset = GraphDataset(
+        [water(0), water(1)], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
+    )
+    batch = collate_training([dataset[0], dataset[1]], z_table=Z_TABLE)
+    assert batch.property_weights["energy"].tolist() == [1.0, 1.0]
+    assert batch.targets["energy"].shape == (2,)
+    assert batch.targets["forces"].shape == (6, 3)
+    assert batch.graph["num_graphs"] == 2
+
+
+def test_the_labels_stay_with_their_own_structure():
+    """The failure this guards is a run that trains on shuffled labels and
+    reports a loss that simply stops going down."""
+    first, second = water(0), water(1)
+    dataset = GraphDataset(
+        [first, second], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
+    )
+    batch = collate_training([dataset[0], dataset[1]], z_table=Z_TABLE)
+    assert batch.targets["energy"][0].item() == pytest.approx(
+        first.properties["energy"]
+    )
+    assert torch.allclose(
+        batch.targets["forces"][3:],
+        torch.as_tensor(second.properties["forces"], dtype=torch.float64),
+    )
+
+
+def test_the_element_index_is_the_position_in_the_model_s_table():
+    dataset = GraphDataset([water()], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS)
+    batch = collate_training([dataset[0]], z_table=Z_TABLE)
+    assert field(batch, "element_index").tolist() == [1, 0, 0]
+
+
+def test_a_head_name_becomes_its_position_in_the_model_s_head_list():
+    dataset = GraphDataset(
+        [water(head="dft"), water(head="ccsd")],
+        cutoff=CUTOFF,
+        z_table=Z_TABLE,
+        targets=SPECS,
+        heads=("dft", "ccsd"),
+    )
+    batch = collate_training([dataset[0], dataset[1]], z_table=Z_TABLE)
+    assert field(batch, "head").tolist() == [0, 1]
+
+
+def test_the_graph_count_comes_from_ptr_and_is_a_plain_int():
+    """A tensor here is a host read in every reduction that uses it."""
+    dataset = GraphDataset(
+        [water(0), water(1), water(2)], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
+    )
+    batch = collate_training([dataset[i] for i in range(3)], z_table=Z_TABLE)
+    assert isinstance(batch.graph["num_graphs"], int)
+    assert batch.graph["num_graphs"] == 3
+
+
+def test_a_loader_yields_batches_of_the_asked_for_size():
+    dataset = GraphDataset(
+        [water(i) for i in range(5)], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
+    )
+    loader = make_loader(dataset, batch_size=2, shuffle=False)
+    sizes = [batch.graph["num_graphs"] for batch in loader]
+    assert sizes == [2, 2, 1]
+
+
+def slab(third_row):
+    """Four atoms periodic in two directions, with the given third cell row."""
+    return Configuration(
+        atomic_numbers=np.array([8, 1, 1, 8]),
+        positions=np.array(
+            [[0.3, 0.4, 0.2], [2.3, 0.5, 0.3], [0.5, 2.3, 1.5], [2.5, 2.6, 1.1]]
+        ),
+        cell=np.array([[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], third_row]),
+        pbc=(True, True, False),
+    )
+
+
+def test_a_slab_with_no_vacuum_keeps_a_volume():
+    """Its third cell row is all zeros. The neighbour search inflates that row
+    so the volume is not zero, and the graph has to carry the inflated cell:
+    with the zero row, the stress is a division by zero and is masked away,
+    where the frozen tree reports a stress for the same structure."""
+    graph = graph_from_configuration(
+        slab([0.0, 0.0, 0.0]), cutoff=CUTOFF, z_table=Z_TABLE
+    )
+    assert abs(float(np.linalg.det(graph["cell"]))) > 0.0
+
+
+def test_a_slab_with_vacuum_keeps_its_physical_cell():
+    graph = graph_from_configuration(
+        slab([0.0, 0.0, 20.0]), cutoff=CUTOFF, z_table=Z_TABLE
+    )
+    assert np.array_equal(graph["cell"], np.diag([4.0, 4.0, 20.0]))

@@ -95,6 +95,7 @@ def open_dataset(
     format: str = "auto",
     key_spec: KeySpecification,
     head: str = "Default",
+    keep_isolated_atoms: bool = False,
 ) -> DataBackend:
     """Open ``source`` with a named backend, or by asking which one claims it.
 
@@ -103,6 +104,7 @@ def open_dataset(
         format: A registered backend name, or ``"auto"``.
         key_spec: Which keys carry which property.
         head: Which head the configurations belong to.
+        keep_isolated_atoms: Leave the single-atom reference structures in.
 
     Raises:
         UnknownBackendError: A named format nobody registered. Lists what there
@@ -136,7 +138,12 @@ def open_dataset(
                     f"import: {record.reason}"
                 ),
             )
-        return record.factory.open(source, key_spec=key_spec, head=head)
+        return record.factory.open(
+            source,
+            key_spec=key_spec,
+            head=head,
+            keep_isolated_atoms=keep_isolated_atoms,
+        )
 
     claimed = [
         name
@@ -162,4 +169,6 @@ def open_dataset(
                 f"sniff methods, and picking the first would hide it."
             ),
         )
-    return discovered[claimed[0]].factory.open(source, key_spec=key_spec, head=head)
+    return discovered[claimed[0]].factory.open(
+        source, key_spec=key_spec, head=head, keep_isolated_atoms=keep_isolated_atoms
+    )

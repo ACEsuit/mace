@@ -15,6 +15,14 @@ from one evaluation at the fixed point. A gradient taken through the trajectory
 would be a gradient of the solver, not of the physics, and would cost memory
 proportional to the step count.
 
+That detach is **exact**, and only because the loop minimises the energy it
+then reports: at the fixed point the derivative against the relaxed variable
+has vanished, so the term it would contribute to any other derivative is
+multiplied by zero. Measured on a coupled problem, the detached force agrees
+with a finite difference of the relaxed energy to 1.9e-10 on forces of order
+1.5. A fixed point of something other than the reported energy has no such
+cancellation, and the driver refuses derivatives for one: see `variational`.
+
 **The warm start is explicit.** The frozen tree caches the converged value by
 writing an attribute onto the model inside its forward, so two calls with the
 same inputs return different numbers depending on what ran before, with nothing
@@ -208,6 +216,21 @@ class FixedPointDriver(nn.Module):
                 produces an error naming this driver rather than a number that
                 silently omits the fixed point's own contribution.
         """
+        wanted = set(compute)
+        if wanted and not self.spec.variational:
+            # There is no implicit backward here, and without the stationarity
+            # that makes one unnecessary a derivative taken anyway is wrong by
+            # the term the fixed point contributes. It is a plausible number,
+            # which is the reason to refuse it rather than warn.
+            raise NotImplementedError(
+                f"{sorted(wanted)} were asked of {type(self).__name__} and its "
+                f"fixed point is declared not variational, so the converged "
+                f"{self.spec.variable!r} contributes a term this solver cannot "
+                f"produce: it has no implicit backward, and the stationarity "
+                f"that would make one unnecessary is exactly what `variational` "
+                f"says is absent. Evaluate it without derivatives, or give the "
+                f"model a solver that differentiates through its own solution."
+            )
         if second_derivatives:
             raise NotImplementedError(
                 f"a second derivative through {type(self).__name__} is not "

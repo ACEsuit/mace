@@ -35,6 +35,7 @@ dependencies = [
     # the release whose reserved-key behaviour the parser is written against.
     "numpy>=1.23",
     "ase>=3.23",
+    "safetensors>=0.4",
 ]
 
 # The all-pairs backend needs nothing beyond numpy, so neighbour-list
