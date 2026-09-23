@@ -8,10 +8,14 @@ module everything else reaches into, which is what the frozen tree's
 """
 
 from mace_torch.train.checkpoint import (
+    ResumeResult,
     RunState,
+    latest_run_checkpoint,
+    read_run_checkpoint,
     read_run_state,
+    retain_run_checkpoints,
     write_model,
-    write_run_state,
+    write_run_checkpoint,
 )
 from mace_torch.train.data_stage import (
     DEFAULT_PRECISION,
@@ -76,6 +80,7 @@ __all__ = [
     "ModelStageError",
     "NullTracker",
     "ProportionalLoader",
+    "ResumeResult",
     "RunState",
     "RunningMetrics",
     "Tracker",
@@ -90,14 +95,17 @@ __all__ = [
     "epoch_values",
     "evaluate",
     "evaluate_heads",
+    "latest_run_checkpoint",
     "log_validation",
     "metric_specs",
     "open_tracker",
     "parameter_groups",
+    "read_run_checkpoint",
     "read_run_state",
     "reduce_loss",
     "register_loss",
     "report_errors",
+    "retain_run_checkpoints",
     "run_data_stage",
     "run_model_stage",
     "run_train_stage",
@@ -106,5 +114,5 @@ __all__ = [
     "terms_for",
     "train_one_epoch",
     "write_model",
-    "write_run_state",
+    "write_run_checkpoint",
 ]

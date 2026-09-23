@@ -28,6 +28,7 @@ from mace_core.stages import TrainedModel
 
 from mace_torch.finetune.foundation import read_foundation
 from mace_torch.train import (
+    latest_run_checkpoint,
     run_data_stage,
     run_model_stage,
     run_train_stage,
@@ -40,6 +41,9 @@ __all__ = ["NOT_MIGRATED", "main", "parse", "run"]
 #: words the launcher uses about a whole script, because a caller that has to
 #: skip cannot tell the two apart and should not have to.
 NOT_MIGRATED = "not yet available on v1 engine"
+
+
+logger = logging.getLogger(__name__)
 
 
 def parse(argv: Sequence[str] | None = None) -> ResolvedConfig:
@@ -113,12 +117,34 @@ def run(config: ResolvedConfig) -> TrainedModel:
         ),
     )
     built = run_model_stage(config, data, catalogue, foundation=foundation)
+    checkpoint_path = Path(config.runtime.work_dir) / config.runtime.name
     return run_train_stage(
         config,
         built,
         device=config.runtime.device,
-        checkpoint_path=Path(config.runtime.work_dir) / config.runtime.name,
+        checkpoint_path=checkpoint_path,
+        resume=_resumes(config, checkpoint_path),
     )
+
+
+def _resumes(config: ResolvedConfig, checkpoint_path: Path) -> bool:
+    """Whether the run continues one already written.
+
+    The frozen tree's contract for ``restart_latest``: the newest checkpoint
+    for the run's name if there is one, and a fresh run that says so if there
+    is none.
+    """
+    if not config.runtime.restart_latest:
+        return False
+    latest = latest_run_checkpoint(checkpoint_path.parent, checkpoint_path.name)
+    if latest is None:
+        logger.warning(
+            "restart_latest is set and there is no run checkpoint for %r in %s, "
+            "so the run starts at epoch 0",
+            checkpoint_path.name,
+            checkpoint_path.parent,
+        )
+    return latest is not None
 
 
 def main(argv: Sequence[str] | None = None) -> int:

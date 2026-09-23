@@ -41,12 +41,20 @@ from mace_torch.data import TrainingBatch
 from mace_torch.finetune.freeze import freeze
 from mace_torch.finetune.lora import inject_lora, merge_lora
 from mace_torch.serialization import (
+    CheckpointError,
     canonical_state,
     load_canonical_state,
     read_canonical_state,
 )
-from mace_torch.train.checkpoint import RunState, read_run_state, write_model
-from mace_torch.train.checkpoint import write_run_state as _write_run_state
+from mace_torch.train.checkpoint import (
+    RunState,
+    latest_run_checkpoint,
+    read_run_checkpoint,
+    read_run_state,
+    retain_run_checkpoints,
+    write_model,
+    write_run_checkpoint,
+)
 from mace_torch.train.contracts import TorchBuiltModel
 from mace_torch.train.ema import ExponentialMovingAverage
 from mace_torch.train.loss import build_loss
@@ -197,10 +205,11 @@ def run_train_stage(
         config: The resolved configuration.
         built: The model and the data it was built from.
         device: Where to train.
-        checkpoint_path: Where the best model is written. ``None`` writes
-            nothing, which is what a smoke test wants.
-        resume: Continue a run written at ``checkpoint_path`` rather than
-            starting one.
+        checkpoint_path: Where the best model is written, and the name the
+            run checkpoints beside it take. ``None`` writes nothing, which is
+            what a smoke test wants.
+        resume: Continue from the newest run checkpoint written for
+            ``checkpoint_path`` rather than starting a run.
 
     Returns:
         The trained model, with the averaged weights in place when the run
@@ -224,17 +233,50 @@ def run_train_stage(
 
     state = RunState(epoch=0)
     best_state: dict[str, dict[str, Tensor]] | None = None
+    schedule = config.schedule()
+    stage = ""
     if resume:
         if checkpoint_path is None:
             raise ValueError(
                 "a resume was asked for and no checkpoint path was given, so "
                 "there is nothing to resume from."
             )
-        state = read_run_state(
-            checkpoint_path, optimizer=optimizer, scheduler=scheduler, ema=ema
+        directory, name = Path(checkpoint_path).parent, Path(checkpoint_path).name
+        latest = latest_run_checkpoint(directory, name)
+        if latest is None:
+            raise FileNotFoundError(
+                f"no run checkpoint for {name!r} in {directory}, so there is no "
+                f"run to continue. Starting from scratch instead would report "
+                f"the first epoch as if it carried on from somewhere."
+            )
+        state = read_run_state(latest)
+        # Every stage up to the one the checkpoint trained in, entered in
+        # order, as the run that wrote it entered them: a stage that names its
+        # own optimizer builds a new one, and restoring into the first stage's
+        # optimizer would have that replace what was restored.
+        for entered in schedule:
+            if stage == state.stage:
+                break
+            stage = entered.name
+            loss, optimizer, scheduler = _enter_stage(
+                entered, config, built, model, optimizer, scheduler
+            )
+        if stage != state.stage:
+            raise CheckpointError(
+                f"{latest} was written in the stage {state.stage!r}, and this "
+                f"configuration's stages are {[s.name for s in schedule]}. "
+                f"Resuming in another stage would train with a schedule the "
+                f"run never had."
+            )
+        resumed = read_run_checkpoint(
+            latest, model=model, optimizer=optimizer, scheduler=scheduler, ema=ema
         )
+        logger.info("Resuming from %s at epoch %d", latest, state.epoch)
+        if resumed.optimizer_state == "reinitialized":
+            logger.warning("Resumed with a new optimizer: %s", resumed.reason)
         # The best epoch so far belongs to the run that wrote it. Taken from
-        # its file, so a resumed run that never improves still ends on it.
+        # its model file, so a resumed run that never improves still ends on
+        # it.
         if Path(checkpoint_path).with_suffix(".safetensors").is_file():
             best_state = read_canonical_state(checkpoint_path)
 
@@ -251,10 +293,8 @@ def run_train_stage(
     best_loss = state.best_valid_loss
     best_epoch = state.best_epoch
     written: Path | None = None
-    since_best = 0
-    stage = ""
+    since_best = state.since_best
 
-    schedule = config.schedule()
     for epoch in range(state.epoch, config.training.max_num_epochs):
         # Before the epoch it applies to, so the epoch that changes the loss
         # weights is trained with them. The stage is looked up rather than
@@ -278,6 +318,7 @@ def run_train_stage(
         )
 
         valid_loss: float | None = None
+        improved = False
         if epoch % config.training.eval_interval == 0:
             context = ema.average_parameters() if ema is not None else nullcontext()
             with context:
@@ -294,6 +335,7 @@ def run_train_stage(
                 valid_loss = selection_loss(per_head, config.training.checkpoint_metric)
                 if best_loss is None or valid_loss < best_loss:
                     best_loss, best_epoch, since_best = valid_loss, epoch, 0
+                    improved = True
                     # Inside the average's context, so what is kept is what
                     # was scored, which is also what the checkpoint holds.
                     best_state = _snapshot(model)
@@ -301,16 +343,29 @@ def run_train_stage(
                         written = write_model(checkpoint_path, model, built.metadata)
                 else:
                     since_best += 1
-            if checkpoint_path is not None:
-                _write_run_state(
-                    checkpoint_path,
-                    RunState(epoch + 1, best_loss, best_epoch),
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    ema=ema,
-                )
 
         _step_schedule(scheduler, valid_loss)
+        if checkpoint_path is not None:
+            # After the schedule has stepped, so a resume continues with the
+            # rate the next epoch would have had, and with the raw weights in
+            # place: the average travels as its own state.
+            directory, name = Path(checkpoint_path).parent, Path(checkpoint_path).name
+            write_run_checkpoint(
+                directory,
+                name,
+                RunState(epoch + 1, best_loss, best_epoch, since_best, stage, improved),
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                ema=ema,
+                metadata=built.metadata,
+            )
+            retain_run_checkpoints(
+                directory,
+                name,
+                keep_improving=config.runtime.keep_checkpoints,
+                keep_all=config.runtime.save_all_checkpoints,
+            )
         history.append(
             EpochRecord(
                 epoch=epoch,
@@ -348,6 +403,12 @@ def run_train_stage(
         # disk, and every number reported after training describes the
         # wrong one of the two.
         load_canonical_state(model, best_state)
+
+    if checkpoint_path is not None:
+        # The model the run delivers, written once more at its end: the best
+        # epoch's weights, averaged when the run averaged and merged when it
+        # adapted, which is also what a run that never evaluated ends on.
+        written = write_model(checkpoint_path, model, built.metadata)
 
     report_errors(config, built, model, loss, specs, tracker, device=device)
     tracker.finish()

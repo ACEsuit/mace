@@ -289,3 +289,50 @@ def test_a_fine_tune_leaves_the_replay_head_out_of_its_table(tmp_path):
     assert finished.returncode == 0, finished.stderr
     assert "valid_target" in finished.stderr
     assert "valid_replay" not in finished.stderr
+
+
+def evaluated_epochs(stderr: str) -> list[int]:
+    return sorted(
+        {
+            int(line.split("epoch ")[1].split(",")[0])
+            for line in stderr.splitlines()
+            if ", head " in line and "epoch " in line
+        }
+    )
+
+
+@needs_the_v1_engine
+def test_restart_latest_continues_the_run(tmp_path):
+    """Two epochs, then the same run asked for four and told to restart from
+    its newest checkpoint: it evaluates epochs two and three only."""
+    config = tiny_task(tmp_path)
+    first = on_v1("--config", str(config), "--training.max_num_epochs", "2")
+    assert first.returncode == 0, first.stderr
+    assert evaluated_epochs(first.stderr) == [0, 1]
+
+    resumed = on_v1("--config", str(config), "--runtime.restart_latest", "true")
+    assert resumed.returncode == 0, resumed.stderr
+    assert "Resuming from" in resumed.stderr
+    assert evaluated_epochs(resumed.stderr) == [2, 3]
+
+
+@needs_the_v1_engine
+def test_restart_latest_with_nothing_to_restart_from_starts_fresh(tmp_path):
+    """The frozen tree's contract: a restart with no checkpoint is a new run,
+    and it says so."""
+    finished = on_v1(
+        "--config", str(tiny_task(tmp_path)), "--runtime.restart_latest", "true"
+    )
+    assert finished.returncode == 0, finished.stderr
+    assert "starts at epoch 0" in finished.stderr
+    assert evaluated_epochs(finished.stderr) == [0, 1, 2, 3]
+
+
+@needs_the_v1_engine
+def test_a_run_keeps_only_its_newest_run_checkpoint_by_default(tmp_path):
+    finished = train_on_v1(tmp_path)
+    assert finished.returncode == 0, finished.stderr
+    assert sorted(path.name for path in tmp_path.glob("tiny.run-*")) == [
+        "tiny.run-000004.json",
+        "tiny.run-000004.safetensors",
+    ]
