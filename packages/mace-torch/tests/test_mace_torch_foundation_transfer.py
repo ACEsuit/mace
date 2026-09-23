@@ -324,3 +324,95 @@ def test_a_checkpoint_recording_no_heads_is_refused(tmp_path):
     )
     with pytest.raises(FoundationError, match="records no isolated-atom energies"):
         read_foundation(tmp_path / "old.safetensors", CATALOGUE)
+
+
+# ---------------------------------------------------------------------------
+# A foundation with two heads
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def two_head_checkpoint(tmp_path_factory):
+    """Two levels of theory on the same structures: the second head's data
+    is drawn with another seed, so its readout learns something else."""
+    torch.set_default_dtype(torch.float64)
+    directory = tmp_path_factory.mktemp("two_heads")
+    config = ResolvedConfig.model_validate(
+        {
+            "runtime": {"work_dir": str(directory), "seed": 3},
+            "data": {
+                "heads": {
+                    "pbe": {
+                        "train_file": str(dataset(directory / "pbe.xyz")),
+                        "e0s": {"isolated_atoms": {}},
+                    },
+                    "r2scan": {
+                        "train_file": str(dataset(directory / "r2scan.xyz", seed=1)),
+                        "e0s": {"isolated_atoms": {}},
+                    },
+                },
+                "valid_fraction": 0.2,
+                "pin_memory": False,
+            },
+            "model": {
+                "observables": ["energy", "forces"],
+                "r_max": 3.0,
+                "num_channels": 4,
+                "max_ell": 1,
+                "num_interactions": 2,
+                "correlation": 2,
+            },
+            "training": {
+                "max_num_epochs": 2,
+                "batch_size": 4,
+                "valid_batch_size": 4,
+                "scheduler": {"kind": {"kind": "constant"}},
+            },
+        }
+    )
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    trained = run_train_stage(config, built)
+    return write_model(directory / "model", trained.model, built.metadata)
+
+
+def foundation_energy(foundation, head):
+    graph = dict(water_graph(foundation.z_table, head))
+    return foundation.engine(graph, compute=()).extras["interaction_energy"]
+
+
+@fp64_only
+def test_each_head_takes_the_readout_it_names(two_head_checkpoint):
+    """The frozen tree's `--foundation_head`: the new head reads out with the
+    foundation head it names, here the second one, not the first."""
+    foundation = read_foundation(two_head_checkpoint, CATALOGUE)
+    assert foundation.heads == ("pbe", "r2scan")
+    pbe, r2scan = (foundation_energy(foundation, head) for head in (0, 1))
+    assert not torch.allclose(pbe, r2scan)
+
+    engine, table = fine_tune_model(foundation)
+    transfer_foundation(
+        foundation.model,
+        engine.get_submodule("backbone"),
+        foundation_elements=foundation.z_table.zs,
+        elements=table.zs,
+        foundation_heads=foundation.heads,
+        heads=("replay", "target"),
+        readout_from=readout_sources(
+            ("replay", "target"),
+            {"replay": "pbe", "target": "r2scan"},
+            foundation.heads,
+        ),
+    )
+    replay, target = (
+        engine(dict(water_graph(table, head)), compute=()).extras["interaction_energy"]
+        for head in (0, 1)
+    )
+    assert torch.allclose(replay, pbe, rtol=0, atol=1e-12)
+    assert torch.allclose(target, r2scan, rtol=0, atol=1e-12)
+
+
+def test_a_named_source_is_kept_as_named():
+    assert readout_sources(
+        ("replay", "target"), {"target": "r2scan", "replay": "pbe"}, ("pbe", "r2scan")
+    ) == {"replay": "pbe", "target": "r2scan"}
