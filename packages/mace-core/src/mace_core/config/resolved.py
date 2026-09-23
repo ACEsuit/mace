@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from mace_core.config.base import ReforgeBaseConfig
 from mace_core.config.data import DataConfig
@@ -39,7 +39,13 @@ from mace_core.config.runtime import RuntimeConfig
 from mace_core.config.section import FrozenSection
 from mace_core.config.training import StageConfig, TrainingConfig
 
-__all__ = ["ENERGY_OBSERVABLE", "FinetuneConfig", "PseudolabelConfig", "ResolvedConfig"]
+__all__ = [
+    "ENERGY_OBSERVABLE",
+    "FinetuneConfig",
+    "LoRAConfig",
+    "PseudolabelConfig",
+    "ResolvedConfig",
+]
 
 #: The observable an isolated-atom energy shifts. A model that does not declare
 #: it has no atomic-energy term for an E0 to reach, whatever it is called.
@@ -58,22 +64,45 @@ class PseudolabelConfig(FrozenSection):
     labels_from: Path | None = None
 
 
-class FinetuneConfig(FrozenSection):
-    """The foundation model a run starts from.
-
-    Reserved. Its full field set lands with the fine-tuning tickets; what is
-    here is what the cross-section validators in this module have to read, so
-    that the rules ship with the sections they constrain rather than waiting
-    for the section that completes them.
+class LoRAConfig(FrozenSection):
+    """Low-rank adapters on the linear maps, trained instead of the model.
 
     Args:
-        foundation_model: The artifact to start from. ``None`` is a run
-            trained from scratch, and it is what makes an E0 kind that reads a
-            foundation model an error.
+        enabled: Whether to adapt at all.
+        rank: The rank of each update, per irrep. Legacy's default.
+        alpha: The update is scaled by ``alpha / rank``.
+    """
+
+    enabled: bool = False
+    rank: int = Field(default=4, ge=1)
+    alpha: float = 1.0
+
+
+class FinetuneConfig(FrozenSection):
+    """The foundation model a run starts from, and how much of it moves.
+
+    Args:
+        foundation_model: The artifact to start from, a v1 checkpoint. ``None``
+            is a run trained from scratch, and it is what makes an E0 kind that
+            reads a foundation model an error.
+        transfer_readout: Start each head's readout from the foundation
+            model's, as ``readout_from`` names it. Off, only the backbone is
+            transferred and the readouts start fresh. Legacy's
+            ``--foundation_model_readout``, on by default there too.
+        lora: Train low-rank adapters instead of the weights.
+        freeze: Freeze the groups up to this level, as legacy's ``--freeze``
+            layers them: one or more freezes the node embedding, five the
+            interactions, six the products and seven the readouts. ``None`` or
+            ``0`` freezes nothing. A negative value is refused: legacy documents
+            ``-1`` as freezing the last layer and does nothing with it, since
+            every threshold is a ``>=`` on a positive number.
         pseudolabels: Where the replay labels come from.
     """
 
     foundation_model: str | None = None
+    transfer_readout: bool = True
+    lora: LoRAConfig = LoRAConfig()
+    freeze: int | None = Field(default=None, ge=0)
     pseudolabels: PseudolabelConfig = PseudolabelConfig()
 
 

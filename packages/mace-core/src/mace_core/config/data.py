@@ -18,14 +18,32 @@ module's.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mace_core.config.e0s import E0sIsolatedAtoms, E0Spec
 from mace_core.config.section import FrozenSection
 
-__all__ = ["DataConfig", "GraphInputKeys", "HeadDataConfig", "TransformSpec"]
+__all__ = [
+    "CURATED_DATASETS",
+    "CuratedDataset",
+    "DataConfig",
+    "GraphInputKeys",
+    "HeadDataConfig",
+    "RatioGuardConfig",
+    "SubselectConfig",
+    "TransformSpec",
+]
+
+#: The replay datasets published beside the foundation models, by the name a
+#: head selects them with. Where each one is downloaded from is the loader's
+#: business; which names exist is the schema's, so a misspelled one is refused
+#: when the run is configured rather than when the download fails.
+CuratedDataset = Literal["mp", "omat", "matpes_pbe", "matpes_r2scan"]
+
+#: The same names, for a caller that enumerates them.
+CURATED_DATASETS: tuple[str, ...] = ("mp", "omat", "matpes_pbe", "matpes_r2scan")
 
 
 class GraphInputKeys(FrozenSection):
@@ -63,6 +81,77 @@ class TransformSpec(FrozenSection):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class SubselectConfig(FrozenSection):
+    """Keeping a representative part of a head's structures.
+
+    A replay set is large, and training on all of it would make the fine-tune
+    about the replay set. So a head can keep a subset, chosen either at random
+    or by farthest-point sampling over a foundation model's descriptors, after
+    a filter on which elements the structures contain.
+
+    The defaults are the frozen tree's **in-run** ones, which are not its
+    standalone selection script's: ``--subselect_pt`` defaults to ``random``
+    and ``--filter_type_pt`` to ``none`` (``mace/tools/arg_parser.py:603-613``),
+    while the script defaults to farthest-point sampling and ``combinations``.
+    The library function carries the script's.
+
+    Args:
+        num_samples: How many structures to keep. ``None`` keeps every one
+            that passes the filter.
+        method: ``random``, or ``fps`` for farthest-point sampling.
+        filtering: Which structures may be kept at all, by the elements in
+            them: ``none``; ``combinations``, only elements of the set;
+            ``exclusive``, exactly the set; ``inclusive``, at least the set.
+        elements: The atomic numbers the filter reads. Required by every
+            filter but ``none``.
+        allow_random_padding: When fewer structures pass the filter than
+            ``num_samples``, make up the rest at random from those that did
+            not. A positive setting: legacy spells it as a flag that turns it
+            off (``--disallow_random_padding_pt``), which reads backwards.
+    """
+
+    num_samples: int | None = 10000
+    method: Literal["random", "fps"] = "random"
+    filtering: Literal["none", "combinations", "exclusive", "inclusive"] = "none"
+    elements: tuple[int, ...] = ()
+    allow_random_padding: bool = True
+
+    @model_validator(mode="after")
+    def _check(self) -> SubselectConfig:
+        if self.num_samples is not None and self.num_samples < 1:
+            raise ValueError(
+                f"subselect.num_samples is {self.num_samples}. Keep at least "
+                f"one structure, or set it to null to keep them all."
+            )
+        if self.filtering != "none" and not self.elements:
+            raise ValueError(
+                f"subselect.filtering is {self.filtering!r} and names no "
+                f"elements to filter by. Give them as subselect.elements, or "
+                f"set filtering to 'none'."
+            )
+        return self
+
+
+class RatioGuardConfig(FrozenSection):
+    """Repeating the other heads when one head outnumbers them all.
+
+    The frozen tree's guard for a replay set that dwarfs the fine-tuning data
+    (``mace/cli/run_train.py:443-457``): when the other heads' structures,
+    together, number fewer than ``threshold`` times this head's, each of them
+    is repeated. Stated against a named head rather than against the replay
+    head, so nothing reads which head is the replay one; the configuration
+    says which is the reference, and that is all.
+
+    Args:
+        reference: The head the others are measured against.
+        threshold: The ratio below which the others are repeated. Legacy's
+            ``--real_pt_data_ratio_threshold``.
+    """
+
+    reference: str
+    threshold: float = 0.1
+
+
 class HeadDataConfig(FrozenSection):
     """One level of theory: its structures, and where its E0s come from.
 
@@ -78,6 +167,16 @@ class HeadDataConfig(FrozenSection):
             absent from the mapping weighs ``1.0``.
         keep_isolated_atoms: Whether the ``IsolatedAtom`` structures stay in
             the training set after their energies have been read out of it.
+        curated: A published replay dataset to read instead of ``train_file``.
+            A head names one source or the other, and a replay head differs
+            from any other head in nothing but this.
+        subselect: Keep only part of the head's structures.
+        weight: Multiplies every structure's weight in this head, which is how
+            a replay head is made to count less than the data the fine-tune is
+            for. Legacy's ``--weight_pt_head``.
+        readout_from: The foundation model head this head's readout starts
+            from. ``None`` takes the foundation model's only head, and is an
+            error when it has several.
     """
 
     train_file: Path | None = None
@@ -86,6 +185,25 @@ class HeadDataConfig(FrozenSection):
     e0s: E0Spec = E0sIsolatedAtoms()
     config_type_weights: dict[str, float] = Field(default_factory=dict)
     keep_isolated_atoms: bool = False
+    curated: CuratedDataset | None = None
+    subselect: SubselectConfig | None = None
+    weight: float = 1.0
+    readout_from: str | None = None
+
+    @model_validator(mode="after")
+    def _one_source(self) -> HeadDataConfig:
+        if self.curated is not None and self.train_file is not None:
+            raise ValueError(
+                f"a head names both train_file ({self.train_file}) and the "
+                f"curated dataset {self.curated!r}. A head reads one source; "
+                f"drop one of the two."
+            )
+        if self.weight < 0:
+            raise ValueError(
+                f"a head's weight is {self.weight}. A negative weight trains "
+                f"the model away from the head's labels."
+            )
+        return self
 
 
 class DataConfig(FrozenSection):
@@ -111,6 +229,7 @@ class DataConfig(FrozenSection):
         transforms: The data transforms, in the order they apply. Order is
             part of the meaning: shifting energies and then masking on a
             threshold is not the same run as masking and then shifting.
+        ratio_guard: Repeat the other heads when one outnumbers them all.
         skip_evaluate_heads: Heads left out of the evaluation tables, for a
             replay head whose errors are not the run's subject.
     """
@@ -125,3 +244,16 @@ class DataConfig(FrozenSection):
     pin_memory: bool = True
     skip_evaluate_heads: tuple[str, ...] = ()
     transforms: tuple[TransformSpec, ...] = ()
+    ratio_guard: RatioGuardConfig | None = None
+
+    @model_validator(mode="after")
+    def _guard_names_a_head(self) -> DataConfig:
+        if (
+            self.ratio_guard is not None
+            and self.ratio_guard.reference not in self.heads
+        ):
+            raise ValueError(
+                f"data.ratio_guard.reference is {self.ratio_guard.reference!r}, "
+                f"which is not a head. The heads are {sorted(self.heads)}."
+            )
+        return self
