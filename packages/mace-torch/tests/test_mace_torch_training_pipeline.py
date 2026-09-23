@@ -545,7 +545,7 @@ def test_the_isolated_atoms_stay_out_of_the_split(tmp_path, seed):
         }
     )
     data = run_data_stage(config, CATALOGUE)
-    dataset_ = data.valid_loader.dataset
+    dataset_ = data.valid_loaders["a"].dataset
     assert isinstance(dataset_, GraphDataset)
     validation = dataset_.configurations
     assert not any(item.config_type == "IsolatedAtom" for item in validation)
