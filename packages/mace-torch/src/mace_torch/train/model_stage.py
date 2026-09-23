@@ -20,7 +20,13 @@ from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.kernels.registry import get_backend
-from mace_core.metadata import ConfigRecord, HeadSummary, ModelMetadata, Provenance
+from mace_core.metadata import (
+    ConfigRecord,
+    HeadSummary,
+    ModelMetadata,
+    ParentModel,
+    Provenance,
+)
 from mace_core.observables import (
     ObservableCatalogue,
     RequestedOutputs,
@@ -29,6 +35,8 @@ from mace_core.observables import (
 from mace_core.stages import BuiltModel
 
 from mace_torch import __version__
+from mace_torch.finetune.foundation import Foundation
+from mace_torch.finetune.transfer import readout_sources, transfer_foundation
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
@@ -66,6 +74,7 @@ def run_model_stage(
     precision: PrecisionConfig = DEFAULT_PRECISION,
     supports_float64: bool = True,
     initialize: bool = True,
+    foundation: Foundation | None = None,
 ) -> TorchBuiltModel:
     """Build the model the configuration describes, scaled by the data.
 
@@ -81,11 +90,16 @@ def run_model_stage(
             weighted op at zero, which is what a model about to be loaded from
             a checkpoint wants and what a model about to be trained must not
             have: zeros multiply to zeros and so does the gradient.
+        foundation: The model a fine-tune starts from. Its architecture is
+            the model's, its weights are transferred into it, and it is
+            recorded as the model's parent.
 
     Returns:
         The model wrapped in its derivative engine, with the bundle it was
         built from and the record that travels with the weights.
     """
+    if foundation is not None:
+        config = _with_foundation_architecture(config, foundation)
     engine, requested = build_model(
         config,
         catalogue,
@@ -97,12 +111,91 @@ def run_model_stage(
         supports_float64=supports_float64,
         initialize=initialize,
     )
+    metadata = _metadata(config, data)
+    if foundation is not None:
+        transfer_foundation(
+            foundation.model,
+            engine.get_submodule("backbone"),
+            foundation_elements=foundation.z_table.zs,
+            elements=data.z_table.zs,
+            foundation_heads=foundation.heads,
+            heads=data.heads,
+            readout_from=readout_sources(
+                data.heads,
+                {name: config.data.heads[name].readout_from for name in data.heads},
+                foundation.heads,
+            ),
+            transfer_readout=config.finetune.transfer_readout,
+        )
+        metadata = metadata.model_copy(
+            update={
+                "parents": [
+                    ParentModel(
+                        role="initial_weights",
+                        name=foundation.name,
+                        metadata=foundation.metadata,
+                    )
+                ]
+            }
+        )
     return BuiltModel(
         model=engine,
         outputs=requested,
         data=data,
-        metadata=_metadata(config, data),
+        metadata=metadata,
     )
+
+
+#: The model settings that are the run's own even when it starts from a
+#: foundation model. Everything else is architecture, and the foundation's.
+_RUN_OWNED_MODEL_FIELDS = frozenset({"observables", "backend"})
+
+
+def _with_foundation_architecture(
+    config: ResolvedConfig, foundation: Foundation
+) -> ResolvedConfig:
+    """The configuration with the foundation model's architecture in it.
+
+    A fine-tune does not choose its architecture: its weights are the
+    foundation's, and they fit only the model they were trained in. So the
+    model section is the foundation's, except for what the run reads out and
+    which backend computes it. A setting the run wrote down that disagrees
+    with the foundation is refused rather than overridden, because a run that
+    asked for a cutoff of five and trained at six would never be told.
+
+    Raises:
+        ModelStageError: Naming each setting the run set that the foundation
+            model contradicts, and each observable it cannot read out.
+    """
+    theirs = foundation.config.model
+    ours = config.model
+    conflicts = sorted(
+        name
+        for name in ours.model_fields_set - _RUN_OWNED_MODEL_FIELDS
+        if getattr(ours, name) != getattr(theirs, name)
+    )
+    if conflicts:
+        details = ", ".join(
+            f"{name}: {getattr(ours, name)!r} here, {getattr(theirs, name)!r} "
+            f"in the foundation model"
+            for name in conflicts
+        )
+        raise ModelStageError(
+            f"the run sets model settings its foundation model was not built "
+            f"with ({details}). A fine-tune takes the foundation's "
+            f"architecture, so drop them or start from a model built that way."
+        )
+    unread = sorted(set(ours.observables) - set(theirs.observables))
+    if unread:
+        raise ModelStageError(
+            f"the run reads out {unread}, which the foundation model does not; "
+            f"it reads out {list(theirs.observables)}. A new observable needs a "
+            f"head nobody trained, which a fine-tune does not start from."
+        )
+    model = theirs.model_copy(
+        update={name: getattr(ours, name) for name in _RUN_OWNED_MODEL_FIELDS}
+    )
+    return config.model_copy(update={"model": model})
 
 
 def build_model(
