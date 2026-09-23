@@ -154,3 +154,56 @@ def test_the_default_factors_write_nothing():
     namespace = parser.parse_args(["--name", "run", "--train_file", "train.xyz"])
     values = legacy.from_namespace(namespace, defaults=parser_defaults())
     assert "group_factors" not in values.get("training", {}).get("scheduler", {})
+
+
+class _Reads:
+    """A namespace that remembers which dests were read off it."""
+
+    def __init__(self, namespace):
+        self._namespace = namespace
+        self.read: set[str] = set()
+
+    def __getattr__(self, name):
+        self.read.add(name)
+        return getattr(self._namespace, name)
+
+
+def test_every_flag_marked_carried_is_read_by_a_collapse():
+    """A merged flag marked as carried is exempt from the refusal, so if no
+    collapse reads it, a command line setting it trains without it and nobody
+    is told. The collapses read some flags only under a given scheduler,
+    optimizer or loss, so every combination is tried."""
+    parser = arg_parser.build_default_arg_parser()
+    read: set[str] = set()
+    for scheduler in legacy._SCHEDULE_KINDS:
+        for optimizer in ("adam", "adamw", "schedulefree"):
+            for loss in ("weighted", "huber"):
+                namespace = _Reads(
+                    parser.parse_args(
+                        [
+                            "--name",
+                            "run",
+                            "--scheduler",
+                            scheduler,
+                            "--optimizer",
+                            optimizer,
+                            "--loss",
+                            loss,
+                        ]
+                    )
+                )
+                legacy._collapse(namespace, {})
+                read |= namespace.read
+    carried = {
+        dest
+        for dest, disposition in legacy.LEGACY_TRAIN_DESTS.items()
+        if isinstance(disposition, legacy.Merged) and disposition.applied
+    }
+    assert carried <= read, sorted(carried - read)
+
+
+def test_a_hard_freeze_is_refused_until_it_has_a_home():
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(["--name", "run", "--freeze", "5"])
+    with pytest.raises(legacy.LegacyFlagError, match="--freeze"):
+        legacy.from_namespace(namespace, defaults=parser_defaults())
