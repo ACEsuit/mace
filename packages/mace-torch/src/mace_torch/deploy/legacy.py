@@ -161,11 +161,18 @@ def pinned_environment(
     marker = root / "mace-legacy-pin.txt"
     if interpreter.exists() and marker.exists() and marker.read_text() == pin:
         return interpreter
+    # Linked, not copied, as `python -m venv` does outside Windows. A copied
+    # interpreter can be one that runs only from where it was installed:
+    # measured with a uv-managed CPython on macOS, the copy aborts on its
+    # first run, inside the pip bootstrap.
+    builder = venv.EnvBuilder(
+        with_pip=True, clear=True, symlinks=sys.platform != "win32"
+    )
     try:
-        venv.EnvBuilder(with_pip=True, clear=True).create(root)
-    except OSError as error:
+        builder.create(root)
+    except (OSError, subprocess.CalledProcessError) as error:
         raise ExtractionFailed(
-            f"could not create an environment at {root}: {error}"
+            f"could not create an environment at {root} with {sys.executable}: {error}"
         ) from error
     completed = subprocess.run(
         [str(interpreter), "-m", "pip", "install", "--quiet", pin, *PINNED_EXTRAS],
