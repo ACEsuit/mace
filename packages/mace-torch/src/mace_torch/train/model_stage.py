@@ -44,6 +44,33 @@ DEFAULT_HIDDEN_IRREPS = "0e+1o"
 #: trained model rather than a preference.
 _ZBL_INSIDE = {"scale_shift": True, "plain": False}
 
+#: The model settings this stage builds one way only, and what that way is.
+#: The configuration can name others, since the schema covers every setting a
+#: legacy model has, and a value the model cannot build is refused rather than
+#: replaced: building the default instead trains another architecture under
+#: the name of the one asked for.
+#:
+#: Both spellings of the first interaction build the same block. The first
+#: layer has no incoming features to skip from, and the frozen tree builds the
+#: plain block there whichever of the two it was given.
+_BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
+    "interaction": ("RealAgnosticResidualInteractionBlock",),
+    "interaction_first": (
+        "RealAgnosticInteractionBlock",
+        "RealAgnosticResidualInteractionBlock",
+    ),
+    "radial_mlp": ((64, 64, 64),),
+    "distance_transform": ("None",),
+    "apply_cutoff": (True,),
+    "use_agnostic_product": (False,),
+    "edge_irreps": (None,),
+    "use_edge_irreps_first": (False,),
+    "clebsch_gordan_basis": ("reduced",),
+    "readout.gate": ("silu",),
+    "readout.last_only": (False,),
+    "readout.from_embedding": (False,),
+}
+
 
 class ModelStageError(RuntimeError):
     """The configuration does not describe a model that can be built."""
@@ -89,6 +116,7 @@ def run_model_stage(
             f"{sorted(_ZBL_INSIDE)}, and they differ in where the short-range "
             f"repulsion is added."
         )
+    _refuse_unbuilt(config)
 
     energy = next(
         (spec for spec in requested.observables if spec.name == "energy"), None
@@ -147,6 +175,30 @@ def run_model_stage(
         data=data,
         metadata=_metadata(config, data),
     )
+
+
+def _refuse_unbuilt(config: ResolvedConfig) -> None:
+    """Refuse every model setting this stage would not build as written.
+
+    Raises:
+        ModelStageError: Naming each such setting, its value, and what can be
+            built instead.
+    """
+    unbuilt = []
+    for path, choices in _BUILT_ONE_WAY.items():
+        value: object = config.model
+        for name in path.split("."):
+            value = getattr(value, name)
+        if value not in choices:
+            allowed = " or ".join(repr(choice) for choice in choices)
+            unbuilt.append(f"model.{path} is {value!r}, and only {allowed} is built")
+    if unbuilt:
+        raise ModelStageError(
+            "the configuration asks for a model this stage cannot build, and "
+            "building the default instead would train another architecture: "
+            + "; ".join(unbuilt)
+            + "."
+        )
 
 
 def _scale_shift(
