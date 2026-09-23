@@ -30,7 +30,6 @@ from mace_torch.train import (
     write_model,
 )
 from mace_torch.train.loss import build_loss
-
 from test_mace_torch_foundation_transfer import dataset
 
 CATALOGUE = load_default_catalogue()
@@ -91,7 +90,9 @@ def new_level_of_theory(path, count=16):
         atom.arrays["REF_forces"] = np.zeros((1, 3))
         frames.append(atom)
     for index in range(count):
-        molecule = Atoms("OH2", positions=WATER + generator.normal(scale=0.03, size=(3, 3)))
+        molecule = Atoms(
+            "OH2", positions=WATER + generator.normal(scale=0.03, size=(3, 3))
+        )
         molecule.info["REF_energy"] = 2 * -13.1 - 2039.2 + 0.3 + 0.08 * index
         molecule.arrays["REF_forces"] = 1.5 * generator.normal(scale=0.1, size=(3, 3))
         frames.append(molecule)
@@ -116,8 +117,12 @@ def fine_tune_config(directory, foundation, **model):
                     # needs an energy for every element of the run, and the
                     # frozen tree fails on that with a bare KeyError.
                     "target": {
-                        "train_file": str(new_level_of_theory(directory / "target.xyz")),
-                        "e0s": {"table": {"values": {1: -13.1, 6: -1030.0, 8: -2039.2}}},
+                        "train_file": str(
+                            new_level_of_theory(directory / "target.xyz")
+                        ),
+                        "e0s": {
+                            "table": {"values": {1: -13.1, 6: -1030.0, 8: -2039.2}}
+                        },
                     },
                 },
                 "valid_fraction": 0.25,
