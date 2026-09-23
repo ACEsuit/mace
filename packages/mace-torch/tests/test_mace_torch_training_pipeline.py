@@ -19,6 +19,7 @@ from ase.io import write
 from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import load_default_catalogue
+from mace_torch.data import GraphDataset
 from mace_torch.models import MACEOutputs, ObservableHead
 from mace_torch.train import (
     RunState,
@@ -518,3 +519,34 @@ def test_the_same_configuration_trains_the_same_run(tmp_path):
     first.mkdir()
     second.mkdir()
     assert history(first) == history(second)
+
+
+@fp64_only
+@pytest.mark.parametrize("seed", range(10))
+def test_the_isolated_atoms_stay_out_of_the_split(tmp_path, seed):
+    """They are references. Split with them in, one lands in the validation set
+    for four seeds in ten on this file, and the isolated-atom E0s then have no
+    energy for that element. The frozen tree splits without them too, so the
+    split is over the same eight waters it splits."""
+    config = ResolvedConfig.model_validate(
+        {
+            "runtime": {"work_dir": str(tmp_path), "seed": seed},
+            "data": {
+                "heads": {
+                    "a": {
+                        "train_file": str(write_dataset(tmp_path / "t.xyz", count=8)),
+                        "e0s": {"isolated_atoms": {}},
+                    }
+                },
+                "valid_fraction": 0.25,
+                "pin_memory": False,
+            },
+            "model": {"observables": ["energy", "forces"], "r_max": 3.0},
+        }
+    )
+    data = run_data_stage(config, CATALOGUE)
+    dataset_ = data.valid_loader.dataset
+    assert isinstance(dataset_, GraphDataset)
+    validation = dataset_.configurations
+    assert not any(item.config_type == "IsolatedAtom" for item in validation)
+    assert len(validation) == 2
