@@ -31,6 +31,7 @@ from torch.optim.lr_scheduler import LRScheduler
 
 __all__ = [
     "GROUPS",
+    "GROUP_MARKERS",
     "UnsupportedOptimizerError",
     "build_optimizer",
     "build_scheduler",
@@ -40,6 +41,15 @@ __all__ = [
 #: The four groups, in the order they are built, and whether weight decay
 #: applies. The names are what a per-group learning-rate factor is keyed by.
 GROUPS = ("embedding", "interactions", "products", "readouts")
+
+#: What a parameter's name contains when it belongs to each group. Stated once,
+#: because freezing a group and optimizing it have to agree on what it holds.
+GROUP_MARKERS: dict[str, str] = {
+    "embedding": "node_embedding",
+    "interactions": ".interactions.",
+    "products": ".products.",
+    "readouts": ".readouts.",
+}
 
 #: Which interaction tensors decay: the linear maps between feature spaces. The
 #: radial network and the up-projection do not, which is the frozen tree's
@@ -80,8 +90,8 @@ def parameter_groups(model: nn.Module, config: TrainingConfig) -> list[dict]:
             }
         )
 
-    interactions = list(_named(model, ".interactions."))
-    add("embedding", list(_named(model, "node_embedding")), 0.0)
+    interactions = list(_named(model, GROUP_MARKERS["interactions"]))
+    add("embedding", list(_named(model, GROUP_MARKERS["embedding"])), 0.0)
     add(
         "interactions",
         [
@@ -102,8 +112,8 @@ def parameter_groups(model: nn.Module, config: TrainingConfig) -> list[dict]:
         0.0,
     )
     groups[-1]["lr"] = factors.get("interactions", 1.0) * config.lr
-    add("products", list(_named(model, ".products.")), config.weight_decay)
-    add("readouts", list(_named(model, ".readouts.")), 0.0)
+    add("products", list(_named(model, GROUP_MARKERS["products"])), config.weight_decay)
+    add("readouts", list(_named(model, GROUP_MARKERS["readouts"])), 0.0)
 
     unclaimed = sorted(
         name

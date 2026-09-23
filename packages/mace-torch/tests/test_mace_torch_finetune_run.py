@@ -217,3 +217,104 @@ def test_a_setting_that_agrees_with_the_foundation_is_accepted(foundation_path):
     config = fine_tune_config(directory, path, r_max=3.0)
     data = run_data_stage(config, CATALOGUE, foundation=foundation.context())
     run_model_stage(config, data, CATALOGUE, foundation=foundation)
+
+
+def with_finetune(config, **settings):
+    return config.model_copy(
+        update={"finetune": config.finetune.model_copy(update=settings)}
+    )
+
+
+def snapshot(model):
+    return {
+        name: parameter.detach().clone() for name, parameter in model.named_parameters()
+    }
+
+
+@fp64_only
+def test_a_lora_fine_tune_ends_with_the_shapes_of_one_never_adapted(foundation_path):
+    """The checkpoint it writes loads into a model built plainly, and computes
+    what the run ended with."""
+    from mace_core.config.resolved import LoRAConfig
+    from mace_torch.serialization import canonical_state, load_checkpoint
+
+    path, directory = foundation_path
+    foundation = read_foundation(path, CATALOGUE)
+    config = with_finetune(
+        fine_tune_config(directory, path), lora=LoRAConfig(enabled=True, rank=2)
+    )
+    data = run_data_stage(config, CATALOGUE, foundation=foundation.context())
+    built = run_model_stage(config, data, CATALOGUE, foundation=foundation)
+    trained = run_train_stage(config, built, checkpoint_path=directory / "lora")
+    assert trained.checkpoint_path is not None
+    assert not any(
+        "parametrizations" in name for name, _ in trained.model.named_parameters()
+    )
+
+    plain = run_model_stage(
+        config, data, CATALOGUE, foundation=foundation, initialize=False
+    ).model
+    shapes = {
+        path: {name: value.shape for name, value in tensors.items()}
+        for path, tensors in canonical_state(plain).items()
+    }
+    reloaded = load_checkpoint(trained.checkpoint_path, lambda _: plain)
+    assert {
+        path: {name: value.shape for name, value in tensors.items()}
+        for path, tensors in canonical_state(reloaded).items()
+    } == shapes
+    graph = next(iter(data.valid_loaders["target"])).graph
+    assert torch.allclose(
+        reloaded(dict(graph), compute=()).total_energy,
+        trained.model(dict(graph), compute=()).total_energy,
+        rtol=0,
+        atol=1e-12,
+    )
+
+
+@fp64_only
+def test_a_lora_fine_tune_moves_the_model_only_through_its_adapters(foundation_path):
+    """With adapters on, the contraction weights and the skip connections,
+    which take no adapter, end where the foundation left them."""
+    from mace_core.config.resolved import LoRAConfig
+
+    path, directory = foundation_path
+    foundation = read_foundation(path, CATALOGUE)
+    config = with_finetune(
+        fine_tune_config(directory, path), lora=LoRAConfig(enabled=True, rank=2)
+    )
+    data = run_data_stage(config, CATALOGUE, foundation=foundation.context())
+    built = run_model_stage(config, data, CATALOGUE, foundation=foundation)
+    before = snapshot(built.model)
+    trained = run_train_stage(config, built)
+    after = snapshot(trained.model)
+    untouched = [name for name in before if ".contraction." in name or ".skip." in name]
+    assert untouched
+    for name in untouched:
+        assert torch.equal(before[name], after[name]), name
+    moved = [name for name in before if not torch.equal(before[name], after[name])]
+    assert moved, "nothing moved, so the adapters did not train"
+
+
+@fp64_only
+def test_a_frozen_fine_tune_leaves_the_frozen_groups_where_they_were(foundation_path):
+    """Level five freezes the embedding and the interactions; the products and
+    the readouts train."""
+    path, directory = foundation_path
+    foundation = read_foundation(path, CATALOGUE)
+    config = with_finetune(fine_tune_config(directory, path), freeze=5)
+    data = run_data_stage(config, CATALOGUE, foundation=foundation.context())
+    built = run_model_stage(config, data, CATALOGUE, foundation=foundation)
+    before = snapshot(built.model)
+    trained = run_train_stage(config, built)
+    after = snapshot(trained.model)
+    for name in before:
+        frozen = "node_embedding" in name or ".interactions." in name
+        changed = not torch.equal(before[name], after[name])
+        if frozen:
+            assert not changed, name
+    assert any(
+        not torch.equal(before[name], after[name])
+        for name in before
+        if ".products." in name or ".readouts." in name
+    )

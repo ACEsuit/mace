@@ -38,6 +38,8 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
 
 from mace_torch.data import TrainingBatch
+from mace_torch.finetune.freeze import freeze
+from mace_torch.finetune.lora import inject_lora, merge_lora
 from mace_torch.serialization import (
     canonical_state,
     load_canonical_state,
@@ -205,6 +207,9 @@ def run_train_stage(
         averaged, since those are the ones the best checkpoint holds.
     """
     model = built.model.to(device)
+    # Before the optimizer and the average are built, since both are built
+    # over what trains, and adapting or freezing changes that.
+    config = _prepare_finetune(config, model)
     requested = _requested_names(built)
     specs = metric_specs(built.outputs)
     loss = build_loss(built.outputs, config.loss)
@@ -319,17 +324,11 @@ def run_train_stage(
         if since_best >= config.training.patience:
             break
 
-    if best_state is not None:
-        # The run ends on its best epoch, as the frozen tree does by loading
-        # its last checkpoint, which it writes only on an improvement. Ending
-        # on the last epoch instead returns a model that is not the one on
-        # disk, and every number reported after training describes the
-        # wrong one of the two.
-        load_canonical_state(model, best_state)
-    elif ema is not None:
+    if best_state is None and ema is not None:
         # The run's model is the averaged one. Leaving the stepped weights in
         # place would return a model that differs from the checkpoint beside
-        # it and from every number the run reported.
+        # it and from every number the run reported. Before any merge, while
+        # what trains is still what the average was kept over.
         with torch.no_grad():
             for parameter, shadow in zip(
                 (p for p in model.parameters() if p.requires_grad),
@@ -337,6 +336,18 @@ def run_train_stage(
                 strict=True,
             ):
                 parameter.copy_(shadow)
+    if config.finetune.lora.enabled:
+        # Folded in before anything is read back or reported: a merged model
+        # has the shapes of one never adapted, which is what the checkpoint
+        # already holds, since a checkpoint reads each weight as adapted.
+        merge_lora(model)
+    if best_state is not None:
+        # The run ends on its best epoch, as the frozen tree does by loading
+        # its last checkpoint, which it writes only on an improvement. Ending
+        # on the last epoch instead returns a model that is not the one on
+        # disk, and every number reported after training describes the
+        # wrong one of the two.
+        load_canonical_state(model, best_state)
 
     report_errors(config, built, model, loss, specs, tracker, device=device)
     tracker.finish()
@@ -535,6 +546,28 @@ def _enter_stage(
         for group in optimizer.param_groups:
             group["lr"] = stage.lr
     return loss, optimizer, scheduler
+
+
+def _prepare_finetune(config: ResolvedConfig, model: nn.Module) -> ResolvedConfig:
+    """Adapt or freeze the model as the fine-tune section asks.
+
+    Returns:
+        The configuration with each frozen group's learning-rate factor at
+        zero, beside whatever factors it already set, so an optimizer built
+        from the factors alone agrees with the flags on the parameters.
+    """
+    settings = config.finetune
+    if settings.lora.enabled:
+        inject_lora(model, rank=settings.lora.rank, alpha=settings.lora.alpha)
+    factors = freeze(model, settings.freeze)
+    if not factors:
+        return config
+    scheduler = config.training.scheduler
+    merged = {**scheduler.group_factors, **factors}
+    training = config.training.model_copy(
+        update={"scheduler": scheduler.model_copy(update={"group_factors": merged})}
+    )
+    return config.model_copy(update={"training": training})
 
 
 def _snapshot(model: nn.Module) -> dict[str, dict[str, Tensor]]:
