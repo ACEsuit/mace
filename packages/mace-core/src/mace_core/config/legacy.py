@@ -368,10 +368,8 @@ _TRAINING: dict[str, Disposition] = {
     ),
     **_merged(
         "training.scheduler.group_factors",
-        "typed per-parameter-group factors; the capability stays and the "
-        "freeze flag reuses it",
+        "typed per-parameter-group factors",
         "lr_params_factors",
-        "freeze",
         applied=True,
     ),
     **_merged(
@@ -397,6 +395,7 @@ _FINETUNE: dict[str, Disposition] = {
     **_reserved(
         "finetune",
         "the fine-tuning tickets",
+        "freeze",
         "foundation_model_kwargs",
         "foundation_model_readout",
         "multiheads_finetuning",
