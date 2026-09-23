@@ -18,9 +18,13 @@ features and nothing else.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from typing import Any
 
+import torch
+from mace_core.kernels.descriptors import RadialBasisKind as RadialKind
+from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
@@ -31,6 +35,25 @@ from mace_torch.nn.backbone import MACEBackbone
 from mace_torch.nn.radial import ZBLBasis
 
 __all__ = ["MACEModel"]
+
+
+@contextmanager
+def _constructed_in(precision: Precision) -> Iterator[None]:
+    """Build under ``precision`` as the process default, then restore it.
+
+    The radial basis, the cutoff envelope and the repulsion create their
+    constants in the process default at construction. Left to the process, a
+    float64 model built in a fresh interpreter, whose default is float32,
+    holds those constants rounded to float32 and computes other numbers than
+    the same checkpoint built elsewhere: measured, 9.6e-7 eV on a two-atom
+    fixture.
+    """
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(getattr(torch, precision))
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(previous)
 
 
 class MACEModel(nn.Module):
@@ -78,35 +101,36 @@ class MACEModel(nn.Module):
         num_heads: int = 1,
     ) -> None:
         super().__init__()
-        self.backbone = MACEBackbone(
-            backend,
-            atomic_numbers=atomic_numbers,
-            num_layers=num_layers,
-            num_features=num_features,
-            lmax=lmax,
-            hidden_irreps=hidden_irreps,
-            num_radial=num_radial,
-            cutoff=cutoff,
-            correlation=correlation,
-            avg_num_neighbors=avg_num_neighbors,
-            radial_kind=radial_kind,
-            cutoff_order=cutoff_order,
-            precision=precision,
-            node_inputs=node_inputs,
-        )
-        self.outputs = MACEOutputs(
-            backend,
-            list(observables),
-            layer_irreps=self.backbone.layer_irreps,
-            num_features=num_features,
-            energy_head=energy_head,
-            precision=precision,
-            hidden_scalars=readout_hidden,
-            num_heads=num_heads,
-        )
-        self.repulsion = (
-            ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None
-        )
+        with _constructed_in(precision):
+            self.backbone = MACEBackbone(
+                backend,
+                atomic_numbers=atomic_numbers,
+                num_layers=num_layers,
+                num_features=num_features,
+                lmax=lmax,
+                hidden_irreps=hidden_irreps,
+                num_radial=num_radial,
+                cutoff=cutoff,
+                correlation=correlation,
+                avg_num_neighbors=avg_num_neighbors,
+                radial_kind=radial_kind,
+                cutoff_order=cutoff_order,
+                precision=precision,
+                node_inputs=node_inputs,
+            )
+            self.outputs = MACEOutputs(
+                backend,
+                list(observables),
+                layer_irreps=self.backbone.layer_irreps,
+                num_features=num_features,
+                energy_head=energy_head,
+                precision=precision,
+                hidden_scalars=readout_hidden,
+                num_heads=num_heads,
+            )
+            self.repulsion = (
+                ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None
+            )
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The declared observables. The graph is read and never written to."""
