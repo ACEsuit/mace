@@ -392,12 +392,19 @@ _FINETUNE: dict[str, Disposition] = {
         "pseudolabel_replay",
         "pseudolabel_replay_compute_stress",
     ),
+    **_kept(
+        freeze="finetune.freeze",
+        foundation_model_readout="finetune.transfer_readout",
+        lora="finetune.lora.enabled",
+        lora_rank="finetune.lora.rank",
+        lora_alpha="finetune.lora.alpha",
+    ),
+    # A legacy fine-tune adds a replay head nobody declared, with defaults
+    # that depend on which foundation model it starts from. Here that head is
+    # declared like any other, so these flags become one head's settings.
     **_reserved(
-        "finetune",
-        "the fine-tuning tickets",
-        "freeze",
-        "foundation_model_kwargs",
-        "foundation_model_readout",
+        "data.heads",
+        "the legacy flag port",
         "multiheads_finetuning",
         "foundation_head",
         "weight_pt_head",
@@ -408,10 +415,16 @@ _FINETUNE: dict[str, Disposition] = {
         "subselect_pt",
         "filter_type_pt",
         "allow_random_padding_pt",
+    ),
+    **_reserved(
+        "finetune",
+        "loading a foundation model by name",
+        "foundation_model_kwargs",
+    ),
+    **_reserved(
+        "finetune",
+        "the fine-tuning tickets",
         "foundation_model_elements",
-        "lora",
-        "lora_rank",
-        "lora_alpha",
         "finetune_dipoles_polarizabilities",
     ),
     **_reserved("data.heads", "the multi-head data work", "heads"),

@@ -202,8 +202,76 @@ def test_every_flag_marked_carried_is_read_by_a_collapse():
     assert carried <= read, sorted(carried - read)
 
 
-def test_a_hard_freeze_is_refused_until_it_has_a_home():
+@pytest.mark.parametrize(
+    "argv,field,expected",
+    [
+        (["--freeze", "5"], ("freeze",), 5),
+        (["--foundation_model_readout", "False"], ("transfer_readout",), False),
+        (["--lora", "True"], ("lora", "enabled"), True),
+        (["--lora", "True", "--lora_rank", "8"], ("lora", "rank"), 8),
+        (["--lora", "True", "--lora_alpha", "2.5"], ("lora", "alpha"), 2.5),
+    ],
+)
+def test_a_fine_tune_flag_reaches_its_field(argv, field, expected):
+    """Validated, not only carried: each lands on the field the fine-tune
+    reads, with the value the command line gave."""
+    from mace_core.config.resolved import ResolvedConfig
+
     parser = arg_parser.build_default_arg_parser()
-    namespace = parser.parse_args(["--name", "run", "--freeze", "5"])
-    with pytest.raises(legacy.LegacyFlagError, match="--freeze"):
+    namespace = parser.parse_args(["--name", "run", "--train_file", "train.xyz", *argv])
+    config = ResolvedConfig.model_validate(
+        legacy.from_namespace(namespace, defaults=parser_defaults())
+    )
+    value = config.finetune
+    for name in field:
+        value = getattr(value, name)
+    assert value == expected
+
+
+def test_the_fine_tune_defaults_are_the_legacy_ones():
+    """A command line that sets none of them resolves to what legacy runs
+    with, so leaving them out of the mapping loses nothing."""
+    from mace_core.config.resolved import ResolvedConfig
+
+    defaults = parser_defaults()
+    finetune = ResolvedConfig.model_validate({}).finetune
+    assert finetune.freeze == defaults["freeze"]
+    assert finetune.transfer_readout == defaults["foundation_model_readout"]
+    assert finetune.lora.enabled == defaults["lora"]
+    assert finetune.lora.rank == defaults["lora_rank"]
+    assert finetune.lora.alpha == defaults["lora_alpha"]
+
+
+def test_a_hard_and_a_soft_freeze_travel_together():
+    """Legacy lets a run freeze by level and scale other groups at once; both
+    have to arrive, since each alone is a different run."""
+    from mace_core.config.resolved import ResolvedConfig
+
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(
+        [
+            "--name",
+            "run",
+            "--train_file",
+            "train.xyz",
+            "--freeze",
+            "1",
+            "--lr_params_factors",
+            '{"embedding_lr_factor": 1.0, "interactions_lr_factor": 0.5, '
+            '"products_lr_factor": 1.0, "readouts_lr_factor": 1.0}',
+        ]
+    )
+    config = ResolvedConfig.model_validate(
+        legacy.from_namespace(namespace, defaults=parser_defaults())
+    )
+    assert config.finetune.freeze == 1
+    assert config.training.scheduler.group_factors["interactions"] == 0.5
+
+
+def test_a_replay_head_flag_is_refused_until_the_flag_port():
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(
+        ["--name", "run", "--train_file", "train.xyz", "--subselect_pt", "fps"]
+    )
+    with pytest.raises(legacy.LegacyFlagError, match="--subselect_pt"):
         legacy.from_namespace(namespace, defaults=parser_defaults())

@@ -61,15 +61,24 @@ def test_the_refusal_says_what_became_of_the_flag():
     with pytest.raises(LegacyFlagError, match="device-agnostic"):
         from_namespace(Namespace(save_cpu=True), defaults={"save_cpu": False})
     with pytest.raises(LegacyFlagError, match="fine-tuning tickets"):
-        from_namespace(Namespace(lora=True), defaults={"lora": False})
+        from_namespace(
+            Namespace(foundation_model_elements=True),
+            defaults={"foundation_model_elements": False},
+        )
 
 
 def test_several_unreachable_flags_are_reported_together():
     """One run, one list, rather than one error per attempt."""
     with pytest.raises(LegacyFlagError) as caught:
         from_namespace(
-            Namespace(default_dtype="float32", save_cpu=True, lora=True),
-            defaults={"default_dtype": "float64", "save_cpu": False, "lora": False},
+            Namespace(
+                default_dtype="float32", save_cpu=True, foundation_model_elements=True
+            ),
+            defaults={
+                "default_dtype": "float64",
+                "save_cpu": False,
+                "foundation_model_elements": False,
+            },
         )
     message = str(caught.value)
     assert message.count("--") >= 3
