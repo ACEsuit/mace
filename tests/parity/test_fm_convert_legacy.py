@@ -574,3 +574,25 @@ def test_a_dielectric_model_s_weights_are_refused_by_readout(fp64, isolated, tmp
     source = dielectric(tmp_path / "d.model")
     with pytest.raises(EXTRACTOR["ExtractionError"], match="DipolePolarReadoutBlock"):
         extract_here(source, tmp_path / "d")
+
+
+def test_a_checkpoint_from_before_the_neighbour_buffer_converts_the_same(
+    fp64, isolated, tmp_path
+):
+    """Older releases held each interaction's neighbour count as a plain
+    attribute, not a buffer, and every published model was pickled that way.
+    Moved back to an attribute, the anchor extracts to the same tensors."""
+    source = GOLDEN / "models" / "tiny_scaleshift.model"
+    model = load_anchor("tiny_scaleshift.model")
+    for block in model.interactions:
+        count = float(block.avg_num_neighbors)
+        del block._buffers["avg_num_neighbors"]
+        block.avg_num_neighbors = count
+    torch.save(model, tmp_path / "older.model")
+
+    older = read_neutral(extract_here(tmp_path / "older.model", tmp_path / "older"))
+    current = read_neutral(extract_here(source, tmp_path / "current"))
+    assert older.tensors.keys() == current.tensors.keys()
+    for key, value in current.tensors.items():
+        assert np.array_equal(value, older.tensors[key]), key
+    assert older.sidecar.ops == current.sidecar.ops

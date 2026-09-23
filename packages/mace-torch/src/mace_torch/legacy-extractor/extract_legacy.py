@@ -144,9 +144,11 @@ def legacy_config(model) -> dict[str, Any]:
     Read through the legacy package's own function, which is the authoritative
     list. It refuses the plain energy class by its name alone, although every
     field it reads exists on it, so that class is read through a view that
-    reports the scale-shift class's name and forwards every attribute: the
-    scale-shift fields are then absent because the model has no scale-shift
-    block, which is the truth.
+    reports the scale-shift class's name and forwards every attribute. Some
+    releases of that function read the scale-shift block without checking it
+    exists, so the view offers the identity one, which is what the plain class
+    computes, and the two keys it produces are dropped afterwards: the plain
+    class has no scale and shift to record.
     """
     # Typed loosely on purpose: the plain class is passed through a view that is
     # not a module, and the function reads only attributes.
@@ -154,10 +156,19 @@ def legacy_config(model) -> dict[str, Any]:
         "mace.tools.scripts_utils"
     ).extract_config_mace_model
     target = model
-    if type(model).__name__ == "MACE":
+    plain = type(model).__name__ == "MACE"
+    if plain:
+        torch = importlib.import_module("torch")
+        identity = type(
+            "IdentityScaleShift",
+            (),
+            {"scale": torch.ones(1), "shift": torch.zeros(1)},
+        )()
 
         class ScaleShiftMACE:  # the name the function checks, nothing more
             def __getattr__(self, name):
+                if name == "scale_shift" and not hasattr(model, name):
+                    return identity
                 return getattr(model, name)
 
         target = ScaleShiftMACE()
@@ -166,6 +177,9 @@ def legacy_config(model) -> dict[str, Any]:
         raise ExtractionError(
             f"the legacy configuration reader refused: {config['error']}"
         )
+    if plain:
+        for key in ("atomic_inter_scale", "atomic_inter_shift"):
+            config.pop(key, None)
     return {key: jsonable(value) for key, value in config.items()}
 
 
@@ -463,7 +477,10 @@ def walk(model, spelling: str) -> Walk:
                 f"interaction {index} is a {kind}, whose weights this converter "
                 f"does not map. It maps {list(INTERACTIONS)}."
             )
-        walker.use(f"{prefix}.avg_num_neighbors")
+        # A buffer in recent releases and a plain attribute in older ones,
+        # which is how every published model was pickled.
+        if f"{prefix}.avg_num_neighbors" in walker.state:
+            walker.use(f"{prefix}.avg_num_neighbors")
         walker.op(
             prefix,
             "interaction",
