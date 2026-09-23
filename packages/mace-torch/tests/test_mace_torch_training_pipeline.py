@@ -9,6 +9,7 @@ loss goes down, and the checkpoint carries enough to rebuild what wrote it.
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import numpy as np
 import pytest
@@ -18,6 +19,7 @@ from ase.io import write
 from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import load_default_catalogue
+from mace_torch.models import MACEOutputs, ObservableHead
 from mace_torch.train import (
     RunState,
     run_data_stage,
@@ -289,6 +291,8 @@ def test_a_model_built_for_two_heads_gives_each_its_own_readout(tmp_path):
     )
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
-    readout = built.model.backbone.outputs.heads["energy"]
-    assert readout.num_heads == 2
-    assert built.model.backbone.outputs.energy_head.e0_table.shape[0] == 2
+    outputs = built.model.get_submodule("backbone.outputs")
+    assert isinstance(outputs, MACEOutputs)
+    assert cast(ObservableHead, outputs.heads["energy"]).num_heads == 2
+    assert outputs.energy_head is not None
+    assert outputs.energy_head.e0_table.shape[0] == 2
