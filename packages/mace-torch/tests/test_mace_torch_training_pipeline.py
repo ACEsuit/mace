@@ -309,3 +309,21 @@ def test_the_record_carries_each_heads_energies_and_how_they_were_obtained(tmp_p
     assert record.values == {"H": HYDROGEN, "O": OXYGEN}
     assert record.source == "estimated"
     assert record.method == "isolated_atoms"
+
+
+@fp64_only
+def test_the_same_configuration_trains_the_same_run(tmp_path):
+    """The shuffle is seeded by the run, not drawn from the global generator,
+    so two runs of one configuration step on the same batches in the same
+    order and report the same losses to the last bit."""
+
+    def history(directory):
+        config = configuration(directory, max_num_epochs=3)
+        data = run_data_stage(config, CATALOGUE)
+        built = run_model_stage(config, data, CATALOGUE)
+        return [record.valid_loss for record in run_train_stage(config, built).history]
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    assert history(first) == history(second)
