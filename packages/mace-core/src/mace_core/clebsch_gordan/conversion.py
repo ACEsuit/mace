@@ -47,7 +47,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.clebsch_gordan.irreps import Irrep, Irreps
 from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,
@@ -226,3 +226,86 @@ def reduced_to_full(
         )
     recovered = moved @ np.linalg.pinv(matrix)
     return np.moveaxis(recovered, -1, axis).astype(_output_dtype(weights))
+
+
+def to_canonical(per_order: Sequence[np.ndarray], axis: int = -2) -> np.ndarray:
+    """Join the per-body-order weight tensors into one flat canonical array.
+
+    Args:
+        per_order: The tensors in ascending body order, which is the order the
+            path enumeration uses and therefore the order on disk.
+        axis: The path axis in each tensor.
+
+    Returns:
+        One array, the concatenation along the path axis.
+    """
+    if not per_order:
+        raise ValueError("there are no weight tensors to join")
+    return np.concatenate(list(per_order), axis=axis)
+
+
+def from_canonical(
+    flat: np.ndarray, counts: Sequence[int], axis: int = -2
+) -> list[np.ndarray]:
+    """Split a canonical array back into per-body-order tensors.
+
+    Args:
+        flat: The canonical array.
+        counts: How many paths each body order carries, ascending.
+        axis: The path axis.
+
+    Raises:
+        ValueError: If the counts do not add up to the path axis length. The
+            message gives both totals, because the usual cause is a correlation
+            mismatch and the shapes are otherwise plausible.
+    """
+    total = int(sum(counts))
+    if flat.shape[axis] != total:
+        raise ValueError(
+            f"the path axis has length {flat.shape[axis]} but the counts "
+            f"{list(counts)} add up to {total}."
+        )
+    edges = np.cumsum(list(counts))[:-1]
+    return [np.ascontiguousarray(part) for part in np.split(flat, edges, axis=axis)]
+
+
+def mul_ir_to_ir_mul(values: np.ndarray, irreps: str | Irreps) -> np.ndarray:
+    """Reinterpret the last axis from ``mul_ir`` layout to ``ir_mul``.
+
+    ``mul_ir`` is canonical and is what this package stores: the multiplicity
+    index varies slowest, so a ``2x1o`` term is two contiguous blocks of three.
+    ``ir_mul`` interleaves them instead. Some backends want the other one, and
+    for a single term the change is a reshape and a transpose rather than a
+    computation.
+
+    Raises:
+        ValueError: If the declaration has more than one term. With several
+            terms the two layouts are not related by one reshape, and pretending
+            otherwise would silently scramble the values.
+    """
+    parsed = irreps if isinstance(irreps, Irreps) else Irreps.parse(irreps)
+    if len(parsed.terms) != 1:
+        raise ValueError(
+            f"the layout change is a reshape only for a single term, and "
+            f"{parsed} has {len(parsed.terms)}. Convert the terms separately."
+        )
+    mul, ir = parsed.terms[0]
+    head = values.shape[:-1]
+    return np.ascontiguousarray(
+        values.reshape(*head, mul, ir.dimension).swapaxes(-1, -2).reshape(*head, -1)
+    )
+
+
+def ir_mul_to_mul_ir(values: np.ndarray, irreps: str | Irreps) -> np.ndarray:
+    """The inverse of :func:`mul_ir_to_ir_mul`."""
+    parsed = irreps if isinstance(irreps, Irreps) else Irreps.parse(irreps)
+    if len(parsed.terms) != 1:
+        raise ValueError(
+            f"the layout change is a reshape only for a single term, and "
+            f"{parsed} has {len(parsed.terms)}. Convert the terms separately."
+        )
+    mul, ir = parsed.terms[0]
+    head = values.shape[:-1]
+    return np.ascontiguousarray(
+        values.reshape(*head, ir.dimension, mul).swapaxes(-1, -2).reshape(*head, -1)
+    )
