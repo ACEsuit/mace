@@ -10,9 +10,13 @@ from mace_torch.electrostatics.solver import (
     PBC_HANDLING,
     ElectrostaticsSolver,
     LongRangeEnergy,
+    LongRangeFeatures,
+    LongRangeGeometry,
     ReferenceSolver,
     build_long_range,
+    build_long_range_features,
     build_scf_solve,
+    long_range_geometry,
     reciprocal_cell_and_volume,
 )
 
@@ -20,8 +24,12 @@ __all__ = [
     "PBC_HANDLING",
     "ElectrostaticsSolver",
     "LongRangeEnergy",
+    "LongRangeFeatures",
+    "LongRangeGeometry",
     "ReferenceSolver",
     "build_long_range",
+    "build_long_range_features",
     "build_scf_solve",
+    "long_range_geometry",
     "reciprocal_cell_and_volume",
 ]

@@ -13,11 +13,19 @@ stress it contributes is the derivative of the energy it computed.
 against the descriptor, and asked for its op once, when the model is built. Its
 periodicity handling is fixed then too: each profile maps to one evaluation of
 the reference, never to one chosen from the batch it happens to see.
+
+**The geometry is computed once per forward and shared.** A charge-aware model
+reads the potential several times in one evaluation and the energy once more,
+all over the same positions and cell. What depends only on those, the
+reciprocal cell, the volume and the k-vectors, is :class:`LongRangeGeometry`,
+and each op takes it rather than deriving its own. An accelerated solver that
+prepares a cache of its own does so from this, once, in its ``prepare``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from types import NotImplementedType
 from typing import Any, Protocol
 
@@ -33,9 +41,13 @@ __all__ = [
     "PBC_HANDLING",
     "ElectrostaticsSolver",
     "LongRangeEnergy",
+    "LongRangeFeatures",
+    "LongRangeGeometry",
     "ReferenceSolver",
     "build_long_range",
+    "build_long_range_features",
     "build_scf_solve",
+    "long_range_geometry",
     "reciprocal_cell_and_volume",
 ]
 
@@ -64,7 +76,14 @@ class ElectrostaticsSolver(Protocol):
     def long_range_energy(
         self, descriptor: ElectrostaticsSolverDescriptor
     ) -> nn.Module:
-        """The op: ``(graph, source_feats) -> energy per graph``."""
+        """The op: ``(graph, source_feats, geometry) -> energy per graph``."""
+        ...
+
+    def long_range_features(
+        self, descriptor: ElectrostaticsSolverDescriptor
+    ) -> nn.Module:
+        """The projection op: ``prepare(geometry)`` once, then
+        ``(cache, source_feats) -> features per atom`` as often as needed."""
         ...
 
     def make_scf_solve(
@@ -85,6 +104,71 @@ def reciprocal_cell_and_volume(cell: Tensor) -> tuple[Tensor, Tensor]:
     inverse, _ = torch.linalg.inv_ex(cell.transpose(-1, -2))
     finite = (volume > 0).view(-1, 1, 1)
     return torch.where(finite, 2 * torch.pi * inverse, torch.zeros_like(cell)), volume
+
+
+@dataclass
+class LongRangeGeometry:
+    """What every long-range op of one forward reads, computed once.
+
+    Attributes:
+        positions: ``[n_atoms, 3]``, as the graph carries them, strained or not.
+        batch: ``[n_atoms]``, which structure each atom belongs to.
+        pbc: ``[n_graphs, 3]``.
+        cell: ``[n_graphs, 3, 3]``, the graph's.
+        rcell: ``[n_graphs, 3, 3]``, ``2 pi inv(cell)^T``, derived from ``cell``.
+        volume: ``[n_graphs]``, ``|det cell|``.
+        k_vectors: ``[n_k, 3]``, every structure's reciprocal vectors inside the
+            cutoff, concatenated. Empty for a solve summed in real space.
+        k_norm2: ``[n_k]``.
+        k_vector_batch: ``[n_k]``, which structure each belongs to.
+        k0_mask: ``[n_k]``.
+    """
+
+    positions: Tensor
+    batch: Tensor
+    pbc: Tensor
+    cell: Tensor
+    rcell: Tensor
+    volume: Tensor
+    k_vectors: Tensor
+    k_norm2: Tensor
+    k_vector_batch: Tensor
+    k0_mask: Tensor
+
+
+def long_range_geometry(
+    graph: Mapping[str, Any], descriptor: ElectrostaticsSolverDescriptor
+) -> LongRangeGeometry:
+    """The shared geometry of one batch, for one solve.
+
+    A solve summed in real space reads no k-vectors, so none are built for it.
+    """
+    from mace_torch.electrostatics.reference.kspace import compute_k_vectors_flat
+
+    positions = graph["positions"]
+    cell = graph["cell"].view(-1, 3, 3)
+    rcell, volume = reciprocal_cell_and_volume(cell)
+    if PBC_HANDLING[descriptor.periodicity_profile] == "realspace":
+        k_vectors = positions.new_empty((0, 3))
+        k_norm2 = positions.new_empty((0,))
+        k_vector_batch = graph["batch"].new_empty((0,))
+        k0_mask = positions.new_empty((0,))
+    else:
+        k_vectors, k_norm2, k_vector_batch, k0_mask = compute_k_vectors_flat(
+            float(descriptor.kspace_cutoff), cell, rcell
+        )
+    return LongRangeGeometry(
+        positions=positions,
+        batch=graph["batch"],
+        pbc=graph["pbc"].view(-1, 3),
+        cell=cell,
+        rcell=rcell,
+        volume=volume,
+        k_vectors=k_vectors,
+        k_norm2=k_norm2,
+        k_vector_batch=k_vector_batch,
+        k0_mask=k0_mask,
+    )
 
 
 class LongRangeEnergy(nn.Module):
@@ -112,32 +196,102 @@ class LongRangeEnergy(nn.Module):
             pbc_handling=PBC_HANDLING[descriptor.periodicity_profile],  # ty: ignore[invalid-argument-type]
         )
 
-    def forward(self, graph: Mapping[str, Any], source_feats: Tensor) -> Tensor:
+    def forward(
+        self,
+        graph: Mapping[str, Any],
+        source_feats: Tensor,
+        geometry: LongRangeGeometry | None = None,
+    ) -> Tensor:
         """The energy of each graph, in eV.
 
         Args:
             graph: The batch. Its ``cell`` is read as it is, strained or not.
             source_feats: ``[n_atoms, (multipole_max_l + 1)^2]``, each atom's
                 multipoles in the ``e3nn`` component order.
+            geometry: The batch's shared geometry, when the caller has already
+                built it for another op. Built here otherwise.
         """
-        from mace_torch.electrostatics.reference.kspace import compute_k_vectors_flat
-
-        cell = graph["cell"].view(-1, 3, 3)
-        rcell, volume = reciprocal_cell_and_volume(cell)
-        k_vectors, k_norm2, k_vector_batch, k0_mask = compute_k_vectors_flat(
-            self.kspace_cutoff, cell, rcell
-        )
+        if geometry is None:
+            geometry = long_range_geometry(graph, self.descriptor)
         return self.energy(
-            k_vectors=k_vectors,
-            k_norm2=k_norm2,
-            k_vector_batch=k_vector_batch,
-            k0_mask=k0_mask,
+            k_vectors=geometry.k_vectors,
+            k_norm2=geometry.k_norm2,
+            k_vector_batch=geometry.k_vector_batch,
+            k0_mask=geometry.k0_mask,
             source_feats=source_feats,
-            node_positions=graph["positions"],
-            batch=graph["batch"],
-            volume=volume,
-            pbc=graph["pbc"].view(-1, 3),
+            node_positions=geometry.positions,
+            batch=geometry.batch,
+            volume=geometry.volume,
+            pbc=geometry.pbc,
         )
+
+
+class LongRangeFeatures(nn.Module):
+    """The potential of the source density, projected onto each atom.
+
+    Two steps, because a charge-aware model projects several densities over
+    one geometry: :meth:`prepare` does everything that depends on the
+    positions and the cell once, and each call projects one density through
+    it.
+
+    Args:
+        descriptor: The solve. Its ``features`` say what is projected onto.
+        solver: The name of the solver that built it.
+    """
+
+    def __init__(self, descriptor: ElectrostaticsSolverDescriptor, solver: str) -> None:
+        super().__init__()
+        from mace_torch.electrostatics.reference.features import (
+            GTOElectrostaticFeatures,
+        )
+
+        projection = descriptor.features
+        if projection is None:
+            raise ValueError(
+                "the descriptor declares no feature projection, so there is "
+                "nothing to project onto. Give it `features`."
+            )
+        self.descriptor = descriptor
+        self.solver = solver
+        self.dimension = projection.dimension
+        self.features = GTOElectrostaticFeatures(
+            density_max_l=descriptor.multipole_max_l,
+            density_smearing_width=descriptor.smearing_width,
+            feature_max_l=projection.max_l,
+            feature_smearing_widths=list(projection.widths),
+            include_self_interaction=projection.include_self_interaction,
+            kspace_cutoff=float(descriptor.kspace_cutoff),
+            quadrupole_feature_corrections=projection.quadrupole_corrections,
+            integral_normalization=projection.normalization,
+            pbc_handling=PBC_HANDLING[descriptor.periodicity_profile],  # ty: ignore[invalid-argument-type]
+        )
+
+    def prepare(self, geometry: LongRangeGeometry) -> dict[str, Any]:
+        """Everything the projection needs that the density does not change."""
+        return self.features.precompute_geometry(
+            k_vectors=geometry.k_vectors,
+            k_norm2=geometry.k_norm2,
+            k_vector_batch=geometry.k_vector_batch,
+            k0_mask=geometry.k0_mask,
+            node_positions=geometry.positions,
+            batch=geometry.batch,
+            volume=geometry.volume,
+            pbc=geometry.pbc,
+        )
+
+    def forward(self, cache: dict[str, Any], source_feats: Tensor) -> Tensor:
+        """``[n_atoms, features.dimension]``, grouped by order, then by width,
+        then by component in the ``e3nn`` order: the declaration of the
+        spherical harmonics up to ``max_l``, one copy per width, sorted.
+
+        Args:
+            cache: What :meth:`prepare` returned for this batch.
+            source_feats: ``[n_atoms, (multipole_max_l + 1)^2]``.
+        """
+        projected = self.features.forward_dynamic(
+            cache=cache, source_feats=source_feats
+        )
+        return projected.reshape(source_feats.shape[0], self.dimension)
 
 
 class ReferenceSolver:
@@ -152,7 +306,7 @@ class ReferenceSolver:
 
     name = "reference"
     capabilities = SolverCapabilities(
-        ops=frozenset({"long_range_energy"}),
+        ops=frozenset({"long_range_energy", "long_range_features"}),
         devices=frozenset({"cpu", "cuda", "xpu", "mps"}),
         dtypes=frozenset({"float64", "float32"}),
         slab_normals=frozenset({2}),
@@ -165,6 +319,11 @@ class ReferenceSolver:
         self, descriptor: ElectrostaticsSolverDescriptor
     ) -> nn.Module:
         return LongRangeEnergy(descriptor, self.name)
+
+    def long_range_features(
+        self, descriptor: ElectrostaticsSolverDescriptor
+    ) -> nn.Module:
+        return LongRangeFeatures(descriptor, self.name)
 
     def make_scf_solve(
         self, descriptor: ElectrostaticsSolverDescriptor
@@ -201,6 +360,34 @@ def build_long_range(
             solver, "training on forces or stress"
         )
     return backend.long_range_energy(descriptor)
+
+
+def build_long_range_features(
+    descriptor: ElectrostaticsSolverDescriptor,
+    *,
+    solver: str = "reference",
+    trains_derivatives: bool = False,
+) -> nn.Module:
+    """The potential projection for a model, resolved once.
+
+    The same rules as :func:`build_long_range`, and the same solver: a model
+    reads its features and its energy from one solver, since two would be two
+    conventions for the same density.
+
+    Raises:
+        SolverNotAvailableError: If no solver has that name, or it did not
+            import.
+        UnsupportedSolveError: If the solver declines the solve, has no
+            projection op, or cannot be differentiated twice and the model
+            trains on derivatives.
+    """
+    backend: ElectrostaticsSolver = get_solver(solver)
+    backend.capabilities.require(descriptor, solver)
+    if trains_derivatives:
+        backend.capabilities.require_double_backward(
+            solver, "training on forces or stress"
+        )
+    return backend.long_range_features(descriptor)
 
 
 def build_scf_solve(

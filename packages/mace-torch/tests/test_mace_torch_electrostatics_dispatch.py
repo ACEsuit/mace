@@ -17,6 +17,7 @@ import torch
 from mace_core.electrostatics import (
     ENTRY_POINT_GROUPS,
     ElectrostaticsSolverDescriptor,
+    FeatureProjection,
     SolverCapabilities,
     SolverNotAvailableError,
     UnsupportedSolveError,
@@ -25,9 +26,12 @@ from mace_core.electrostatics import (
 from mace_core.electrostatics import registry as registry_module
 from mace_torch.electrostatics import (
     LongRangeEnergy,
+    LongRangeFeatures,
     ReferenceSolver,
     build_long_range,
+    build_long_range_features,
     build_scf_solve,
+    long_range_geometry,
 )
 from torch import nn
 
@@ -148,6 +152,58 @@ def test_a_solver_that_declines_a_system_is_an_error_not_a_fallback(registered):
     molecule = ElectrostaticsSolverDescriptor("molecular", 1, 3.0, 1.0)
     with pytest.raises(UnsupportedSolveError, match="accelerated"):
         build_long_range(molecule, solver="accelerated")
+
+
+# ---------------------------------------------------------------------------
+# The projection, and the geometry both ops share
+# ---------------------------------------------------------------------------
+
+PROJECTING = ElectrostaticsSolverDescriptor(
+    "full_periodic", 1, 3.0, 1.0, features=FeatureProjection(1, (1.0, 1.5))
+)
+
+
+def test_the_projection_comes_from_the_same_solver(registered):
+    op = build_long_range_features(PROJECTING)
+    assert isinstance(op, LongRangeFeatures) and op.solver == "reference"
+
+
+def test_a_solver_without_a_projection_is_not_asked_for_one(registered):
+    with pytest.raises(UnsupportedSolveError, match="accelerated"):
+        build_long_range_features(PROJECTING, solver="accelerated")
+
+
+def test_one_geometry_serves_the_energy_and_every_projection(registered):
+    """The k-vectors are built once per forward. Handed the same geometry, the
+    energy is the energy it builds for itself, and the projection of a density
+    has one row per atom and the width it declares."""
+    graph = {
+        "positions": torch.rand(4, 3, dtype=torch.float64) * 5,
+        "batch": torch.zeros(4, dtype=torch.long),
+        "cell": 6.0 * torch.eye(3, dtype=torch.float64).unsqueeze(0),
+        "pbc": torch.tensor([[True, True, True]]),
+    }
+    density = torch.rand(4, 4, dtype=torch.float64)
+    geometry = long_range_geometry(graph, PROJECTING)
+    energy = build_long_range(PROJECTING)
+    torch.testing.assert_close(
+        energy(graph, density, geometry), energy(graph, density), rtol=0, atol=0
+    )
+    projection = build_long_range_features(PROJECTING)
+    assert isinstance(projection, LongRangeFeatures)
+    features = projection(projection.prepare(geometry), density)
+    assert features.shape == (4, 8)
+
+
+def test_a_solve_summed_in_real_space_builds_no_k_vectors():
+    graph = {
+        "positions": torch.rand(3, 3, dtype=torch.float64),
+        "batch": torch.zeros(3, dtype=torch.long),
+        "cell": 10.0 * torch.eye(3, dtype=torch.float64).unsqueeze(0),
+        "pbc": torch.tensor([[False, False, False]]),
+    }
+    molecule = ElectrostaticsSolverDescriptor("molecular", 1, 3.0, 1.0)
+    assert long_range_geometry(graph, molecule).k_vectors.shape == (0, 3)
 
 
 # ---------------------------------------------------------------------------

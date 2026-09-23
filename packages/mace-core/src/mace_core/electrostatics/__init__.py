@@ -11,8 +11,11 @@ from mace_core.electrostatics.capabilities import (
 )
 from mace_core.electrostatics.descriptor import (
     PERIODICITY_PROFILES,
+    REALSPACE_METHODS,
     ElectrostaticsSolverDescriptor,
+    FeatureProjection,
     PeriodicityProfile,
+    RealspaceMethod,
     ScfSpec,
 )
 from mace_core.electrostatics.registry import (
@@ -26,9 +29,12 @@ from mace_core.electrostatics.registry import (
 __all__ = [
     "ENTRY_POINT_GROUPS",
     "PERIODICITY_PROFILES",
+    "REALSPACE_METHODS",
     "DiscoveredSolver",
     "ElectrostaticsSolverDescriptor",
+    "FeatureProjection",
     "PeriodicityProfile",
+    "RealspaceMethod",
     "ScfSpec",
     "SolverCapabilities",
     "SolverNotAvailableError",
