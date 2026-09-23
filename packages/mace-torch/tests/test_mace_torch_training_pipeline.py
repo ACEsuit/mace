@@ -22,6 +22,7 @@ from mace_core.observables import load_default_catalogue
 from mace_torch.data import GraphDataset
 from mace_torch.models import MACEOutputs, ObservableHead
 from mace_torch.train import (
+    ModelStageError,
     RunState,
     run_data_stage,
     run_model_stage,
@@ -550,3 +551,57 @@ def test_the_isolated_atoms_stay_out_of_the_split(tmp_path, seed):
     validation = dataset_.configurations
     assert not any(item.config_type == "IsolatedAtom" for item in validation)
     assert len(validation) == 2
+
+
+def build_with(tmp_path, **model):
+    config = configuration(tmp_path)
+    config = config.model_copy(
+        update={
+            "model": config.model.model_validate({**config.model.model_dump(), **model})
+        }
+    )
+    data = run_data_stage(config, CATALOGUE)
+    return run_model_stage(config, data, CATALOGUE).model
+
+
+@pytest.mark.parametrize(
+    "setting,value",
+    [
+        ("interaction", "RealAgnosticInteractionBlock"),
+        ("interaction_first", "RealAgnosticDensityInteractionBlock"),
+        ("radial_mlp", (8,)),
+        ("distance_transform", "Agnesi"),
+        ("apply_cutoff", False),
+        ("use_agnostic_product", True),
+        ("edge_irreps", "4x0e"),
+        ("use_edge_irreps_first", True),
+        ("clebsch_gordan_basis", "full"),
+        ("readout", {"gate": "tanh"}),
+        ("readout", {"last_only": True}),
+        ("readout", {"from_embedding": True}),
+    ],
+)
+def test_a_setting_the_model_cannot_build_is_refused(tmp_path, setting, value):
+    """Each of these used to build the default model and train it under the
+    name of the one asked for, with the same parameter count."""
+    with pytest.raises(ModelStageError, match=f"model.{setting}"):
+        build_with(tmp_path, **{setting: value})
+
+
+def test_the_first_layer_builds_from_either_spelling(tmp_path):
+    """The frozen tree builds the plain block in the first layer whichever of
+    the two it is given, so both are the same model."""
+    plain = build_with(tmp_path, interaction_first="RealAgnosticInteractionBlock")
+    residual = build_with(
+        tmp_path, interaction_first="RealAgnosticResidualInteractionBlock"
+    )
+    assert sum(p.numel() for p in plain.parameters()) == sum(
+        p.numel() for p in residual.parameters()
+    )
+
+
+def test_every_refusal_is_reported_together(tmp_path):
+    with pytest.raises(ModelStageError) as caught:
+        build_with(tmp_path, apply_cutoff=False, radial_mlp=(8,))
+    assert "model.apply_cutoff" in str(caught.value)
+    assert "model.radial_mlp" in str(caught.value)
