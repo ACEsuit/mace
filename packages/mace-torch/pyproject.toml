@@ -39,6 +39,9 @@ dependencies = [
     # The checkpoint format. Tensors only, no pickle, so a checkpoint carries
     # no executable code and can be read without trusting its author.
     "safetensors",
+    # The reference electrostatics solver computes its Gaussian overlap
+    # integrals and normalisations with it when it is built.
+    "scipy",
 ]
 
 [project.entry-points."mace.neighbor_backends"]
@@ -56,6 +59,11 @@ wandb = ["wandb"]
 # The mandatory reference backend, discovered the same way any third-party one
 # is: through an entry point, with nothing in `mace_core` naming it.
 reference = "mace_torch.backends.reference:ReferenceBackend"
+
+[project.entry-points."mace.electrostatics_backends.torch"]
+# The reference long-range solver, in the tree and found the way any other
+# solver is, in a group of its own beside the kernel backends'.
+reference = "mace_torch.electrostatics.solver:ReferenceSolver"
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

@@ -23,7 +23,15 @@ from mace_core.config.training import (
 )
 from pydantic import BaseModel, ValidationError
 
-SECTIONS = ("runtime", "data", "model", "loss", "training", "finetune")
+SECTIONS = (
+    "runtime",
+    "data",
+    "model",
+    "loss",
+    "training",
+    "finetune",
+    "electrostatics",
+)
 
 
 def write(tmp_path: Path, suffix: str, document: dict) -> Path:
@@ -40,7 +48,7 @@ def write(tmp_path: Path, suffix: str, document: dict) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_the_six_sections_are_the_declared_ones():
+def test_the_seven_sections_are_the_declared_ones():
     assert tuple(ResolvedConfig.model_fields) == SECTIONS
 
 

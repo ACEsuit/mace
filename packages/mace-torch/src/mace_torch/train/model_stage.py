@@ -260,6 +260,7 @@ def build_model(
             f"repulsion is added."
         )
     _refuse_unbuilt(config)
+    _refuse_electrostatics(config)
 
     energy = next(
         (spec for spec in requested.observables if spec.name == "energy"), None
@@ -332,6 +333,30 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
             + "; ".join(unbuilt)
             + "."
         )
+
+
+def _refuse_electrostatics(config: ResolvedConfig) -> None:
+    """Resolve the named solver, then refuse: no model here carries the term.
+
+    Resolved first, so a solver that is not registered or did not import is
+    named as such rather than hidden behind the second refusal.
+
+    Raises:
+        SolverNotAvailableError: If the solver cannot be delivered.
+        ModelStageError: Whenever the section is enabled, since training the
+            model without the long-range term it asked for is another model.
+    """
+    settings = config.electrostatics
+    if not settings.enabled:
+        return
+    from mace_core.electrostatics import get_solver
+
+    get_solver(settings.solver)
+    raise ModelStageError(
+        "electrostatics.enabled is set, and no model built here carries a "
+        "long-range term yet, so the run would train one without it. Leave "
+        "the section out for now."
+    )
 
 
 def _scale_shift(

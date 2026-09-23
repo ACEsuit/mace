@@ -33,6 +33,7 @@ from pydantic import Field, model_validator
 from mace_core.config.base import ReforgeBaseConfig
 from mace_core.config.data import DataConfig
 from mace_core.config.e0s import FOUNDATION_E0_KINDS
+from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.loss import LossConfig
 from mace_core.config.model import ModelConfig
 from mace_core.config.runtime import RuntimeConfig
@@ -116,6 +117,7 @@ class ResolvedConfig(ReforgeBaseConfig):
         loss: What the run is scored on.
         training: The optimizer, the schedule and the stages.
         finetune: The foundation model, reserved.
+        electrostatics: The long-range solver, for the models that carry one.
     """
 
     model_config = ReforgeBaseConfig.model_config | {"frozen": True}
@@ -126,6 +128,7 @@ class ResolvedConfig(ReforgeBaseConfig):
     loss: LossConfig = LossConfig()
     training: TrainingConfig = TrainingConfig()
     finetune: FinetuneConfig = FinetuneConfig()
+    electrostatics: ElectrostaticsConfig = ElectrostaticsConfig()
 
     def schedule(self) -> tuple[StageConfig, ...]:
         """The stages this run goes through, with their loss weights filled in.
