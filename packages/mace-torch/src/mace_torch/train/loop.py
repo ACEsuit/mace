@@ -22,15 +22,12 @@ import logging
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 import torch
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.config.training import (
-    InheritOptimizer,
-    LBFGSOptimizer,
-    StageConfig,
-)
+from mace_core.config.training import InheritOptimizer, StageConfig
 from mace_core.stages import EpochRecord, TrainedModel
 from mace_core.tables import Row, error_table
 from torch import Tensor, nn
@@ -60,6 +57,7 @@ from mace_torch.train.checkpoint import (
 from mace_torch.train.contracts import TorchBuiltModel
 from mace_torch.train.ddp import DistributedContext, broadcast_decision, wrap_model
 from mace_torch.train.ema import ExponentialMovingAverage
+from mace_torch.train.full_batch import full_batch_step
 from mace_torch.train.loss import build_loss
 from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
 from mace_torch.train.optimizers import build_optimizer, build_scheduler
@@ -226,9 +224,6 @@ def run_train_stage(
     processes = distributed or DistributedContext(device=device)
     valid_loaders = built.data.valid_loaders
     if processes.distributed:
-        built.data.train_loader.shard = training_shard(
-            processes.rank, processes.world_size
-        )
         valid_loaders = {
             head: _evaluated_share(loader, processes)
             for head, loader in built.data.valid_loaders.items()
@@ -334,16 +329,40 @@ def run_train_stage(
             # own epochs, and the model the run ends on is the last stage's.
             best_loss, since_best = None, 0
 
-        train_loss = train_one_epoch(
-            stepped,
-            built.data.train_loader.batches(epoch, drop_last=_drops_tail(entering)),
-            loss,
-            optimizer,
-            device=device,
-            compute=requested.derivatives,
-            clip_grad=config.training.clip_grad,
-            ema=ema,
-        )
+        # The regime follows the optimizer the stage runs, which a stage that
+        # inherits its optimizer takes from the one before it.
+        full_batch = isinstance(optimizer, torch.optim.LBFGS)
+        train_loader = built.data.train_loader
+        if processes.distributed:
+            train_loader.shard = training_shard(
+                processes.rank, processes.world_size, pad=not full_batch
+            )
+        if full_batch:
+            # The whole set, ragged tail and all: a structure left out is one
+            # the step never sees.
+            train_loss = full_batch_step(
+                model,
+                partial(train_loader.batches, epoch, drop_last=False),
+                loss,
+                optimizer,
+                device=device,
+                compute=requested.derivatives,
+                clip_grad=config.training.clip_grad,
+                processes=processes,
+            )
+        else:
+            # A short last batch is a noisier gradient with the same learning
+            # rate behind it, so a mini-batch stage drops it.
+            train_loss = train_one_epoch(
+                stepped,
+                train_loader.batches(epoch, drop_last=True),
+                loss,
+                optimizer,
+                device=device,
+                compute=requested.derivatives,
+                clip_grad=config.training.clip_grad,
+                ema=ema,
+            )
 
         valid_loss: float | None = None
         improved = False
@@ -585,18 +604,6 @@ def _requested_names(built: TorchBuiltModel) -> _Requested:
             names.append(name)
             per_atom.append(request.wrt == "pos")
     return _Requested(tuple(names), tuple(per_atom), outputs.derivatives)
-
-
-def _drops_tail(stage: StageConfig) -> bool:
-    """Whether this stage drops the epoch's ragged last batch.
-
-    A full-batch optimizer steps once an epoch through a closure over
-    everything it was given, so a dropped tail is a slice of the dataset it
-    never sees. A mini-batch one drops it, because a short last batch is a
-    noisier gradient with the same learning rate behind it. The frozen tree
-    spells the same distinction as ``drop_last=(not args.lbfgs)``.
-    """
-    return not isinstance(stage.optimizer, LBFGSOptimizer)
 
 
 def log_validation(epoch: int, per_head: Mapping[str, dict[str, float]]) -> None:

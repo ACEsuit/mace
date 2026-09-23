@@ -25,24 +25,28 @@ from torch.utils.data import Dataset, Sampler
 __all__ = ["EvaluationSampler", "training_shard"]
 
 
-def training_shard(rank: int, world_size: int):
+def training_shard(rank: int, world_size: int, *, pad: bool = True):
     """A function giving one process its share of an epoch's order.
 
     Args:
         rank: The process's index.
         world_size: How many processes share the epoch.
+        pad: Whether the parts are made the same length by repeating the
+            first structures. A mini-batch stage needs it, since every process
+            has to take the same number of steps. A full-batch stage must not
+            have it: it sums the whole set once per step, and a repeated
+            structure would be counted twice.
 
     Returns:
-        A function from the epoch's order to this process's part of it, all
-        parts of the same length.
+        A function from the epoch's order to this process's part of it.
     """
     if not 0 <= rank < world_size:
         raise ValueError(f"rank {rank} is not in a world of {world_size}.")
 
     def shard(indices: Sequence[int]) -> list[int]:
         order = list(indices)
-        if not order:
-            return order
+        if not order or not pad:
+            return order[rank::world_size]
         total = -(-len(order) // world_size) * world_size
         padded = (order * (total // len(order) + 1))[:total]
         return padded[rank:total:world_size]

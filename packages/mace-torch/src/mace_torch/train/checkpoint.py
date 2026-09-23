@@ -261,6 +261,7 @@ def write_run_checkpoint(
         },
         "model_tensors": sorted(key for key in tensors if key.startswith("model")),
         "optimizer": {
+            "kind": type(optimizer).__name__,
             "topology": _topology(optimizer),
             "state": _encode(optimizer.state_dict(), "optimizer", tensors),
         },
@@ -388,7 +389,19 @@ def read_run_checkpoint(
     current = _topology(optimizer)
     outcome: Literal["restored", "reinitialized"] = "restored"
     reason = None
-    if saved != current:
+    written_by, resumed_by = document["optimizer"]["kind"], type(optimizer).__name__
+    if written_by != resumed_by:
+        # Decided from what the checkpoint records, before anything is loaded:
+        # one optimizer's state read into another can load without an error
+        # and mean nothing, as Adam's moments would under L-BFGS.
+        outcome = "reinitialized"
+        reason = (
+            f"the checkpoint was written by {written_by} and the run resumes "
+            f"with {resumed_by}, whose state is not the same kind of thing, so "
+            f"the weights were loaded and the optimizer and schedule start "
+            f"afresh"
+        )
+    elif saved != current:
         outcome = "reinitialized"
         reason = (
             f"the optimizer's parameter groups changed since the checkpoint "

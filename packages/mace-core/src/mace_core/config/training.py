@@ -88,12 +88,29 @@ class ScheduleFreeOptimizer(FrozenSection):
 class LBFGSOptimizer(FrozenSection):
     """Full-batch L-BFGS, which steps once per epoch through a closure.
 
-    A stage running this forbids an EMA and a plateau schedule. Both are built
-    around a per-step optimizer, and against one step an epoch neither does
-    what its name says.
+    A stage running this is a full-batch stage: every epoch is one optimizer
+    step over the whole training set, and the set keeps its ragged tail. It
+    forbids an EMA and a plateau schedule. Both are built around a per-step
+    optimizer, and against one step an epoch neither does what its name says.
+
+    The defaults are the frozen tree's, which builds the optimizer with these
+    three and leaves the rest at torch's.
+
+    Args:
+        lr: The step length the line search starts from. Not
+            ``training.lr``, which is a mini-batch rate: the frozen tree never
+            passes it, so a full-batch stage starts from torch's 1.0.
+        history_size: How many past updates approximate the curvature.
+        max_iter: Closure evaluations a single step may take, line search
+            included.
+        line_search_fn: ``"strong_wolfe"``, or ``None`` for a fixed step.
     """
 
     kind: Literal["lbfgs"] = "lbfgs"
+    lr: float = Field(default=1.0, gt=0)
+    history_size: int = Field(default=200, ge=1)
+    max_iter: int = Field(default=20, ge=1)
+    line_search_fn: Literal["strong_wolfe"] | None = "strong_wolfe"
 
 
 #: Which optimizer, with its own hyperparameters under it.

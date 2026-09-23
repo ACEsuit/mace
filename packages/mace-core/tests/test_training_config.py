@@ -370,6 +370,54 @@ def test_a_second_stage_running_lbfgs_is_checked_too():
         )
 
 
+def test_a_listed_stage_running_lbfgs_names_its_own_field_and_the_other():
+    """Both fields, so whoever reads the error knows which two to reconcile."""
+    with pytest.raises(
+        ValidationError,
+        match=r"training\.stages\[1\]\.optimizer runs lbfgs and "
+        r"training\.scheduler is plateau",
+    ):
+        ResolvedConfig.load(
+            cli_overrides=[
+                "--model.model=an-architecture",
+                "--training.stages",
+                '[{"name": "main"}, {"name": "polish", "start_epoch": 5, '
+                '"optimizer": {"lbfgs": {}}}]',
+            ]
+        )
+
+
+def test_a_stage_that_keeps_running_lbfgs_is_checked_against_its_own_schedule():
+    """Inheriting the optimizer inherits the regime, and the schedule the
+    later stage sets is the one it runs."""
+    with pytest.raises(
+        ValidationError,
+        match=r"training\.stages\[0\]\.optimizer runs lbfgs and "
+        r"training\.stages\[1\]\.scheduler is plateau",
+    ):
+        ResolvedConfig.load(
+            cli_overrides=[
+                "--model.model=an-architecture",
+                "--training.scheduler.kind",
+                '{"constant": {}}',
+                "--training.stages",
+                '[{"name": "main", "optimizer": {"lbfgs": {}}}, '
+                '{"name": "late", "start_epoch": 5, '
+                '"scheduler": {"kind": {"plateau": {}}}}]',
+            ]
+        )
+
+
+def test_lbfgs_carries_the_frozen_tree_s_settings():
+    optimizer = LBFGSOptimizer()
+    assert (
+        optimizer.lr,
+        optimizer.history_size,
+        optimizer.max_iter,
+        optimizer.line_search_fn,
+    ) == (1.0, 200, 20, "strong_wolfe")
+
+
 def test_a_second_stage_that_never_starts_is_refused():
     with pytest.raises(ValidationError, match="start"):
         ResolvedConfig.load(

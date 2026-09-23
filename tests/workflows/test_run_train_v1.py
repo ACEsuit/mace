@@ -336,3 +336,34 @@ def test_a_run_keeps_only_its_newest_run_checkpoint_by_default(tmp_path):
         "tiny.run-000004.json",
         "tiny.run-000004.safetensors",
     ]
+
+
+#: The full-batch regime, named where the optimizer is.
+LBFGS = ("--training.optimizer", '{"lbfgs": {}}')
+
+
+@needs_the_v1_engine
+def test_an_lbfgs_run_trains_from_the_console_script(tmp_path):
+    """The v1 counterpart of the frozen tree's L-BFGS workflow test, which
+    also turns on an average and a second stage. Both are refused beside
+    L-BFGS here, so this runs the regime alone."""
+    finished = on_v1("--config", str(tiny_task(tmp_path)), *LBFGS)
+    assert finished.returncode == 0, finished.stderr
+    assert evaluated_epochs(finished.stderr) == [0, 1, 2, 3]
+    assert (tmp_path / "tiny.safetensors").is_file()
+
+
+@needs_the_v1_engine
+def test_a_mini_batch_run_continued_under_lbfgs_says_its_optimizer_is_new(tmp_path):
+    """The frozen tree's way of finishing a run with L-BFGS: train, then
+    restart with the flag. The restart reports that the optimizer's state did
+    not carry over rather than loading one optimizer's state into another."""
+    config = tiny_task(tmp_path)
+    first = on_v1("--config", str(config), "--training.max_num_epochs", "2")
+    assert first.returncode == 0, first.stderr
+
+    resumed = on_v1("--config", str(config), *LBFGS, "--runtime.restart_latest", "true")
+    assert resumed.returncode == 0, resumed.stderr
+    assert "Resumed with a new optimizer" in resumed.stderr
+    assert "written by Adam and the run resumes with LBFGS" in resumed.stderr
+    assert evaluated_epochs(resumed.stderr) == [2, 3]

@@ -20,7 +20,7 @@ rather than a NaN, and nothing has to know which properties are missing.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -180,8 +180,39 @@ class TermwiseLoss(torch.nn.Module):
         """The per-element cost of a residual. Squared error by default."""
         return residual.square()
 
-    def forward(self, output: MACEOutput[Tensor], batch: TrainingBatch) -> Tensor:
-        """The total, as a scalar."""
+    def element_counts(self, batch: TrainingBatch) -> dict[str, int]:
+        """How many elements each term averages over in this batch.
+
+        Read off the cost of a zero residual shaped like the reference, so a
+        loss whose cost has another shape than its residual, as a vector norm
+        over a force does, is counted by the elements it actually averages.
+        """
+        counts: dict[str, int] = {}
+        for term in self.terms:
+            reference = batch.targets[term.name]
+            counts[term.name] = self.elementwise(
+                torch.zeros_like(reference), term
+            ).numel()
+        return counts
+
+    def forward(
+        self,
+        output: MACEOutput[Tensor],
+        batch: TrainingBatch,
+        totals: Mapping[str, float] | None = None,
+    ) -> Tensor:
+        """The total, as a scalar.
+
+        Args:
+            output: What the model produced for the batch.
+            batch: The batch, with its references and weights.
+            totals: Each term's element count over a whole set this batch is
+                one part of. Each term is then its sum over this batch divided
+                by that count, and not the batch's mean, so the parts of a set
+                add up to exactly the set's loss, whatever the sizes of its
+                structures. Nothing is reduced across ranks in this mode: the
+                caller adds the parts up.
+        """
         counts = atom_counts(batch)
         total: Tensor | None = None
         for term in self.terms:
@@ -196,7 +227,11 @@ class TermwiseLoss(torch.nn.Module):
                 residual = residual / _broadcast(counts, residual)
             cost = self.elementwise(residual, term)
             weights = row_weights(batch, term.name, term.per_atom, cost)
-            total_term = term.weight * reduce_loss(weights * cost)
+            if totals is None:
+                reduced = reduce_loss(weights * cost)
+            else:
+                reduced = (weights * cost).sum() / totals[term.name]
+            total_term = term.weight * reduced
             total = total_term if total is None else total + total_term
         assert total is not None
         return total
@@ -352,12 +387,17 @@ class UniversalLoss(TermwiseLoss):
         self.delta = delta
         self._reference: dict[str, Tensor] = {}
 
-    def forward(self, output: MACEOutput[Tensor], batch: TrainingBatch) -> Tensor:
+    def forward(
+        self,
+        output: MACEOutput[Tensor],
+        batch: TrainingBatch,
+        totals: Mapping[str, float] | None = None,
+    ) -> Tensor:
         # The band is a property of the reference, so it is read here and used
         # by `elementwise`, which only sees the residual.
         self._reference = dict(batch.targets)
         try:
-            return super().forward(output, batch)
+            return super().forward(output, batch, totals)
         finally:
             self._reference = {}
 

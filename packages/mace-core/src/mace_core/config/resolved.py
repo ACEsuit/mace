@@ -203,31 +203,59 @@ class ResolvedConfig(ReforgeBaseConfig):
 
     @model_validator(mode="after")
     def _lbfgs_steps_too_rarely_for_an_ema_or_a_plateau(self) -> ResolvedConfig:
-        for stage, optimizer in self._stages():
-            if optimizer != "lbfgs":
+        for optimizer, scheduler in self._stages():
+            if optimizer[1] != "lbfgs":
                 continue
             if self.training.ema.enabled:
                 raise ValueError(
-                    f"{stage} runs lbfgs and training.ema.enabled is set. "
-                    f"L-BFGS steps once per epoch through a full-batch "
+                    f"{optimizer[0]} runs lbfgs and training.ema.enabled is "
+                    f"set. L-BFGS steps once per epoch through a full-batch "
                     f"closure, so an average over its steps is an average "
                     f"over epochs and not what the field means."
                 )
-            if self.training.scheduler.kind.kind == "plateau":
+            if scheduler[1] == "plateau":
                 raise ValueError(
-                    f"{stage} runs lbfgs and training.scheduler is plateau. "
+                    f"{optimizer[0]} runs lbfgs and {scheduler[0]} is plateau. "
                     f"A plateau schedule reduces the rate on evaluations "
                     f"without improvement, and L-BFGS takes one step between "
                     f"them. Use a constant schedule for an L-BFGS stage."
                 )
         return self
 
-    def _stages(self) -> list[tuple[str, str]]:
-        """Each stage that runs, with the optimizer kind it runs."""
-        stages = [("training.optimizer", self.training.optimizer.kind)]
-        stage_two = self.training.stage_two
-        if stage_two.enabled and stage_two.optimizer.kind != "inherit":
-            stages.append(("training.stage_two.optimizer", stage_two.optimizer.kind))
+    def _stages(self) -> list[tuple[tuple[str, str], tuple[str, str]]]:
+        """Each stage's optimizer and schedule, as the field that sets each
+        and the kind it sets.
+
+        Walked in the order the stages run, since a stage that inherits its
+        optimizer or keeps its schedule runs whatever the one before it set,
+        and that is the field an error has to name.
+        """
+        training = self.training
+        optimizer: tuple[str, str] = ("training.optimizer", training.optimizer.kind)
+        scheduler: tuple[str, str] = (
+            "training.scheduler",
+            training.scheduler.kind.kind,
+        )
+        stages: list[tuple[tuple[str, str], tuple[str, str]]] = [(optimizer, scheduler)]
+        if training.stages:
+            stages = []
+            ordered = sorted(
+                enumerate(training.stages), key=lambda item: item[1].start_epoch
+            )
+            for index, stage in ordered:
+                field = f"training.stages[{index}]"
+                if stage.optimizer.kind != "inherit":
+                    optimizer = (f"{field}.optimizer", stage.optimizer.kind)
+                if stage.scheduler is not None:
+                    scheduler = (f"{field}.scheduler", stage.scheduler.kind.kind)
+                stages.append((optimizer, scheduler))
+        elif training.stage_two.enabled:
+            if training.stage_two.optimizer.kind != "inherit":
+                optimizer = (
+                    "training.stage_two.optimizer",
+                    training.stage_two.optimizer.kind,
+                )
+            stages.append((optimizer, scheduler))
         return stages
 
     @model_validator(mode="after")

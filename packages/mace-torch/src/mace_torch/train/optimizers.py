@@ -21,6 +21,7 @@ from mace_core.config.training import (
     AdamWOptimizer,
     ConstantSchedule,
     ExponentialSchedule,
+    LBFGSOptimizer,
     PlateauSchedule,
     SchedulerConfig,
     TrainingConfig,
@@ -155,10 +156,51 @@ def build_optimizer(model: nn.Module, config: TrainingConfig) -> Optimizer:
             betas=(settings.beta, 0.999),
             amsgrad=settings.amsgrad,
         )
+    if isinstance(settings, LBFGSOptimizer):
+        return _lbfgs(groups, config, settings)
     raise UnsupportedOptimizerError(
-        f"the {settings.kind!r} optimizer is not built here. 'adam' and "
-        f"'adamw' are; the full-batch and schedule-free regimes are their own "
-        f"work."
+        f"the {settings.kind!r} optimizer is not built here. 'adam', 'adamw' "
+        f"and 'lbfgs' are; the schedule-free regime is its own work."
+    )
+
+
+def _lbfgs(
+    groups: list[dict], config: TrainingConfig, settings: LBFGSOptimizer
+) -> Optimizer:
+    """L-BFGS over every parameter that trains, as one group.
+
+    One group because torch's L-BFGS takes one: it treats the parameters as a
+    single flat vector with a single step length. So a frozen group, whose
+    factor is zero, is left out, and a factor between zero and one has nothing
+    to scale. No weight decay, as in the frozen tree, which builds L-BFGS over
+    the bare parameters.
+
+    Raises:
+        ValueError: On a learning-rate factor other than zero or one, naming
+            the group.
+    """
+    factors = config.scheduler.group_factors
+    partial = sorted(
+        name for name, factor in factors.items() if factor not in (0.0, 1.0)
+    )
+    if partial:
+        raise ValueError(
+            f"training.scheduler.group_factors scales {partial}, and L-BFGS "
+            f"steps every parameter with one step length. Use a factor of zero "
+            f"to freeze a group, or one to train it."
+        )
+    parameters = [
+        parameter
+        for group in groups
+        if factors.get(group["name"].removesuffix("_no_decay"), 1.0) != 0.0
+        for parameter in group["params"]
+    ]
+    return torch.optim.LBFGS(
+        parameters,
+        lr=settings.lr,
+        history_size=settings.history_size,
+        max_iter=settings.max_iter,
+        line_search_fn=settings.line_search_fn,
     )
 
 
