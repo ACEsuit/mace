@@ -191,7 +191,7 @@ def _key_spec(data: DataConfig) -> KeySpecification:
     spec = KeySpecification.from_defaults()
     keys = data.graph_input_keys
     return spec.update(
-        info_keys={
+        graph_keys={
             "elec_temp": keys.elec_temp,
             "total_spin": keys.total_spin,
             "total_charge": keys.total_charge,
