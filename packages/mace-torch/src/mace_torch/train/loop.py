@@ -255,7 +255,8 @@ def run_train_stage(
     stage = ""
 
     schedule = config.schedule()
-    for epoch in range(state.epoch, config.training.max_num_epochs):
+    epoch = state.epoch
+    while epoch < config.training.max_num_epochs:
         # Before the epoch it applies to, so the epoch that changes the loss
         # weights is trained with them. The stage is looked up rather than
         # switched into, which is what lets a resume land mid-schedule.
@@ -265,6 +266,11 @@ def run_train_stage(
             loss, optimizer, scheduler = _enter_stage(
                 entering, config, built, model, optimizer, scheduler
             )
+        if epoch == entering.start_epoch:
+            # A stage scores with its own weights, so its losses and the ones
+            # before it are not on one scale. Its best is the best among its
+            # own epochs, and the model the run ends on is the last stage's.
+            best_loss, since_best = None, 0
 
         train_loss = train_one_epoch(
             model,
@@ -301,14 +307,29 @@ def run_train_stage(
                         written = write_model(checkpoint_path, model, built.metadata)
                 else:
                     since_best += 1
-            if checkpoint_path is not None:
-                _write_run_state(
-                    checkpoint_path,
-                    RunState(epoch + 1, best_loss, best_epoch),
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    ema=ema,
-                )
+        following = _following_epoch(
+            schedule, epoch, since_best >= config.training.patience
+        )
+        if following is None:
+            logger.info("Stopping after %d evaluations without improvement", since_best)
+        elif following != epoch + 1:
+            logger.info(
+                "Stage %r stopped improving after %d evaluations; the run moves "
+                "to the next stage at epoch %d",
+                stage,
+                since_best,
+                following,
+            )
+        if valid_loss is not None and checkpoint_path is not None:
+            # With the epoch the run continues at, so a resume after a move to
+            # the next stage continues there.
+            _write_run_state(
+                checkpoint_path,
+                RunState(following or epoch + 1, best_loss, best_epoch),
+                optimizer=optimizer,
+                scheduler=scheduler,
+                ema=ema,
+            )
 
         _step_schedule(scheduler, valid_loss)
         history.append(
@@ -321,8 +342,9 @@ def run_train_stage(
                 evaluated_with_ema=valid_loss is not None and ema is not None,
             )
         )
-        if since_best >= config.training.patience:
+        if following is None:
             break
+        epoch = following
 
     if best_state is None and ema is not None:
         # The run's model is the averaged one. Leaving the stepped weights in
@@ -515,6 +537,22 @@ def _stage_at(schedule: Sequence[StageConfig], epoch: int) -> StageConfig:
         if stage.start_epoch <= epoch:
             current = stage
     return current
+
+
+def _following_epoch(
+    schedule: Sequence[StageConfig], epoch: int, exhausted: bool
+) -> int | None:
+    """The epoch the run trains next, or ``None`` when it stops.
+
+    A stage that has stopped improving hands over to the next one at the epoch
+    that one starts, as the frozen tree moves to its second stage. Only the
+    last stage's patience ends the run, since stopping in an earlier one would
+    skip the stages the configuration asked for.
+    """
+    if not exhausted:
+        return epoch + 1
+    later = [stage.start_epoch for stage in schedule if stage.start_epoch > epoch]
+    return min(later) if later else None
 
 
 def _enter_stage(
