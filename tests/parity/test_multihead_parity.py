@@ -123,7 +123,7 @@ def pair(fp64):
 
 
 @pytest.mark.parametrize("head", range(len(HEADS)))
-def test_every_head_of_the_converted_model_matches_the_live_one(pair, head):
+def test_every_head_of_the_converted_model_matches_the_live_one(isolated, pair, head):
     """Energy and forces, per head, on every structure of the fixture."""
     legacy, model, config = pair
     engine = DerivativeEngine(model, ENERGY)
@@ -153,7 +153,7 @@ def test_every_head_of_the_converted_model_matches_the_live_one(pair, head):
     assert worst_force < 1e-12, f"head {HEADS[head]}: forces off by {worst_force:.3e}"
 
 
-def test_the_two_heads_really_disagree(pair):
+def test_the_two_heads_really_disagree(isolated, pair):
     """The guard: with identical heads, the test above could pass on a
     conversion that read head zero's copy for both."""
     legacy, _, _ = pair
