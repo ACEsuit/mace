@@ -170,6 +170,35 @@ def test_edge_forces_are_minus_the_gradient_against_the_edge_vectors():
 
 
 @fp64_only
+def test_asking_for_edge_forces_as_well_leaves_the_forces_as_they_were():
+    """The edge vectors are differentiated where they are, as a function of
+    the positions. Made a leaf of their own, they cut the energy off from the
+    positions, and the forces asked for beside them came back as zeros."""
+    engine = build_engine()
+    positions, numbers = molecule()
+    alone = engine(build_graph(positions, numbers), compute=("forces",))
+    both = engine(build_graph(positions, numbers), compute=("forces", "edge_forces"))
+    assert float(alone.forces.abs().max()) > 0.0
+    torch.testing.assert_close(both.forces, alone.forces, rtol=0.0, atol=0.0)
+
+
+@fp64_only
+def test_the_edge_forces_add_up_to_the_forces():
+    """Each edge vector is its receiver's position minus its sender's, so the
+    force on an atom is what its edges push it with, receiving minus sending."""
+    engine = build_engine()
+    positions, numbers = molecule()
+    graph = build_graph(positions, numbers)
+    result = engine(graph, compute=("forces", "edge_forces"))
+    edge_forces = result.extras["edge_forces"]
+    sender, receiver = graph["edge_index"]
+    assembled = torch.zeros_like(result.forces)
+    assembled.index_add_(0, receiver, edge_forces)
+    assembled.index_add_(0, sender, -edge_forces)
+    torch.testing.assert_close(assembled, result.forces, rtol=1e-12, atol=1e-14)
+
+
+@fp64_only
 def test_asking_for_nothing_returns_the_model_output_alone():
     engine = build_engine()
     positions, numbers = molecule()

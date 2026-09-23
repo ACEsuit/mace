@@ -258,13 +258,6 @@ class DerivativeEngine(nn.Module):
         prepared, positions, displacement = prepare_inputs(
             graph, need_forces=need_forces, need_stress=need_strain
         )
-        if "edge_forces" in wanted:
-            # The edge vectors become the leaf themselves. Detaching first is
-            # what makes them one: a tensor that is already a function of the
-            # positions is an interior node, and asking for its gradient gives
-            # the positions' contribution rather than the edges'.
-            prepared["vectors"] = prepared["vectors"].detach().requires_grad_(True)
-
         output = self.output_layer(prepared, self.backbone(prepared))
         if not wanted:
             return output
