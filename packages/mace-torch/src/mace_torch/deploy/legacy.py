@@ -44,9 +44,10 @@ __all__ = [
     "pinned_environment",
 ]
 
-#: The legacy release a packaged extraction runs against. The oldest one every
-#: published foundation model unpickles under.
-PINNED_LEGACY = "mace-torch==0.3.17"
+#: The legacy release a packaged extraction runs against: the last one
+#: published. The frozen tree reports 0.3.17, a version that was never
+#: released; this one extracts the committed anchors to the same bytes.
+PINNED_LEGACY = "mace-torch==0.3.16"
 
 #: What the pinned environment needs besides the legacy release: the writer of
 #: the tensor file.
