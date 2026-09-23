@@ -109,15 +109,13 @@ def graph_from_configuration(
         (False, False, False) if configuration.pbc is None else tuple(configuration.pbc)
     )
     neighborhood = get_neighborhood(positions, cutoff, pbc, configuration.cell)
-    # The neighbour search returns a padding box for an aperiodic structure,
-    # and that box is what the shifts were taken against, so it is the cell the
-    # model has to see. The physical cell is `None` there and dividing by it is
-    # what the stress mask exists for.
-    cell = (
-        neighborhood.cell
-        if configuration.cell is None
-        else np.asarray(configuration.cell, dtype=float)
-    )
+    # The cell the neighbour search returns, never the one the structure came
+    # with. It is the physical cell in every regime but two, and both are
+    # deliberate: a padding box for an aperiodic structure, whose stress the
+    # model masks, and an inflated row for a non-periodic axis whose physical
+    # row is all zeros, which would otherwise make the volume zero and the
+    # stress of a slab with no vacuum a division by zero.
+    cell = neighborhood.cell
     # The per-graph fields carry no leading axis: the collation stacks them,
     # and `batch` and `ptr` are built there rather than here. So this is a
     # structure's contribution to a batch and not a batch of one, which is why
