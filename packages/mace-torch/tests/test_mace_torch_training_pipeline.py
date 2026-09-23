@@ -272,3 +272,23 @@ def test_the_average_is_what_the_run_is_judged_and_left_with(tmp_path):
 @fp64_only
 def test_a_run_state_knows_where_it_stopped():
     assert RunState(epoch=3, best_valid_loss=0.5, best_epoch=2).epoch == 3
+
+
+@fp64_only
+def test_a_model_built_for_two_heads_gives_each_its_own_readout(tmp_path):
+    """Two levels of theory share the backbone and nothing after it, so a
+    head that is a different level of theory has weights of its own to fit."""
+    config = configuration(tmp_path)
+    head = config.data.heads["default"]
+    config = config.model_copy(
+        update={
+            "data": config.data.model_copy(
+                update={"heads": {"first": head, "second": head}}
+            )
+        }
+    )
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    readout = built.model.backbone.outputs.heads["energy"]
+    assert readout.num_heads == 2
+    assert built.model.backbone.outputs.energy_head.e0_table.shape[0] == 2

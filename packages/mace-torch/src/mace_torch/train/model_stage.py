@@ -122,6 +122,9 @@ def run_model_stage(
         pair_repulsion=config.model.pair_repulsion,
         cutoff_order=config.model.num_cutoff_basis,
         readout_hidden=_readout_hidden(config),
+        # One readout per head, so a head that is a different level of theory
+        # has weights of its own to fit it with.
+        num_heads=len(data.heads),
     )
     if energy is None:
         raise ModelStageError(
