@@ -22,6 +22,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
+import torch.distributed as dist
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import load_default_catalogue
 from mace_core.stages import TrainedModel
@@ -34,6 +35,7 @@ from mace_torch.train import (
     run_train_stage,
     setup_logging,
 )
+from mace_torch.train.ddp import init_distributed
 
 __all__ = ["NOT_MIGRATED", "main", "parse", "run"]
 
@@ -97,6 +99,9 @@ def run(config: ResolvedConfig) -> TrainedModel:
     disagree about. A fine-tune reads its foundation model first, and hands
     the data stage what it needs of it and the model stage the rest.
     """
+    processes = init_distributed(
+        config.runtime.distributed, config.runtime.launcher, config.runtime.device
+    )
     catalogue = load_default_catalogue()
     foundation = (
         read_foundation(config.finetune.foundation_model, catalogue)
@@ -121,9 +126,10 @@ def run(config: ResolvedConfig) -> TrainedModel:
     return run_train_stage(
         config,
         built,
-        device=config.runtime.device,
+        device=processes.device,
         checkpoint_path=checkpoint_path,
         resume=_resumes(config, checkpoint_path),
+        distributed=processes,
     )
 
 
@@ -151,7 +157,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """The console entry point. Returns a process exit status."""
     config = parse(argv)
     setup_logging(config.runtime)
-    trained = run(config)
+    try:
+        trained = run(config)
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
     if trained.best is None:
         logging.info(
             "Trained %d epoch(s); nothing was evaluated.", len(trained.history)

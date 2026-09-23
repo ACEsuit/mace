@@ -36,8 +36,10 @@ from mace_core.tables import Row, error_table
 from torch import Tensor, nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
+from torch.utils.data import DataLoader
 
 from mace_torch.data import TrainingBatch
+from mace_torch.data.distributed_sampler import EvaluationSampler, training_shard
 from mace_torch.finetune.freeze import freeze
 from mace_torch.finetune.lora import inject_lora, merge_lora
 from mace_torch.serialization import (
@@ -56,6 +58,7 @@ from mace_torch.train.checkpoint import (
     write_run_checkpoint,
 )
 from mace_torch.train.contracts import TorchBuiltModel
+from mace_torch.train.ddp import DistributedContext, broadcast_decision, wrap_model
 from mace_torch.train.ema import ExponentialMovingAverage
 from mace_torch.train.loss import build_loss
 from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
@@ -198,6 +201,7 @@ def run_train_stage(
     device: str = "cpu",
     checkpoint_path: str | Path | None = None,
     resume: bool = False,
+    distributed: DistributedContext | None = None,
 ) -> TrainedModel[nn.Module]:
     """Train the model, and leave behind what the run produced.
 
@@ -210,12 +214,25 @@ def run_train_stage(
             what a smoke test wants.
         resume: Continue from the newest run checkpoint written for
             ``checkpoint_path`` rather than starting a run.
+        distributed: Where this process sits in a distributed run. Each
+            process trains on its share of every epoch, rank zero alone
+            writes, and rank zero's decision to stop is every rank's.
 
     Returns:
         The trained model, with the averaged weights in place when the run
         averaged, since those are the ones the best checkpoint holds.
     """
     model = built.model.to(device)
+    processes = distributed or DistributedContext(device=device)
+    valid_loaders = built.data.valid_loaders
+    if processes.distributed:
+        built.data.train_loader.shard = training_shard(
+            processes.rank, processes.world_size
+        )
+        valid_loaders = {
+            head: _evaluated_share(loader, processes)
+            for head, loader in built.data.valid_loaders.items()
+        }
     # Before the optimizer and the average are built, since both are built
     # over what trains, and adapting or freezing changes that.
     config = _prepare_finetune(config, model)
@@ -230,6 +247,10 @@ def run_train_stage(
         if config.training.ema.enabled
         else None
     )
+    # Trained through the wrapper, which averages the gradients across the
+    # processes; evaluated and written without it, since it holds the same
+    # parameters and its hooks would only synchronize what needs no syncing.
+    stepped = wrap_model(model, processes)
 
     state = RunState(epoch=0)
     best_state: dict[str, dict[str, Tensor]] | None = None
@@ -302,12 +323,13 @@ def run_train_stage(
         entering = _stage_at(schedule, epoch)
         if entering.name != stage:
             stage = entering.name
+            logger.info("Epoch %d starts the stage %r", epoch, stage)
             loss, optimizer, scheduler = _enter_stage(
                 entering, config, built, model, optimizer, scheduler
             )
 
         train_loss = train_one_epoch(
-            model,
+            stepped,
             built.data.train_loader.batches(epoch, drop_last=_drops_tail(entering)),
             loss,
             optimizer,
@@ -324,7 +346,7 @@ def run_train_stage(
             with context:
                 per_head = evaluate_heads(
                     model,
-                    built.data.valid_loaders,
+                    valid_loaders,
                     loss,
                     specs,
                     device=device,
@@ -339,18 +361,18 @@ def run_train_stage(
                     # Inside the average's context, so what is kept is what
                     # was scored, which is also what the checkpoint holds.
                     best_state = _snapshot(model)
-                    if checkpoint_path is not None:
+                    if checkpoint_path is not None and processes.is_main:
                         written = write_model(checkpoint_path, model, built.metadata)
                 else:
                     since_best += 1
 
         _step_schedule(scheduler, valid_loss)
-        if checkpoint_path is not None:
+        if checkpoint_path is not None and processes.is_main:
             # After the schedule has stepped, so a resume continues with the
             # rate the next epoch would have had, and with the raw weights in
             # place: the average travels as its own state.
             directory, name = Path(checkpoint_path).parent, Path(checkpoint_path).name
-            write_run_checkpoint(
+            written_run = write_run_checkpoint(
                 directory,
                 name,
                 RunState(epoch + 1, best_loss, best_epoch, since_best, stage, improved),
@@ -366,6 +388,7 @@ def run_train_stage(
                 keep_improving=config.runtime.keep_checkpoints,
                 keep_all=config.runtime.save_all_checkpoints,
             )
+            logger.debug("Rank %d wrote %s", processes.rank, written_run)
         history.append(
             EpochRecord(
                 epoch=epoch,
@@ -376,7 +399,10 @@ def run_train_stage(
                 evaluated_with_ema=valid_loss is not None and ema is not None,
             )
         )
-        if since_best >= config.training.patience:
+        # Every rank waits for rank zero's writes before any can read them, and
+        # stops on rank zero's word, so none trains an epoch the others skip.
+        processes.barrier()
+        if broadcast_decision(since_best >= config.training.patience, processes):
             break
 
     if best_state is None and ema is not None:
@@ -404,12 +430,13 @@ def run_train_stage(
         # wrong one of the two.
         load_canonical_state(model, best_state)
 
-    if checkpoint_path is not None:
+    if checkpoint_path is not None and processes.is_main:
         # The model the run delivers, written once more at its end: the best
         # epoch's weights, averaged when the run averaged and merged when it
         # adapted, which is also what a run that never evaluated ends on.
         written = write_model(checkpoint_path, model, built.metadata)
 
+    processes.barrier()
     report_errors(config, built, model, loss, specs, tracker, device=device)
     tracker.finish()
     return TrainedModel(
@@ -629,6 +656,18 @@ def _prepare_finetune(config: ResolvedConfig, model: nn.Module) -> ResolvedConfi
         update={"scheduler": scheduler.model_copy(update={"group_factors": merged})}
     )
     return config.model_copy(update={"training": training})
+
+
+def _evaluated_share(loader: DataLoader, context: DistributedContext) -> DataLoader:
+    """The same loader over this process's share of its structures."""
+    return DataLoader(
+        loader.dataset,
+        batch_size=loader.batch_size,
+        sampler=EvaluationSampler(loader.dataset, context.rank, context.world_size),
+        collate_fn=loader.collate_fn,
+        num_workers=loader.num_workers,
+        pin_memory=loader.pin_memory,
+    )
 
 
 def _snapshot(model: nn.Module) -> dict[str, dict[str, Tensor]]:
