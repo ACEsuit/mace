@@ -306,16 +306,31 @@ def _read_head(
         [(spec.name, spec.settings) for spec in config.data.transforms],
     )
 
+    # The isolated atoms are references, not structures to fit, so they stay
+    # out of the split and are never validated on. Split with them in, one
+    # lands in the validation set often enough to matter, and the E0 read
+    # from the training set then has no energy for that element: measured,
+    # four seeds in ten on a file of eight waters and two isolated atoms. The
+    # frozen tree takes them out before it splits too, so what is split is
+    # the same set it splits.
+    references = [
+        item for item in train if item.config_type == ISOLATED_ATOM_CONFIG_TYPE
+    ]
+    structures = [
+        item for item in train if item.config_type != ISOLATED_ATOM_CONFIG_TYPE
+    ]
     if head.valid_file is not None:
         valid = list(_open(head.valid_file, name, key_spec).iter_range())
+        train = structures
     else:
         train, valid = random_train_valid_split(
-            train,
+            structures,
             config.data.valid_fraction,
             config.runtime.seed,
             config.runtime.work_dir,
             prefix=name,
         )
+    train = references + train
     test = (
         list(_open(head.test_file, name, key_spec).iter_range())
         if head.test_file is not None
