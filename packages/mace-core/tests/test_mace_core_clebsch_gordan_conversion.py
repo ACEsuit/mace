@@ -12,6 +12,9 @@ import numpy as np
 import pytest
 from mace_core.clebsch_gordan import IrrepsError
 from mace_core.clebsch_gordan.conversion import (
+    PROJECTION_TOLERANCE,
+    BasisConversionError,
+    _projection,
     from_canonical,
     full_to_reduced,
     ir_mul_to_mul_ir,
@@ -155,3 +158,135 @@ def test_the_layout_change_actually_moves_the_values():
 def test_the_layout_change_refuses_a_declaration_it_cannot_reshape():
     with pytest.raises(ValueError, match="separately"):
         mul_ir_to_ir_mul(np.zeros((1, 4)), "1x0e+1x1o")
+
+
+# ---------------------------------------------------------------------------
+# From an artifact's own full basis
+# ---------------------------------------------------------------------------
+
+#: The coupling every published foundation model uses, one channel of it.
+PUBLISHED = "1x0e+1x1o+1x2e+1x3o"
+
+
+def another_gauge(full, seed):
+    """A different basis of the same space: the paths mixed by an invertible
+    matrix, the way a second implementation orders and rotates its own."""
+    rng = np.random.default_rng(seed)
+    mixing = rng.normal(size=(full.shape[0], full.shape[0]))
+    return np.einsum("qp,p...->q...", mixing, full)
+
+
+@pytest.mark.parametrize(
+    ("target", "dimensions"), [("0e", (1, 4, 8)), ("1o", (1, 3, 12))]
+)
+def test_the_reduced_basis_has_the_published_dimensions(target, dimensions):
+    """The compatibility target: every published artifact's contraction lands
+    on exactly these, per body order."""
+    got = tuple(
+        reduced_symmetric_tensor_product_basis(PUBLISHED, order, target)[target].shape[
+            0
+        ]
+        for order in (1, 2, 3)
+    )
+    assert got == dimensions
+
+
+@pytest.mark.parametrize(("target", "total"), [("0e", 28), ("1o", 58)])
+def test_the_full_basis_has_the_published_path_counts(target, total):
+    assert (
+        sum(
+            full_symmetric_tensor_product_basis(PUBLISHED, order, target)[target].shape[
+                0
+            ]
+            for order in (1, 2, 3)
+        )
+        == total
+    )
+
+
+@pytest.mark.parametrize(("irreps", "correlation", "target"), GRID)
+def test_weights_from_another_basis_keep_their_function(irreps, correlation, target):
+    rng = np.random.default_rng(3)
+    full = full_symmetric_tensor_product_basis(irreps, correlation, target)[target]
+    source = another_gauge(full, seed=4)
+    reduced = reduced_symmetric_tensor_product_basis(irreps, correlation, target)[
+        target
+    ]
+    weights = rng.normal(size=(2, source.shape[0], 4))
+    carried = full_to_reduced(weights, irreps, correlation, target, source=source)
+
+    inputs = rng.normal(size=(5, full.shape[2]))
+    before = contract(source, inputs, weights, correlation)
+    after = contract(reduced, inputs, carried, correlation)
+    assert np.abs(before - after).max() < ATOL * np.abs(before).max()
+
+
+def test_the_basis_is_an_argument_not_an_assumption():
+    """Weights from another basis converted as if they were this package's
+    compute something else. That is why the artifact has to carry its own."""
+    irreps, correlation, target = "0e+1o+2e", 3, "0e"
+    rng = np.random.default_rng(5)
+    full = full_symmetric_tensor_product_basis(irreps, correlation, target)[target]
+    source = another_gauge(full, seed=6)
+    reduced = reduced_symmetric_tensor_product_basis(irreps, correlation, target)[
+        target
+    ]
+    weights = rng.normal(size=(1, source.shape[0], 2))
+    assumed = full_to_reduced(weights, irreps, correlation, target)
+    inputs = rng.normal(size=(3, full.shape[2]))
+    before = contract(source, inputs, weights, correlation)
+    assert np.abs(before - contract(reduced, inputs, assumed, correlation)).max() > 1e-3
+
+
+@pytest.mark.parametrize("target", ["0e", "1o"])
+def test_the_published_projection_is_exact_to_the_tolerance(target):
+    """At the published coupling and correlation three, on a basis in another
+    gauge. The call refuses above the tolerance, so succeeding is the check."""
+    full = full_symmetric_tensor_product_basis(PUBLISHED, 3, target)[target]
+    matrix = _projection(PUBLISHED, 3, target, source=another_gauge(full, seed=7))
+    assert matrix.shape == (full.shape[0], {"0e": 8, "1o": 12}[target])
+    assert PROJECTION_TOLERANCE <= 1e-14
+
+
+def test_the_unsymmetrized_fit_is_the_trap():
+    """Treating the input slots as independent sees every full path as its own
+    direction: rank 23 for a scalar at body order three, where only 8 compute
+    anything. The symmetrized paths have exactly the reduced rank."""
+    from mace_core.clebsch_gordan.reduced_basis import symmetrize
+
+    full = full_symmetric_tensor_product_basis(PUBLISHED, 3, "0e")["0e"]
+    raw = np.linalg.matrix_rank(full.reshape(full.shape[0], -1))
+    symmetric = np.linalg.matrix_rank(
+        np.stack([symmetrize(path, 3).reshape(-1) for path in full])
+    )
+    assert (raw, symmetric) == (23, 8)
+
+
+def test_a_source_that_spans_something_else_is_refused():
+    """A path that is not equivariant has a symmetric part no reduced basis
+    reproduces. Converting it would return weights of the right shape that
+    compute a different function, so it is refused instead."""
+    irreps, correlation, target = "0e+1o", 2, "0e"
+    full = full_symmetric_tensor_product_basis(irreps, correlation, target)[target]
+    stray = np.random.default_rng(8).normal(size=(1, *full.shape[1:]))
+    with pytest.raises(BasisConversionError, match="relative residual"):
+        full_to_reduced(
+            np.ones((1, full.shape[0] + 1, 1)),
+            irreps,
+            correlation,
+            target,
+            source=np.concatenate([full, stray]),
+        )
+
+
+def test_a_source_in_the_wrong_layout_is_refused():
+    irreps, correlation, target = "0e+1o", 2, "1o"
+    full = full_symmetric_tensor_product_basis(irreps, correlation, target)[target]
+    with pytest.raises(BasisConversionError, match="path axis first"):
+        full_to_reduced(
+            np.ones((1, full.shape[0], 1)),
+            irreps,
+            correlation,
+            target,
+            source=np.moveaxis(full, 0, -1),
+        )

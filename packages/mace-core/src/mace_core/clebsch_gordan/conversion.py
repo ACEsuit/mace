@@ -22,9 +22,22 @@ Neither direction is bit-exact in weight space, and it cannot be: the map is a
 projection. What it preserves is the function, so it is tested on values and
 never on weight equality.
 
-Both directions compute at float64 whatever the input, and hand the result back
-in the input's floating dtype; anything that is not a floating array comes back
-as float64.
+**Which full basis matters.** A trained model's weights are written against the
+basis that model was built with. Two full bases of the same space can differ by
+an order and a rotation inside it, and the frozen tree's does: it spans exactly
+this package's space and is not this package's basis. So weights from an
+artifact are converted against the artifact's own basis, passed as ``source``,
+and a projection derived from this package's full basis alone would compute
+something else.
+
+**Why symmetrized.** The contraction feeds the same vector to every input slot,
+so only the part of a path that is symmetric under permuting the slots computes
+anything. Fitting the unsymmetrized tensor treats the slots as independent,
+finds the full rank (23 for a scalar at body order three where the reduced
+basis has 8) and leaves a residual of order one, which looks like a broken
+projection rather than a wrong formulation. The residual of the symmetrized fit
+is measured on every call and refused above a tolerance, since a reduced basis
+short of a direction still produces weights of the right shape.
 """
 
 from __future__ import annotations
@@ -34,7 +47,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from mace_core.clebsch_gordan.irreps import Irrep, Irreps
+from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,
@@ -42,6 +55,8 @@ from mace_core.clebsch_gordan.reduced_basis import (
 )
 
 __all__ = [
+    "PROJECTION_TOLERANCE",
+    "BasisConversionError",
     "from_canonical",
     "full_to_reduced",
     "ir_mul_to_mul_ir",
@@ -51,10 +66,19 @@ __all__ = [
 ]
 
 
+#: The largest relative residual of a projection that still counts as exact.
+#: The fit is an identity between two spans, so what it leaves is rounding, and
+#: at float64 that is measured around 1e-15.
+PROJECTION_TOLERANCE = 1e-14
+
+
+class BasisConversionError(ValueError):
+    """A conversion between bases that would not preserve the function."""
+
+
 def _target_text(target: str | Irrep) -> str:
     """The canonical spelling of one output irrep, refusing a declaration."""
     return str(target if isinstance(target, Irrep) else Irrep.parse(target))
-
 
 def _output_dtype(weights: np.ndarray) -> np.dtype:
     """The dtype a conversion hands back: the input's, if it is floating."""
@@ -62,19 +86,47 @@ def _output_dtype(weights: np.ndarray) -> np.dtype:
         return weights.dtype
     return np.dtype(np.float64)
 
-
 def _projection(
-    irreps_in: str | Irreps, correlation: int, target: str | Irrep
+    irreps_in: str | Irreps,
+    correlation: int,
+    target: str | Irrep,
+    source: np.ndarray | None = None,
+    tolerance: float = PROJECTION_TOLERANCE,
 ) -> np.ndarray:
     """The matrix carrying full-basis weights onto reduced-basis ones.
+
+    Args:
+        source: The full basis the weights are written against, path axis
+            first: ``[paths, target dimension, d, ..., d]`` with
+            ``correlation`` input axes. ``None`` is this package's own.
 
     Returns shape ``(n_full, n_reduced)``. Its transpose is the weight map: a
     full path contributes to a reduced one in proportion to how much of it
     survives symmetrization.
+
+    Raises:
+        BasisConversionError: If the source has the wrong shape, or the reduced
+            basis does not reproduce its symmetric part, which is a basis short
+            of a direction or two bases of different spaces.
     """
-    key = _target_text(target)
-    full = full_symmetric_tensor_product_basis(irreps_in, correlation, key)[key]
-    reduced = reduced_symmetric_tensor_product_basis(irreps_in, correlation, key)[key]
+    target = _target_text(target)
+    reduced = reduced_symmetric_tensor_product_basis(irreps_in, correlation, target)[
+        target
+    ]
+    if source is None:
+        full = full_symmetric_tensor_product_basis(irreps_in, correlation, target)[
+            target
+        ]
+    else:
+        full = np.asarray(source, dtype=np.float64)
+        expected = reduced.shape[1:]
+        if full.shape[1:] != expected:
+            raise BasisConversionError(
+                f"the source basis for {target!r} at correlation {correlation} "
+                f"has shape {full.shape}, and a path over {irreps_in!r} has "
+                f"shape {expected}: [target dimension, then one axis per input "
+                f"slot]. Pass it with the path axis first."
+            )
     if full.shape[0] == 0 or reduced.shape[0] == 0:
         return np.zeros((full.shape[0], reduced.shape[0]), dtype=np.float64)
     # symmetrize sums over the permutations rather than averaging, so it
@@ -90,6 +142,17 @@ def _projection(
     )
     flat_reduced = reduced.reshape(reduced.shape[0], -1)
     solution, *_ = np.linalg.lstsq(flat_reduced.T, symmetrized.T, rcond=None)
+    scale = float(np.abs(symmetrized).max())
+    residual = float(np.abs(flat_reduced.T @ solution - symmetrized.T).max())
+    if scale > 0.0 and residual / scale > tolerance:
+        raise BasisConversionError(
+            f"the reduced basis for {target!r} at correlation {correlation} over "
+            f"{irreps_in!r} does not reproduce the source basis: the relative "
+            f"residual is {residual / scale:.3e} against {tolerance:.1e}. The "
+            f"source has {full.shape[0]} paths and the reduced basis "
+            f"{reduced.shape[0]}; converting would change what the model "
+            f"computes."
+        )
     return np.ascontiguousarray(solution.T)
 
 
@@ -99,6 +162,7 @@ def full_to_reduced(
     correlation: int,
     target: str | Irrep,
     axis: int = -2,
+    source: np.ndarray | None = None,
 ) -> np.ndarray:
     """Carry full-basis weights onto the reduced basis. Exact and unique.
 
@@ -107,27 +171,28 @@ def full_to_reduced(
             ``[Z, A, mul]`` arrangement puts it at ``-2``, which is the default.
         irreps_in: The input irreps the basis was built over.
         correlation: The body order.
-        target: The one output irrep these weights belong to, such as ``"1o"``.
+        target: The output irrep these weights belong to.
         axis: Which axis indexes the paths.
+        source: The full basis the weights were trained against, path axis
+            first. Required for weights from an artifact; see the module
+            docstring for why this package's own basis is not a substitute.
 
     Returns:
-        An array of the same shape except along ``axis``, which now has the
-        reduced basis's length. Computed at float64 and returned in the dtype
-        of ``weights`` if that is floating, float64 otherwise.
+        The same array with the path axis replaced by the reduced one.
 
     Raises:
-        ValueError: If the path axis does not have the length the full basis
-            has. The message gives both numbers, since the usual cause is
-            weights built for a different correlation.
-        IrrepsError: If ``target`` is not a single irrep such as ``"1o"``.
+        BasisConversionError: If the path axis does not have the length the
+            full basis has, or the projection is not exact. The message gives
+            both numbers, since the usual cause is weights built for a
+            different correlation.
     """
     weights = np.asarray(weights)
-    matrix = _projection(irreps_in, correlation, target)
+    matrix = _projection(irreps_in, correlation, target, source)
     moved = np.moveaxis(weights, axis, -1).astype(np.float64)
     if moved.shape[-1] != matrix.shape[0]:
-        raise ValueError(
+        raise BasisConversionError(
             f"the path axis has length {moved.shape[-1]}, but the full basis "
-            f"for {str(target)!r} at correlation {correlation} has "
+            f"for {target!r} at correlation {correlation} has "
             f"{matrix.shape[0]} paths."
         )
     return np.moveaxis(moved @ matrix, -1, axis).astype(_output_dtype(weights))
@@ -161,86 +226,3 @@ def reduced_to_full(
         )
     recovered = moved @ np.linalg.pinv(matrix)
     return np.moveaxis(recovered, -1, axis).astype(_output_dtype(weights))
-
-
-def to_canonical(per_order: Sequence[np.ndarray], axis: int = -2) -> np.ndarray:
-    """Join the per-body-order weight tensors into one flat canonical array.
-
-    Args:
-        per_order: The tensors in ascending body order, which is the order the
-            path enumeration uses and therefore the order on disk.
-        axis: The path axis in each tensor.
-
-    Returns:
-        One array, the concatenation along the path axis.
-    """
-    if not per_order:
-        raise ValueError("there are no weight tensors to join")
-    return np.concatenate(list(per_order), axis=axis)
-
-
-def from_canonical(
-    flat: np.ndarray, counts: Sequence[int], axis: int = -2
-) -> list[np.ndarray]:
-    """Split a canonical array back into per-body-order tensors.
-
-    Args:
-        flat: The canonical array.
-        counts: How many paths each body order carries, ascending.
-        axis: The path axis.
-
-    Raises:
-        ValueError: If the counts do not add up to the path axis length. The
-            message gives both totals, because the usual cause is a correlation
-            mismatch and the shapes are otherwise plausible.
-    """
-    total = int(sum(counts))
-    if flat.shape[axis] != total:
-        raise ValueError(
-            f"the path axis has length {flat.shape[axis]} but the counts "
-            f"{list(counts)} add up to {total}."
-        )
-    edges = np.cumsum(list(counts))[:-1]
-    return [np.ascontiguousarray(part) for part in np.split(flat, edges, axis=axis)]
-
-
-def mul_ir_to_ir_mul(values: np.ndarray, irreps: str | Irreps) -> np.ndarray:
-    """Reinterpret the last axis from ``mul_ir`` layout to ``ir_mul``.
-
-    ``mul_ir`` is canonical and is what this package stores: the multiplicity
-    index varies slowest, so a ``2x1o`` term is two contiguous blocks of three.
-    ``ir_mul`` interleaves them instead. Some backends want the other one, and
-    for a single term the change is a reshape and a transpose rather than a
-    computation.
-
-    Raises:
-        ValueError: If the declaration has more than one term. With several
-            terms the two layouts are not related by one reshape, and pretending
-            otherwise would silently scramble the values.
-    """
-    parsed = irreps if isinstance(irreps, Irreps) else Irreps.parse(irreps)
-    if len(parsed.terms) != 1:
-        raise ValueError(
-            f"the layout change is a reshape only for a single term, and "
-            f"{parsed} has {len(parsed.terms)}. Convert the terms separately."
-        )
-    mul, ir = parsed.terms[0]
-    head = values.shape[:-1]
-    return np.ascontiguousarray(
-        values.reshape(*head, mul, ir.dimension).swapaxes(-1, -2).reshape(*head, -1)
-    )
-
-
-def ir_mul_to_mul_ir(values: np.ndarray, irreps: str | Irreps) -> np.ndarray:
-    """The inverse of :func:`mul_ir_to_ir_mul`."""
-    parsed = irreps if isinstance(irreps, Irreps) else Irreps.parse(irreps)
-    if len(parsed.terms) != 1:
-        raise ValueError(
-            f"the layout change is a reshape only for a single term, and "
-            f"{parsed} has {len(parsed.terms)}. Convert the terms separately."
-        )
-    mul, ir = parsed.terms[0]
-    head = values.shape[:-1]
-    return np.ascontiguousarray(
-        values.reshape(*head, ir.dimension, mul).swapaxes(-1, -2).reshape(*head, -1)
-    )
