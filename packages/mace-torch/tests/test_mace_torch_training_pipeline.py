@@ -459,3 +459,16 @@ def test_a_model_built_for_two_heads_gives_each_its_own_readout(tmp_path):
     assert cast(ObservableHead, outputs.heads["energy"]).num_heads == 2
     assert outputs.energy_head is not None
     assert outputs.energy_head.e0_table.shape[0] == 2
+
+
+@fp64_only
+def test_the_record_carries_each_heads_energies_and_how_they_were_obtained(tmp_path):
+    """What a fine-tune reads a foundation model's energies from, and what
+    tells `average` apart from a table that happens to hold the same numbers."""
+    config = configuration(tmp_path)
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    record = built.metadata.heads["default"].e0
+    assert record.values == {"H": HYDROGEN, "O": OXYGEN}
+    assert record.source == "estimated"
+    assert record.method == "isolated_atoms"

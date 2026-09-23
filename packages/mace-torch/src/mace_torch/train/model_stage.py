@@ -13,11 +13,13 @@ undone to save.
 
 from __future__ import annotations
 
+from ase.data import chemical_symbols
+from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.kernels.registry import get_backend
-from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
+from mace_core.metadata import ConfigRecord, HeadSummary, ModelMetadata, Provenance
 from mace_core.observables import ObservableCatalogue, resolve_requested
 from mace_core.stages import BuiltModel
 
@@ -178,8 +180,27 @@ def _metadata(config: ResolvedConfig, data: TorchDataBundle) -> ModelMetadata:
     The resolved configuration goes in whole. A checkpoint that carried only
     the weights would need its run's command line to be rebuilt, and that is
     the thing least likely to still exist.
+
+    Each head's isolated-atom energies go in too, with how they were obtained.
+    Two reasons, and the second is not a nicety: ``average`` and a table read
+    from a file produce the same numbers and mean different things, and a
+    fine-tune that copies a foundation model's energies reads them from here
+    rather than out of a loaded module's buffer, which says what some model
+    was built with and nothing about which head it belonged to.
     """
     return ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
         provenance=Provenance(code_version=__version__),
+        heads={
+            head: HeadSummary(
+                e0=e0_details(
+                    config.data.heads[head].e0s,
+                    {
+                        chemical_symbols[number]: float(energy)
+                        for number, energy in data.e0s.values[head].items()
+                    },
+                )
+            )
+            for head in data.heads
+        },
     )
