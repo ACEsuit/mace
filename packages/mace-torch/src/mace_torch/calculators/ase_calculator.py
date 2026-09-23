@@ -15,10 +15,24 @@ isolated-atom energy) and ``node_energy`` (without it), and with
 their population variance under ``_var``. Every key it writes is in
 ``implemented_properties``.
 
+**The charge-aware model adds its own results**, under the frozen tree's
+names: ``dipole``, ``charges`` and ``spins`` per atom, the three energy parts
+``interaction_energy``, ``electrostatic_energy`` and ``electron_energy``, the
+density as ``density_coefficients`` and per spin as ``spin_charge_density``,
+and ``fukui_functions``. A committee reports ``dipole`` per model and as a
+spread too. Its charge, multiplicity and applied field are read from
+``atoms.info`` (``charge``, ``spin``, ``external_field`` by default), and a
+structure that gives none is neutral, a singlet and in no field.
+
 **Units.** The model computes in eV and Angstrom. ``energy_units_to_eV`` and
 ``length_units_to_A`` convert each result by its dimension: energies by E,
-forces by E/L, stresses by E/L^3, virials by E and the Hessian by E/L^2. A
-variance takes the square of its quantity's factor.
+forces by E/L, stresses by E/L^3, virials by E, the Hessian by E/L^2 and the
+dipole by L. A variance takes the square of its quantity's factor. Charges,
+spins and the density coefficients are left as the model computes them, in
+units of the elementary charge with the dipole components in e Angstrom.
+
+**Dielectric derivatives are not this calculator's.** They are the dipole
+family's, and :meth:`MACECalculator.get_dielectric_derivatives` says so.
 """
 
 from __future__ import annotations
@@ -53,8 +67,9 @@ from mace_torch.deploy.loader import DeployedModel, load_deployed
 from mace_torch.models.outputs import ENERGY_OBSERVABLE
 from mace_torch.nn import MACEBackbone
 from mace_torch.serialization import FORMAT as CHECKPOINT_FORMAT
+from mace_torch.train.data_stage import graph_inputs_of
 
-__all__ = ["ENSEMBLE_KEYS", "MACECalculator", "declared_properties"]
+__all__ = ["ENSEMBLE_KEYS", "POLAR_RESULTS", "MACECalculator", "declared_properties"]
 
 logger = logging.getLogger(__name__)
 
@@ -71,15 +86,35 @@ DEFAULT_INFO_KEYS = {
 }
 
 
-def declared_properties(*, committee: bool, atomic_stresses: bool) -> list[str]:
+#: The charge-aware model's results, with the model output each is read from
+#: and its dimension: energies convert by E, the dipole by L, the rest not.
+POLAR_RESULTS: dict[str, tuple[str, str]] = {
+    "dipole": ("dipole", "length"),
+    "charges": ("charges", "none"),
+    "spins": ("spins", "none"),
+    "interaction_energy": ("interaction_energy", "energy"),
+    "electrostatic_energy": ("electrostatic_energy", "energy"),
+    "electron_energy": ("electron_energy", "energy"),
+    "density_coefficients": ("density_coefficients", "none"),
+    "spin_charge_density": ("spin_charge_density", "none"),
+    "fukui_functions": ("fukui_functions", "none"),
+}
+
+
+def declared_properties(
+    *, committee: bool, atomic_stresses: bool, polar: bool = False
+) -> list[str]:
     """Every result key a calculator so configured writes, and no other."""
     properties = ["energy", "free_energy", "energies", "node_energy", "forces"]
     properties.append("stress")
     if atomic_stresses:
         properties += ["stresses", "virials"]
+    if polar:
+        properties += list(POLAR_RESULTS)
     if committee:
+        ensemble = [*ENSEMBLE_KEYS, *(("dipole",) if polar else ())]
         properties += [
-            f"{key}{suffix}" for key in ENSEMBLE_KEYS for suffix in ("_comm", "_var")
+            f"{key}{suffix}" for key in ensemble for suffix in ("_comm", "_var")
         ]
     return properties
 
@@ -110,6 +145,9 @@ class MACECalculator(Calculator):
             was given.
         compute_atomic_stresses: Also report per-atom ``stresses`` and
             ``virials``.
+        external_field: An applied field ``[Ex, Ey, Ez]`` in V/Angstrom for
+            every structure, in place of each one's ``atoms.info`` entry. Read
+            by a charge-aware model only.
 
     Raises:
         ValueError: If no model is named, a pattern matches nothing, the
@@ -132,9 +170,20 @@ class MACECalculator(Calculator):
         padding: PaddingPolicy | None = None,
         compile_mode: str | None = None,
         compute_atomic_stresses: bool = False,
+        external_field: Sequence[float] | None = None,
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, **kwargs)
+        if external_field is not None and np.asarray(external_field).size != 3:
+            raise ValueError(
+                f"external_field is {list(np.asarray(external_field).ravel())}; "
+                f"it is one vector, [Ex, Ey, Ez]."
+            )
+        self.external_field = (
+            None
+            if external_field is None
+            else np.asarray(external_field, dtype=float).reshape(3)
+        )
         self.device = device
         self.models = _committee(model_paths, models, device)
         cutoffs = [model.r_max for model in self.models]
@@ -153,6 +202,14 @@ class MACECalculator(Calculator):
                     f"calculator is the energy family's; the others have their "
                     f"own."
                 )
+        inputs = {graph_inputs_of(model.config.model.model) for model in self.models}
+        if len(inputs) != 1:
+            raise ValueError(
+                "the committee mixes models that read different per-structure "
+                "inputs, and one structure's graph carries one set."
+            )
+        self.graph_inputs = inputs.pop()
+        self.polar = bool(self.graph_inputs)
         self.r_max = cutoffs[0]
         self.z_table = first.z_table
         self.heads = first.heads
@@ -183,6 +240,7 @@ class MACECalculator(Calculator):
         self.implemented_properties = declared_properties(
             committee=len(self.models) > 1,
             atomic_stresses=compute_atomic_stresses,
+            polar=self.polar,
         )
 
     # -----------------------------------------------------------------------
@@ -252,6 +310,20 @@ class MACECalculator(Calculator):
         ]
         return hessians[0] if len(hessians) == 1 else hessians
 
+    def get_dielectric_derivatives(self, atoms: Atoms | None = None):
+        """Not computed here, for any model this calculator takes.
+
+        Raises:
+            NotImplementedError: Always. The derivatives of the dipole and the
+                polarizability are the dipole family's; a charge-aware model's
+                dipole is its density's and has none of its own to offer, as in
+                the frozen tree.
+        """
+        raise NotImplementedError(
+            "dielectric derivatives belong to the dipole and polarizability "
+            "models, not to this calculator's energy and charge-aware ones."
+        )
+
     def get_descriptors(
         self,
         atoms: Atoms | None = None,
@@ -299,17 +371,26 @@ class MACECalculator(Calculator):
     ) -> tuple[dict[str, Any], PaddingInfo]:
         """One structure's batch, padded to the budget when asked, on device."""
         periodic = atoms.get_pbc()
+        properties = {
+            name: atoms.info[self.info_keys[name]]
+            for name in self.graph_inputs
+            if name in self.info_keys and self.info_keys[name] in atoms.info
+        }
+        if self.external_field is not None and "external_field" in self.graph_inputs:
+            properties["external_field"] = self.external_field
         configuration = Configuration(
             atomic_numbers=np.asarray(atoms.get_atomic_numbers()),
             positions=np.asarray(atoms.get_positions(), dtype=np.float64),
             cell=np.asarray(atoms.get_cell().array, dtype=np.float64),
             pbc=(bool(periodic[0]), bool(periodic[1]), bool(periodic[2])),
+            properties=properties,
         )
         structure = graph_from_configuration(
             configuration,
             cutoff=self.r_max,
             z_table=self.z_table,
             head=self.heads.index(self.head),
+            graph_inputs=self.graph_inputs,
         )
         if padded:
             nodes = len(atoms)
@@ -364,6 +445,10 @@ class MACECalculator(Calculator):
         graphs = int(graph["num_graphs"])
         values: dict[str, Tensor] = {}
         for field, key in self.info_keys.items():
+            # A model's own per-structure inputs are in the graph already, from
+            # the builder, with their defaults and their padding.
+            if field in self.graph_inputs:
+                continue
             if key in atoms.info:
                 row = torch.as_tensor(np.asarray(atoms.info[key]), dtype=dtype)
                 padded = torch.zeros((graphs, *row.shape), dtype=dtype)
@@ -390,19 +475,27 @@ class MACECalculator(Calculator):
         if self.compute_atomic_stresses:
             quantities["stresses"] = ("atomic_stresses", energy / length**3)
             quantities["virials"] = ("atomic_virials", energy)
+        if self.polar:
+            factors = {"energy": energy, "length": length, "none": 1.0}
+            for key, (name, dimension) in POLAR_RESULTS.items():
+                quantities[key] = (name, factors[dimension])
+        ensemble = (*ENSEMBLE_KEYS, *(("dipole",) if self.polar else ()))
         results: dict[str, Any] = {}
         for key, (name, factor) in quantities.items():
             values = [output.get(name) for output in per_model]
             if any(value is None for value in values):
                 continue
             stacked = torch.stack([v.detach() for v in values if v is not None])
-            if key in ("energy", "stress"):
+            if key in ("energy", "stress", "dipole", *_PER_STRUCTURE):
                 stacked = stacked[:, 0]
             stack = stacked.to(torch.float64).cpu().numpy()
             results[key] = stack.mean(axis=0) * factor
-            if len(per_model) > 1 and key in ENSEMBLE_KEYS:
+            if len(per_model) > 1 and key in ensemble:
                 results[f"{key}_comm"] = stack * factor
                 results[f"{key}_var"] = stack.var(axis=0) * factor**2
+        for key in _PER_STRUCTURE:
+            if key in results:
+                results[key] = float(results[key])
         results["energy"] = float(results["energy"])
         if len(per_model) > 1:
             results["energy_var"] = float(results["energy_var"])
@@ -411,6 +504,10 @@ class MACECalculator(Calculator):
             if key in results:
                 results[key] = full_3x3_to_voigt_6_stress(results[key])
         return results
+
+
+#: The charge-aware results with one value per structure, reported as numbers.
+_PER_STRUCTURE = ("interaction_energy", "electrostatic_energy", "electron_energy")
 
 
 def _committee(
