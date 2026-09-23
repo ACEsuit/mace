@@ -14,6 +14,8 @@ split: each of them is a run that would otherwise finish and report a number.
 
 from __future__ import annotations
 
+import dataclasses
+import logging
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -28,6 +30,7 @@ from mace_core.data import (
     random_train_valid_split,
     resolve_e0s,
 )
+from mace_core.data.backends.xyz import SUFFIXES as XYZ_SUFFIXES
 from mace_core.data.e0_resolution import E0Provenance, EnergyPredictor
 from mace_core.data.xyz import ISOLATED_ATOM_CONFIG_TYPE
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
@@ -38,6 +41,10 @@ from torch.utils.data import DataLoader
 
 from mace_torch.data import GraphDataset, make_loader, target_specs
 from mace_torch.data.transforms import apply_transforms
+from mace_torch.finetune.foundation import FoundationContext, FoundationError
+from mace_torch.finetune.ratio import RatioGuardError, repeat_count
+from mace_torch.finetune.replay import read_curated
+from mace_torch.finetune.subselect import SelectionError, select, split_by_filter
 from mace_torch.train.contracts import TorchDataBundle
 from mace_torch.train.loaders import build_training_loader
 
@@ -46,6 +53,9 @@ __all__ = ["DEFAULT_PRECISION", "DataStageError", "run_data_stage"]
 #: What a run computes in until a precision section exists to say otherwise.
 #: It is frozen, so one instance serves as every caller's default.
 DEFAULT_PRECISION = PrecisionConfig()
+
+
+logger = logging.getLogger(__name__)
 
 
 class DataStageError(RuntimeError):
@@ -58,7 +68,7 @@ def run_data_stage(
     *,
     precision: PrecisionConfig = DEFAULT_PRECISION,
     predict_energy: EnergyPredictor | None = None,
-    foundation_e0s: dict[int, float] | None = None,
+    foundation: FoundationContext | None = None,
     pseudolabel: Callable[[Sequence[Configuration]], Sequence[Configuration]]
     | None = None,
 ) -> TorchDataBundle:
@@ -75,7 +85,10 @@ def run_data_stage(
         predict_energy: A foundation model's energies, needed only by the
             ``estimated`` E0 kind. Injected rather than imported: fitting an E0
             is arithmetic and the model that corrects it is torch.
-        foundation_e0s: A foundation model's table, for the kinds that copy it.
+        foundation: What the foundation model a fine-tune starts from
+            contributes: its element table, which the model is built over,
+            its energies per head, for the E0 kinds that copy them, and
+            descriptors for farthest-point sampling.
         pseudolabel: The seam a fine-tune uses to relabel replay structures
             before they are measured. It runs before the statistics, because a
             statistic taken over labels that are about to be replaced describes
@@ -97,20 +110,34 @@ def run_data_stage(
 
     for name, head in heads.items():
         head_train, head_valid, head_test = _read_head(
-            name, head, config, key_spec, pseudolabel
+            name, head, config, key_spec, pseudolabel, foundation
         )
         train.extend(head_train)
         valid.extend(head_valid)
         test.extend(head_test)
 
-    z_table = AtomicNumberTable(
-        sorted({int(z) for item in train for z in item.atomic_numbers})
-    )
-    if not z_table.zs:
+    present = {int(z) for item in train for z in item.atomic_numbers}
+    if not present:
         raise DataStageError(
             "the training set holds no structures, so there is no element "
             "table to build a model from."
         )
+    if foundation is not None:
+        # The elements the data holds, which have to be among the foundation
+        # model's: a fine-tune is built over them and takes the foundation's
+        # weights for each. An element outside its table would need an
+        # embedding row nobody trained, which is new-species initialization
+        # rather than a fine-tune of what is there. Building over the whole of
+        # its table instead is a different mode, the frozen tree's
+        # `--foundation_model_elements`, and it obliges every head to have an
+        # energy for every one of those elements.
+        outside = sorted(present - {int(z) for z in foundation.z_table.zs})
+        if outside:
+            raise DataStageError(
+                f"the data holds elements {outside} the foundation model was "
+                f"not fitted for; its elements are {list(foundation.z_table.zs)}."
+            )
+    z_table = AtomicNumberTable(sorted(present))
 
     for name, head in heads.items():
         head_train = [item for item in train if item.head == name]
@@ -118,7 +145,7 @@ def run_data_stage(
             head.e0s,
             z_table,
             head_train,
-            foundation_e0s=foundation_e0s,
+            foundation_e0s=_foundation_e0s(name, head, foundation),
             predict_energy=predict_energy,
         )
         e0s[name] = values
@@ -134,6 +161,9 @@ def run_data_stage(
         if heads[item.head].keep_isolated_atoms
         or item.config_type != ISOLATED_ATOM_CONFIG_TYPE
     ]
+
+    if config.data.ratio_guard is not None:
+        train = _guard_ratio(train, config, heads)
 
     resolved = ResolvedE0s(
         {name: dict(values) for name, values in e0s.items()},
@@ -234,19 +264,37 @@ def _read_head(
     config: ResolvedConfig,
     key_spec: KeySpecification,
     pseudolabel: Callable[[Sequence[Configuration]], Sequence[Configuration]] | None,
+    foundation: FoundationContext | None = None,
 ) -> tuple[list[Configuration], list[Configuration], list[Configuration]]:
-    """One head's training, validation and test structures."""
-    if head.train_file is None:
+    """One head's training, validation and test structures.
+
+    A head reading a published replay dataset and one reading a file go
+    through every step here alike; the source is the one line that differs.
+    """
+    if head.curated is not None:
+        train = read_curated(head.curated, head=name)
+        source = f"the {head.curated!r} replay dataset"
+    elif head.train_file is not None:
+        # The reference structures stay in: the isolated-atom E0 kind reads
+        # them, and a backend that dropped them first would hand over whatever
+        # its own extraction does with an unlabelled one, which is a zero.
+        train = list(_open(head.train_file, name, key_spec).iter_range())
+        source = str(head.train_file)
+    else:
         raise DataStageError(
-            f"head {name!r} names no `train_file`. A head with no structures "
-            f"contributes nothing and would train a readout against nothing."
+            f"head {name!r} names neither a `train_file` nor a `curated` "
+            f"dataset. A head with no structures contributes nothing and would "
+            f"train a readout against nothing."
         )
-    # The reference structures stay in: the isolated-atom E0 kind reads
-    # them, and a backend that dropped them first would hand over whatever
-    # its own extraction does with an unlabelled one, which is a zero.
-    train = list(_open(head.train_file, name, key_spec).iter_range())
     if not train:
-        raise DataStageError(f"head {name!r} read {head.train_file} and it is empty.")
+        raise DataStageError(f"head {name!r} read {source} and it is empty.")
+    if head.subselect is not None:
+        train = _subselect(name, head, train, config, foundation)
+    if head.weight != 1.0:
+        train = [
+            dataclasses.replace(item, weight=item.weight * head.weight)
+            for item in train
+        ]
     if pseudolabel is not None:
         train = list(pseudolabel(train))
     # Before the split and before the statistics. A scale computed from
@@ -274,6 +322,116 @@ def _read_head(
         else []
     )
     return train, valid, test
+
+
+def _subselect(
+    name: str,
+    head: HeadDataConfig,
+    structures: list[Configuration],
+    config: ResolvedConfig,
+    foundation: FoundationContext | None,
+) -> list[Configuration]:
+    """The part of a head's structures its subselection keeps.
+
+    Before the split, as the frozen tree does it: the kept structures are then
+    divided into training and validation like any other head's.
+    """
+    settings = head.subselect
+    assert settings is not None
+    descriptors = None
+    if settings.method == "fps":
+        if foundation is None or foundation.describe is None:
+            raise DataStageError(
+                f"head {name!r} asks for farthest-point sampling, which reads "
+                f"a foundation model's descriptors, and the run has none."
+            )
+        passed, _ = split_by_filter(structures, settings.elements, settings.filtering)
+        descriptors = foundation.describe(passed)
+    try:
+        return select(
+            structures,
+            num_samples=settings.num_samples,
+            method=settings.method,
+            filtering=settings.filtering,
+            elements=settings.elements,
+            allow_random_padding=settings.allow_random_padding,
+            seed=config.runtime.seed,
+            descriptors=descriptors,
+        )
+    except SelectionError as failure:
+        raise DataStageError(f"head {name!r}: {failure}") from failure
+
+
+def _foundation_e0s(
+    name: str, head: HeadDataConfig, foundation: FoundationContext | None
+):
+    """The foundation table a head's E0 kind copies, when it copies one."""
+    if foundation is None or head.e0s.kind not in {"foundation", "estimated"}:
+        return None
+    try:
+        return foundation.e0_table(getattr(head.e0s, "head", None))
+    except FoundationError as failure:
+        raise DataStageError(f"head {name!r}: {failure}") from failure
+
+
+def _reads_in_memory(head: HeadDataConfig) -> bool:
+    """Whether a head's structures are all held as a list, rather than streamed.
+
+    The frozen tree applies the ratio guard only when every head is an
+    ase-readable file, and skips it silently otherwise
+    (``mace/cli/run_train.py:436-461``): repeating a streamed database's
+    entries would mean copying the database. The same rule, stated.
+    """
+    if head.curated is not None:
+        return True
+    return (
+        head.train_file is not None and head.train_file.suffix.lower() in XYZ_SUFFIXES
+    )
+
+
+def _guard_ratio(
+    train: list[Configuration],
+    config: ResolvedConfig,
+    heads: dict[str, HeadDataConfig],
+) -> list[Configuration]:
+    """Repeat the other heads when the reference head outnumbers them.
+
+    After the isolated atoms are gone, since those are references rather than
+    structures to fit, and the frozen tree counts its training collections
+    without them.
+    """
+    guard = config.data.ratio_guard
+    assert guard is not None
+    streamed = sorted(
+        name for name, head in heads.items() if not _reads_in_memory(head)
+    )
+    if streamed:
+        logger.info(
+            "The ratio guard is skipped: heads %s are streamed databases, and "
+            "repeating their entries would mean copying the database.",
+            streamed,
+        )
+        return train
+    reference = sum(1 for item in train if item.head == guard.reference)
+    others = len(train) - reference
+    try:
+        copies = repeat_count(reference, others, guard.threshold)
+    except RatioGuardError as failure:
+        raise DataStageError(str(failure)) from failure
+    if copies == 1:
+        return train
+    logger.warning(
+        "The heads other than %r hold %d structures against its %d, below the "
+        "ratio %s; each of them is repeated %d times.",
+        guard.reference,
+        others,
+        reference,
+        guard.threshold,
+        copies,
+    )
+    kept = [item for item in train if item.head == guard.reference]
+    repeated = [item for item in train if item.head != guard.reference]
+    return kept + repeated * copies
 
 
 def _open(path: Path, head: str, key_spec: KeySpecification):
