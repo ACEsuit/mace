@@ -303,6 +303,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/legacy-extractor/extract_legacy.py` | Run by the pinned legacy venv to extract a pickle into the neutral format. |
 | `mace_torch/models/__init__.py` | The model and its output layer, re-exported. |
 | `mace_torch/models/base.py` | `MACEModel`: backbone, repulsion and output layer; the class models subclass. |
+| `mace_torch/models/dipoles.py` | `DipoleModel`: a dipole, or a dipole and a polarizability, read off per-atom responses. |
 | `mace_torch/models/electrostatics.py` | `PolarModel`: the charge-aware model, its refined density of multipoles and long-range energy. |
 | `mace_torch/models/energy.py` | The energy head: E0s, scale and shift, and the two reductions. |
 | `mace_torch/models/heads.py` | One readout head per declared observable, per head of theory. |

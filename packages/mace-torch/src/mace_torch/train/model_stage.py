@@ -323,7 +323,7 @@ def build_model(
         precision=precision.model,
         pair_repulsion=config.model.pair_repulsion,
         cutoff_order=config.model.num_cutoff_basis,
-        readout_hidden=_readout_hidden(config),
+        readout_hidden=config.model.readout.mlp_irreps,
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
         num_heads=len(heads),
@@ -396,7 +396,7 @@ def _polar_model(
         radial_kind=config.model.radial_type,
         precision=precision.model,
         cutoff_order=config.model.num_cutoff_basis,
-        readout_hidden=_readout_hidden(config),
+        readout_hidden=config.model.readout.mlp_irreps,
         num_heads=len(heads),
         element_agnostic_product=config.model.use_agnostic_product,
     )

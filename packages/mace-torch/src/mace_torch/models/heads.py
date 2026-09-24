@@ -218,7 +218,9 @@ class _Gate(nn.Module):
 
     The standard equivariant gate. A pointwise nonlinearity is only equivariant
     on scalars, so a higher irrep is instead multiplied by a scalar, which
-    leaves its direction alone and changes only its length.
+    leaves its direction alone and changes only its length. The gates go
+    through the same normalized SiLU as the scalars, not a sigmoid: that is the
+    frozen tree's readout, whose gates take the model's one activation.
     """
 
     gate_repeat: Tensor
@@ -265,7 +267,7 @@ class _Gate(nn.Module):
         )
         if not self.num_gates:
             return scalars
-        gates = torch.sigmoid(
+        gates = SECOND_MOMENT_SCALE * torch.nn.functional.silu(
             features[..., self.scalar_dim : self.scalar_dim + self.num_gates]
         )
         gated = features[..., self.scalar_dim + self.num_gates :]
@@ -287,7 +289,9 @@ class ObservableHead(nn.Module):
         num_features: The channel width.
         nonlinear: Whether the last layer's readout carries a gate. The frozen
             tree makes exactly this choice, and only for the last layer.
-        hidden_scalars: The width of the gated readout's middle, per head.
+        readout_irreps: The gated readout's middle, per head, as the frozen
+            tree's ``MLP_irreps``: ``16`` is ``"16x0e"``. See
+            :class:`_GatedReadout` for what of it the middle keeps.
         precision: The dtype every op is built at.
         num_heads: How many levels of theory read this observable out. Each
             gets its own readout weights; see the module docstring for how
@@ -303,7 +307,7 @@ class ObservableHead(nn.Module):
         layer_irreps: Sequence[str],
         num_features: int,
         nonlinear: bool = False,
-        hidden_scalars: int = 16,
+        readout_irreps: int | str = 16,
         precision: Precision = "float64",
         num_heads: int = 1,
     ) -> None:
@@ -345,7 +349,7 @@ class ObservableHead(nn.Module):
                         backend,
                         grouped,
                         spec.irreps,
-                        hidden_scalars,
+                        readout_irreps,
                         precision,
                         num_heads=num_heads,
                     )
@@ -531,10 +535,14 @@ class ObservableHead(nn.Module):
 class _GatedReadout(nn.Module):
     """Linear, gate, linear. The frozen tree's nonlinear readout, rebuilt.
 
-    The middle is scalars plus, when the output is not a scalar, one gate per
-    non-scalar channel and the non-scalar terms themselves. With several heads
-    every section of the middle and of the output carries one copy per head,
-    and the middle is masked to the atom's own head before the second map.
+    The middle is read off ``readout_irreps``, the frozen tree's
+    ``MLP_irreps``, by its rule: every scalar it declares, and of its higher
+    irreps those the output has, each with one gate per channel. An output
+    irrep the middle does not carry has no path through the second map and
+    reads out exactly zero, which is what the frozen tree's readout returns
+    there too. With several heads every section of the middle and of the
+    output carries one copy per head, and the middle is masked to the atom's
+    own head before the second map.
     """
 
     hidden_heads: Tensor
@@ -544,26 +552,37 @@ class _GatedReadout(nn.Module):
         backend,
         irreps_in: str,
         irreps_out: str,
-        hidden_scalars: int,
+        readout_irreps: int | str,
         precision: Precision,
         num_heads: int = 1,
     ) -> None:
         super().__init__()
         self.num_heads = num_heads
         out = Irreps.parse(irreps_out)
-        scalars = "+".join(
-            f"{mul}x{ir}" for mul, ir in out.terms if ir.degree == 0 and ir.parity == 1
+        if not out.terms:
+            raise ValueError(f"{irreps_out!r} declares no irreps to read out.")
+        hidden = Irreps.parse(
+            f"{readout_irreps}x0e"
+            if isinstance(readout_irreps, int)
+            else readout_irreps
         )
+        wanted = {ir for _, ir in out.terms}
+        hidden_scalars = sum(
+            mul for mul, ir in hidden.terms if ir.degree == 0 and ir.parity == 1
+        )
+        if not hidden_scalars:
+            raise ValueError(
+                f"the readout middle {readout_irreps!r} declares no scalars, and "
+                f"a gated readout needs them: they are what the nonlinearity "
+                f"acts on. Add a `0e` term."
+            )
+        # The middle always carries scalars, whether or not the output does:
+        # they are what the nonlinearity acts on.
         gated = "+".join(
             f"{mul}x{ir}"
-            for mul, ir in out.terms
-            if not (ir.degree == 0 and ir.parity == 1)
+            for mul, ir in hidden.terms
+            if not (ir.degree == 0 and ir.parity == 1) and ir in wanted
         )
-        # The middle always carries scalars, whether or not the output does:
-        # they are what the nonlinearity acts on, and what the gates are cut
-        # from. `scalars` is read only to check the output is not empty.
-        if not scalars and not gated:
-            raise ValueError(f"{irreps_out!r} declares no irreps to read out.")
         middle = f"{hidden_scalars}x0e" + (f"+{gated}" if gated else "")
         num_gates = sum(mul for mul, _ in Irreps.parse(gated).terms) if gated else 0
         # The head of each copy on either side of the gate. Going in there are

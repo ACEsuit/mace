@@ -37,6 +37,7 @@ harmonics, not a property of the tables.
 from __future__ import annotations
 
 import math
+from functools import cache
 
 import numpy as np
 
@@ -102,3 +103,135 @@ def wigner_3j_real(l1: int, l2: int, l3: int) -> np.ndarray:
             f"phase convention in this module is wrong for this triple."
         )
     return np.ascontiguousarray(carried.real)
+
+
+AXIS_PERMUTATION = (2, 0, 1)
+
+
+@cache
+def textbook_harmonics(degree: int, directions: tuple) -> np.ndarray:
+    """Real spherical harmonics in the textbook basis, on given directions.
+
+    Built by the same recursion the model's harmonics use: each degree is the
+    previous one coupled with the l = 1 block through the 3j of this module.
+    It exists here, rather than only in the framework packages, because
+    :func:`induced_rotation` needs it and has to stay framework-free.
+    """
+    points = np.asarray(directions, dtype=float).reshape(-1, 3)
+    points = points / np.linalg.norm(points, axis=1, keepdims=True)
+    blocks = [np.ones((points.shape[0], 1))]
+    if degree == 0:
+        return blocks[0]
+    first = points[:, [1, 2, 0]]
+    blocks.append(first)
+    for order in range(2, degree + 1):
+        coupling = wigner_3j_real(order, order - 1, 1)
+        raw = np.einsum("oab,na,nb->no", coupling, blocks[-1], first)
+        blocks.append(raw / np.linalg.norm(raw, axis=1, keepdims=True).mean())
+    return blocks[degree]
+
+
+@cache
+def induced_rotation(degree: int) -> np.ndarray:
+    """The orthogonal map from the textbook basis to e3nn's, at one degree.
+
+    Solved for from the textbook harmonics alone: evaluating them on a set of
+    directions and on the same directions with the axes permuted gives
+    ``Y(Pr) = Y(r) @ Q``, and ``Q`` is that matrix. No e3nn is consulted, and
+    none can be: this module is imported by a package that must not have it.
+
+    A fixed set of directions rather than a random one, so the result is the
+    same on every machine and every run. The system is heavily overdetermined,
+    so the particular directions do not matter as long as they are generic.
+    """
+    if degree == 0:
+        return np.ones((1, 1))
+    angles = np.linspace(0.13, 3.01, 4 * (2 * degree + 1))
+    points = np.stack(
+        [np.cos(angles) * 0.9, np.sin(angles) * 0.8, np.cos(2.0 * angles) * 0.7], axis=1
+    )
+    points = points / np.linalg.norm(points, axis=1, keepdims=True)
+    permuted = points[:, list(AXIS_PERMUTATION)]
+    here = textbook_harmonics(degree, tuple(map(tuple, points)))
+    there = textbook_harmonics(degree, tuple(map(tuple, permuted)))
+    rotation, *_ = np.linalg.lstsq(here, there, rcond=None)
+    return np.ascontiguousarray(rotation)
+
+
+def wigner_d_real(degree: int, rotation: np.ndarray) -> np.ndarray:
+    """How one irrep's components move when space is rotated.
+
+    The representation matrix ``D`` of the rotation at this degree, in the
+    project's own basis, so that a feature row ``f`` carrying this irrep goes
+    to ``f @ D`` when the positions go to ``r @ rotation.T``.
+
+    Solved from the project's own harmonics rather than from a closed form in
+    Euler angles: the basis is the one this module defines, so deriving ``D``
+    from anything else would be asserting a convention instead of reading it.
+    The system is overdetermined by a factor of four, which is what makes the
+    least squares an identification rather than a fit.
+
+    Args:
+        degree: The irrep's degree.
+        rotation: A ``(3, 3)`` proper rotation.
+
+    Returns:
+        A ``(2 * degree + 1, 2 * degree + 1)`` orthogonal matrix.
+    """
+    rotation = np.asarray(rotation, dtype=float)
+    if rotation.shape != (3, 3):
+        raise ValueError(
+            f"a rotation is a (3, 3) matrix, and this one has shape {rotation.shape}."
+        )
+    if degree == 0:
+        return np.ones((1, 1))
+
+    angles = np.linspace(0.13, 3.01, 4 * (2 * degree + 1))
+    points = np.stack(
+        [np.cos(angles) * 0.9, np.sin(angles) * 0.8, np.cos(2.0 * angles) * 0.7], axis=1
+    )
+    points = points / np.linalg.norm(points, axis=1, keepdims=True)
+    turned = points @ rotation.T
+
+    change = induced_rotation(degree)
+    here = textbook_harmonics(degree, tuple(map(tuple, points))) @ change
+    there = textbook_harmonics(degree, tuple(map(tuple, turned))) @ change
+    wigner, *_ = np.linalg.lstsq(here, there, rcond=None)
+
+    residue = np.abs(wigner @ wigner.T - np.eye(2 * degree + 1)).max()
+    if residue > 1e-9:
+        raise AssertionError(
+            f"the Wigner matrix for degree {degree} came out non-orthogonal by "
+            f"{residue:.3e}, which means the argument was not a proper "
+            f"rotation. Its determinant is {np.linalg.det(rotation):.6f}."
+        )
+    return np.ascontiguousarray(wigner)
+
+
+@cache
+def symmetric_matrix_basis() -> np.ndarray:
+    """A symmetric 3x3 matrix as ``0e+2e``, and back.
+
+    Row ``m`` is the matrix component ``m`` of the six spherical components
+    stands for, so a spherical row ``t`` is the matrix
+    ``einsum("mij,m->ij", basis, t)``, and since the rows are orthonormal the
+    same table read the other way takes a symmetric matrix to its six
+    components. The first row is the trace part, ``I / sqrt(3)``.
+
+    These are the 3j tables coupling two vectors to degrees 0 and 2, scaled to
+    unit norm per row: the matrix ``v w^T`` of two vectors is exactly that
+    coupling. The components are therefore in the project's basis, the one the
+    harmonics and every readout use, which is also the frozen tree's.
+
+    Returns:
+        ``(6, 3, 3)``, read only.
+    """
+    rows = [
+        np.moveaxis(wigner_3j_real(1, 1, degree), -1, 0) * math.sqrt(2 * degree + 1)
+        for degree in (0, 2)
+    ]
+    basis = np.concatenate(rows, axis=0)
+    basis.setflags(write=False)
+    return basis
+
+__all__ += ['textbook_harmonics', 'induced_rotation', 'wigner_d_real', 'symmetric_matrix_basis', 'AXIS_PERMUTATION']

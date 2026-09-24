@@ -243,8 +243,16 @@ def test_a_sign_alone_needs_no_name():
 # ---------------------------------------------------------------------------
 
 
-def test_the_defaults_declare_energy_and_its_two_derivatives():
-    assert DEFAULT_CATALOGUE.names() == ("energy", "forces", "stress")
+def test_the_defaults_declare_energy_the_dipole_and_the_polarizability():
+    assert DEFAULT_CATALOGUE.names() == (
+        "energy",
+        "dipole",
+        "polarizability",
+        "forces",
+        "stress",
+        "dmu_dr",
+        "dalpha_dr",
+    )
 
 
 def test_the_default_names_and_signs_come_from_the_declaration_and_not_from_code():
@@ -257,7 +265,7 @@ def test_the_default_names_and_signs_come_from_the_declaration_and_not_from_code
     resolved = {
         spec.name: spec.sign for spec in DEFAULT_CATALOGUE.requested_derivatives()
     }
-    assert resolved == {"forces": -1, "stress": +1}
+    assert resolved == {"forces": -1, "stress": +1, "dmu_dr": +1, "dalpha_dr": +1}
 
     stripped = DEFAULT_CATALOGUE.model_dump()
     for observable in stripped["observables"]:
@@ -268,6 +276,8 @@ def test_the_default_names_and_signs_come_from_the_declaration_and_not_from_code
     assert {spec.name for spec in bare.requested_derivatives()} == {
         "d_energy_d_pos",
         "d_energy_d_strain",
+        "d_dipole_d_pos",
+        "d_polarizability_d_pos",
     }
     assert [spec.name for spec in DEFAULT_CATALOGUE.inputs] == ["pos", "strain"]
 
@@ -484,8 +494,8 @@ def test_asking_for_the_same_derivative_twice_is_an_error():
 def test_an_unknown_observable_or_input_says_what_is_declared():
     catalogue = DEFAULT_CATALOGUE
     with pytest.raises(KeyError) as caught:
-        catalogue.observable("dipole")
-    assert "['energy']" in str(caught.value)
+        catalogue.observable("quadrupole")
+    assert "['dipole', 'energy', 'polarizability']" in str(caught.value)
     with pytest.raises(KeyError) as caught:
         catalogue.input("magmom")
     assert "['pos', 'strain']" in str(caught.value)

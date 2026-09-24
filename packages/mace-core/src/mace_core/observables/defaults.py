@@ -1,4 +1,5 @@
-"""The default catalogue: energy, and its derivatives against the two inputs.
+"""The default catalogue: energy and its derivatives, the dipole and the
+polarizability, and their derivatives against the positions.
 
 It is built from the same objects as any other catalogue, which is what makes
 it the example every other declaration copies. A new property is one more
@@ -52,8 +53,28 @@ _ENERGY = ObservableSpec(
     ),
 )
 
-#: Energy plus its position and strain derivatives, named ``forces`` and
-#: ``stress``. Every spec in it is frozen, so it is shared rather than rebuilt.
+#: The total dipole of a structure, in e Angstrom. Its derivative against the
+#: positions is what an infrared intensity is computed from, and it keeps the
+#: frozen tree's name for it and the gradient's own sign.
+_DIPOLE = ObservableSpec(
+    name="dipole",
+    irreps="1o",
+    per_atom=False,
+    units="e*Å",
+    derivatives=(DerivativeRequest(wrt="pos", name="dmu_dr", sign=+1),),
+)
+
+#: The polarizability of a structure, a symmetric matrix, in Angstrom cubed.
+#: Its position derivative is what a Raman intensity is computed from.
+_POLARIZABILITY = ObservableSpec(
+    name="polarizability",
+    irreps="0e+2e",
+    per_atom=False,
+    units="Å^3",
+    derivatives=(DerivativeRequest(wrt="pos", name="dalpha_dr", sign=+1),),
+)
+
+#: Every spec in it is frozen, so it is shared rather than rebuilt.
 DEFAULT_CATALOGUE = ObservableCatalogue(
-    inputs=(_POSITIONS, _STRAIN), observables=(_ENERGY,)
+    inputs=(_POSITIONS, _STRAIN), observables=(_ENERGY, _DIPOLE, _POLARIZABILITY)
 )
