@@ -1,0 +1,709 @@
+{
+  "model": "mace-polar-1-l",
+  "checkpoint": "/Users/Lilyes/.cache/mace/MACEPOLAR1Lmodel",
+  "checkpoint_sha256": "9f65f8dc6ddaff1d631e299cb531376a7da5e68d1bef04f34a2d5073d5ef114b",
+  "dtype": "float64",
+  "threads": 4,
+  "coordinate_convention": "PDB coordinates rounded through float32, matching upstream MDAnalysis; unchanged between paired calculations",
+  "status": "interrupted",
+  "cases": {
+    "10GS_01": {
+      "affected": false,
+      "reference_kcal_mol": -2.184,
+      "charged": true,
+      "public_prediction_kcal_mol": -2.1380335681266573,
+      "corrected_prediction_kcal_mol": -2.1380335681266573,
+      "source": "unchanged public prediction"
+    },
+    "10GS_02": {
+      "affected": false,
+      "reference_kcal_mol": -0.13199999999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.10174111804972244,
+      "corrected_prediction_kcal_mol": -0.10174111804972244,
+      "source": "unchanged public prediction"
+    },
+    "10GS_03": {
+      "affected": false,
+      "reference_kcal_mol": 0.428,
+      "charged": true,
+      "public_prediction_kcal_mol": 0.3860260412143187,
+      "corrected_prediction_kcal_mol": 0.3860260412143187,
+      "source": "unchanged public prediction"
+    },
+    "10GS_04": {
+      "affected": false,
+      "reference_kcal_mol": 4.504,
+      "charged": true,
+      "public_prediction_kcal_mol": 4.61580180288994,
+      "corrected_prediction_kcal_mol": 4.61580180288994,
+      "source": "unchanged public prediction"
+    },
+    "10GS_05": {
+      "affected": false,
+      "reference_kcal_mol": -11.436999999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -11.328427500416877,
+      "corrected_prediction_kcal_mol": -11.328427500416877,
+      "source": "unchanged public prediction"
+    },
+    "10GS_06": {
+      "affected": false,
+      "reference_kcal_mol": -6.882999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -7.019524592443238,
+      "corrected_prediction_kcal_mol": -7.019524592443238,
+      "source": "unchanged public prediction"
+    },
+    "10GS_07": {
+      "affected": false,
+      "reference_kcal_mol": -6.112,
+      "charged": true,
+      "public_prediction_kcal_mol": -6.330234610589315,
+      "corrected_prediction_kcal_mol": -6.330234610589315,
+      "source": "unchanged public prediction"
+    },
+    "10GS_08": {
+      "affected": false,
+      "reference_kcal_mol": -14.281999999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -14.60929271423883,
+      "corrected_prediction_kcal_mol": -14.60929271423883,
+      "source": "unchanged public prediction"
+    },
+    "10GS_09": {
+      "affected": false,
+      "reference_kcal_mol": -4.063,
+      "charged": true,
+      "public_prediction_kcal_mol": -4.182282291845618,
+      "corrected_prediction_kcal_mol": -4.182282291845618,
+      "source": "unchanged public prediction"
+    },
+    "10GS_10": {
+      "affected": false,
+      "reference_kcal_mol": -3.9569999999999994,
+      "charged": true,
+      "public_prediction_kcal_mol": -3.9983876647442664,
+      "corrected_prediction_kcal_mol": -3.9983876647442664,
+      "source": "unchanged public prediction"
+    },
+    "10GS_11": {
+      "affected": false,
+      "reference_kcal_mol": -0.762,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.7564056890162703,
+      "corrected_prediction_kcal_mol": -0.7564056890162703,
+      "source": "unchanged public prediction"
+    },
+    "10GS_12": {
+      "affected": false,
+      "reference_kcal_mol": -7.820999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -7.323122438904101,
+      "corrected_prediction_kcal_mol": -7.323122438904101,
+      "source": "unchanged public prediction"
+    },
+    "10GS_13": {
+      "affected": false,
+      "reference_kcal_mol": -5.856999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -5.360069173320272,
+      "corrected_prediction_kcal_mol": -5.360069173320272,
+      "source": "unchanged public prediction"
+    },
+    "10GS_14": {
+      "affected": false,
+      "reference_kcal_mol": -1.3079999999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.9991395362891129,
+      "corrected_prediction_kcal_mol": -0.9991395362891129,
+      "source": "unchanged public prediction"
+    },
+    "10GS_15": {
+      "affected": false,
+      "reference_kcal_mol": -53.819,
+      "charged": true,
+      "public_prediction_kcal_mol": -55.521773103447906,
+      "corrected_prediction_kcal_mol": -55.521773103447906,
+      "source": "unchanged public prediction"
+    },
+    "10GS_16": {
+      "affected": false,
+      "reference_kcal_mol": -0.6179999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.40770546153762793,
+      "corrected_prediction_kcal_mol": -0.40770546153762793,
+      "source": "unchanged public prediction"
+    },
+    "10GS_17": {
+      "affected": false,
+      "reference_kcal_mol": -19.558,
+      "charged": true,
+      "public_prediction_kcal_mol": -19.235264352448052,
+      "corrected_prediction_kcal_mol": -19.235264352448052,
+      "source": "unchanged public prediction"
+    },
+    "10GS_18": {
+      "affected": false,
+      "reference_kcal_mol": -89.34399999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -87.8163982305518,
+      "corrected_prediction_kcal_mol": -87.8163982305518,
+      "source": "unchanged public prediction"
+    },
+    "10GS_19": {
+      "affected": false,
+      "reference_kcal_mol": -32.03799999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -33.09943475516423,
+      "corrected_prediction_kcal_mol": -33.09943475516423,
+      "source": "unchanged public prediction"
+    },
+    "10GS_20": {
+      "affected": false,
+      "reference_kcal_mol": -1.2869999999999997,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.97985618555204,
+      "corrected_prediction_kcal_mol": -0.97985618555204,
+      "source": "unchanged public prediction"
+    },
+    "10GS_21": {
+      "affected": false,
+      "reference_kcal_mol": -10.896999999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -11.35925195907988,
+      "corrected_prediction_kcal_mol": -11.35925195907988,
+      "source": "unchanged public prediction"
+    },
+    "10GS_22": {
+      "affected": false,
+      "reference_kcal_mol": -11.269999999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -11.512223913567553,
+      "corrected_prediction_kcal_mol": -11.512223913567553,
+      "source": "unchanged public prediction"
+    },
+    "10GS_23": {
+      "affected": false,
+      "reference_kcal_mol": -1.617,
+      "charged": true,
+      "public_prediction_kcal_mol": -1.4505021172887516,
+      "corrected_prediction_kcal_mol": -1.4505021172887516,
+      "source": "unchanged public prediction"
+    },
+    "10GS_24": {
+      "affected": false,
+      "reference_kcal_mol": 19.608,
+      "charged": true,
+      "public_prediction_kcal_mol": 19.961647619298336,
+      "corrected_prediction_kcal_mol": 19.961647619298336,
+      "source": "unchanged public prediction"
+    },
+    "10GS_25": {
+      "affected": false,
+      "reference_kcal_mol": -14.741,
+      "charged": true,
+      "public_prediction_kcal_mol": -14.358093664261641,
+      "corrected_prediction_kcal_mol": -14.358093664261641,
+      "source": "unchanged public prediction"
+    },
+    "2CET_01": {
+      "affected": false,
+      "reference_kcal_mol": 0.23099999999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": 0.2406386332157094,
+      "corrected_prediction_kcal_mol": 0.2406386332157094,
+      "source": "unchanged public prediction"
+    },
+    "2CET_02": {
+      "affected": false,
+      "reference_kcal_mol": -0.814,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.8658212283796131,
+      "corrected_prediction_kcal_mol": -0.8658212283796131,
+      "source": "unchanged public prediction"
+    },
+    "2CET_03": {
+      "affected": false,
+      "reference_kcal_mol": -0.25999999999999995,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.37928854376143867,
+      "corrected_prediction_kcal_mol": -0.37928854376143867,
+      "source": "unchanged public prediction"
+    },
+    "2CET_04": {
+      "affected": false,
+      "reference_kcal_mol": -9.866999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -10.120146250862819,
+      "corrected_prediction_kcal_mol": -10.120146250862819,
+      "source": "unchanged public prediction"
+    },
+    "2CET_05": {
+      "affected": false,
+      "reference_kcal_mol": 34.92199999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": 35.71200663511827,
+      "corrected_prediction_kcal_mol": 35.71200663511827,
+      "source": "unchanged public prediction"
+    },
+    "2CET_06": {
+      "affected": false,
+      "reference_kcal_mol": -1.059,
+      "charged": true,
+      "public_prediction_kcal_mol": -1.648117399174292,
+      "corrected_prediction_kcal_mol": -1.648117399174292,
+      "source": "unchanged public prediction"
+    },
+    "2CET_07": {
+      "affected": false,
+      "reference_kcal_mol": -5.045,
+      "charged": true,
+      "public_prediction_kcal_mol": -5.132686822738451,
+      "corrected_prediction_kcal_mol": -5.132686822738451,
+      "source": "unchanged public prediction"
+    },
+    "2CET_08": {
+      "affected": false,
+      "reference_kcal_mol": -2.421,
+      "charged": true,
+      "public_prediction_kcal_mol": -2.4349703235670694,
+      "corrected_prediction_kcal_mol": -2.4349703235670694,
+      "source": "unchanged public prediction"
+    },
+    "2CET_09": {
+      "affected": false,
+      "reference_kcal_mol": -103.15,
+      "charged": true,
+      "public_prediction_kcal_mol": -103.57133640967767,
+      "corrected_prediction_kcal_mol": -103.57133640967767,
+      "source": "unchanged public prediction"
+    },
+    "2CET_10": {
+      "affected": false,
+      "reference_kcal_mol": -2.021,
+      "charged": true,
+      "public_prediction_kcal_mol": -2.113828034041595,
+      "corrected_prediction_kcal_mol": -2.113828034041595,
+      "source": "unchanged public prediction"
+    },
+    "2CET_11": {
+      "affected": false,
+      "reference_kcal_mol": -0.645,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.6952993627982154,
+      "corrected_prediction_kcal_mol": -0.6952993627982154,
+      "source": "unchanged public prediction"
+    },
+    "2CET_12": {
+      "affected": false,
+      "reference_kcal_mol": -0.15199999999999997,
+      "charged": true,
+      "public_prediction_kcal_mol": 0.945848554151183,
+      "corrected_prediction_kcal_mol": 0.945848554151183,
+      "source": "unchanged public prediction"
+    },
+    "2CET_13": {
+      "affected": false,
+      "reference_kcal_mol": -0.4709999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.2042579113235697,
+      "corrected_prediction_kcal_mol": -0.2042579113235697,
+      "source": "unchanged public prediction"
+    },
+    "2CET_14": {
+      "affected": false,
+      "reference_kcal_mol": 3.2999999999999994,
+      "charged": true,
+      "public_prediction_kcal_mol": 3.539231243319461,
+      "corrected_prediction_kcal_mol": 3.539231243319461,
+      "source": "unchanged public prediction"
+    },
+    "2CET_15": {
+      "affected": false,
+      "reference_kcal_mol": -6.711999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -7.004366600374632,
+      "corrected_prediction_kcal_mol": -7.004366600374632,
+      "source": "unchanged public prediction"
+    },
+    "2CET_16": {
+      "affected": false,
+      "reference_kcal_mol": -0.626,
+      "charged": true,
+      "public_prediction_kcal_mol": -0.5536372318936722,
+      "corrected_prediction_kcal_mol": -0.5536372318936722,
+      "source": "unchanged public prediction"
+    },
+    "2CET_17": {
+      "affected": false,
+      "reference_kcal_mol": -4.775,
+      "charged": true,
+      "public_prediction_kcal_mol": -5.05157787813949,
+      "corrected_prediction_kcal_mol": -5.05157787813949,
+      "source": "unchanged public prediction"
+    },
+    "2CET_18": {
+      "affected": false,
+      "reference_kcal_mol": -92.91599999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -93.69847642606844,
+      "corrected_prediction_kcal_mol": -93.69847642606844,
+      "source": "unchanged public prediction"
+    },
+    "2CET_19": {
+      "affected": false,
+      "reference_kcal_mol": -9.608,
+      "charged": true,
+      "public_prediction_kcal_mol": -10.453107501425901,
+      "corrected_prediction_kcal_mol": -10.453107501425901,
+      "source": "unchanged public prediction"
+    },
+    "2CET_20": {
+      "affected": false,
+      "reference_kcal_mol": 0.29999999999999993,
+      "charged": true,
+      "public_prediction_kcal_mol": 0.2583497501602207,
+      "corrected_prediction_kcal_mol": 0.2583497501602207,
+      "source": "unchanged public prediction"
+    },
+    "2CET_21": {
+      "affected": false,
+      "reference_kcal_mol": -110.34599999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -111.850909562525,
+      "corrected_prediction_kcal_mol": -111.850909562525,
+      "source": "unchanged public prediction"
+    },
+    "2CET_22": {
+      "affected": false,
+      "reference_kcal_mol": -2.321,
+      "charged": true,
+      "public_prediction_kcal_mol": -2.932467725707354,
+      "corrected_prediction_kcal_mol": -2.932467725707354,
+      "source": "unchanged public prediction"
+    },
+    "2CET_23": {
+      "affected": false,
+      "reference_kcal_mol": -5.528999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": -5.762053684269798,
+      "corrected_prediction_kcal_mol": -5.762053684269798,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_01": {
+      "affected": false,
+      "reference_kcal_mol": -1.071,
+      "charged": false,
+      "public_prediction_kcal_mol": -0.8135190989291118,
+      "corrected_prediction_kcal_mol": -0.8135190989291118,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_02": {
+      "affected": false,
+      "reference_kcal_mol": -0.9929999999999999,
+      "charged": false,
+      "public_prediction_kcal_mol": -0.9771535679078168,
+      "corrected_prediction_kcal_mol": -0.9771535679078168,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_03": {
+      "affected": false,
+      "reference_kcal_mol": -0.802,
+      "charged": false,
+      "public_prediction_kcal_mol": -0.5798912369357081,
+      "corrected_prediction_kcal_mol": -0.5798912369357081,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_04": {
+      "affected": false,
+      "reference_kcal_mol": -0.42199999999999993,
+      "charged": false,
+      "public_prediction_kcal_mol": -0.3006301680809731,
+      "corrected_prediction_kcal_mol": -0.3006301680809731,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_05": {
+      "affected": false,
+      "reference_kcal_mol": -5.863,
+      "charged": false,
+      "public_prediction_kcal_mol": -5.624667561949015,
+      "corrected_prediction_kcal_mol": -5.624667561949015,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_06": {
+      "affected": false,
+      "reference_kcal_mol": -3.3379999999999996,
+      "charged": false,
+      "public_prediction_kcal_mol": -3.1316306386940824,
+      "corrected_prediction_kcal_mol": -3.1316306386940824,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_07": {
+      "affected": false,
+      "reference_kcal_mol": -8.131,
+      "charged": false,
+      "public_prediction_kcal_mol": -8.147889341509625,
+      "corrected_prediction_kcal_mol": -8.147889341509625,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_08": {
+      "affected": false,
+      "reference_kcal_mol": -2.2999999999999994,
+      "charged": false,
+      "public_prediction_kcal_mol": -2.6644089254154806,
+      "corrected_prediction_kcal_mol": -2.6644089254154806,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_09": {
+      "affected": false,
+      "reference_kcal_mol": -7.876999999999999,
+      "charged": false,
+      "public_prediction_kcal_mol": -7.951093132851481,
+      "corrected_prediction_kcal_mol": -7.951093132851481,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_10": {
+      "affected": false,
+      "reference_kcal_mol": 1.604,
+      "charged": false,
+      "public_prediction_kcal_mol": 1.8007555366842232,
+      "corrected_prediction_kcal_mol": 1.8007555366842232,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_11": {
+      "affected": false,
+      "reference_kcal_mol": -1.444,
+      "charged": false,
+      "public_prediction_kcal_mol": -1.3496876398190794,
+      "corrected_prediction_kcal_mol": -1.3496876398190794,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_12": {
+      "affected": false,
+      "reference_kcal_mol": 0.23499999999999996,
+      "charged": false,
+      "public_prediction_kcal_mol": 0.3876068095216231,
+      "corrected_prediction_kcal_mol": 0.3876068095216231,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_13": {
+      "affected": false,
+      "reference_kcal_mol": -3.4769999999999994,
+      "charged": false,
+      "public_prediction_kcal_mol": -3.3436067022250833,
+      "corrected_prediction_kcal_mol": -3.3436067022250833,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_14": {
+      "affected": false,
+      "reference_kcal_mol": 0.073,
+      "charged": false,
+      "public_prediction_kcal_mol": 0.28489721759156117,
+      "corrected_prediction_kcal_mol": 0.28489721759156117,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_15": {
+      "affected": false,
+      "reference_kcal_mol": -0.30099999999999993,
+      "charged": false,
+      "public_prediction_kcal_mol": -0.044973435263588865,
+      "corrected_prediction_kcal_mol": -0.044973435263588865,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_16": {
+      "affected": false,
+      "reference_kcal_mol": -3.0179999999999993,
+      "charged": false,
+      "public_prediction_kcal_mol": -2.7359438046471944,
+      "corrected_prediction_kcal_mol": -2.7359438046471944,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_17": {
+      "affected": false,
+      "reference_kcal_mol": -3.78,
+      "charged": false,
+      "public_prediction_kcal_mol": -3.677741235894548,
+      "corrected_prediction_kcal_mol": -3.677741235894548,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_18": {
+      "affected": false,
+      "reference_kcal_mol": -2.6919999999999997,
+      "charged": false,
+      "public_prediction_kcal_mol": -2.648102259056112,
+      "corrected_prediction_kcal_mol": -2.648102259056112,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_19": {
+      "affected": false,
+      "reference_kcal_mol": -1.7729999999999997,
+      "charged": false,
+      "public_prediction_kcal_mol": -1.9041217753363258,
+      "corrected_prediction_kcal_mol": -1.9041217753363258,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_20": {
+      "affected": false,
+      "reference_kcal_mol": -5.495,
+      "charged": true,
+      "public_prediction_kcal_mol": -5.162738589943686,
+      "corrected_prediction_kcal_mol": -5.162738589943686,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_21": {
+      "affected": false,
+      "reference_kcal_mol": -1.148,
+      "charged": false,
+      "public_prediction_kcal_mol": -0.8792140730649579,
+      "corrected_prediction_kcal_mol": -0.8792140730649579,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_22": {
+      "affected": false,
+      "reference_kcal_mol": -2.3549999999999995,
+      "charged": false,
+      "public_prediction_kcal_mol": -1.988731318063708,
+      "corrected_prediction_kcal_mol": -1.988731318063708,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_23": {
+      "affected": false,
+      "reference_kcal_mol": -1.405,
+      "charged": true,
+      "public_prediction_kcal_mol": -2.5081831679285145,
+      "corrected_prediction_kcal_mol": -2.5081831679285145,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_24": {
+      "affected": false,
+      "reference_kcal_mol": -3.0859999999999994,
+      "charged": false,
+      "public_prediction_kcal_mol": -2.6816782591985446,
+      "corrected_prediction_kcal_mol": -2.6816782591985446,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_25": {
+      "affected": false,
+      "reference_kcal_mol": -1.099,
+      "charged": false,
+      "public_prediction_kcal_mol": -0.8467101846545247,
+      "corrected_prediction_kcal_mol": -0.8467101846545247,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_26": {
+      "affected": false,
+      "reference_kcal_mol": -0.5269999999999999,
+      "charged": false,
+      "public_prediction_kcal_mol": -0.377832968974899,
+      "corrected_prediction_kcal_mol": -0.377832968974899,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_27": {
+      "affected": false,
+      "reference_kcal_mol": -3.5659999999999994,
+      "charged": false,
+      "public_prediction_kcal_mol": -3.5283567950904855,
+      "corrected_prediction_kcal_mol": -3.5283567950904855,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_28": {
+      "affected": false,
+      "reference_kcal_mol": -9.816,
+      "charged": true,
+      "public_prediction_kcal_mol": -10.956990351488937,
+      "corrected_prediction_kcal_mol": -10.956990351488937,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_29": {
+      "affected": false,
+      "reference_kcal_mol": -18.965999999999998,
+      "charged": true,
+      "public_prediction_kcal_mol": -19.73840940004556,
+      "corrected_prediction_kcal_mol": -19.73840940004556,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_30": {
+      "affected": false,
+      "reference_kcal_mol": -4.526999999999999,
+      "charged": false,
+      "public_prediction_kcal_mol": -4.515390694288738,
+      "corrected_prediction_kcal_mol": -4.515390694288738,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_31": {
+      "affected": false,
+      "reference_kcal_mol": -4.344,
+      "charged": false,
+      "public_prediction_kcal_mol": -4.34929703823469,
+      "corrected_prediction_kcal_mol": -4.34929703823469,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_32": {
+      "affected": false,
+      "reference_kcal_mol": -1.161,
+      "charged": false,
+      "public_prediction_kcal_mol": -1.0456823435604712,
+      "corrected_prediction_kcal_mol": -1.0456823435604712,
+      "source": "unchanged public prediction"
+    },
+    "2FVD_33": {
+      "affected": false,
+      "reference_kcal_mol": -9.472,
+      "charged": true,
+      "public_prediction_kcal_mol": -10.415875344614395,
+      "corrected_prediction_kcal_mol": -10.415875344614395,
+      "source": "unchanged public prediction"
+    },
+    "2OBF_01": {
+      "affected": true,
+      "reference_kcal_mol": -0.5179999999999999,
+      "charged": true,
+      "public_prediction_kcal_mol": 0.0947813636447688,
+      "corrected_prediction_kcal_mol": -0.32605206867399605,
+      "reconstructed_bad_prediction_kcal_mol": 0.0947814779081039,
+      "bad_minus_public_kcal_mol": 1.1426333509922948e-07,
+      "corrected_component_energies_eV": [
+        -55049.59190703436,
+        -5692.364172100771,
+        -49357.2135959778
+      ],
+      "bad_component_energies_eV": [
+        -43557.55057872828,
+        -5692.364172100771,
+        -37865.190516741364
+      ],
+      "seconds": 152.9531709169969,
+      "source": "fresh paired calculation"
+    }
+  },
+  "controls": {
+    "10GS_01": {
+      "energy_only_kcal_mol": -2.138034483407851,
+      "standard_calculator_kcal_mol": -2.138034483407851,
+      "difference_kcal_mol": 0.0
+    },
+    "10GS_02": {
+      "energy_only_kcal_mol": -0.10174087794570993,
+      "standard_calculator_kcal_mol": -0.10174087794570993,
+      "difference_kcal_mol": 0.0
+    },
+    "10GS_01_public": {
+      "prediction_kcal_mol": -2.138033333391847,
+      "public_prediction_kcal_mol": -2.1380335681266573,
+      "difference_kcal_mol": 2.3473481025604315e-07
+    },
+    "2FVD_01_public": {
+      "prediction_kcal_mol": -0.8135191296342371,
+      "public_prediction_kcal_mol": -0.8135190989291118,
+      "difference_kcal_mol": -3.0705125331209615e-08
+    },
+    "2XB8_01_public": {
+      "prediction_kcal_mol": 3.1701039800602686,
+      "public_prediction_kcal_mol": 3.170104034759016,
+      "difference_kcal_mol": -5.469874730934521e-08
+    }
+  },
+  "calculator_calls": 19,
+  "interruption_reason": "User reported a crash after substantial memory pressure during concurrent POLAR calculations. Verified no benchmark processes remain. Full benchmark incomplete; no corrected aggregate MAE established."
+}
