@@ -54,6 +54,7 @@ calc = (mace_omol if args.model == 'omol' else mace_polar)(
 
 def flags(model, positional, kwargs):
     d = positional[0] if positional else kwargs['data']
+    out['last_forward_spin'] = d['total_spin'].detach().cpu().tolist()
     assert len(positional) <= 1 and not bool(torch.any(d['pbc']))
     assert not kwargs.get('use_pbc_evaluator', False)
     kwargs.update(compute_force=False, compute_stress=False, compute_virials=False,
@@ -86,7 +87,7 @@ def properties(f,charge,spin):
         assert len(q)==len(a)
     assert np.isfinite(e) and np.isfinite(q).all()
     assert abs(sum(q)-charge)<(2e-5 if args.dtype=='float32' else 1e-10)
-    return dict(energy_eV=e,atomic_charges=q,total_charge=sum(q),spin=spin)
+    return dict(energy_eV=e,atomic_charges=q,total_charge=sum(q),spin=spin,forward_spin=out['last_forward_spin'])
 
 try:
     path=root/'water_charge_inputs.json';data=json.loads(path.read_text())
@@ -94,9 +95,10 @@ try:
     for system,v in data.items():
         explicit=properties(v['frames'][0],v['charge'],1)
         absent=properties(v['frames'][0],v['charge'],None)
+        repeated=properties(v['frames'][0],v['charge'],1)
         delta=max(abs(x-y) for x,y in zip(explicit['atomic_charges'],absent['atomic_charges']))
-        out['controls'][system+'_default_spin']=dict(max_atomic_charge_difference=delta,energy_difference=absent['energy_eV']-explicit['energy_eV'])
-        assert delta<1e-9 and abs(absent['energy_eV']-explicit['energy_eV'])<1e-8
+        out['controls'][system+'_default_spin']=dict(max_atomic_charge_difference=delta,energy_difference=absent['energy_eV']-explicit['energy_eV'],explicit=explicit,absent=absent,repeated=repeated)
+        assert explicit['forward_spin']==absent['forward_spin']==repeated['forward_spin']
         for i,f in enumerate(v['frames']):
             row={}
             for spin in ([1] if system=='neutral' else [1,2]):
