@@ -191,12 +191,56 @@ def test_a_head_naming_two_sources_is_refused(tmp_path):
 
 
 @fp64_only
-def test_a_fine_tune_is_built_over_the_elements_its_data_holds(tmp_path):
-    """The frozen tree's default. The foundation also knows carbon, and a head
-    here would otherwise need an energy for an element it never sees."""
+def test_a_fine_tune_keeps_the_foundation_model_s_elements(tmp_path):
+    """The foundation also knows carbon, which the data never holds. The model
+    keeps it, so it can be fine-tuned again on a structure with carbon."""
     config = configuration(tmp_path, {"target": target_head(tmp_path)})
     data = run_data_stage(config, CATALOGUE, foundation=foundation())
+    assert list(data.z_table.zs) == [1, 6, 8]
+
+
+@fp64_only
+def test_an_element_no_structure_holds_takes_the_foundation_s_energy(tmp_path):
+    """Hydrogen and oxygen come from the head's own isolated atoms; carbon,
+    which no structure holds, from the foundation head, and the record says
+    which were taken that way."""
+    config = configuration(tmp_path, {"target": target_head(tmp_path)})
+    data = run_data_stage(config, CATALOGUE, foundation=foundation())
+    assert data.e0s.values["target"] == {1: HYDROGEN, 6: -1030.0, 8: OXYGEN}
+    assert data.e0_provenance["target"].from_foundation == (6,)
+
+
+@fp64_only
+def test_a_table_declaration_keeps_its_own_value_for_an_absent_element(tmp_path):
+    head = target_head(tmp_path)
+    head["e0s"] = {"table": {"values": {1: -13.5, 6: -1029.0, 8: -2040.5}}}
+    config = configuration(tmp_path, {"target": head})
+    data = run_data_stage(config, CATALOGUE, foundation=foundation())
+    assert data.e0s.values["target"][6] == -1029.0
+    assert data.e0_provenance["target"].from_foundation == ()
+
+
+@fp64_only
+def test_the_data_s_table_is_an_explicit_choice(tmp_path):
+    """The frozen tree's default, which v1 builds only when asked."""
+    config = configuration(tmp_path, {"target": target_head(tmp_path)})
+    config = config.model_copy(
+        update={
+            "finetune": config.finetune.model_copy(update={"element_table": "data"})
+        }
+    )
+    data = run_data_stage(config, CATALOGUE, foundation=foundation())
     assert list(data.z_table.zs) == [1, 8]
+    assert set(data.e0s.values["target"]) == {1, 8}
+
+
+@fp64_only
+def test_the_foundation_head_to_take_energies_from_has_to_be_said(tmp_path):
+    """With two foundation heads and no `readout_from`, which one's carbon
+    energy is meant is not something to guess."""
+    config = configuration(tmp_path, {"target": target_head(tmp_path)})
+    with pytest.raises(DataStageError, match="target"):
+        run_data_stage(config, CATALOGUE, foundation=foundation(heads=("a", "b")))
 
 
 @fp64_only

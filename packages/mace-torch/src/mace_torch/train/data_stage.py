@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from mace_core.config.data import DataConfig, HeadDataConfig
+from mace_core.config.e0s import E0sTable
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data import (
     Configuration,
@@ -52,7 +53,9 @@ __all__ = [
     "DEFAULT_PRECISION",
     "DataStageError",
     "graph_inputs_of",
+    "key_specification",
     "run_data_stage",
+    "selected_structures",
 ]
 
 #: What a run computes in until a precision section exists to say otherwise.
@@ -104,7 +107,7 @@ def run_data_stage(
             less data than the configuration asked for.
     """
     heads = _heads(config.data)
-    key_spec = _key_spec(config.data)
+    key_spec = key_specification(config.data)
     requested = resolve_requested(config.model.observables, catalogue)
 
     train: list[Configuration] = []
@@ -132,10 +135,7 @@ def run_data_stage(
         # model's: a fine-tune is built over them and takes the foundation's
         # weights for each. An element outside its table would need an
         # embedding row nobody trained, which is new-species initialization
-        # rather than a fine-tune of what is there. Building over the whole of
-        # its table instead is a different mode, the frozen tree's
-        # `--foundation_model_elements`, and it obliges every head to have an
-        # energy for every one of those elements.
+        # rather than a fine-tune of what is there.
         outside = sorted(present - {int(z) for z in foundation.z_table.zs})
         if outside:
             raise DataStageError(
@@ -143,6 +143,16 @@ def run_data_stage(
                 f"not fitted for; its elements are {list(foundation.z_table.zs)}."
             )
     z_table = AtomicNumberTable(sorted(present))
+    # A fine-tune keeps the foundation model's whole element table unless the
+    # run asks for the data's, so a model fine-tuned on two elements can be
+    # fine-tuned again on a third. The energies are resolved over the elements
+    # the data holds, as they would be without a foundation model, and every
+    # other element takes the energy of the foundation head its readout starts
+    # from: no structure holds it, so it trains nothing, and the model stays
+    # ready for it.
+    keeps_foundation_table = (
+        foundation is not None and config.finetune.element_table == "foundation"
+    )
 
     for name, head in heads.items():
         head_train = [item for item in train if item.head == name]
@@ -153,8 +163,16 @@ def run_data_stage(
             foundation_e0s=_foundation_e0s(name, head, foundation),
             predict_energy=predict_energy,
         )
+        if keeps_foundation_table:
+            assert foundation is not None
+            values, record = _with_foundation_energies(
+                name, head, values, record, foundation
+            )
         e0s[name] = values
         provenance[name] = record
+    if keeps_foundation_table:
+        assert foundation is not None
+        z_table = foundation.z_table
 
     # After the energies have been read off them, and only for the heads that
     # did not ask to keep them. An isolated atom left in the training set is a
@@ -269,7 +287,7 @@ def _heads(data: DataConfig) -> dict[str, HeadDataConfig]:
     return dict(data.heads)
 
 
-def _key_spec(data: DataConfig) -> KeySpecification:
+def key_specification(data: DataConfig) -> KeySpecification:
     """The default property keys, plus the graph inputs this run renamed."""
     spec = KeySpecification.from_defaults()
     keys = data.graph_input_keys
@@ -296,25 +314,7 @@ def _read_head(
     A head reading a published replay dataset and one reading a file go
     through every step here alike; the source is the one line that differs.
     """
-    if head.curated is not None:
-        train = read_curated(head.curated, head=name)
-        source = f"the {head.curated!r} replay dataset"
-    elif head.train_file is not None:
-        # The reference structures stay in: the isolated-atom E0 kind reads
-        # them, and a backend that dropped them first would hand over whatever
-        # its own extraction does with an unlabelled one, which is a zero.
-        train = list(_open(head.train_file, name, key_spec).iter_range())
-        source = str(head.train_file)
-    else:
-        raise DataStageError(
-            f"head {name!r} names neither a `train_file` nor a `curated` "
-            f"dataset. A head with no structures contributes nothing and would "
-            f"train a readout against nothing."
-        )
-    if not train:
-        raise DataStageError(f"head {name!r} read {source} and it is empty.")
-    if head.subselect is not None:
-        train = _subselect(name, head, train, config, foundation)
+    train = selected_structures(name, head, config, key_spec, foundation)
     if head.weight != 1.0:
         train = [
             dataclasses.replace(item, weight=item.weight * head.weight)
@@ -364,6 +364,42 @@ def _read_head(
     return train, valid, test
 
 
+def selected_structures(
+    name: str,
+    head: HeadDataConfig,
+    config: ResolvedConfig,
+    key_spec: KeySpecification,
+    foundation: FoundationContext | None = None,
+) -> list[Configuration]:
+    """A head's structures as its source holds them, after its subselection.
+
+    Before its weight, its pseudolabels, its transforms and its split, which is
+    what makes it a boundary a fine-tune can stop at and start again from: a
+    head reading the written structures with no subselection goes through the
+    rest exactly as this one would.
+    """
+    if head.curated is not None:
+        structures = read_curated(head.curated, head=name)
+        source = f"the {head.curated!r} replay dataset"
+    elif head.train_file is not None:
+        # The reference structures stay in: the isolated-atom E0 kind reads
+        # them, and a backend that dropped them first would hand over whatever
+        # its own extraction does with an unlabelled one, which is a zero.
+        structures = list(_open(head.train_file, name, key_spec).iter_range())
+        source = str(head.train_file)
+    else:
+        raise DataStageError(
+            f"head {name!r} names neither a `train_file` nor a `curated` "
+            f"dataset. A head with no structures contributes nothing and would "
+            f"train a readout against nothing."
+        )
+    if not structures:
+        raise DataStageError(f"head {name!r} read {source} and it is empty.")
+    if head.subselect is not None:
+        structures = _subselect(name, head, structures, config, foundation)
+    return structures
+
+
 def _subselect(
     name: str,
     head: HeadDataConfig,
@@ -400,6 +436,37 @@ def _subselect(
         )
     except SelectionError as failure:
         raise DataStageError(f"head {name!r}: {failure}") from failure
+
+
+def _with_foundation_energies(
+    name: str,
+    head: HeadDataConfig,
+    values: Mapping[int, float],
+    record: E0Provenance,
+    foundation: FoundationContext,
+) -> tuple[dict[int, float], E0Provenance]:
+    """A head's energies over the foundation model's whole element table.
+
+    The elements the data holds keep what the head's declaration resolved to.
+    Every other one takes the energy of the foundation head the head's readout
+    starts from, or the value a table declaration gives it outright.
+    """
+    try:
+        source = foundation.e0_table(head.readout_from)
+    except FoundationError as failure:
+        raise DataStageError(f"head {name!r}: {failure}") from failure
+    given = head.e0s.values if isinstance(head.e0s, E0sTable) else {}
+    filled = dict(values)
+    taken = []
+    for z in foundation.z_table.zs:
+        if z in filled:
+            continue
+        if z in given:
+            filled[z] = float(given[z])
+        else:
+            filled[z] = float(source[z])
+            taken.append(z)
+    return filled, dataclasses.replace(record, from_foundation=tuple(taken))
 
 
 def _foundation_e0s(

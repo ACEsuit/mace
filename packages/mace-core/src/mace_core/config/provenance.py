@@ -19,7 +19,7 @@ rename five keys, and the side that resolved the energies already has one.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from mace_core.config.e0s import E0Spec, E0sTable
 from mace_core.metadata import E0Details
@@ -37,7 +37,12 @@ E0_METHODS: dict[str, str | None] = {
 }
 
 
-def e0_details(spec: E0Spec, values: Mapping[str, float]) -> E0Details:
+def e0_details(
+    spec: E0Spec,
+    values: Mapping[str, float],
+    *,
+    from_foundation: Sequence[str] = (),
+) -> E0Details:
     """Record how one head's E0s were obtained, given the resolved values.
 
     Args:
@@ -46,6 +51,9 @@ def e0_details(spec: E0Spec, values: Mapping[str, float]) -> E0Details:
             whose spec already carries values: those are keyed by atomic
             number and are the request, and recording a request as a result is
             the confusion this whole object exists to remove.
+        from_foundation: Symbols whose energies no structure determined and
+            which were taken from the foundation model instead, recorded as
+            the ``from_foundation`` parameter when there are any.
 
     Returns:
         The metadata record. ``"explicit"`` for a table, which is already an
@@ -68,9 +76,12 @@ def e0_details(spec: E0Spec, values: Mapping[str, float]) -> E0Details:
         source="explicit" if isinstance(spec, E0sTable) else "estimated",
         method=E0_METHODS[spec.kind],
         parameters={
-            name: value
-            for name, value in spec.model_dump(mode="json").items()
-            if name not in {"kind", "values"}
+            **{
+                name: value
+                for name, value in spec.model_dump(mode="json").items()
+                if name not in {"kind", "values"}
+            },
+            **({"from_foundation": sorted(from_foundation)} if from_foundation else {}),
         },
         values=dict(sorted(values.items())),
     )

@@ -62,8 +62,8 @@ def test_the_refusal_says_what_became_of_the_flag():
         from_namespace(Namespace(save_cpu=True), defaults={"save_cpu": False})
     with pytest.raises(LegacyFlagError, match="fine-tuning tickets"):
         from_namespace(
-            Namespace(foundation_model_elements=True),
-            defaults={"foundation_model_elements": False},
+            Namespace(finetune_dipoles_polarizabilities=True),
+            defaults={"finetune_dipoles_polarizabilities": False},
         )
 
 
@@ -72,12 +72,14 @@ def test_several_unreachable_flags_are_reported_together():
     with pytest.raises(LegacyFlagError) as caught:
         from_namespace(
             Namespace(
-                default_dtype="float32", save_cpu=True, foundation_model_elements=True
+                default_dtype="float32",
+                save_cpu=True,
+                finetune_dipoles_polarizabilities=True,
             ),
             defaults={
                 "default_dtype": "float64",
                 "save_cpu": False,
-                "foundation_model_elements": False,
+                "finetune_dipoles_polarizabilities": False,
             },
         )
     message = str(caught.value)
@@ -170,3 +172,11 @@ def test_the_six_dropped_flags_are_the_recorded_ones():
         "save_cpu",
         "use_so3",
     ]
+
+
+@pytest.mark.parametrize(("keep_all", "table"), [(True, "foundation"), (False, "data")])
+def test_the_element_flag_picks_the_element_table(keep_all, table):
+    """Legacy's default shrinks the table to the data's, and v1's keeps the
+    foundation model's, so a legacy command line says which it meant."""
+    values = from_namespace(Namespace(foundation_model_elements=keep_all))
+    assert values["finetune"]["element_table"] == table
