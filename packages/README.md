@@ -289,6 +289,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/electrostatics/reference/utils.py` | Scatter and dense-batch helpers. |
 | `mace_torch/electrostatics/solver.py` | The reference solver, the shared geometry, and resolving a solver once. |
 | `mace_torch/finetune/__init__.py` | Fine-tuning, re-exported. |
+| `mace_torch/finetune/extend.py` | Adding elements to a trained model: rows carried, new rows from a written spec. |
 | `mace_torch/finetune/foundation.py` | What a run reads from its foundation model. |
 | `mace_torch/finetune/freeze.py` | Freezing parameter groups up to a level. |
 | `mace_torch/finetune/lora.py` | Low-rank adapters in place of the weights they adapt. |
