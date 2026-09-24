@@ -30,7 +30,8 @@ packages/mace-core/
 │   ├── __init__.py                     # re-exports public types/config/registries; does NOT import heavy submodules
 │   ├── _version.py                     # contract version (semver of the weights format/spec)
 │   │
-│   ├── types.py                        # MACEOutputs (typed dataclass, replaces the get_outputs dict); GRAPH_SCHEMA + GraphInfo/GraphView (rfc-03 flat-dict contract)
+│   ├── outputs.py                      # MACEOutput (typed dataclass generic over the tensor type, replaces the get_outputs dict)
+│   ├── types.py                        # GRAPH_SCHEMA + GraphInfo/GraphView (rfc-03 flat-dict contract)
 │   ├── graph.py                        # flat-dict contract {node_attrs,edge_index,positions,batch,cell,shifts,...} + shape/dtype validation
 │   │
 │   ├── config/
@@ -46,15 +47,12 @@ packages/mace-core/
 │   │   ├── number_table.py             # AtomicNumberTable (reimplemented; mirror of tools/utils.py, without dragging in train.py)
 │   │   └── default_keys.py             # DefaultKeys (reimplemented; mirror of tools/default_keys.py)
 │   │
-│   ├── observables/
-│   │   ├── __init__.py                 # OBSERVABLE_REGISTRY (declarative: name → spec)
-│   │   ├── base.py                     # Observable protocol: output irreps, how it's derived (readout | autograd | grad-strain)
-│   │   ├── energy.py                   # Energy, SiteEnergy (readout+scatter_sum)
-│   │   ├── forces.py                   # Forces (=-dE/dx via autograd) — spec only, the physics is executed by mace_torch/mace_jax
-│   │   ├── stress.py                   # Stress, Virials (grad w.r.t. strain; sign convention PINNED here)
-│   │   ├── dipole.py                   # Dipole, AtomicDipole
-│   │   ├── polarizability.py           # Polarizability (dielectric/polar)
-│   │   └── hessian.py                  # Hessian (second derivative)
+│   ├── observables/                    # a property is a declaration, not a module per property
+│   │   ├── __init__.py                 # the public surface of the package
+│   │   ├── spec.py                     # InputSpec, ObservableSpec, DerivativeSpec, ObservableCatalogue (pydantic)
+│   │   ├── grammar.py                  # the irreps string grammar: parse + validate + dimension (no algebra)
+│   │   ├── derivatives.py              # d_<q>_d_<x> naming, and the three special cases with their signs
+│   │   └── defaults.py                 # DEFAULT_CATALOGUE: energy + its position and strain derivatives, the declaration every observable copies
 │   │
 │   ├── kernels/
 │   │   ├── protocol.py                 # KernelBackend Protocol, generic over TensorT: make_* factories + capabilities (§3.1)
@@ -383,7 +381,7 @@ in the forward is a real code change:
 | You want to… | How | New code? |
 |---|---|---|
 | **Tune a parameter** — a loss weight, a Huber `delta`, a cutoff, a schedule, any hyperparameter | set a field in config | **none** |
-| **Train a new property** — any well-defined spherical-tensor observable (a dipole, a rank-2 tensor, spectra, a magnetic moment) | add a **row to the observable table** (`ObservableSpec` in config, canonical defaults in `defaults/observables.yaml`) — it auto-creates the head, the loss term, and the derivative names | **none** |
+| **Train a new property** — any well-defined spherical-tensor observable (a dipole, a rank-2 tensor, spectra, a magnetic moment) | add a **row to the observable table** (`ObservableSpec` in config, canonical defaults in `observables/defaults.py`) — it auto-creates the head, the loss term, and the derivative names | **none** |
 | **A new loss** — a non-standard reduction, or a data/relative-energy/mask transform | `@register_loss` / `@register_transform` + select it in config | a small module |
 | **A new readout / head** | `@register_readout` + config | a small module |
 | **A new backend** — kernel, data format, neighbour list, electrostatics solver | ship a wheel with one entry-point line (`mace.kernel_backends.torch`, `mace.data_backends`, `mace.neighbor_backends`, `mace.electrostatics_backends.torch`) | a backend module, **zero core edits** |
@@ -400,7 +398,7 @@ that come up a lot:
   code at all — its loss term appears automatically with a default weight you can override.
 - **A new property is a table row, not an add-on.** The framework is property-agnostic by
   construction: the observable table maps a property name to its mathematical structure (irreps,
-  per-atom vs total, units, normalization), and everything downstream (head, loss, derivatives) is
+  per-atom vs total, units), and everything downstream (head, loss, derivatives) is
   derived from that row.
 
 The sections below give the worked examples for each row of the ladder; for a single **end-to-end
@@ -493,14 +491,14 @@ silently wrong forces); it stays usable for inference (`supports_double_backward
 
 ### 3.2 A new observable (config only)
 
-- **Extender touches:** a `mace_core/observables/myobs.py` file with an `Observable` (declares output irreps and derivation mode: `readout` | `autograd(energy, wrt=positions)` | `grad_strain`) + `@register_observable("myobs")`.
-- **Core touched:** zero existing files (only the new module is added). The model exposes it automatically because `BaseMACE` iterates over `config.observables`; `MACEOutputs` is a dataclass with optional fields populated by name.
-- **Enabling it:** `ModelConfig(observables=["energy","forces","myobs"])`.
-- **Test:** `mace_core/tests/test_observable_registry.py` validates irreps/derivation consistency (pure); if it is autograd-derived, `tests/parity` verifies finite-diff.
+- **Extender touches:** one `ObservableSpec` declaration giving `name`, `irreps`, `per_atom`, `units`, and the declared inputs to differentiate against. The scaling of the head that produces it is set in the model config and its loss weight in `LossConfig`, both keyed by this name. No module, no decorator. A derivative is named by the rule `d_<q>_d_<x>`, with `forces`, `stress` and `magforces` as the three special cases, so asking for a derivative against a newly declared input needs no code either.
+- **Core touched:** zero files. The model exposes the row automatically because `BaseMACE` iterates over the declared observables; `MACEOutput` carries the six core fields and everything else by name in `extras`.
+- **Enabling it:** list it in the model config's observables, in a catalogue that extends `DEFAULT_CATALOGUE`.
+- **Test:** `packages/mace-core/tests/test_observables.py` validates the grammar and the derivative naming (pure); if it is autograd-derived, `tests/parity` verifies finite-diff.
 
 ### 3.3 A new loss / transform (plugin registry)
 
-- **Tuning an existing loss is config, not a new loss.** `LossConfig` carries the per-observable **weights** *and* the loss's own **parameters** (e.g. `params={"huber_delta": 0.02}`) — this preserves the legacy `--energy_weight`/`--forces_weight`/`--huber_delta` knobs as config fields. Changing a coefficient never needs a `@register_loss`. And a well-defined spherical-tensor observable needs **no** loss code at all — its term is generated from the observable table with `default_loss_weight`.
+- **Tuning an existing loss is config, not a new loss.** `LossConfig` carries the per-observable **weights** *and* the loss's own **parameters** (e.g. `params={"huber_delta": 0.02}`) — this preserves the legacy `--energy_weight`/`--forces_weight`/`--huber_delta` knobs as config fields. Changing a coefficient never needs a `@register_loss`. And a well-defined spherical-tensor observable needs **no** loss code at all — its term is generated from the observable table, with its weight read from `LossConfig`.
 - **A genuinely new loss:** `mace_torch/train/loss.py` (or an external package) with `@register_loss("myloss")` on a `torch.nn.Module`; select via `LossConfig(name="myloss", weights=..., params=...)`.
 - **Data transform:** `@register_transform("mytransform")` in `mace_torch/data/`; chained via `DataConfig(transforms=[...])`.
 - **Core touched:** the registries (`LOSS_REGISTRY`, `TRANSFORM_REGISTRY`) live in `mace_core.registries` as specs; **adding one does not edit the registry**, only the decorator populates it at import time. Zero core edits.
