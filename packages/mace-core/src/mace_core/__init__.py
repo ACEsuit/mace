@@ -8,22 +8,22 @@ Python, numpy and pydantic, so the same types carry ``torch.Tensor`` in
 from importlib.metadata import PackageNotFoundError, version
 
 from mace_core.observables import (
+    DEFAULT_CATALOGUE,
     DerivativeSpec,
     InputSpec,
     ObservableCatalogue,
     ObservableSpec,
-    load_default_catalogue,
 )
 from mace_core.outputs import MACEOutput
 
 __all__ = [
+    "DEFAULT_CATALOGUE",
     "DerivativeSpec",
     "InputSpec",
     "MACEOutput",
     "ObservableCatalogue",
     "ObservableSpec",
     "__version__",
-    "load_default_catalogue",
 ]
 
 #: Version of the installed `mace-core` distribution. Read from installed metadata

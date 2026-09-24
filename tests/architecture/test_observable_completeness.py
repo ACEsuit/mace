@@ -43,10 +43,10 @@ if importlib.util.find_spec("mace_core") is None:  # pragma: no cover
         allow_module_level=True,
     )
 from mace_core.observables import (
+    DEFAULT_CATALOGUE,
     DEFAULT_SIGN,
     ObservableSpec,
     default_derivative_name,
-    load_default_catalogue,
 )
 
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE
@@ -201,14 +201,13 @@ def test_the_named_derivatives_keep_their_legacy_names():
     """forces, stress and magforces are the pairs that have a name of their own,
     and the two negated ones are the two the frozen tree negates.
 
-    The shipped declarations are the other side of this comparison, and they are
-    a genuinely separate source: this table is read off the frozen tree, and
-    that file is authored. Where both name a pair they have to agree, and a pair
-    the file does not ship yet, `magforces`, is simply absent rather than wrong.
+    The default catalogue is the other side of this comparison, and it is a
+    genuinely separate source: this table is read off the frozen tree, and that
+    catalogue is authored. Where both name a pair they have to agree, and a pair
+    the catalogue does not declare yet, `magforces`, is simply absent rather
+    than wrong.
     """
-    declared = {
-        spec.name: spec for spec in load_default_catalogue().requested_derivatives()
-    }
+    declared = {spec.name: spec for spec in DEFAULT_CATALOGUE.requested_derivatives()}
     for name in ("forces", "stress", "magforces"):
         row = DISPOSITIONS[name]
         assert isinstance(row, Derivative)
