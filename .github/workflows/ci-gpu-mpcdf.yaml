@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         default: smoke
-        options: [smoke, full]
+        options: [smoke, full, followup]
 permissions:
   contents: read
 concurrency:
@@ -54,6 +54,7 @@ jobs:
           "$AUDIT_DIR/venv/bin/python" -m pip install --disable-pip-version-check mace-torch==0.3.16 numpy==2.3.5 scipy==1.15.3 ase==3.26.0 e3nn==0.4.4 h5py==3.13.0 matscipy==1.2.0 torchmetrics==1.7.0 opt_einsum==3.4.0
           "$AUDIT_DIR/venv/bin/python" -m pip freeze > "$AUDIT_DIR/results/environment.txt"
       - name: Evaluate sequentially with controls before every model
+        if: inputs.phase != 'followup'
         shell: bash
         run: |
           set -euo pipefail
@@ -67,6 +68,25 @@ jobs:
               venv/bin/python audit/run_gpu.py --size "$size" --phase "$AUDIT_PHASE" \
               --checkpoint "checkpoints/${size}.model" --output "results/${AUDIT_PHASE}_${size}.json" \
               2>&1 | tee "results/${AUDIT_PHASE}_${size}.log"
+          done
+      - name: QUID and PLA15 fresh evaluations
+        if: inputs.phase == 'followup'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$AUDIT_DIR"
+          for size in m l omol; do
+            if [ "$size" = omol ]; then
+              url=https://github.com/ACEsuit/mace-foundations/releases/download/mace_omol_0/MACE-omol-0-extra-large-1024.model
+            else
+              upper=$(echo "$size" | tr '[:lower:]' '[:upper:]')
+              url="https://github.com/ACEsuit/mace-foundations/releases/download/mace_polar_1/MACE-POLAR-1-${upper}.model"
+            fi
+            curl --fail --location --retry 3 --max-time 300 "$url" -o "checkpoints/${size}.model"
+            timeout --signal=TERM --kill-after=30s 1800 \
+              venv/bin/python audit/run_followup.py --model "$size" \
+              --checkpoint "checkpoints/${size}.model" --output "results/followup_${size}.json" \
+              2>&1 | tee "results/followup_${size}.log"
           done
       - name: Upload progress even on failure
         if: always()
