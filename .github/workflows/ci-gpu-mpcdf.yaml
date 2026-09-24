@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         default: smoke
-        options: [smoke, full, followup, orb]
+        options: [smoke, full, followup, orb, water]
 permissions:
   contents: read
 concurrency:
@@ -70,7 +70,7 @@ jobs:
               2>&1 | tee "results/${AUDIT_PHASE}_${size}.log"
           done
       - name: QUID and PLA15 fresh evaluations
-        if: inputs.phase == 'followup'
+        if: inputs.phase == 'followup' || inputs.phase == 'water'
         shell: bash
         run: |
           set -euo pipefail
@@ -84,9 +84,9 @@ jobs:
             fi
             curl --fail --location --retry 3 --max-time 300 "$url" -o "checkpoints/${size}.model"
             timeout --signal=TERM --kill-after=30s 1800 \
-              venv/bin/python audit/run_followup.py --model "$size" \
-              --checkpoint "checkpoints/${size}.model" --output "results/followup_${size}.json" \
-              2>&1 | tee "results/followup_${size}.log"
+              venv/bin/python "audit/run_${AUDIT_PHASE}.py" --model "$size" \
+              --checkpoint "checkpoints/${size}.model" --output "results/${AUDIT_PHASE}_${size}.json" \
+              2>&1 | tee "results/${AUDIT_PHASE}_${size}.log"
           done
       - name: ORB PLF547 corrected evaluation
         if: inputs.phase == 'orb'
