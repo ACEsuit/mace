@@ -13,6 +13,8 @@ path at a time with the channels inside, in the paths' sorted order.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
@@ -29,7 +31,12 @@ from tests.parity.fm00_convert import (
     fully_connected_tp_weights_to_canonical,
 )
 
-__all__ = ["convert_magnetic", "magnetic_config", "transfer_magnetic_weights"]
+__all__ = [
+    "convert_magnetic",
+    "magnetic_config",
+    "transfer_magnetic_weights",
+    "write_magnetic_checkpoint",
+]
 
 
 def _per_channel(irreps: str) -> str:
@@ -163,3 +170,93 @@ def transfer_magnetic_weights(legacy, model: MagneticModel) -> None:
         if model.one_body is not None:
             model.one_body.coefficients.copy_(legacy.onebody_magmombasis_coeffs)
             model.one_body.offset.copy_(legacy.one_body_magmom_const_correction)
+
+
+def write_magnetic_checkpoint(legacy, directory, train_file) -> Path:
+    """The legacy model as a v1 checkpoint with the record a v1 run writes.
+
+    Args:
+        legacy: The trained model.
+        directory: Where to write it.
+        train_file: The structure file its one head is recorded as reading. A
+            record names one, and nothing reads it back.
+    """
+    from ase.data import chemical_symbols
+    from mace_core.config.resolved import ResolvedConfig
+    from mace_core.data.backend import DatasetStatistics
+    from mace_core.metadata import (
+        ConfigRecord,
+        E0Details,
+        HeadSummary,
+        ModelMetadata,
+        Provenance,
+    )
+    from mace_torch.train import write_model
+    from mace_torch.train.model_stage import build_model
+
+    settings = magnetic_config(legacy)
+    values, scale, shift = energy_constants_to_canonical(legacy)
+    numbers = settings["atomic_numbers"]
+    config = ResolvedConfig.model_validate(
+        {
+            "runtime": {"work_dir": str(directory)},
+            "data": {
+                "heads": {
+                    "default": {
+                        "train_file": str(train_file),
+                        "e0s": {"kind": "table", "values": values["default"]},
+                    }
+                }
+            },
+            "model": {
+                "model": "magnetic",
+                "observables": ["energy", "forces", "magforces"],
+                "r_max": settings["cutoff"],
+                "num_interactions": settings["num_layers"],
+                "num_channels": settings["num_features"],
+                "hidden_irreps": settings["hidden_irreps"],
+                "max_ell": settings["lmax"],
+                "correlation": settings["correlation"],
+                "num_radial_basis": settings["num_radial"],
+                "num_cutoff_basis": settings["cutoff_order"],
+                "pair_repulsion": settings["pair_repulsion"],
+                "readout": {"mlp_irreps": settings["readout_hidden"]},
+                "magnetic": {
+                    "saturation": dict(
+                        zip(numbers, settings["saturation"], strict=True)
+                    ),
+                    "num_basis": settings["num_moment_basis"],
+                    "lmax": settings["moment_lmax"],
+                    "one_body": settings["one_body_basis"] > 0,
+                    "one_body_basis": max(settings["one_body_basis"], 1),
+                },
+            },
+        }
+    )
+    engine, _ = build_model(
+        config,
+        DEFAULT_CATALOGUE,
+        z_table=AtomicNumberTable(numbers),
+        heads=("default",),
+        e0s=ResolvedE0s(values),
+        statistics=DatasetStatistics(mean=shift[0], std=scale[0]),
+        initialize=False,
+    )
+    transfer_magnetic_weights(legacy, engine.get_submodule("backbone"))
+    metadata = ModelMetadata(
+        config=ConfigRecord(resolved=config.model_dump(mode="json")),
+        provenance=Provenance(code_version="anchor"),
+        heads={
+            "default": HeadSummary(
+                e0=E0Details(
+                    source="explicit",
+                    values={
+                        chemical_symbols[z]: energy
+                        for z, energy in values["default"].items()
+                    },
+                )
+            )
+        },
+        elements=[chemical_symbols[z] for z in numbers],
+    )
+    return write_model(Path(directory) / "magnetic", engine, metadata)

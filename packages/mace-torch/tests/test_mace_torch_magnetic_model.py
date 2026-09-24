@@ -17,6 +17,7 @@ import pytest
 import torch
 from ase import Atoms
 from ase.io import write
+from mace_core.config import FixedPointSpec
 from mace_core.config.model import MagneticConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
@@ -24,6 +25,7 @@ from mace_core.kernels.precision import PrecisionConfig
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.reference import ReferenceBackend
+from mace_torch.calculators import MACECalculator
 from mace_torch.cli.run_train import run
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.stages import build
@@ -34,6 +36,7 @@ from mace_torch.nn.magnetic import OneBodyMomentEnergy
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train import ModelStageError
 from scipy.spatial.transform import Rotation
+from test_mace_torch_extend_elements import water_foundation
 
 NUMBERS = [8, 26]
 ENERGY = DEFAULT_CATALOGUE.observable("energy")
@@ -291,3 +294,88 @@ def test_one_body_coefficients_that_are_not_trained_keep_their_values(tmp_path):
 def test_magnetic_forces_are_refused_for_a_model_that_reads_no_moments(tmp_path):
     with pytest.raises(ModelStageError, match="magforces"):
         build(configuration(tmp_path, model="scale_shift"))
+
+
+# ---------------------------------------------------------------------------
+# The calculator
+# ---------------------------------------------------------------------------
+
+
+def iron_cluster(seed: int = 5) -> Atoms:
+    atoms = Atoms("OFe3", positions=CLUSTER)
+    atoms.arrays["REF_magmom"] = moments(seed)
+    return atoms
+
+
+def test_the_calculator_reports_the_magnetic_forces_of_the_model(trained):
+    assert trained.checkpoint_path is not None
+    calculator = MACECalculator(model_paths=trained.checkpoint_path)
+    assert "magforces" in calculator.implemented_properties
+    atoms = iron_cluster()
+    calculator.calculate(atoms)
+    direct = trained.model(
+        graph(CLUSTER, atoms.arrays["REF_magmom"]), compute=("forces", "magforces")
+    )
+    np.testing.assert_allclose(
+        calculator.results["magforces"],
+        direct.extras["magforces"].detach().numpy(),
+        atol=1e-12,
+    )
+
+
+def test_a_structure_without_moments_is_refused(trained):
+    calculator = MACECalculator(model_paths=trained.checkpoint_path)
+    atoms = iron_cluster()
+    del atoms.arrays["REF_magmom"]
+    atoms.set_initial_magnetic_moments([0.0, 2.0, 2.0, 2.0])
+    with pytest.raises(ValueError, match="initial magnetic moments are not read"):
+        calculator.calculate(atoms)
+
+
+def test_changing_the_moments_invalidates_the_cached_energy(trained):
+    atoms = iron_cluster()
+    atoms.calc = MACECalculator(model_paths=trained.checkpoint_path)
+    first = atoms.get_potential_energy()
+    atoms.arrays["REF_magmom"][1] *= 0.5
+    assert atoms.get_potential_energy() != first
+
+
+def test_the_moments_can_be_read_from_another_key(trained):
+    atoms = iron_cluster()
+    atoms.arrays["spins"] = atoms.arrays.pop("REF_magmom")
+    calculator = MACECalculator(model_paths=trained.checkpoint_path, magmom_key="spins")
+    calculator.calculate(atoms)
+    assert calculator.results["magforces"].shape == (4, 3)
+
+
+def test_a_relaxation_that_runs_off_to_infinity_is_refused(trained):
+    """A model whose energy has no lower bound in the moments, as an untrained
+    one generally has not: the solid harmonics grow with the moment. The
+    energy that would come back is not a number, and the driver says so rather
+    than returning it."""
+    spec = FixedPointSpec(
+        variable="magmom", max_iter=100, tolerance=1e-8, require_convergence=False
+    )
+    atoms = iron_cluster()
+    atoms.calc = MACECalculator(model_paths=trained.checkpoint_path, fixed_point=spec)
+    with pytest.raises(RuntimeError, match="stopped being finite"):
+        atoms.get_potential_energy()
+
+
+def test_a_fixed_point_is_refused_for_a_committee_and_a_model_without_moments(
+    trained, tmp_path
+):
+    spec = FixedPointSpec(variable="magmom")
+    path = trained.checkpoint_path
+    with pytest.raises(ValueError, match="committee"):
+        MACECalculator(model_paths=[path, path], fixed_point=spec)
+    energy_model = water_foundation(tmp_path)
+    with pytest.raises(ValueError, match="already relaxed"):
+        MACECalculator(model_paths=energy_model, fixed_point=spec)
+
+
+def test_a_hessian_through_the_fixed_point_is_refused(trained):
+    spec = FixedPointSpec(variable="magmom", require_convergence=False)
+    calculator = MACECalculator(model_paths=trained.checkpoint_path, fixed_point=spec)
+    with pytest.raises(NotImplementedError, match="second derivative"):
+        calculator.get_hessian(iron_cluster())

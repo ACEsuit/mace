@@ -31,8 +31,12 @@ OTHER_FAMILIES = {
     "LES_alphas": "the LES model",
     "LES_kappas": "the LES model",
     "bec": "the LES model",
-    "MACE_magmoms": "the magnetic model",
 }
+
+#: The keys v1 writes that the frozen tree's calculator never did, each with
+#: the reason. The magnetic calculator computed ``dE/dm`` on every call and
+#: dropped it, so the only way to it was the evaluation command line.
+ADDED = {"magforces": "the magnetic forces the frozen calculator computed and dropped"}
 
 FIXED = DipoleSettings(charges="fixed")
 PREDICTED = DipoleSettings(charges="predicted", polarizability=True)
@@ -54,6 +58,13 @@ FAMILIES = {
         PREDICTED.extra_rows,
         produced=PREDICTED.produced,
     ),
+    "magnetic": produced_outputs(
+        ("energy", "forces", "magforces"),
+        ENERGY_EXTRA_ROWS,
+        atomic_stresses=True,
+        produced=["converged_magmom"],
+        derivatives=["magforces"],
+    ),
 }
 
 
@@ -74,7 +85,9 @@ def test_every_legacy_key_is_produced_or_belongs_to_another_family():
         f"neither produced by a v1 model family nor assigned to another."
     )
     assert not produced & set(OTHER_FAMILIES)
-    assert produced <= legacy, sorted(produced - legacy)
+    assert produced - set(ADDED) <= legacy, sorted(produced - set(ADDED) - legacy)
+    assert set(ADDED) <= produced
+    assert not set(ADDED) & legacy
 
 
 @pytest.mark.parametrize(
