@@ -1,4 +1,4 @@
-"""The ASE calculator for v1 models of the energy family.
+"""The ASE calculator for every v1 model: energy, charge-aware and response.
 
 It wraps :func:`mace_torch.deploy.load_deployed` rather than loading models
 itself, builds each structure's graph with the same builder training uses, and
@@ -31,8 +31,19 @@ dipole by L. A variance takes the square of its quantity's factor. Charges,
 spins and the density coefficients are left as the model computes them, in
 units of the elementary charge with the dipole components in e Angstrom.
 
-**Dielectric derivatives are not this calculator's.** They are the dipole
-family's, and :meth:`MACECalculator.get_dielectric_derivatives` says so.
+**A response model adds its own results**: ``dipole``, and for the
+dielectric model ``charges``, ``polarizability`` as a matrix and
+``polarizability_sh`` as its six spherical components. It has no energy, so it
+writes no energy, forces or stress. A committee reports ``dipole`` per model and
+as a spread, whichever model it comes from.
+
+**What is written is read off the model, not off its kind.** There is no
+``model_type``. Every result is one row of :data:`RESULTS`, naming the model
+output it is read from, and a calculator writes the rows whose output its
+models produce: the observables they declare and what each model says it adds.
+A capability the model does not declare is refused by the observable's name:
+the Hessian needs ``energy``, and :meth:`MACECalculator.get_dielectric_derivatives`
+needs ``dipole`` and its declared derivative ``dmu_dr``.
 """
 
 from __future__ import annotations
@@ -50,7 +61,7 @@ from ase import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 from mace_core.data.configuration import Configuration
-from mace_core.outputs import MACEOutput
+from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor
 
 from mace_torch.calculators.padding import (
@@ -69,13 +80,20 @@ from mace_torch.nn import MACEBackbone
 from mace_torch.serialization import FORMAT as CHECKPOINT_FORMAT
 from mace_torch.train.data_stage import graph_inputs_of
 
-__all__ = ["ENSEMBLE_KEYS", "POLAR_RESULTS", "MACECalculator", "declared_properties"]
+__all__ = [
+    "ENSEMBLE_KEYS",
+    "POLAR_RESULTS",
+    "RESULTS",
+    "MACECalculator",
+    "declared_properties",
+    "produced_outputs",
+]
 
 logger = logging.getLogger(__name__)
 
-#: The results a committee also reports per model and as a spread. The frozen
-#: tree adds ``dipole``, which belongs to the dipole families.
-ENSEMBLE_KEYS = ("energy", "forces", "stress")
+#: The results a committee also reports per model and as a spread, when the
+#: model produces them.
+ENSEMBLE_KEYS = ("energy", "forces", "stress", "dipole")
 
 #: What ``atoms.info`` entries reach the graph by default, as the frozen tree
 #: passes them: graph field, then info key.
@@ -101,20 +119,61 @@ POLAR_RESULTS: dict[str, tuple[str, str]] = {
 }
 
 
-def declared_properties(
-    *, committee: bool, atomic_stresses: bool, polar: bool = False
-) -> list[str]:
-    """Every result key a calculator so configured writes, and no other."""
-    properties = ["energy", "free_energy", "energies", "node_energy", "forces"]
-    properties.append("stress")
-    if atomic_stresses:
-        properties += ["stresses", "virials"]
-    if polar:
-        properties += list(POLAR_RESULTS)
+#: Every result the calculator can write, in the order it lists them: the model
+#: output each is read from, and its dimension. Energies convert by E, forces
+#: by E/L, stresses by E/L^3, the dipole by L, and the rest are left as the
+#: model computes them.
+RESULTS: dict[str, tuple[str, str]] = {
+    "energy": ("total_energy", "energy"),
+    "energies": ("node_energies", "energy"),
+    "node_energy": ("node_interaction_energy", "energy"),
+    "forces": ("forces", "force"),
+    "stress": ("stress", "stress"),
+    "stresses": ("atomic_stresses", "stress"),
+    "virials": ("atomic_virials", "energy"),
+    **POLAR_RESULTS,
+    "polarizability": ("polarizability", "none"),
+    "polarizability_sh": ("polarizability_sh", "none"),
+}
+
+
+def produced_outputs(
+    observables: Sequence[str],
+    extra_rows: Mapping[str, str],
+    *,
+    atomic_stresses: bool = False,
+    produced: Sequence[str] = (),
+) -> set[str]:
+    """The model outputs a calculator reads from a model so declared.
+
+    Args:
+        observables: The declared observables, by name.
+        extra_rows: What the model says it adds to its output.
+        atomic_stresses: Whether per-atom stresses are asked for.
+        produced: What the model computes itself rather than reads out.
+    """
+    names = {FIELD_BY_OBSERVABLE.get(name, name) for name in observables}
+    names |= set(extra_rows) | set(produced)
+    if ENERGY_OBSERVABLE in observables:
+        # Forces and stress are always taken for an energy model, as the frozen
+        # tree takes them, whatever derivatives it was trained against.
+        names |= {"total_energy", "node_energies", "forces", "stress"}
+        if atomic_stresses:
+            names |= {"atomic_stresses", "atomic_virials"}
+    return names
+
+
+def declared_properties(outputs: set[str], *, committee: bool) -> list[str]:
+    """Every result key a calculator reading these outputs writes, and no other."""
+    properties = [key for key, (name, _) in RESULTS.items() if name in outputs]
+    if "energy" in properties:
+        properties.insert(properties.index("energy") + 1, "free_energy")
     if committee:
-        ensemble = [*ENSEMBLE_KEYS, *(("dipole",) if polar else ())]
         properties += [
-            f"{key}{suffix}" for key in ensemble for suffix in ("_comm", "_var")
+            f"{key}{suffix}"
+            for key in ENSEMBLE_KEYS
+            if key in properties
+            for suffix in ("_comm", "_var")
         ]
     return properties
 
@@ -193,23 +252,22 @@ class MACECalculator(Calculator):
                 f"graph has one cutoff. Every member has to share it."
             )
         first = self.models[0]
-        for model in self.models:
-            if model.config.model.observables and (
-                ENERGY_OBSERVABLE not in model.config.model.observables
-            ):
-                raise ValueError(
-                    f"{model.path} does not declare {ENERGY_OBSERVABLE!r}. This "
-                    f"calculator is the energy family's; the others have their "
-                    f"own."
-                )
+        declared = {tuple(_declared(model)) for model in self.models}
+        if len(declared) != 1:
+            raise ValueError(
+                f"the committee's members declare different observables, "
+                f"{sorted(declared)}, and one calculator reports one set of "
+                f"results for all of them."
+            )
+        self.observables = declared.pop()
         inputs = {graph_inputs_of(model.config.model.model) for model in self.models}
         if len(inputs) != 1:
             raise ValueError(
-                "the committee mixes models that read different per-structure "
-                "inputs, and one structure's graph carries one set."
+                "the committee mixes models that read different inputs, and one "
+                "structure's graph carries one set."
             )
         self.graph_inputs = inputs.pop()
-        self.polar = bool(self.graph_inputs)
+        self.has_energy = ENERGY_OBSERVABLE in self.observables
         self.r_max = cutoffs[0]
         self.z_table = first.z_table
         self.heads = first.heads
@@ -222,7 +280,14 @@ class MACECalculator(Calculator):
         self.padding = padding or PaddingPolicy.requested(
             pad_num_atoms, pad_num_edges, compiled=compile_mode is not None
         )
-        self._rows = output_rows(first.outputs)
+        extra_rows = _extra_rows(first)
+        self._rows = output_rows(first.outputs, extra_rows)
+        self._outputs = produced_outputs(
+            self.observables,
+            extra_rows,
+            atomic_stresses=compute_atomic_stresses,
+            produced=sorted(getattr(first.model, "PRODUCED", ())),
+        )
         self._engines = [model.engine for model in self.models]
         if compile_mode is not None:
             self._engines = [
@@ -238,9 +303,7 @@ class MACECalculator(Calculator):
         # The instance's own list: the class attribute on the ASE base is
         # shared, and extending it grows every calculator built after.
         self.implemented_properties = declared_properties(
-            committee=len(self.models) > 1,
-            atomic_stresses=compute_atomic_stresses,
-            polar=self.polar,
+            self._outputs, committee=len(self.models) > 1
         )
 
     # -----------------------------------------------------------------------
@@ -272,8 +335,8 @@ class MACECalculator(Calculator):
     ) -> None:
         Calculator.calculate(self, atoms)
         assert self.atoms is not None
-        compute = ["forces", "stress"]
-        if self.compute_atomic_stresses:
+        compute = ["forces", "stress"] if self.has_energy else []
+        if self.compute_atomic_stresses and self.has_energy:
             compute += ["atomic_stresses", "atomic_virials"]
         graph, info = self._graph(self.atoms, padded=True)
         per_model = [
@@ -295,7 +358,16 @@ class MACECalculator(Calculator):
 
         Returns:
             The array for one model, a list of them for a committee.
+
+        Raises:
+            NotImplementedError: If the model declares no ``energy``, which is
+                what the Hessian is the second derivative of.
         """
+        if not self.has_energy:
+            raise NotImplementedError(
+                f"the Hessian is the second derivative of the {ENERGY_OBSERVABLE!r} "
+                f"observable, and the model declares {list(self.observables)}."
+            )
         atoms = self._atoms(atoms)
         graph, _ = self._graph(atoms, padded=False)
         scale = self.energy_units_to_eV / self.length_units_to_A**2
@@ -311,18 +383,45 @@ class MACECalculator(Calculator):
         return hessians[0] if len(hessians) == 1 else hessians
 
     def get_dielectric_derivatives(self, atoms: Atoms | None = None):
-        """Not computed here, for any model this calculator takes.
+        """The position derivatives of the dipole, and of the polarizability.
+
+        ``dmu_dr`` is ``[3, n_atoms, 3]``, ``d mu_i / d r_aj`` at ``[i, a, j]``,
+        and ``dalpha_dr`` is ``[9, n_atoms, 3]`` with the polarizability's nine
+        components row major. Both are left in the model's units.
+
+        Returns:
+            For one model, ``dmu_dr``, or ``(dmu_dr, dalpha_dr)`` when the model
+            declares a polarizability; for a committee the same with a list per
+            quantity, one entry per model. That is the frozen tree's shape.
 
         Raises:
-            NotImplementedError: Always. The derivatives of the dipole and the
-                polarizability are the dipole family's; a charge-aware model's
-                dipole is its density's and has none of its own to offer, as in
-                the frozen tree.
+            NotImplementedError: If the model declares no ``dipole`` with its
+                position derivative ``dmu_dr``, naming what it does declare.
         """
-        raise NotImplementedError(
-            "dielectric derivatives belong to the dipole and polarizability "
-            "models, not to this calculator's energy and charge-aware ones."
-        )
+        wanted = [
+            name
+            for name in ("dmu_dr", "dalpha_dr")
+            if all(name in _responses(model) for model in self.models)
+        ]
+        if "dmu_dr" not in wanted:
+            raise NotImplementedError(
+                f"dielectric derivatives are the position derivatives of the "
+                f"'dipole' observable, declared as 'dmu_dr', and the model "
+                f"declares {list(self.observables)}."
+            )
+        atoms = self._atoms(atoms)
+        graph, _ = self._graph(atoms, padded=False)
+        per_model = [
+            engine(dict(graph), compute=tuple(wanted), training=False)
+            for engine in self._engines
+        ]
+        values = [
+            [output.extras[name].detach().cpu().numpy() for output in per_model]
+            for name in wanted
+        ]
+        if len(self.models) == 1:
+            values = [value[0] for value in values]
+        return values[0] if len(values) == 1 else tuple(values)
 
     def get_descriptors(
         self,
@@ -463,43 +562,35 @@ class MACECalculator(Calculator):
         return values
 
     def _results(self, per_model: Sequence[MACEOutput[Tensor]]) -> dict[str, Any]:
-        energy = self.energy_units_to_eV
-        length = self.length_units_to_A
-        quantities: dict[str, tuple[str, float]] = {
-            "energy": ("total_energy", energy),
-            "energies": ("node_energies", energy),
-            "node_energy": ("node_interaction_energy", energy),
-            "forces": ("forces", energy / length),
-            "stress": ("stress", energy / length**3),
+        factors = {
+            "energy": self.energy_units_to_eV,
+            "force": self.energy_units_to_eV / self.length_units_to_A,
+            "stress": self.energy_units_to_eV / self.length_units_to_A**3,
+            "length": self.length_units_to_A,
+            "none": 1.0,
         }
-        if self.compute_atomic_stresses:
-            quantities["stresses"] = ("atomic_stresses", energy / length**3)
-            quantities["virials"] = ("atomic_virials", energy)
-        if self.polar:
-            factors = {"energy": energy, "length": length, "none": 1.0}
-            for key, (name, dimension) in POLAR_RESULTS.items():
-                quantities[key] = (name, factors[dimension])
-        ensemble = (*ENSEMBLE_KEYS, *(("dipole",) if self.polar else ()))
         results: dict[str, Any] = {}
-        for key, (name, factor) in quantities.items():
+        for key, (name, dimension) in RESULTS.items():
+            if name not in self._outputs:
+                continue
             values = [output.get(name) for output in per_model]
             if any(value is None for value in values):
                 continue
+            factor = factors[dimension]
             stacked = torch.stack([v.detach() for v in values if v is not None])
-            if key in ("energy", "stress", "dipole", *_PER_STRUCTURE):
+            if self._rows.get(name) == "graph":
+                # One structure: its row, not a batch of one.
                 stacked = stacked[:, 0]
             stack = stacked.to(torch.float64).cpu().numpy()
             results[key] = stack.mean(axis=0) * factor
-            if len(per_model) > 1 and key in ensemble:
+            if len(per_model) > 1 and key in ENSEMBLE_KEYS:
                 results[f"{key}_comm"] = stack * factor
                 results[f"{key}_var"] = stack.var(axis=0) * factor**2
-        for key in _PER_STRUCTURE:
+        for key in ("energy", "energy_var", *_PER_STRUCTURE):
             if key in results:
                 results[key] = float(results[key])
-        results["energy"] = float(results["energy"])
-        if len(per_model) > 1:
-            results["energy_var"] = float(results["energy_var"])
-        results["free_energy"] = results["energy"]
+        if "energy" in results:
+            results["free_energy"] = results["energy"]
         for key in ("stress", "stress_comm", "stress_var", "stresses"):
             if key in results:
                 results[key] = full_3x3_to_voigt_6_stress(results[key])
@@ -508,6 +599,21 @@ class MACECalculator(Calculator):
 
 #: The charge-aware results with one value per structure, reported as numbers.
 _PER_STRUCTURE = ("interaction_energy", "electrostatic_energy", "electron_energy")
+
+
+def _declared(model: DeployedModel) -> list[str]:
+    """The observables a model was built to read out, by name."""
+    return [spec.name for spec in model.outputs.observables]
+
+
+def _extra_rows(model: DeployedModel) -> dict[str, str]:
+    """What the model says it adds to its output, and the row of each."""
+    return dict(getattr(model.model, "extra_rows", {}))
+
+
+def _responses(model: DeployedModel) -> set[str]:
+    """The response derivatives the model's engine takes, by name."""
+    return set(getattr(model.engine, "responses", {}))
 
 
 def _committee(

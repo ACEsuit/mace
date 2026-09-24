@@ -30,7 +30,7 @@ from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.models.energy import EnergyOutputHead
-from mace_torch.models.outputs import MACEOutputs
+from mace_torch.models.outputs import ENERGY_EXTRA_ROWS, MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
 from mace_torch.nn.radial import ZBLBasis
 
@@ -143,6 +143,15 @@ class MACEModel(nn.Module):
             self.repulsion = (
                 ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None
             )
+
+    @property
+    def extra_rows(self) -> dict[str, str]:
+        """What each quantity the model adds to ``extras`` has a row for.
+
+        Declared by the model that adds it, so whatever cuts a padded batch
+        back reads it here rather than keeping a list of every model's.
+        """
+        return dict(ENERGY_EXTRA_ROWS) if self.outputs.energy_head is not None else {}
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The declared observables. The graph is read and never written to."""

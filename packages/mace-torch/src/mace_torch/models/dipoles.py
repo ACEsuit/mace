@@ -125,6 +125,21 @@ class DipoleSettings:
             )
 
     @property
+    def produced(self) -> frozenset[str]:
+        """What the model computes from its readouts."""
+        return frozenset(
+            {"dipole", *(("polarizability",) if self.polarizability else ())}
+        )
+
+    @property
+    def extra_rows(self) -> dict[str, str]:
+        """The rows of what the model adds to ``extras``."""
+        names = {head.name for head in self.heads}
+        if self.polarizability:
+            names.add("polarizability")
+        return {name: row for name, row in DIPOLE_EXTRA_ROWS.items() if name in names}
+
+    @property
     def heads(self) -> tuple[ObservableSpec, ...]:
         """The readouts this model builds, in the order it builds them."""
         names = ["atomic_dipoles"]
@@ -150,7 +165,9 @@ class DipoleModel(MACEModel):
         and no repulsion.
     """
 
-    #: What the model computes from its readouts rather than reads out.
+    #: What the model computes from its readouts rather than reads out: the
+    #: dipole always, and the polarizability for the dielectric model. Set per
+    #: model from its settings; this is every name either can produce.
     PRODUCED: frozenset[str] = frozenset({"dipole", "polarizability"})
 
     polarizability_basis: Tensor
@@ -195,11 +212,16 @@ class DipoleModel(MACEModel):
             last_layer_irreps=last_layer_irreps,
         )
         self.settings = settings
+        self.PRODUCED = settings.produced
         self.register_buffer(
             "polarizability_basis",
             torch.tensor(symmetric_matrix_basis(), dtype=getattr(torch, precision)),
             persistent=False,
         )
+
+    @property
+    def extra_rows(self) -> dict[str, str]:
+        return self.settings.extra_rows
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The dipole, and the polarizability when there is one."""
