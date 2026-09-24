@@ -22,6 +22,7 @@ from mace_core.kernels.precision import PrecisionConfig
 from mace_core.kernels.registry import get_backend
 from mace_core.metadata import (
     ConfigRecord,
+    E0Details,
     ElectrostaticsRecord,
     HeadSummary,
     ModelMetadata,
@@ -51,6 +52,7 @@ __all__ = [
     "ModelStageError",
     "build_model",
     "run_model_stage",
+    "with_foundation_architecture",
 ]
 
 #: What one channel carries when the configuration does not say. The frozen
@@ -141,7 +143,7 @@ def run_model_stage(
         built from and the record that travels with the weights.
     """
     if foundation is not None:
-        config = _with_foundation_architecture(config, foundation)
+        config = with_foundation_architecture(config, foundation)
     engine, requested = build_model(
         config,
         catalogue,
@@ -198,7 +200,7 @@ def run_model_stage(
 _RUN_OWNED_MODEL_FIELDS = frozenset({"observables", "backend"})
 
 
-def _with_foundation_architecture(
+def with_foundation_architecture(
     config: ResolvedConfig, foundation: Foundation
 ) -> ResolvedConfig:
     """The configuration with the foundation model's architecture in it.
@@ -578,14 +580,19 @@ def _metadata(config: ResolvedConfig, data: TorchDataBundle) -> ModelMetadata:
     from a file produce the same numbers and mean different things, and a
     fine-tune that copies a foundation model's energies reads them from here
     rather than out of a loaded module's buffer, which says what some model
-    was built with and nothing about which head it belonged to.
+    was built with and nothing about which head it belonged to. A model that
+    reads out no energy has none, and its heads record an empty table.
     """
+    reads_energy = "energy" in config.model.observables
     return ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
         provenance=Provenance(code_version=__version__),
+        elements=[chemical_symbols[int(z)] for z in data.z_table.zs],
         heads={
             head: HeadSummary(
-                e0=e0_details(
+                e0=E0Details(source="explicit")
+                if not reads_energy
+                else e0_details(
                     config.data.heads[head].e0s,
                     {
                         chemical_symbols[number]: float(energy)

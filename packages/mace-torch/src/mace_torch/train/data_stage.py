@@ -154,7 +154,16 @@ def run_data_stage(
         foundation is not None and config.finetune.element_table == "foundation"
     )
 
+    # A model that reads out no energy has no isolated-atom energies to be
+    # shifted by, and a declaration of them is refused when the configuration
+    # is validated. Its heads carry none.
+    reads_energy = any(spec.name == "energy" for spec in requested.observables)
+
     for name, head in heads.items():
+        if not reads_energy:
+            e0s[name] = {}
+            provenance[name] = E0Provenance(kind="none")
+            continue
         head_train = [item for item in train if item.head == name]
         values, record = resolve_e0s(
             head.e0s,
@@ -196,11 +205,14 @@ def run_data_stage(
     # Measuring nothing instead would leave a checkpoint unable to say what the
     # data looked like.
     measured = "std" if config.model.scaling == "none" else config.model.scaling
+    if not reads_energy:
+        # The one spread a model without an energy has data for.
+        measured = "rms_dipoles"
     statistics = compute_statistics(
         InMemoryBackend(train),
         list(z_table.zs),
         config.model.r_max,
-        _average_e0s(e0s, z_table),
+        _average_e0s(e0s, z_table) if reads_energy else {},
         scaling=measured,
     )
 

@@ -70,7 +70,7 @@ CASES = {
 }
 
 
-def legacy_dielectric(mlp_irreps: str):
+def legacy_dielectric(mlp_irreps: str, atomic_numbers=(1, 6, 8)):
     from e3nn import o3
 
     from mace.modules import interaction_classes
@@ -85,11 +85,11 @@ def legacy_dielectric(mlp_irreps: str):
         interaction_cls=interaction_classes["RealAgnosticResidualInteractionBlock"],
         interaction_cls_first=interaction_classes["RealAgnosticInteractionBlock"],
         num_interactions=2,
-        num_elements=3,
+        num_elements=len(atomic_numbers),
         hidden_irreps=o3.Irreps("4x0e + 4x1o + 4x2e"),
         MLP_irreps=o3.Irreps(mlp_irreps),
         avg_num_neighbors=3.0,
-        atomic_numbers=[1, 6, 8],
+        atomic_numbers=list(atomic_numbers),
         correlation=2,
         gate=torch.nn.functional.silu,
         radial_MLP=[64, 64, 64],

@@ -27,13 +27,13 @@ fields that disagree.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
 from mace_core.config.base import ReforgeBaseConfig
 from mace_core.config.data import DataConfig
-from mace_core.config.e0s import FOUNDATION_E0_KINDS
+from mace_core.config.e0s import FOUNDATION_E0_KINDS, E0sIsolatedAtoms
 from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.loss import LossConfig
 from mace_core.config.model import ModelConfig
@@ -158,6 +158,30 @@ class ResolvedConfig(ReforgeBaseConfig):
             for stage in stages
         )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _an_error_table_for_what_is_read_out(cls, data: Any) -> Any:
+        """The error table defaults to one the declared observables can fill.
+
+        ``PerAtomRMSE`` reports energies and forces, which a model reading out
+        a dipole has neither of. Written into the configuration, so the
+        resolved one says which table the run prints.
+        """
+        if not isinstance(data, dict):
+            return data
+        model = data.get("model") or {}
+        observables = model.get("observables") if isinstance(model, dict) else None
+        runtime = data.get("runtime") or {}
+        if (
+            observables is None
+            or ENERGY_OBSERVABLE in observables
+            or not isinstance(runtime, dict)
+            or "error_table" in runtime
+        ):
+            return data
+        table = "DipolePolarRMSE" if "polarizability" in observables else "DipoleRMSE"
+        return {**data, "runtime": {**runtime, "error_table": table}}
+
     @model_validator(mode="after")
     def _e0s_that_read_a_foundation_model_need_one(self) -> ResolvedConfig:
         if self.finetune.foundation_model is not None:
@@ -176,6 +200,26 @@ class ResolvedConfig(ReforgeBaseConfig):
         return self
 
     @model_validator(mode="after")
+    def _a_loss_for_what_is_read_out(self) -> ResolvedConfig:
+        """The universal loss is refused for a model that reads out no energy.
+
+        What makes it universal is the band it puts on the force term by the
+        reference force's norm. A model with no energy has no forces, so it
+        would get a plain Huber under another name, and asking for it says the
+        configuration was written for another model.
+        """
+        if ENERGY_OBSERVABLE in self.model.observables:
+            return self
+        if self.loss.kind.kind == "universal":
+            raise ValueError(
+                f"loss.kind is 'universal', which bands the force term, and "
+                f"model.observables {list(self.model.observables)} has no "
+                f"energy and so no forces. Use 'weighted', which is the frozen "
+                f"tree's dipole and polarizability loss, or 'huber'."
+            )
+        return self
+
+    @model_validator(mode="after")
     def _a_model_without_atomic_energies_cannot_carry_e0s(self) -> ResolvedConfig:
         """Read off the declared observables, not off the model's name.
 
@@ -186,10 +230,13 @@ class ResolvedConfig(ReforgeBaseConfig):
         """
         if ENERGY_OBSERVABLE in self.model.observables:
             return self
+        # Against the default rather than against what was written: a resolved
+        # configuration writes every field, the default E0s included, and
+        # reading it back has to give the same configuration.
         offenders = sorted(
             f"data.heads.{name}.e0s"
             for name, head in self.data.heads.items()
-            if "e0s" in head.model_fields_set
+            if head.e0s != E0sIsolatedAtoms()
         )
         if offenders:
             raise ValueError(
