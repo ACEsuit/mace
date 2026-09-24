@@ -85,6 +85,7 @@ def load_deployed(
     device: str = "cpu",
     catalogue: ObservableCatalogue | None = None,
     precision: Any = None,
+    solver: str | None = None,
 ) -> DeployedModel:
     """Rebuild a model from a v1 checkpoint.
 
@@ -94,13 +95,19 @@ def load_deployed(
         catalogue: The observables it may declare. The default catalogue
             unless a model declares others.
         precision: What it computes in. The default precision unless given.
+        solver: The electrostatics solver to rebuild a long-range model with,
+            when it is not the one it recorded. Allowed only between two
+            solvers that both reproduce the reference bit for bit.
 
     Raises:
         DeployError: If the record carries no isolated-atom energies for its
             heads, which is a checkpoint written before heads were recorded,
             or heads that disagree about the elements.
         CheckpointError: If the files are not a v1 checkpoint, or the weights
-            and the record disagree.
+            and the record disagree, or the rebuilt model's long-range solve is
+            not the one recorded.
+        SolverSubstitutionError: If ``solver`` would change a long-range
+            model's numbers.
     """
     from ase.data import atomic_numbers as numbers_of
     from mace_core.data.backend import DatasetStatistics
@@ -113,6 +120,7 @@ def load_deployed(
     document = read_sidecar(path)
     metadata = ModelMetadata.model_validate(document["config"])
     config = ResolvedConfig.model_validate(metadata.config.resolved)
+    config = _with_solver(config, metadata, solver, path)
     heads = tuple(config.data.heads)
     missing = [head for head in heads if head not in metadata.heads]
     if not heads or missing:
@@ -154,6 +162,7 @@ def load_deployed(
 
     engine = load_checkpoint(path, build).to(device)
     engine.eval()
+    _check_recorded_solve(engine.get_submodule("backbone"), metadata, path)
     return DeployedModel(
         engine=engine,
         config=config,
@@ -164,3 +173,56 @@ def load_deployed(
         outputs=built[0],
         path=Path(path),
     )
+
+
+def _with_solver(
+    config: ResolvedConfig,
+    metadata: ModelMetadata,
+    solver: str | None,
+    path: str | Path,
+) -> ResolvedConfig:
+    """The configuration with the solver the model is to be rebuilt with."""
+    from mace_core.electrostatics import solver_to_load
+
+    record = metadata.electrostatics
+    if record is None:
+        if solver is not None:
+            raise DeployError(
+                f"{path} is a model with no long-range term, so there is no "
+                f"electrostatics solver to choose; {solver!r} has nothing to do."
+            )
+        return config
+    chosen = solver_to_load(record.solver, record.bit_parity, solver)
+    section = config.electrostatics.model_copy(update={"solver": chosen})
+    return config.model_copy(update={"electrostatics": section})
+
+
+def _check_recorded_solve(
+    model: nn.Module, metadata: ModelMetadata, path: str | Path
+) -> None:
+    """The rebuilt model asks its solver for the solve it was trained with.
+
+    Its solve is derived from the configuration by code, so a default that
+    moved between versions would rebuild the same weights around another
+    solve. The record is what says which one they were fitted in.
+    """
+    from mace_core.electrostatics import descriptor_record
+
+    from mace_torch.serialization import CheckpointError
+
+    record = metadata.electrostatics
+    descriptor = getattr(model, "descriptor", None)
+    if record is None or descriptor is None:
+        return
+    rebuilt = descriptor_record(descriptor)
+    if rebuilt != record.descriptor:
+        differing = sorted(
+            key
+            for key in set(rebuilt) | set(record.descriptor)
+            if rebuilt.get(key) != record.descriptor.get(key)
+        )
+        raise CheckpointError(
+            f"{path} was trained with the long-range solve "
+            f"{record.descriptor} and rebuilds as {rebuilt}; they differ in "
+            f"{differing}. The weights were fitted in the recorded one."
+        )

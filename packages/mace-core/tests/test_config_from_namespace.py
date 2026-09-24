@@ -156,10 +156,17 @@ def _dict_value_of(annotation):
     return None
 
 
-def test_the_four_dropped_flags_are_the_recorded_ones():
+def test_the_six_dropped_flags_are_the_recorded_ones():
     dropped = sorted(
         dest
         for dest, disposition in LEGACY_TRAIN_DESTS.items()
         if isinstance(disposition, Dropped)
     )
-    assert dropped == ["force_mh_ft_lr", "plot_interaction_e", "save_cpu", "use_so3"]
+    assert dropped == [
+        "field_norm_factor",
+        "force_mh_ft_lr",
+        "plot_interaction_e",
+        "return_electrostatic_potentials",
+        "save_cpu",
+        "use_so3",
+    ]

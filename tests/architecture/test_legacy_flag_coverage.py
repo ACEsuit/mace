@@ -298,3 +298,48 @@ def test_the_checkpoint_retention_flags_mean_what_they_meant(argv, keep, save_al
     )
     assert config.runtime.keep_checkpoints is keep
     assert config.runtime.save_all_checkpoints is save_all
+
+
+def test_a_polar_command_line_carries_its_architecture():
+    """The published models' settings, as the frozen command line spells them:
+    literals in strings, and the block choices by class name."""
+    from mace_core.config.resolved import ResolvedConfig
+
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(
+        [
+            "--name", "run",
+            "--train_file", "train.xyz",
+            "--atomic_multipoles_max_l", "1",
+            "--atomic_multipoles_smearing_width", "1.5",
+            "--field_feature_max_l", "1",
+            "--field_feature_widths", "[1.5, 3.0]",
+            "--field_feature_norms", "[20.0, 20.0, 0.5, 0.5]",
+            "--num_recursion_steps", "2",
+            "--include_electrostatic_self_interaction", "True",
+            "--kspace_cutoff_factor", "1.0",
+            "--fixedpoint_update_config",
+            "{'type': 'AgnosticEmbeddedOneBodyVariableUpdate', "
+            "'potential_embedding_cls': 'AgnosticChargeBiasedLinearPotentialEmbedding', "
+            "'nonlinearity_cls': 'MLPNonLinearity'}",
+            "--field_readout_config", "{'type': 'OneBodyMLPFieldReadout'}",
+        ]
+    )  # fmt: skip
+    config = ResolvedConfig.model_validate(
+        legacy.from_namespace(namespace, defaults=parser_defaults())
+    )
+    polar = config.model.polar
+    assert polar.multipole_max_l == 1 and polar.multipole_width == 1.5
+    assert polar.feature_widths == (1.5, 3.0)
+    assert polar.feature_norms == (20.0, 20.0, 0.5, 0.5)
+    assert polar.num_recursion_steps == 2 and polar.energy_self_interaction
+    assert config.electrostatics.kspace_cutoff_factor == 1.0
+
+
+def test_a_field_block_v1_does_not_build_is_refused():
+    parser = arg_parser.build_default_arg_parser()
+    namespace = parser.parse_args(
+        ["--name", "run", "--field_readout_config", "{'type': 'SomethingElse'}"]
+    )
+    with pytest.raises(legacy.LegacyFlagError, match="SomethingElse"):
+        legacy.from_namespace(namespace, defaults=parser_defaults())

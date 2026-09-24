@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
+from mace_core.graph import GRAPH_INPUT_DEFAULTS
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import RequestedOutputs
 
@@ -80,6 +81,7 @@ def graph_from_configuration(
     z_table: AtomicNumberTable,
     head: int = 0,
     weight: float = 1.0,
+    graph_inputs: Sequence[str] = (),
 ) -> dict[str, np.ndarray]:
     """One structure's contribution to a batch, as the schema declares it.
 
@@ -92,6 +94,9 @@ def graph_from_configuration(
         head: Which head this structure belongs to, as a position in the
             model's head list.
         weight: Its weight in the loss.
+        graph_inputs: The per-structure inputs the model reads, by name. Each
+            is taken from the structure's properties, or from
+            :data:`~mace_core.graph.GRAPH_INPUT_DEFAULTS` when it has none.
 
     Raises:
         ValueError: If the structure holds an element the table does not.
@@ -130,7 +135,29 @@ def graph_from_configuration(
         "pbc": np.asarray(pbc, dtype=bool).reshape(3),
         "weight": np.asarray(weight, dtype=float),
         "head": np.asarray(head, dtype=np.int64),
+        **{
+            name: _graph_input(configuration, name, GRAPH_INPUT_DEFAULTS[name])
+            for name in graph_inputs
+        },
     }
+
+
+def _graph_input(
+    configuration: Configuration, name: str, default: tuple[float, ...]
+) -> np.ndarray:
+    """One per-structure input, shaped as the schema declares it.
+
+    A structure that gives one with the wrong number of components is refused
+    by name, rather than broadcast or truncated into another value.
+    """
+    value = configuration.properties.get(name)
+    array = np.asarray(default if value is None else value, dtype=float).reshape(-1)
+    if array.size != len(default):
+        raise ValueError(
+            f"{name!r} has {array.size} component(s) and is one per structure "
+            f"of {len(default)}: {array.tolist()}."
+        )
+    return array if len(default) > 1 else array.reshape(())
 
 
 def targets_from_configuration(

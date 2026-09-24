@@ -344,7 +344,6 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             ),
         )
 
-        self.static_quantities = None
         self._precompute_geometry_impl = self._select_precompute_geometry_impl()
         self._forward_dynamic_impl = self._select_forward_dynamic_impl()
 
@@ -418,7 +417,6 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             volume=volume,
             pbc=pbc,
         )
-        self.static_quantities = cache
         return self._forward_dynamic_impl(
             source_feats=source_feats,
             cache=cache,
@@ -445,7 +443,6 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             volume=volume,
             pbc=pbc,
         )
-        self.static_quantities = cache
         return cache
 
     def forward_dynamic(

@@ -75,6 +75,11 @@ class MACEModel(nn.Module):
         num_heads: How many levels of theory the model reads out. They share
             the backbone and nothing after it: each has its own readout, and
             the energy head carries one row of constants per head.
+        full_last_layer: Keep every irrep in the last layer; see the backbone.
+        element_agnostic_product: One set of product weights for all
+            elements; see the backbone.
+        edge_axes: The axis order the spherical harmonics read; see the
+            backbone.
         The rest are the backbone's.
     """
 
@@ -99,6 +104,9 @@ class MACEModel(nn.Module):
         node_inputs: Sequence[InputSpec] = (),
         readout_hidden: int = 16,
         num_heads: int = 1,
+        full_last_layer: bool = False,
+        element_agnostic_product: bool = False,
+        edge_axes: tuple[int, int, int] = (0, 1, 2),
     ) -> None:
         super().__init__()
         with _constructed_in(precision):
@@ -117,6 +125,9 @@ class MACEModel(nn.Module):
                 cutoff_order=cutoff_order,
                 precision=precision,
                 node_inputs=node_inputs,
+                full_last_layer=full_last_layer,
+                element_agnostic_product=element_agnostic_product,
+                edge_axes=edge_axes,
             )
             self.outputs = MACEOutputs(
                 backend,

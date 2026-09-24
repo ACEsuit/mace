@@ -37,7 +37,7 @@ from mace_core.config.e0s import (
 )
 from mace_core.config.legacy import LEGACY_TRAIN_DESTS, LegacyFlagError, from_namespace
 from mace_core.config.loss import LossConfig
-from mace_core.config.model import ReadoutConfig
+from mace_core.config.model import PolarConfig, ReadoutConfig
 from mace_core.config.provenance import E0_METHODS, e0_details
 from mace_core.config.resolved import FinetuneConfig, PseudolabelConfig, ResolvedConfig
 from mace_core.config.runtime import RuntimeConfig
@@ -84,6 +84,7 @@ __all__ = [
     "LegacyFlagError",
     "LossConfig",
     "ModelConfig",
+    "PolarConfig",
     "PseudolabelConfig",
     "ReadoutConfig",
     "BaseConfig",

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from mace_core.electrostatics.descriptor import (
     PERIODICITY_PROFILES,
+    REALSPACE_METHODS,
     ElectrostaticsSolverDescriptor,
 )
 
@@ -35,13 +36,17 @@ class SolverCapabilities:
 
     Attributes:
         ops: Which ops the solver implements. ``long_range_energy`` is the
-            base one; ``scf_solve`` is the optional fused span.
+            base one; ``long_range_features`` is the potential projection a
+            charge-aware model reads; ``scf_solve`` is the optional fused span.
         devices: Device kinds, as names.
         dtypes: Precision names it computes in.
         periodicity_profiles: The profiles it can solve.
         max_multipole_l: The highest multipole order it takes. ``None`` is no
             limit.
         slab_normals: The axes a slab correction can act along.
+        realspace_methods: How it can sum an open system in real space. Two
+            methods give two sets of numbers, so a solver that has only one of
+            them declines a model trained with the other.
         field_flags: The applied-field and self-interaction options it
             understands. A flag it does not is a solve it cannot do, not one
             it can ignore.
@@ -60,6 +65,9 @@ class SolverCapabilities:
     )
     max_multipole_l: int | None = None
     slab_normals: frozenset[int] = field(default_factory=lambda: frozenset({0, 1, 2}))
+    realspace_methods: frozenset[str] = field(
+        default_factory=lambda: frozenset(REALSPACE_METHODS)
+    )
     field_flags: frozenset[str] = field(default_factory=frozenset)
     supports_double_backward: bool = False
     bit_parity: bool = False
@@ -79,6 +87,10 @@ class SolverCapabilities:
             return False
         if not descriptor.external_field_flags <= self.field_flags:
             return False
+        if descriptor.realspace_method not in self.realspace_methods:
+            return False
+        if descriptor.features is not None and "long_range_features" not in self.ops:
+            return False
         return self.max_multipole_l is None or (
             descriptor.multipole_max_l <= self.max_multipole_l
         )
@@ -97,7 +109,9 @@ class SolverCapabilities:
                 f"the electrostatics solver {solver!r} does not support "
                 f"{descriptor!r}. It declares the profiles "
                 f"{sorted(self.periodicity_profiles)}, the slab normals "
-                f"{sorted(self.slab_normals)}, the field options "
+                f"{sorted(self.slab_normals)}, the real-space methods "
+                f"{sorted(self.realspace_methods)}, the ops {sorted(self.ops)}, "
+                f"the field options "
                 f"{sorted(self.field_flags)}, the precisions "
                 f"{sorted(self.dtypes)} and a highest multipole order of "
                 f"{limit}. "

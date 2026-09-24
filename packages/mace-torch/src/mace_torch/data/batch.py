@@ -141,8 +141,10 @@ class GraphDataset(Dataset):
         z_table: AtomicNumberTable,
         targets: Sequence[TargetSpec],
         heads: Sequence[str] = ("default",),
+        graph_inputs: Sequence[str] = (),
     ) -> None:
         self.configurations = list(configurations)
+        self.graph_inputs = tuple(graph_inputs)
         self.cutoff = cutoff
         self.z_table = z_table
         self.targets = tuple(targets)
@@ -160,6 +162,7 @@ class GraphDataset(Dataset):
             z_table=self.z_table,
             head=head,
             weight=float(configuration.weight),
+            graph_inputs=self.graph_inputs,
         )
         targets, weights = targets_from_configuration(
             configuration, self.targets, len(configuration.atomic_numbers)

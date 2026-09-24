@@ -11,28 +11,40 @@ from mace_core.electrostatics.capabilities import (
 )
 from mace_core.electrostatics.descriptor import (
     PERIODICITY_PROFILES,
+    REALSPACE_METHODS,
     ElectrostaticsSolverDescriptor,
+    FeatureProjection,
     PeriodicityProfile,
+    RealspaceMethod,
     ScfSpec,
+    descriptor_record,
 )
 from mace_core.electrostatics.registry import (
     ENTRY_POINT_GROUPS,
     DiscoveredSolver,
     SolverNotAvailableError,
+    SolverSubstitutionError,
     available_solvers,
     get_solver,
+    solver_to_load,
 )
 
 __all__ = [
     "ENTRY_POINT_GROUPS",
     "PERIODICITY_PROFILES",
+    "REALSPACE_METHODS",
     "DiscoveredSolver",
     "ElectrostaticsSolverDescriptor",
+    "FeatureProjection",
     "PeriodicityProfile",
+    "RealspaceMethod",
     "ScfSpec",
     "SolverCapabilities",
     "SolverNotAvailableError",
+    "SolverSubstitutionError",
     "UnsupportedSolveError",
     "available_solvers",
+    "descriptor_record",
     "get_solver",
+    "solver_to_load",
 ]

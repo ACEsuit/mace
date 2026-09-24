@@ -33,6 +33,7 @@ from torch.optim.lr_scheduler import LRScheduler
 __all__ = [
     "GROUPS",
     "GROUP_MARKERS",
+    "POLAR_GROUP_MARKERS",
     "UnsupportedOptimizerError",
     "build_optimizer",
     "build_scheduler",
@@ -51,6 +52,18 @@ GROUP_MARKERS: dict[str, str] = {
     "products": ".products.",
     "readouts": ".readouts.",
 }
+
+#: The blocks a charge-aware model adds around its density, one group without
+#: weight decay. They mix biases, gates and physically meaningful scalars that
+#: must not be pulled towards zero, which is the frozen tree's reason too; it
+#: gives each block a group of its own with the same settings.
+POLAR_GROUP_MARKERS: tuple[str, ...] = (
+    ".source_maps.",
+    ".layer_mixer.",
+    ".fukui_readout.",
+    ".updates.",
+    ".electron_energy.",
+)
 
 #: Which interaction tensors decay: the linear maps between feature spaces. The
 #: radial network and the up-projection do not, which is the frozen tree's
@@ -115,6 +128,16 @@ def parameter_groups(model: nn.Module, config: TrainingConfig) -> list[dict]:
     groups[-1]["lr"] = factors.get("interactions", 1.0) * config.lr
     add("products", list(_named(model, GROUP_MARKERS["products"])), config.weight_decay)
     add("readouts", list(_named(model, GROUP_MARKERS["readouts"])), 0.0)
+    add(
+        "polar",
+        [
+            item
+            for marker in POLAR_GROUP_MARKERS
+            for item in _named(model, marker)
+            if item[0] not in claimed
+        ],
+        0.0,
+    )
 
     unclaimed = sorted(
         name

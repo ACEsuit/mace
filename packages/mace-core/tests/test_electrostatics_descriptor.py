@@ -13,7 +13,9 @@ import sys
 import pytest
 from mace_core.electrostatics import (
     PERIODICITY_PROFILES,
+    REALSPACE_METHODS,
     ElectrostaticsSolverDescriptor,
+    FeatureProjection,
     ScfSpec,
     SolverCapabilities,
     UnsupportedSolveError,
@@ -94,6 +96,36 @@ def test_a_declined_solve_names_the_solver_and_what_it_declared():
 def test_a_solver_that_cannot_differentiate_twice_says_why_it_is_refused():
     with pytest.raises(UnsupportedSolveError, match="training on forces"):
         SolverCapabilities().require_double_backward("fast", "training on forces")
+
+
+def test_the_real_space_method_is_one_of_the_named_ones():
+    assert REALSPACE_METHODS == ("finite_difference",)
+    with pytest.raises(ValueError, match="real-space method"):
+        solve(realspace_method="analytical")
+
+
+def test_a_projection_needs_a_width_and_counts_its_components():
+    with pytest.raises(ValueError, match="widths"):
+        FeatureProjection(max_l=1, widths=())
+    assert FeatureProjection(max_l=1, widths=(1.0, 1.5)).dimension == 8
+
+
+def test_a_solver_without_the_projection_declines_a_solve_that_reads_one():
+    """A model reads its features and its energy from one solver, so a solver
+    that has only the energy cannot serve a model that projects."""
+    energy_only = SolverCapabilities()
+    projecting = solve(features=FeatureProjection(max_l=1, widths=(1.0,)))
+    assert energy_only.supports(solve())
+    assert not energy_only.supports(projecting)
+    both = SolverCapabilities(
+        ops=frozenset({"long_range_energy", "long_range_features"})
+    )
+    assert both.supports(projecting)
+
+
+def test_a_solver_declines_a_real_space_method_it_does_not_have():
+    """Two methods are two sets of numbers for an open system."""
+    assert not SolverCapabilities(realspace_methods=frozenset()).supports(solve())
 
 
 @pytest.mark.parametrize("framework", ["torch", "jax"])

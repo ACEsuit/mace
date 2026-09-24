@@ -11,16 +11,20 @@ in ``forward``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal, get_args
+from dataclasses import asdict, dataclass, field
+from typing import Any, Literal, get_args
 
 from mace_core.kernels.precision import Precision
 
 __all__ = [
     "PERIODICITY_PROFILES",
+    "REALSPACE_METHODS",
     "ElectrostaticsSolverDescriptor",
+    "FeatureProjection",
     "PeriodicityProfile",
+    "RealspaceMethod",
     "ScfSpec",
+    "descriptor_record",
 ]
 
 #: Which systems a solve is set up for.
@@ -33,6 +37,58 @@ __all__ = [
 PeriodicityProfile = Literal["full_periodic", "z_slab", "molecular", "partial"]
 
 PERIODICITY_PROFILES: tuple[str, ...] = get_args(PeriodicityProfile)
+
+#: How an open system's multipoles interact in real space.
+#:
+#: ``finite_difference`` represents each dipole as charges displaced along the
+#: laboratory axes, which is what every published polar model was trained
+#: against. Its error depends on the orientation of the system, so a rotated
+#: molecule does not have quite the same energy. The method is part of what a
+#: trained model computes, which is why it is a field here and not a setting
+#: of the solver.
+RealspaceMethod = Literal["finite_difference"]
+
+REALSPACE_METHODS: tuple[str, ...] = get_args(RealspaceMethod)
+
+
+@dataclass(frozen=True)
+class FeatureProjection:
+    """The potential of the source density, projected onto Gaussians per atom.
+
+    The features a charge-aware model reads the field through. Each atom
+    receives the potential of every other atom's density, projected onto
+    Gaussians of its own.
+
+    Attributes:
+        max_l: The highest angular order projected onto.
+        widths: The Gaussian widths projected onto, in Angstrom. One radial
+            channel each.
+        normalization: How each receiving Gaussian is normalized, by name.
+        include_self_interaction: Whether an atom receives its own density's
+            potential too.
+        quadrupole_corrections: Whether an open system's projection carries
+            the quadrupole correction as well as the monopole and dipole ones.
+    """
+
+    max_l: int
+    widths: tuple[float, ...]
+    normalization: Literal["receiver", "multipoles"] = "receiver"
+    include_self_interaction: bool = False
+    quadrupole_corrections: bool = False
+
+    def __post_init__(self) -> None:
+        if self.max_l < 0:
+            raise ValueError(f"max_l is {self.max_l}; it is at least 0.")
+        if not self.widths or any(width <= 0 for width in self.widths):
+            raise ValueError(
+                f"widths is {self.widths}; at least one is needed and each has "
+                f"to be positive."
+            )
+
+    @property
+    def dimension(self) -> int:
+        """Components per atom: every order, for every width."""
+        return (self.max_l + 1) ** 2 * len(self.widths)
 
 
 @dataclass(frozen=True)
@@ -72,6 +128,10 @@ class ElectrostaticsSolverDescriptor:
         smearing_width: The Gaussian width of each source, in Angstrom.
         scf_spec: The self-consistent loop around the solve, or ``None`` for a
             model that evaluates it once.
+        features: The potential projection the model reads, or ``None`` for a
+            model that reads only the energy.
+        realspace_method: How an open system is summed in real space; see
+            :data:`RealspaceMethod`.
         external_field_flags: Applied-field and self-interaction options, as
             names.
         precision: What it computes in.
@@ -83,6 +143,8 @@ class ElectrostaticsSolverDescriptor:
     smearing_width: float
     slab_normal: int | None = None
     scf_spec: ScfSpec | None = None
+    features: FeatureProjection | None = None
+    realspace_method: RealspaceMethod = "finite_difference"
     external_field_flags: frozenset[str] = field(default_factory=frozenset)
     precision: Precision = "float64"
 
@@ -106,8 +168,33 @@ class ElectrostaticsSolverDescriptor:
             raise ValueError(
                 f"multipole_max_l is {self.multipole_max_l}; it is at least 0."
             )
+        if self.realspace_method not in REALSPACE_METHODS:
+            raise ValueError(
+                f"{self.realspace_method!r} is not a real-space method. They "
+                f"are {list(REALSPACE_METHODS)}."
+            )
         if self.kspace_cutoff <= 0 or self.smearing_width <= 0:
             raise ValueError(
                 f"kspace_cutoff is {self.kspace_cutoff} and smearing_width is "
                 f"{self.smearing_width}; both have to be positive."
             )
+
+
+def descriptor_record(descriptor: ElectrostaticsSolverDescriptor) -> dict[str, Any]:
+    """The solve as plain JSON data: sets sorted, tuples as lists.
+
+    What a checkpoint records, and what a rebuilt model's solve is compared
+    against, so that a default that moved between versions is caught rather
+    than silently changing a trained model's numbers.
+    """
+
+    def plain(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: plain(item) for key, item in value.items()}
+        if isinstance(value, frozenset | set):
+            return sorted(plain(item) for item in value)
+        if isinstance(value, tuple | list):
+            return [plain(item) for item in value]
+        return value
+
+    return plain(asdict(descriptor))
