@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         default: smoke
-        options: [smoke, full, followup, orb, water]
+        options: [smoke, full, followup, orb, water, uma-access]
 permissions:
   contents: read
 concurrency:
@@ -102,6 +102,13 @@ jobs:
           timeout --signal=TERM --kill-after=30s 2700 \
             venv/bin/python audit/run_orb.py --checkpoint checkpoints/orb.ckpt --output results/orb.json \
             2>&1 | tee results/orb.log
+      - name: Check existing UMA checkpoint access
+        if: inputs.phase == 'uma-access'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$AUDIT_DIR/venv/bin/python" -m pip install --disable-pip-version-check huggingface_hub==0.34.4
+          "$AUDIT_DIR/venv/bin/python" "$AUDIT_DIR/audit/check_uma_access.py" "$AUDIT_DIR/results/uma_access.json"
       - name: Upload progress even on failure
         if: always()
         uses: actions/upload-artifact@v4
