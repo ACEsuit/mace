@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         default: smoke
-        options: [smoke, full, followup]
+        options: [smoke, full, followup, orb]
 permissions:
   contents: read
 concurrency:
@@ -54,7 +54,7 @@ jobs:
           "$AUDIT_DIR/venv/bin/python" -m pip install --disable-pip-version-check mace-torch==0.3.16 numpy==2.3.5 scipy==1.15.3 ase==3.26.0 e3nn==0.4.4 h5py==3.13.0 matscipy==1.2.0 torchmetrics==1.7.0 opt_einsum==3.4.0
           "$AUDIT_DIR/venv/bin/python" -m pip freeze > "$AUDIT_DIR/results/environment.txt"
       - name: Evaluate sequentially with controls before every model
-        if: inputs.phase != 'followup'
+        if: inputs.phase == 'smoke' || inputs.phase == 'full'
         shell: bash
         run: |
           set -euo pipefail
@@ -88,6 +88,20 @@ jobs:
               --checkpoint "checkpoints/${size}.model" --output "results/followup_${size}.json" \
               2>&1 | tee "results/followup_${size}.log"
           done
+      - name: ORB PLF547 corrected evaluation
+        if: inputs.phase == 'orb'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$AUDIT_DIR"
+          venv/bin/python -m pip install --disable-pip-version-check orb-models==0.5.5 torch==2.6.0 numpy==2.3.5 scipy==1.15.3 ase==3.26.0
+          venv/bin/python -m pip freeze > results/environment.txt
+          curl --fail --location --retry 3 --max-time 300 \
+            https://orbitalmaterials-public-models.s3.us-west-1.amazonaws.com/forcefields/orb-v3-conservative-omol-20250820.ckpt \
+            -o checkpoints/orb.ckpt
+          timeout --signal=TERM --kill-after=30s 2700 \
+            venv/bin/python audit/run_orb.py --checkpoint checkpoints/orb.ckpt --output results/orb.json \
+            2>&1 | tee results/orb.log
       - name: Upload progress even on failure
         if: always()
         uses: actions/upload-artifact@v4
