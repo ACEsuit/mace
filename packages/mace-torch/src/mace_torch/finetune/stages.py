@@ -40,7 +40,10 @@ from mace_torch.train.data_stage import (
     selected_structures,
 )
 from mace_torch.train.loop import run_train_stage
-from mace_torch.train.model_stage import run_model_stage
+from mace_torch.train.model_stage import (
+    run_model_stage,
+    with_foundation_architecture,
+)
 
 __all__ = [
     "NewSpeciesInit",
@@ -124,6 +127,10 @@ def build(
     """
     if foundation is None and config.finetune.foundation_model is not None:
         foundation = _foundation(config, catalogue)
+    if foundation is not None:
+        # Before the data is read: the graphs are cut off at the foundation's
+        # radius and carry the inputs its family reads.
+        config = with_foundation_architecture(config, foundation)
     describe = any(
         head.subselect is not None and head.subselect.method == "fps"
         for head in config.data.heads.values()

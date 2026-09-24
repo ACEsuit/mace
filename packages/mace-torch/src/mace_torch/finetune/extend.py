@@ -323,6 +323,9 @@ def _metadata(
         update={
             "provenance": Provenance(code_version=__version__),
             "heads": heads,
+            "elements": [
+                chemical_symbols[z] for z in sorted({*parent.z_table.zs, *added})
+            ],
             "parents": [
                 ParentModel(
                     role="initial_weights", name=str(path), metadata=parent.metadata

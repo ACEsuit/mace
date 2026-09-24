@@ -73,6 +73,10 @@ class _ReservedKey:
     rewritten: str
     getter: str
     stored_in: str
+    #: Whether the key convention's own default is the reserved spelling. Then
+    #: every file is read through it, so it is recovered quietly, and only from
+    #: a file whose calculator holds the value.
+    convention: bool = False
 
 
 #: The file keys ase moves out of the structure and into
@@ -99,6 +103,11 @@ _RESERVED_KEYS: dict[str, _ReservedKey] = {
     ),
     "forces": _ReservedKey("forces", DefaultKeys.FORCES.value, "get_forces", "arrays"),
     "stress": _ReservedKey("stress", DefaultKeys.STRESS.value, "get_stress", "info"),
+    # The convention's dipole key is ase's own name for the calculator's
+    # dipole, so a dipole written under it is only ever in the calculator.
+    "dipole": _ReservedKey(
+        "dipole", "REF_dipole", "get_dipole_moment", "info", convention=True
+    ),
 }
 
 
@@ -349,16 +358,24 @@ def _rewrite_reserved_keys(
         )
         if store.get(name) != reserved.reserved:
             continue
-        logger.warning(
-            "Reading %s from the key %r is not safe with ase 3.23 and newer: "
-            "ase reads that key back into the calculator, not into the "
-            "structure. Rewriting it to %r and recovering the values from the "
-            "calculator. Label the file with %r to read it directly.",
-            name,
-            reserved.reserved,
-            reserved.rewritten,
-            reserved.rewritten,
-        )
+        if reserved.convention:
+            if not any(
+                atoms.calc is not None and name in atoms.calc.results
+                for atoms in atoms_list
+            ):
+                continue
+        else:
+            logger.warning(
+                "Reading %s from the key %r is not safe with ase 3.23 and "
+                "newer: ase reads that key back into the calculator, not into "
+                "the structure. Rewriting it to %r and recovering the values "
+                "from the calculator. Label the file with %r to read it "
+                "directly.",
+                name,
+                reserved.reserved,
+                reserved.rewritten,
+                reserved.rewritten,
+            )
         store[name] = reserved.rewritten
         for atoms in atoms_list:
             try:

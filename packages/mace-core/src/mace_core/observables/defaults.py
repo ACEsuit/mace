@@ -55,22 +55,26 @@ _ENERGY = ObservableSpec(
 
 #: The total dipole of a structure, in e Angstrom. Its derivative against the
 #: positions is what an infrared intensity is computed from, and it keeps the
-#: frozen tree's name for it and the gradient's own sign.
+#: frozen tree's name for it and the gradient's own sign. It grows with the
+#: structure, so a loss compares it per atom, as the frozen tree's does.
 _DIPOLE = ObservableSpec(
     name="dipole",
     irreps="1o",
     per_atom=False,
     units="e*Å",
+    extensive=True,
     derivatives=(DerivativeRequest(wrt="pos", name="dmu_dr", sign=+1),),
 )
 
 #: The polarizability of a structure, a symmetric matrix, in Angstrom cubed.
-#: Its position derivative is what a Raman intensity is computed from.
+#: Its position derivative is what a Raman intensity is computed from. Compared
+#: per atom as well.
 _POLARIZABILITY = ObservableSpec(
     name="polarizability",
     irreps="0e+2e",
     per_atom=False,
     units="Å^3",
+    extensive=True,
     derivatives=(DerivativeRequest(wrt="pos", name="dalpha_dr", sign=+1),),
 )
 

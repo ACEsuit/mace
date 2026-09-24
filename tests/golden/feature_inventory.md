@@ -327,7 +327,7 @@ Group default: KEEP.
 | `train.lora_rank` | `--lora_rank` | `mace/tools/arg_parser.py:658` | KEEP | `tests/unit/test_lora.py` |
 | `train.lora_alpha` | `--lora_alpha` | `mace/tools/arg_parser.py:664` | KEEP | `tests/unit/test_lora.py` |
 | `train.freeze` | `--freeze` | `mace/tools/arg_parser.py:949` | KEEP | `tests/workflows/test_freeze.py` (port cases) |
-| `train.finetune_dipoles_polarizabilities` | `--finetune_dipoles_polarizabilities` | `mace/tools/arg_parser.py:1037` | KEEP — the MDP fine-tuning path | `tests/workflows/test_mdp_finetune.py::test_mdp_finetune_updates_params` + `tests/workflows/test_mdp_finetune.py::test_mdp_finetune_wrong_model_type_raises` |
+| `train.finetune_dipoles_polarizabilities` | `--finetune_dipoles_polarizabilities` | `mace/tools/arg_parser.py:1037` | KEEP — the MDP fine-tuning path. In v1 there is no mode: a fine-tune declaring the dipole and polarizability observables from a dielectric foundation is one, and the element transfer carries every angular channel | `tests/workflows/test_mdp_finetune.py::test_mdp_finetune_updates_params` + `tests/workflows/test_mdp_finetune.py::test_mdp_finetune_wrong_model_type_raises` + `packages/mace-torch/tests/test_mace_torch_dielectric_finetune.py::test_a_dielectric_fine_tune_trains_from_the_foundation` + `packages/mace-torch/tests/test_mace_torch_dielectric_finetune.py::test_a_foundation_that_reads_out_no_dipole_is_refused` + `tests/parity/test_dielectric_finetune_parity.py::test_the_data_s_table_is_the_frozen_tree_s_dielectric_transfer` (v1 parity) |
 
 ### 3.7 Loss (16)
 
