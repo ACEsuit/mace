@@ -267,6 +267,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/cli/polar_density_cube.py` | `mace_polar_density_cube --engine v1`: a charge-aware model's density as cube files. |
 | `mace_torch/cli/run_train.py` | `mace_run_train --engine v1`: training from a configuration file. |
 | `mace_torch/data/__init__.py` | Graph building and batching, re-exported. |
+| `mace_torch/data/augmentation.py` | Registered training-data augmentations, drawn on every read, and the magnetic-moment one. |
 | `mace_torch/data/batch.py` | `TrainingBatch`, collation, the lazy graph dataset and its loader. |
 | `mace_torch/data/distributed_sampler.py` | Splitting an epoch across the processes of a distributed run. |
 | `mace_torch/data/graphs.py` | One structure into a graph and its training targets. |

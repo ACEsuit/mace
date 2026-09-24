@@ -18,6 +18,7 @@ import torch
 from ase import Atoms
 from ase.io import write
 from mace_core.config import FixedPointSpec
+from mace_core.config.data import AugmentationSpec
 from mace_core.config.model import MagneticConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
@@ -34,7 +35,7 @@ from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.nn.magnetic import OneBodyMomentEnergy
 from mace_torch.physics import DerivativeEngine
-from mace_torch.train import ModelStageError
+from mace_torch.train import ModelStageError, run_data_stage
 from scipy.spatial.transform import Rotation
 from test_mace_torch_extend_elements import water_foundation
 
@@ -379,3 +380,38 @@ def test_a_hessian_through_the_fixed_point_is_refused(trained):
     calculator = MACECalculator(model_paths=trained.checkpoint_path, fixed_point=spec)
     with pytest.raises(NotImplementedError, match="second derivative"):
         calculator.get_hessian(iron_cluster())
+
+
+def test_a_configured_augmentation_reaches_the_training_batches_alone(tmp_path):
+    base = configuration(tmp_path)
+    config = base.model_copy(
+        update={
+            "data": base.data.model_copy(
+                update={
+                    "augmentations": (
+                        AugmentationSpec(name="magnetic_moments", settings={}),
+                    ),
+                    "valid_fraction": 0.5,
+                }
+            )
+        }
+    )
+    data = run_data_stage(config, DEFAULT_CATALOGUE)
+    torch.manual_seed(0)
+
+    def moments_of(batches):
+        return torch.cat([batch.graph["magmom"] for batch in batches])
+
+    def epoch(number):
+        return moments_of(data.train_loader.batches(number, drop_last=False))
+
+    # The same epoch twice, so the order is the same and only the draws differ.
+    first, second = epoch(0), epoch(0)
+    lengths = torch.linalg.vector_norm
+    assert not torch.allclose(first, second)
+    assert torch.allclose(
+        lengths(first, dim=-1).sort().values, lengths(second, dim=-1).sort().values
+    )
+    for loaders in (data.valid_loaders, data.train_eval_loaders):
+        loader = loaders["default"]
+        assert torch.equal(moments_of(loader), moments_of(loader))

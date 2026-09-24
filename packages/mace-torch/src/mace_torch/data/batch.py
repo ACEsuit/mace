@@ -142,8 +142,12 @@ class GraphDataset(Dataset):
         targets: Sequence[TargetSpec],
         heads: Sequence[str] = ("default",),
         graph_inputs: Sequence[str] = (),
+        augmentations: Sequence[Callable[[Configuration], Configuration]] = (),
     ) -> None:
         self.configurations = list(configurations)
+        # Drawn again on every read. A dataset that is evaluated is built
+        # without them.
+        self.augmentations = tuple(augmentations)
         self.graph_inputs = tuple(graph_inputs)
         self.cutoff = cutoff
         self.z_table = z_table
@@ -155,6 +159,8 @@ class GraphDataset(Dataset):
 
     def __getitem__(self, index: int) -> Item:
         configuration = self.configurations[index]
+        for augment in self.augmentations:
+            configuration = augment(configuration)
         head = self.head_index.get(configuration.head, 0)
         graph = graph_from_configuration(
             configuration,

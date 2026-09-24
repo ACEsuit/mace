@@ -27,6 +27,7 @@ from mace_core.config.section import FrozenSection
 
 __all__ = [
     "CURATED_DATASETS",
+    "AugmentationSpec",
     "CuratedDataset",
     "DataConfig",
     "GraphInputKeys",
@@ -77,6 +78,21 @@ class TransformSpec(FrozenSection):
         name: The registered name.
         settings: What to pass the transform's factory. Validated by the
             factory when the run is configured, not when the data is read.
+    """
+
+    name: str
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class AugmentationSpec(FrozenSection):
+    """One training-data augmentation, by the name it is registered under.
+
+    Drawn afresh every time a training structure is read, where a transform
+    rewrites the data once. Named and configured as a transform is.
+
+    Args:
+        name: The registered name.
+        settings: What to pass the augmentation's factory.
     """
 
     name: str
@@ -231,6 +247,8 @@ class DataConfig(FrozenSection):
         transforms: The data transforms, in the order they apply. Order is
             part of the meaning: shifting energies and then masking on a
             threshold is not the same run as masking and then shifting.
+        augmentations: The training-data augmentations, in the order they
+            apply, drawn again on every read of a training structure.
         ratio_guard: Repeat the other heads when one outnumbers them all.
         skip_evaluate_heads: Heads left out of the evaluation tables, for a
             replay head whose errors are not the run's subject.
@@ -246,6 +264,7 @@ class DataConfig(FrozenSection):
     pin_memory: bool = True
     skip_evaluate_heads: tuple[str, ...] = ()
     transforms: tuple[TransformSpec, ...] = ()
+    augmentations: tuple[AugmentationSpec, ...] = ()
     ratio_guard: RatioGuardConfig | None = None
 
     @model_validator(mode="after")
