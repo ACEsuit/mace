@@ -23,6 +23,12 @@ stage, from whatever its declaration names, and that is the point of having a
 head. The scale and shift are copied from the foundation head a head's readout
 comes from, which is what the frozen tree does with ``use_scale`` and
 ``use_shift`` on.
+
+A magnetic model adds two more. Its moment saturations are one per element,
+and its one-body energy of the moment length is one per element and per head,
+so it is read at the kept elements and at each head's source head, like a
+readout. The frozen tree does not transfer that term at all, and a fine-tune
+of a magnetic model starts it from a random draw instead of the trained one.
 """
 
 from __future__ import annotations
@@ -175,6 +181,14 @@ def transfer_foundation(
             }
         elif path.endswith(".skip"):
             state[path] = {"weight": found["weight"][rows].clone()}
+        elif path.rpartition(".")[2] == "moments":
+            state[path] = {"saturation": found["saturation"][rows].clone()}
+        elif path.rpartition(".")[2] == "one_body":
+            sources = [head_of[readout_from[head]] for head in heads]
+            state[path] = {
+                "coefficients": found["coefficients"][rows][..., sources].clone(),
+                "offset": found["offset"][rows][:, sources].clone(),
+            }
         elif path.endswith(".contraction"):
             state[path] = {
                 name: value[rows].clone() if name == "weight" else value

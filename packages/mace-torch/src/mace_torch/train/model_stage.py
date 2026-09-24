@@ -14,6 +14,7 @@ undone to save.
 from __future__ import annotations
 
 from ase.data import chemical_symbols
+from mace_core.config.model import ModelConfig
 from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
@@ -228,7 +229,7 @@ def with_foundation_architecture(
         ModelStageError: Naming each setting the run set that the foundation
             model contradicts, and each observable it cannot read out.
     """
-    theirs = foundation.config.model
+    theirs = _saturations_by_element(foundation.config.model, foundation)
     ours = config.model
     conflicts = sorted(
         name
@@ -257,6 +258,24 @@ def with_foundation_architecture(
         update={name: getattr(ours, name) for name in _RUN_OWNED_MODEL_FIELDS}
     )
     return config.model_copy(update={"model": model})
+
+
+def _saturations_by_element(model: ModelConfig, foundation: Foundation) -> ModelConfig:
+    """The foundation's moment saturations by atomic number.
+
+    Given one per element of its table in its order, they cannot be read by a
+    fine-tune over fewer elements; by atomic number they can, and they are the
+    same numbers.
+    """
+    saturation = model.magnetic.saturation
+    if not isinstance(saturation, tuple):
+        return model
+    by_element = dict(zip(foundation.z_table.zs, saturation, strict=True))
+    return model.model_copy(
+        update={
+            "magnetic": model.magnetic.model_copy(update={"saturation": by_element})
+        }
+    )
 
 
 def build_model(

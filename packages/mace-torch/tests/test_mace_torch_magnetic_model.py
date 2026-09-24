@@ -415,3 +415,140 @@ def test_a_configured_augmentation_reaches_the_training_batches_alone(tmp_path):
     for loaders in (data.valid_loaders, data.train_eval_loaders):
         loader = loaders["default"]
         assert torch.equal(moments_of(loader), moments_of(loader))
+
+
+# ---------------------------------------------------------------------------
+# A fine-tune from a magnetic foundation
+# ---------------------------------------------------------------------------
+
+
+def irons(path, count=6, seed=7):
+    generator = np.random.default_rng(seed)
+    frames = []
+    for _ in range(count):
+        atoms = Atoms(
+            "Fe3", positions=CLUSTER[1:] + generator.normal(scale=0.05, size=(3, 3))
+        )
+        atoms.arrays["REF_magmom"] = generator.normal(scale=1.5, size=(3, 3))
+        atoms.info["REF_energy"] = -18.0 + generator.normal()
+        atoms.arrays["REF_forces"] = generator.normal(scale=0.1, size=(3, 3))
+        atoms.arrays["REF_magforces"] = generator.normal(scale=0.1, size=(3, 3))
+        frames.append(atoms)
+    write(path, frames)
+    return path
+
+
+def fine_tune(directory, foundation, train_file, element_table="foundation"):
+    return ResolvedConfig.model_validate(
+        {
+            "runtime": {"work_dir": str(directory), "seed": 4},
+            "finetune": {
+                "foundation_model": str(foundation),
+                "element_table": element_table,
+            },
+            "data": {
+                "heads": {
+                    "new": {
+                        "train_file": str(train_file),
+                        "e0s": {"kind": "foundation"},
+                    }
+                },
+                "valid_fraction": 0.2,
+                "pin_memory": False,
+            },
+            "model": {"observables": ["energy", "forces", "magforces"]},
+            "training": {"max_num_epochs": 1, "batch_size": 4},
+        }
+    )
+
+
+def iron_graph(numbers_table):
+    positions = CLUSTER[1:]
+    neighborhood = get_neighborhood(positions, 4.0, (False, False, False), None)
+    return {
+        "positions": torch.tensor(positions),
+        "atomic_numbers": torch.tensor([26, 26, 26]),
+        "element_index": torch.tensor([numbers_table.index(26)] * 3),
+        "edge_index": torch.tensor(neighborhood.edge_index),
+        "shifts": torch.tensor(neighborhood.shifts),
+        "unit_shifts": torch.tensor(neighborhood.unit_shifts),
+        "cell": torch.tensor(np.asarray(neighborhood.cell, dtype=float)).reshape(
+            1, 3, 3
+        ),
+        "batch": torch.zeros(3, dtype=torch.long),
+        "num_graphs": 1,
+        "head": torch.zeros(1, dtype=torch.long),
+        "magmom": torch.tensor(moments(9)[:3]),
+    }
+
+
+def test_a_fine_tune_inherits_the_moment_architecture(trained, tmp_path):
+    assert trained.checkpoint_path is not None
+    config = fine_tune(tmp_path, trained.checkpoint_path, irons(tmp_path / "fe.xyz"))
+    assert config.model.magnetic == MagneticConfig()
+    built = build(config)
+    inherited = built.metadata.config.resolved["model"]
+    assert inherited["model"] == "magnetic"
+    assert inherited["magnetic"]["lmax"] == 2
+    assert inherited["magnetic"]["num_basis"] == 6
+    assert inherited["magnetic"]["one_body"] is True
+
+
+@pytest.mark.parametrize("element_table", ["foundation", "data"])
+def test_a_fine_tune_starts_from_the_foundation_s_moment_terms(
+    trained, tmp_path, element_table
+):
+    """Forces and magnetic forces before any training are the foundation's, and
+    so is the one-body term, which the frozen tree leaves at a random draw."""
+    assert trained.checkpoint_path is not None
+    config = fine_tune(
+        tmp_path, trained.checkpoint_path, irons(tmp_path / "fe.xyz"), element_table
+    )
+    built = build(config)
+    table = list(built.data.z_table.zs)
+    assert table == ([8, 26] if element_table == "foundation" else [26])
+    before = built.model(iron_graph(table), compute=("forces", "magforces"))
+    parent = trained.model(iron_graph(NUMBERS), compute=("forces", "magforces"))
+    assert torch.allclose(before.forces, parent.forces, atol=1e-12)
+    assert torch.allclose(
+        before.extras["magforces"], parent.extras["magforces"], atol=1e-12
+    )
+    kept = [NUMBERS.index(z) for z in table]
+    assert torch.equal(
+        one_body_of(built.model).coefficients,
+        one_body_of(trained.model).coefficients[kept],
+    )
+    saturation = cast(
+        torch.Tensor, built.model.get_submodule("backbone.backbone.moments").saturation
+    )
+    assert torch.equal(saturation, torch.tensor([1.2, 4.5], dtype=torch.float64)[kept])
+
+
+def test_saturations_given_in_the_table_s_order_survive_a_smaller_table(tmp_path):
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        (tmp_path / "foundation").mkdir()
+        base = configuration(tmp_path / "foundation")
+        listed = base.model_copy(
+            update={
+                "model": base.model.model_copy(
+                    update={
+                        "magnetic": base.model.magnetic.model_copy(
+                            update={"saturation": (1.2, 4.5)}
+                        )
+                    }
+                )
+            }
+        )
+        foundation = run(listed).checkpoint_path
+        assert foundation is not None
+        config = fine_tune(tmp_path, foundation, irons(tmp_path / "fe.xyz"), "data")
+        built = build(config)
+        saturation = cast(
+            torch.Tensor,
+            built.model.get_submodule("backbone.backbone.moments").saturation,
+        )
+        assert torch.equal(saturation, torch.tensor([4.5], dtype=torch.float64))
+    finally:
+        torch.set_default_dtype(previous)
