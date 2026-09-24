@@ -41,6 +41,7 @@ from mace_core.stages import DataBundle
 from torch.utils.data import DataLoader
 
 from mace_torch.data import GraphDataset, make_loader, target_specs
+from mace_torch.data.augmentation import build_augmentations
 from mace_torch.data.transforms import apply_transforms
 from mace_torch.finetune.foundation import FoundationContext, FoundationError
 from mace_torch.finetune.ratio import RatioGuardError, repeat_count
@@ -220,7 +221,11 @@ def run_data_stage(
     head_names = tuple(heads)
     graph_inputs = graph_inputs_of(config.model.model)
 
-    def build(items: Sequence[Configuration]) -> GraphDataset:
+    augmentations = build_augmentations(
+        [(spec.name, spec.settings) for spec in config.data.augmentations]
+    )
+
+    def build(items: Sequence[Configuration], augment: bool = False) -> GraphDataset:
         return GraphDataset(
             list(items),
             cutoff=config.model.r_max,
@@ -228,6 +233,7 @@ def run_data_stage(
             targets=specs,
             heads=head_names,
             graph_inputs=graph_inputs,
+            augmentations=augmentations if augment else (),
         )
 
     # Per head, because that is what the balancing decides between and what an
@@ -236,7 +242,7 @@ def run_data_stage(
     # shape the stage can produce.
     train_sets = {name: build(_of_head(train, name)) for name in head_names}
     train_loader = build_training_loader(
-        train_sets,
+        {name: build(_of_head(train, name), augment=True) for name in head_names},
         mode=config.training.head_balancing,
         z_table=z_table,
         batch_size=config.training.batch_size,
@@ -282,6 +288,10 @@ def graph_inputs_of(model: str) -> tuple[str, ...]:
         from mace_torch.models.dipoles import DIPOLE_GRAPH_INPUTS
 
         return DIPOLE_GRAPH_INPUTS["fixed" if model == "dipole" else "predicted"]
+    if model == "magnetic":
+        from mace_torch.models.magnetic import MAGNETIC_GRAPH_INPUTS
+
+        return MAGNETIC_GRAPH_INPUTS
     return ()
 
 

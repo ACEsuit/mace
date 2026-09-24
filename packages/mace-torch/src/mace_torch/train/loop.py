@@ -602,7 +602,7 @@ def _requested_names(built: TorchBuiltModel) -> _Requested:
             if name not in outputs.derivatives:
                 continue
             names.append(name)
-            per_atom.append(request.wrt == "pos")
+            per_atom.append(outputs.per_atom_derivative(request.wrt))
     return _Requested(tuple(names), tuple(per_atom), outputs.derivatives)
 
 

@@ -37,6 +37,15 @@ dielectric model ``charges``, ``polarizability`` as a matrix and
 writes no energy, forces or stress. A committee reports ``dipole`` per model and
 as a spread, whichever model it comes from.
 
+**The magnetic model adds** ``magforces``, ``-dE/dm`` per atom, and reads its
+moments from ``atoms.arrays`` under ``magmom_key`` (``REF_magmom`` by default,
+the frozen tree's key). A structure that carries none is refused rather than
+evaluated at zero moments, since ase's initial magnetic moments live elsewhere
+and are not what the model reads. A change to the moments invalidates the
+cached results like a change to the positions. With ``fixed_point`` the moments
+are relaxed first, and the relaxed ones are reported as ``MACE_magmoms`` and
+written back into ``atoms.arrays`` under that name, as the frozen tree does.
+
 **What is written is read off the model, not off its kind.** There is no
 ``model_type``. Every result is one row of :data:`RESULTS`, naming the model
 output it is read from, and a calculator writes the rows whose output its
@@ -60,6 +69,7 @@ import torch
 from ase import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
+from mace_core.config import FixedPointSpec
 from mace_core.data.configuration import Configuration
 from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor
@@ -77,6 +87,8 @@ from mace_torch.data.graphs import graph_from_configuration
 from mace_torch.deploy.loader import DeployedModel, load_deployed
 from mace_torch.models.outputs import ENERGY_OBSERVABLE
 from mace_torch.nn import MACEBackbone
+from mace_torch.physics import DerivativeEngine
+from mace_torch.physics.fixed_point import FixedPointDriver
 from mace_torch.serialization import FORMAT as CHECKPOINT_FORMAT
 from mace_torch.train.data_stage import graph_inputs_of
 
@@ -134,7 +146,18 @@ RESULTS: dict[str, tuple[str, str]] = {
     **POLAR_RESULTS,
     "polarizability": ("polarizability", "none"),
     "polarizability_sh": ("polarizability_sh", "none"),
+    # An energy per moment: the moments are not converted, so the energy is.
+    "magforces": ("magforces", "energy"),
+    "MACE_magmoms": ("converged_magmom", "none"),
 }
+
+#: The derivative a model that reads moments is always asked for, beside the
+#: forces and the stress.
+MAGNETIC_DERIVATIVE = "magforces"
+
+#: Where the moments are read from, and where the relaxed ones are written.
+MAGMOM_KEY = "REF_magmom"
+RELAXED_MAGMOM_KEY = "MACE_magmoms"
 
 
 def produced_outputs(
@@ -143,6 +166,7 @@ def produced_outputs(
     *,
     atomic_stresses: bool = False,
     produced: Sequence[str] = (),
+    derivatives: Sequence[str] = (),
 ) -> set[str]:
     """The model outputs a calculator reads from a model so declared.
 
@@ -151,9 +175,11 @@ def produced_outputs(
         extra_rows: What the model says it adds to its output.
         atomic_stresses: Whether per-atom stresses are asked for.
         produced: What the model computes itself rather than reads out.
+        derivatives: The energy derivatives asked of it beyond the forces and
+            the stress, ``magforces`` for a model that reads moments.
     """
     names = {FIELD_BY_OBSERVABLE.get(name, name) for name in observables}
-    names |= set(extra_rows) | set(produced)
+    names |= set(extra_rows) | set(produced) | set(derivatives)
     if ENERGY_OBSERVABLE in observables:
         # Forces and stress are always taken for an energy model, as the frozen
         # tree takes them, whatever derivatives it was trained against.
@@ -207,10 +233,17 @@ class MACECalculator(Calculator):
         external_field: An applied field ``[Ex, Ey, Ez]`` in V/Angstrom for
             every structure, in place of each one's ``atoms.info`` entry. Read
             by a charge-aware model only.
+        magmom_key: The ``atoms.arrays`` entry the moments are read from, in
+            muB. Read by a magnetic model only.
+        fixed_point: Relax the moments to where the energy's derivative
+            against them vanishes before reporting anything. For a magnetic
+            model, and one model at a time.
 
     Raises:
         ValueError: If no model is named, a pattern matches nothing, the
-            committee's cutoffs differ, or the head is not one of the model's.
+            committee's cutoffs differ, the head is not one of the model's, or
+            a fixed point is asked of a committee or of a model that does not
+            read what it relaxes.
     """
 
     def __init__(
@@ -230,6 +263,8 @@ class MACECalculator(Calculator):
         compile_mode: str | None = None,
         compute_atomic_stresses: bool = False,
         external_field: Sequence[float] | None = None,
+        magmom_key: str = MAGMOM_KEY,
+        fixed_point: FixedPointSpec | None = None,
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, **kwargs)
@@ -268,6 +303,28 @@ class MACECalculator(Calculator):
             )
         self.graph_inputs = inputs.pop()
         self.has_energy = ENERGY_OBSERVABLE in self.observables
+        self.magmom_key = magmom_key
+        self.reads_moments = "magmom" in self.graph_inputs
+        self.fixed_point = fixed_point
+        if fixed_point is not None:
+            if fixed_point.variable not in self.graph_inputs:
+                raise ValueError(
+                    f"the fixed point relaxes {fixed_point.variable!r}, and the "
+                    f"model reads {list(self.graph_inputs)}, so the energy does "
+                    f"not depend on it and every structure is already relaxed."
+                )
+            if len(self.models) > 1:
+                raise ValueError(
+                    f"a fixed point was asked of a committee of "
+                    f"{len(self.models)} models. Each would relax the moments "
+                    f"to its own, and there is no one relaxed state to report."
+                )
+            if compile_mode is not None:
+                raise ValueError(
+                    "a fixed point runs a variable number of evaluations at "
+                    "unpadded shapes, which a compiled static-shape model "
+                    "cannot. Leave compile_mode unset."
+                )
         self.r_max = cutoffs[0]
         self.z_table = first.z_table
         self.heads = first.heads
@@ -286,7 +343,11 @@ class MACECalculator(Calculator):
             self.observables,
             extra_rows,
             atomic_stresses=compute_atomic_stresses,
-            produced=sorted(getattr(first.model, "PRODUCED", ())),
+            produced=[
+                *sorted(getattr(first.model, "PRODUCED", ())),
+                *([f"converged_{fixed_point.variable}"] if fixed_point else []),
+            ],
+            derivatives=[MAGNETIC_DERIVATIVE] if self.reads_moments else [],
         )
         self._engines = [model.engine for model in self.models]
         if compile_mode is not None:
@@ -298,6 +359,12 @@ class MACECalculator(Calculator):
             for parameter in model.engine.parameters():
                 parameter.requires_grad_(False)
 
+        if fixed_point is not None:
+            # Around the engines themselves: a fixed point is never compiled.
+            self._engines = [
+                FixedPointDriver(_derivative_engine(model), fixed_point)
+                for model in self.models
+            ]
         if len(self.models) > 1:
             logger.info("Running a committee of %d models", len(self.models))
         # The instance's own list: the class attribute on the ASE base is
@@ -325,6 +392,19 @@ class MACECalculator(Calculator):
             and not _infos_equal(self.atoms.info, atoms.info)
         ):
             state.append("info")
+        # The moments are an input as much as the positions are, and ase's own
+        # comparison does not look at an entry it does not know.
+        if (
+            not state
+            and self.reads_moments
+            and self.atoms is not None
+            and not _arrays_equal(
+                self.atoms.arrays.get(self.magmom_key),
+                atoms.arrays.get(self.magmom_key),
+                tol,
+            )
+        ):
+            state.append(self.magmom_key)
         return state
 
     def calculate(
@@ -338,16 +418,35 @@ class MACECalculator(Calculator):
         compute = ["forces", "stress"] if self.has_energy else []
         if self.compute_atomic_stresses and self.has_energy:
             compute += ["atomic_stresses", "atomic_virials"]
-        graph, info = self._graph(self.atoms, padded=True)
-        per_model = [
-            unpad_outputs(
-                engine(dict(graph), compute=tuple(compute), training=False),
-                info,
-                self._rows,
-            )
-            for engine in self._engines
-        ]
+        if self.reads_moments:
+            compute.append(MAGNETIC_DERIVATIVE)
+        if self.fixed_point is not None:
+            # Unpadded: padding atoms would be relaxed with the real ones and
+            # move the solver's path.
+            graph, _ = self._graph(self.atoms, padded=False)
+            per_model = [
+                engine(dict(graph), compute=tuple(compute), training=False)
+                for engine in self._engines
+            ]
+        else:
+            graph, info = self._graph(self.atoms, padded=True)
+            per_model = [
+                unpad_outputs(
+                    engine(dict(graph), compute=tuple(compute), training=False),
+                    info,
+                    self._rows,
+                )
+                for engine in self._engines
+            ]
         self.results = self._results(per_model)
+        if RELAXED_MAGMOM_KEY in self.results:
+            # Onto the structure the caller holds, not only the copy ase keeps.
+            for target in {
+                id(item): item for item in (atoms, self.atoms) if item is not None
+            }.values():
+                target.arrays[RELAXED_MAGMOM_KEY] = self.results[
+                    RELAXED_MAGMOM_KEY
+                ].copy()
 
     # -----------------------------------------------------------------------
     # Beyond the ASE interface
@@ -477,6 +576,18 @@ class MACECalculator(Calculator):
         }
         if self.external_field is not None and "external_field" in self.graph_inputs:
             properties["external_field"] = self.external_field
+        if self.reads_moments:
+            if self.magmom_key not in atoms.arrays:
+                raise ValueError(
+                    f"the model reads a moment on every atom from "
+                    f"atoms.arrays[{self.magmom_key!r}], and the structure has "
+                    f"no such entry; its arrays are {sorted(atoms.arrays)}. "
+                    f"ase's initial magnetic moments are not read: set the "
+                    f"moments under that key, in muB, or pass magmom_key."
+                )
+            properties["magmom"] = np.asarray(
+                atoms.arrays[self.magmom_key], dtype=np.float64
+            )
         configuration = Configuration(
             atomic_numbers=np.asarray(atoms.get_atomic_numbers()),
             positions=np.asarray(atoms.get_positions(), dtype=np.float64),
@@ -611,6 +722,13 @@ def _extra_rows(model: DeployedModel) -> dict[str, str]:
     return dict(getattr(model.model, "extra_rows", {}))
 
 
+def _derivative_engine(model: DeployedModel) -> DerivativeEngine:
+    """The model's derivative engine, which a fixed point relaxes around."""
+    engine = model.engine
+    assert isinstance(engine, DerivativeEngine)
+    return engine
+
+
 def _responses(model: DeployedModel) -> set[str]:
     """The response derivatives the model's engine takes, by name."""
     return set(getattr(model.engine, "responses", {}))
@@ -685,6 +803,15 @@ def _choose_head(heads: Sequence[str], head: str | None) -> str:
             f"'default', so which to evaluate has to be said: pass head=."
         )
     return defaults[0]
+
+
+def _arrays_equal(saved: Any, current: Any, tol: float) -> bool:
+    if saved is None or current is None:
+        return saved is None and current is None
+    saved, current = np.asarray(saved), np.asarray(current)
+    return saved.shape == current.shape and bool(
+        np.allclose(saved, current, atol=tol, rtol=0.0)
+    )
 
 
 def _infos_equal(saved: Mapping[str, Any], current: Mapping[str, Any]) -> bool:

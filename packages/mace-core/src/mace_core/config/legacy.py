@@ -468,21 +468,25 @@ _EXTRAS: dict[str, Disposition] = {
         "the frozen polar model stores it as a buffer and never reads it: its "
         "energy is the same at 1 and at 5"
     ),
-    **_reserved(
-        "model.magnetic",
-        "the magnetic ticket",
-        "m_max",
-        "max_m_ell",
-        "num_mag_radial_basis",
-        "num_mag_radial_basis_one_body",
-        "use_magmom_one_body",
-        "train_one_body_contribution",
+    **_kept(
+        max_m_ell="model.magnetic.lmax",
+        num_mag_radial_basis="model.magnetic.num_basis",
+        num_mag_radial_basis_one_body="model.magnetic.one_body_basis",
+        use_magmom_one_body="model.magnetic.one_body",
+        train_one_body_contribution="model.magnetic.train_one_body",
     ),
     **_merged(
-        "the data transforms",
+        "model.magnetic.saturation",
+        "a dict literal, an ordered list or one number in a list of strings",
+        "m_max",
+        applied=True,
+    ),
+    **_merged(
+        "data.augmentations",
         "a training-data augmentation, which is the data layer's and not the model's",
         "data_aug_magmom",
         "data_aug_magmom_mode",
+        applied=True,
     ),
     **_reserved(
         "runtime.tracking",
@@ -644,6 +648,61 @@ def _collapse(namespace: Any, values: dict[str, Any]) -> None:
     _collapse_schedule(namespace, values)
     _collapse_stage_two(namespace, values)
     _collapse_finetune(namespace, values)
+    _collapse_e0s(namespace, values)
+    _collapse_magnetic(namespace, values)
+
+
+def _collapse_magnetic(namespace: Any, values: dict[str, Any]) -> None:
+    """`--m_max` in its three spellings, and the moment augmentation.
+
+    The frozen command line takes `--m_max` as a list of strings: one dict
+    literal of atomic number to saturation, one number for every element, or
+    one number per element of the table in its order. The first and the last
+    are kept as they are, since only the model knows the table; a dict with an
+    element outside it is resolved at build time, where it is ignored.
+    """
+    tokens = _read(namespace, "m_max")
+    if tokens is not None:
+        if not isinstance(tokens, list | tuple):
+            tokens = [tokens]
+        if len(tokens) == 1 and isinstance(tokens[0], str) and "{" in tokens[0]:
+            saturation: Any = {int(z): float(m) for z, m in _literal(tokens[0]).items()}
+        elif len(tokens) == 1:
+            saturation = float(tokens[0])
+        else:
+            saturation = [float(token) for token in tokens]
+        _set(values, "model.magnetic.saturation", saturation)
+    mode = _read(namespace, "data_aug_magmom_mode") or "non-soc"
+    if _read(namespace, "data_aug_magmom"):
+        _set(
+            values,
+            "data.augmentations",
+            [{"name": "magnetic_moments", "settings": {"mode": mode}}],
+        )
+
+
+def _collapse_e0s(namespace: Any, values: dict[str, Any]) -> None:
+    """`--E0s` is a kind by name, a JSON file, or a dict literal.
+
+    Legacy reads the word ``average``, ``foundation`` or ``estimated`` as a
+    method, a path ending ``.json`` as a table in a file, and anything else as
+    a Python dict literal of atomic number to energy.
+    """
+    raw = _read(namespace, "E0s")
+    if raw is None:
+        return
+    if isinstance(raw, str) and raw.lower() in {"average", "foundation", "estimated"}:
+        spec: dict[str, Any] = {"kind": raw.lower()}
+    elif isinstance(raw, str) and raw.endswith(".json"):
+        import json
+
+        with open(raw, encoding="utf-8") as handle:
+            table = json.load(handle)
+        spec = {"kind": "table", "values": {int(z): float(e) for z, e in table.items()}}
+    else:
+        table = _literal(raw)
+        spec = {"kind": "table", "values": {int(z): float(e) for z, e in table.items()}}
+    _set(values, "data.heads.default.e0s", spec)
 
 
 def _collapse_finetune(namespace: Any, values: dict[str, Any]) -> None:

@@ -267,6 +267,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/cli/polar_density_cube.py` | `mace_polar_density_cube --engine v1`: a charge-aware model's density as cube files. |
 | `mace_torch/cli/run_train.py` | `mace_run_train --engine v1`: training from a configuration file. |
 | `mace_torch/data/__init__.py` | Graph building and batching, re-exported. |
+| `mace_torch/data/augmentation.py` | Registered training-data augmentations, drawn on every read, and the magnetic-moment one. |
 | `mace_torch/data/batch.py` | `TrainingBatch`, collation, the lazy graph dataset and its loader. |
 | `mace_torch/data/distributed_sampler.py` | Splitting an epoch across the processes of a distributed run. |
 | `mace_torch/data/graphs.py` | One structure into a graph and its training targets. |
@@ -309,6 +310,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/models/electrostatics.py` | `PolarModel`: the charge-aware model, its refined density of multipoles and long-range energy. |
 | `mace_torch/models/energy.py` | The energy head: E0s, scale and shift, and the two reductions. |
 | `mace_torch/models/heads.py` | One readout head per declared observable, per head of theory. |
+| `mace_torch/models/magnetic.py` | `MagneticModel`: an energy model reading a moment on every atom, with its one-body term. |
 | `mace_torch/models/outputs.py` | `MACEOutputs`: every declared observable read out and typed. |
 | `mace_torch/nn/__init__.py` | The building blocks, re-exported. |
 | `mace_torch/nn/backbone.py` | `MACEBackbone`: embeddings, interactions and products, features out. |
@@ -317,6 +319,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/nn/graph_features.py` | Graph-level inputs embedded into the node features. |
 | `mace_torch/nn/interaction.py` | The interaction blocks: convolution, linear, skip. |
 | `mace_torch/nn/layout.py` | Index maps between channel-major and irrep-grouped layouts. |
+| `mace_torch/nn/magnetic.py` | The moment-reading blocks: moment features, interaction and product couplings with the moment. |
 | `mace_torch/nn/node_inputs.py` | Declared per-node inputs mixed into the features. |
 | `mace_torch/nn/product_basis.py` | The many-body product on the backend's contraction. |
 | `mace_torch/nn/radial.py` | Radial bases, cutoffs, distance transforms and the ZBL repulsion. |

@@ -39,6 +39,16 @@ _POSITIONS = InputSpec(name="pos", irreps="1o", per_atom=True, units="Å")
 #: positions and the cell, which is how the frozen tree does it too.
 _STRAIN = InputSpec(name="strain", irreps="0e+2e", per_atom=False, units="1")
 
+#: A magnetic moment on every atom, in Bohr magnetons, read in by the magnetic
+#: model and by no other. Declared ``1o``, a polar vector, because that is what
+#: the trained magnetic models treat it as: their harmonics of it are
+#: ``0e + 1o + 2e``, so a structure inverted together with its moments is the
+#: same structure to them. A physical moment is axial, and a model built that
+#: way would be a different model.
+_MAGMOM = InputSpec(
+    name="magmom", irreps="1o", per_atom=True, units="muB", differentiable=True
+)
+
 _ENERGY = ObservableSpec(
     name="energy",
     irreps="0e",
@@ -50,6 +60,9 @@ _ENERGY = ObservableSpec(
         # not a sign, and does not belong here. It is applied by whatever
         # computes the stress.
         DerivativeRequest(wrt="strain", name="stress", sign=+1, units="eV/Å^3"),
+        # Minus the gradient, like the forces, and named as the frozen tree
+        # names it and its data key does.
+        DerivativeRequest(wrt="magmom", name="magforces", sign=-1, units="eV/muB"),
     ),
 )
 
@@ -80,5 +93,6 @@ _POLARIZABILITY = ObservableSpec(
 
 #: Every spec in it is frozen, so it is shared rather than rebuilt.
 DEFAULT_CATALOGUE = ObservableCatalogue(
-    inputs=(_POSITIONS, _STRAIN), observables=(_ENERGY, _DIPOLE, _POLARIZABILITY)
+    inputs=(_POSITIONS, _STRAIN, _MAGMOM),
+    observables=(_ENERGY, _DIPOLE, _POLARIZABILITY),
 )

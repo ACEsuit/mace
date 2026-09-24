@@ -70,7 +70,9 @@ def target_specs(requested: RequestedOutputs) -> tuple[TargetSpec, ...]:
         for request in observable.derivatives:
             name = observable.derivative_name(request.wrt)
             if name in requested.derivatives:
-                specs.append(TargetSpec(name, request.wrt == "pos"))
+                specs.append(
+                    TargetSpec(name, requested.per_atom_derivative(request.wrt))
+                )
     return tuple(specs)
 
 
@@ -148,22 +150,28 @@ def graph_from_configuration(
 
 
 def _node_input(configuration: Configuration, name: str, num_atoms: int) -> np.ndarray:
-    """One per-atom input, one value per atom.
+    """One per-atom input: ``[n_atoms]`` for a scalar, ``[n_atoms, k]`` otherwise.
 
     Raises:
         ValueError: If the structure gives a number of values other than one
-            per atom.
+            per atom and component.
     """
+    default = NODE_INPUT_DEFAULTS[name]
+    shape = (num_atoms,) if len(default) == 1 else (num_atoms, len(default))
     value = configuration.properties.get(name)
     if value is None:
-        return np.full(num_atoms, NODE_INPUT_DEFAULTS[name], dtype=float)
-    array = np.asarray(value, dtype=float).reshape(-1)
-    if array.size != num_atoms:
-        raise ValueError(
-            f"{name!r} has {array.size} value(s) and is one per atom of "
-            f"{num_atoms}: {array.tolist()}."
+        return (
+            np.broadcast_to(np.asarray(default, dtype=float), shape)
+            .reshape(shape)
+            .copy()
         )
-    return array
+    array = np.asarray(value, dtype=float)
+    if array.size != int(np.prod(shape)):
+        raise ValueError(
+            f"{name!r} has {array.size} value(s) and is {len(default)} per atom "
+            f"of {num_atoms}: {array.tolist()}."
+        )
+    return array.reshape(shape)
 
 
 def _graph_input(

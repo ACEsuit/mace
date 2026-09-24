@@ -14,6 +14,7 @@ undone to save.
 from __future__ import annotations
 
 from ase.data import chemical_symbols
+from mace_core.config.model import ModelConfig
 from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
@@ -43,6 +44,7 @@ from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.models.dipoles import DipoleModel, DipoleSettings
 from mace_torch.models.electrostatics import PolarModel, PolarSettings
+from mace_torch.models.magnetic import MagneticModel
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
@@ -76,7 +78,18 @@ _RESPONSE_MODELS = {
 
 #: Every registered model name. The charge-aware one scales and shifts its
 #: local energy as the scale-shift model does.
-_MODELS = frozenset({*_ZBL_INSIDE, "polar", *_RESPONSE_MODELS})
+_MODELS = frozenset({*_ZBL_INSIDE, "polar", "magnetic", *_RESPONSE_MODELS})
+
+#: The derivative only a model that reads moments has.
+_MAGNETIC_DERIVATIVE = "magforces"
+
+#: What the magnetic model's first and later interactions are called in the
+#: frozen tree. The model builds that pair whatever the two fields say, so
+#: these and the defaults are the spellings it accepts.
+_MAGNETIC_INTERACTIONS = {
+    "interaction": "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+    "interaction_first": "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
+}
 
 #: The model settings this stage builds one way only, and what that way is.
 #: The configuration can name others, since the schema covers every setting a
@@ -216,7 +229,7 @@ def with_foundation_architecture(
         ModelStageError: Naming each setting the run set that the foundation
             model contradicts, and each observable it cannot read out.
     """
-    theirs = foundation.config.model
+    theirs = _saturations_by_element(foundation.config.model, foundation)
     ours = config.model
     conflicts = sorted(
         name
@@ -245,6 +258,24 @@ def with_foundation_architecture(
         update={name: getattr(ours, name) for name in _RUN_OWNED_MODEL_FIELDS}
     )
     return config.model_copy(update={"model": model})
+
+
+def _saturations_by_element(model: ModelConfig, foundation: Foundation) -> ModelConfig:
+    """The foundation's moment saturations by atomic number.
+
+    Given one per element of its table in its order, they cannot be read by a
+    fine-tune over fewer elements; by atomic number they can, and they are the
+    same numbers.
+    """
+    saturation = model.magnetic.saturation
+    if not isinstance(saturation, tuple):
+        return model
+    by_element = dict(zip(foundation.z_table.zs, saturation, strict=True))
+    return model.model_copy(
+        update={
+            "magnetic": model.magnetic.model_copy(update={"saturation": by_element})
+        }
+    )
 
 
 def build_model(
@@ -280,8 +311,19 @@ def build_model(
             f"{config.model.model!r} is not a registered model. The choices are "
             f"{sorted(_MODELS)}: the two energy models differ in where the "
             f"short-range repulsion is added, `polar` carries a "
-            f"self-consistent density and a long-range term, and `dipole` and "
-            f"`dielectric` read out a dipole and no energy."
+            f"self-consistent density and a long-range term, `magnetic` reads a "
+            f"moment on every atom, and `dipole` and `dielectric` read out a "
+            f"dipole and no energy."
+        )
+    if (
+        _MAGNETIC_DERIVATIVE in requested.derivatives
+        and config.model.model != "magnetic"
+    ):
+        raise ModelStageError(
+            f"model.observables asks for {_MAGNETIC_DERIVATIVE!r}, the energy's "
+            f"derivative against the moments, and a {config.model.model!r} model "
+            f"reads no moments, so it would be zero. Set `model.model` to "
+            f"'magnetic', or drop it."
         )
     _refuse_unbuilt(config)
     _check_electrostatics(config)
@@ -318,6 +360,18 @@ def build_model(
         zbl_in_scale_shift=_ZBL_INSIDE.get(config.model.model, True),
         supports_float64=supports_float64,
     )
+    if config.model.model == "magnetic":
+        model = _magnetic_model(
+            config,
+            requested,
+            energy_head,
+            z_table=z_table,
+            heads=heads,
+            precision=precision,
+        )
+        if initialize:
+            initialize_model_weights(model, config.runtime.seed)
+        return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
     if config.model.model == "polar":
         model = _polar_model(
             config,
@@ -471,6 +525,51 @@ def _response_model(
     )
 
 
+def _magnetic_model(
+    config: ResolvedConfig,
+    requested: RequestedOutputs,
+    energy_head: EnergyOutputHead,
+    *,
+    z_table: AtomicNumberTable,
+    heads: tuple[str, ...],
+    precision: PrecisionConfig,
+) -> MagneticModel:
+    """The magnetic model, which reads out an energy and nothing else."""
+    others = [spec.name for spec in requested.observables if spec.name != "energy"]
+    if others:
+        raise ModelStageError(
+            f"model.observables declares {others} beside the energy, and the "
+            f"magnetic model reads out the energy alone. Its moments are an "
+            f"input, and `magforces` is the energy's derivative against them."
+        )
+    settings = config.model.magnetic
+    model = MagneticModel(
+        get_backend(config.model.backend),
+        atomic_numbers=list(z_table.zs),
+        observables=requested.observables,
+        energy_head=energy_head,
+        saturation=settings.saturation_for(z_table.zs),
+        num_layers=config.model.num_interactions,
+        num_features=config.model.num_channels,
+        lmax=config.model.max_ell,
+        moment_lmax=settings.lmax,
+        hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
+        num_radial=config.model.num_radial_basis,
+        num_moment_basis=settings.num_basis,
+        one_body_basis=settings.one_body_basis if settings.one_body else 0,
+        cutoff=config.model.r_max,
+        cutoff_order=config.model.num_cutoff_basis,
+        correlation=config.model.correlation,
+        pair_repulsion=config.model.pair_repulsion,
+        readout_hidden=config.model.readout.mlp_irreps,
+        num_heads=len(heads),
+        precision=precision.model,
+    )
+    if model.one_body is not None and not settings.train_one_body:
+        model.one_body.coefficients.requires_grad_(False)
+    return model
+
+
 def _refuse_unbuilt(config: ResolvedConfig) -> None:
     """Refuse every model setting this stage would not build as written.
 
@@ -491,6 +590,12 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
     if config.model.model in _RESPONSE_MODELS:
         # A response model has no energy to add a repulsion to.
         built["pair_repulsion"] = (False,)
+    if config.model.model == "magnetic":
+        for field, name in _MAGNETIC_INTERACTIONS.items():
+            built[field] = (*built[field], name)
+        # Its radial networks read the Bessel basis of the edge length beside
+        # the moment's own basis, and it has no other.
+        built["radial_type"] = ("bessel",)
     for path, choices in built.items():
         value: object = config.model
         for name in path.split("."):

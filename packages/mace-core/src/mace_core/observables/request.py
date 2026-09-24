@@ -36,10 +36,19 @@ class RequestedOutputs:
         derivatives: The derivative names the engine is asked to compute, such
             as ``forces``. Asking for none is legitimate: an inference run
             wants the energy alone.
+        per_atom_inputs: The declared inputs that hold one value per atom. A
+            derivative against one of them has one row per atom, as the forces
+            against the positions and ``magforces`` against the moments do; a
+            derivative against any other input has one row per structure.
     """
 
     observables: tuple[ObservableSpec, ...] = ()
     derivatives: tuple[str, ...] = ()
+    per_atom_inputs: frozenset[str] = frozenset({"pos"})
+
+    def per_atom_derivative(self, wrt: str) -> bool:
+        """Whether a derivative taken against ``wrt`` has one row per atom."""
+        return wrt in self.per_atom_inputs
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -81,7 +90,11 @@ def resolve_requested(
         if owner not in observables:
             observables.append(owner)
         derivatives.append(derivative)
-    return RequestedOutputs(tuple(observables), tuple(derivatives))
+    return RequestedOutputs(
+        tuple(observables),
+        tuple(derivatives),
+        frozenset(spec.name for spec in catalogue.inputs if spec.per_atom),
+    )
 
 
 def _find(

@@ -33,6 +33,7 @@ from torch.optim.lr_scheduler import LRScheduler
 __all__ = [
     "GROUPS",
     "GROUP_MARKERS",
+    "ONE_BODY_MARKER",
     "POLAR_GROUP_MARKERS",
     "UnsupportedOptimizerError",
     "build_optimizer",
@@ -64,6 +65,10 @@ POLAR_GROUP_MARKERS: tuple[str, ...] = (
     ".updates.",
     ".electron_energy.",
 )
+
+#: The magnetic model's one-body energy of the moment length, a group of its
+#: own without weight decay, as the frozen tree has it.
+ONE_BODY_MARKER = ".one_body."
 
 #: Which interaction tensors decay: the linear maps between feature spaces. The
 #: radial network and the up-projection do not, which is the frozen tree's
@@ -138,6 +143,7 @@ def parameter_groups(model: nn.Module, config: TrainingConfig) -> list[dict]:
         ],
         0.0,
     )
+    add("one_body", list(_named(model, ONE_BODY_MARKER)), 0.0)
 
     unclaimed = sorted(
         name

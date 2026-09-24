@@ -38,6 +38,7 @@ these models, and this refuses them by name.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping
 from typing import Any, Protocol, runtime_checkable
 
@@ -170,6 +171,18 @@ class FixedPointDriver(nn.Module):
             return energy.detach()
 
         optimizer.step(closure)
+        if not all(math.isfinite(value) for value in history):
+            first = next(
+                i for i, value in enumerate(history) if not math.isfinite(value)
+            )
+            raise RuntimeError(
+                f"the energy stopped being finite at step {first + 1} of the "
+                f"relaxation of {self.spec.variable!r}, after "
+                f"{history[max(first - 1, 0)]:.6f}. The energy has no lower "
+                f"bound in that variable and the solver followed it off to "
+                f"infinity; that is about the model, not about the solver's "
+                f"settings."
+            )
         final_gradient = variable.grad
         settled = bool(
             final_gradient is not None
@@ -231,7 +244,9 @@ class FixedPointDriver(nn.Module):
                 f"says is absent. Evaluate it without derivatives, or give the "
                 f"model a solver that differentiates through its own solution."
             )
-        if second_derivatives:
+        # The Hessian is a second derivative asked for by name, and it would
+        # omit the same term as one asked for by the flag.
+        if second_derivatives or "hessian" in wanted:
             raise NotImplementedError(
                 f"a second derivative through {type(self).__name__} is not "
                 f"available: the loop detaches its converged "

@@ -258,7 +258,10 @@ def pad_batch(
             if name in structure
         },
         **{
-            name: np.full(nodes, default)
+            name: np.broadcast_to(
+                np.asarray(default if len(default) > 1 else default[0]),
+                (nodes, len(default)) if len(default) > 1 else (nodes,),
+            ).copy()
             for name, default in NODE_INPUT_DEFAULTS.items()
             if name in structure
         },
@@ -288,7 +291,7 @@ def output_rows(
         for request in spec.derivatives if spec.is_scalar else ():
             rows.setdefault(
                 spec.derivative_name(request.wrt),
-                "atom" if request.wrt == "pos" else "graph",
+                "atom" if requested.per_atom_derivative(request.wrt) else "graph",
             )
     for name, row in {**extra_rows, **ENGINE_EXTRA_ROWS}.items():
         rows.setdefault(name, cast(Row, row))
