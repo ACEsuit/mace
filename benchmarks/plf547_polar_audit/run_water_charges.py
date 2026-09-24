@@ -70,7 +70,7 @@ if args.model != 'omol':
 
 
 assert args.model in ['m','l']
-assert 'charges' in calc.implemented_properties
+out['declared_calculator_properties']=list(calc.implemented_properties)
 
 def properties(f,charge,spin):
     a=Atoms(numbers=f['numbers'],positions=f['positions'],pbc=False)
@@ -80,7 +80,10 @@ def properties(f,charge,spin):
     assert (sum(a.numbers)-charge)%2==0
     a.calc=calc;calc.reset()
     with torch.no_grad():
-        e=float(a.get_potential_energy());q=a.get_charges().tolist()
+        e=float(a.get_potential_energy())
+        # The pinned Polar calculator returns charges without advertising them.
+        q=np.asarray(calc.results['charges']).copy().tolist()
+        assert len(q)==len(a)
     assert np.isfinite(e) and np.isfinite(q).all()
     assert abs(sum(q)-charge)<(2e-5 if args.dtype=='float32' else 1e-10)
     return dict(energy_eV=e,atomic_charges=q,total_charge=sum(q),spin=spin)
