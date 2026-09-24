@@ -151,7 +151,7 @@ def terms_for(
                 LossTerm(
                     name,
                     weight_of(name),
-                    request.wrt == "pos",
+                    requested.per_atom_derivative(request.wrt),
                     request.extensive,
                 )
             )
@@ -363,6 +363,10 @@ class HuberLoss(TermwiseLoss):
         return _huber(residual, self.delta)
 
 
+#: The term the universal loss bands by its reference norm.
+_BANDED_TERM = "forces"
+
+
 @register_loss("universal")
 class UniversalLoss(TermwiseLoss):
     """Huber whose crossover falls where the reference force is large.
@@ -403,7 +407,10 @@ class UniversalLoss(TermwiseLoss):
 
     def elementwise(self, residual: Tensor, term: LossTerm) -> Tensor:
         reference = self._reference.get(term.name)
-        if reference is None or not term.per_atom or reference.dim() < 2:
+        # The force term alone is banded. Another per-atom vector, the
+        # magnetic forces, is scored with the plain crossover, as the frozen
+        # tree scores it: a large magnetic force is not a broken calculation.
+        if reference is None or term.name != _BANDED_TERM or reference.dim() < 2:
             return _huber(residual, self.delta)
         norms = torch.linalg.vector_norm(reference.to(residual.dtype), dim=-1)
         # From the widest band inwards, so the narrowest one that matches is

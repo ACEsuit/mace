@@ -436,7 +436,9 @@ class DerivativeEngine(nn.Module):
         # Only the inputs whose derivative was actually asked for. A leaf that
         # nobody differentiates still holds the whole backward graph alive.
         leaves = [
-            spec for spec in self.differentiable_inputs if by_input[spec.name] in wanted
+            spec
+            for spec in self.differentiable_inputs
+            if by_input.get(spec.name) in wanted
         ]
         for spec in leaves:
             if spec.name not in graph:

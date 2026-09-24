@@ -282,6 +282,10 @@ def graph_inputs_of(model: str) -> tuple[str, ...]:
         from mace_torch.models.dipoles import DIPOLE_GRAPH_INPUTS
 
         return DIPOLE_GRAPH_INPUTS["fixed" if model == "dipole" else "predicted"]
+    if model == "magnetic":
+        from mace_torch.models.magnetic import MAGNETIC_GRAPH_INPUTS
+
+        return MAGNETIC_GRAPH_INPUTS
     return ()
 
 

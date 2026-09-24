@@ -450,6 +450,41 @@ def test_the_band_is_read_off_the_reference_and_not_the_prediction():
 
 
 @fp64_only
+def test_the_universal_loss_bands_the_forces_and_not_the_magnetic_forces():
+    """The frozen tree bands its force term and scores ``magforces`` with the
+    plain crossover. Both are per-atom vectors, and a reference magnetic force
+    of 433 does not make a structure less worth fitting."""
+    requested = resolve_requested(["energy", "forces", "magforces"], CATALOGUE)
+    configuration = Configuration(
+        atomic_numbers=np.array([1, 1]),
+        positions=POSITIONS,
+        properties={
+            "energy": 10.0,
+            "forces": np.zeros((2, 3)),
+            "magforces": np.full((2, 3), 250.0),
+        },
+    )
+    dataset = GraphDataset(
+        [configuration], cutoff=0.5, z_table=Z_TABLE, targets=target_specs(requested)
+    )
+    batch = collate_training([dataset[0]], z_table=Z_TABLE)
+    magforces = batch.targets["magforces"].clone()
+    magforces[0, 0] = magforces[0, 0] + 1.0
+    output = MACEOutput(
+        total_energy=batch.targets["energy"].clone(),
+        forces=batch.targets["forces"].clone(),
+        extras={"magforces": magforces},
+    )
+    config = LossConfig(
+        kind=UniversalLossConfig(delta=1.0),
+        weights={"energy": 0.0, "forces": 0.0, "magforces": 1.0},
+    )
+    assert float(build_loss(requested, config)(output, batch)) == pytest.approx(
+        0.5 / 6.0
+    )
+
+
+@fp64_only
 def test_the_l1l2_loss_costs_a_length_rather_than_a_square():
     """`1.5 + 2.5`, from `test_weighted_energy_forces_l1l2_loss`.
 

@@ -94,7 +94,7 @@ def metric_specs(requested: RequestedOutputs) -> tuple[MetricSpec, ...]:
             name = observable.derivative_name(request.wrt)
             if name not in requested.derivatives:
                 continue
-            per_atom = request.wrt == "pos"
+            per_atom = requested.per_atom_derivative(request.wrt)
             specs.append(MetricSpec(name, per_atom, request.extensive and not per_atom))
     return tuple(specs)
 
