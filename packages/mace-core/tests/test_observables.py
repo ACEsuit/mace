@@ -1,16 +1,14 @@
 """The declarative observable specification.
 
 The acceptance bar is "zero new code", so most of these tests declare something
-in YAML text and assert what comes out. If any of them needed a new branch in
-``mace_core`` to pass, the abstraction would not be doing its job.
+as plain data, the rows a configuration would hold, and assert what comes out.
+If any of them needed a new branch in ``mace_core`` to pass, the abstraction
+would not be doing its job.
 """
 
-from importlib.resources import files
-
 import pytest
-import yaml
 from mace_core.observables import (
-    DEFAULTS_RESOURCE,
+    DEFAULT_CATALOGUE,
     DerivativeRequest,
     InputSpec,
     IrrepsGrammarError,
@@ -18,31 +16,24 @@ from mace_core.observables import (
     ObservableSpec,
     default_derivative_name,
     irreps_dimension,
-    load_catalogue,
-    load_default_catalogue,
     parse_irreps,
 )
 from pydantic import ValidationError
 
-# A catalogue with the two inputs every model has, written out so that the
-# tests below can add one row at a time to it.
-BASE_INPUTS = """
-inputs:
-  - name: pos
-    irreps: "1o"
-    per_atom: true
-    units: "Å"
-  - name: strain
-    irreps: "0e+2e"
-    per_atom: false
-    units: "1"
-"""
+# The two inputs every model has, written out so that the tests below can add
+# one row at a time to them.
+BASE_INPUTS = [
+    {"name": "pos", "irreps": "1o", "per_atom": True, "units": "Å"},
+    {"name": "strain", "irreps": "0e+2e", "per_atom": False, "units": "1"},
+]
+
+ENERGY_ROW = {"name": "energy", "irreps": "0e", "per_atom": False, "units": "eV"}
 
 
-def catalogue_from(text, tmp_path):
-    path = tmp_path / "observables.yaml"
-    path.write_text(BASE_INPUTS + text, encoding="utf-8")
-    return load_catalogue(path)
+def catalogue_from(observables, inputs=()):
+    return ObservableCatalogue.model_validate(
+        {"inputs": [*BASE_INPUTS, *inputs], "observables": list(observables)}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -209,42 +200,40 @@ def test_a_sign_alone_needs_no_name():
 
 
 # ---------------------------------------------------------------------------
-# The shipped defaults
+# The default catalogue
 # ---------------------------------------------------------------------------
 
 
 def test_the_defaults_declare_energy_and_its_two_derivatives():
-    catalogue = load_default_catalogue()
-    assert catalogue.names() == ("energy", "forces", "stress")
+    assert DEFAULT_CATALOGUE.names() == ("energy", "forces", "stress")
 
 
-def test_the_shipped_names_and_signs_come_from_the_file_and_not_from_code():
+def test_the_default_names_and_signs_come_from_the_declaration_and_not_from_code():
     """The reason the table was removed: this is now a property of the data.
 
     If these were still special-cased in code, the assertion would pass with
-    the declarations file saying nothing at all.
+    the declaration saying nothing at all.
     """
-    catalogue = load_default_catalogue()
-    resolved = {spec.name: spec.sign for spec in catalogue.requested_derivatives()}
+    resolved = {
+        spec.name: spec.sign for spec in DEFAULT_CATALOGUE.requested_derivatives()
+    }
     assert resolved == {"forces": -1, "stress": +1}
 
-    stripped = yaml.safe_load(
-        files("mace_core").joinpath(DEFAULTS_RESOURCE).read_text(encoding="utf-8")
-    )
+    stripped = DEFAULT_CATALOGUE.model_dump()
     for observable in stripped["observables"]:
-        for request in observable.get("derivatives", []):
-            request.pop("name", None)
-            request.pop("sign", None)
+        for request in observable["derivatives"]:
+            request.pop("name")
+            request.pop("sign")
     bare = ObservableCatalogue.model_validate(stripped)
     assert {spec.name for spec in bare.requested_derivatives()} == {
         "d_energy_d_pos",
         "d_energy_d_strain",
     }
-    assert [spec.name for spec in catalogue.inputs] == ["pos", "strain"]
+    assert [spec.name for spec in DEFAULT_CATALOGUE.inputs] == ["pos", "strain"]
 
 
 def test_the_default_forces_row_is_the_negative_position_gradient():
-    forces = load_default_catalogue().derivative("energy", "pos")
+    forces = DEFAULT_CATALOGUE.derivative("energy", "pos")
     assert forces.name == "forces"
     assert forces.sign == -1
     assert forces.per_atom is True
@@ -253,7 +242,7 @@ def test_the_default_forces_row_is_the_negative_position_gradient():
 
 
 def test_the_default_stress_row_is_the_positive_strain_gradient():
-    stress = load_default_catalogue().derivative("energy", "strain")
+    stress = DEFAULT_CATALOGUE.derivative("energy", "strain")
     assert stress.name == "stress"
     assert stress.sign == +1
     assert stress.per_atom is False
@@ -265,17 +254,17 @@ def test_the_default_stress_row_is_the_positive_strain_gradient():
 # ---------------------------------------------------------------------------
 
 
-def test_a_new_rank_two_per_atom_observable_is_a_row_in_yaml(tmp_path):
+def test_a_new_rank_two_per_atom_observable_is_one_declaration():
     catalogue = catalogue_from(
-        """
-observables:
-  - name: quadrupole
-    irreps: "0e+2e"
-    per_atom: true
-    units: "e*Å^2"
-    derivatives: [pos, strain]
-""",
-        tmp_path,
+        [
+            {
+                "name": "quadrupole",
+                "irreps": "0e+2e",
+                "per_atom": True,
+                "units": "e*Å^2",
+                "derivatives": ["pos", "strain"],
+            }
+        ]
     )
     quadrupole = catalogue.observable("quadrupole")
     assert quadrupole.per_atom is True
@@ -287,33 +276,29 @@ observables:
     )
 
 
-def test_a_new_input_feature_makes_its_derivative_declarable(tmp_path):
+def test_a_new_input_feature_makes_its_derivative_declarable():
     """`magmom` is the case that pays for the grammar being written over
     declared inputs rather than over positions and the strain.
 
-    It is also the case that pays for the name and the sign living in the file.
-    `magforces` used to be a row in a table inside this package, and this
-    catalogue reaches it with no code at all.
+    It is also the case that pays for the name and the sign living in the
+    declaration. `magforces` used to be a row in a table inside this package,
+    and this catalogue reaches it with no code at all.
     """
     catalogue = catalogue_from(
-        """
-  - name: magmom
-    irreps: "1e"
-    per_atom: true
-    units: "muB"
-
-observables:
-  - name: energy
-    irreps: "0e"
-    per_atom: false
-    units: "eV"
-    derivatives:
-      - wrt: magmom
-        name: magforces
-        sign: -1
-        units: "eV/muB"
-""",
-        tmp_path,
+        [
+            {
+                **ENERGY_ROW,
+                "derivatives": [
+                    {
+                        "wrt": "magmom",
+                        "name": "magforces",
+                        "sign": -1,
+                        "units": "eV/muB",
+                    }
+                ],
+            }
+        ],
+        inputs=[{"name": "magmom", "irreps": "1e", "per_atom": True, "units": "muB"}],
     )
     magforces = catalogue.derivative("energy", "magmom")
     assert magforces.name == "magforces"
@@ -324,18 +309,8 @@ observables:
     assert catalogue.names() == ("energy", "magforces")
 
 
-def test_the_bare_string_form_and_the_mapping_form_agree(tmp_path):
-    shorthand = catalogue_from(
-        """
-observables:
-  - name: energy
-    irreps: "0e"
-    per_atom: false
-    units: "eV"
-    derivatives: [pos]
-""",
-        tmp_path,
-    )
+def test_the_bare_string_form_and_the_mapping_form_agree():
+    shorthand = catalogue_from([{**ENERGY_ROW, "derivatives": ["pos"]}])
     assert shorthand.observable("energy").derivatives == (DerivativeRequest(wrt="pos"),)
 
 
@@ -344,105 +319,59 @@ observables:
 # ---------------------------------------------------------------------------
 
 
-def test_a_derivative_against_an_undeclared_input_is_an_error(tmp_path):
+def test_a_derivative_against_an_undeclared_input_is_an_error():
     with pytest.raises(ValidationError) as caught:
-        catalogue_from(
-            """
-observables:
-  - name: energy
-    irreps: "0e"
-    per_atom: false
-    units: "eV"
-    derivatives: [elec_temp]
-""",
-            tmp_path,
-        )
+        catalogue_from([{**ENERGY_ROW, "derivatives": ["elec_temp"]}])
     message = str(caught.value)
     assert "energy" in message
     assert "elec_temp" in message
     assert "['pos', 'strain']" in message
 
 
-def test_a_derived_name_may_not_collide_with_a_declared_observable(tmp_path):
+def test_a_derived_name_may_not_collide_with_a_declared_observable():
     with pytest.raises(ValidationError) as caught:
         catalogue_from(
-            """
-observables:
-  - name: d_energy_d_pos
-    irreps: "1o"
-    per_atom: true
-    units: "eV/Å"
-  - name: energy
-    irreps: "0e"
-    per_atom: false
-    units: "eV"
-    derivatives: [pos]
-""",
-            tmp_path,
+            [
+                {
+                    "name": "d_energy_d_pos",
+                    "irreps": "1o",
+                    "per_atom": True,
+                    "units": "eV/Å",
+                },
+                {**ENERGY_ROW, "derivatives": ["pos"]},
+            ]
         )
     assert "'d_energy_d_pos'" in str(caught.value)
 
 
-def test_a_declared_name_may_not_collide_with_a_declared_observable(tmp_path):
-    """The same guard, now reachable through a name the file chose itself."""
+def test_a_declared_name_may_not_collide_with_a_declared_observable():
+    """The same guard, now reachable through a name the declaration chose."""
     with pytest.raises(ValidationError) as caught:
         catalogue_from(
-            """
-observables:
-  - name: forces
-    irreps: "1o"
-    per_atom: true
-    units: "eV/Å"
-  - name: energy
-    irreps: "0e"
-    per_atom: false
-    units: "eV"
-    derivatives:
-      - wrt: pos
-        name: forces
-        sign: -1
-""",
-            tmp_path,
+            [
+                {"name": "forces", "irreps": "1o", "per_atom": True, "units": "eV/Å"},
+                {
+                    **ENERGY_ROW,
+                    "derivatives": [{"wrt": "pos", "name": "forces", "sign": -1}],
+                },
+            ]
         )
     assert "'forces'" in str(caught.value)
 
 
-def test_a_name_declared_twice_is_an_error(tmp_path):
+def test_a_name_declared_twice_is_an_error():
     with pytest.raises(ValidationError) as caught:
-        catalogue_from(
-            """
-observables:
-  - name: energy
-    irreps: "0e"
-    per_atom: false
-    units: "eV"
-  - name: energy
-    irreps: "0e"
-    per_atom: false
-    units: "eV"
-""",
-            tmp_path,
-        )
+        catalogue_from([ENERGY_ROW, ENERGY_ROW])
     assert "declared twice" in str(caught.value)
 
 
-def test_asking_for_the_same_derivative_twice_is_an_error(tmp_path):
+def test_asking_for_the_same_derivative_twice_is_an_error():
     with pytest.raises(ValidationError):
-        catalogue_from(
-            """
-observables:
-  - name: energy
-    irreps: "0e"
-    per_atom: false
-    units: "eV"
-    derivatives: [pos, pos]
-""",
-            tmp_path,
-        )
+        catalogue_from([{**ENERGY_ROW, "derivatives": ["pos", "pos"]}])
 
 
 def test_an_unknown_observable_or_input_says_what_is_declared():
-    catalogue = load_default_catalogue()
+    catalogue = DEFAULT_CATALOGUE
     with pytest.raises(KeyError) as caught:
         catalogue.observable("dipole")
     assert "['energy']" in str(caught.value)

@@ -1,10 +1,6 @@
 """Declarative observables: what a model computes, declared rather than coded."""
 
-from mace_core.observables.defaults import (
-    DEFAULTS_RESOURCE,
-    load_catalogue,
-    load_default_catalogue,
-)
+from mace_core.observables.defaults import DEFAULT_CATALOGUE
 from mace_core.observables.derivatives import (
     DEFAULT_SIGN,
     default_derivative_name,
@@ -26,7 +22,7 @@ from mace_core.observables.spec import (
 )
 
 __all__ = [
-    "DEFAULTS_RESOURCE",
+    "DEFAULT_CATALOGUE",
     "DEFAULT_SIGN",
     "IRREPS_GRAMMAR",
     "DerivativeRequest",
@@ -39,7 +35,5 @@ __all__ = [
     "default_derivative_name",
     "irreps_dimension",
     "is_default_shaped_name",
-    "load_catalogue",
-    "load_default_catalogue",
     "parse_irreps",
 ]

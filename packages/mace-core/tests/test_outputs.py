@@ -11,7 +11,7 @@ import sys
 
 import numpy as np
 import pytest
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_core.outputs import (
     CORE_FIELD_NAMES,
     FIELD_BY_OBSERVABLE,
@@ -157,7 +157,7 @@ def test_membership_and_listing_agree_on_every_name():
 
 def test_a_catalogue_name_finds_its_value_in_an_output():
     """The correlation the two vocabularies exist to allow."""
-    catalogue = load_default_catalogue()
+    catalogue = DEFAULT_CATALOGUE
     output = MACEOutput(total_energy=np.array([-1.5]), forces=np.zeros((4, 3)))
     shared = set(catalogue.names()) & set(output.names())
     assert shared == {"energy", "forces"}

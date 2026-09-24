@@ -38,7 +38,7 @@ mace-magnetic/                       # a separate repo / PyPI package — not in
 ├── src/mace_magnetic/
 │   ├── __init__.py                  # the mace.plugins target: runs the @register_* decorators
 │   ├── embedding.py                 # MagmomEmbedding                              (extending_mace.md §1)
-│   ├── observables.yaml             # the magforces row                            (§2)
+│   ├── observables.py               # the magforces declaration                    (§2)
 │   ├── transforms.py                # RotateMagmom                                 (§3)
 │   └── model.py                     # MagneticScaleShiftMACE / MagneticSCFMACE     (§5)
 └── tests/
@@ -63,16 +63,17 @@ edit to any MACE file.
 
 The module code is what [Extending MACE](extending_mace.md) §1, §3 and §5 already showed; **only the
 import root changes** (`mace_magnetic` instead of `mace_torch.extras.magnetic`). The `__init__.py` runs the
-decorators and loads the observable rows:
+decorators and registers the observable declarations:
 
 ```python
 # src/mace_magnetic/__init__.py
 from mace_torch.models import register_model
 from mace_torch.data import register_transform
 from mace_torch.nn import register_input_embedding
-from mace_torch.observables import register_observables_yaml
+from mace_torch.observables import register_observables
 
 from .embedding import MagmomEmbedding
+from .observables import MAGMOM, MAGFORCES
 from .transforms import RotateMagmom
 from .model import MagneticScaleShiftMACE, MagneticSCFMACE
 
@@ -80,7 +81,7 @@ register_input_embedding("magmom")(MagmomEmbedding)
 register_transform("rotate_magmom")(RotateMagmom)
 register_model("MagneticScaleShiftMACE")(MagneticScaleShiftMACE)
 register_model("MagneticSCFMACE")(MagneticSCFMACE)
-register_observables_yaml(__file__, "observables.yaml")   # magforces
+register_observables(inputs=[MAGMOM], derivatives=[MAGFORCES])   # magforces
 ```
 
 `config.toml` is byte-for-byte the one from the in-tree example — it refers to the feature only by

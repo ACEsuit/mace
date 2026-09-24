@@ -86,12 +86,13 @@ scalars). The magnetic output is the moment's **conjugate force**, `magforces = 
 by autograd exactly like `forces = −dE/dpositions`. It is a per-atom `1o` vector, declared as a
 derivative observable:
 
-```yaml
-# mace_torch/extras/magnetic/observables.yaml  — the extra ships its own observable rows
-magforces:
-  derivation: "autograd(energy, wrt=magmom)"   # -dE/dmagmom
-  per_atom: true
-  irreps: "1o"                                  # a 3-vector, same convention as magmom
+```python
+# mace_torch/extras/magnetic/observables.py  — the extra ships its own declarations
+from mace_core.observables import DerivativeRequest, InputSpec
+
+MAGMOM = InputSpec(name="magmom", irreps="1e", per_atom=True, units="muB")
+# -dE/dmagmom, declared on the energy: a per-atom vector like the moment itself
+MAGFORCES = DerivativeRequest(wrt="magmom", name="magforces", sign=-1, units="eV/muB")
 ```
 
 ```toml
@@ -111,12 +112,14 @@ readout is a one-row change in the observable table, so here is what a *predicte
 like. **This block is illustrative** — it is not in the current implementation; it is shown only to
 demonstrate the readout mechanism.
 
-```yaml
-# mace_torch/extras/magnetic/observables.yaml  — illustrative, NOT in #1244
-magnetic_moment:
-  derivation: readout        # a learned equivariant readout over node features
-  per_atom: true
-  irreps: "1o"               # same convention as the magmom input
+```python
+# mace_torch/extras/magnetic/observables.py  — illustrative, NOT in #1244
+from mace_core.observables import ObservableSpec
+
+# a learned equivariant readout over node features, same convention as magmom
+MAGNETIC_MOMENT = ObservableSpec(
+    name="magnetic_moment", irreps="1e", per_atom=True, units="muB"
+)
 ```
 
 ```toml
@@ -314,7 +317,7 @@ directory, wired by the `__init__.py` above:
 mace_torch/extras/magnetic/          # everything the feature owns lives here
 ├── __init__.py                      # the registration entry point (the mace.plugins target)
 ├── embedding.py                     # MagmomEmbedding             (§1)
-├── observables.yaml                 # the magforces row           (§2)
+├── observables.py                   # the magforces declaration   (§2)
 ├── transforms.py                    # RotateMagmom                (§3)
 └── model.py                         # MagneticScaleShiftMACE / MagneticSCFMACE   (§5)
 ```
@@ -364,7 +367,7 @@ unchanged — only where the files sit and a couple of packaging details drop aw
 
 - The same modules move from `mace_torch/extras/magnetic/` into the main `mace-torch` tree
   (`mace_torch/nn/`, `mace_torch/data/`, `mace_torch/models/`), still registered by the same decorators.
-- The observable row goes in the shared `defaults/observables.yaml` instead of a feature-local file.
+- The observable declarations go in the shared `observables/defaults.py` instead of a feature-local module.
 - No `mace.plugins` entry point, no `[magnetic]` optional-dependency group, no capability marker — its
   dependencies (here `sphericart-torch`) would be base dependencies and its tests run unconditionally.
 
