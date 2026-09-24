@@ -53,7 +53,8 @@ class MACEOutputs(nn.Module):
         energy_head: The energy head, required when ``energy`` is declared and
             rejected when it is not.
         nonlinear: Whether each head's last-layer readout carries a gate.
-        hidden_scalars: The width of that gated readout's middle.
+        readout_irreps: That gated readout's middle, as ``MLP_irreps``; an
+            integer is that many scalars.
         precision: The dtype every op is built at.
         num_heads: How many levels of theory the model reads out. Every
             observable gets one readout per head, so what the heads share is
@@ -69,7 +70,7 @@ class MACEOutputs(nn.Module):
         energy_head: EnergyOutputHead | None = None,
         nonlinear: bool = True,
         precision: Precision = "float64",
-        hidden_scalars: int = 16,
+        readout_irreps: int | str = 16,
         num_heads: int = 1,
     ) -> None:
         super().__init__()
@@ -112,7 +113,7 @@ class MACEOutputs(nn.Module):
                     layer_irreps=layer_irreps,
                     num_features=num_features,
                     nonlinear=nonlinear,
-                    hidden_scalars=hidden_scalars,
+                    readout_irreps=readout_irreps,
                     precision=precision,
                     num_heads=num_heads,
                 )

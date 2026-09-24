@@ -42,7 +42,7 @@ from dataclasses import dataclass, replace
 from typing import Literal, cast
 
 import numpy as np
-from mace_core.graph import GRAPH_INPUT_DEFAULTS
+from mace_core.graph import GRAPH_INPUT_DEFAULTS, NODE_INPUT_DEFAULTS
 from mace_core.observables import RequestedOutputs
 from mace_core.outputs import (
     CORE_FIELD_NAMES,
@@ -251,11 +251,17 @@ def pad_batch(
         "pbc": np.zeros(3, dtype=bool),
         "weight": np.asarray(0.0),
         "head": np.asarray(structure["head"]),
-        # Whatever per-structure inputs the real one carries, at their
-        # defaults, since a batch holds a field for every graph or for none.
+        # Whatever inputs the real one carries, per structure and per atom, at
+        # their defaults, since a batch holds a field for every graph or for
+        # none.
         **{
             name: np.asarray(default if len(default) > 1 else default[0])
             for name, default in GRAPH_INPUT_DEFAULTS.items()
+            if name in structure
+        },
+        **{
+            name: np.full(nodes, default)
+            for name, default in NODE_INPUT_DEFAULTS.items()
             if name in structure
         },
     }

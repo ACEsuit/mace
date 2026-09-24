@@ -71,11 +71,12 @@ class MACEModel(nn.Module):
             trained model set something else moves the energy by 6.3e-3 eV and
             the repulsion by 0.41 eV.
         node_inputs: Declared per-node input streams.
-        readout_hidden: The width of the last readout's middle, per head.
+        readout_hidden: The last readout's middle, per head, as
+            ``MLP_irreps``; an integer is that many scalars.
         num_heads: How many levels of theory the model reads out. They share
             the backbone and nothing after it: each has its own readout, and
             the energy head carries one row of constants per head.
-        full_last_layer: Keep every irrep in the last layer; see the backbone.
+        last_layer_irreps: What the last layer keeps; see the backbone.
         element_agnostic_product: One set of product weights for all
             elements; see the backbone.
         edge_axes: The axis order the spherical harmonics read; see the
@@ -102,9 +103,9 @@ class MACEModel(nn.Module):
         pair_repulsion: bool = False,
         cutoff_order: int = 6,
         node_inputs: Sequence[InputSpec] = (),
-        readout_hidden: int = 16,
+        readout_hidden: int | str = 16,
         num_heads: int = 1,
-        full_last_layer: bool = False,
+        last_layer_irreps: str = "0e",
         element_agnostic_product: bool = False,
         edge_axes: tuple[int, int, int] = (0, 1, 2),
     ) -> None:
@@ -125,7 +126,7 @@ class MACEModel(nn.Module):
                 cutoff_order=cutoff_order,
                 precision=precision,
                 node_inputs=node_inputs,
-                full_last_layer=full_last_layer,
+                last_layer_irreps=last_layer_irreps,
                 element_agnostic_product=element_agnostic_product,
                 edge_axes=edge_axes,
             )
@@ -136,7 +137,7 @@ class MACEModel(nn.Module):
                 num_features=num_features,
                 energy_head=energy_head,
                 precision=precision,
-                hidden_scalars=readout_hidden,
+                readout_irreps=readout_hidden,
                 num_heads=num_heads,
             )
             self.repulsion = (

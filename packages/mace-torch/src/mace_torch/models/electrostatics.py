@@ -230,7 +230,7 @@ class PolarModel(MACEModel):
         radial_kind: RadialKind = "bessel",
         precision: Precision = "float64",
         cutoff_order: int = 6,
-        readout_hidden: int = 16,
+        readout_hidden: int | str = 16,
         num_heads: int = 1,
         element_agnostic_product: bool = False,
     ) -> None:
@@ -260,7 +260,7 @@ class PolarModel(MACEModel):
             cutoff_order=cutoff_order,
             readout_hidden=readout_hidden,
             num_heads=num_heads,
-            full_last_layer=True,
+            last_layer_irreps=hidden_irreps,
             element_agnostic_product=element_agnostic_product,
             # The density's dipoles are read off the degree one features, and
             # the solver holds a dipole as (y, z, x).

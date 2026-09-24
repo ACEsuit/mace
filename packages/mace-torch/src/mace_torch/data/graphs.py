@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
-from mace_core.graph import GRAPH_INPUT_DEFAULTS
+from mace_core.graph import GRAPH_INPUT_DEFAULTS, NODE_INPUT_DEFAULTS
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import RequestedOutputs
 
@@ -94,9 +94,10 @@ def graph_from_configuration(
         head: Which head this structure belongs to, as a position in the
             model's head list.
         weight: Its weight in the loss.
-        graph_inputs: The per-structure inputs the model reads, by name. Each
-            is taken from the structure's properties, or from
-            :data:`~mace_core.graph.GRAPH_INPUT_DEFAULTS` when it has none.
+        graph_inputs: The inputs the model reads, by name, per structure or per
+            atom. Each is taken from the structure's properties, or from
+            :data:`~mace_core.graph.GRAPH_INPUT_DEFAULTS` or
+            :data:`~mace_core.graph.NODE_INPUT_DEFAULTS` when it has none.
 
     Raises:
         ValueError: If the structure holds an element the table does not.
@@ -136,10 +137,33 @@ def graph_from_configuration(
         "weight": np.asarray(weight, dtype=float),
         "head": np.asarray(head, dtype=np.int64),
         **{
-            name: _graph_input(configuration, name, GRAPH_INPUT_DEFAULTS[name])
+            name: (
+                _node_input(configuration, name, len(numbers))
+                if name in NODE_INPUT_DEFAULTS
+                else _graph_input(configuration, name, GRAPH_INPUT_DEFAULTS[name])
+            )
             for name in graph_inputs
         },
     }
+
+
+def _node_input(configuration: Configuration, name: str, num_atoms: int) -> np.ndarray:
+    """One per-atom input, one value per atom.
+
+    Raises:
+        ValueError: If the structure gives a number of values other than one
+            per atom.
+    """
+    value = configuration.properties.get(name)
+    if value is None:
+        return np.full(num_atoms, NODE_INPUT_DEFAULTS[name], dtype=float)
+    array = np.asarray(value, dtype=float).reshape(-1)
+    if array.size != num_atoms:
+        raise ValueError(
+            f"{name!r} has {array.size} value(s) and is one per atom of "
+            f"{num_atoms}: {array.tolist()}."
+        )
+    return array
 
 
 def _graph_input(

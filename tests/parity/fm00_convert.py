@@ -29,10 +29,13 @@ from mace_core.clebsch_gordan.irreps import Irreps
 
 __all__ = [
     "contraction_weights_to_canonical",
+    "copy_linear",
     "energy_constants_to_canonical",
     "fully_connected_tp_weights_to_canonical",
     "linear_weights_to_canonical",
     "recorded_basis",
+    "transfer_backbone_weights",
+    "transfer_weights",
 ]
 
 
@@ -231,6 +234,12 @@ def energy_constants_to_canonical(legacy_model, heads=("default",)):
     return values, tuple(float(v) for v in scale), tuple(float(v) for v in shift)
 
 
+def _dimension(irreps: str) -> int:
+    """A declaration's dimension, zero for the empty one a dipole-only
+    readout's middle can be."""
+    return Irreps.parse(irreps).dimension if irreps else 0
+
+
 def build_config(legacy_model) -> dict:
     """Everything needed to rebuild the model, read off the trained one.
 
@@ -269,16 +278,28 @@ def build_config(legacy_model) -> dict:
         "avg_num_neighbors": float(interaction.avg_num_neighbors),
         "pair_repulsion": repulsion is not None,
         "cutoff_order": int(repulsion.p) if repulsion is not None else 6,
-        "readout_hidden": Irreps.parse(
-            str(legacy_model.readouts[-1].linear_1.irreps_out)
-        ).dimension
+        "readout_hidden": _dimension(str(legacy_model.readouts[-1].linear_1.irreps_out))
         // num_heads,
         "num_heads": num_heads,
     }
 
 
-def transfer_weights(legacy_model, model, correlation: int) -> None:
-    """Copy every trained number into the rebuilt model.
+def copy_linear(source, destination) -> None:
+    """One legacy ``o3.Linear`` into the rewrite's linear, whole."""
+    import torch
+
+    destination.weight.copy_(
+        torch.tensor(
+            linear_weights_to_canonical(
+                source, str(source.irreps_in), str(source.irreps_out)
+            ),
+            dtype=destination.weight.dtype,
+        )
+    )
+
+
+def transfer_backbone_weights(legacy_model, model, correlation: int) -> None:
+    """Copy the embedding, the interactions and the products.
 
     Walks the two module trees side by side. It is written out rather than
     driven by a name map because the two trees are not the same shape: what
@@ -286,16 +307,7 @@ def transfer_weights(legacy_model, model, correlation: int) -> None:
     """
     import torch
 
-    def linear(source, destination):
-        destination.weight.copy_(
-            torch.tensor(
-                linear_weights_to_canonical(
-                    source, str(source.irreps_in), str(source.irreps_out)
-                ),
-                dtype=destination.weight.dtype,
-            )
-        )
-
+    linear = copy_linear
     with torch.no_grad():
         linear(legacy_model.node_embedding.linear, model.backbone.node_embedding)
 
@@ -346,14 +358,22 @@ def transfer_weights(legacy_model, model, correlation: int) -> None:
                     )
             linear(source.linear, product.linear)
 
+
+def transfer_weights(legacy_model, model, correlation: int) -> None:
+    """Copy every trained number into the rebuilt model: the backbone, then
+    the energy readouts."""
+    import torch
+
+    transfer_backbone_weights(legacy_model, model, correlation)
+    with torch.no_grad():
         head = model.outputs.heads["energy"]
         for index, source in enumerate(legacy_model.readouts):
             destination = head.readouts[index]
             if hasattr(source, "linear_1"):
-                linear(source.linear_1, destination.first)
-                linear(source.linear_2, destination.second)
+                copy_linear(source.linear_1, destination.first)
+                copy_linear(source.linear_2, destination.second)
             else:
-                linear(source.linear, destination)
+                copy_linear(source.linear, destination)
 
 
 def recorded_basis(legacy_contraction, irreps_in: str, target: str, correlation: int):
