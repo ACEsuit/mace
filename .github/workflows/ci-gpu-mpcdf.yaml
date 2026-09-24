@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         default: smoke
-        options: [smoke, full, followup, orb, water, uma-access]
+        options: [smoke, full, followup, orb, water, uma-access, water-charges]
 permissions:
   contents: read
 concurrency:
@@ -102,6 +102,24 @@ jobs:
           timeout --signal=TERM --kill-after=30s 2700 \
             venv/bin/python audit/run_orb.py --checkpoint checkpoints/orb.ckpt --output results/orb.json \
             2>&1 | tee results/orb.log
+      - name: Audit manuscript water fragment charges
+        if: inputs.phase == 'water-charges'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$AUDIT_DIR"
+          for size in m l; do
+            upper=$(echo "$size" | tr '[:lower:]' '[:upper:]')
+            curl --fail --location --retry 3 --max-time 300 \
+              "https://github.com/ACEsuit/mace-foundations/releases/download/mace_polar_1/MACE-POLAR-1-${upper}.model" \
+              -o "checkpoints/${size}.model"
+            for dtype in float32 float64; do
+              timeout --signal=TERM --kill-after=30s 1200 \
+                venv/bin/python audit/run_water_charges.py --model "$size" --dtype "$dtype" \
+                --checkpoint "checkpoints/${size}.model" --output "results/charges_${size}_${dtype}.json" \
+                2>&1 | tee "results/charges_${size}_${dtype}.log"
+            done
+          done
       - name: Check existing UMA checkpoint access
         if: inputs.phase == 'uma-access'
         shell: bash
