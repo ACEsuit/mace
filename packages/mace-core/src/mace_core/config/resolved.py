@@ -27,6 +27,7 @@ fields that disagree.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -86,6 +87,12 @@ class FinetuneConfig(FrozenSection):
         foundation_model: The artifact to start from, a v1 checkpoint. ``None``
             is a run trained from scratch, and it is what makes an E0 kind that
             reads a foundation model an error.
+        element_table: Which elements the fine-tune's model is built over.
+            ``"foundation"``, the default, keeps every element the foundation
+            model has, so a model fine-tuned on two of them can be fine-tuned
+            again on a third. ``"data"`` keeps only the elements the training
+            data holds, which is what legacy does unless
+            ``--foundation_model_elements`` is set.
         transfer_readout: Start each head's readout from the foundation
             model's, as ``readout_from`` names it. Off, only the backbone is
             transferred and the readouts start fresh. Legacy's
@@ -101,6 +108,7 @@ class FinetuneConfig(FrozenSection):
     """
 
     foundation_model: str | None = None
+    element_table: Literal["foundation", "data"] = "foundation"
     transfer_readout: bool = True
     lora: LoRAConfig = LoRAConfig()
     freeze: int | None = Field(default=None, ge=0)

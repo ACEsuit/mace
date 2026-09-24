@@ -427,8 +427,13 @@ _FINETUNE: dict[str, Disposition] = {
     **_reserved(
         "finetune",
         "the fine-tuning tickets",
-        "foundation_model_elements",
         "finetune_dipoles_polarizabilities",
+    ),
+    **_merged(
+        "finetune.element_table",
+        "one field says which element table a fine-tune is built over",
+        "foundation_model_elements",
+        applied=True,
     ),
     **_reserved("data.heads", "the multi-head data work", "heads"),
     "force_mh_ft_lr": Dropped(
@@ -638,6 +643,18 @@ def _collapse(namespace: Any, values: dict[str, Any]) -> None:
     _collapse_optimizer(namespace, values)
     _collapse_schedule(namespace, values)
     _collapse_stage_two(namespace, values)
+    _collapse_finetune(namespace, values)
+
+
+def _collapse_finetune(namespace: Any, values: dict[str, Any]) -> None:
+    """`--foundation_model_elements` picks the element table.
+
+    Off, which is legacy's default, the model keeps only the data's elements;
+    on, it keeps the foundation model's. v1 defaults to the second, so a
+    legacy command line says which it meant either way.
+    """
+    if (keep_all := _read(namespace, "foundation_model_elements")) is not None:
+        _set(values, "finetune.element_table", "foundation" if keep_all else "data")
 
 
 def _collapse_model(namespace: Any, values: dict[str, Any]) -> None:

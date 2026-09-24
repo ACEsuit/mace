@@ -89,6 +89,9 @@ class E0Provenance:
         foundation_model: Which artifact a copied or corrected table came from.
         missing_filled: Elements the source did not cover, filled by the
             declared policy. Empty under the default, which is to refuse.
+        from_foundation: Elements no structure holds, whose energies were
+            taken from the foundation model a fine-tune keeps the element
+            table of.
     """
 
     kind: str
@@ -98,6 +101,7 @@ class E0Provenance:
     rank: int | None = None
     foundation_model: str | None = None
     missing_filled: tuple[int, ...] = field(default_factory=tuple)
+    from_foundation: tuple[int, ...] = field(default_factory=tuple)
 
 
 def resolve_e0s(
@@ -282,7 +286,9 @@ def _from_foundation(spec, z_table, configurations, **kwargs: Any):
     )
     values = {z: float(table[z]) for z in z_table.zs if z in table}
     missing = [z for z in z_table.zs if z not in table]
-    values, filled = _fill_missing(values, missing, spec.missing, spec.kind)
+    values, filled = _fill_missing(
+        values, missing, spec.missing, spec.kind, configurations
+    )
     return values, E0Provenance(
         kind=spec.kind,
         foundation_model=kwargs.get("foundation_model"),
@@ -308,7 +314,7 @@ def _from_corrected_least_squares(spec, z_table, configurations, **kwargs: Any):
     ]
     values, rank = _least_squares(kept, z_table, residuals, spec.kind)
     missing = [z for z in z_table.zs if z not in values]
-    values, filled = _fill_missing(values, missing, spec.missing, spec.kind)
+    values, filled = _fill_missing(values, missing, spec.missing, spec.kind, kept)
     return values, E0Provenance(
         kind=spec.kind,
         solver="foundation_corrected_least_squares",
@@ -321,28 +327,77 @@ def _from_corrected_least_squares(spec, z_table, configurations, **kwargs: Any):
 
 
 def _fill_missing(
-    values: dict[int, float], missing: Sequence[int], policy: str, kind: str
+    values: dict[int, float],
+    missing: Sequence[int],
+    policy: str,
+    kind: str,
+    configurations: Sequence[Configuration] | None,
 ) -> tuple[dict[int, float], tuple[int, ...]]:
-    """Apply the declared policy for elements the source did not cover."""
+    """Apply the declared policy for elements the source did not cover.
+
+    ``average`` fits the uncovered elements to the head's training energies
+    with the covered ones held at the source's values: each structure's energy
+    less its covered atoms' energies is a sum over its uncovered atoms, and
+    that is the only system whose answer is an energy per uncovered element.
+    ``zero`` is a padding, and a padding is only harmless where nothing trains
+    against it, so an element it fills that a structure holds is refused.
+    """
     if not missing:
         return values, ()
     if policy == "error":
         raise E0ResolutionError(
             f"the {kind!r} source covers {sorted(values)} and the model is "
             f"built for elements including {sorted(missing)}. Legacy pads "
-            f"those with 0.0. Declare missing: average to use the mean of the "
-            f"ones it does cover, or missing: zero to ask for the padding."
+            f"those with 0.0. Declare missing: average to fit them to the "
+            f"training energies with the covered ones held fixed, or missing: "
+            f"zero if no structure holds them."
         )
+    held = {int(z) for item in configurations or () for z in item.atomic_numbers}
     if policy == "zero":
-        filler = 0.0
-    else:
-        if not values:
+        trained = sorted(held & set(missing))
+        if trained:
             raise E0ResolutionError(
-                f"the {kind!r} source covers no element at all, so there is no "
-                f"average of the covered ones to fill {sorted(missing)} with."
+                f"missing: zero pads {trained} with 0.0, and the training data "
+                f"holds them, so the head would train against a reference "
+                f"energy of zero. Use missing: average, or give their energies."
             )
-        filler = sum(values.values()) / len(values)
-    return {**values, **{z: filler for z in missing}}, tuple(sorted(missing))
+        return {**values, **dict.fromkeys(missing, 0.0)}, tuple(sorted(missing))
+    return {**values, **_fit_uncovered(values, missing, configurations, kind)}, tuple(
+        sorted(missing)
+    )
+
+
+def _fit_uncovered(
+    values: Mapping[int, float],
+    missing: Sequence[int],
+    configurations: Sequence[Configuration] | None,
+    kind: str,
+) -> dict[int, float]:
+    """The uncovered elements' energies, the covered ones held fixed."""
+    kept, energies = _labelled_energies(
+        _needs(configurations, "the head's training structures", kind), kind
+    )
+    order = {int(z): column for column, z in enumerate(sorted(missing))}
+    counts = np.zeros((len(kept), len(order)), dtype=np.float64)
+    residuals = np.asarray(energies, dtype=np.float64)
+    for row, configuration in enumerate(kept):
+        for number in configuration.atomic_numbers:
+            number = int(number)
+            if number in order:
+                counts[row, order[number]] += 1.0
+            else:
+                residuals[row] -= values[number]
+    solution, _residuals, rank, _singular = np.linalg.lstsq(
+        counts, residuals, rcond=None
+    )
+    if rank < len(order):
+        raise E0ResolutionError(
+            f"missing: average fits {sorted(missing)} to the training energies "
+            f"with the covered elements held fixed, and the structures that "
+            f"hold them give rank {rank} for {len(order)} unknowns. Add "
+            f"structures that hold them, or give their energies."
+        )
+    return {z: float(solution[column]) for z, column in order.items()}
 
 
 def _fingerprint(configurations: Sequence[Configuration]) -> str:

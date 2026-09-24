@@ -591,6 +591,12 @@ def _metadata(config: ResolvedConfig, data: TorchDataBundle) -> ModelMetadata:
                         chemical_symbols[number]: float(energy)
                         for number, energy in data.e0s.values[head].items()
                     },
+                    from_foundation=[
+                        chemical_symbols[number]
+                        for number in data.e0_provenance[head].from_foundation
+                    ]
+                    if head in data.e0_provenance
+                    else (),
                 )
             )
             for head in data.heads

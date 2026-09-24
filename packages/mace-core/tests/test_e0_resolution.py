@@ -188,17 +188,62 @@ def test_the_zero_padding_can_be_asked_for_and_is_recorded():
     assert provenance.missing_filled == (1,)
 
 
-def test_the_average_of_the_covered_elements_can_be_asked_for():
+def test_an_uncovered_element_is_fitted_with_the_covered_ones_held_fixed():
+    """The restricted least squares: each structure's energy less its covered
+    atoms' energies is a sum over its uncovered atoms, solved for those."""
+    data = [
+        configuration([1, 8], HYDROGEN + OXYGEN),
+        configuration([1, 1, 8], 2 * HYDROGEN + OXYGEN),
+        configuration([8, 8], 2 * OXYGEN),
+    ]
     values, provenance = resolve_e0s(
-        E0sFromFoundation(missing="average"), Z_TABLE, foundation_e0s={1: HYDROGEN}
+        E0sFromFoundation(missing="average"),
+        Z_TABLE,
+        data,
+        foundation_e0s={1: HYDROGEN + 0.25},
     )
-    assert values[8] == pytest.approx(HYDROGEN)
+    assert values[1] == HYDROGEN + 0.25
+    residuals = [
+        (HYDROGEN + OXYGEN) - (HYDROGEN + 0.25),
+        (2 * HYDROGEN + OXYGEN) - 2 * (HYDROGEN + 0.25),
+        2 * OXYGEN,
+    ]
+    counts = np.array([[1.0], [1.0], [2.0]])
+    expected = np.linalg.lstsq(counts, np.array(residuals), rcond=None)[0][0]
+    assert values[8] == pytest.approx(expected, abs=1e-12)
     assert provenance.missing_filled == (8,)
 
 
-def test_averaging_over_nothing_is_refused():
-    with pytest.raises(E0ResolutionError, match="no element at all"):
-        resolve_e0s(E0sFromFoundation(missing="average"), Z_TABLE, foundation_e0s={})
+def test_fitting_an_element_no_structure_holds_is_refused():
+    data = [configuration([1, 1], 2 * HYDROGEN)]
+    with pytest.raises(E0ResolutionError, match="rank 0"):
+        resolve_e0s(
+            E0sFromFoundation(missing="average"),
+            Z_TABLE,
+            data,
+            foundation_e0s={1: HYDROGEN},
+        )
+
+
+def test_the_zero_padding_is_allowed_where_nothing_trains_against_it():
+    data = [configuration([1, 1], 2 * HYDROGEN)]
+    values, provenance = resolve_e0s(
+        E0sFromFoundation(missing="zero"), Z_TABLE, data, foundation_e0s={1: HYDROGEN}
+    )
+    assert values[8] == 0.0
+    assert provenance.missing_filled == (8,)
+
+
+def test_the_zero_padding_of_an_element_the_data_holds_is_refused():
+    """A head would train against a reference energy of zero for oxygen."""
+    data = [configuration([1, 8], HYDROGEN + OXYGEN)]
+    with pytest.raises(E0ResolutionError, match=r"pads \[8\]"):
+        resolve_e0s(
+            E0sFromFoundation(missing="zero"),
+            Z_TABLE,
+            data,
+            foundation_e0s={1: HYDROGEN},
+        )
 
 
 # ---------------------------------------------------------------------------

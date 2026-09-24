@@ -53,7 +53,11 @@ __all__ = [
 #: What to do about an element the source does not cover. ``"error"`` is the
 #: default everywhere: a missing E0 is a per-species constant offset in every
 #: energy the head trains on, and the two quiet options exist only because a
-#: dataset can legitimately outrun its reference table.
+#: dataset can legitimately outrun its reference table. ``"average"`` fits the
+#: uncovered elements to the head's training energies with the covered ones
+#: held at the source's values. ``"zero"`` pads with 0.0, and only elements no
+#: training structure holds, since a padding anything trains against is a
+#: reference energy of zero.
 MissingElementPolicy = Literal["error", "average", "zero"]
 
 
