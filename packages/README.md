@@ -296,6 +296,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/finetune/ratio.py` | Repeating the other heads when one head dominates. |
 | `mace_torch/finetune/replay.py` | The published replay datasets. |
 | `mace_torch/finetune/subselect.py` | Keeping a representative subset of a dataset. |
+| `mace_torch/finetune/stages.py` | A fine-tune as separate steps: select, extend, build, train. |
 | `mace_torch/finetune/transfer.py` | Copying a foundation model's weights into a fine-tune. |
 | `mace_torch/graph.py` | Tensorizing a collated graph. |
 | `mace_torch/kernels/__init__.py` | The torch side of the kernel contract, re-exported. |

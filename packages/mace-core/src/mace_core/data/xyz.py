@@ -35,8 +35,10 @@ from mace_core.elements.default_keys import DefaultKeys, Storage
 __all__ = [
     "ISOLATED_ATOM_CONFIG_TYPE",
     "ParsedConfigurations",
+    "atoms_from_configuration",
     "configuration_from_atoms",
     "read_configurations",
+    "write_configurations",
 ]
 
 logger = logging.getLogger(__name__)
@@ -188,6 +190,60 @@ def _stored_value(atoms: Atoms, file_key: str, per: Storage) -> tuple[bool, Any]
     if file_key in _CALCULATOR_KEYS[per] and file_key in results:
         return True, results[file_key]
     return False, None
+
+
+def atoms_from_configuration(
+    configuration: Configuration, key_spec: KeySpecification
+) -> Atoms:
+    """The inverse of :func:`configuration_from_atoms`, under the same keys.
+
+    A label the structure does not carry is left out rather than written, and a
+    property weight is written only where it is not the ``1.0`` a reader
+    assumes. The structure weight is written whole, so a config-type weight the
+    reader folded into it survives, and is not applied a second time as long as
+    the reader is given no config-type weights.
+    """
+    atoms = Atoms(
+        numbers=np.asarray(configuration.atomic_numbers),
+        positions=np.asarray(configuration.positions),
+        cell=configuration.cell,
+        pbc=configuration.pbc if configuration.pbc is not None else False,
+    )
+    for name, file_key in key_spec.graph_keys.items():
+        value = configuration.properties.get(name)
+        if value is not None:
+            atoms.info[file_key] = value
+    for name, file_key in key_spec.atom_keys.items():
+        value = configuration.properties.get(name)
+        if value is not None:
+            atoms.arrays[file_key] = np.asarray(value)
+    for name, weight in configuration.property_weights.items():
+        if configuration.properties.get(name) is not None and weight != 1.0:
+            atoms.info[f"config_{name}_weight"] = weight
+    if configuration.weight != 1.0:
+        atoms.info["config_weight"] = configuration.weight
+    atoms.info["config_type"] = configuration.config_type
+    return atoms
+
+
+def write_configurations(
+    path: str | Path,
+    configurations: Sequence[Configuration],
+    key_spec: KeySpecification,
+) -> Path:
+    """Write structures as extended XYZ, readable back under ``key_spec``.
+
+    Positions and per-atom labels are written to eight decimals, which is what
+    extended XYZ does. A structure read from such a file is therefore written
+    back exactly, and one computed in memory is not.
+    """
+    path = Path(path)
+    ase.io.write(
+        str(path),
+        [atoms_from_configuration(item, key_spec) for item in configurations],
+        format="extxyz",
+    )
+    return path
 
 
 def read_configurations(

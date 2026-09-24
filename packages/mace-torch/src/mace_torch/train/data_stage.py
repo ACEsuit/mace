@@ -53,7 +53,9 @@ __all__ = [
     "DEFAULT_PRECISION",
     "DataStageError",
     "graph_inputs_of",
+    "key_specification",
     "run_data_stage",
+    "selected_structures",
 ]
 
 #: What a run computes in until a precision section exists to say otherwise.
@@ -105,7 +107,7 @@ def run_data_stage(
             less data than the configuration asked for.
     """
     heads = _heads(config.data)
-    key_spec = _key_spec(config.data)
+    key_spec = key_specification(config.data)
     requested = resolve_requested(config.model.observables, catalogue)
 
     train: list[Configuration] = []
@@ -285,7 +287,7 @@ def _heads(data: DataConfig) -> dict[str, HeadDataConfig]:
     return dict(data.heads)
 
 
-def _key_spec(data: DataConfig) -> KeySpecification:
+def key_specification(data: DataConfig) -> KeySpecification:
     """The default property keys, plus the graph inputs this run renamed."""
     spec = KeySpecification.from_defaults()
     keys = data.graph_input_keys
@@ -312,25 +314,7 @@ def _read_head(
     A head reading a published replay dataset and one reading a file go
     through every step here alike; the source is the one line that differs.
     """
-    if head.curated is not None:
-        train = read_curated(head.curated, head=name)
-        source = f"the {head.curated!r} replay dataset"
-    elif head.train_file is not None:
-        # The reference structures stay in: the isolated-atom E0 kind reads
-        # them, and a backend that dropped them first would hand over whatever
-        # its own extraction does with an unlabelled one, which is a zero.
-        train = list(_open(head.train_file, name, key_spec).iter_range())
-        source = str(head.train_file)
-    else:
-        raise DataStageError(
-            f"head {name!r} names neither a `train_file` nor a `curated` "
-            f"dataset. A head with no structures contributes nothing and would "
-            f"train a readout against nothing."
-        )
-    if not train:
-        raise DataStageError(f"head {name!r} read {source} and it is empty.")
-    if head.subselect is not None:
-        train = _subselect(name, head, train, config, foundation)
+    train = selected_structures(name, head, config, key_spec, foundation)
     if head.weight != 1.0:
         train = [
             dataclasses.replace(item, weight=item.weight * head.weight)
@@ -378,6 +362,42 @@ def _read_head(
         else []
     )
     return train, valid, test
+
+
+def selected_structures(
+    name: str,
+    head: HeadDataConfig,
+    config: ResolvedConfig,
+    key_spec: KeySpecification,
+    foundation: FoundationContext | None = None,
+) -> list[Configuration]:
+    """A head's structures as its source holds them, after its subselection.
+
+    Before its weight, its pseudolabels, its transforms and its split, which is
+    what makes it a boundary a fine-tune can stop at and start again from: a
+    head reading the written structures with no subselection goes through the
+    rest exactly as this one would.
+    """
+    if head.curated is not None:
+        structures = read_curated(head.curated, head=name)
+        source = f"the {head.curated!r} replay dataset"
+    elif head.train_file is not None:
+        # The reference structures stay in: the isolated-atom E0 kind reads
+        # them, and a backend that dropped them first would hand over whatever
+        # its own extraction does with an unlabelled one, which is a zero.
+        structures = list(_open(head.train_file, name, key_spec).iter_range())
+        source = str(head.train_file)
+    else:
+        raise DataStageError(
+            f"head {name!r} names neither a `train_file` nor a `curated` "
+            f"dataset. A head with no structures contributes nothing and would "
+            f"train a readout against nothing."
+        )
+    if not structures:
+        raise DataStageError(f"head {name!r} read {source} and it is empty.")
+    if head.subselect is not None:
+        structures = _subselect(name, head, structures, config, foundation)
+    return structures
 
 
 def _subselect(

@@ -76,12 +76,11 @@ def methanol(offset=0.0):
     return atoms
 
 
-@pytest.fixture(scope="module", name="foundation")
-def fixture_foundation(tmp_path_factory):
+def water_foundation(directory):
+    """A foundation trained on waters for one epoch, written as a checkpoint."""
     previous = torch.get_default_dtype()
     torch.set_default_dtype(torch.float64)
     try:
-        directory = tmp_path_factory.mktemp("water_foundation")
         write(directory / "train.xyz", waters())
         config = ResolvedConfig.model_validate(
             {
@@ -112,6 +111,11 @@ def fixture_foundation(tmp_path_factory):
         return write_model(directory / "model", trained.model, built.metadata)
     finally:
         torch.set_default_dtype(previous)
+
+
+@pytest.fixture(scope="module", name="foundation")
+def fixture_foundation(tmp_path_factory):
+    return water_foundation(tmp_path_factory.mktemp("water_foundation"))
 
 
 SEEDED = NewSpeciesInit(seed=5)

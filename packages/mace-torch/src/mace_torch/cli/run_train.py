@@ -24,14 +24,12 @@ from pathlib import Path
 
 import torch.distributed as dist
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_core.stages import TrainedModel
 
-from mace_torch.finetune.foundation import read_foundation
+from mace_torch.finetune.stages import build
 from mace_torch.train import (
     latest_run_checkpoint,
-    run_data_stage,
-    run_model_stage,
     run_train_stage,
     setup_logging,
 )
@@ -102,26 +100,9 @@ def run(config: ResolvedConfig) -> TrainedModel:
     processes = init_distributed(
         config.runtime.distributed, config.runtime.launcher, config.runtime.device
     )
-    catalogue = load_default_catalogue()
-    foundation = (
-        read_foundation(config.finetune.foundation_model, catalogue)
-        if config.finetune.foundation_model is not None
-        else None
-    )
-    samples_by_descriptor = any(
-        head.subselect is not None and head.subselect.method == "fps"
-        for head in config.data.heads.values()
-    )
-    data = run_data_stage(
-        config,
-        catalogue,
-        foundation=(
-            foundation.context(describe=samples_by_descriptor)
-            if foundation is not None
-            else None
-        ),
-    )
-    built = run_model_stage(config, data, catalogue, foundation=foundation)
+    # The same steps a fine-tune run step by step goes through, so the two
+    # cannot come to differ.
+    built = build(config, DEFAULT_CATALOGUE)
     checkpoint_path = Path(config.runtime.work_dir) / config.runtime.name
     return run_train_stage(
         config,
