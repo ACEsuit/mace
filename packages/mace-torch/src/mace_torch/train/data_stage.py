@@ -239,7 +239,7 @@ def run_data_stage(
 
 
 def graph_inputs_of(model: str) -> tuple[str, ...]:
-    """The per-structure inputs a registered model reads, by its name.
+    """The inputs a registered model reads, per structure or per atom.
 
     Written into every graph built for it, from the file or from their
     defaults, and into no other model's, which reads none.
@@ -248,6 +248,10 @@ def graph_inputs_of(model: str) -> tuple[str, ...]:
         from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS
 
         return POLAR_GRAPH_INPUTS
+    if model in ("dipole", "dielectric"):
+        from mace_torch.models.dipoles import DIPOLE_GRAPH_INPUTS
+
+        return DIPOLE_GRAPH_INPUTS["fixed" if model == "dipole" else "predicted"]
     return ()
 
 

@@ -93,6 +93,7 @@ def test_the_results_have_the_frozen_tree_s_names_and_shapes(checkpoints, period
         "node_energy",
         "forces",
         "stress",
+        "interaction_energy",
     }
     assert isinstance(results["energy"], float)
     assert results["free_energy"] == results["energy"]
@@ -163,6 +164,7 @@ def test_each_result_is_converted_by_its_own_dimension(checkpoints):
         "stress": energy / length**3,
         "stresses": energy / length**3,
         "virials": energy,
+        "interaction_energy": energy,
     }
     assert set(factors) == set(plain)
     for key, factor in factors.items():

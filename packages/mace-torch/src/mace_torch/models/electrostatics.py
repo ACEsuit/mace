@@ -382,6 +382,10 @@ class PolarModel(MACEModel):
         correction[:, :, 0] = fukui * (spin_totals - totals)
         return density + correction, fukui
 
+    @property
+    def extra_rows(self) -> dict[str, str]:
+        return {**super().extra_rows, **POLAR_EXTRA_ROWS}
+
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The energy, its parts, and the density it came from.
 
