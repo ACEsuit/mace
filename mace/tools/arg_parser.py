@@ -947,7 +947,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--amsgrad",
         help="use amsgrad variant of optimizer",
-        action="store_true",
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
