@@ -389,11 +389,9 @@ _TRAINING: dict[str, Disposition] = {
 #: ticket builds only what its cross-section validators read.
 _FINETUNE: dict[str, Disposition] = {
     **_kept(foundation_model="finetune.foundation_model"),
-    **_reserved(
-        "finetune.pseudolabels",
-        "the pseudolabel replay work",
-        "pseudolabel_replay",
-        "pseudolabel_replay_compute_stress",
+    **_kept(
+        pseudolabel_replay="finetune.pseudolabels.enabled",
+        pseudolabel_replay_compute_stress="finetune.pseudolabels.stress_if_missing",
     ),
     **_kept(
         freeze="finetune.freeze",

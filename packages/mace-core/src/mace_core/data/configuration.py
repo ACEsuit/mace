@@ -24,6 +24,7 @@ volume was invented.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from typing import Any
 
@@ -219,3 +220,44 @@ def _checked_property(name: str, value: Any, n_atoms: int) -> Any:
             f"array in that shape."
         )
     return value
+
+
+def structures_fingerprint(
+    configurations: Sequence[Configuration], inputs: Sequence[str] = ()
+) -> str:
+    """A digest of what a model reads from these structures, in their order.
+
+    The elements, the positions, the cell and its periodicity of each, and the
+    named inputs among its properties, a moment or a total charge. Not the
+    labels: two sets of structures that differ only in their labels are the
+    same structures to be labelled, and that is what the digest is compared
+    for. Exact: the float64 bytes, not a rounding of them.
+
+    Args:
+        configurations: The structures.
+        inputs: The properties that are inputs of the model, not labels.
+    """
+    import hashlib
+
+    digest = hashlib.sha256()
+    for configuration in configurations:
+        digest.update(
+            np.asarray(configuration.atomic_numbers, dtype=np.int64).tobytes()
+        )
+        digest.update(np.asarray(configuration.positions, dtype=np.float64).tobytes())
+        cell = configuration.cell
+        digest.update(
+            b"no cell" if cell is None else np.asarray(cell, dtype=np.float64).tobytes()
+        )
+        digest.update(repr(configuration.pbc).encode())
+        for name in inputs:
+            value = configuration.properties.get(name)
+            digest.update(name.encode())
+            digest.update(
+                b"absent"
+                if value is None
+                else np.asarray(value, dtype=np.float64).tobytes()
+            )
+    return digest.hexdigest()
+
+__all__.append("structures_fingerprint")

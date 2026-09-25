@@ -102,7 +102,7 @@ def run(config: ResolvedConfig) -> TrainedModel:
     )
     # The same steps a fine-tune run step by step goes through, so the two
     # cannot come to differ.
-    built = build(config, DEFAULT_CATALOGUE)
+    built = build(config, DEFAULT_CATALOGUE, context=processes)
     checkpoint_path = Path(config.runtime.work_dir) / config.runtime.name
     return run_train_stage(
         config,

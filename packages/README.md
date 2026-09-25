@@ -199,6 +199,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/config/loss.py` | Loss kinds and per-observable weights. |
 | `mace_core/config/model.py` | Architecture, declared observables, readouts, and the polar section. |
 | `mace_core/config/provenance.py` | Turning what a run asked for into what its model records. |
+| `mace_core/config/pseudolabels.py` | Replay labels from the foundation model: their settings and the record of what they were made from. |
 | `mace_core/config/resolved.py` | The whole configuration and the rules that span its sections. |
 | `mace_core/config/runtime.py` | Run name, output directory, seed, device, distribution, logging, plots. |
 | `mace_core/config/section.py` | A section that is immutable once validated. |
@@ -294,10 +295,11 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/finetune/foundation.py` | What a run reads from its foundation model. |
 | `mace_torch/finetune/freeze.py` | Freezing parameter groups up to a level. |
 | `mace_torch/finetune/lora.py` | Low-rank adapters in place of the weights they adapt. |
+| `mace_torch/finetune/pseudolabels.py` | Generating replay labels once per run, writing them exactly, and checking a reuse. |
 | `mace_torch/finetune/ratio.py` | Repeating the other heads when one head dominates. |
 | `mace_torch/finetune/replay.py` | The published replay datasets. |
 | `mace_torch/finetune/subselect.py` | Keeping a representative subset of a dataset. |
-| `mace_torch/finetune/stages.py` | A fine-tune as separate steps: select, extend, build, train. |
+| `mace_torch/finetune/stages.py` | A fine-tune as separate steps: select, relabel, extend, build, train. |
 | `mace_torch/finetune/transfer.py` | Copying a foundation model's weights into a fine-tune. |
 | `mace_torch/graph.py` | Tensorizing a collated graph. |
 | `mace_torch/kernels/__init__.py` | The torch side of the kernel contract, re-exported. |

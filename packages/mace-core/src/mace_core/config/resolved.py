@@ -26,7 +26,6 @@ fields that disagree.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
@@ -37,6 +36,7 @@ from mace_core.config.e0s import FOUNDATION_E0_KINDS, E0sIsolatedAtoms
 from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.loss import LossConfig
 from mace_core.config.model import ModelConfig
+from mace_core.config.pseudolabels import PseudolabelConfig
 from mace_core.config.runtime import RuntimeConfig
 from mace_core.config.section import FrozenSection
 from mace_core.config.training import StageConfig, TrainingConfig
@@ -52,18 +52,6 @@ __all__ = [
 #: The observable an isolated-atom energy shifts. A model that does not declare
 #: it has no atomic-energy term for an E0 to reach, whatever it is called.
 ENERGY_OBSERVABLE = "energy"
-
-
-class PseudolabelConfig(FrozenSection):
-    """Replay labels regenerated from the foundation model, or read back.
-
-    Args:
-        enabled: Generate them during this run.
-        labels_from: Read them from a previous run's artifact instead.
-    """
-
-    enabled: bool = False
-    labels_from: Path | None = None
 
 
 class LoRAConfig(FrozenSection):
@@ -105,6 +93,15 @@ class FinetuneConfig(FrozenSection):
             ``-1`` as freezing the last layer and does nothing with it, since
             every threshold is a ``>=`` on a positive number.
         pseudolabels: Where the replay labels come from.
+        preset: A named set of defaults for a kind of fine-tune.
+            ``"multihead"`` is the frozen tree's multi-head fine-tune: a
+            learning rate of 1e-4, an exponential moving average with decay
+            0.99999, and the published replay datasets relabelled by the
+            foundation model. Each is a default, and a value the configuration
+            writes wins.
+        preset_values: Which configuration path each preset value landed on,
+            filled in when the configuration is resolved, so the resolved
+            configuration says where a number came from.
     """
 
     foundation_model: str | None = None
@@ -113,6 +110,36 @@ class FinetuneConfig(FrozenSection):
     lora: LoRAConfig = LoRAConfig()
     freeze: int | None = Field(default=None, ge=0)
     pseudolabels: PseudolabelConfig = PseudolabelConfig()
+    preset: Literal["multihead"] | None = None
+    preset_values: dict[str, str] = Field(default_factory=dict)
+
+
+#: The multi-head preset's values, by configuration path. A path the configuration
+#: writes itself is left alone.
+MULTIHEAD_PRESET: dict[str, Any] = {
+    "training.lr": 1e-4,
+    "training.ema": {"enabled": True, "decay": 0.99999},
+    "finetune.pseudolabels.enabled": True,
+}
+
+
+def _written(data: dict[str, Any], path: str) -> bool:
+    node: Any = data
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return False
+        node = node[part]
+    return True
+
+
+def _write(data: dict[str, Any], path: str, value: Any) -> dict[str, Any]:
+    """``data`` with ``value`` at ``path``, copying every level it passes."""
+    head, _, rest = path.partition(".")
+    section = dict(data.get(head) or {})
+    if rest:
+        section = _write(section, rest, value)
+        return {**data, head: section}
+    return {**data, head: value}
 
 
 class ResolvedConfig(ReforgeBaseConfig):
@@ -157,6 +184,74 @@ class ResolvedConfig(ReforgeBaseConfig):
             else stage
             for stage in stages
         )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_fine_tune_defaults(cls, data: Any) -> Any:
+        """The preset, then the E0s of the heads it relabels, in that order."""
+        return cls._replay_heads_take_the_foundation_s_e0s(cls._apply_the_preset(data))
+
+    @staticmethod
+    def _apply_the_preset(data: Any) -> Any:
+        """Write a named preset's values where the configuration left a gap.
+
+        Before validation, so a value the configuration wrote is told apart
+        from a default: a written value always wins, whatever it is, and the
+        preset records the paths it filled. There is no flag that forces a
+        preset over a written value, since nothing needs forcing.
+        """
+        if not isinstance(data, dict):
+            return data
+        finetune = data.get("finetune") or {}
+        if not isinstance(finetune, dict) or finetune.get("preset") != "multihead":
+            return data
+        filled: dict[str, str] = {}
+        for path, value in MULTIHEAD_PRESET.items():
+            if path == "finetune.pseudolabels.enabled" and _written(
+                data, "finetune.pseudolabels.labels_from"
+            ):
+                continue
+            if not _written(data, path):
+                data = _write(data, path, value)
+                filled[path] = "multihead"
+        # A resolved configuration read back has every value written and the
+        # record of which ones the preset gave; the record is kept.
+        recorded = dict(finetune.get("preset_values") or {})
+        return _write(data, "finetune.preset_values", {**recorded, **filled})
+
+    @staticmethod
+    def _replay_heads_take_the_foundation_s_e0s(data: Any) -> Any:
+        """A relabelled head's isolated-atom energies are the foundation's.
+
+        Its energies are the foundation model's own, so the only E0s they are
+        consistent with are that model's, from the head that labelled them.
+        Written into a head that says nothing about its E0s; a head that says
+        something else is refused after validation.
+        """
+        if not isinstance(data, dict):
+            return data
+        finetune = data.get("finetune") or {}
+        heads = (data.get("data") or {}).get("heads") or {}
+        if not isinstance(finetune, dict) or not isinstance(heads, dict):
+            return data
+        pseudolabels = finetune.get("pseudolabels") or {}
+        if not isinstance(pseudolabels, dict) or not (
+            pseudolabels.get("enabled") or pseudolabels.get("labels_from")
+        ):
+            return data
+        named = pseudolabels.get("heads") or [
+            name
+            for name, head in heads.items()
+            if isinstance(head, dict) and head.get("curated")
+        ]
+        for name in named:
+            head = heads.get(name)
+            if isinstance(head, dict) and "e0s" not in head:
+                spec: dict[str, Any] = {"kind": "foundation"}
+                if head.get("readout_from"):
+                    spec["head"] = head["readout_from"]
+                data = _write(data, f"data.heads.{name}.e0s", spec)
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -257,6 +352,67 @@ class ResolvedConfig(ReforgeBaseConfig):
                 "read from "
                 f"{pseudolabels.labels_from} at the same time. Set one."
             )
+        return self
+
+    @property
+    def pseudolabelled_heads(self) -> tuple[str, ...]:
+        """The heads whose structures the foundation model relabels.
+
+        The ones ``finetune.pseudolabels.heads`` names, or every head reading
+        a published replay dataset when it names none. Empty when the run
+        relabels nothing.
+        """
+        pseudolabels = self.finetune.pseudolabels
+        if not (pseudolabels.enabled or pseudolabels.labels_from is not None):
+            return ()
+        if pseudolabels.heads:
+            return pseudolabels.heads
+        return tuple(
+            name for name, head in self.data.heads.items() if head.curated is not None
+        )
+
+    @model_validator(mode="after")
+    def _pseudolabels_name_heads_that_exist(self) -> ResolvedConfig:
+        pseudolabels = self.finetune.pseudolabels
+        if not (pseudolabels.enabled or pseudolabels.labels_from is not None):
+            return self
+        if self.finetune.foundation_model is None:
+            raise ValueError(
+                "finetune.pseudolabels asks for replay labels from the "
+                "foundation model, and finetune.foundation_model is not set."
+            )
+        unknown = sorted(set(pseudolabels.heads) - set(self.data.heads))
+        if unknown:
+            raise ValueError(
+                f"finetune.pseudolabels.heads names {unknown}, which are not "
+                f"heads of this run; its heads are {sorted(self.data.heads)}."
+            )
+        if not self.pseudolabelled_heads:
+            raise ValueError(
+                "finetune.pseudolabels is on and no head is relabelled: none "
+                "names a published replay dataset. Name the heads in "
+                "finetune.pseudolabels.heads."
+            )
+        for name in self.pseudolabelled_heads:
+            head = self.data.heads[name]
+            if head.e0s.kind != "foundation":
+                raise ValueError(
+                    f"data.heads.{name}.e0s is {head.e0s.kind!r}, and the head "
+                    f"is relabelled by the foundation model, whose energies "
+                    f"are consistent only with its own isolated-atom energies. "
+                    f"Drop the e0s, or set them to kind 'foundation'."
+                )
+            labelled_by = getattr(head.e0s, "head", None)
+            if (
+                labelled_by is not None
+                and head.readout_from is not None
+                and labelled_by != head.readout_from
+            ):
+                raise ValueError(
+                    f"data.heads.{name} takes its E0s from the foundation head "
+                    f"{labelled_by!r} and its readout, and so its labels, from "
+                    f"{head.readout_from!r}. They are one head."
+                )
         return self
 
     @model_validator(mode="after")

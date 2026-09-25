@@ -78,7 +78,7 @@ def run_data_stage(
     precision: PrecisionConfig = DEFAULT_PRECISION,
     predict_energy: EnergyPredictor | None = None,
     foundation: FoundationContext | None = None,
-    pseudolabel: Callable[[Sequence[Configuration]], Sequence[Configuration]]
+    pseudolabel: Callable[[str, list[Configuration]], list[Configuration]]
     | None = None,
 ) -> TorchDataBundle:
     """Read the data, resolve the E0s once, and measure the dataset.
@@ -99,9 +99,11 @@ def run_data_stage(
             its energies per head, for the E0 kinds that copy them, and
             descriptors for farthest-point sampling.
         pseudolabel: The seam a fine-tune uses to relabel replay structures
-            before they are measured. It runs before the statistics, because a
-            statistic taken over labels that are about to be replaced describes
-            a dataset that never trains.
+            before they are measured, called with each head's name and its
+            structures. It runs before the statistics, because a statistic
+            taken over labels that are about to be replaced describes a dataset
+            that never trains, and before the head's weight, so what it writes
+            does not depend on it.
 
     Raises:
         DataStageError: On anything that would otherwise train a model against
@@ -328,7 +330,7 @@ def _read_head(
     head: HeadDataConfig,
     config: ResolvedConfig,
     key_spec: KeySpecification,
-    pseudolabel: Callable[[Sequence[Configuration]], Sequence[Configuration]] | None,
+    pseudolabel: Callable[[str, list[Configuration]], list[Configuration]] | None,
     foundation: FoundationContext | None = None,
 ) -> tuple[list[Configuration], list[Configuration], list[Configuration]]:
     """One head's training, validation and test structures.
@@ -337,13 +339,13 @@ def _read_head(
     through every step here alike; the source is the one line that differs.
     """
     train = selected_structures(name, head, config, key_spec, foundation)
+    if pseudolabel is not None:
+        train = list(pseudolabel(name, train))
     if head.weight != 1.0:
         train = [
             dataclasses.replace(item, weight=item.weight * head.weight)
             for item in train
         ]
-    if pseudolabel is not None:
-        train = list(pseudolabel(train))
     # Before the split and before the statistics. A scale computed from
     # energies that are about to be shifted is wrong by the shift, and a
     # validation set taken before the transform would be scored on a different
