@@ -947,8 +947,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--amsgrad",
         help=(
-            "Use the amsgrad variant of the optimizer. Pass the flag with no "
-            "value to turn it on, or an explicit boolean."
+            "Use the amsgrad variant of the optimizer (on by default). "
+            "Pass False to turn it off; the bare flag keeps it on."
         ),
         # `nargs="?"` so the bare `--amsgrad` of older scripts still parses,
         # while `--amsgrad=False` and `amsgrad: false` in a YAML config can turn
