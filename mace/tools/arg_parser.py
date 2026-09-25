@@ -946,7 +946,15 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--amsgrad",
-        help="use amsgrad variant of optimizer",
+        help=(
+            "Use the amsgrad variant of the optimizer. Pass the flag with no "
+            "value to turn it on, or an explicit boolean."
+        ),
+        # `nargs="?"` so the bare `--amsgrad` of older scripts still parses,
+        # while `--amsgrad=False` and `amsgrad: false` in a YAML config can turn
+        # it off, which a `store_true` switch defaulting to True never could.
+        nargs="?",
+        const=True,
         type=str2bool,
         default=True,
     )
