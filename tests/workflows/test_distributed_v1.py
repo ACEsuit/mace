@@ -20,21 +20,23 @@ from pathlib import Path
 
 from tests.helpers import cli_command, run_train
 from tests.workflows.test_run_train_v1 import (
+    RESTART,
     evaluated_epochs,
     needs_the_v1_engine,
     tiny_task,
+    variant,
 )
 
-#: Given as dotted overrides rather than appended to the file: a second
+#: Written into the parsed file rather than appended to it: a second
 #: ``training:`` block in the YAML would replace the first one whole.
-DISTRIBUTED = (
-    "--runtime.distributed", "true",
-    "--runtime.launcher", "torchrun",
-    "--runtime.log_level", "DEBUG",
-    "--training.stage_two.enabled", "true",
-    "--training.stage_two.start_epoch", "2",
-    "--training.stage_two.lr", "0.005",
-)  # fmt: skip
+DISTRIBUTED = {
+    "runtime.distributed": True,
+    "runtime.launcher": "torchrun",
+    "runtime.log_level": "DEBUG",
+    "training.stage_two.enabled": True,
+    "training.stage_two.start_epoch": 2,
+    "training.stage_two.lr": 0.005,
+}
 
 
 #: Seconds a rank may take. The whole run takes a few.
@@ -47,8 +49,11 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-def both_ranks(config: Path, *arguments: str) -> list[subprocess.CompletedProcess]:
+def both_ranks(
+    config: Path, *arguments: str, settings: dict | None = None
+) -> list[subprocess.CompletedProcess]:
     """Start the two ranks together and wait for both."""
+    config = variant(config, {**DISTRIBUTED, **(settings or {})})
     port = free_port()
     processes = []
     for rank in (0, 1):
@@ -70,7 +75,6 @@ def both_ranks(config: Path, *arguments: str) -> list[subprocess.CompletedProces
                     "v1",
                     "--config",
                     str(config),
-                    *DISTRIBUTED,
                     *arguments,
                 ],
                 env=environment,
@@ -123,11 +127,11 @@ def test_two_ranks_train_and_only_rank_zero_writes(tmp_path):
 @needs_the_v1_engine
 def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path):
     config = tiny_task(tmp_path)
-    first = both_ranks(config, "--training.max_num_epochs", "3")
+    first = both_ranks(config, "--max_num_epochs", "3")
     for rank, finished in enumerate(first):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
 
-    resumed = both_ranks(config, "--runtime.restart_latest", "true")
+    resumed = both_ranks(config, settings=RESTART)
     for rank, finished in enumerate(resumed):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
         assert "Resuming from" in finished.stderr

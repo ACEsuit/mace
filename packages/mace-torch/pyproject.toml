@@ -65,6 +65,12 @@ reference = "mace_torch.backends.reference:ReferenceBackend"
 # solver is, in a group of its own beside the kernel backends'.
 reference = "mace_torch.electrostatics.solver:ReferenceSolver"
 
+[project.entry-points."mace.commands"]
+# The mace subcommands this package implements, named by their words with dots
+# between them. mace_core.cli finds them here and names no package itself.
+train = "mace_torch.cli.commands:TRAIN"
+"model.export-config" = "mace_torch.cli.commands:EXPORT_CONFIG"
+
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
 

@@ -6,8 +6,8 @@ that can fail and a table is already an answer. What is asserted is that the
 whole schema survives the trip, and that the two halves do not get confused.
 """
 
-import json
-
+from mace_core.cli import set_value
+from mace_core.config import read_config_file
 from mace_core.config.e0s import (
     E0sAverage,
     E0sEstimated,
@@ -19,18 +19,24 @@ from mace_core.config.provenance import E0_METHODS, e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
 
-SETTINGS = [
-    "--runtime.name=run",
-    "--model.r_max=4.5",
-    "--model.observables",
-    '["energy", "forces", "stress"]',
-    "--training.optimizer",
-    '{"schedulefree": {"warmup_steps": 100}}',
-    "--loss.kind",
-    '{"huber": {"delta": 0.05}}',
-    "--data.heads",
-    json.dumps({"pbe": {"train_file": "train.xyz"}}),
-]
+
+def loaded(schema, path=None, settings=None):
+    """A config the way a command line builds one: a file, then the values its
+    flags set, each at its dotted path."""
+    document = read_config_file(path) if path is not None else {}
+    for dotted_path, value in (settings or {}).items():
+        set_value(document, dotted_path, value)
+    return schema.from_dict(document)
+
+
+SETTINGS = {
+    "runtime.name": "run",
+    "model.r_max": "4.5",
+    "model.observables": ["energy", "forces", "stress"],
+    "training.optimizer": {"kind": "schedulefree", "warmup_steps": 100},
+    "loss.kind": {"kind": "huber", "delta": 0.05},
+    "data.heads": {"pbe": {"train_file": "train.xyz"}},
+}
 
 
 def record(config: ResolvedConfig) -> ModelMetadata:
@@ -42,7 +48,7 @@ def record(config: ResolvedConfig) -> ModelMetadata:
 
 def test_the_whole_schema_survives_the_record():
     """Every default filled, written out, read back, and still the same object."""
-    config = ResolvedConfig.load(cli_overrides=SETTINGS)
+    config = loaded(ResolvedConfig, settings=SETTINGS)
     metadata = record(config)
     restored = ResolvedConfig.model_validate(metadata.config.resolved)
     assert restored == config
@@ -50,17 +56,17 @@ def test_the_whole_schema_survives_the_record():
 
 def test_the_record_survives_json():
     """A checkpoint's sidecar is text, so the trip that matters goes through it."""
-    metadata = record(ResolvedConfig.load(cli_overrides=SETTINGS))
+    metadata = record(loaded(ResolvedConfig, settings=SETTINGS))
     restored = ModelMetadata.model_validate_json(metadata.model_dump_json())
     assert restored == metadata
-    assert ResolvedConfig.model_validate(
-        restored.config.resolved
-    ) == ResolvedConfig.load(cli_overrides=SETTINGS)
+    assert ResolvedConfig.model_validate(restored.config.resolved) == loaded(
+        ResolvedConfig, settings=SETTINGS
+    )
 
 
 def test_recording_twice_gives_the_same_record():
     """The fixed point, over the full schema rather than one section."""
-    config = ResolvedConfig.load(cli_overrides=SETTINGS)
+    config = loaded(ResolvedConfig, settings=SETTINGS)
     once = record(config).config.resolved
     twice = record(ResolvedConfig.model_validate(once)).config.resolved
     assert once == twice
@@ -69,7 +75,7 @@ def test_recording_twice_gives_the_same_record():
 def test_the_record_keeps_what_the_user_wrote_apart_from_what_was_filled_in():
     """Both halves, because a reader asking 'what did they set' and a reader
     asking 'what did it run with' want different answers."""
-    config = ResolvedConfig.load(cli_overrides=SETTINGS)
+    config = loaded(ResolvedConfig, settings=SETTINGS)
     written = record(config)
     assert written.config.user["model"]["r_max"] == 4.5
     assert "num_channels" not in written.config.user["model"]

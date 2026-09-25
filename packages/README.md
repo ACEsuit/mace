@@ -128,6 +128,7 @@ moved or deleted without its row fails there, so the guide cannot go stale.
 packages/
   mace-core/src/mace_core/       framework-free contract and pure math
     clebsch_gordan/              irreps, Wigner 3j, the reduced symmetric basis
+    cli/                         the mace program; commands come from entry points
     config/                      the pydantic configuration, section by section
     data/                        structures, backends, E0s, statistics, splits
       backends/                  in-memory, XYZ, HDF5 and LMDB data backends
@@ -159,7 +160,8 @@ packages/
 ### Where to start
 
 **A training run**, in the order it happens:
-`mace_torch/cli/run_train.py` parses the command line into
+`mace train` (`mace_core/cli/`, with the command in
+`mace_torch/cli/commands.py`) reads the file and flags into
 `mace_core/config/resolved.py`; `mace_torch/train/data_stage.py` reads the data
 and resolves the E0s and statistics; `mace_torch/train/model_stage.py` builds
 the model; `mace_torch/train/loop.py` trains it and
@@ -189,8 +191,11 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/clebsch_gordan/irreps.py` | O(3) irreps: parsing, ordering, dimensions, selection rules. |
 | `mace_core/clebsch_gordan/real_basis.py` | The Wigner 3j table in the real spherical-harmonic basis the models use. |
 | `mace_core/clebsch_gordan/reduced_basis.py` | The reduced symmetric tensor-product basis and its path order. |
+| `mace_core/cli/__init__.py` | The `mace` program: the commands installed packages declare, parsed and run. |
+| `mace_core/cli/command.py` | A command, its explicit flags, and how they write into the configuration file. |
+| `mace_core/cli/registry.py` | Finding commands in the `mace.commands` entry point group, refusing conflicts. |
 | `mace_core/config/__init__.py` | The configuration schemas, re-exported. |
-| `mace_core/config/base.py` | The base schema: file loading, dotted CLI overrides, unknown keys as errors. |
+| `mace_core/config/base.py` | The base schema: one file, one validation, unknown keys as errors. |
 | `mace_core/config/data.py` | Datasets, heads, splits, transforms and the graph-input file keys. |
 | `mace_core/config/e0s.py` | The ways a head's isolated-atom energies can be given or estimated. |
 | `mace_core/config/electrostatics.py` | Which long-range solver a model uses, and for which systems. |
@@ -243,7 +248,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/metadata.py` | `ModelMetadata`: the versioned record every checkpoint carries. |
 | `mace_core/neighbors.py` | The neighbour list as a pure function, with the cell regimes stated. |
 | `mace_core/observables/__init__.py` | Declared observables, re-exported. |
-| `mace_core/observables/defaults.py` | Loading an observable catalogue from its YAML file. |
+| `mace_core/observables/defaults.py` | The default observable catalogue: energy with forces and stress. |
 | `mace_core/observables/derivatives.py` | How a derivative of a declared quantity is named. |
 | `mace_core/observables/grammar.py` | The irreps string grammar. |
 | `mace_core/observables/request.py` | Turning configured names into observables and derivatives. |
@@ -268,6 +273,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/calculators/ase_calculator.py` | `MACECalculator` for ASE: results, committees, Hessian, units. |
 | `mace_torch/calculators/padding.py` | Padding a batch to a fixed size for compiled GPU runs, and cutting it back. |
 | `mace_torch/cli/__init__.py` | Console entry points only. |
+| `mace_torch/cli/commands.py` | `mace train` and `mace model export-config`, declared for the `mace` program. |
 | `mace_torch/cli/convert_legacy.py` | `mace_convert_legacy`: a legacy checkpoint into a v1 one. |
 | `mace_torch/cli/polar_density_cube.py` | `mace_polar_density_cube --engine v1`: a charge-aware model's density as cube files. |
 | `mace_torch/cli/run_train.py` | `mace_run_train --engine v1`: training from a configuration file. |

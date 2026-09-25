@@ -7,7 +7,9 @@ keep a run going on silently wrong energies are gone.
 """
 
 import pytest
-from mace_core.config.base import ConfigError, ReforgeBaseConfig
+from mace_core.cli import set_value
+from mace_core.config import read_config_file
+from mace_core.config.base import ReforgeBaseConfig
 from mace_core.config.e0s import (
     FOUNDATION_E0_KINDS,
     E0sAverage,
@@ -19,6 +21,15 @@ from mace_core.config.e0s import (
 )
 from mace_core.config.section import FrozenSection
 from pydantic import ValidationError
+
+
+def loaded(schema, path=None, settings=None):
+    """A config the way a command line builds one: a file, then the values its
+    flags set, each at its dotted path."""
+    document = read_config_file(path) if path is not None else {}
+    for dotted_path, value in (settings or {}).items():
+        set_value(document, dotted_path, value)
+    return schema.from_dict(document)
 
 
 class Head(FrozenSection):
@@ -43,7 +54,7 @@ KINDS = {
 @pytest.mark.parametrize("kind", sorted(KINDS))
 def test_every_kind_parses_through_the_discriminator(kind):
     expected, body = KINDS[kind]
-    config = Root.model_validate({"head": {"e0s": {kind: body}}})
+    config = Root.model_validate({"head": {"e0s": {"kind": kind, **body}}})
     assert isinstance(config.head.e0s, expected)
     assert config.head.e0s.kind == kind
 
@@ -54,30 +65,32 @@ def test_the_default_is_the_one_legacy_reaches_for_first():
     assert e0s.on_missing_energy == "error"
 
 
-def test_a_kind_is_written_as_its_own_key():
-    """`[e0s.foundation]` rather than a `kind =` line beside the settings."""
-    config = Root.load(
-        cli_overrides=[
-            "--head.e0s",
-            '{"foundation": {"head": "mp", "missing": "zero"}}',
-        ]
+def test_a_kind_is_written_beside_its_settings():
+    """`kind = "foundation"` beside the settings, which is pydantic's own
+    tagged form, both read and exported."""
+    config = loaded(
+        Root,
+        settings={"head.e0s": {"kind": "foundation", "head": "mp", "missing": "zero"}},
     )
     assert config.head.e0s == E0sFromFoundation(head="mp", missing="zero")
     assert config.to_resolved_dict()["head"]["e0s"] == {
-        "foundation": {"head": "mp", "missing": "zero"}
+        "kind": "foundation",
+        "head": "mp",
+        "missing": "zero",
     }
 
 
 def test_an_unknown_kind_names_the_kinds_there_are():
-    with pytest.raises(ConfigError, match=r"kinds of head\.e0s"):
-        Root.load(cli_overrides=["--head.e0s", '{"from_thin_air": {}}'])
+    with pytest.raises(ValidationError, match="'isolated_atoms'"):
+        loaded(Root, settings={"head.e0s": {"kind": "from_thin_air"}})
 
 
 def test_a_setting_that_belongs_to_another_kind_is_refused():
     """The reason the settings live with the kind rather than beside it."""
-    with pytest.raises(ConfigError, match=r"head\.e0s\.average\.on_missing_energy"):
-        Root.load(
-            cli_overrides=["--head.e0s", '{"average": {"on_missing_energy": "zero"}}']
+    with pytest.raises(ValidationError, match=r"head\.e0s\.average\.on_missing_energy"):
+        loaded(
+            Root,
+            settings={"head.e0s": {"kind": "average", "on_missing_energy": "zero"}},
         )
 
 
@@ -130,8 +143,8 @@ def test_the_two_foundation_kinds_are_named_once():
 
 
 def test_resolving_twice_is_a_fixed_point():
-    written = {"head": {"e0s": {"table": {"values": {6: -1000.0}}}}}
+    written = {"head": {"e0s": {"kind": "table", "values": {6: -1000.0}}}}
     once = Root.model_validate(written).to_resolved_dict()
     twice = Root.model_validate(once).to_resolved_dict()
     assert once == twice
-    assert once["head"]["e0s"] == {"table": {"values": {"6": -1000.0}}}
+    assert once["head"]["e0s"] == {"kind": "table", "values": {"6": -1000.0}}

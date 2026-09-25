@@ -40,7 +40,7 @@ CONFIG = """
 runtime: {{work_dir: {work_dir}, name: tiny, seed: 1}}
 data:
   heads:
-    default: {{train_file: {train_file}, e0s: {{isolated_atoms: {{}}}}}}
+    default: {{train_file: {train_file}, e0s: {{kind: isolated_atoms}}}}
   valid_fraction: 0.2
   pin_memory: false
 model:
@@ -57,7 +57,7 @@ training:
   batch_size: 4
   valid_batch_size: 4
   lr: 0.02
-  scheduler: {{kind: {{constant: {{}}}}}}
+  scheduler: {{kind: {{kind: constant}}}}
 loss: {{weights: {{energy: 1.0, forces: 10.0}}}}
 """
 
@@ -85,6 +85,27 @@ def tiny_task(directory: Path) -> Path:
         CONFIG.format(work_dir=directory, train_file=directory / "train.xyz")
     )
     return config
+
+
+def variant(config: Path, settings: dict) -> Path:
+    """The configuration with some values changed, as a file beside it.
+
+    The engine takes a file and a few flags, with no dotted overrides, so a
+    run that differs from another in a setting without a flag gets a file of
+    its own. The run name and directory are the original's, which is what
+    lets a restart find the first run's checkpoints.
+    """
+    import yaml
+    from mace_core.cli import set_value
+
+    document = yaml.safe_load(config.read_text())
+    for dotted_path, value in settings.items():
+        set_value(document, dotted_path, value)
+    written = config.with_name(
+        f"{config.stem}-{len(list(config.parent.glob('*.yaml')))}.yaml"
+    )
+    written.write_text(yaml.safe_dump(document))
+    return written
 
 
 def on_v1(*arguments: str) -> subprocess.CompletedProcess:
@@ -140,17 +161,25 @@ def test_the_v1_run_reports_the_epoch_it_chose(tmp_path):
 def test_a_legacy_command_line_on_v1_says_it_has_not_moved(tmp_path):
     """Until the flag port lands. It is a refusal rather than a crash, which
     is what lets the black-box suite skip instead of failing."""
-    finished = on_v1("--name", "tiny", "--train_file", str(tmp_path / "absent.xyz"))
+    finished = on_v1(
+        "--name",
+        "tiny",
+        "--train_file",
+        str(tmp_path / "absent.xyz"),
+        "--r_max",
+        "5.0",
+    )
     assert finished.returncode != 0
     assert "not yet available on v1 engine" in finished.stderr
+    assert "--r_max" in finished.stderr
 
 
 MULTIHEAD_CONFIG = """
 runtime: {{work_dir: {work_dir}, name: tiny, seed: 1, error_table: PerAtomRMSE}}
 data:
   heads:
-    small: {{train_file: {small_file}, e0s: {{isolated_atoms: {{}}}}}}
-    large: {{train_file: {large_file}, e0s: {{isolated_atoms: {{}}}}}}
+    small: {{train_file: {small_file}, e0s: {{kind: isolated_atoms}}}}
+    large: {{train_file: {large_file}, e0s: {{kind: isolated_atoms}}}}
   valid_fraction: 0.25
   pin_memory: false
 model:
@@ -168,7 +197,7 @@ training:
   valid_batch_size: 2
   lr: 0.02
   head_balancing: balanced
-  scheduler: {{kind: {{constant: {{}}}}}}
+  scheduler: {{kind: {{kind: constant}}}}
 loss: {{weights: {{energy: 1.0, forces: 10.0}}}}
 """
 
@@ -238,8 +267,8 @@ runtime: {{work_dir: {work_dir}, name: tuned, seed: 2, error_table: PerAtomRMSE}
 finetune: {{foundation_model: {foundation}}}
 data:
   heads:
-    replay: {{train_file: {replay_file}, e0s: {{foundation: {{}}}}, weight: 0.5}}
-    target: {{train_file: {target_file}, e0s: {{isolated_atoms: {{}}}}}}
+    replay: {{train_file: {replay_file}, e0s: {{kind: foundation}}, weight: 0.5}}
+    target: {{train_file: {target_file}, e0s: {{kind: isolated_atoms}}}}
   valid_fraction: 0.25
   pin_memory: false
   skip_evaluate_heads: [replay]
@@ -250,7 +279,7 @@ training:
   batch_size: 2
   valid_batch_size: 2
   lr: 0.01
-  scheduler: {{kind: {{constant: {{}}}}}}
+  scheduler: {{kind: {{kind: constant}}}}
 """
 
 
@@ -291,6 +320,10 @@ def test_a_fine_tune_leaves_the_replay_head_out_of_its_table(tmp_path):
     assert "valid_replay" not in finished.stderr
 
 
+#: A run that continues the newest checkpoint of the same name.
+RESTART = {"runtime.restart_latest": True}
+
+
 def evaluated_epochs(stderr: str) -> list[int]:
     return sorted(
         {
@@ -306,11 +339,11 @@ def test_restart_latest_continues_the_run(tmp_path):
     """Two epochs, then the same run asked for four and told to restart from
     its newest checkpoint: it evaluates epochs two and three only."""
     config = tiny_task(tmp_path)
-    first = on_v1("--config", str(config), "--training.max_num_epochs", "2")
+    first = on_v1("--config", str(config), "--max_num_epochs", "2")
     assert first.returncode == 0, first.stderr
     assert evaluated_epochs(first.stderr) == [0, 1]
 
-    resumed = on_v1("--config", str(config), "--runtime.restart_latest", "true")
+    resumed = on_v1("--config", str(variant(config, RESTART)))
     assert resumed.returncode == 0, resumed.stderr
     assert "Resuming from" in resumed.stderr
     assert evaluated_epochs(resumed.stderr) == [2, 3]
@@ -320,9 +353,7 @@ def test_restart_latest_continues_the_run(tmp_path):
 def test_restart_latest_with_nothing_to_restart_from_starts_fresh(tmp_path):
     """The frozen tree's contract: a restart with no checkpoint is a new run,
     and it says so."""
-    finished = on_v1(
-        "--config", str(tiny_task(tmp_path)), "--runtime.restart_latest", "true"
-    )
+    finished = on_v1("--config", str(variant(tiny_task(tmp_path), RESTART)))
     assert finished.returncode == 0, finished.stderr
     assert "starts at epoch 0" in finished.stderr
     assert evaluated_epochs(finished.stderr) == [0, 1, 2, 3]
@@ -339,7 +370,7 @@ def test_a_run_keeps_only_its_newest_run_checkpoint_by_default(tmp_path):
 
 
 #: The full-batch regime, named where the optimizer is.
-LBFGS = ("--training.optimizer", '{"lbfgs": {}}')
+LBFGS = {"training.optimizer": {"kind": "lbfgs"}}
 
 
 @needs_the_v1_engine
@@ -347,7 +378,7 @@ def test_an_lbfgs_run_trains_from_the_console_script(tmp_path):
     """The v1 counterpart of the frozen tree's L-BFGS workflow test, which
     also turns on an average and a second stage. Both are refused beside
     L-BFGS here, so this runs the regime alone."""
-    finished = on_v1("--config", str(tiny_task(tmp_path)), *LBFGS)
+    finished = on_v1("--config", str(variant(tiny_task(tmp_path), LBFGS)))
     assert finished.returncode == 0, finished.stderr
     assert evaluated_epochs(finished.stderr) == [0, 1, 2, 3]
     assert (tmp_path / "tiny.safetensors").is_file()
@@ -359,10 +390,10 @@ def test_a_mini_batch_run_continued_under_lbfgs_says_its_optimizer_is_new(tmp_pa
     restart with the flag. The restart reports that the optimizer's state did
     not carry over rather than loading one optimizer's state into another."""
     config = tiny_task(tmp_path)
-    first = on_v1("--config", str(config), "--training.max_num_epochs", "2")
+    first = on_v1("--config", str(config), "--max_num_epochs", "2")
     assert first.returncode == 0, first.stderr
 
-    resumed = on_v1("--config", str(config), *LBFGS, "--runtime.restart_latest", "true")
+    resumed = on_v1("--config", str(variant(config, {**LBFGS, **RESTART})))
     assert resumed.returncode == 0, resumed.stderr
     assert "Resumed with a new optimizer" in resumed.stderr
     assert "written by Adam and the run resumes with LBFGS" in resumed.stderr
@@ -374,17 +405,11 @@ def test_an_averaged_run_continued_under_lbfgs_starts_from_the_average(tmp_path)
     """The frozen tree's usual pair: an averaged mini-batch run, then L-BFGS,
     which refuses an average, from the model the first run ended on."""
     config = tiny_task(tmp_path)
-    first = on_v1(
-        "--config",
-        str(config),
-        "--training.max_num_epochs",
-        "2",
-        "--training.ema.enabled",
-        "true",
-    )
+    averaged = variant(config, {"training.ema.enabled": True})
+    first = on_v1("--config", str(averaged), "--max_num_epochs", "2")
     assert first.returncode == 0, first.stderr
 
-    resumed = on_v1("--config", str(config), *LBFGS, "--runtime.restart_latest", "true")
+    resumed = on_v1("--config", str(variant(config, {**LBFGS, **RESTART})))
     assert resumed.returncode == 0, resumed.stderr
     assert "training continues from the averaged weights" in resumed.stderr
     assert evaluated_epochs(resumed.stderr) == [2, 3]

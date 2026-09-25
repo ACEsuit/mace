@@ -170,7 +170,11 @@ def test_the_refusal_is_a_skip_whatever_the_caller_asked_for(tmp_path, monkeypat
     for capture in (False, True):
         with pytest_module.raises(BaseException) as raised:
             helpers.run_mace_train(
-                {"name": "unmigrated", "train_file": str(tmp_path / "none.xyz")},
+                {
+                    "name": "unmigrated",
+                    "train_file": str(tmp_path / "none.xyz"),
+                    "r_max": 5.0,
+                },
                 capture_output=capture,
                 text=True,
                 cwd=tmp_path,

@@ -65,9 +65,13 @@ lmdb = "mace_core.data.backends.lmdb:ASEDBBackend"
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
 
-# No [project.scripts]. Every mace_* console entry point is owned by one
-# distribution, mace-launcher; two distributions declaring the same script name
-# is undefined behaviour in pip.
+# The one console script this package owns. Its subcommands come from the
+# packages that implement them, through the mace.commands entry point group,
+# so it is one program whatever is installed. Every legacy mace_* script stays
+# with mace-launcher; two distributions declaring the same script name is
+# undefined behaviour in pip.
+[project.scripts]
+mace = "mace_core.cli:main"
 
 [tool.hatch.version]
 source = "vcs"
