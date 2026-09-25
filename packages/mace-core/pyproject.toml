@@ -36,6 +36,11 @@ dependencies = [
     "numpy>=1.23",
     "ase>=3.23",
     "safetensors>=0.4",
+    # The two on-disk dataset formats: the v2 shards and the legacy files are
+    # HDF5, and the fairchem corpora are LMDB. Both are read through their
+    # numpy-level bindings, which need no framework.
+    "h5py>=3.8",
+    "lmdb>=1.4",
 ]
 
 # The all-pairs backend needs nothing beyond numpy, so neighbour-list
@@ -53,6 +58,9 @@ all_pairs = "mace_core.neighbors.all_pairs:AllPairsBackend"
 # One backend is one module and one line here. A third-party wheel declares
 # into the same group and is discovered with no edit in this repository.
 xyz = "mace_core.data.backends.xyz:XYZBackend"
+hdf5 = "mace_core.data.backends.hdf5:HDF5Backend"
+hdf5-legacy = "mace_core.data.backends.hdf5_legacy:LegacyHDF5Backend"
+lmdb = "mace_core.data.backends.lmdb:ASEDBBackend"
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
