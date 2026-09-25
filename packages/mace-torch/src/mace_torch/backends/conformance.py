@@ -471,31 +471,52 @@ def _check_weight_gradients(
     precision: str,
     where: str,
 ) -> None:
-    """Compare the weight gradients in the canonical layout, the one both
-    backends agree on, by writing each gradient where its weight was and
-    reading it back through ``to_canonical``. The weights are put back after."""
+    """Compare the weight gradients along directions of the canonical form.
+
+    A backend holds its weights in its own layout, and a gradient transforms
+    against the map from the canonical one, not with it. What both backends
+    must agree on is the derivative along a direction of canonical weights: the
+    direction loaded into each op gives that op's own parameter direction, and
+    the gradient projected on it is the directional derivative.
+    """
     parameters = [p for p in reference.parameters() if p.requires_grad]
     gradients = torch.autograd.grad(
         (reference(*arguments) * projection).sum(), parameters
     )
+    mine = [p for p in candidate.parameters() if p.requires_grad]
     reference_state = reference.to_canonical()
     candidate_state = candidate.to_canonical()
-    mine = [p for p in candidate.parameters() if p.requires_grad]
-    with torch.no_grad():
-        for parameter, gradient in zip(parameters, gradients, strict=True):
-            parameter.copy_(gradient)
-        for parameter, gradient in zip(mine, candidate_gradients, strict=True):
-            parameter.copy_(gradient)
+    generator = torch.Generator().manual_seed(7)
+
+    def randomized(state: Any) -> Any:
+        if isinstance(state, Tensor):
+            if not state.is_floating_point():
+                return state
+            return torch.randn(
+                state.shape, generator=generator, dtype=torch.float64
+            ).to(state)
+        return {name: randomized(value) for name, value in state.items()}
+
     try:
-        for a, b in zip(
-            _flat_canonical(candidate.to_canonical()),
-            _flat_canonical(reference.to_canonical()),
-            strict=True,
-        ):
-            if a.is_floating_point():
-                _close(
-                    a.to(b.device, b.dtype), b, precision, f"{where} weight gradient"
-                )
+        for _ in range(3):
+            direction = randomized(reference_state)
+            with torch.no_grad():
+                reference.load_canonical(direction)
+                candidate.load_canonical(_canonical_to(direction, mine[0]))
+            expected = sum(
+                (g * p.detach()).sum()
+                for g, p in zip(gradients, parameters, strict=True)
+            )
+            actual = sum(
+                (g * p.detach()).sum()
+                for g, p in zip(candidate_gradients, mine, strict=True)
+            )
+            _close(
+                torch.as_tensor(actual).reshape(1),
+                torch.as_tensor(expected).reshape(1).to(torch.as_tensor(actual)),
+                precision,
+                f"{where} weight gradient along a canonical direction",
+            )
     finally:
         reference.load_canonical(reference_state)
         candidate.load_canonical(candidate_state)

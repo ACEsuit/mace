@@ -54,11 +54,25 @@ vesin = "mace_torch.neighbors.vesin_backend:VesinBackend"
 # the import happens inside the tracker's constructor, so a run with tracking
 # off never touches the package.
 wandb = ["wandb"]
+# The cuEquivariance kernel backend. The pins are the legacy distribution's,
+# for its reasons: the ops major has to match torch.version.cuda, and the ops
+# wheels stop below 0.11, whose binaries fail to import and leave
+# cuequivariance running its pure-torch path.
+cueq = ["cuequivariance-torch>=0.2.0,<0.12"]
+cueq-cuda-12 = ["cuequivariance-ops-torch-cu12>=0.2.0,<0.11"]
+cueq-cuda-13 = ["cuequivariance-ops-torch-cu13>=0.7.0,<0.11"]
+# The OpenEquivariance backend, which compiles its kernels on first use and
+# needs a CUDA toolkit and a C++20 host compiler for that.
+oeq = ["openequivariance"]
 
 [project.entry-points."mace.kernel_backends.torch"]
 # The mandatory reference backend, discovered the same way any third-party one
 # is: through an entry point, with nothing in `mace_core` naming it.
 reference = "mace_torch.backends.reference:ReferenceBackend"
+# Registered whether or not cuequivariance is installed: without it the import
+# fails, discovery records why, and asking for it by name says so.
+cueq = "mace_torch.backends.cueq:CuEqBackend"
+oeq = "mace_torch.backends.oeq:OeqBackend"
 
 [project.entry-points."mace.electrostatics_backends.torch"]
 # The reference long-range solver, in the tree and found the way any other

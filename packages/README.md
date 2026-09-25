@@ -268,6 +268,8 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/backends/__init__.py` | The shipped kernel backends. |
 | `mace_torch/backends/composite.py` | A chosen backend with the reference behind it, op by op, and how a name resolves to one. |
 | `mace_torch/backends/conformance.py` | The checks every kernel backend passes against the reference. |
+| `mace_torch/backends/cueq.py` | The cuEquivariance backend: linear, convolution, contraction and skip on NVIDIA's kernels. |
+| `mace_torch/backends/oeq.py` | The OpenEquivariance backend: the fused convolution. |
 | `mace_torch/backends/reference/__init__.py` | The reference backend, re-exported. |
 | `mace_torch/backends/reference/backend.py` | Plain-torch linear, convolution, contraction, radial basis and reductions. |
 | `mace_torch/backends/reference/spherical_harmonics.py` | Real spherical harmonics in the legacy convention. |

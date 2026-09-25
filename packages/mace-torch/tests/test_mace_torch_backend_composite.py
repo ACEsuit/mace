@@ -6,8 +6,10 @@ and declines others, which is exactly what cueq and oeq do.
 
 from __future__ import annotations
 
+import ast
 import logging
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from conftest import fp64_only
@@ -164,3 +166,28 @@ def test_a_backend_without_double_backward_is_refused_for_force_training(
 
 def test_the_conv_descriptor_carries_the_channel_count():
     assert ChannelwiseTPConvDescriptor(num_features=8).num_features == 8
+
+
+def test_no_model_code_permutes_the_layout():
+    """Every op reads and writes one layout, so nothing between the ops
+    regroups features. The reference regroups inside its own kernels, which is
+    where the permutations are allowed to live."""
+    root = Path(__file__).resolve().parents[1] / "src" / "mace_torch"
+    permutations = {"channel_layout_index", "inverse_layout_index", "path_layout_index"}
+    offenders = []
+    for folder in ("nn", "models"):
+        for path in (root / folder).rglob("*.py"):
+            if path.name == "layout.py":
+                continue
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and any(
+                    alias.name in permutations for alias in node.names
+                ):
+                    offenders.append(f"{path.name} imports a layout permutation")
+                if isinstance(node, ast.Attribute) and node.attr in (
+                    "permute",
+                    "movedim",
+                ):
+                    offenders.append(f"{path.name}:{node.lineno} calls {node.attr}")
+    assert not offenders
