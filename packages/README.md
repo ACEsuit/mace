@@ -130,8 +130,8 @@ packages/
     clebsch_gordan/              irreps, Wigner 3j, the reduced symmetric basis
     config/                      the pydantic configuration, section by section
     data/                        structures, backends, E0s, statistics, splits
-      backends/                  in-memory and XYZ data backends
-    defaults/                    the default observable catalogue, as YAML
+      backends/                  in-memory, XYZ, HDF5 and LMDB data backends
+    data_spec/                   the v2 shard format and its writer
     electrostatics/              long-range solve descriptors, solver registry
     elements/                    element tables, default file keys, E0 values
     kernels/                     op descriptors, backend protocol and registry
@@ -208,6 +208,9 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/data/__init__.py` | The data layer's boundary objects, re-exported. |
 | `mace_core/data/backend.py` | The protocol every data backend implements, and the statistics type. |
 | `mace_core/data/backends/__init__.py` | The shipped backends and their registration. |
+| `mace_core/data/backends/hdf5.py` | Prepared datasets of v2 shards, read lazily. |
+| `mace_core/data/backends/hdf5_legacy.py` | The frozen tree's HDF5 files and statistics, read-only. |
+| `mace_core/data/backends/lmdb.py` | Fairchem-style ASE LMDB databases, read-only. |
 | `mace_core/data/backends/memory.py` | Structures already in memory, presented as a backend. |
 | `mace_core/data/backends/xyz.py` | The XYZ backend over anything ase can read. |
 | `mace_core/data/configuration.py` | `Configuration`: one parsed, labelled structure. |
@@ -218,7 +221,8 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/data/splitting.py` | Train and validation splits, and grouping for reports. |
 | `mace_core/data/statistics.py` | Average neighbours, energy shift and scale, over any backend. |
 | `mace_core/data/xyz.py` | Reading labelled structure files into configurations. |
-| `mace_core/defaults/observables.yaml` | The default observable catalogue: energy with forces and stress. |
+| `mace_core/data_spec/__init__.py` | The on-disk dataset formats, re-exported. |
+| `mace_core/data_spec/shard_format.py` | The v2 shard layout, the manifest check and the shard writer. |
 | `mace_core/electrostatics/__init__.py` | The electrostatics contract, re-exported. |
 | `mace_core/electrostatics/capabilities.py` | What a solver declares it can do, and the refusal when it cannot. |
 | `mace_core/electrostatics/descriptor.py` | One long-range solve as data: profile, multipoles, projection, method. |

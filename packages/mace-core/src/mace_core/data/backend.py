@@ -119,9 +119,12 @@ class DatasetManifest:
     Attributes:
         schema_version: Bumped when this shape changes, so a mismatch is a
             named error rather than a missing key.
-        shard_counts: How many configurations each shard holds. Stored per
-            shard rather than as one group size, so an exact length never has
-            to assume the shards are uniform.
+        shards: The shard files, relative to the manifest, in reading order.
+            Listed rather than globbed, so a missing shard is an error and the
+            order does not depend on how a directory happens to sort.
+        shard_counts: How many configurations each shard holds, one entry per
+            file in ``shards``. Stored per shard rather than as one group size,
+            so an exact length never has to assume the shards are uniform.
         key_specification: The specification used at write time. A dataset read
             back under a different one is a different dataset.
         atomic_numbers: The element table.
@@ -131,6 +134,7 @@ class DatasetManifest:
     """
 
     schema_version: int = 1
+    shards: list[str] = field(default_factory=list)
     shard_counts: list[int] = field(default_factory=list)
     key_specification: dict[str, Any] = field(default_factory=dict)
     atomic_numbers: list[int] = field(default_factory=list)
