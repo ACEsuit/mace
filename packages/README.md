@@ -266,6 +266,8 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 |---|---|
 | `mace_torch/__init__.py` | The package version. |
 | `mace_torch/backends/__init__.py` | The shipped kernel backends. |
+| `mace_torch/backends/composite.py` | A chosen backend with the reference behind it, op by op, and how a name resolves to one. |
+| `mace_torch/backends/conformance.py` | The checks every kernel backend passes against the reference. |
 | `mace_torch/backends/reference/__init__.py` | The reference backend, re-exported. |
 | `mace_torch/backends/reference/backend.py` | Plain-torch linear, convolution, contraction, radial basis and reductions. |
 | `mace_torch/backends/reference/spherical_harmonics.py` | Real spherical harmonics in the legacy convention. |

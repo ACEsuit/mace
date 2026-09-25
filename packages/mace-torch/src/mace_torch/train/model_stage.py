@@ -13,6 +13,9 @@ undone to save.
 
 from __future__ import annotations
 
+import logging
+from typing import Any
+
 from ase.data import chemical_symbols
 from mace_core.config.model import ModelConfig
 from mace_core.config.provenance import e0_details
@@ -20,7 +23,6 @@ from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import PrecisionConfig
-from mace_core.kernels.registry import get_backend
 from mace_core.metadata import (
     ConfigRecord,
     E0Details,
@@ -38,6 +40,11 @@ from mace_core.observables import (
 from mace_core.stages import BuiltModel
 
 from mace_torch import __version__
+from mace_torch.backends import (
+    CompositeBackend,
+    require_double_backward,
+    resolve_backend,
+)
 from mace_torch.finetune.foundation import Foundation
 from mace_torch.finetune.transfer import readout_sources, transfer_foundation
 from mace_torch.kernels import initialize_model_weights
@@ -48,6 +55,8 @@ from mace_torch.models.magnetic import MagneticModel
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_HIDDEN_IRREPS",
@@ -168,6 +177,12 @@ def run_model_stage(
         supports_float64=supports_float64,
         initialize=initialize,
     )
+    if requested.derivatives:
+        # Training on a derivative differentiates through it once more.
+        require_double_backward(
+            config.model.backend,
+            "training on " + ", ".join(sorted(requested.derivatives)),
+        )
     metadata = _metadata(config, data)
     model = engine.get_submodule("backbone")
     if isinstance(model, PolarModel):
@@ -327,14 +342,17 @@ def build_model(
         )
     _refuse_unbuilt(config)
     _check_electrostatics(config)
+    backend = resolve_backend(config.model.backend)
     if config.model.model in _RESPONSE_MODELS:
         model = _response_model(
             config,
             requested,
+            backend=backend,
             z_table=z_table,
             statistics=statistics,
             precision=precision,
         )
+        _report_backend(backend)
         if initialize:
             initialize_model_weights(model, config.runtime.seed)
         engine = DerivativeEngine(
@@ -365,10 +383,12 @@ def build_model(
             config,
             requested,
             energy_head,
+            backend=backend,
             z_table=z_table,
             heads=heads,
             precision=precision,
         )
+        _report_backend(backend)
         if initialize:
             initialize_model_weights(model, config.runtime.seed)
         return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
@@ -377,17 +397,19 @@ def build_model(
             config,
             requested,
             energy_head,
+            backend=backend,
             z_table=z_table,
             heads=heads,
             statistics=statistics,
             precision=precision,
             trains_derivatives=initialize and bool(requested.derivatives),
         )
+        _report_backend(backend)
         if initialize:
             initialize_model_weights(model, config.runtime.seed)
         return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
     model = MACEModel(
-        get_backend(config.model.backend),
+        backend,
         atomic_numbers=list(z_table.zs),
         observables=requested.observables,
         energy_head=energy_head,
@@ -408,6 +430,7 @@ def build_model(
         # has weights of its own to fit it with.
         num_heads=len(heads),
     )
+    _report_backend(backend)
     if initialize:
         # Seeded from the run, so the same configuration and the same seed
         # rebuild the same model. The walk is over the model rather than the
@@ -417,11 +440,18 @@ def build_model(
     return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
 
 
+def _report_backend(backend: Any) -> None:
+    """Say which backend built which ops, when more than one did."""
+    if isinstance(backend, CompositeBackend):
+        logger.info("Kernel backends:\n%s", backend.report())
+
+
 def _polar_model(
     config: ResolvedConfig,
     requested: RequestedOutputs,
     energy_head: EnergyOutputHead,
     *,
+    backend: Any,
     z_table: AtomicNumberTable,
     heads: tuple[str, ...],
     statistics: DatasetStatistics,
@@ -454,7 +484,7 @@ def _polar_model(
         slab_normal=electrostatics.slab_normal,
     )
     return PolarModel(
-        get_backend(config.model.backend),
+        backend,
         atomic_numbers=list(z_table.zs),
         observables=[
             spec
@@ -486,6 +516,7 @@ def _response_model(
     config: ResolvedConfig,
     requested: RequestedOutputs,
     *,
+    backend: Any,
     z_table: AtomicNumberTable,
     statistics: DatasetStatistics,
     precision: PrecisionConfig,
@@ -507,7 +538,7 @@ def _response_model(
             f"what the model produces."
         )
     return DipoleModel(
-        get_backend(config.model.backend),
+        backend,
         atomic_numbers=list(z_table.zs),
         settings=settings,
         num_layers=config.model.num_interactions,
@@ -530,6 +561,7 @@ def _magnetic_model(
     requested: RequestedOutputs,
     energy_head: EnergyOutputHead,
     *,
+    backend: Any,
     z_table: AtomicNumberTable,
     heads: tuple[str, ...],
     precision: PrecisionConfig,
@@ -544,7 +576,7 @@ def _magnetic_model(
         )
     settings = config.model.magnetic
     model = MagneticModel(
-        get_backend(config.model.backend),
+        backend,
         atomic_numbers=list(z_table.zs),
         observables=requested.observables,
         energy_head=energy_head,
