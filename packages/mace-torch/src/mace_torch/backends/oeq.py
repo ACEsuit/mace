@@ -61,6 +61,7 @@ class OeqChannelwiseTPConv(nn.Module):
             descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
         )
         self.num_paths = len(paths)
+        self.weight_width = self.num_paths * descriptor.num_features
         dtype = _DTYPES[descriptor.precision]
         problem = oeq.TPProblem(
             expanded_irreps(descriptor.irreps_node, features),
@@ -91,7 +92,9 @@ class OeqChannelwiseTPConv(nn.Module):
         return self.operation(
             node_features,
             edge_attributes,
-            radial_weights.reshape(radial_weights.shape[0], -1),
+            # The width is spelled out: a structure with no edges has zero
+            # rows, and `-1` cannot be inferred from an empty tensor.
+            radial_weights.reshape(radial_weights.shape[0], self.weight_width),
             receiver,
             sender,
         )

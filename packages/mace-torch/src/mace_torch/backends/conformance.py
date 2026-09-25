@@ -17,7 +17,12 @@ descriptor, and checks:
   backward that is not itself differentiable gives wrong forces rather than
   none;
 * **honesty**: a descriptor the backend declines is refused when asked for,
-  rather than built into something that fails later.
+  rather than built into something that fails later;
+* on request, that the op **compiles without a graph break**, under
+  ``torch.compile(fullgraph=True)``, and that it **runs inside a captured CUDA
+  graph**, replaying to the same values. Both are what an inference loop does
+  with a model, and a kernel that syncs with the host or allocates on every
+  call fails them rather than degrading quietly.
 
 A case the backend declines is recorded and skipped, never failed: declining
 is how a backend says an op is the reference's.
@@ -296,6 +301,8 @@ def run_backend_conformance(
     precision: Precision = "float64",
     cases: list[Any] | None = None,
     seed: int = 0,
+    compile_ops: bool = False,
+    cuda_graphs: bool = False,
 ) -> list[ConformanceResult]:
     """Check every case against the reference. Raises on the first failure.
 
@@ -305,6 +312,8 @@ def run_backend_conformance(
         precision: The dtype the cases are built at.
         cases: The descriptors. :func:`conformance_cases` by default.
         seed: For the weights, the inputs and the rotation.
+        compile_ops: Also compile each op with ``fullgraph=True``.
+        cuda_graphs: Also capture each op in a CUDA graph and replay it.
 
     Returns:
         One result per case, including the declined ones.
@@ -445,6 +454,24 @@ def run_backend_conformance(
             ):
                 raise AssertionError(f"{where}: gradgradcheck failed")
             result.checks.append("double backward")
+        detached = [
+            value.detach() if isinstance(value, Tensor) else value
+            for value in inputs.arguments
+        ]
+        if isinstance(descriptor, ChannelwiseTPConvDescriptor):
+            _check_no_edges(candidate, detached, theirs.shape[1], where)
+            result.checks.append("no edges")
+        if compile_ops:
+            torch._dynamo.reset()
+            compiled = torch.compile(candidate, fullgraph=True, dynamic=False)
+            with torch.no_grad():
+                _close(
+                    compiled(*detached), mine.detach(), precision, f"{where} compiled"
+                )
+            result.checks.append("compiles")
+        if cuda_graphs:
+            _check_cuda_graph(candidate, detached, mine.detach(), precision, where)
+            result.checks.append("cuda graph")
         if isinstance(candidate, InternalWeights) and any(
             p.requires_grad for p in candidate.parameters()
         ):
@@ -520,3 +547,51 @@ def _check_weight_gradients(
     finally:
         reference.load_canonical(reference_state)
         candidate.load_canonical(candidate_state)
+
+
+def _check_cuda_graph(
+    candidate: Any, arguments: list[Any], expected: Tensor, precision: str, where: str
+) -> None:
+    """Capture one forward in a CUDA graph, replay it, compare.
+
+    Warmed up on a side stream first, as capture requires: the first calls may
+    allocate or pick a kernel, and neither may happen inside a capture.
+    """
+    static = [
+        value.clone() if isinstance(value, Tensor) else value for value in arguments
+    ]
+    side = torch.cuda.Stream()
+    side.wait_stream(torch.cuda.current_stream())
+    with torch.no_grad(), torch.cuda.stream(side):
+        for _ in range(3):
+            candidate(*static)
+    torch.cuda.current_stream().wait_stream(side)
+    graph = torch.cuda.CUDAGraph()
+    with torch.no_grad(), torch.cuda.graph(graph):
+        output = candidate(*static)
+    graph.replay()
+    torch.cuda.synchronize()
+    _close(output, expected, precision, f"{where} replayed from a CUDA graph")
+
+
+def _check_no_edges(
+    candidate: Any, arguments: list[Any], width: int, where: str
+) -> None:
+    """A structure with no edges, such as a single atom, gets one zero row per
+    node. Inferring a width from zero rows is how this breaks."""
+    nodes, edge_attributes, weights, sender, receiver, num_nodes = arguments
+    with torch.no_grad():
+        output = candidate(
+            nodes,
+            edge_attributes[:0],
+            weights[:0],
+            sender[:0],
+            receiver[:0],
+            num_nodes,
+        )
+    if tuple(output.shape) != (num_nodes, width) or bool(output.any()):
+        raise AssertionError(
+            f"{where}: with no edges it returned {tuple(output.shape)} "
+            f"{'with values' if output.numel() and output.any() else ''}, and "
+            f"expected zeros of shape {(num_nodes, width)}"
+        )

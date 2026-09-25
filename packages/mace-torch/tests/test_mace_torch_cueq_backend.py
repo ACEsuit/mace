@@ -191,3 +191,18 @@ def test_a_force_loss_sends_the_reference_s_gradient_to_the_weights(device):
             for g, p in zip(accelerated_gradients, accelerated_parameters, strict=True)
         )
         assert torch.allclose(actual, expected, atol=1e-9, rtol=1e-9)
+
+
+@pytest.mark.skipif(DEVICES != ["cuda"], reason="compiles and captures on CUDA")
+def test_cueq_ops_compile_whole_and_replay_from_a_cuda_graph(dtype):
+    precision = "float64" if dtype == torch.float64 else "float32"
+    results = run_backend_conformance(
+        CuEqBackend(),
+        precision=precision,
+        device="cuda",
+        compile_ops=True,
+        cuda_graphs=True,
+    )
+    for result in results:
+        if result.built:
+            assert {"compiles", "cuda graph"} <= set(result.checks), result.op

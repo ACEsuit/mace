@@ -270,6 +270,10 @@ class CuEqChannelwiseTPConv(nn.Module):
             descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
         )
         self.num_paths = len(paths)
+        self.weight_width = self.num_paths * descriptor.num_features
+        self.output_width = descriptor.num_features * sum(
+            path.irrep.dimension for path in paths
+        )
         self.operation = cuet.ChannelWiseTensorProduct(
             _irreps(expanded_irreps(descriptor.irreps_node, descriptor.num_features)),
             _irreps(descriptor.irreps_edge),
@@ -298,14 +302,31 @@ class CuEqChannelwiseTPConv(nn.Module):
         receiver: Tensor,
         num_nodes: int,
     ) -> Tensor:
-        return self.operation(
-            node_features,
-            edge_attributes,
-            radial_weights.reshape(radial_weights.shape[0], -1),
-            indices_1=sender,
-            indices_out=receiver,
-            size_out=num_nodes,
+        # What `ChannelWiseTensorProduct.forward` does, with one difference:
+        # the output's size is given by a tensor made on the device of the
+        # inputs. The public forward makes it on the host and copies it over
+        # on every call, which a CUDA graph cannot capture. This leans on the
+        # module's `transpose_in1`, `transpose_in2`, `f` and `transpose_out`,
+        # which cuEquivariance 0.10 has and does not document as public; the
+        # conformance harness's CUDA graph check is what notices if they move.
+        if sender.shape[0] == 0:
+            # No edges, no messages. cuEquivariance's pure-torch path refuses
+            # an empty edge batch outright, so it is not asked.
+            return node_features.new_zeros(num_nodes, self.output_width)
+        operation = self.operation
+        output = operation.f(
+            [
+                # The width is spelled out: a structure with no edges has zero
+                # rows, and `-1` cannot be inferred from an empty tensor.
+                radial_weights.reshape(radial_weights.shape[0], self.weight_width),
+                operation.transpose_in1(node_features),
+                operation.transpose_in2(edge_attributes),
+            ],
+            input_indices={1: sender},
+            output_shapes={0: node_features.new_empty(num_nodes, 1)},
+            output_indices={0: receiver},
         )
+        return operation.transpose_out(output[0])
 
 
 @cache

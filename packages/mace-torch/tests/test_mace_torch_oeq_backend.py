@@ -45,3 +45,16 @@ def test_the_model_on_oeq_is_the_reference_model():
     for name in ("total_energy", "forces", "stress"):
         mine, theirs = getattr(actual, name), getattr(expected, name)
         assert torch.allclose(mine, theirs, atol=1e-10, rtol=1e-10), name
+
+
+def test_oeq_compiles_whole_and_replays_from_a_cuda_graph(dtype):
+    precision = "float64" if dtype == torch.float64 else "float32"
+    results = run_backend_conformance(
+        OeqBackend(),
+        precision=precision,
+        device="cuda",
+        compile_ops=True,
+        cuda_graphs=True,
+    )
+    built = [result for result in results if result.built]
+    assert built and all({"compiles", "cuda graph"} <= set(r.checks) for r in built)
