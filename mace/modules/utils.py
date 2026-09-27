@@ -747,6 +747,47 @@ def compute_dielectric_gradients_loop(
     return gradients
 
 
+POLARIZABILITY_METHODS = ("dipole", "energy")
+
+
+@torch.jit.unused
+def compute_polarizability(
+    energy: torch.Tensor,
+    dipole: torch.Tensor,
+    external_field: torch.Tensor,
+    method: str = "dipole",
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """Polarizability alpha_ij = d mu_i / d F_j per graph, shape [n_graphs, 3, 3],
+    from one autograd pass over the dipole (method="dipole") or two over the
+    energy (method="energy", which also returns mu = dE/dF as the second value).
+    """
+    if method not in POLARIZABILITY_METHODS:
+        raise ValueError(
+            f"polarizability method must be one of {POLARIZABILITY_METHODS}, "
+            f"got {method!r}"
+        )
+    dipole_from_energy: Optional[torch.Tensor] = None
+    if method == "energy":
+        dipole_from_energy = torch.autograd.grad(
+            energy.sum(),
+            external_field,
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+        dipole = dipole_from_energy
+    d_dipole_d_external_field = torch.stack(
+        [
+            torch.autograd.grad(dipole[:, i].sum(), external_field, retain_graph=True)[0]
+            for i in range(3)
+        ],
+        dim=1,
+    )  # [n_graphs, 3, 3], [g, i, j] = d dipole_i / d external_field_j
+    # PolarMACE adds ``+ external_field . dipole`` to the energy, so its
+    # external_field is minus the physical field F, and alpha = d mu / d F flips sign.
+    polarizability = -d_dipole_d_external_field
+    return polarizability, dipole_from_energy
+
+
 class InteractionKwargs(NamedTuple):
     lammps_class: Optional[torch.Tensor]
     lammps_natoms: Tuple[int, int] = (0, 0)

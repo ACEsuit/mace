@@ -331,13 +331,7 @@ def _build_model(
             use_agnostic_product=args.use_agnostic_product,
         )
     if args.model == "PolarMACE" and model_config_foundation is not None:
-        model_config_foundation.pop("compute_dipole_from_electric_field", None)
-        model_config_foundation.pop("compute_polarizability", None)
-        return modules.PolarMACE(
-            **model_config_foundation,
-            compute_dipole_from_electric_field=args.compute_dipole_from_electric_field,
-            compute_polarizability=args.compute_polarizability_from_electric_field,
-        )
+        return modules.PolarMACE(**model_config_foundation)
     if args.model == "PolarMACE":
         field_feature_widths = _parse_literal_or_none(args.field_feature_widths)
         field_feature_norms = _parse_literal_or_none(args.field_feature_norms)
@@ -377,8 +371,6 @@ def _build_model(
             field_norm_factor=args.field_norm_factor,
             fixedpoint_update_config=fixedpoint_update_config,
             field_readout_config=field_readout_config,
-            compute_dipole_from_electric_field=args.compute_dipole_from_electric_field,
-            compute_polarizability=args.compute_polarizability_from_electric_field,
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)

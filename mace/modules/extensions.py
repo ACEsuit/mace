@@ -33,6 +33,7 @@ from mace.modules.blocks import (
 from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import (
+    compute_polarizability as _compute_polarizability,
     compute_total_charge_dipole_permuted,
     get_atomic_virials_stresses,
     get_outputs,
@@ -686,8 +687,6 @@ class PolarMACE(ScaleShiftMACE):
         fixedpoint_update_config: Optional[Dict[str, Any]] = None,
         field_readout_config: Optional[Dict[str, Any]] = None,
         pbc_handling: str = "auto",
-        compute_dipole_from_electric_field: bool = False,
-        compute_polarizability: bool = False,
         **kwargs,
     ):
         if not GRAPH_LONGRANGE_AVAILABLE:
@@ -753,8 +752,6 @@ class PolarMACE(ScaleShiftMACE):
         self.quadrupole_feature_corrections = quadrupole_feature_corrections
         self.field_si = field_si
         self.keep_last_layer_irreps = True
-        self.compute_dipole_from_electric_field = compute_dipole_from_electric_field
-        self.compute_polarizability = compute_polarizability
 
         # k-space cutoff heuristic
         kspace_cutoff = kspace_cutoff_factor * gto_basis_kspace_cutoff(
@@ -992,6 +989,8 @@ class PolarMACE(ScaleShiftMACE):
         lammps_mliap: bool = False,
         fermi_level: Optional[torch.Tensor] = None,
         external_field: Optional[torch.Tensor] = None,
+        compute_polarizability: bool = False,
+        polarizability_method: str = "dipole",
     ) -> Dict[str, Optional[torch.Tensor]]:
         if not GRAPH_LONGRANGE_AVAILABLE:
             raise ImportError(
@@ -1042,13 +1041,8 @@ class PolarMACE(ScaleShiftMACE):
             fermi_level = data["fermi_level"]
         if external_field is None:
             external_field = data["external_field"]
-        compute_dipole_from_electric_field = getattr(
-            self, "compute_dipole_from_electric_field", False
-        )
-        compute_polarizability = getattr(self, "compute_polarizability", False)
-        if compute_polarizability or compute_dipole_from_electric_field:
-            external_field = external_field.detach().requires_grad_(True)
-
+        if compute_polarizability and not external_field.requires_grad:
+            external_field = external_field.clone().requires_grad_(True)
         external_potential = torch.hstack(
             (torch.zeros_like(fermi_level).unsqueeze(-1), external_field)
         )
@@ -1349,50 +1343,20 @@ class PolarMACE(ScaleShiftMACE):
             + electro_energy
             + torch.sum(external_potential[:, 1:] * total_dipole, dim=-1)
         )
-        total_dipole_from_electric_field: Optional[torch.Tensor] = None
-        total_polarizability: Optional[torch.Tensor] = None
-        if compute_dipole_from_electric_field or compute_polarizability:
-            # μ = ∂E/∂F ; energy already includes +F·μ_charge
-            total_dipole_from_electric_field = torch.autograd.grad(
-                outputs=[total_energy],
-                inputs=[external_field],
-                grad_outputs=[torch.ones_like(total_energy)],
-                create_graph=True,
-                retain_graph=True,
-                allow_unused=True,
-            )[0]
-            if total_dipole_from_electric_field is None:
-                total_dipole_from_electric_field = torch.zeros_like(external_field)
-            if compute_polarizability:
-                # α_ij = ∂μ_i/∂F_j. One backward cannot fill a (B, 3, 3)
-                # Jacobian; is_grads_batched runs the 3 Cartesian rows together.
-                num_graphs, n_cart = external_field.shape
-                grad_outputs = (
-                    torch.eye(
-                        n_cart,
-                        device=external_field.device,
-                        dtype=external_field.dtype,
-                    )
-                    .unsqueeze(1)
-                    .expand(n_cart, num_graphs, n_cart)
-                )
-                total_polarizability = torch.autograd.grad(
-                    outputs=total_dipole_from_electric_field,
-                    inputs=external_field,
-                    grad_outputs=grad_outputs,
-                    create_graph=True,
-                    retain_graph=True,
-                    allow_unused=True,
-                    is_grads_batched=True,
-                )[0]
-                if total_polarizability is None:
-                    total_polarizability = external_field.new_zeros(
-                        (num_graphs, n_cart, n_cart)
-                    )
-                else:
-                    total_polarizability = total_polarizability.permute(1, 0, 2)
-            if not compute_dipole_from_electric_field:
-                total_dipole_from_electric_field = None
+
+        # Before get_outputs, which frees the graph unless training.
+        # "dipole": alpha = -d(dipole)/d(external_field), one autograd pass.
+        # "energy": alpha = -d2(energy)/d(external_field)2, two passes; also
+        # yields dipole_from_energy. See mace.modules.utils.compute_polarizability.
+        polarizability: Optional[torch.Tensor] = None
+        dipole_from_energy: Optional[torch.Tensor] = None
+        if compute_polarizability:
+            polarizability, dipole_from_energy = _compute_polarizability(
+                energy=total_energy,
+                dipole=total_dipole,
+                external_field=external_field,
+                method=polarizability_method,
+            )
 
         forces, virials, stress, hessian, edge_forces, _ = get_outputs(
             energy=total_energy,
@@ -1448,14 +1412,14 @@ class PolarMACE(ScaleShiftMACE):
             "charges": charge_density_mul_ir[:, 0],
             "spins": spin_density_mul_ir[:, 0],
             "dipole": total_dipole,
+            "polarizability": polarizability,
+            "dipole_from_energy": dipole_from_energy,
             "total_charge": total_charge,
             "electrostatic_energy": electro_energy,
             "electron_energy": le_total,
             "electrostatic_potentials": esps,
             "spin_charge_density": spin_charge_density_mul_ir,
             "fukui_functions": final_fukui_sources,
-            "total_dipole_from_electric_field": total_dipole_from_electric_field,
-            "total_polarizability": total_polarizability,
         }
 
 
