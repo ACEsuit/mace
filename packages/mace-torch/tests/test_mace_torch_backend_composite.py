@@ -173,7 +173,7 @@ def test_no_model_code_permutes_the_layout():
     regroups features. The reference regroups inside its own kernels, which is
     where the permutations are allowed to live."""
     root = Path(__file__).resolve().parents[1] / "src" / "mace_torch"
-    permutations = {"channel_layout_index", "inverse_layout_index", "path_layout_index"}
+    permutations = {"channel_major", "grouped"}
     offenders = []
     for folder in ("nn", "models"):
         for path in (root / folder).rglob("*.py"):

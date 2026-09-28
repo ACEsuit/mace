@@ -422,6 +422,7 @@ def channelwise_tp_conv(
     edge_attributes: Tensor,
     radial_weights: Tensor,
     coefficients: Tensor,
+    path_widths: list[int],
     sender: Tensor,
     receiver: Tensor,
     num_nodes: int,
@@ -434,8 +435,11 @@ def channelwise_tp_conv(
             of the edge direction.
         radial_weights: ``[n_edges, n_paths, num_features]``, from the radial
             MLP, which is external to this op.
-        coefficients: ``[n_paths, dim_out, dim_in, dim_edge]``, the
-            Clebsch-Gordan coefficients. Constant model state.
+        coefficients: ``[dim_out, dim_in, dim_edge]``, the Clebsch-Gordan
+            coefficients of every path. Constant model state.
+        path_widths: How many output components each path owns, in order. The
+            paths own consecutive, disjoint blocks of ``dim_out``, which is
+            what lets one array hold all of their coefficients.
         sender: ``[n_edges]``, int64.
         receiver: ``[n_edges]``, int64.
         num_nodes: The node count, as a plain int so it stays symbolic under
@@ -447,15 +451,33 @@ def channelwise_tp_conv(
         the reduction is fused into the kernel is a backend's business, which
         is what removes the six ``conv_fusion`` branches the frozen tree
         carries inside its interaction blocks.
+
+    The coupling with the edge attributes carries no channel, so it is done
+    first, for every edge at once: ``[n_edges, dim_out, dim_in]``. One batched
+    product with the senders' features then gives every path's message, held
+    ``[n_edges, dim_out, num_features]`` so that the channels are the long
+    side of each product and each path's radial weights scale one contiguous
+    block. The messages are the largest intermediate, the same array the
+    frozen tree forms before its scatter.
     """
+    channels = node_features.shape[1]
     gathered = node_features.index_select(0, sender)
-    messages = torch.einsum(
-        "poid,emi,ed,epm->emo", coefficients, gathered, edge_attributes, radial_weights
-    )
-    out = node_features.new_zeros(
-        (num_nodes, node_features.shape[1], coefficients.shape[1])
-    )
-    return out.index_add(0, receiver, messages)
+    coupling = _edge_coupling(edge_attributes, coefficients)
+    messages = torch.bmm(coupling, gathered.transpose(1, 2))
+    start = 0
+    for path, width in enumerate(path_widths):
+        messages[:, start : start + width].mul_(radial_weights[:, path, None, :])
+        start += width
+    out = messages.new_zeros((num_nodes, coefficients.shape[0], channels))
+    return out.index_add_(0, receiver, messages).transpose(1, 2).contiguous()
+
+
+def _edge_coupling(edge_attributes: Tensor, coefficients: Tensor) -> Tensor:
+    """The coefficients contracted with each edge's attributes:
+    ``[n_edges, dim_out, dim_in]``."""
+    dim_out, dim_in, dim_edge = coefficients.shape
+    flat = coefficients.reshape(dim_out * dim_in, dim_edge)
+    return (edge_attributes @ flat.T).reshape(-1, dim_out, dim_in)
 
 
 @channelwise_tp_conv.register_fake
@@ -464,12 +486,13 @@ def _(
     edge_attributes: Tensor,
     radial_weights: Tensor,
     coefficients: Tensor,
+    path_widths: list[int],
     sender: Tensor,
     receiver: Tensor,
     num_nodes: int,
 ) -> Tensor:
     return node_features.new_empty(
-        (num_nodes, node_features.shape[1], coefficients.shape[1])
+        (num_nodes, node_features.shape[1], coefficients.shape[0])
     )
 
 
@@ -479,6 +502,7 @@ def _conv_setup(ctx, inputs, output) -> None:
         edge_attributes,
         radial_weights,
         coefficients,
+        path_widths,
         sender,
         receiver,
         _,
@@ -486,6 +510,7 @@ def _conv_setup(ctx, inputs, output) -> None:
     ctx.save_for_backward(
         node_features, edge_attributes, radial_weights, coefficients, sender, receiver
     )
+    ctx.path_widths = list(path_widths)
 
 
 def _conv_backward(ctx, grad):
@@ -497,28 +522,82 @@ def _conv_backward(ctx, grad):
         sender,
         receiver,
     ) = ctx.saved_tensors
-    grad_messages = grad.index_select(0, receiver)
+    dim_out, dim_in, dim_edge = coefficients.shape
+    widths = ctx.path_widths
+    if not widths:
+        return (
+            torch.zeros_like(node_features),
+            torch.zeros_like(edge_attributes),
+            torch.zeros_like(radial_weights),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    edges = edge_attributes.shape[0]
     gathered = node_features.index_select(0, sender)
+    coupling = _edge_coupling(edge_attributes, coefficients)
+    # One contiguous gather of the gradient per edge, ``[n_edges, dim_out,
+    # num_features]``, the layout the forward held its messages in.
+    incoming = grad.transpose(1, 2).contiguous().index_select(0, receiver)
+    # Each path's block scaled by its radial weights. Built by slices rather
+    # than by gathering the weights out to every component, which would need
+    # an index tensor made on the host inside the backward.
+    weighted = torch.cat(
+        [
+            piece * radial_weights[:, path, None, :]
+            for path, piece in enumerate(torch.split(incoming, widths, dim=1))
+        ],
+        dim=1,
+    )
 
-    grad_gathered = torch.einsum(
-        "poid,emo,ed,epm->emi",
-        coefficients,
-        grad_messages,
-        edge_attributes,
-        radial_weights,
+    # Every operation is differentiable, which is what the second derivative
+    # needs.
+    grad_gathered = _edge_product(coupling.transpose(1, 2), weighted).transpose(1, 2)
+    grad_coupling = _edge_product(weighted, gathered)
+    unweighted = torch.bmm(coupling, gathered.transpose(1, 2))
+    grad_radial = torch.stack(
+        [piece.sum(1) for piece in torch.split(incoming * unweighted, widths, dim=1)],
+        dim=1,
     )
     grad_nodes = torch.zeros_like(node_features).index_add(0, sender, grad_gathered)
-    grad_edges = torch.einsum(
-        "poid,emo,emi,epm->ed",
-        coefficients,
-        grad_messages,
-        gathered,
-        radial_weights,
+    flat = coefficients.reshape(dim_out * dim_in, dim_edge)
+    grad_edges = grad_coupling.reshape(edges, dim_out * dim_in) @ flat
+    return (
+        grad_nodes,
+        grad_edges,
+        grad_radial,
+        None,
+        None,
+        None,
+        None,
+        None,
     )
-    grad_radial = torch.einsum(
-        "poid,emo,emi,ed->epm", coefficients, grad_messages, gathered, edge_attributes
+
+
+def _edge_product(left: Tensor, right: Tensor) -> Tensor:
+    """``left @ right`` edge by edge, where one side has only a few rows or
+    columns: the input irreps' components.
+
+    In float32 on CUDA that shape gets a poor kernel. Measured on an A100 at
+    153714 edges, ``[40 x 128] @ [128 x 4]`` per edge takes 37.6 ms as one
+    batched product and 11.0 ms as four products of one column each, and
+    ``[4 x 40] @ [40 x 128]`` 13.9 against 10.7 ms one row at a time. In
+    float64 the single product is the fast one, 6.9 and 6.3 ms against 22.0
+    and 21.3, and on the CPU splitting only multiplies the per-edge loop. So
+    only float32 on CUDA takes the short side one slice at a time.
+    """
+    if left.dtype != torch.float32 or not left.is_cuda:
+        return torch.bmm(left, right)
+    if right.shape[2] <= left.shape[1]:
+        return torch.cat(
+            [torch.bmm(left, right[:, :, k : k + 1]) for k in range(right.shape[2])],
+            dim=2,
+        )
+    return torch.cat(
+        [torch.bmm(left[:, k : k + 1], right) for k in range(left.shape[1])], dim=1
     )
-    return grad_nodes, grad_edges, grad_radial, None, None, None, None
 
 
 channelwise_tp_conv.register_autograd(_conv_backward, setup_context=_conv_setup)

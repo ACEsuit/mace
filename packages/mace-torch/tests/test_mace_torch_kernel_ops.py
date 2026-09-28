@@ -209,7 +209,8 @@ def convolution_case(nodes=3, edges=6, width=2, dim_in=4, dim_edge=3, paths=2, o
         "node_features": torch.randn(nodes, width, dim_in, requires_grad=True),
         "edge_attributes": torch.randn(edges, dim_edge, requires_grad=True),
         "radial_weights": torch.randn(edges, paths, width, requires_grad=True),
-        "coefficients": torch.randn(paths, out, dim_in, dim_edge),
+        "coefficients": torch.randn(out, dim_in, dim_edge),
+        "path_widths": [out // paths] * paths,
         "sender": torch.randint(0, nodes, (edges,)),
         "receiver": torch.randint(0, nodes, (edges,)),
         "num_nodes": nodes,
@@ -233,6 +234,7 @@ def test_the_convolution_differentiates_twice():
             attributes,
             radial,
             case["coefficients"],
+            case["path_widths"],
             case["sender"],
             case["receiver"],
             case["num_nodes"],
@@ -245,6 +247,40 @@ def test_the_convolution_differentiates_twice():
     )
     assert torch.autograd.gradcheck(function, arguments)
     assert torch.autograd.gradgradcheck(function, arguments)
+
+
+def test_the_convolution_is_each_path_coupled_weighted_and_summed():
+    """The op never forms every path's messages at once, so check it against
+    the formula that does: each path's block of the coupling applied to the
+    sender's features and the edge attributes, weighted by that path's radial
+    weights per channel, and summed onto the receivers."""
+    case = convolution_case(nodes=4, edges=9, width=3, dim_in=4, paths=2, out=6)
+    case["path_widths"] = [2, 4]
+    coefficients = case["coefficients"]
+    gathered = case["node_features"][case["sender"]]
+    expected = torch.zeros(4, 3, 6)
+    start = 0
+    for path, width in enumerate(case["path_widths"]):
+        block = coefficients[start : start + width]
+        messages = (
+            torch.einsum("oid,emi,ed->emo", block, gathered, case["edge_attributes"])
+            * case["radial_weights"][:, path, :, None]
+        )
+        expected[:, :, start : start + width] = torch.zeros(4, 3, width).index_add(
+            0, case["receiver"], messages
+        )
+        start += width
+    torch.testing.assert_close(
+        channelwise_tp_conv(**case), expected, rtol=1e-12, atol=1e-12
+    )
+
+
+def test_the_convolution_takes_a_structure_with_no_edges():
+    case = convolution_case(nodes=3, edges=0)
+    out = channelwise_tp_conv(**case)
+    assert out.shape == (3, 2, 4) and not out.any()
+    out.sum().backward()
+    assert case["node_features"].grad is not None
 
 
 def test_the_node_count_comes_from_the_argument_and_not_from_the_indices():
@@ -277,14 +313,14 @@ def test_the_ops_compile_whole_and_do_not_recompile_for_every_batch_size():
 
     bases, weights = contraction_case()
     weights = [weight.detach() for weight in weights]
-    coefficients = torch.randn(2, 4, 4, 3)
+    coefficients = torch.randn(4, 4, 3)
 
     def step(features, element, attributes, radial, sender, receiver, nodes):
         contracted = symmetric_contraction(
             features, weights, bases, element, len(bases)
         )
         convolved = channelwise_tp_conv(
-            features, attributes, radial, coefficients, sender, receiver, nodes
+            features, attributes, radial, coefficients, [2, 2], sender, receiver, nodes
         )
         return segment_sum(contracted.flatten(1), element, 2).sum() + convolved.sum()
 
