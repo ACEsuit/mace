@@ -1,4 +1,4 @@
-"""`ReforgeBaseConfig`: file formats, `from_dict`, unknown keys, and the two
+"""`BaseConfig`: file formats, `from_dict`, unknown keys, and the two
 exports' fixed point."""
 
 import inspect
@@ -12,92 +12,20 @@ from typing import Annotated, Any
 
 import pytest
 import yaml
-from mace_core.config import (
-    ConfigError,
-    ConfigSection,
-    ReforgeBaseConfig,
-    read_config_file,
+from mace_core.config import BaseConfig, ConfigError, ConfigSection, read_config_file
+from mace_core_demo import (
+    FILE_VALUES,
+    DemoConfig,
+    RadialSection,
+    StageTwoSection,
+    dump,
+    error_locations,
+    write_config,
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, computed_field
 
 #: A warning the test did not ask for is a failure.
 pytestmark = pytest.mark.filterwarnings("error")
-
-# ---------------------------------------------------------------------------
-# The demo schema: two levels of nesting, a list, an optional, a Literal.
-
-
-class RadialSection(ConfigSection):
-    num_bessel: int = 8
-    cutoff: float = 5.0
-
-
-class ModelSection(ConfigSection):
-    num_interactions: int = 2
-    hidden_irreps: str = "128x0e + 128x1o"
-    radial: RadialSection = RadialSection()
-
-
-class DataSection(ConfigSection):
-    train_file: str | None = None
-    valid_fraction: float = 0.1
-    energy_key: str = "REF_energy"
-    heads: list[str] = Field(default_factory=lambda: ["default"])
-
-
-class StageTwoSection(ConfigSection):
-    start_epoch: int = 100
-    energy_weight: float = 1000.0
-
-
-class DemoConfig(ReforgeBaseConfig):
-    name: str = "mace"
-    seed: int = 123
-    default_dtype: str = "float64"
-    model: ModelSection = ModelSection()
-    data: DataSection = DataSection()
-    #: A section left at its defaults unless a file or the CLI writes into it.
-    stage_two: StageTwoSection = StageTwoSection()
-
-
-#: One config, as a dict. Each format test writes it out and loads it back.
-FILE_VALUES = {
-    "name": "water",
-    "seed": 7,
-    "model": {"num_interactions": 4, "radial": {"cutoff": 4.5}},
-    "data": {"train_file": "train.xyz", "heads": ["pbe", "r2scan"]},
-}
-
-
-def to_toml(values, prefix=""):
-    """Enough TOML for a None-free config: scalars and lists share JSON's
-    literal syntax, nested dicts become `[a.b]` tables after the scalars."""
-    lines = [
-        f"{k} = {json.dumps(v)}" for k, v in values.items() if not isinstance(v, dict)
-    ]
-    for key, value in values.items():
-        if isinstance(value, dict):
-            lines += [f"\n[{prefix}{key}]", to_toml(value, f"{prefix}{key}.")]
-    return "\n".join(lines)
-
-
-def dump(values, extension):
-    if extension == ".toml":
-        return to_toml(values)
-    if extension == ".json":
-        return json.dumps(values)
-    return yaml.safe_dump(values)
-
-
-def write_config(tmp_path, extension, values=FILE_VALUES, name="config"):
-    path = tmp_path / f"{name}{extension}"
-    path.write_text(dump(values, extension), encoding="utf-8")
-    return path
-
-
-def error_locations(excinfo):
-    """The dotted location of every error a `ValidationError` carries."""
-    return [".".join(map(str, error["loc"])) for error in excinfo.value.errors()]
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +103,7 @@ def test_malformed_file_is_a_config_error(tmp_path, extension, text):
 def test_a_yaml_anchor_that_contains_itself_is_a_config_error(tmp_path):
     # Under a section it would be pydantic's error; under a free dict it would
     # load and then fail to export, so the file is refused up front.
-    class Free(ReforgeBaseConfig):
+    class Free(BaseConfig):
         extra: dict[str, Any] = Field(default_factory=dict)
 
     path = tmp_path / "loop.yaml"
@@ -279,7 +207,7 @@ def test_unknown_key_in_a_document_is_reported_at_its_path():
 
 
 def test_every_bad_list_item_is_reported(tmp_path):
-    class Layers(ReforgeBaseConfig):
+    class Layers(BaseConfig):
         layers: list[RadialSection] = Field(default_factory=list)
 
     path = write_config(tmp_path, ".json", {"layers": [{"cutof": 1}, {"nb": 2}]})
@@ -309,6 +237,8 @@ def test_resolved_dict_has_every_default_in_declaration_order(tmp_path):
         "model",
         "data",
         "stage_two",
+        "loss",
+        "extra",
     ]
     assert resolved["stage_two"] == {"start_epoch": 100, "energy_weight": 1000.0}
     assert list(resolved["model"]) == ["num_interactions", "hidden_irreps", "radial"]
@@ -342,37 +272,38 @@ def test_fixed_point_holds_through_toml_when_nothing_is_none(tmp_path):
         assert_fixed_point(tmp_path, first, extension)
 
 
-def test_inf_and_nan_survive_the_exports_in_every_format(tmp_path):
-    # pydantic's JSON mode writes them as null by default, which would put a
-    # different value into the model metadata. Each format spells them its own
-    # way (JSON constants, YAML .inf/.nan, TOML inf/nan); nan != nan, so the
-    # round trip is compared as JSON text.
+def test_exports_hold_json_native_values_under_a_free_field():
+    # Without the JSON mode of the dump the tuple would stay a tuple.
+    config = DemoConfig.from_dict({"extra": {"window": (1, 2)}})
+    assert config.to_resolved_dict()["extra"] == {"window": [1, 2]}
+    assert config.to_user_dict() == {"extra": {"window": [1, 2]}}
+
+
+def test_inf_survives_the_exports_in_every_format(tmp_path):
+    # pydantic's JSON mode writes it as null by default under a free field
+    # (`extra`), which would put a different value into the model metadata.
+    # Each format spells it its own way: JSON Infinity, YAML .inf, TOML inf.
     values = {
         **FILE_VALUES,  # the file sets the optional file name, so no null
         "model": {"radial": {"cutoff": math.inf}},
-        "stage_two": {"energy_weight": math.nan},
+        "extra": {"limit": math.inf},
     }
     config = DemoConfig.load(write_config(tmp_path, ".yaml", values))
     resolved = config.to_resolved_dict()
     assert resolved["model"]["radial"]["cutoff"] == math.inf
-    assert math.isnan(resolved["stage_two"]["energy_weight"])
-    assert math.isnan(config.to_user_dict()["stage_two"]["energy_weight"])
+    assert config.to_user_dict()["extra"] == {"limit": math.inf}
     text = json.dumps(resolved)
-    assert "null" not in text and "Infinity" in text and "NaN" in text
+    assert "null" not in text and "Infinity" in text
     for extension, body in [
         (".json", text),
         (".yaml", yaml.safe_dump(resolved)),
-        (".toml", "[model.radial]\ncutoff = inf\n[stage_two]\nenergy_weight = nan\n"),
+        (".toml", "[model.radial]\ncutoff = inf\n"),
     ]:
         path = tmp_path / f"special{extension}"
         path.write_text(body, encoding="utf-8")
         second = DemoConfig.load(path).to_resolved_dict()
         assert second["model"]["radial"]["cutoff"] == math.inf, extension
-        assert math.isnan(second["stage_two"]["energy_weight"]), extension
-    assert (
-        json.dumps(DemoConfig.load(tmp_path / "special.json").to_resolved_dict())
-        == text
-    )
+    assert DemoConfig.load(tmp_path / "special.json").to_resolved_dict() == resolved
 
 
 class LenientSection(BaseModel):
@@ -412,12 +343,31 @@ def test_field_shapes_the_contract_cannot_keep_are_rejected_at_class_definition(
                 return 2 * self.seed
 
 
-def test_a_section_cannot_reopen_extra():
+def test_a_section_cannot_reopen_extra_or_thaw():
     with pytest.raises(TypeError, match=r"Loose sets extra='allow'; a section keeps"):
 
         class Loose(ConfigSection):
             model_config = ConfigDict(extra="allow")
             seed: int = 1
+
+    with pytest.raises(TypeError, match=r"Thawed sets frozen=False; a section stays"):
+
+        class Thawed(ConfigSection):
+            model_config = ConfigDict(frozen=False)
+            seed: int = 1
+
+
+def test_a_validated_config_is_immutable(tmp_path):
+    # What validation produced is what the run uses: a change is a new
+    # validation of an edited dict, never an assignment behind it.
+    config = DemoConfig.load(write_config(tmp_path, ".yaml"))
+    with pytest.raises(ValidationError, match="frozen"):
+        config.seed = 8  # ty: ignore[invalid-assignment]  # the point of the test
+    with pytest.raises(ValidationError, match="frozen"):
+        config.model.radial.cutoff = 6.0  # ty: ignore[invalid-assignment]
+    assert config.seed == 7 and config.model.radial.cutoff == 4.5
+    changed = DemoConfig.from_dict({**config.to_resolved_dict(), "seed": 8})
+    assert changed.seed == 8 and changed.model == config.model
 
 
 # A class that names a class defined below it is incomplete at definition:
@@ -433,7 +383,7 @@ class Later(ConfigSection):
     x: int = 1
 
 
-class ForwardConfig(ReforgeBaseConfig):
+class ForwardConfig(BaseConfig):
     forward: Forward = Field(default_factory=Forward)
 
 
@@ -445,7 +395,7 @@ class PlainLater(BaseModel):  # not a ConfigSection: it would swallow a typo
     a: int = 1
 
 
-class LeakingConfig(ReforgeBaseConfig):
+class LeakingConfig(BaseConfig):
     leaking: Leaking = Field(default_factory=Leaking)
 
 

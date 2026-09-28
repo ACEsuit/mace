@@ -66,14 +66,10 @@ def apply_overrides(
 ) -> dict[str, Any]:
     """A copy of the parsed file with each override written at its dotted path,
     in order. Mappings missing on the way are created and a parent that is not
-    a mapping (a scalar, a list, null) is replaced. A mapping value merges key
-    by key into a mapping already there, so `--model '{"depth": 3}'` keeps the
-    file's other `model` keys; a list or a scalar replaces (a repeated mapping
-    path from `parse_overrides` replaces too, since the mapping keeps one
-    value per path). Values are written as given for pydantic to validate.
-    Neither argument is written into: the copy takes dicts and lists apart, so
-    two keys sharing one object (a YAML anchor) stop sharing; a value that
-    contains itself is a `ConfigError`."""
+    a mapping is replaced. A mapping value merges key by key into a mapping
+    already there, so `--model '{"depth": 3}'` keeps the file's other `model`
+    keys; anything else replaces. Neither argument is written into; a value
+    that contains itself is a `ConfigError`."""
     try:
         copy = _copy_tree(document)
         for dotted_path, value in overrides.items():

@@ -4,91 +4,28 @@ config base knows nothing of either; a command line composes them with
 `read_config_file` and `from_dict`."""
 
 import json
-from typing import Annotated, Any, Literal
+from typing import Any
 
 import pytest
 from mace_core.config import (
     ConfigError,
-    ConfigSection,
-    ReforgeBaseConfig,
     apply_overrides,
     parse_overrides,
     read_config_file,
 )
-from pydantic import Field, ValidationError
+from mace_core_demo import FILE_VALUES, DemoConfig, Huber, error_locations, write_config
+from pydantic import ValidationError
 
 #: A warning the test did not ask for is a failure.
 pytestmark = pytest.mark.filterwarnings("error")
 
-# ---------------------------------------------------------------------------
-# The demo schema: two levels of nesting, a list, an optional, a free dict, a
-# kinds field.
-
-
-class RadialSection(ConfigSection):
-    num_bessel: int = 8
-    cutoff: float = 5.0
-
-
-class ModelSection(ConfigSection):
-    num_interactions: int = 2
-    radial: RadialSection = RadialSection()
-
-
-class DataSection(ConfigSection):
-    train_file: str | None = None
-    heads: list[str] = Field(default_factory=lambda: ["default"])
-
-
-class StageTwoSection(ConfigSection):
-    start_epoch: int = 100
-    energy_weight: float = 1000.0
-
-
-class Weighted(ConfigSection):
-    kind: Literal["weighted"] = "weighted"
-    stress_weight: float = 0.0
-
-
-class Huber(ConfigSection):
-    kind: Literal["huber"] = "huber"
-    delta: float = 0.01
-
-
-class DemoConfig(ReforgeBaseConfig):
-    name: str = "mace"
-    seed: int = 123
-    model: ModelSection = ModelSection()
-    data: DataSection = DataSection()
-    stage_two: StageTwoSection = StageTwoSection()
-    loss: Annotated[Weighted | Huber, Field(discriminator="kind")] = Weighted()
-    extra: dict[str, Any] = Field(default_factory=dict)
-
-
-FILE_VALUES = {
-    "name": "water",
-    "seed": 7,
-    "model": {"num_interactions": 4, "radial": {"cutoff": 4.5}},
-    "data": {"train_file": "train.xyz", "heads": ["pbe", "r2scan"]},
-}
-
 HEADS_JSON = '["a", "b"]'
-
-
-def write_config(tmp_path, values=FILE_VALUES):
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps(values), encoding="utf-8")
-    return path
 
 
 def load(tmp_path, argv, values=FILE_VALUES, root=DemoConfig):
     """What a command line does with its config file and the tokens after it."""
-    document = read_config_file(write_config(tmp_path, values))
+    document = read_config_file(write_config(tmp_path, ".json", values))
     return root.from_dict(apply_overrides(document, parse_overrides(argv)))
-
-
-def error_locations(excinfo):
-    return [".".join(map(str, error["loc"])) for error in excinfo.value.errors()]
 
 
 # ---------------------------------------------------------------------------
@@ -248,32 +185,12 @@ def test_an_override_beats_the_file_which_beats_the_defaults(tmp_path):
     assert config.model.radial.cutoff == 4.5  # the file's other values survive
     assert config.model.radial.num_bessel == 8  # defaults fill the rest
     assert load(tmp_path, []) == DemoConfig.from_dict(FILE_VALUES)
-
-
-def test_values_are_handed_to_pydantic_as_given(tmp_path):
-    argv = ["--seed=9", "--data.train_file", "null", "--data.heads", HEADS_JSON]
-    config = load(tmp_path, argv, {})
-    assert config.seed == 9  # pydantic's lax coercion
-    assert config.data.train_file is None
-    assert config.data.heads == ["a", "b"]
-    assert load(tmp_path, ["--stage_two.start_epoch", "50"], {}).stage_two == (
-        StageTwoSection(start_epoch=50)
-    )
-
-
-def test_a_value_of_the_wrong_type_is_a_validation_error(tmp_path):
-    with pytest.raises(ValidationError, match="seed"):
-        load(tmp_path, ["--seed", "seven"])
-
-
-@pytest.mark.parametrize(
-    "dotted_path", ["nmae", "model.num_interaction", "stage_two.start"]
-)
-def test_an_unknown_key_in_an_override_is_reported_at_its_path(tmp_path, dotted_path):
+    # A section the file left alone is created on the way and validated like
+    # any other; the value stays the string the grammar handed over.
+    assert load(tmp_path, ["--stage_two.start_epoch", "50"]).stage_two.start_epoch == 50
     with pytest.raises(ValidationError) as excinfo:
-        load(tmp_path, [f"--{dotted_path}", "1"], {})
-    assert error_locations(excinfo) == [dotted_path]
-    assert excinfo.value.errors()[0]["type"] == "extra_forbidden"
+        load(tmp_path, ["--stage_two.start", "50"])
+    assert error_locations(excinfo) == ["stage_two.start"]
 
 
 def test_an_override_writes_into_a_kinds_field(tmp_path):

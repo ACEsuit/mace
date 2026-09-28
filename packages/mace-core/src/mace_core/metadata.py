@@ -18,7 +18,7 @@ from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from mace_core.config import ReforgeBaseConfig
+from mace_core.config import BaseConfig
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -26,11 +26,9 @@ __all__ = [
     "ConfigRecord",
     "DataSourceSummary",
     "DataSummary",
-    "E0Details",
     "HeadSummary",
     "MetadataSchemaError",
     "ModelMetadata",
-    "ParentModel",
     "Provenance",
     "format_citations",
 ]
@@ -55,7 +53,7 @@ class _Record(BaseModel):
 class ConfigRecord(_Record):
     """The training configuration, as written and as resolved.
 
-    Both are the JSON-native dicts a `ReforgeBaseConfig` exports: `user` is
+    Both are the JSON-native dicts a `BaseConfig` exports: `user` is
     `to_user_dict()`, the keys the config file and the command line set, and
     `resolved` is `to_resolved_dict()`, every key with defaults filled in.
     Build it with `from_config()` so the two cannot be mixed up.
@@ -65,15 +63,17 @@ class ConfigRecord(_Record):
     resolved: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def from_config(cls, config: ReforgeBaseConfig) -> ConfigRecord:
+    def from_config(cls, config: BaseConfig) -> ConfigRecord:
         return cls(user=config.to_user_dict(), resolved=config.to_resolved_dict())
 
 
 class Provenance(_Record):
     """Which code produced the model."""
 
-    #: Version of the `mace-core` distribution, as `mace_core.__version__` reports it.
-    code_version: str
+    #: Version per distribution involved, `{"mace-core": "1.0.2", "mace-torch":
+    #: "1.1.0"}`: the packages version independently, so no single number
+    #: identifies the code.
+    versions: dict[str, str]
     #: Full hash of the commit the code was run from; None when not in a checkout.
     git_commit: str | None = None
 
@@ -91,8 +91,8 @@ class DataSourceSummary(_Record):
     name: str
     num_configurations: int | None = None
     num_atoms: int | None = None
-    #: Chemical symbols of every element present.
-    elements: list[str] = Field(default_factory=list)
+    #: Atomic numbers of every element present.
+    elements: list[int] = Field(default_factory=list)
     reference_keys: list[str] = Field(default_factory=list)
 
 
@@ -103,27 +103,10 @@ class DataSummary(_Record):
     sources: list[DataSourceSummary] = Field(default_factory=list)
 
 
-class E0Details(_Record):
-    """How one head's per-element reference energies (the E0s) were obtained.
-
-    `values` maps chemical symbol to E0 in the model's energy unit. Symbols
-    rather than atomic numbers, because JSON keys are strings and an integer
-    key would not survive the round trip.
-    """
-
-    #: "explicit" when the E0s were given; "estimated" when fitted from the data.
-    source: Literal["explicit", "estimated"]
-    #: The estimation method (e.g. "average", "least_squares"); None when explicit.
-    method: str | None = None
-    #: Parameters of the method or reference, e.g. which data the fit used.
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    values: dict[str, float] = Field(default_factory=dict)
-
-
 class HeadSummary(_Record):
-    """What one head was fitted on: its E0s and the data sources it consumed."""
+    """What one head was fitted on: the data sources it consumed. Its E0s are
+    not recorded here; the head's parameters in the model hold them."""
 
-    e0: E0Details
     #: Names in `DataSummary.sources`; a source feeding two heads appears in both.
     sources: list[str] = Field(default_factory=list)
 
@@ -153,9 +136,6 @@ class ModelMetadata(_Record):
     doi: str | None = None
     citations: list[Citation] = Field(default_factory=list)
     notes: str = ""
-    #: The models this one was built from, each with its own record inside, so
-    #: the whole lineage travels with the model.
-    parents: list[ParentModel] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _heads_name_known_sources(self) -> ModelMetadata:
@@ -191,9 +171,7 @@ class ModelMetadata(_Record):
         """Parse a record written by `to_json()`.
 
         Raises `MetadataSchemaError` when the record carries a schema version
-        this code does not read, before any field is interpreted. Embedded
-        parent records are validated as fields, so a version mismatch inside
-        one is pydantic's error; a record only embeds parents it could read.
+        this code does not read, before any field is interpreted.
         """
         try:
             document = json.loads(text)
@@ -222,21 +200,6 @@ class ModelMetadata(_Record):
                 f"mace-core reads schema_version {SCHEMA_VERSION}: {hint}"
             )
         return cls.model_validate_json(text)
-
-
-class ParentModel(_Record):
-    """A model this one was built from."""
-
-    #: What the parent contributed: its weights as the starting point (fine-tuning
-    #: or continued training), or its predictions as distillation targets.
-    role: Literal["initial_weights", "teacher"]
-    #: How the config named it: a path or a registry name such as "mace-mp-0b3".
-    name: str
-    #: The parent's own record; None for a legacy checkpoint that carries none.
-    metadata: ModelMetadata | None = None
-
-
-ModelMetadata.model_rebuild()  # `parents` refers to the class defined after it
 
 
 def format_citations(citations: Iterable[Citation]) -> str:

@@ -6,14 +6,14 @@ Clebsch-Gordan basis, neighbours) are imported from their own modules.
 
 from importlib.metadata import PackageNotFoundError, version
 
-from mace_core.config import ConfigError, ConfigSection, ReforgeBaseConfig
+from mace_core.config import BaseConfig, ConfigError, ConfigSection
 from mace_core.metadata import ModelMetadata, format_citations
 
 __all__ = [
+    "BaseConfig",
     "ConfigError",
     "ConfigSection",
     "ModelMetadata",
-    "ReforgeBaseConfig",
     "__version__",
     "format_citations",
 ]

@@ -1,16 +1,8 @@
-"""One config file, one validation, two exports.
+"""The config base: one file, validated once by pydantic, exported as a dict.
 
-`ReforgeBaseConfig.load(config_file)` reads one TOML, YAML or JSON file into a
-dict (`read_config_file`, public) and validates it once with pydantic
-(`from_dict`, public, for a caller that edits the dict first: `cli` does, for a
-command line). Everything the schema rejects, unknown keys included, is
-pydantic's `ValidationError` at its dotted location; `ConfigError` is raised
-only for a file that cannot be read or parsed. `to_resolved_dict` is the full
-JSON-native dump, itself a reloadable config file; `to_user_dict` holds only
-what was set. A kinds field (a discriminated union on `kind`) is an ordinary
-pydantic feature written in the tagged form, `loss: {kind: huber, delta: 0.1}`;
-nothing here knows about it. Nothing here knows about a command line either;
-the `--a.b value` grammar is `cli`'s.
+Everything the schema rejects, unknown keys included, is pydantic's
+`ValidationError`; `ConfigError` is only for a file that cannot be read or
+parsed. Nothing here knows about a command line: that is `cli`.
 """
 
 import json
@@ -30,7 +22,7 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib
 
-__all__ = ["ConfigError", "ConfigSection", "ReforgeBaseConfig", "read_config_file"]
+__all__ = ["BaseConfig", "ConfigError", "ConfigSection", "read_config_file"]
 
 
 class ConfigError(ValueError):
@@ -82,21 +74,21 @@ def read_config_file(path: str | os.PathLike[str]) -> dict[str, Any]:
 
 
 class ConfigSection(BaseModel):
-    """A node of a config tree: unknown keys are errors at every level.
+    """A node of a config tree: unknown keys are errors, and its attributes
+    cannot be reassigned (a list or dict it holds is not protected). A change
+    is a new validation, `from_dict` on an edited dict.
 
-    Subclasses declare fields only. The definition-time checks keep unknown
-    keys fatal (every reachable model is a section, `extra="forbid"` cannot be
-    reopened) and the resolved export a fixed point (no sets, aliases,
-    excluded or computed fields). A class left incomplete by a forward
-    reference is checked on every `load` of a root that reaches it instead;
-    a forward reference to a class local to a function cannot be resolved
-    that way (pydantic cannot see the function's scope), so declare such
-    classes at module level.
+    Subclasses declare fields only. A subclass that would undo either rule, or
+    hold what does not load back from the export (a set, an alias, an excluded
+    or computed field, a plain `BaseModel`), is a `TypeError` when it is
+    defined, or on `load` if a forward reference left it incomplete. Declare a
+    forward-referenced class at module level: pydantic cannot resolve one
+    local to a function.
     """
 
     # inf/nan as the JSON constants Infinity and NaN, not pydantic's default
     # null, which would turn a value into a different one.
-    model_config = ConfigDict(extra="forbid", ser_json_inf_nan="constants")
+    model_config = ConfigDict(extra="forbid", frozen=True, ser_json_inf_nan="constants")
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -106,6 +98,11 @@ class ConfigSection(BaseModel):
             raise TypeError(
                 f"{cls.__name__} sets extra={extra!r}; a section keeps "
                 "extra='forbid' so an unknown key stays an error"
+            )
+        if not cls.model_config.get("frozen"):
+            raise TypeError(
+                f"{cls.__name__} sets frozen=False; a section stays frozen "
+                "so a validated config is not changed behind the validation"
             )
         if cls.__pydantic_complete__:  # else a forward reference: `load` checks it
             _check_field_declarations(cls)
@@ -167,8 +164,9 @@ def _check_sections_reached_by(root: type[ConfigSection]) -> None:
                     to_visit.append(leaf)
 
 
-class ReforgeBaseConfig(ConfigSection):
-    """The root of a config tree: `load` a file, or `from_dict` a parsed one."""
+class BaseConfig(ConfigSection):
+    """Base class for the root of a config schema: subclass it and declare the
+    fields, then `load` a file or `from_dict` a parsed one."""
 
     @classmethod
     def load(cls, config_file: str | os.PathLike[str]) -> Self:
@@ -177,11 +175,10 @@ class ReforgeBaseConfig(ConfigSection):
 
     @classmethod
     def from_dict(cls, document: Mapping[str, Any]) -> Self:
-        """Build the config from a parsed document, checking the sections the
-        class reaches first. This is `load` for a caller that edits the parsed
-        file before validating it, such as a command line writing its flags into
-        the dict `read_config_file` returned. The document is not written into
-        (values under an `Any`-typed field are shared with it, not copied)."""
+        """Build the config from a parsed document: `load` for a caller that
+        edits the dict `read_config_file` returned first, such as a command
+        line. The document is not written into (values under an `Any`-typed
+        field are shared with it, not copied)."""
         _check_sections_reached_by(cls)
         return cls.model_validate(document)
 
@@ -192,7 +189,7 @@ class ReforgeBaseConfig(ConfigSection):
         return self.model_dump(mode="json")
 
     def to_user_dict(self) -> dict[str, Any]:
-        """Only what the file set, in the same shape. A loaded config carries
+        """Only what was set, in the same shape. A loaded config carries
         the tag of every kinds field it wrote, so this loads back;
         a variant built in code without its tag (`Config(loss=Huber(delta=2))`)
         exports without `kind`: pass the tag, or use `to_resolved_dict`."""

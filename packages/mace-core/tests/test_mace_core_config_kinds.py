@@ -9,7 +9,7 @@ import json
 from typing import Annotated, Literal
 
 import pytest
-from mace_core.config import ConfigSection, ReforgeBaseConfig
+from mace_core.config import BaseConfig, ConfigSection
 from pydantic import Field, ValidationError
 
 #: A warning the test did not ask for is a failure.
@@ -65,7 +65,7 @@ class HeadSection(ConfigSection):
     loss: Choice = Weighted()
 
 
-class LossConfig(ReforgeBaseConfig):
+class LossConfig(BaseConfig):
     energy_weight: float = 1.0
     choice: Choice = Weighted()
     opt: OptChoice = NoChoice()
@@ -79,7 +79,7 @@ class HuberRequired(ConfigSection):
     delta: float = 0.01
 
 
-class RequiredConfig(ReforgeBaseConfig):
+class RequiredConfig(BaseConfig):
     choice: Annotated[Weighted | HuberRequired, Field(discriminator="kind")] = (
         Weighted()
     )
@@ -250,7 +250,7 @@ def test_json_schema_is_produced_in_both_modes():
 
 
 def test_a_variant_class_as_a_plain_field_keeps_kind_as_a_key(tmp_path):
-    class Reuse(ReforgeBaseConfig):
+    class Reuse(BaseConfig):
         direct: Huber = Huber()
 
     resolved = {
