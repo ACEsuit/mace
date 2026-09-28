@@ -354,3 +354,56 @@ def test_the_converted_energy_differentiates_twice(fp64, isolated):
     start = graph["positions"].clone().requires_grad_(True)
     assert torch.autograd.gradcheck(energy, (start,), eps=1e-6, atol=1e-7)
     assert torch.autograd.gradgradcheck(energy, (start,), eps=1e-6, atol=1e-5)
+
+
+def test_a_model_without_the_pair_repulsion_converts_too(fp64, isolated):
+    """Every committed anchor has the repulsion on, so the envelope order was
+    once read off the repulsion and defaulted to 6 without it. A legacy model
+    with the default envelope of order 5 and no repulsion then converted into a
+    different function, off by 0.18 eV on 64 atoms of diamond."""
+    from ase.build import bulk
+    from e3nn import o3
+
+    from mace import modules
+
+    torch.manual_seed(0)
+    legacy = modules.ScaleShiftMACE(
+        r_max=5.0,
+        num_bessel=8,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=1,
+        hidden_irreps=o3.Irreps("8x0e+8x1o"),
+        MLP_irreps=o3.Irreps("8x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=np.array([-1.0]),
+        avg_num_neighbors=8.0,
+        atomic_numbers=[6],
+        correlation=2,
+        radial_type="bessel",
+        atomic_inter_scale=1.0,
+        atomic_inter_shift=0.0,
+        use_reduced_cg=False,
+        pair_repulsion=False,
+    ).to(torch.float64)
+    atoms = bulk("C", "diamond", a=3.57, cubic=True).repeat(2)
+    atoms.positions += np.random.default_rng(0).normal(scale=0.05, size=(64, 3))
+    reference = legacy(
+        legacy_batch(legacy, atoms).to_dict(), training=False, compute_force=True
+    )
+    model, config = convert(legacy)
+    result = DerivativeEngine(model, ENERGY)(
+        v1_graph(atoms, [6], config["cutoff"]), compute=("forces",)
+    )
+    assert config["cutoff_order"] == 5
+    assert (
+        abs(float(reference["energy"]) - float(result.total_energy)) < ENERGY_TOLERANCE
+    )
+    assert float((reference["forces"] - result.forces).abs().max()) < FORCE_TOLERANCE

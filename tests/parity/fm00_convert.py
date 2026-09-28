@@ -277,7 +277,10 @@ def build_config(legacy_model) -> dict:
         .correlation,
         "avg_num_neighbors": float(interaction.avg_num_neighbors),
         "pair_repulsion": repulsion is not None,
-        "cutoff_order": int(repulsion.p) if repulsion is not None else 6,
+        # The radial envelope's order, which the pair repulsion shares when
+        # there is one. Read off the envelope, since a model without the
+        # repulsion still has one.
+        "cutoff_order": int(legacy_model.radial_embedding.cutoff_fn.p),
         "readout_hidden": _dimension(str(legacy_model.readouts[-1].linear_1.irreps_out))
         // num_heads,
         "num_heads": num_heads,
