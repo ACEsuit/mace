@@ -257,3 +257,162 @@ def test_no_attribute_is_written_onto_a_module_during_a_forward():
         and (key not in before or key not in after or before[key] is not after[key])
     }
     assert not changed, f"the forward wrote {sorted(changed)} onto the engine"
+
+
+# ---------------------------------------------------------------------------
+# Why detaching the converged variable is exact
+# ---------------------------------------------------------------------------
+
+
+class CoupledEngine(torch.nn.Module):
+    """``E = sum((v - x A)^2) + sum(c * x)``.
+
+    The fixed point in ``v`` moves with ``x``, so the total derivative of the
+    relaxed energy in ``x`` is not obviously the partial one. It is, and only
+    because the loop reaches the fixed point by minimising this same energy:
+    the term the converged ``v`` contributes is multiplied by a derivative that
+    has vanished. This engine is what turns that argument into a measurement.
+    """
+
+    def __init__(self, coupling: torch.Tensor, linear: torch.Tensor) -> None:
+        super().__init__()
+        self.coupling = coupling
+        self.linear = linear
+        self.differentiable_inputs = [NODE_INPUT]
+
+    def derivative_names(self):
+        return {VARIABLE: "magforces"}
+
+    def forward(self, graph, compute=(), training=False):
+        variable = graph[VARIABLE]
+        positions = graph["positions"]
+        relaxed = (
+            variable
+            if variable.requires_grad
+            else variable.clone().requires_grad_(True)
+        )
+        moving = (
+            positions
+            if positions.requires_grad
+            else positions.clone().requires_grad_(True)
+        )
+        energy = (
+            ((relaxed - moving @ self.coupling) ** 2).sum()
+            + (self.linear * moving).sum()
+        ).reshape(1)
+        output = MACEOutput(total_energy=energy)
+        wanted = set(compute)
+        if "magforces" in wanted:
+            output.extras["magforces"] = -torch.autograd.grad(
+                energy.sum(), relaxed, create_graph=training, retain_graph=True
+            )[0]
+        if "forces" in wanted:
+            output.forces = -torch.autograd.grad(
+                energy.sum(), moving, create_graph=training, retain_graph=True
+            )[0]
+        return output
+
+
+def coupled_setup(count: int = 4, **spec_kwargs):
+    torch.manual_seed(0)
+    engine = CoupledEngine(torch.randn(3, 3), torch.randn(count, 3))
+    settings: dict[str, Any] = dict(variable=VARIABLE, max_iter=200, tolerance=1e-12)
+    settings.update(spec_kwargs)
+    driver = FixedPointDriver(engine, FixedPointSpec(**settings))
+    positions = torch.randn(count, 3, dtype=torch.float64)
+    return driver, engine, positions
+
+
+@fp64_only
+def test_the_force_at_the_fixed_point_is_the_total_derivative():
+    """Against a finite difference of the *relaxed* energy, which is the only
+    thing that distinguishes the total derivative from the partial one.
+
+    This is the measurement behind detaching the converged variable. If it
+    failed, every force from a relaxing model would be missing a term and the
+    only symptom would be a fit that does not quite converge.
+    """
+    driver, engine, positions = coupled_setup()
+    reported = driver(
+        {"positions": positions.clone(), VARIABLE: torch.zeros(4, 3)},
+        compute=("forces",),
+    ).forces.detach()
+
+    def relaxed_energy(at: torch.Tensor) -> float:
+        fresh = FixedPointDriver(
+            engine, FixedPointSpec(variable=VARIABLE, max_iter=200, tolerance=1e-12)
+        )
+        graph = {"positions": at, VARIABLE: torch.zeros(4, 3)}
+        return float(fresh(graph, compute=()).total_energy.sum().detach())
+
+    step = 1e-6
+    difference = torch.zeros_like(positions)
+    for atom in range(positions.shape[0]):
+        for axis in range(3):
+            forward, backward = positions.clone(), positions.clone()
+            forward[atom, axis] += step
+            backward[atom, axis] -= step
+            difference[atom, axis] = -(
+                relaxed_energy(forward) - relaxed_energy(backward)
+            ) / (2 * step)
+
+    assert torch.allclose(reported, difference, rtol=0, atol=1e-8)
+
+
+@fp64_only
+def test_a_fixed_point_that_is_not_a_minimum_refuses_derivatives():
+    """Without the stationarity there is no cancellation, and this solver has
+    no implicit backward to replace it. The number it would return is
+    plausible, which is why it is refused rather than warned about."""
+    driver, _, positions = coupled_setup(variational=False)
+    graph = {"positions": positions, VARIABLE: torch.zeros(4, 3)}
+    with pytest.raises(NotImplementedError, match="not variational"):
+        driver(graph, compute=("forces",))
+
+
+@fp64_only
+def test_it_still_evaluates_without_derivatives():
+    """The refusal is of derivatives, not of the model."""
+    driver, _, positions = coupled_setup(variational=False)
+    graph = {"positions": positions, VARIABLE: torch.zeros(4, 3)}
+    assert driver(graph, compute=()).total_energy is not None
+
+
+@fp64_only
+def test_the_force_agrees_with_differentiating_through_the_iterations():
+    """The other half of the argument, from the opposite direction.
+
+    A finite difference says the reported force is the derivative of the
+    relaxed energy. This says the same thing analytically: a solve whose every
+    step stays in the graph, differentiated end to end, reaches the same
+    number. Between them the detach is shown to lose nothing rather than to
+    lose something the finite difference was too coarse to see.
+
+    The unrolled solve is plain gradient descent rather than the driver's
+    LBFGS, which is the point: what the two agree on is the fixed point, not
+    the path to it.
+    """
+    driver, engine, positions = coupled_setup()
+    reported = driver(
+        {"positions": positions.clone(), VARIABLE: torch.zeros(4, 3)},
+        compute=("forces",),
+    ).forces.detach()
+
+    moving = positions.clone().requires_grad_(True)
+    variable = torch.zeros(4, 3, dtype=torch.float64)
+    for _ in range(400):
+        graph = {"positions": moving, VARIABLE: variable}
+        gradient = -engine(graph, compute=("magforces",), training=True).extras[
+            "magforces"
+        ]
+        # Kept in the graph on purpose: this is the trajectory the driver
+        # detaches, and differentiating through it is what makes the two
+        # answers independent.
+        variable = variable - 0.5 * gradient
+
+    energy = engine(
+        {"positions": moving, VARIABLE: variable}, compute=()
+    ).total_energy.sum()
+    (unrolled,) = torch.autograd.grad(energy, moving)
+
+    assert torch.allclose(reported, -unrolled, rtol=0, atol=1e-9)

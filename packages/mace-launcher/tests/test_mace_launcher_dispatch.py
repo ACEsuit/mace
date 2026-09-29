@@ -1,6 +1,7 @@
 """Engine selection, argv handling and the not-yet-migrated error."""
 
 import sys
+import types
 
 import mace_launcher
 import pytest
@@ -81,11 +82,42 @@ def test_engine_flag_without_a_value_is_refused(monkeypatch):
 
 
 def test_an_unmigrated_capability_names_itself_rather_than_a_module(monkeypatch):
-    """A missing v1 CLI is a routine migration state, not an ImportError."""
-    monkeypatch.setattr(sys, "argv", ["mace_run_train", "--engine", "v1"])
+    """A missing v1 CLI is a routine migration state, not an ImportError.
+
+    Evaluation is one of the eleven that have not moved yet. Training has, so
+    it is no longer the example: a script whose v1 side exists reaches it, and
+    the test below is the one that says so.
+    """
+    monkeypatch.setattr(sys, "argv", ["mace_eval_configs", "--engine", "v1"])
     with pytest.raises(SystemExit) as excinfo:
-        mace_launcher.run_train()
+        mace_launcher.eval_configs()
     message = str(excinfo.value)
-    assert "mace_run_train" in message
+    assert "mace_eval_configs" in message
     assert "not yet available on v1 engine" in message
     assert "--engine legacy" in message
+
+
+def test_training_reaches_the_v1_module_now_that_it_exists(monkeypatch):
+    """The dispatch is the whole of coexistence: the same script name runs one
+    stack or the other, and nothing but the flag says which."""
+    called = {}
+
+    def record():
+        called["v1"] = list(sys.argv)
+
+    module = types.ModuleType("mace_torch.cli.run_train")
+    module.main = record  # ty: ignore[unresolved-attribute]
+    monkeypatch.setitem(sys.modules, "mace_torch.cli.run_train", module)
+    monkeypatch.setattr(
+        sys, "argv", ["mace_run_train", "--engine", "v1", "--config", "run.yaml"]
+    )
+    mace_launcher.run_train()
+    assert called["v1"] == ["mace_run_train", "--config", "run.yaml"]
+
+
+def test_both_stacks_say_the_same_thing_about_what_has_not_moved():
+    """The suite skips by matching the sentence, so two spellings of it would
+    make half the refusals fail instead of skip."""
+    from mace_torch.cli.run_train import NOT_MIGRATED as from_the_command_line
+
+    assert from_the_command_line == mace_launcher.NOT_MIGRATED

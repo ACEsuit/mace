@@ -43,20 +43,29 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 import torch
-from mace_core.observables import InputSpec
-from mace_core.observables.derivatives import (
-    derivative_name,
-    derivative_sign,
-)
+from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 __all__ = [
+    "ENGINE_EXTRA_ROWS",
     "DerivativeEngine",
+    "atomic_virials_and_stresses",
     "cell_volume_and_mask",
+    "hessian_of_energy",
     "prepare_inputs",
     "stress_from_strain_gradient",
 ]
+
+
+#: What each quantity this engine adds to ``extras`` has a row for. The
+#: Hessian is not here: it couples every atom with every other, so it has no
+#: row per atom to cut, and it is taken on a batch with no padding.
+ENGINE_EXTRA_ROWS: dict[str, str] = {
+    "edge_forces": "edge",
+    "atomic_virials": "atom",
+    "atomic_stresses": "atom",
+}
 
 
 def cell_volume_and_mask(
@@ -106,6 +115,80 @@ def stress_from_strain_gradient(
     # The near-degenerate backstop. A cell that is not quite singular divides
     # to something finite and enormous, which the mask above does not catch.
     return torch.where(torch.abs(stress) < 1e10, stress, torch.zeros_like(stress))
+
+
+def atomic_virials_and_stresses(
+    edge_forces: Tensor,
+    edge_index: Tensor,
+    vectors: Tensor,
+    batch: Tensor,
+    cell: Tensor,
+    pbc: Tensor | None = None,
+) -> tuple[Tensor, Tensor]:
+    """The virial and the stress of each atom, from the forces on its edges.
+
+    Each edge's contribution to the strain derivative, ``dE/dv (x) v``, is
+    split evenly between its two atoms and symmetrised, so the atoms' shares
+    add up to the whole structure's: their virials to ``virials`` and their
+    stresses to ``stress``, with the same signs and the same masking of a
+    structure that has no volume. The frozen tree's split, which it takes from
+    an edge force of the opposite sign.
+
+    Args:
+        edge_forces: ``-dE/dv`` per edge, ``[n_edges, 3]``, as the engine
+            reports them.
+        edge_index: ``[2, n_edges]``, sender then receiver.
+        vectors: The edge vectors, ``[n_edges, 3]``.
+        batch: ``[n_atoms]``, which structure each atom belongs to.
+        cell: ``[n_graphs, 3, 3]``.
+        pbc: ``[n_graphs, 3]`` of bool, or ``None``.
+
+    Returns:
+        ``(virials, stresses)``, each ``[n_atoms, 3, 3]``.
+    """
+    num_atoms = int(batch.shape[0])
+    per_edge = -torch.einsum("ei,ej->eij", edge_forces, vectors)
+    shares = torch.zeros(
+        (num_atoms, 3, 3), dtype=per_edge.dtype, device=per_edge.device
+    )
+    shares = shares.index_add(0, edge_index[0], per_edge)
+    shares = shares.index_add(0, edge_index[1], per_edge) / 2
+    shares = (shares + shares.transpose(-1, -2)) / 2
+    volume, periodic = cell_volume_and_mask(cell, pbc)
+    stresses = shares / volume[batch].view(-1, 1, 1)
+    stresses = torch.where(
+        periodic[batch].view(-1, 1, 1), stresses, torch.zeros_like(stresses)
+    )
+    stresses = torch.where(
+        torch.abs(stresses) < 1e10, stresses, torch.zeros_like(stresses)
+    )
+    return -shares, stresses
+
+
+def hessian_of_energy(forces: Tensor, positions: Tensor) -> Tensor:
+    """``d2E / dr dr``, one row per force component.
+
+    Returns:
+        ``[3 * n_atoms, n_atoms, 3]``: row ``3 * i + a`` is the gradient of
+        the ``a`` component of ``-forces[i]`` against every position, which is
+        the frozen tree's layout.
+    """
+    flat = -forces.reshape(-1)
+    rows = torch.eye(flat.shape[0], dtype=flat.dtype, device=flat.device)
+    try:
+        (hessian,) = torch.autograd.grad(
+            [flat], [positions], [rows], retain_graph=True, is_grads_batched=True
+        )
+    except RuntimeError:
+        # An operator without a batching rule. Row by row gives the same
+        # numbers, only slower.
+        hessian = torch.stack(
+            [
+                torch.autograd.grad([flat[index]], [positions], retain_graph=True)[0]
+                for index in range(flat.shape[0])
+            ]
+        )
+    return hessian
 
 
 def _symmetric_strain(
@@ -236,6 +319,13 @@ class DerivativeEngine(nn.Module):
             asked for by name. Nothing here knows what any of them mean: a
             magnetic moment and an external field go through the same code, and
             neither appears as a literal in it.
+        responses: Observables other than the energy whose declared derivative
+            against the positions can be asked for by its declared name, a
+            dipole's ``dmu_dr`` for one. Each is taken component by component,
+            as ``[components, n_atoms, 3]``.
+
+    A model with no energy is wrapped with ``energy=None``; it can then be asked
+    only for response derivatives.
 
     The energy that is differentiated is always ``total_energy``, for both of
     the shapes the frozen tree has. Its plain model differentiates the total
@@ -248,8 +338,10 @@ class DerivativeEngine(nn.Module):
     def __init__(
         self,
         backbone: nn.Module,
+        energy: ObservableSpec | None,
         output_layer: nn.Module | None = None,
         inputs: Iterable[InputSpec] = (),
+        responses: Iterable[ObservableSpec] = (),
     ) -> None:
         super().__init__()
         # Either a backbone and an output layer, or one model that is already
@@ -257,20 +349,28 @@ class DerivativeEngine(nn.Module):
         # was an assumption, and a model with a pair repulsion in it does not.
         self.backbone = backbone
         self.output_layer = output_layer
+        self.energy = energy
         self.inputs = list(inputs)
         self.differentiable_inputs = [
             spec for spec in self.inputs if spec.differentiable
         ]
+        self.responses = {
+            spec.derivative_name("pos"): spec
+            for spec in responses
+            if "pos" in spec.requested_derivatives()
+        }
 
     def derivative_names(self) -> dict[str, str]:
         """The name each declared input's energy derivative is reported under.
 
-        Derived, never declared. ``pos`` reports as ``forces`` and ``magmom``
-        as ``magforces`` because those pairs have names of their own; anything
-        else follows ``d_energy_d_<input>``.
+        Read off the energy observable's own declaration. A pair with a name of
+        its own says so there, beside its sign and its units, so a quantity
+        like ``magforces`` needs no code here and no table anywhere.
         """
+        if self.energy is None:
+            return {}
         return {
-            spec.name: derivative_name("energy", spec.name)
+            spec.name: self.energy.derivative_name(spec.name)
             for spec in self.differentiable_inputs
         }
 
@@ -285,20 +385,36 @@ class DerivativeEngine(nn.Module):
         Args:
             graph: The flat dict, read only.
             compute: Any of ``forces``, ``stress``, ``virials``,
-                ``edge_forces``.
+                ``edge_forces``, ``atomic_virials``, ``atomic_stresses`` and
+                ``hessian``, and the declared name of any response
+                derivative.
             training: ``True`` keeps the graph alive so the derivative can
                 itself be differentiated, which is what force training needs.
         """
         wanted = set(compute)
         by_input = self.derivative_names()
-        known = {"forces", "stress", "virials", "edge_forces"} | set(by_input.values())
+        per_atom_strain = {"atomic_virials", "atomic_stresses"}
+        known = {
+            "forces",
+            "stress",
+            "virials",
+            "edge_forces",
+            "hessian",
+            *per_atom_strain,
+        } | set(by_input.values())
+        wanted_responses = sorted(wanted & set(self.responses))
+        if self.energy is None:
+            known = set()
+        known |= set(self.responses)
         unknown = sorted(wanted - known)
         if unknown:
             undeclared = [
                 name
                 for name in unknown
-                if any(
-                    derivative_name("energy", spec.name) == name for spec in self.inputs
+                if self.energy is not None
+                and any(
+                    self.energy.derivative_name(spec.name) == name
+                    for spec in self.inputs
                 )
             ]
             if undeclared:
@@ -312,11 +428,17 @@ class DerivativeEngine(nn.Module):
                 f"{sorted(known)}."
             )
         need_strain = bool(wanted & {"stress", "virials"})
-        need_forces = bool(wanted & {"forces", "edge_forces"}) or need_strain
+        need_edges = "edge_forces" in wanted or bool(wanted & per_atom_strain)
+        need_hessian = "hessian" in wanted
+        need_forces = (
+            bool(wanted & {"forces"}) or need_edges or need_strain or need_hessian
+        )
         # Only the inputs whose derivative was actually asked for. A leaf that
         # nobody differentiates still holds the whole backward graph alive.
         leaves = [
-            spec for spec in self.differentiable_inputs if by_input[spec.name] in wanted
+            spec
+            for spec in self.differentiable_inputs
+            if by_input.get(spec.name) in wanted
         ]
         for spec in leaves:
             if spec.name not in graph:
@@ -330,23 +452,25 @@ class DerivativeEngine(nn.Module):
 
         prepared, positions, displacement = prepare_inputs(
             graph,
-            need_forces=need_forces,
+            need_forces=need_forces or bool(wanted_responses),
             need_stress=need_strain,
             leaves=[spec.name for spec in leaves],
         )
-        if "edge_forces" in wanted:
-            # The edge vectors become the leaf themselves. Detaching first is
-            # what makes them one: a tensor that is already a function of the
-            # positions is an interior node, and asking for its gradient gives
-            # the positions' contribution rather than the edges'.
-            prepared["vectors"] = prepared["vectors"].detach().requires_grad_(True)
-
         if self.output_layer is None:
             output = self.backbone(prepared)
         else:
             output = self.output_layer(prepared, self.backbone(prepared))
+        if wanted_responses:
+            for name in wanted_responses:
+                output.extras[name] = self._response_derivative(
+                    output, name, positions, training
+                )
+            wanted = wanted - set(wanted_responses)
         if not wanted:
             return output
+        # Everything left is an energy derivative, which a model with no energy
+        # was refused above.
+        assert self.energy is not None
 
         targets: list[Tensor] = []
         order: list[str] = []
@@ -357,7 +481,7 @@ class DerivativeEngine(nn.Module):
             assert displacement is not None
             targets.append(displacement)
             order.append("displacement")
-        if "edge_forces" in wanted:
+        if need_edges:
             targets.append(prepared["vectors"])
             order.append("vectors")
         for spec in leaves:
@@ -375,13 +499,15 @@ class DerivativeEngine(nn.Module):
             outputs=[energy],
             inputs=targets,
             grad_outputs=[torch.ones_like(energy)],
-            retain_graph=training or len(targets) > 1,
-            create_graph=training,
+            retain_graph=training or need_hessian or len(targets) > 1,
+            # The Hessian differentiates the forces again, so they have to
+            # carry their own graph.
+            create_graph=training or need_hessian,
             allow_unused=True,
         )
         by_name = dict(zip(order, gradients, strict=True))
 
-        if "forces" in wanted:
+        if "forces" in wanted or need_hessian:
             gradient = by_name["positions"]
             # A completely dissociated structure has no edges, so the energy
             # does not depend on the positions at all and the gradient comes
@@ -410,13 +536,71 @@ class DerivativeEngine(nn.Module):
             gradient = by_name[spec.name]
             if gradient is None:
                 gradient = torch.zeros_like(prepared[spec.name])
-            output.extras[name] = derivative_sign("energy", spec.name) * gradient
+            output.extras[name] = self.energy.derivative_sign(spec.name) * gradient
 
-        if "edge_forces" in wanted:
+        if need_edges:
             gradient = by_name["vectors"]
             # The sign is flipped once, here, so the deployment adapters do not
             # each flip it again on their own.
-            output.extras["edge_forces"] = (
+            edge_forces = (
                 torch.zeros_like(prepared["vectors"]) if gradient is None else -gradient
             )
+            if "edge_forces" in wanted:
+                output.extras["edge_forces"] = edge_forces
+            if wanted & per_atom_strain:
+                virials, stresses = atomic_virials_and_stresses(
+                    edge_forces,
+                    prepared["edge_index"],
+                    prepared["vectors"],
+                    prepared["batch"],
+                    prepared["cell"],
+                    graph["pbc"] if "pbc" in graph else None,  # noqa: SIM401
+                )
+                if "atomic_virials" in wanted:
+                    output.extras["atomic_virials"] = virials
+                if "atomic_stresses" in wanted:
+                    output.extras["atomic_stresses"] = stresses
+        if need_hessian:
+            assert output.forces is not None
+            hessian = hessian_of_energy(output.forces, positions)
+            output.extras["hessian"] = hessian if training else hessian.detach()
+            if "forces" not in wanted:
+                output.forces = None
+            elif not training:
+                output.forces = output.forces.detach()
         return output
+
+    def _response_derivative(
+        self,
+        output: MACEOutput[Tensor],
+        name: str,
+        positions: Tensor,
+        training: bool,
+    ) -> Tensor:
+        """One response derivative, ``[components, n_atoms, 3]``.
+
+        Each component of the per-structure value is differentiated in turn,
+        summed over the structures: an atom belongs to one structure, so the
+        sum takes each atom's derivative of its own structure's value. A matrix
+        value is flattened row major, so a polarizability's nine components are
+        ``xx, xy, xz, yx, ...``.
+        """
+        spec = self.responses[name]
+        value = output.get(spec.name)
+        if value is None:
+            raise ValueError(
+                f"{name!r} is the derivative of {spec.name!r}, and the model "
+                f"produced no {spec.name!r} to differentiate."
+            )
+        flat = value.reshape(value.shape[0], -1)
+        rows = []
+        for component in range(flat.shape[1]):
+            (gradient,) = torch.autograd.grad(
+                outputs=[flat[:, component].sum()],
+                inputs=[positions],
+                retain_graph=True,
+                create_graph=training,
+                allow_unused=True,
+            )
+            rows.append(torch.zeros_like(positions) if gradient is None else gradient)
+        return spec.derivative_sign("pos") * torch.stack(rows)

@@ -18,19 +18,42 @@ features and nothing else.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from typing import Any
 
+import torch
+from mace_core.kernels.descriptors import RadialBasisKind as RadialKind
+from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.models.energy import EnergyOutputHead
-from mace_torch.models.outputs import MACEOutputs
+from mace_torch.models.outputs import ENERGY_EXTRA_ROWS, MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
 from mace_torch.nn.radial import ZBLBasis
 
 __all__ = ["MACEModel"]
+
+
+@contextmanager
+def _constructed_in(precision: Precision) -> Iterator[None]:
+    """Build under ``precision`` as the process default, then restore it.
+
+    The radial basis, the cutoff envelope and the repulsion create their
+    constants in the process default at construction. Left to the process, a
+    float64 model built in a fresh interpreter, whose default is float32,
+    holds those constants rounded to float32 and computes other numbers than
+    the same checkpoint built elsewhere: measured, 9.6e-7 eV on a two-atom
+    fixture.
+    """
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(getattr(torch, precision))
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(previous)
 
 
 class MACEModel(nn.Module):
@@ -48,7 +71,16 @@ class MACEModel(nn.Module):
             trained model set something else moves the energy by 6.3e-3 eV and
             the repulsion by 0.41 eV.
         node_inputs: Declared per-node input streams.
-        readout_hidden: The width of the last readout's middle.
+        readout_hidden: The last readout's middle, per head, as
+            ``MLP_irreps``; an integer is that many scalars.
+        num_heads: How many levels of theory the model reads out. They share
+            the backbone and nothing after it: each has its own readout, and
+            the energy head carries one row of constants per head.
+        last_layer_irreps: What the last layer keeps; see the backbone.
+        element_agnostic_product: One set of product weights for all
+            elements; see the backbone.
+        edge_axes: The axis order the spherical harmonics read; see the
+            backbone.
         The rest are the backbone's.
     """
 
@@ -71,37 +103,55 @@ class MACEModel(nn.Module):
         pair_repulsion: bool = False,
         cutoff_order: int = 6,
         node_inputs: Sequence[InputSpec] = (),
-        readout_hidden: int = 16,
+        readout_hidden: int | str = 16,
+        num_heads: int = 1,
+        last_layer_irreps: str = "0e",
+        element_agnostic_product: bool = False,
+        edge_axes: tuple[int, int, int] = (0, 1, 2),
     ) -> None:
         super().__init__()
-        self.backbone = MACEBackbone(
-            backend,
-            atomic_numbers=atomic_numbers,
-            num_layers=num_layers,
-            num_features=num_features,
-            lmax=lmax,
-            hidden_irreps=hidden_irreps,
-            num_radial=num_radial,
-            cutoff=cutoff,
-            correlation=correlation,
-            avg_num_neighbors=avg_num_neighbors,
-            radial_kind=radial_kind,
-            cutoff_order=cutoff_order,
-            precision=precision,
-            node_inputs=node_inputs,
-        )
-        self.outputs = MACEOutputs(
-            backend,
-            list(observables),
-            layer_irreps=self.backbone.layer_irreps,
-            num_features=num_features,
-            energy_head=energy_head,
-            precision=precision,
-            hidden_scalars=readout_hidden,
-        )
-        self.repulsion = (
-            ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None
-        )
+        with _constructed_in(precision):
+            self.backbone = MACEBackbone(
+                backend,
+                atomic_numbers=atomic_numbers,
+                num_layers=num_layers,
+                num_features=num_features,
+                lmax=lmax,
+                hidden_irreps=hidden_irreps,
+                num_radial=num_radial,
+                cutoff=cutoff,
+                correlation=correlation,
+                avg_num_neighbors=avg_num_neighbors,
+                radial_kind=radial_kind,
+                cutoff_order=cutoff_order,
+                precision=precision,
+                node_inputs=node_inputs,
+                last_layer_irreps=last_layer_irreps,
+                element_agnostic_product=element_agnostic_product,
+                edge_axes=edge_axes,
+            )
+            self.outputs = MACEOutputs(
+                backend,
+                list(observables),
+                layer_irreps=self.backbone.layer_irreps,
+                num_features=num_features,
+                energy_head=energy_head,
+                precision=precision,
+                readout_irreps=readout_hidden,
+                num_heads=num_heads,
+            )
+            self.repulsion = (
+                ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None
+            )
+
+    @property
+    def extra_rows(self) -> dict[str, str]:
+        """What each quantity the model adds to ``extras`` has a row for.
+
+        Declared by the model that adds it, so whatever cuts a padded batch
+        back reads it here rather than keeping a list of every model's.
+        """
+        return dict(ENERGY_EXTRA_ROWS) if self.outputs.energy_head is not None else {}
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The declared observables. The graph is read and never written to."""

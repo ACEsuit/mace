@@ -9,29 +9,22 @@ Distribution `mace-core`, import name `mace_core`.
 
 What is here so far:
 
-- `mace_core.config` — `BaseConfig`, the pydantic base every v1 config schema
-  derives from: one TOML/YAML/JSON file, validated once; unknown keys are
-  errors, a validated config is frozen, and its resolved export loads back to
-  the same config. `config.cli` holds the `--a.b value` override grammar for a
-  command line to compose with it.
+- `mace_core.config` — `ReforgeBaseConfig`, the pydantic base every v1
+  config schema derives from: `load()` reads one TOML/YAML/JSON file and
+  validates it once (`from_dict()` for a caller that edits the parsed dict
+  first); unknown keys are pydantic errors at every level;
+  `to_resolved_dict()` is the fully defaulted, round-trippable export and
+  `to_user_dict()` holds only what was set. The base has no command-line
+  knowledge.
+- `mace_core.cli`: the `mace` program. Its commands come from the packages
+  that implement them, through the `mace.commands` entry point group, so
+  torch and jax plug in and this package declares none. A command with a
+  schema reads one file with `--config`, writes its few explicit flags into
+  it, and validates once; there is no general override syntax.
 - `mace_core.metadata` — `ModelMetadata`, the versioned record every trained
   model carries (config as written and as resolved, provenance, a summary per
-  data source, per head the sources it consumed, DOI, citations and notes,
-  and, for a trained model, how the training run ended), with a JSON round
-  trip, `ConfigRecord.from_config()` to embed a config in its fixed-point
-  form, and `format_citations()`. The schema is versioned `major.minor`;
-  which records a release reads is stated at `SCHEMA_VERSION`.
-- `mace_core.neighbors` — `get_neighborhood`, the pure-function neighbour list
-  every graph builder calls, over swappable backends registered in the
-  `mace.neighbor_backends` entry point group, selected by the
-  `NeighborListConfig` section. `all_pairs` needs only numpy and `matscipy`
-  comes with the extra of the same name; mace-torch registers `vesin`, since
-  importing vesin also imports torch when it is installed. A section that
-  names no backend gets the framework's default through
-  `resolve_neighbor_backend`: vesin for mace-torch, matscipy for mace-jax,
-  all_pairs without a framework. A named backend is used as named, or
-  refused. The search box and the effective cell the graph carries are
-  decided once, by `search_geometry`, whichever backend runs.
-- `mace_core.graph` — the flat graph dict a model is handed: `GRAPH_SCHEMA`
-  as data, `validate_graph` for the boundaries, the numpy reference `collate`,
-  `graph_sample` from a `Configuration`, and the padding policies and budgets.
+  data source, per head its E0s and the sources it consumed, DOI, citations,
+  notes, and the records of the models it was built from), with a JSON round
+  trip,
+  `ConfigRecord.from_config()` to embed a config in its fixed-point form, and
+  `format_citations()`.

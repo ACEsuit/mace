@@ -109,8 +109,18 @@ def names_used(source: str) -> set[str]:
     return used
 
 
+#: The one file under packages/ that is the legacy side of a boundary rather
+#: than v1 code. The converter's extraction script runs only under an
+#: interpreter that has the legacy package, reads the pickled model, and has to
+#: name the legacy classes to refuse the ones it cannot carry by identity. It
+#: is not a module: its directory is not an identifier, so nothing imports it.
+LEGACY_SIDE = frozenset(
+    {PACKAGES / "mace-torch/src/mace_torch/legacy-extractor/extract_legacy.py"}
+)
+
+
 def package_sources() -> list[Path]:
-    return sorted(PACKAGES.rglob("*.py"))
+    return sorted(path for path in PACKAGES.rglob("*.py") if path not in LEGACY_SIDE)
 
 
 def legacy_top_level_classes() -> set[str]:
@@ -207,3 +217,29 @@ def test_the_check_fires_on_a_structural_port(snippet):
 def test_the_check_does_not_fire_on_prose_or_reused_names(snippet):
     """A docstring, a comment and the names v1 keeps must all pass."""
     assert not (names_used(snippet) & DENYLIST)
+
+
+def test_the_legacy_side_is_one_file_and_it_exists():
+    """An exemption that names nothing, or names a moved file, exempts nothing
+    and hides that the check changed shape."""
+    assert len(LEGACY_SIDE) == 1
+    for path in LEGACY_SIDE:
+        assert path.is_file(), path
+
+
+def test_the_legacy_side_cannot_be_imported():
+    """Its directory is not an identifier, so no import statement reaches it
+    and the import contracts have nothing to see."""
+    for path in LEGACY_SIDE:
+        parts = path.relative_to(PACKAGES / "mace-torch/src").parts[:-1]
+        assert not all(part.isidentifier() for part in parts), path
+
+
+def test_only_the_runner_names_the_legacy_side():
+    """It is executed as a file by one function, and read by nothing else."""
+    naming = sorted(
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in package_sources()
+        if "legacy-extractor" in path.read_text(encoding="utf-8")
+    )
+    assert naming == ["packages/mace-torch/src/mace_torch/deploy/legacy.py"], naming

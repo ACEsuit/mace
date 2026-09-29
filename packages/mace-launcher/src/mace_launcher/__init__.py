@@ -40,6 +40,11 @@ ENGINES = ("legacy", "v1")
 DEFAULT_ENGINE = "legacy"
 ENGINE_ENV_VAR = "MACE_ENGINE"
 
+#: What is said when the v1 stack does not carry something yet. Named because
+#: the suite matches on it to skip rather than fail, and because the v1 command
+#: lines say the same about a capability of their own that has not moved.
+NOT_MIGRATED = "not yet available on v1 engine"
+
 #: script name -> module basename, shared by both engines. Four of the twelve
 #: scripts are not named after their module, so this cannot be derived.
 TARGETS = {
@@ -106,7 +111,7 @@ def _load_main(script: str, engine: str) -> Callable[[], object]:
             module = importlib.import_module(f"mace_torch.cli.{module_basename}")
         except ImportError as error:
             raise SystemExit(
-                f"capability {script} not yet available on v1 engine "
+                f"capability {script} {NOT_MIGRATED} "
                 f"(run it with --engine legacy, or MACE_ENGINE=legacy). "
                 f"Underlying import error: {error}"
             ) from error

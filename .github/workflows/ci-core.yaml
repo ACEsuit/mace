@@ -359,6 +359,16 @@ jobs:
           # covered by nothing.
           extras: dev, wandb
 
+      - name: Install the v1 stack so the engine that is not the default runs
+        # The launcher is installed for every job, and on its own it can only
+        # dispatch to legacy: a `--engine v1` test would skip, and a skipped
+        # end-to-end test is a green tick for a stack that was never run. One
+        # pip invocation, because mace-torch requires the unpublished
+        # mace-core and pip resolves it only from the same command line.
+        run: |
+          python -m pip install --retries 5 -e packages/mace-core \
+                                            -e packages/mace-torch
+
       # Training tests can leave large files around until the run ends.
       - name: Free up disk space
         run: |

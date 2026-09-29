@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
+from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
@@ -26,12 +27,18 @@ from mace_torch.kernels import segment_sum
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.heads import ObservableHead
 
-__all__ = ["ENERGY_OBSERVABLE", "MACEOutputs"]
+__all__ = ["ENERGY_EXTRA_ROWS", "ENERGY_OBSERVABLE", "MACEOutputs"]
 
 #: The one observable whose head is not a plain readout. Its site energies go
 #: through the energy head, which owns the isolated-atom energies, the scale and
 #: shift, and the two-reduction structure.
 ENERGY_OBSERVABLE = "energy"
+
+#: What each quantity the energy head adds to ``extras`` has a row for.
+ENERGY_EXTRA_ROWS: dict[str, str] = {
+    "interaction_energy": "graph",
+    "node_interaction_energy": "atom",
+}
 
 
 class MACEOutputs(nn.Module):
@@ -46,8 +53,12 @@ class MACEOutputs(nn.Module):
         energy_head: The energy head, required when ``energy`` is declared and
             rejected when it is not.
         nonlinear: Whether each head's last-layer readout carries a gate.
-        hidden_scalars: The width of that gated readout's middle.
+        readout_irreps: That gated readout's middle, as ``MLP_irreps``; an
+            integer is that many scalars.
         precision: The dtype every op is built at.
+        num_heads: How many levels of theory the model reads out. Every
+            observable gets one readout per head, so what the heads share is
+            the backbone and nothing after it.
     """
 
     def __init__(
@@ -58,8 +69,9 @@ class MACEOutputs(nn.Module):
         num_features: int,
         energy_head: EnergyOutputHead | None = None,
         nonlinear: bool = True,
-        precision: str = "float64",
-        hidden_scalars: int = 16,
+        precision: Precision = "float64",
+        readout_irreps: int | str = 16,
+        num_heads: int = 1,
     ) -> None:
         super().__init__()
         names = [spec.name for spec in observables]
@@ -82,8 +94,17 @@ class MACEOutputs(nn.Module):
                 f"declared. The declarations are {names}."
             )
 
+        if energy_head is not None and energy_head.e0_table.shape[0] != num_heads:
+            raise ValueError(
+                f"the energy head carries isolated-atom energies for "
+                f"{energy_head.e0_table.shape[0]} heads and the readouts are "
+                f"built for {num_heads}. A head is one row of each, so the two "
+                f"counts are the same number or the rows do not line up."
+            )
+
         self.specs = list(observables)
         self.energy_head = energy_head
+        self.num_heads = num_heads
         self.heads = nn.ModuleDict(
             {
                 spec.name: ObservableHead(
@@ -92,8 +113,9 @@ class MACEOutputs(nn.Module):
                     layer_irreps=layer_irreps,
                     num_features=num_features,
                     nonlinear=nonlinear,
-                    hidden_scalars=hidden_scalars,
+                    readout_irreps=readout_irreps,
                     precision=precision,
+                    num_heads=num_heads,
                 )
                 for spec in observables
             }
@@ -139,6 +161,8 @@ class MACEOutputs(nn.Module):
         """
         batch = graph["batch"]
         num_graphs = int(graph["num_graphs"])
+        # Gathered once, since every observable's readout reads it.
+        node_head = graph["head"][batch] if self.num_heads > 1 else None
         fields: dict[str, Tensor] = {}
         extras: dict[str, Tensor] = {}
 
@@ -147,7 +171,10 @@ class MACEOutputs(nn.Module):
             if spec.name == ENERGY_OBSERVABLE:
                 assert self.energy_head is not None
                 terms = self.energy_head(
-                    [value.squeeze(-1) for value in head.per_layer(features)],
+                    [
+                        value.squeeze(-1)
+                        for value in head.per_layer(features, node_head)
+                    ],
                     zbl_node_energy,
                     graph["element_index"],
                     graph["head"],
@@ -157,9 +184,10 @@ class MACEOutputs(nn.Module):
                 fields["total_energy"] = terms.total_energy
                 fields["node_energies"] = terms.node_energy
                 extras["interaction_energy"] = terms.interaction_energy
+                extras["node_interaction_energy"] = terms.node_interaction_energy
                 continue
 
-            value = head(features)
+            value = head(features, node_head)
             if not spec.per_atom:
                 value = segment_sum(value, batch, num_graphs)
             field = FIELD_BY_OBSERVABLE.get(spec.name, spec.name)

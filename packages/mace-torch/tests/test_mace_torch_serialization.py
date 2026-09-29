@@ -85,6 +85,37 @@ def test_a_model_survives_the_round_trip(tmp_path):
 
 
 @fp64_only
+def test_the_neighbour_normalization_travels_with_the_weights(tmp_path):
+    """Rebuilt with a different value, the model loads the recorded one.
+
+    The messages are divided by it, so a checkpoint that dropped it would load
+    into whatever the builder happened to pass and compute a different
+    function without a word. The round trip above cannot see that, because it
+    rebuilds with the very same settings.
+    """
+    import numpy as np
+    from mace_core.neighbors import get_neighborhood
+
+    model = trained()
+    save_checkpoint(tmp_path / "anchor", model, dict(SETTINGS))
+    restored = load_checkpoint(
+        tmp_path / "anchor", lambda config: build({**config, "avg_num_neighbors": 1.0})
+    )
+    positions = np.array([[0.0, 0.0, 0.0], [0.95, 0.0, 0.0], [-0.24, 0.93, 0.0]])
+    neighborhood = get_neighborhood(positions, 5.0, (False, False, False), None)
+    graph = {
+        "positions": torch.tensor(positions),
+        "atomic_numbers": torch.tensor([8, 1, 1]),
+        "edge_index": torch.tensor(neighborhood.edge_index),
+        "shifts": torch.tensor(neighborhood.shifts),
+    }
+    for index, (first, second) in enumerate(
+        zip(model(graph), restored(graph), strict=True)
+    ):
+        assert torch.equal(first, second), f"layer {index} changed"
+
+
+@fp64_only
 def test_the_file_holds_no_pickle_and_no_module_tree(tmp_path):
     """What is written is each operator's canonical form, keyed by position.
 

@@ -13,6 +13,11 @@ from mace_core.observables.grammar import (
     irreps_dimension,
     parse_irreps,
 )
+from mace_core.observables.request import (
+    RequestedOutputs,
+    UnknownObservableError,
+    resolve_requested,
+)
 from mace_core.observables.spec import (
     DerivativeRequest,
     DerivativeSpec,
@@ -32,8 +37,11 @@ __all__ = [
     "IrrepsGrammarError",
     "ObservableCatalogue",
     "ObservableSpec",
+    "RequestedOutputs",
+    "UnknownObservableError",
     "default_derivative_name",
     "irreps_dimension",
     "is_default_shaped_name",
     "parse_irreps",
+    "resolve_requested",
 ]

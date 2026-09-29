@@ -49,6 +49,16 @@ class FixedPointSpec(ConfigSection):
         warm_start: Begin from the previous call's converged value. Off by
             default, because a warm start makes a call depend on what ran
             before it and that should be asked for rather than inherited.
+        variational: Whether the fixed point is a stationary point of the
+            energy that gets reported. It is, when the loop reaches it by
+            minimising that energy, and then a force taken at the fixed point
+            with the converged variable detached is already the total
+            derivative: the term the variable would contribute is multiplied by
+            a gradient that vanished. A fixed point of something else, a linear
+            system solved for charges say, has no such cancellation, and a
+            derivative through it needs an implicit backward that this solver
+            does not have. Declaring it false is therefore a refusal of
+            derivative training rather than a setting that changes a number.
         require_convergence: Fail when the loop stops without reaching the
             tolerance. On by default, which is a **declared deviation** from
             the frozen tree: it returns the energy at wherever the solver
@@ -67,6 +77,7 @@ class FixedPointSpec(ConfigSection):
     step_size: float = Field(default=1.0, gt=0.0)
     collinear: bool = False
     warm_start: bool = False
+    variational: bool = True
     require_convergence: bool = True
 
     @model_validator(mode="after")

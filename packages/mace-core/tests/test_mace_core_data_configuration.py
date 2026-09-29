@@ -1254,3 +1254,55 @@ def test_the_table_does_not_follow_the_callers_list():
 def test_two_tables_with_the_same_order_are_equal():
     assert atomic_number_table_from_zs([8, 1]) == AtomicNumberTable([1, 8])
     assert AtomicNumberTable([1, 8]) != AtomicNumberTable([8, 1])
+
+
+def test_a_zero_weight_and_an_absent_label_are_told_apart():
+    """The weight cannot say which is which, so it must not be asked.
+
+    A file is free to write `config_forces_weight=0.0` for a structure whose
+    forces are there, and an absent label is zeroed too. Both give `0.0`, so a
+    consumer reading the weight to find out whether a label exists is reading
+    two different facts through one number.
+    """
+    key_spec = KeySpecification.from_defaults()
+
+    weighted_to_zero = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    weighted_to_zero.arrays["REF_forces"] = np.zeros((2, 3))
+    weighted_to_zero.info["config_forces_weight"] = 0.0
+    absent = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+    present = configuration_from_atoms(weighted_to_zero, key_spec)
+    missing = configuration_from_atoms(absent, key_spec)
+
+    assert (
+        present.property_weights["forces"] == missing.property_weights["forces"] == 0.0
+    )
+    assert present.is_labelled("forces")
+    assert not missing.is_labelled("forces")
+
+
+def test_an_undeclared_property_is_not_labelled_either():
+    """`is_labelled` answers about training data, not about declarations."""
+    configuration = configuration_from_atoms(
+        Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        KeySpecification.from_defaults(),
+    )
+    assert not configuration.is_labelled("a_property_nobody_declared")
+
+
+def test_a_reserved_key_is_rewritten_onto_its_default_spelling():
+    """The rewrite has to land where the parser then looks.
+
+    Spelled once, on the key table. A second copy here would keep saying
+    `REF_energy` while the table moved. The dipole is the exception: its
+    default spelling is the reserved one, so it is what gets rewritten.
+    """
+    from mace_core.data.xyz import _RESERVED_KEYS
+
+    for name, reserved in _RESERVED_KEYS.items():
+        default = DefaultKeys[name.upper()].value
+        if reserved.convention:
+            assert reserved.reserved == default
+            assert reserved.rewritten != default
+        else:
+            assert reserved.rewritten == default

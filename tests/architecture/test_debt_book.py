@@ -266,10 +266,13 @@ def test_debt_v1_has_no_deployment_path():
     """
     deploy = REPO_ROOT / "packages" / "mace-torch" / "src" / "mace_torch" / "deploy"
     assert deploy.is_dir(), "packages/mace-torch/src/mace_torch/deploy/ does not exist"
-    modules = [path.name for path in deploy.glob("*.py") if path.name != "__init__.py"]
-    assert modules, (
-        f"{deploy.relative_to(REPO_ROOT)} exists but is empty of modules, so "
-        f"there is still no export entry point"
+    # The export entry point by name. The package also holds the weights
+    # format and the legacy converter, which move weights in and out and
+    # deploy nothing, so a module count would call the row burned early.
+    export = deploy / "export.py"
+    assert export.is_file(), (
+        f"{export.relative_to(REPO_ROOT)} does not exist, so there is still no "
+        f"export entry point"
     )
 
 

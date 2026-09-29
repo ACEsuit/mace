@@ -98,6 +98,28 @@ class RadialMLP(nn.Module):
                 activated = SECOND_MOMENT_SCALE * torch.nn.functional.silu(activated)
         return activated
 
+    def initialize_weights(self, seed: int) -> None:
+        """A standard normal per layer, from the seed and nothing else.
+
+        The constructor already draws one, from the global generator, which is
+        what a module built on its own needs. This is the draw a built model
+        gets: a run has to be rebuildable from its recorded seed, and a weight
+        that came from the global generator depends on how many random numbers
+        the process had drawn before the model was built.
+
+        No fan-in factor here, unlike the equivariant linears: this layer
+        divides by ``1 / sqrt(fan_in)`` inside the forward, so what is stored is
+        the raw weight and a scaled draw would be scaled twice.
+        """
+        with torch.no_grad():
+            for index, weight in enumerate(self.weights):
+                generator = torch.Generator().manual_seed(seed + index)
+                weight.copy_(
+                    torch.randn(
+                        weight.shape, generator=generator, dtype=torch.float64
+                    ).to(weight.dtype)
+                )
+
     def to_canonical(self) -> dict[str, Tensor]:
         """One dense tensor per layer, unscaled, as they are held.
 

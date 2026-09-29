@@ -35,8 +35,10 @@ from mace_core.elements.default_keys import DefaultKeys, Storage
 __all__ = [
     "ISOLATED_ATOM_CONFIG_TYPE",
     "ParsedConfigurations",
+    "atoms_from_configuration",
     "configuration_from_atoms",
     "read_configurations",
+    "write_configurations",
 ]
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,10 @@ class _ReservedKey:
     rewritten: str
     getter: str
     stored_in: str
+    #: Whether the key convention's own default is the reserved spelling. Then
+    #: every file is read through it, so it is recovered quietly, and only from
+    #: a file whose calculator holds the value.
+    convention: bool = False
 
 
 #: The file keys ase moves out of the structure and into
@@ -97,6 +103,11 @@ _RESERVED_KEYS: dict[str, _ReservedKey] = {
     ),
     "forces": _ReservedKey("forces", DefaultKeys.FORCES.value, "get_forces", "arrays"),
     "stress": _ReservedKey("stress", DefaultKeys.STRESS.value, "get_stress", "info"),
+    # The convention's dipole key is ase's own name for the calculator's
+    # dipole, so a dipole written under it is only ever in the calculator.
+    "dipole": _ReservedKey(
+        "dipole", "REF_dipole", "get_dipole_moment", "info", convention=True
+    ),
 }
 
 
@@ -188,6 +199,60 @@ def _stored_value(atoms: Atoms, file_key: str, per: Storage) -> tuple[bool, Any]
     if file_key in _CALCULATOR_KEYS[per] and file_key in results:
         return True, results[file_key]
     return False, None
+
+
+def atoms_from_configuration(
+    configuration: Configuration, key_spec: KeySpecification
+) -> Atoms:
+    """The inverse of :func:`configuration_from_atoms`, under the same keys.
+
+    A label the structure does not carry is left out rather than written, and a
+    property weight is written only where it is not the ``1.0`` a reader
+    assumes. The structure weight is written whole, so a config-type weight the
+    reader folded into it survives, and is not applied a second time as long as
+    the reader is given no config-type weights.
+    """
+    atoms = Atoms(
+        numbers=np.asarray(configuration.atomic_numbers),
+        positions=np.asarray(configuration.positions),
+        cell=configuration.cell,
+        pbc=configuration.pbc if configuration.pbc is not None else False,
+    )
+    for name, file_key in key_spec.graph_keys.items():
+        value = configuration.properties.get(name)
+        if value is not None:
+            atoms.info[file_key] = value
+    for name, file_key in key_spec.atom_keys.items():
+        value = configuration.properties.get(name)
+        if value is not None:
+            atoms.arrays[file_key] = np.asarray(value)
+    for name, weight in configuration.property_weights.items():
+        if configuration.properties.get(name) is not None and weight != 1.0:
+            atoms.info[f"config_{name}_weight"] = weight
+    if configuration.weight != 1.0:
+        atoms.info["config_weight"] = configuration.weight
+    atoms.info["config_type"] = configuration.config_type
+    return atoms
+
+
+def write_configurations(
+    path: str | Path,
+    configurations: Sequence[Configuration],
+    key_spec: KeySpecification,
+) -> Path:
+    """Write structures as extended XYZ, readable back under ``key_spec``.
+
+    Positions and per-atom labels are written to eight decimals, which is what
+    extended XYZ does. A structure read from such a file is therefore written
+    back exactly, and one computed in memory is not.
+    """
+    path = Path(path)
+    ase.io.write(
+        str(path),
+        [atoms_from_configuration(item, key_spec) for item in configurations],
+        format="extxyz",
+    )
+    return path
 
 
 def read_configurations(
@@ -293,16 +358,24 @@ def _rewrite_reserved_keys(
         )
         if store.get(name) != reserved.reserved:
             continue
-        logger.warning(
-            "Reading %s from the key %r is not safe with ase 3.23 and newer: "
-            "ase reads that key back into the calculator, not into the "
-            "structure. Rewriting it to %r and recovering the values from the "
-            "calculator. Label the file with %r to read it directly.",
-            name,
-            reserved.reserved,
-            reserved.rewritten,
-            reserved.rewritten,
-        )
+        if reserved.convention:
+            if not any(
+                atoms.calc is not None and name in atoms.calc.results
+                for atoms in atoms_list
+            ):
+                continue
+        else:
+            logger.warning(
+                "Reading %s from the key %r is not safe with ase 3.23 and "
+                "newer: ase reads that key back into the calculator, not into "
+                "the structure. Rewriting it to %r and recovering the values "
+                "from the calculator. Label the file with %r to read it "
+                "directly.",
+                name,
+                reserved.reserved,
+                reserved.rewritten,
+                reserved.rewritten,
+            )
         store[name] = reserved.rewritten
         for atoms in atoms_list:
             try:

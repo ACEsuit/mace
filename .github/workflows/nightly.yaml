@@ -178,6 +178,12 @@ jobs:
                   sys.exit(f"{b['name']} records no {absent}: not reproducible")
           print(f"{len(runs)} benchmarks across sizes {sorted(sizes)}")
           PY
+      - name: v1 against the legacy baselines
+        # Informative, never gating: pairs each v1 case with the frozen tree's
+        # on the same case from this same run and writes the table to the run
+        # summary, naming any case where v1 is slower.
+        if: always()
+        run: python tests/benchmarks/compare_v1.py benchmark.json >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         # always(), so the artifact is there to diagnose a failed content check
         # rather than only on the nights that pass it.

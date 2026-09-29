@@ -93,11 +93,14 @@ class EnergyTerms:
         total_energy: ``[n_graphs]``, in the model's own dtype.
         node_energy: ``[n_atoms]``, in the accumulation dtype.
         interaction_energy: ``[n_graphs]``, the total without the E0 sum.
+        node_interaction_energy: ``[n_atoms]``, each atom's energy without
+            its isolated-atom energy, in the accumulation dtype.
     """
 
     total_energy: Tensor
     node_energy: Tensor
     interaction_energy: Tensor
+    node_interaction_energy: Tensor
 
 
 class EnergyOutputHead(nn.Module):
@@ -246,4 +249,5 @@ class EnergyOutputHead(nn.Module):
             total_energy=interaction_total + e0_total,
             node_energy=node_energy,
             interaction_energy=interaction_total,
+            node_interaction_energy=scaled.to(accumulate),
         )

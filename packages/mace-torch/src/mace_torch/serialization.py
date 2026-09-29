@@ -35,11 +35,15 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import torch
 from safetensors.torch import load_file, save_file
 from torch import Tensor, nn
+
+#: What the caller's builder returns, so a load is typed as precisely as the
+#: builder is rather than as a bare module.
+Model = TypeVar("Model", bound=nn.Module)
 
 __all__ = [
     "FORMAT",
@@ -50,6 +54,7 @@ __all__ = [
     "check_layout",
     "load_canonical_state",
     "load_checkpoint",
+    "read_canonical_state",
     "save_checkpoint",
 ]
 
@@ -274,8 +279,8 @@ def read_sidecar(path: str | Path) -> dict[str, Any]:
 
 
 def load_checkpoint(
-    path: str | Path, build: Callable[[dict[str, Any]], nn.Module]
-) -> nn.Module:
+    path: str | Path, build: Callable[[dict[str, Any]], Model]
+) -> Model:
     """Rebuild a model and put its weights back.
 
     Args:
@@ -291,6 +296,14 @@ def load_checkpoint(
             sidecar disagree, or if the model and the file hold different
             operators.
     """
+    document = read_sidecar(_refuse_pickle(path))
+    model = build(dict(document["config"]))
+    check_layout(model, document.get("layout", {}))
+    load_canonical_state(model, read_canonical_state(path))
+    return model
+
+
+def _refuse_pickle(path: str | Path) -> Path:
     source = Path(path)
     if source.suffix in {".pt", ".pth", ".ckpt"}:
         raise CheckpointError(
@@ -298,6 +311,20 @@ def load_checkpoint(
             f"whatever it contains, which is why it is not a format this reads. "
             f"Convert it first."
         )
+    return source
+
+
+def read_canonical_state(path: str | Path) -> dict[str, dict[str, Tensor]]:
+    """The tensors of a checkpoint, by operator, checked against the sidecar.
+
+    For a caller that already holds a model and wants a written state back in
+    it, which is what a run does to end on its best epoch.
+
+    Raises:
+        CheckpointError: If the file is not this format, or the tensors and
+            the sidecar disagree.
+    """
+    source = _refuse_pickle(path)
     document = read_sidecar(source)
     flat = load_file(str(source.with_suffix(".safetensors")))
 
@@ -321,8 +348,4 @@ def load_checkpoint(
                 f"file and the sidecar says {wanted}."
             )
         state.setdefault(entry["module"], {})[entry["name"]] = value
-
-    model = build(dict(document["config"]))
-    check_layout(model, document.get("layout", {}))
-    load_canonical_state(model, state)
-    return model
+    return state
