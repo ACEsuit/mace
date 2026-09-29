@@ -227,13 +227,19 @@ def _symmetric_strain(
         displacement = displacement + positions.sum() * 0.0
 
     symmetric = 0.5 * (displacement + displacement.transpose(-1, -2))
-    positions = positions + torch.einsum("be,bec->bc", positions, symmetric[batch])
+    positions = positions + torch.einsum(
+        "be,bec->bc", positions, symmetric.index_select(0, batch)
+    )
     cell = cell.view(-1, 3, 3)
     cell = cell + torch.matmul(cell, symmetric)
     # `unit_shifts` counts whole cells, so it is naturally an integer array.
     # It multiplies a cell here, so it is cast rather than required to arrive
     # as a float: a caller holding it as counts is holding it correctly.
-    shifts = torch.einsum("be,bec->bc", unit_shifts.to(cell.dtype), cell[batch[sender]])
+    shifts = torch.einsum(
+        "be,bec->bc",
+        unit_shifts.to(cell.dtype),
+        cell.index_select(0, batch.index_select(0, sender)),
+    )
     return positions, shifts, cell, displacement
 
 
@@ -304,7 +310,12 @@ def prepare_inputs(
         )
 
     sender, receiver = graph["edge_index"][0], graph["edge_index"][1]
-    prepared["vectors"] = positions[receiver] - positions[sender] + shifts
+    # A gather by index_select, not by indexing: the backward of an indexing
+    # accumulates by sorting its indices on CUDA, and of the whole step that
+    # was the most expensive op.
+    prepared["vectors"] = (
+        positions.index_select(0, receiver) - positions.index_select(0, sender) + shifts
+    )
     return prepared, positions, displacement
 
 
