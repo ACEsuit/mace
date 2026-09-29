@@ -267,6 +267,9 @@ class PolarModel(MACEModel):
             edge_axes=(1, 2, 0),
         )
         self.settings = settings
+        # The charge totals are sums over a structure, accumulated in the
+        # energy head's floor as the frozen tree accumulates them in float64.
+        self.total_dtype = getattr(torch, energy_head.accumulate)
         self.num_recursion_steps = settings.num_recursion_steps
         self.add_local_electron_energy = settings.add_local_electron_energy
         self.descriptor = settings.descriptor(precision)
@@ -371,7 +374,7 @@ class PolarModel(MACEModel):
         Returns:
             The corrected density, and the normalized weights.
         """
-        accumulate = torch.float64 if density.dtype == torch.float64 else density.dtype
+        accumulate = self.total_dtype
         norm = segment_sum(fukui.to(accumulate), batch, num_graphs)[batch]
         norm = torch.where(norm == 0, torch.ones_like(norm), norm).to(density.dtype)
         fukui = fukui / norm

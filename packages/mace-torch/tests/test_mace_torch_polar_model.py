@@ -39,13 +39,20 @@ WITH_STRESS = ENERGY.model_copy(
 )
 
 
-def build_model(profile="molecular", steps=2, **overrides) -> PolarModel:
+def build_model(
+    profile="molecular",
+    steps=2,
+    head_precision: PrecisionConfig | None = None,
+    supports_float64=True,
+    **overrides,
+) -> PolarModel:
     head = EnergyOutputHead(
         ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
         ["default"],
         AtomicNumberTable([1, 8]),
         ScaleShiftSpec("std", (1.0,), (0.0,)),
-        PrecisionConfig(model="float64"),
+        head_precision or PrecisionConfig(model="float64"),
+        supports_float64=supports_float64,
     )
     model = PolarModel(
         ReferenceBackend(),
@@ -242,3 +249,21 @@ def test_an_open_molecule_energy_does_not_depend_on_its_orientation():
     positions, numbers = molecule()
     energies = _rotated_energies("molecular", positions, numbers, None, (False,) * 3)
     np.testing.assert_allclose(energies, energies[0], rtol=0, atol=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("supports_float64", "expected"),
+    [(True, torch.float64), (False, torch.float32)],
+)
+def test_a_float32_model_sums_its_charges_in_the_energy_floor(
+    supports_float64, expected
+):
+    """The frozen tree sums the Fukui weights and the charge totals through
+    ``safe_double``: float64 where the device has it, the model's own where it
+    does not."""
+    model = build_model(
+        head_precision=PrecisionConfig(model="float32", accumulate="float64"),
+        supports_float64=supports_float64,
+        precision="float32",
+    )
+    assert model.total_dtype is expected
