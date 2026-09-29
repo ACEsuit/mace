@@ -233,6 +233,7 @@ class PolarModel(MACEModel):
         readout_hidden: int = 16,
         num_heads: int = 1,
         element_agnostic_product: bool = False,
+        residual_first_layer: bool = False,
     ) -> None:
         produced = sorted(
             spec.name for spec in observables if spec.name in self.PRODUCED
@@ -262,6 +263,7 @@ class PolarModel(MACEModel):
             num_heads=num_heads,
             full_last_layer=True,
             element_agnostic_product=element_agnostic_product,
+            residual_first_layer=residual_first_layer,
             # The density's dipoles are read off the degree one features, and
             # the solver holds a dipole as (y, z, x).
             edge_axes=(1, 2, 0),

@@ -73,9 +73,9 @@ _MODELS = frozenset({*_ZBL_INSIDE, "polar"})
 #: replaced: building the default instead trains another architecture under
 #: the name of the one asked for.
 #:
-#: Both spellings of the first interaction build the same block. The first
-#: layer has no incoming features to skip from, and the frozen tree builds the
-#: plain block there whichever of the two it was given.
+#: Both spellings of the first interaction are built, and they are different
+#: models: the residual one takes its skip from the element embedding and has
+#: the product basis add it, the plain one applies its skip to the message.
 _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
     "interaction": ("RealAgnosticResidualInteractionBlock",),
     "interaction_first": (
@@ -327,6 +327,7 @@ def build_model(
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
         num_heads=len(heads),
+        residual_first_layer=_residual_first_layer(config),
     )
     if initialize:
         # Seeded from the run, so the same configuration and the same seed
@@ -398,8 +399,14 @@ def _polar_model(
         cutoff_order=config.model.num_cutoff_basis,
         readout_hidden=_readout_hidden(config),
         num_heads=len(heads),
+        residual_first_layer=_residual_first_layer(config),
         element_agnostic_product=config.model.use_agnostic_product,
     )
+
+
+def _residual_first_layer(config: ResolvedConfig) -> bool:
+    """Whether the first layer is residual, as the frozen tree's default is."""
+    return config.model.interaction_first == "RealAgnosticResidualInteractionBlock"
 
 
 def _refuse_unbuilt(config: ResolvedConfig) -> None:

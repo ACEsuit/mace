@@ -70,6 +70,7 @@ def anchor_config(legacy, work_dir: Path) -> ResolvedConfig:
             "model": {
                 "model": "scale_shift",
                 "observables": ["energy", "forces"],
+                "interaction_first": type(legacy.interactions[0]).__name__,
                 "r_max": built["cutoff"],
                 "num_interactions": built["num_layers"],
                 "num_channels": built["num_features"],

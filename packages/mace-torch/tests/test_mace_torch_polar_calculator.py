@@ -33,8 +33,17 @@ def fixture_checkpoints(tmp_path_factory):
         for seed in (1, 2):
             directory = tmp_path_factory.mktemp(f"polar{seed}")
             config = polar_configuration(directory)
+            # The plain first layer, which is what the Hessian check below was
+            # measured on: its tolerance is absolute, and the residual first
+            # layer's dimer has Hessian entries near 1e5, where a difference
+            # quotient cannot reach it.
             config = config.model_copy(
-                update={"runtime": config.runtime.model_copy(update={"seed": seed})}
+                update={
+                    "runtime": config.runtime.model_copy(update={"seed": seed}),
+                    "model": config.model.model_copy(
+                        update={"interaction_first": "RealAgnosticInteractionBlock"}
+                    ),
+                }
             )
             _, model = built(config)
             run_train_stage(config, model, checkpoint_path=directory / "polar")
