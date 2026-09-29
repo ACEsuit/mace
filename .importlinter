@@ -17,6 +17,7 @@ root_packages =
     mace_torch
     mace_jax
     mace_launcher
+    mace_backend_example
 include_external_packages = True
 
 [importlinter:contract:no-legacy-from-v1]
@@ -26,6 +27,7 @@ source_modules =
     mace_core
     mace_torch
     mace_jax
+    mace_backend_example
 forbidden_modules =
     mace
 ; `mace_launcher` is deliberately absent from the source modules: dispatching
@@ -47,6 +49,21 @@ forbidden_modules =
     mace_torch
     mace_jax
     mace_launcher
+    mace_backend_example
+
+[importlinter:contract:core-does-not-know-the-example-backend]
+name = No MACE package imports the example backend
+type = forbidden
+; The example backend is shaped like a third party's wheel, and the claim it
+; proves is that such a wheel needs no edit to MACE. It holds only while the
+; example is reached through its entry point and nothing else.
+source_modules =
+    mace_core
+    mace_torch
+    mace_jax
+    mace_launcher
+forbidden_modules =
+    mace_backend_example
 
 [importlinter:contract:core-is-framework-free]
 name = mace_core depends on no framework and on no sibling

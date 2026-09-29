@@ -17,7 +17,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_DIR = REPO_ROOT / "packages"
 
 # Import names of the v1 packages, which are what a leak would look like.
-V1_IMPORT_NAMES = {"mace_core", "mace_torch", "mace_jax", "mace_launcher"}
+V1_IMPORT_NAMES = {
+    "mace_core",
+    "mace_torch",
+    "mace_jax",
+    "mace_launcher",
+    "mace_backend_example",
+}
 
 
 def test_scaffold_directories_are_not_python_identifiers():

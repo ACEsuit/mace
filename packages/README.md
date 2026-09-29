@@ -28,6 +28,7 @@ every file.
 | `packages/mace-torch` | `mace-torch-v1` | `mace_torch` | `mace-torch-v*` |
 | `packages/mace-jax` | `mace-jax` | `mace_jax` | `mace-jax-v*` |
 | `packages/mace-launcher` | `mace-launcher` | `mace_launcher` | `mace-launcher-v*` |
+| `packages/mace-backend-example` | `mace-backend-example` | `mace_backend_example` | `mace-backend-example-v*` |
 
 The import names never collide with the legacy import name `mace`, so both
 stacks live in one process.
@@ -73,6 +74,12 @@ package and moves its `[project.scripts]` table into `mace-torch`, pointed at
 distribution still declares each `mace_*` script, and from then on it is
 `mace-torch`. The v1.0.0 release therefore publishes three distributions, not
 four.
+
+**`mace-backend-example` is never published.** It is a kernel backend shaped
+like a third party's wheel, depending on `mace-core` and torch alone and
+registered only through its entry point, and it exists to be checked: CI runs
+the whole conformance suite over it on every change, and nothing in the other
+four packages may name it. Its README is the template for writing a backend.
 
 ## Installing alongside the legacy package
 
@@ -372,6 +379,14 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_jax/__init__.py` | The package version; inference code arrives with its tickets. |
 | `mace_launcher/__init__.py` | The `mace_*` console scripts, dispatching on `--engine` or `MACE_ENGINE`. |
 | `mace_launcher/audit.py` | The runtime guard that fails when a v1 module imports the legacy package. |
+
+### `mace-backend-example`
+
+| File | What is in it |
+|---|---|
+| `mace_backend_example/__init__.py` | The backend the entry point names, and the package version. |
+| `mace_backend_example/backend.py` | Every dispatched op in plain torch, its capabilities, and the canonical weights. |
+| `mace_backend_example/ops.py` | Its own convolution, contraction and reduction kernels, each with a fake and a differentiable backward. |
 
 ### Tests
 

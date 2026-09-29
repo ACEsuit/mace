@@ -38,6 +38,7 @@ def test_the_scan_reaches_the_v1_packages():
     """
     roots = v1_surface.package_roots()
     assert [root.name for root in roots] == [
+        "mace_backend_example",
         "mace_core",
         "mace_jax",
         "mace_launcher",
