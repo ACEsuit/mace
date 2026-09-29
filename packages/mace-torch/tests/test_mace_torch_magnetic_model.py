@@ -20,9 +20,9 @@ from ase.io import write
 from mace_core.config import FixedPointSpec
 from mace_core.config.data import AugmentationSpec
 from mace_core.config.model import MagneticConfig
+from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.reference import ReferenceBackend
@@ -54,6 +54,7 @@ def engine(one_body: int = 6, seed: int = 3) -> DerivativeEngine:
         AtomicNumberTable(NUMBERS),
         ScaleShiftSpec("std", (0.7,), (0.1,)),
         PrecisionConfig(),
+        widen_node_energy=False,
     )
     model = MagneticModel(
         ReferenceBackend(),

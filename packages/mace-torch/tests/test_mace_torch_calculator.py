@@ -269,7 +269,9 @@ def test_a_compiled_calculator_pads_automatically(checkpoints, monkeypatch):
     )
     calculator = MACECalculator(model_paths=checkpoints["a"], compile_mode="default")
     assert calculator.padding.mode == "auto"
-    assert compiled == [{"mode": "default", "dynamic": False}]
+    assert compiled == [
+        {"mode": "default", "backend": "inductor", "fullgraph": True, "dynamic": False}
+    ]
 
 
 @fp64_only

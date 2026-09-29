@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 import torch
+from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch_engine_fixtures import ATOMIC_NUMBERS, ENERGY

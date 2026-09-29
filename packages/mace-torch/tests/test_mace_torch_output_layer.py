@@ -17,8 +17,8 @@ import pytest
 import torch
 from conftest import assert_close, fp64_only
 from mace_core.clebsch_gordan.real_basis import wigner_d_real
+from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend

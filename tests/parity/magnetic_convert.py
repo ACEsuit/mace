@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
+from mace_core.config.precision import PrecisionConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
@@ -88,6 +88,7 @@ def convert_magnetic(legacy, observables=None) -> MagneticModel:
         AtomicNumberTable(config["atomic_numbers"]),
         ScaleShiftSpec("std", scale, shift),
         PrecisionConfig(),
+        widen_node_energy=False,
     )
     model = MagneticModel(
         ReferenceBackend(),

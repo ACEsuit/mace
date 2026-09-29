@@ -12,12 +12,14 @@ replaces a way a checkpoint can load and quietly give a different model.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 import torch
 from conftest import fp64_only
+from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
+from mace_core.kernels.precision import Precision
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.nn import MACEBackbone
@@ -31,7 +33,7 @@ from mace_torch.serialization import (
 )
 from safetensors.torch import load_file, save_file
 
-SETTINGS = dict(
+SETTINGS: dict[str, Any] = dict(
     atomic_numbers=[1, 8],
     num_layers=2,
     num_features=4,
@@ -42,7 +44,7 @@ SETTINGS = dict(
 )
 
 
-def build(config):
+def build(config: dict[str, Any]) -> MACEBackbone:
     return MACEBackbone(ReferenceBackend(), **config)
 
 
@@ -198,8 +200,9 @@ def test_a_model_of_a_different_shape_is_refused(tmp_path):
     model = trained()
     save_checkpoint(tmp_path / "anchor", model, dict(SETTINGS))
 
-    def build_deeper(config):
-        return MACEBackbone(ReferenceBackend(), **{**config, "num_layers": 3})
+    def build_deeper(config: dict[str, Any]) -> MACEBackbone:
+        deeper: dict[str, Any] = {**config, "num_layers": 3}
+        return MACEBackbone(ReferenceBackend(), **deeper)
 
     with pytest.raises(CheckpointError, match=r"products\.1\.contraction"):
         load_checkpoint(tmp_path / "anchor", build_deeper)
@@ -233,7 +236,7 @@ def test_a_file_missing_an_operator_entirely_is_refused(tmp_path):
         load_checkpoint(tmp_path / "anchor", build)
 
 
-def energy_head(precision: str):
+def energy_head(precision: Precision) -> EnergyOutputHead:
     return EnergyOutputHead(
         ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
         ["default"],

@@ -39,7 +39,7 @@ relaxes a crystal in the wrong direction.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 import torch
@@ -359,6 +359,43 @@ class DerivativeEngine(nn.Module):
             for spec in responses
             if "pos" in spec.requested_derivatives()
         }
+        self._compiled_model: Callable[..., MACEOutput[Tensor]] | None = None
+
+    def model_forward(self, prepared: Mapping[str, Any]) -> MACEOutput[Tensor]:
+        """The model alone, between preparing the inputs and differentiating.
+
+        What :meth:`compile_model` compiles: everything the backbone and the
+        heads do, and nothing that calls ``autograd.grad``.
+        """
+        if self.output_layer is None:
+            return self.backbone(prepared)
+        return self.output_layer(prepared, self.backbone(prepared))
+
+    def compile_model(
+        self, mode: str | None = None, backend: str | Callable = "inductor"
+    ) -> None:
+        """Run the model through ``torch.compile``, whole and at static shapes.
+
+        Only :meth:`model_forward` is compiled. The inputs are prepared and the
+        derivatives taken outside it, so the compiled region holds no
+        ``autograd.grad`` and ``fullgraph=True`` holds: a graph break raises
+        rather than splitting the model. With static shapes every new batch
+        shape is one new compile, which is why a compiled model is fed padded
+        batches. The derivatives are taken once through the compiled graph, so
+        this is an inference path: training on forces differentiates them
+        again, and the eager model is the one that does that.
+
+        Args:
+            mode: The ``torch.compile`` mode.
+            backend: The ``torch.compile`` backend.
+        """
+        self._compiled_model = torch.compile(
+            self.model_forward,
+            mode=mode,
+            backend=backend,
+            fullgraph=True,
+            dynamic=False,
+        )
 
     def derivative_names(self) -> dict[str, str]:
         """The name each declared input's energy derivative is reported under.
@@ -456,10 +493,8 @@ class DerivativeEngine(nn.Module):
             need_stress=need_strain,
             leaves=[spec.name for spec in leaves],
         )
-        if self.output_layer is None:
-            output = self.backbone(prepared)
-        else:
-            output = self.output_layer(prepared, self.backbone(prepared))
+        run = self._compiled_model or self.model_forward
+        output = run(prepared)
         if wanted_responses:
             for name in wanted_responses:
                 output.extras[name] = self._response_derivative(

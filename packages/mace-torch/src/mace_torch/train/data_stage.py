@@ -21,6 +21,7 @@ from pathlib import Path
 
 from mace_core.config.data import DataConfig, HeadDataConfig
 from mace_core.config.e0s import E0sTable
+from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data import (
     Configuration,
@@ -35,7 +36,6 @@ from mace_core.data.backends.xyz import SUFFIXES as XYZ_SUFFIXES
 from mace_core.data.e0_resolution import E0Provenance, EnergyPredictor
 from mace_core.data.xyz import ISOLATED_ATOM_CONFIG_TYPE
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
 from mace_core.observables import ObservableCatalogue, resolve_requested
 from mace_core.stages import DataBundle
 from torch.utils.data import DataLoader

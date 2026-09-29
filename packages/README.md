@@ -203,6 +203,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/config/legacy.py` | Every legacy training flag and what became of it, plus the translator. |
 | `mace_core/config/loss.py` | Loss kinds and per-observable weights. |
 | `mace_core/config/model.py` | Architecture, declared observables, readouts, and the polar section. |
+| `mace_core/config/precision.py` | Which dtype each op kind computes and accumulates in, the presets, and degradation on a device without float64. |
 | `mace_core/config/provenance.py` | Turning what a run asked for into what its model records. |
 | `mace_core/config/pseudolabels.py` | Replay labels from the foundation model: their settings and the record of what they were made from. |
 | `mace_core/config/resolved.py` | The whole configuration and the rules that span its sections. |
@@ -242,8 +243,9 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/kernels/capabilities.py` | What a kernel backend declares it can build. |
 | `mace_core/kernels/descriptors.py` | Every dispatched op, described before a backend builds it. |
 | `mace_core/kernels/paths.py` | The tensor-product paths of the convolution and their order. |
-| `mace_core/kernels/precision.py` | Dtype names and the per-op precision configuration. |
+| `mace_core/kernels/precision.py` | Dtype names, and which is wider. |
 | `mace_core/kernels/protocol.py` | The interface a kernel backend implements. |
+| `mace_core/kernels/reorder.py` | The map from canonical contraction weights to a backend's own path order, derived from two bases and split into its independent blocks. |
 | `mace_core/kernels/registry.py` | Finding kernel backends by entry point. |
 | `mace_core/metadata.py` | `ModelMetadata`: the versioned record every checkpoint carries. |
 | `mace_core/neighbors.py` | The neighbour list as a pure function, with the cell regimes stated. |
@@ -268,8 +270,10 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/backends/__init__.py` | The shipped kernel backends. |
 | `mace_torch/backends/composite.py` | A chosen backend with the reference behind it, op by op, and how a name resolves to one. |
 | `mace_torch/backends/conformance.py` | The checks every kernel backend passes against the reference. |
+| `mace_torch/backends/layout.py` | How features sit inside each irrep term, as the one object the model asks for views in the backend's layout. |
 | `mace_torch/backends/cueq.py` | The cuEquivariance backend: linear, convolution, contraction and skip on NVIDIA's kernels. |
 | `mace_torch/backends/oeq.py` | The OpenEquivariance backend: the fused convolution. |
+| `mace_torch/backends/precision.py` | A backend whose ops are built at the precision configured for each, with casts at the boundary of those that differ. |
 | `mace_torch/backends/reference/__init__.py` | The reference backend, re-exported. |
 | `mace_torch/backends/reference/backend.py` | Plain-torch linear, convolution, contraction, radial basis and reductions. |
 | `mace_torch/backends/reference/spherical_harmonics.py` | Real spherical harmonics in the legacy convention. |

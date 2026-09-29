@@ -18,11 +18,11 @@ from typing import Any
 
 from ase.data import chemical_symbols
 from mace_core.config.model import ModelConfig
+from mace_core.config.precision import PrecisionConfig
 from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
 from mace_core.metadata import (
     ConfigRecord,
     E0Details,
@@ -45,6 +45,7 @@ from mace_torch.backends import (
     require_double_backward,
     resolve_backend,
 )
+from mace_torch.backends.precision import PrecisionBackend, degradation_report
 from mace_torch.finetune.foundation import Foundation
 from mace_torch.finetune.transfer import readout_sources, transfer_foundation
 from mace_torch.kernels import initialize_model_weights
@@ -72,10 +73,22 @@ __all__ = [
 #: the shape of one channel.
 DEFAULT_HIDDEN_IRREPS = "0e+1o"
 
+logger = logging.getLogger(__name__)
+
 #: Which model spelling puts the short-range repulsion inside the scaled sum.
 #: The two differ by about 77 eV on a probe geometry, so it is a fact about a
 #: trained model rather than a preference.
 _ZBL_INSIDE = {"scale_shift": True, "plain": False}
+
+#: Which energy models hand out per-atom energies in the accumulation dtype
+#: rather than their own. The frozen tree widens them in its scale-shift, polar
+#: and LES models and not in its plain and magnetic ones.
+_WIDENS_NODE_ENERGY = {
+    "scale_shift": True,
+    "plain": False,
+    "polar": True,
+    "magnetic": False,
+}
 
 #: The two response models, which read out a dipole and no energy: fixed
 #: charges and a dipole alone, or predicted charges, a dipole and a
@@ -342,7 +355,7 @@ def build_model(
         )
     _refuse_unbuilt(config)
     _check_electrostatics(config)
-    backend = resolve_backend(config.model.backend)
+    backend = _backend(config, precision, supports_float64)
     if config.model.model in _RESPONSE_MODELS:
         model = _response_model(
             config,
@@ -351,6 +364,7 @@ def build_model(
             z_table=z_table,
             statistics=statistics,
             precision=precision,
+            supports_float64=supports_float64,
         )
         _report_backend(backend)
         if initialize:
@@ -377,7 +391,10 @@ def build_model(
         precision,
         zbl_in_scale_shift=_ZBL_INSIDE.get(config.model.model, True),
         supports_float64=supports_float64,
+        widen_node_energy=_WIDENS_NODE_ENERGY[config.model.model],
     )
+    if (report := energy_head.build_report()) is not None:
+        logger.warning(report)
     if config.model.model == "magnetic":
         model = _magnetic_model(
             config,
@@ -387,6 +404,7 @@ def build_model(
             z_table=z_table,
             heads=heads,
             precision=precision,
+            supports_float64=supports_float64,
         )
         _report_backend(backend)
         if initialize:
@@ -402,6 +420,7 @@ def build_model(
             heads=heads,
             statistics=statistics,
             precision=precision,
+            supports_float64=supports_float64,
             trains_derivatives=initialize and bool(requested.derivatives),
         )
         _report_backend(backend)
@@ -442,6 +461,8 @@ def build_model(
 
 def _report_backend(backend: Any) -> None:
     """Say which backend built which ops, when more than one did."""
+    if isinstance(backend, PrecisionBackend):
+        backend = backend.backend
     if isinstance(backend, CompositeBackend):
         logger.info("Kernel backends:\n%s", backend.report())
 
@@ -456,6 +477,7 @@ def _polar_model(
     heads: tuple[str, ...],
     statistics: DatasetStatistics,
     precision: PrecisionConfig,
+    supports_float64: bool = True,
     trains_derivatives: bool,
 ) -> PolarModel:
     """The charge-aware model, with its long-range ops from the named solver.
@@ -520,6 +542,7 @@ def _response_model(
     z_table: AtomicNumberTable,
     statistics: DatasetStatistics,
     precision: PrecisionConfig,
+    supports_float64: bool = True,
 ) -> DipoleModel:
     """A dipole or dielectric model, which reads out no energy.
 
@@ -565,6 +588,7 @@ def _magnetic_model(
     z_table: AtomicNumberTable,
     heads: tuple[str, ...],
     precision: PrecisionConfig,
+    supports_float64: bool = True,
 ) -> MagneticModel:
     """The magnetic model, which reads out an energy and nothing else."""
     others = [spec.name for spec in requested.observables if spec.name != "energy"]
@@ -600,6 +624,15 @@ def _magnetic_model(
     if model.one_body is not None and not settings.train_one_body:
         model.one_body.coefficients.requires_grad_(False)
     return model
+
+
+def _backend(
+    config: ResolvedConfig, precision: PrecisionConfig, supports_float64: bool
+) -> Any:
+    """The configured backend, building every op at the precision given it."""
+    if (report := degradation_report(precision, supports_float64)) is not None:
+        logger.warning(report)
+    return resolve_backend(config.model.backend, precision, supports_float64)
 
 
 def _refuse_unbuilt(config: ResolvedConfig) -> None:
