@@ -57,10 +57,11 @@ needs ``dipole`` and its declared derivative ``dmu_dr``.
 
 from __future__ import annotations
 
+import copy
 import glob
 import json
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -72,8 +73,9 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from mace_core.config import FixedPointSpec
 from mace_core.data.configuration import Configuration
 from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
-from torch import Tensor
+from torch import Tensor, nn
 
+from mace_torch.backends.precision import interface_dtype
 from mace_torch.calculators.padding import (
     PaddingInfo,
     PaddingPolicy,
@@ -349,11 +351,12 @@ class MACECalculator(Calculator):
             ],
             derivatives=[MAGNETIC_DERIVATIVE] if self.reads_moments else [],
         )
-        self._engines = [model.engine for model in self.models]
+        self._engines: list[Callable[..., Any]] = [
+            model.engine for model in self.models
+        ]
         if compile_mode is not None:
             self._engines = [
-                torch.compile(engine, mode=compile_mode, dynamic=False)
-                for engine in self._engines
+                _compiled(model.engine, compile_mode) for model in self.models
             ]
         for model in self.models:
             for parameter in model.engine.parameters():
@@ -629,7 +632,7 @@ class MACECalculator(Calculator):
             info = PaddingInfo(
                 nodes=len(atoms), edges=int(structure["edge_index"].shape[1])
             )
-        dtype = next(self.models[0].engine.parameters()).dtype
+        dtype = interface_dtype(self.models[0].engine)
         batch = collate_training(
             [(item, {}, {}) for item in structures],
             z_table=self.z_table,
@@ -720,6 +723,19 @@ def _declared(model: DeployedModel) -> list[str]:
 def _extra_rows(model: DeployedModel) -> dict[str, str]:
     """What the model says it adds to its output, and the row of each."""
     return dict(getattr(model.model, "extra_rows", {}))
+
+
+def _compiled(engine: nn.Module, mode: str) -> DerivativeEngine:
+    """``engine`` with its model compiled, leaving ``engine`` itself eager.
+
+    A shallow copy shares the modules and the weights, so the two evaluate the
+    same model, and another calculator over the same engine is not handed a
+    compiled one it did not ask for.
+    """
+    assert isinstance(engine, DerivativeEngine)
+    compiled = copy.copy(engine)
+    compiled.compile_model(mode=mode)
+    return compiled
 
 
 def _derivative_engine(model: DeployedModel) -> DerivativeEngine:

@@ -23,7 +23,12 @@ from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.precision import Precision
 from torch import Tensor, nn
 
-__all__ = ["PrecisionBackend", "boundary_precision", "cast_at_boundary"]
+__all__ = [
+    "PrecisionBackend",
+    "boundary_precision",
+    "cast_at_boundary",
+    "interface_dtype",
+]
 
 _TORCH_DTYPE = {
     "float64": torch.float64,
@@ -158,6 +163,23 @@ def boundary_precision(op: nn.Module) -> tuple[Precision, Precision] | None:
     if not inputs:
         return None
     return inputs[0].precision, output[0].precision
+
+
+def interface_dtype(model: nn.Module) -> torch.dtype:
+    """The dtype tensors cross ``model``'s op boundaries in.
+
+    That of its parameters outside every op that casts at its boundary, since
+    an op held wider keeps its own weights in its own dtype.
+    """
+    wider = [
+        path for path, module in model.named_modules() if boundary_precision(module)
+    ]
+    for name, parameter in model.named_parameters():
+        if parameter.is_floating_point() and not any(
+            name.startswith(f"{path}.") for path in wider
+        ):
+            return parameter.dtype
+    raise ValueError("the model has no floating parameter outside its ops")
 
 
 class _CastInputs:
