@@ -109,8 +109,6 @@ _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
     "interaction_first": tuple(_FIRST_INTERACTIONS),
     "radial_mlp": ((64, 64, 64),),
     "distance_transform": tuple(_DISTANCE_TRANSFORMS),
-    "apply_cutoff": (True,),
-    "use_agnostic_product": (False,),
     "clebsch_gordan_basis": ("reduced",),
     "readout.gate": ("silu",),
     "readout.last_only": (False,),
@@ -347,11 +345,13 @@ def build_model(
         pair_repulsion=config.model.pair_repulsion,
         cutoff_order=config.model.num_cutoff_basis,
         distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
+        apply_cutoff=config.model.apply_cutoff,
         readout_hidden=_readout_hidden(config),
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
         num_heads=len(heads),
         **_interaction_settings(config)._asdict(),
+        element_agnostic_product=config.model.use_agnostic_product,
     )
     if initialize:
         # Seeded from the run, so the same configuration and the same seed
@@ -422,6 +422,7 @@ def _polar_model(
         precision=precision.model,
         cutoff_order=config.model.num_cutoff_basis,
         distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
+        apply_cutoff=config.model.apply_cutoff,
         readout_hidden=_readout_hidden(config),
         num_heads=len(heads),
         **_interaction_settings(config)._asdict(),
@@ -490,10 +491,6 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
     unbuilt = []
     built = dict(_BUILT_ONE_WAY)
     if config.model.model == "polar":
-        # Built both ways for the charge-aware model: the published ones share
-        # one set of product weights, and the frozen tree's command line
-        # defaults to one per element.
-        built["use_agnostic_product"] = (False, True)
         # The frozen tree computes the repulsion of this model and never adds
         # it, so the only faithful build is the one without it.
         built["pair_repulsion"] = (False,)

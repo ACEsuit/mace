@@ -72,6 +72,7 @@ def legacy_model(
     edge_irreps: str | None = None,
     use_edge_irreps_first: bool = False,
     distance_transform: str = ANCHOR_CONFIG["distance_transform"],
+    **settings,
 ) -> torch.nn.Module:
     torch.manual_seed(SEED)
     np.random.seed(SEED)
@@ -97,6 +98,7 @@ def legacy_model(
         use_reduced_cg=ANCHOR_CONFIG["use_reduced_cg"],
         edge_irreps=o3.Irreps(edge_irreps) if edge_irreps else None,
         use_edge_irreps_first=use_edge_irreps_first,
+        **settings,
     ).to(torch.float64)
 
 
@@ -182,6 +184,46 @@ def test_the_nonlinear_normalization_is_live(fp64, isolated):
         for block in legacy.interactions:
             block.beta.zero_()
     assert not torch.allclose(before, legacy_energies(legacy, structures), atol=1e-6)
+
+
+#: The two settings MACE-MH-1 and MACE-OMOL add to the backbone: the cutoff
+#: envelope multiplied into what the radial networks produce rather than into
+#: the basis, and one set of product weights for every element.
+BACKBONE_SETTINGS = {
+    "envelope-after-the-radial-networks": {"apply_cutoff": False},
+    "element-agnostic-product": {"use_agnostic_product": True},
+}
+
+
+@pytest.mark.parametrize("setting", sorted(BACKBONE_SETTINGS))
+@pytest.mark.parametrize("pairing", ["anchors", "mace-mh-0", "nonlinear"])
+def test_each_backbone_setting_matches_the_live_legacy_model(
+    setting, pairing, fp64, isolated, tmp_path
+):
+    from tests.golden.anchors import load_training_structures
+
+    first, later = PAIRINGS[pairing]
+    legacy = legacy_model(first, later, **BACKBONE_SETTINGS[setting])
+    if pairing == "nonlinear":
+        legacy = trained_away_from_the_start(legacy)
+    structures = load_training_structures()
+    got = energies(converted(legacy, tmp_path).engine, legacy, structures)
+    expected = legacy_energies(legacy, structures)
+    assert torch.allclose(got, expected, atol=1e-12, rtol=0), (
+        f"largest difference {float((got - expected).abs().max()):.3g} eV"
+    )
+
+
+@pytest.mark.parametrize("setting", sorted(BACKBONE_SETTINGS))
+def test_each_backbone_setting_changes_the_model(setting, fp64, isolated):
+    from tests.golden.anchors import load_training_structures
+
+    structures = load_training_structures()
+    plain = legacy_energies(legacy_model(PLAIN, RESIDUAL), structures)
+    changed = legacy_energies(
+        legacy_model(PLAIN, RESIDUAL, **BACKBONE_SETTINGS[setting]), structures
+    )
+    assert not torch.allclose(plain, changed, atol=1e-6)
 
 
 @pytest.mark.parametrize(

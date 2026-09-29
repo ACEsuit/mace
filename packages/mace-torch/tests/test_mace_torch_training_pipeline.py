@@ -656,8 +656,6 @@ def build_with(tmp_path, **model):
     [
         ("interaction", "RealAgnosticInteractionBlock"),
         ("radial_mlp", (8,)),
-        ("apply_cutoff", False),
-        ("use_agnostic_product", True),
         ("edge_irreps", "4x0e"),
         ("clebsch_gordan_basis", "full"),
         ("readout", {"gate": "tanh"}),
@@ -728,6 +726,6 @@ def test_edge_irreps_a_standard_block_would_read_are_refused(tmp_path, setting):
 
 def test_every_refusal_is_reported_together(tmp_path):
     with pytest.raises(ModelStageError) as caught:
-        build_with(tmp_path, apply_cutoff=False, radial_mlp=(8,))
-    assert "model.apply_cutoff" in str(caught.value)
+        build_with(tmp_path, clebsch_gordan_basis="full", radial_mlp=(8,))
+    assert "model.clebsch_gordan_basis" in str(caught.value)
     assert "model.radial_mlp" in str(caught.value)
