@@ -39,7 +39,7 @@ def test_the_v1_packages_are_not_sources_of_a_legacy_import():
     parser.read(CONFIG, encoding="utf-8")
     section = parser["importlinter:contract:no-legacy-from-v1"]
     sources = set(section["source_modules"].split())
-    assert sources == {"mace_core", "mace_torch", "mace_jax"}, (
+    assert sources == {"mace_core", "mace_torch", "mace_jax", "mace_backend_example"}, (
         f"the forbidden contract's sources are {sorted(sources)}. Every v1 "
         f"package belongs there; the only module allowed out is the launcher, "
         f"and any other omission is a hole in the guard."
@@ -54,7 +54,14 @@ def test_exactly_two_modules_may_import_both_stacks():
 #: Every package the config declares as a root. import-linter resolves each on
 #: the filesystem, so one that is not installed is reported as a broken
 #: contract rather than as a missing install, which reads as a real violation.
-ROOT_PACKAGES = ("mace", "mace_core", "mace_torch", "mace_jax", "mace_launcher")
+ROOT_PACKAGES = (
+    "mace",
+    "mace_core",
+    "mace_torch",
+    "mace_jax",
+    "mace_launcher",
+    "mace_backend_example",
+)
 
 
 def _missing_roots() -> list[str]:

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mace-backend-example"
+dynamic = ["version"]
+description = "A MACE kernel backend shaped like a third-party wheel, and the template for writing one."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "MACE developers" }]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+# The contract and a framework, and nothing else. The backend imports no part
+# of mace_torch: the model is what calls a backend, never the other way round.
+dependencies = [
+    "mace-core",
+    "numpy>=1.23",
+    "torch>=2.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/ACEsuit/mace"
+
+# The only thing that makes the backend exist, as far as MACE is concerned.
+# Installing this distribution is what registers it; nothing in mace-core or
+# mace-torch names it.
+[project.entry-points."mace.kernel_backends.torch"]
+example = "mace_backend_example:ExampleBackend"
+
+[tool.hatch.version]
+source = "vcs"
+tag-pattern = "^mace-backend-example-v(?P<version>.+)$"
+fallback-version = "0.0.0"
+raw-options = { root = "../..", git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "mace-backend-example-v*"] }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mace_backend_example"]
