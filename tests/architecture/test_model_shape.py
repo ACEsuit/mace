@@ -105,6 +105,20 @@ def test_no_torch_geometric_in_model_interface():
     assert not problems, "\n".join(problems)
 
 
+def test_no_hardcoded_precision_on_the_forward_path():
+    """No `.double()`, no `autocast`, no dtype or device branch in a forward,
+    under the blocks, the models and the derivative engine.
+
+    Each op's dtype is fixed when the model is built, from the precision
+    configuration; the forward path only carries it out.
+    """
+    problems, scanned = v1_surface.scan(
+        v1_surface.precision_violations, v1_surface.hot_path_roots()
+    )
+    assert scanned > 10
+    assert not problems, "\n".join(problems)
+
+
 def test_no_jit_in_live_v1_path():
     """No `jit.*` and no `@compile_mode` under `packages/`.
 
@@ -253,6 +267,7 @@ def test_the_torch_geometric_detector_accepts_torch_itself():
         "import torch\n\n\n@torch.jit.unused\ndef helper():\n    pass\n",
         "import torch\n\nx = torch.jit.annotate(List[int], [])\n",
         "import torch\n\nif torch.jit.is_scripting():\n    pass\n",
+        "import torch\n\n\nclass A:\n    @torch.jit.export\n    def f(self):\n        pass\n",
     ],
     ids=[
         "compile-mode-decorator",
@@ -261,6 +276,7 @@ def test_the_torch_geometric_detector_accepts_torch_itself():
         "jit-unused-decorator",
         "jit-annotate",
         "is-scripting-branch",
+        "jit-export-decorator",
     ],
 )
 def test_the_torchscript_detector_rejects_every_spelling(source):
@@ -289,3 +305,54 @@ def test_the_torchscript_detector_finds_the_legacy_tree_it_describes():
         f"only {len(problems)} TorchScript uses found in mace/modules/, which "
         f"has 52 @compile_mode decorators alone: the detector is broken"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def forward(self, x):\n    return x.double()\n",
+        "def helper(x):\n    return x.float().argmax(-1)\n",
+        "def forward(self, x):\n    return x.half() + x.bfloat16()\n",
+        "import torch\n\nwith torch.autocast('cuda'):\n    pass\n",
+        "from torch import autocast\n",
+        "def forward(self, x):\n    if x.dtype == torch.float64:\n        return x\n    return x\n",
+        "def forward(self, x):\n    y = 1 if x.device.type == 'cuda' else 0\n    return y\n",
+        "def forward(self, x):\n    if x.is_floating_point():\n        return x\n    return x\n",
+    ],
+    ids=[
+        "double",
+        "float-in-a-helper",
+        "half-and-bfloat16",
+        "autocast-context",
+        "autocast-import",
+        "dtype-branch",
+        "device-ternary",
+        "floating-point-branch",
+    ],
+)
+def test_the_precision_detector_rejects_every_spelling(source):
+    assert v1_surface.precision_violations(source, "offender.py"), source
+
+
+def test_the_precision_detector_accepts_a_configured_dtype():
+    """A cast to a dtype read from the configuration, and a dtype decided in
+    the constructor, are what the rule asks for."""
+    source = (
+        "import torch\n\n\n"
+        "class A:\n"
+        "    def __init__(self, precision):\n"
+        "        self.dtype = torch.float64 if precision == 'float64' else None\n"
+        "        if self.dtype is torch.float64:\n"
+        "            pass\n\n"
+        "    def forward(self, x):\n"
+        "        return x.to(self.dtype), torch.float32\n"
+    )
+    assert not v1_surface.precision_violations(source, "clean.py")
+
+
+def test_the_precision_detector_finds_safe_double():
+    """The frozen tree's one hardcoded cast is the function this rule replaces,
+    and it is in the tree the rule is written against."""
+    roots = [v1_surface.REPO_ROOT / "mace" / "modules"]
+    problems, _ = v1_surface.scan(v1_surface.precision_violations, roots)
+    assert any(problem.startswith("mace/modules/utils.py") for problem in problems)

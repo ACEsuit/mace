@@ -230,6 +230,7 @@ TORCHSCRIPT_CALLS = (
     "ignore",
     "is_scripting",
     "script_if_tracing",
+    "export",
 )
 
 
@@ -284,6 +285,77 @@ def torchscript_violations(source: str, path: str) -> list[str]:
             for alias in node.names:
                 if alias.name in {"torch.jit", "e3nn.util.jit"}:
                     problems.append(f"{path}:{node.lineno}: imports {alias.name}")
+    return sorted(set(problems))
+
+
+#: Where the forward pass lives, relative to a package's import root: the
+#: blocks, the models and the derivative engine.
+HOT_PATH_SUBDIRECTORIES = ("nn", "models", "physics")
+
+#: Casts that name a dtype in the code rather than reading one from the
+#: precision configuration.
+HARDCODED_CASTS = ("double", "float", "half", "bfloat16")
+
+#: What a branch on a tensor's dtype or device reads.
+DISPATCH_ATTRIBUTES = ("dtype", "device", "is_cuda", "is_floating_point")
+
+
+def hot_path_roots() -> list[Path]:
+    """The directories the forward pass lives in, where they exist yet."""
+    return [
+        root / subdirectory
+        for root in package_roots()
+        for subdirectory in HOT_PATH_SUBDIRECTORIES
+        if (root / subdirectory).is_dir()
+    ]
+
+
+def precision_violations(source: str, path: str) -> list[str]:
+    """No hardcoded cast, no autocast, and no dtype or device branch in a
+    forward.
+
+    Every op's dtype is decided when the model is built, from the precision
+    configuration, so the code on the forward path never names one: a
+    ``.double()`` is a precision nobody configured, ``autocast`` a global one,
+    and a branch on a tensor's dtype or device is a decision taken again on
+    every call, which a compiled graph turns into a guard.
+    """
+    problems = []
+    tree = ast.parse(source, filename=path)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in HARDCODED_CASTS
+            and not node.args
+            and not node.keywords
+        ):
+            problems.append(f"{path}:{node.lineno}: .{node.func.attr}()")
+        if (
+            (isinstance(node, ast.Attribute) and node.attr == "autocast")
+            or (isinstance(node, ast.Name) and node.id == "autocast")
+            or (
+                isinstance(node, ast.ImportFrom)
+                and any(alias.name == "autocast" for alias in node.names)
+            )
+        ):
+            problems.append(f"{path}:{node.lineno}: autocast")
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+            node.name == "forward"
+        ):
+            for branch in ast.walk(node):
+                if not isinstance(branch, (ast.If, ast.IfExp)):
+                    continue
+                read = {
+                    attribute.attr
+                    for attribute in ast.walk(branch.test)
+                    if isinstance(attribute, ast.Attribute)
+                }
+                if read & set(DISPATCH_ATTRIBUTES):
+                    problems.append(
+                        f"{path}:{branch.lineno}: branches on "
+                        f"{sorted(read & set(DISPATCH_ATTRIBUTES))} in forward"
+                    )
     return sorted(set(problems))
 
 
