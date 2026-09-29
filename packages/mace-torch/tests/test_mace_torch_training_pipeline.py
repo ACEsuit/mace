@@ -651,7 +651,6 @@ def build_with(tmp_path, **model):
     "setting,value",
     [
         ("interaction", "RealAgnosticInteractionBlock"),
-        ("interaction_first", "RealAgnosticDensityInteractionBlock"),
         ("radial_mlp", (8,)),
         ("distance_transform", "Agnesi"),
         ("apply_cutoff", False),

@@ -78,7 +78,12 @@ REFUSED = {
 }
 
 #: Interaction blocks whose weights this knows how to walk.
-INTERACTIONS = ("RealAgnosticInteractionBlock", "RealAgnosticResidualInteractionBlock")
+INTERACTIONS = (
+    "RealAgnosticInteractionBlock",
+    "RealAgnosticResidualInteractionBlock",
+    "RealAgnosticDensityInteractionBlock",
+    "RealAgnosticDensityResidualInteractionBlock",
+)
 
 #: Readout blocks whose weights this knows how to walk. The dielectric
 #: model's dipole and polarizability readouts are not among them yet, so its
@@ -507,6 +512,21 @@ def walk(model, spelling: str) -> Walk:
             layers,
             descriptor={"widths": widths, "activation": activation},
         )
+        density = getattr(block, "density_fn", None)
+        if density is not None:
+            density_widths = list(density.hs)
+            density_layers = {}
+            for layer in range(len(density_widths) - 1):
+                walker.use(f"{prefix}.density_fn.layer{layer}.weight")
+                density_layers[f"layer_{layer}"] = (
+                    getattr(density, f"layer{layer}").weight.detach().cpu().numpy()
+                )
+            walker.op(
+                f"{prefix}.density",
+                "radial_mlp",
+                density_layers,
+                descriptor={"widths": density_widths, "activation": None},
+            )
         for key in list(walker.state):
             if key.startswith(f"{prefix}.conv_tp."):
                 walker.derive(

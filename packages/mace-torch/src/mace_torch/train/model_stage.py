@@ -13,6 +13,8 @@ undone to save.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from ase.data import chemical_symbols
 from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
@@ -73,15 +75,28 @@ _MODELS = frozenset({*_ZBL_INSIDE, "polar"})
 #: replaced: building the default instead trains another architecture under
 #: the name of the one asked for.
 #:
-#: Both spellings of the first interaction are built, and they are different
-#: models: the residual one takes its skip from the element embedding and has
-#: the product basis add it, the plain one applies its skip to the message.
+#: What each spelling of the first interaction builds: whether the layer
+#: carries its skip onward for the product basis to add, rather than applying
+#: it to the message, and whether it normalizes by a density learned per atom
+#: rather than by the average neighbour count. Four models, not two names for
+#: one: the residual one takes its skip from the element embedding.
+_FIRST_INTERACTIONS: dict[str, tuple[bool, bool]] = {
+    "RealAgnosticInteractionBlock": (False, False),
+    "RealAgnosticResidualInteractionBlock": (True, False),
+    "RealAgnosticDensityInteractionBlock": (False, True),
+    "RealAgnosticDensityResidualInteractionBlock": (True, True),
+}
+
+#: The same for every later layer, which always carries its skip: whether it
+#: normalizes by a learned density.
+_INTERACTIONS: dict[str, bool] = {
+    "RealAgnosticResidualInteractionBlock": False,
+    "RealAgnosticDensityResidualInteractionBlock": True,
+}
+
 _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
-    "interaction": ("RealAgnosticResidualInteractionBlock",),
-    "interaction_first": (
-        "RealAgnosticInteractionBlock",
-        "RealAgnosticResidualInteractionBlock",
-    ),
+    "interaction": tuple(_INTERACTIONS),
+    "interaction_first": tuple(_FIRST_INTERACTIONS),
     "radial_mlp": ((64, 64, 64),),
     "distance_transform": ("None",),
     "apply_cutoff": (True,),
@@ -327,7 +342,7 @@ def build_model(
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
         num_heads=len(heads),
-        residual_first_layer=_residual_first_layer(config),
+        **_interaction_settings(config)._asdict(),
     )
     if initialize:
         # Seeded from the run, so the same configuration and the same seed
@@ -399,14 +414,24 @@ def _polar_model(
         cutoff_order=config.model.num_cutoff_basis,
         readout_hidden=_readout_hidden(config),
         num_heads=len(heads),
-        residual_first_layer=_residual_first_layer(config),
+        **_interaction_settings(config)._asdict(),
         element_agnostic_product=config.model.use_agnostic_product,
     )
 
 
-def _residual_first_layer(config: ResolvedConfig) -> bool:
-    """Whether the first layer is residual, as the frozen tree's default is."""
-    return config.model.interaction_first == "RealAgnosticResidualInteractionBlock"
+class _InteractionSettings(NamedTuple):
+    """What the configured interactions build, as the backbone's settings."""
+
+    residual_first_layer: bool
+    learned_density_first_layer: bool
+    learned_density: bool
+
+
+def _interaction_settings(config: ResolvedConfig) -> _InteractionSettings:
+    residual_first, density_first = _FIRST_INTERACTIONS[config.model.interaction_first]
+    return _InteractionSettings(
+        residual_first, density_first, _INTERACTIONS[config.model.interaction]
+    )
 
 
 def _refuse_unbuilt(config: ResolvedConfig) -> None:

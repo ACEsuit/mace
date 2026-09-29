@@ -374,9 +374,10 @@ def _state(
                 state[path] = _linear(
                     artifact, f"{source}.{rest.removeprefix('body.')}", tensors
                 )
-            elif rest == "body.radial":
+            elif rest in {"body.radial", "body.density"}:
+                op = f"{source}.{rest.removeprefix('body.')}"
                 state[path] = {
-                    name: _as(artifact.tensor(f"{source}.radial", name), value)
+                    name: _as(artifact.tensor(op, name), value)
                     for name, value in tensors.items()
                 }
             elif rest == "skip":
