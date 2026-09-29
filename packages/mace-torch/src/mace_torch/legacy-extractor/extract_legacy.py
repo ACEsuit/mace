@@ -322,6 +322,49 @@ def basis_path_first(basis, order: int, target_dimension: int) -> Any:
     return numpy.ascontiguousarray(values)
 
 
+#: How far a stored basis may be from the float64 construction, relative to
+#: its largest entry, and still be that construction computed in float32. The
+#: frozen tree builds the higher orders by float32 products, a few units of
+#: float32 rounding apart; a basis of another construction is off by order one.
+FLOAT32_BASIS_TOLERANCE = 1e-5
+
+
+def float64_basis(contraction, target: str, order: int, stored, reduced: bool):
+    """The coupling basis rebuilt at float64, when the stored one is that
+    construction held at float32, and ``None`` otherwise, including when the
+    two are equal.
+
+    A model built in float32 holds its bases at float32, and keeps them so
+    when it is carried to float64. Carried as they are, that error enters the
+    conversion and the converted model computes neither the published
+    function nor the exact one. The basis is rebuilt with the frozen tree's
+    own construction, and used only when every stored entry is a float32
+    number, the zeros sit in the same places and the two agree to float32
+    precision: anything else is carried unchanged.
+    """
+    torch = importlib.import_module("torch")
+    values = stored.detach().cpu().double()
+    if not torch.equal(values, values.float().double()):
+        return None
+    construction = importlib.import_module("mace.tools.cg")
+    exact = construction.U_matrix_real(
+        irreps_in=contraction.coupling_irreps,
+        irreps_out=target,
+        correlation=order,
+        use_cueq_cg=reduced,
+        dtype=torch.float64,
+    )[-1]
+    if exact.shape != values.shape:
+        return None
+    if not torch.equal(exact == 0, values == 0):
+        return None
+    scale = float(exact.abs().max())
+    difference = float((exact - values).abs().max())
+    if difference == 0.0 or difference > FLOAT32_BASIS_TOLERANCE * scale:
+        return None
+    return exact
+
+
 def channel_irreps(irreps) -> str:
     """One channel of a declaration: its irreps without multiplicities, in the
     order the declaration has them."""
@@ -445,6 +488,15 @@ def walk_nonlinear(walker: Walk, block, prefix: str) -> None:
                 "the edge tensor product holds no weights of its own; its "
                 "coupling constants and masks are rebuilt from the irreps",
             )
+        elif key.startswith(f"{prefix}.equivariant_nonlin."):
+            # Earlier releases pickled e3nn's own gate, whose elementwise
+            # product holds an empty weight and a mask of the paths it keeps.
+            if key.endswith(".weight") and walker.state[key].numel():
+                raise ExtractionError(
+                    f"{key} holds {walker.state[key].numel()} weights, and the "
+                    f"gate this converter carries holds none."
+                )
+            walker.derive(key, "the gate holds no weights; rebuilt from the irreps")
 
 
 def walk(model, spelling: str) -> Walk:
@@ -464,18 +516,20 @@ def walk(model, spelling: str) -> Walk:
             f"the radial basis is a {type(basis).__name__}, and this converter "
             f"carries the Bessel basis only."
         )
-    walker.use("radial_embedding.bessel_fn.bessel_weights")
-    walker.derive(
-        "radial_embedding.bessel_fn.r_max", "the cutoff, carried in the configuration"
+    walker.use(
+        "radial_embedding.bessel_fn.bessel_weights",
+        "radial_embedding.bessel_fn.prefactor",
     )
     walker.derive(
-        "radial_embedding.bessel_fn.prefactor",
-        "sqrt(2 / r_max), derived from the cutoff",
+        "radial_embedding.bessel_fn.r_max", "the cutoff, carried in the configuration"
     )
     walker.op(
         "radial_basis",
         "bessel_basis",
-        {"weights": basis.bessel_weights.detach().cpu().numpy()},
+        {
+            "weights": basis.bessel_weights.detach().cpu().numpy(),
+            "prefactor": basis.prefactor.detach().cpu().numpy(),
+        },
         descriptor={
             "r_max": float(basis.r_max),
             "num_basis": int(basis.bessel_weights.numel()),
@@ -527,6 +581,18 @@ def walk(model, spelling: str) -> Walk:
         walker.use(
             *(f"pair_repulsion_fn.{name}" for name in names), "pair_repulsion_fn.p"
         )
+        for key in (
+            "pair_repulsion_fn.r_max",
+            "pair_repulsion_fn.cutoff.p",
+            "pair_repulsion_fn.cutoff.r_max",
+        ):
+            if key in walker.state:
+                walker.derive(
+                    key,
+                    "state of an earlier release of the repulsion, which the "
+                    "frozen tree's forward never reads: its envelope ends at the "
+                    "pair's covalent radii and has the order p",
+                )
         walker.op(
             "pair_repulsion",
             "zbl",
@@ -656,13 +722,17 @@ def walk(model, spelling: str) -> Walk:
                 flag = walker.state.get(f"{source}.weights_{slot}_zeroed")
                 zeroed[str(order)] = bool(flag) if flag is not None else False
             tensors = {}
+            rebuilt = []
             dimension = 2 * int(target[:-1]) + 1
             for order in range(1, correlation + 1):
                 walker.use(f"{source}.U_matrix_{order}")
                 tensors[f"weights.{order}"] = by_order[order].detach().cpu().numpy()
-                tensors[f"basis.{order}"] = basis_path_first(
-                    getattr(contraction, f"U_matrix_{order}"), order, dimension
-                )
+                basis = getattr(contraction, f"U_matrix_{order}")
+                exact = float64_basis(contraction, target, order, basis, use_reduced)
+                if exact is not None:
+                    basis = exact
+                    rebuilt.append(str(order))
+                tensors[f"basis.{order}"] = basis_path_first(basis, order, dimension)
             walker.op(
                 f"{prefix}.contraction.{target}",
                 "symmetric_contraction",
@@ -674,6 +744,7 @@ def walk(model, spelling: str) -> Walk:
                     "target": target,
                     "correlation": int(correlation),
                     "zeroed": zeroed,
+                    "basis_rebuilt_at_float64": rebuilt,
                 },
             )
         walker.linear(f"{prefix}.linear", product.linear, f"{prefix}.linear")

@@ -22,7 +22,6 @@ Three rules make it a conversion rather than an approximation:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -76,9 +75,6 @@ _OBSERVABLES = ("energy", "forces", "stress")
 
 #: The readout the last layer must have been for the v1 readout to be it.
 _LAST_READOUT = "NonLinearReadoutBlock"
-
-#: Relative tolerance on constants v1 recomputes instead of storing.
-_CONSTANT_TOLERANCE = 1e-12
 
 
 class NeutralImportError(RuntimeError):
@@ -358,6 +354,14 @@ _TRANSFORM_TENSORS = {
     "soft_transform": {"steepness": "alpha", "covalent_radii": "covalent_radii"},
 }
 
+#: The repulsion's tensors: the model's name for one, the artifact's.
+_REPULSION_TENSORS = {
+    "screening_coefficients": "c",
+    "covalent_radii": "covalent_radii",
+    "screening_length_exponent": "a_exp",
+    "screening_length_prefactor": "a_prefactor",
+}
+
 #: The nonlinear interaction's linears, each an op of the same name.
 _NONLINEAR_LINEARS = frozenset(
     {"linear_up", "linear_res", "source", "target", "linear_mid", "linear_out"}
@@ -414,6 +418,23 @@ def _state(
                 }
             else:
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
+        elif path == f"{backbone}radial":
+            state[path] = {
+                "frequencies": _as(
+                    artifact.tensor("radial_basis", "weights"), tensors["frequencies"]
+                ),
+                "prefactor": _as(
+                    artifact.tensor("radial_basis", "prefactor").reshape(()),
+                    tensors["prefactor"],
+                ),
+            }
+        elif path == "backbone.repulsion":
+            state[path] = {}
+            for name, source in _REPULSION_TENSORS.items():
+                value = artifact.tensor("pair_repulsion", source)
+                if tensors[name].dim() == 0:
+                    value = value.reshape(())
+                state[path][name] = _as(value, tensors[name])
         elif path == f"{backbone}distance_transform":
             names = _TRANSFORM_TENSORS[ops["distance_transform"].op_kind]
             state[path] = {}
@@ -462,48 +483,23 @@ def _energy_constants(artifact: NeutralArtifact, expected: dict[str, Tensor]):
     }
 
 
-def _check_constants(artifact: NeutralArtifact, config: ResolvedConfig, engine) -> None:
-    """The constants v1 recomputes, compared with the ones the source used."""
+def _check_constants(artifact: NeutralArtifact, config: ResolvedConfig) -> None:
+    """The settings v1 builds from the configuration, compared with the ones
+    the source used."""
     ops = artifact.sidecar.ops
     refusals: list[str] = []
 
-    frequencies = artifact.tensor("radial_basis", "weights").astype(np.float64)
-    analytic = math.pi * np.arange(1, frequencies.size + 1) / config.model.r_max
-    if not np.allclose(frequencies, analytic, rtol=_CONSTANT_TOLERANCE, atol=0.0):
-        refusals.append(
-            "the radial basis frequencies are not pi * n / r_max, so the source "
-            "trained them, and v1 computes them from the cutoff"
-        )
     order = int(ops["cutoff"].descriptor["p"])
     if order != config.model.num_cutoff_basis:
         refusals.append(
             f"the cutoff envelope has order {order} and the configuration "
             f"{config.model.num_cutoff_basis}"
         )
-    if "pair_repulsion" in ops:
-        repulsion = dict(engine.get_submodule("backbone.repulsion").named_buffers())
-        pairs = {
-            "c": "screening_coefficients",
-            "covalent_radii": "covalent_radii",
-            "a_exp": "screening_length_exponent",
-            "a_prefactor": "screening_length_prefactor",
-        }
-        for source, name in pairs.items():
-            # Flattened: a scalar can arrive as one element rather than as a
-            # zero-dimensional array, and that is the same constant.
-            recorded = artifact.tensor("pair_repulsion", source).astype(np.float64)
-            recorded = recorded.reshape(-1)
-            held = repulsion[name].detach().cpu().numpy().astype(np.float64)
-            held = held.reshape(-1)
-            if recorded.shape != held.shape or not np.allclose(
-                recorded, held, rtol=_CONSTANT_TOLERANCE, atol=0.0
-            ):
-                refusals.append(f"the repulsion's {source} differs from v1's {name}")
-        if int(ops["pair_repulsion"].descriptor["p"]) != order:
-            refusals.append(
-                "the repulsion's envelope order differs from the cutoff's, and "
-                "v1 uses one order for both"
-            )
+    if "pair_repulsion" in ops and int(ops["pair_repulsion"].descriptor["p"]) != order:
+        refusals.append(
+            "the repulsion's envelope order differs from the cutoff's, and "
+            "v1 uses one order for both"
+        )
     if refusals:
         raise NeutralImportError(
             "the artifact's constants are not the ones v1 would use: "
@@ -587,7 +583,7 @@ def import_neutral(
         precision=precision or DEFAULT_PRECISION,
         initialize=False,
     )
-    _check_constants(artifact, config, engine)
+    _check_constants(artifact, config)
     load_canonical_state(engine, _state(artifact, engine))
     return ImportedModel(
         engine=engine,

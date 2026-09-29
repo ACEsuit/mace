@@ -667,6 +667,26 @@ class ReferenceRadialBasis(nn.Module):
             descriptor.cutoff, descriptor.cutoff_order, dtype=self.dtype
         )
 
+    def to_canonical(self) -> dict[str, Tensor]:
+        """The Bessel basis's frequencies and prefactor, which a checkpoint
+        has to carry: a model built in float32 holds them rounded to float32
+        after it is carried to float64, as the published multi-head models
+        do, and a trainable basis holds frequencies of its own. The other
+        bases carry nothing."""
+        if not isinstance(self.basis, BesselBasis):
+            return {}
+        return {
+            "frequencies": self.basis.frequencies.detach(),
+            "prefactor": self.basis.prefactor.detach(),
+        }
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        if not isinstance(self.basis, BesselBasis):
+            return
+        with torch.no_grad():
+            self.basis.frequencies.copy_(state["frequencies"])
+            self.basis.prefactor.copy_(state["prefactor"])
+
     def forward(self, lengths: Tensor) -> Tensor:
         """``[n_edges, 1]`` lengths in Angstrom -> ``[n_edges, num_basis]``."""
         lengths = lengths.to(self.dtype)

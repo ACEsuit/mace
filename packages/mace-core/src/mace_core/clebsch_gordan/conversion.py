@@ -55,6 +55,7 @@ from mace_core.clebsch_gordan.reduced_basis import (
 )
 
 __all__ = [
+    "FLOAT32_PROJECTION_TOLERANCE",
     "PROJECTION_TOLERANCE",
     "BasisConversionError",
     "from_canonical",
@@ -62,6 +63,7 @@ __all__ = [
     "ir_mul_to_mul_ir",
     "mul_ir_to_ir_mul",
     "reduced_to_full",
+    "source_tolerance",
     "to_canonical",
 ]
 
@@ -70,6 +72,22 @@ __all__ = [
 #: The fit is an identity between two spans, so what it leaves is rounding, and
 #: at float64 that is measured around 1e-15.
 PROJECTION_TOLERANCE = 1e-14
+
+#: The same for a source basis held at float32, as a model built in float32
+#: holds it even once it is carried to float64: every entry is a float32
+#: number, so the basis is off the exact span by that rounding. Measured on the
+#: published multi-head models, the residual is 3.3e-8; a basis of another
+#: space leaves one of order one.
+FLOAT32_PROJECTION_TOLERANCE = 1e-6
+
+
+def source_tolerance(source: np.ndarray) -> float:
+    """The projection tolerance a source basis is held to: the float32 one
+    when every entry is a float32 number, and the float64 one otherwise."""
+    values = np.asarray(source, dtype=np.float64)
+    if np.array_equal(values, values.astype(np.float32).astype(np.float64)):
+        return FLOAT32_PROJECTION_TOLERANCE
+    return PROJECTION_TOLERANCE
 
 
 class BasisConversionError(ValueError):
@@ -163,6 +181,7 @@ def full_to_reduced(
     target: str | Irrep,
     axis: int = -2,
     source: np.ndarray | None = None,
+    tolerance: float | None = None,
 ) -> np.ndarray:
     """Carry full-basis weights onto the reduced basis. Exact and unique.
 
@@ -176,6 +195,9 @@ def full_to_reduced(
         source: The full basis the weights were trained against, path axis
             first. Required for weights from an artifact; see the module
             docstring for why this package's own basis is not a substitute.
+        tolerance: The largest relative residual accepted. By default
+            :func:`source_tolerance` of the source, or the float64 one for
+            this package's own basis.
 
     Returns:
         The same array with the path axis replaced by the reduced one.
@@ -187,7 +209,9 @@ def full_to_reduced(
             different correlation.
     """
     weights = np.asarray(weights)
-    matrix = _projection(irreps_in, correlation, target, source)
+    if tolerance is None:
+        tolerance = PROJECTION_TOLERANCE if source is None else source_tolerance(source)
+    matrix = _projection(irreps_in, correlation, target, source, tolerance)
     moved = np.moveaxis(weights, axis, -1).astype(np.float64)
     if moved.shape[-1] != matrix.shape[0]:
         raise BasisConversionError(

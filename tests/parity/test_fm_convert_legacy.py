@@ -429,20 +429,32 @@ def with_tensor(sidecar_path, tmp_path, key, change):
     return write_neutral(tmp_path / "changed", artifact.sidecar, tensors)
 
 
-def test_trained_radial_frequencies_are_refused(converted, tmp_path):
+def test_the_radial_frequencies_are_carried(converted, tmp_path):
+    """Trained ones, or ones a float32 build rounded: either way the model's
+    own, and the converted model holds exactly those."""
     _, sidecar = converted
     changed = with_tensor(
         sidecar, tmp_path, "radial_basis::weights", lambda w: w * 1.01
     )
-    with pytest.raises(NeutralImportError, match="frequencies"):
-        import_neutral(changed, CATALOGUE)
+    written = read_neutral(changed).tensor("radial_basis", "weights")
+    radial = import_neutral(changed, CATALOGUE).engine.get_submodule(
+        "backbone.backbone.radial"
+    )
+    assert np.array_equal(radial.basis.frequencies.detach().numpy(), written)
 
 
-def test_other_repulsion_constants_are_refused(converted, tmp_path):
+def test_the_repulsion_constants_are_carried(converted, tmp_path):
+    """The covalent radii among them, which the frozen tree copies from the
+    ASE it was built with."""
     _, sidecar = converted
     changed = with_tensor(sidecar, tmp_path, "pair_repulsion::c", lambda c: c * 1.01)
-    with pytest.raises(NeutralImportError, match="repulsion's c"):
-        import_neutral(changed, CATALOGUE)
+    written = read_neutral(changed).tensor("pair_repulsion", "c")
+    repulsion = import_neutral(changed, CATALOGUE).engine.get_submodule(
+        "backbone.repulsion"
+    )
+    assert np.array_equal(
+        repulsion.screening_coefficients.detach().numpy(), written
+    )
 
 
 # ---------------------------------------------------------------------------

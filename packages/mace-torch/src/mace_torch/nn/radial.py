@@ -154,6 +154,29 @@ class ZBLBasis(torch.nn.Module):
         )
         return node_energies.index_add(0, edge_index[1], edge_energies.squeeze(-1))
 
+    def to_canonical(self) -> dict[str, Tensor]:
+        """The screening constants and the covalent radii, which a checkpoint
+        has to carry for the reason :meth:`AgnesiTransform.to_canonical`
+        gives: a trained model holds the radii of the ASE it was built with.
+        The screening exponents are the potential's definition and are not
+        carried."""
+        return {
+            "screening_coefficients": self.screening_coefficients.detach(),
+            "covalent_radii": self.covalent_radii.detach(),
+            "screening_length_exponent": self.screening_length_exponent.detach(),
+            "screening_length_prefactor": self.screening_length_prefactor.detach(),
+        }
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        with torch.no_grad():
+            for name in (
+                "screening_coefficients",
+                "covalent_radii",
+                "screening_length_exponent",
+                "screening_length_prefactor",
+            ):
+                getattr(self, name).copy_(state[name])
+
     def extra_repr(self) -> str:
         return (
             f"polynomial_order={self.polynomial_order}, "
