@@ -13,7 +13,7 @@ undone to save.
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from ase.data import chemical_symbols
 from mace_core.config.provenance import e0_details
@@ -97,11 +97,18 @@ _INTERACTIONS: dict[str, tuple[bool, bool]] = {
     "RealAgnosticResidualNonLinearInteractionBlock": (False, True),
 }
 
+#: The configuration's spelling of a distance transform, and the backbone's.
+_DISTANCE_TRANSFORMS: dict[str, Literal["none", "agnesi", "soft"]] = {
+    "None": "none",
+    "Agnesi": "agnesi",
+    "Soft": "soft",
+}
+
 _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
     "interaction": tuple(_INTERACTIONS),
     "interaction_first": tuple(_FIRST_INTERACTIONS),
     "radial_mlp": ((64, 64, 64),),
-    "distance_transform": ("None",),
+    "distance_transform": tuple(_DISTANCE_TRANSFORMS),
     "apply_cutoff": (True,),
     "use_agnostic_product": (False,),
     "clebsch_gordan_basis": ("reduced",),
@@ -339,6 +346,7 @@ def build_model(
         precision=precision.model,
         pair_repulsion=config.model.pair_repulsion,
         cutoff_order=config.model.num_cutoff_basis,
+        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
         readout_hidden=_readout_hidden(config),
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
@@ -413,6 +421,7 @@ def _polar_model(
         radial_kind=config.model.radial_type,
         precision=precision.model,
         cutoff_order=config.model.num_cutoff_basis,
+        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
         readout_hidden=_readout_hidden(config),
         num_heads=len(heads),
         **_interaction_settings(config)._asdict(),

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from mace_core.electrostatics import (
@@ -230,6 +230,7 @@ class PolarModel(MACEModel):
         radial_kind: RadialKind = "bessel",
         precision: Precision = "float64",
         cutoff_order: int = 6,
+        distance_transform: Literal["none", "agnesi", "soft"] = "none",
         readout_hidden: int = 16,
         num_heads: int = 1,
         element_agnostic_product: bool = False,
@@ -265,6 +266,7 @@ class PolarModel(MACEModel):
             radial_kind=radial_kind,
             precision=precision,
             cutoff_order=cutoff_order,
+            distance_transform=distance_transform,
             readout_hidden=readout_hidden,
             num_heads=num_heads,
             full_last_layer=True,

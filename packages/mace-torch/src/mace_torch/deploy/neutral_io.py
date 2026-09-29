@@ -346,6 +346,18 @@ def _linear(artifact: NeutralArtifact, op: str, expected: dict[str, Tensor]):
     }
 
 
+#: Each distance transform's tensors: the model's name for one, the
+#: artifact's.
+_TRANSFORM_TENSORS = {
+    "agnesi_transform": {
+        "amplitude": "a",
+        "exponent_q": "q",
+        "exponent_p": "p",
+        "covalent_radii": "covalent_radii",
+    },
+    "soft_transform": {"steepness": "alpha", "covalent_radii": "covalent_radii"},
+}
+
 #: The nonlinear interaction's linears, each an op of the same name.
 _NONLINEAR_LINEARS = frozenset(
     {"linear_up", "linear_res", "source", "target", "linear_mid", "linear_out"}
@@ -402,6 +414,14 @@ def _state(
                 }
             else:
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
+        elif path == f"{backbone}distance_transform":
+            names = _TRANSFORM_TENSORS[ops["distance_transform"].op_kind]
+            state[path] = {}
+            for name, source in names.items():
+                value = artifact.tensor("distance_transform", source)
+                if tensors[name].dim() == 0:
+                    value = value.reshape(())
+                state[path][name] = _as(value, tensors[name])
         elif path.startswith(f"{backbone}products."):
             index, _, rest = path.removeprefix(f"{backbone}products.").partition(".")
             if rest == "contraction":

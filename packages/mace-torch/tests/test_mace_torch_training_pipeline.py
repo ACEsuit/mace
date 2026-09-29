@@ -656,7 +656,6 @@ def build_with(tmp_path, **model):
     [
         ("interaction", "RealAgnosticInteractionBlock"),
         ("radial_mlp", (8,)),
-        ("distance_transform", "Agnesi"),
         ("apply_cutoff", False),
         ("use_agnostic_product", True),
         ("edge_irreps", "4x0e"),

@@ -71,6 +71,7 @@ def legacy_model(
     later: str = RESIDUAL,
     edge_irreps: str | None = None,
     use_edge_irreps_first: bool = False,
+    distance_transform: str = ANCHOR_CONFIG["distance_transform"],
 ) -> torch.nn.Module:
     torch.manual_seed(SEED)
     np.random.seed(SEED)
@@ -91,7 +92,7 @@ def legacy_model(
         correlation=ANCHOR_CONFIG["correlation"],
         gate=modules.gate_dict[ANCHOR_CONFIG["gate"]],
         pair_repulsion=ANCHOR_CONFIG["pair_repulsion"],
-        distance_transform=ANCHOR_CONFIG["distance_transform"],
+        distance_transform=distance_transform,
         radial_type=ANCHOR_CONFIG["radial_type"],
         use_reduced_cg=ANCHOR_CONFIG["use_reduced_cg"],
         edge_irreps=o3.Irreps(edge_irreps) if edge_irreps else None,

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from mace_core.kernels.descriptors import RadialBasisKind as RadialKind
@@ -85,6 +85,7 @@ class MACEModel(nn.Module):
             backbone.
         narrow_first_convolution: Convolve only its scalars in the first
             layer.
+        distance_transform: The distance transform; see the backbone.
         full_last_layer: Keep every irrep in the last layer; see the backbone.
         element_agnostic_product: One set of product weights for all
             elements; see the backbone.
@@ -111,6 +112,7 @@ class MACEModel(nn.Module):
         precision: str = "float64",
         pair_repulsion: bool = False,
         cutoff_order: int = 6,
+        distance_transform: Literal["none", "agnesi", "soft"] = "none",
         node_inputs: Sequence[InputSpec] = (),
         readout_hidden: int = 16,
         num_heads: int = 1,
@@ -140,6 +142,7 @@ class MACEModel(nn.Module):
                 avg_num_neighbors=avg_num_neighbors,
                 radial_kind=radial_kind,
                 cutoff_order=cutoff_order,
+                distance_transform=distance_transform,
                 precision=precision,
                 node_inputs=node_inputs,
                 residual_first_layer=residual_first_layer,

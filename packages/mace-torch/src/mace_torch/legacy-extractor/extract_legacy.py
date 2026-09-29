@@ -496,9 +496,29 @@ def walk(model, spelling: str) -> Walk:
     )
     if hasattr(radial, "distance_transform"):
         transform = type(radial.distance_transform).__name__
-        raise ExtractionError(
-            f"the radial embedding applies a {transform} distance transform, "
-            f"whose parameters this converter does not carry."
+        carried = {
+            "AgnesiTransform": ("agnesi_transform", ("a", "q", "p", "covalent_radii")),
+            "SoftTransform": ("soft_transform", ("alpha", "covalent_radii")),
+        }
+        if transform not in carried:
+            raise ExtractionError(
+                f"the radial embedding applies a {transform} distance transform, "
+                f"whose parameters this converter does not carry. It carries "
+                f"{sorted(carried)}."
+            )
+        kind, names = carried[transform]
+        walker.use(*(f"radial_embedding.distance_transform.{name}" for name in names))
+        walker.op(
+            "distance_transform",
+            kind,
+            {
+                name: getattr(radial.distance_transform, name)
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(numpy.float64)
+                for name in names
+            },
         )
 
     if hasattr(model, "pair_repulsion_fn"):
