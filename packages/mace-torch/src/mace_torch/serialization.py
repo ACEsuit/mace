@@ -15,6 +15,14 @@ did. What is written instead is each operator's **canonical** form, which the
 backend defines and every backend agrees on, so a model trained with one set of
 kernels loads into another.
 
+**The sidecar also carries the layout.** Tensors alone say how many weights
+there are, never which path each one multiplies, and the path order of the
+symmetric contraction is a free choice that two implementations can make
+differently. So each operator that has one writes its own layout description
+beside the tensors, and a load compares it against the model being loaded into.
+A disagreement then names the paths it disagreed about instead of producing a
+model that runs and means something else.
+
 The sidecar's ``config`` is opaque here on purpose. What this module owns is
 the format: the versioning, the tensor naming and the dispatch to each
 operator's own loader. What the configuration means belongs to the schema that
@@ -27,17 +35,23 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import torch
 from safetensors.torch import load_file, save_file
 from torch import Tensor, nn
 
+#: What the caller's builder returns, so a load is typed as precisely as the
+#: builder is rather than as a bare module.
+Model = TypeVar("Model", bound=nn.Module)
+
 __all__ = [
     "FORMAT",
     "VERSION",
     "CheckpointError",
+    "canonical_metadata",
     "canonical_state",
+    "check_layout",
     "load_canonical_state",
     "load_checkpoint",
     "read_canonical_state",
@@ -50,8 +64,10 @@ FORMAT = "mace-v1-checkpoint"
 
 #: Bumped when the meaning of an existing field changes. A reader refuses a
 #: version it was not written for, because guessing at a format is how a model
-#: loads and computes something else.
-VERSION = 1
+#: loads and computes something else. Version 2 added ``layout``, and a version
+#: 1 file carries no record of which basis path each weight multiplies, so it
+#: cannot be validated rather than merely lacking a field.
+VERSION = 2
 
 #: Separates a module's path from the name its own canonical form gives a
 #: tensor. A dot would be ambiguous against the module path itself.
@@ -110,6 +126,76 @@ def load_canonical_state(
         reader(dict(state[path]))
 
 
+def canonical_metadata(model: nn.Module) -> dict[str, dict[str, Any]]:
+    """Every operator's description of its own layout, keyed by where it sits.
+
+    An operator opts in by defining ``canonical_metadata``. One that does not
+    contributes nothing, so an operator whose tensors carry their meaning in
+    their shape alone costs no sidecar entry.
+
+    Args:
+        model: Anything holding operators.
+
+    Returns:
+        ``module path -> a JSON-serializable description``.
+    """
+    described: dict[str, dict[str, Any]] = {}
+    for path, module in model.named_modules():
+        writer = getattr(module, "canonical_metadata", None)
+        if writer is None:
+            continue
+        described[path] = dict(writer())
+    return described
+
+
+def check_layout(model: nn.Module, recorded: Mapping[str, Mapping[str, Any]]) -> None:
+    """Refuse a file whose layout is not the one this model reads.
+
+    Args:
+        model: The model about to be loaded into.
+        recorded: What the sidecar's ``layout`` holds.
+
+    Only operators the two have in common are compared. A model and a file that
+    hold different operators at all is
+    :func:`load_canonical_state`'s refusal, and it runs before any weight is
+    written, so stating it twice here would only give the same fault two
+    different messages.
+
+    Raises:
+        CheckpointError: If a shared operator's description differs. The
+            message names the first few paths that differ rather than only
+            reporting that something did, because the whole reason the layout
+            is recorded is that a path count can match while the paths do not.
+    """
+    expected = canonical_metadata(model)
+    for path in sorted(set(expected) & set(recorded)):
+        description = expected[path]
+        stored = dict(recorded[path])
+        if stored == description:
+            continue
+        for key, value in description.items():
+            if stored.get(key) == value:
+                continue
+            if isinstance(value, list) and isinstance(stored.get(key), list):
+                differing = [
+                    f"position {position}: file {theirs!r}, model {mine!r}"
+                    for position, (theirs, mine) in enumerate(
+                        zip(stored[key], value, strict=False)
+                    )
+                    if theirs != mine
+                ]
+                detail = "; ".join(differing[:3]) or (
+                    f"the file holds {len(stored[key])} and the model {len(value)}"
+                )
+            else:
+                detail = f"file {stored.get(key)!r}, model {value!r}"
+            raise CheckpointError(
+                f"{path} was written in a different layout: {key} disagrees "
+                f"({detail}). The weights would load and multiply the wrong "
+                f"basis paths."
+            )
+
+
 def save_checkpoint(
     path: str | Path, model: nn.Module, config: Mapping[str, Any]
 ) -> Path:
@@ -153,6 +239,7 @@ def save_checkpoint(
                 "format": FORMAT,
                 "version": VERSION,
                 "config": dict(config),
+                "layout": canonical_metadata(model),
                 "tensors": entries,
             },
             indent=2,
@@ -192,8 +279,8 @@ def read_sidecar(path: str | Path) -> dict[str, Any]:
 
 
 def load_checkpoint(
-    path: str | Path, build: Callable[[dict[str, Any]], nn.Module]
-) -> nn.Module:
+    path: str | Path, build: Callable[[dict[str, Any]], Model]
+) -> Model:
     """Rebuild a model and put its weights back.
 
     Args:
@@ -211,6 +298,7 @@ def load_checkpoint(
     """
     document = read_sidecar(_refuse_pickle(path))
     model = build(dict(document["config"]))
+    check_layout(model, document.get("layout", {}))
     load_canonical_state(model, read_canonical_state(path))
     return model
 

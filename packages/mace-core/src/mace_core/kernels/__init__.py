@@ -35,6 +35,9 @@ from mace_core.kernels.canonical import (
     radial_mlp_initial_bound,
     radial_mlp_layer_normalization,
     symmetric_contraction_initial_scale,
+
+    contraction_path_labels,
+    contraction_path_order,
 )
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
@@ -70,6 +73,12 @@ from mace_core.kernels.registry import (
     available_backends,
     get_backend,
 )
+from mace_core.kernels.reorder import (
+    ReorderBlock,
+    ReorderError,
+    WeightReorder,
+    derive_reorder,
+)
 
 __all__ = [
     "CANONICAL_LAYOUT",
@@ -97,15 +106,23 @@ __all__ = [
     "Precision",
     "RadialBasisDescriptor",
     "RadialMLPDescriptor",
+
+    "ReorderBlock",
+    "ReorderError",
     "SegmentReduceDescriptor",
     "SphericalHarmonicsDescriptor",
     "SymmetricContractionDescriptor",
     "UnsupportedDescriptorError",
+    "WeightReorder",
     "available_backends",
     "canonical_weight_shape",
     "channelwise_paths",
     "exact_silu_second_moment_scale",
     "fully_connected_tp_path_normalization",
+
+    "contraction_path_labels",
+    "contraction_path_order",
+    "derive_reorder",
     "get_backend",
     "linear_path_normalization",
     "path_irreps",
