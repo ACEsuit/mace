@@ -37,7 +37,14 @@ tree: ``node_embedding``, ``interactions.<i>.linear_up``,
 ``interactions.<i>.skip``, ``products.<i>.contraction.<irrep>``,
 ``products.<i>.linear``, ``readouts.<i>`` or ``readouts.<i>.first`` and
 ``.second``, ``energy.atomic_energies``, ``energy.scale_shift``,
-``radial_basis``, ``cutoff``, ``pair_repulsion``.
+``radial_basis``, ``cutoff``, ``pair_repulsion``. A nonlinear interaction
+adds ``interactions.<i>.linear_res``, ``.source``, ``.target``,
+``.linear_mid``, ``.linear_out`` and ``.density``, and carries the two scalars
+of its normalization, ``alpha`` and ``beta``, on ``interactions.<i>`` itself.
+
+A ``layer_norm_mlp`` is linear, layer norm and SiLU, repeated, with a plain
+linear last. Its tensors are named ``<layer>.weight`` and ``<layer>.bias`` by
+the layer's position in that sequence, each linear's weight ``[out, in]``.
 
 **Weights are in the canonical layout** of :mod:`mace_core.kernels.canonical`:
 ``mul_ir``, output copies outermost, every normalization folded into the
@@ -85,6 +92,7 @@ OpKind = Literal[
     "linear",
     "element_linear",
     "radial_mlp",
+    "layer_norm_mlp",
     "symmetric_contraction",
     "interaction",
     "atomic_energies",

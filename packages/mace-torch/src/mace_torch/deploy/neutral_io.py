@@ -251,7 +251,7 @@ def isolated_atom_energies(artifact: NeutralArtifact) -> dict[str, dict[int, flo
 
 
 def _as(value: np.ndarray, like: Tensor) -> Tensor:
-    tensor = torch.from_numpy(np.ascontiguousarray(value)).to(like.dtype)
+    tensor = torch.from_numpy(np.array(value, order="C")).to(like.dtype)
     if tensor.shape != like.shape:
         raise NeutralImportError(
             f"a tensor of shape {tuple(tensor.shape)} arrived where the model "
@@ -346,6 +346,12 @@ def _linear(artifact: NeutralArtifact, op: str, expected: dict[str, Tensor]):
     }
 
 
+#: The nonlinear interaction's linears, each an op of the same name.
+_NONLINEAR_LINEARS = frozenset(
+    {"linear_up", "linear_res", "source", "target", "linear_mid", "linear_out"}
+)
+
+
 def _state(
     artifact: NeutralArtifact, engine: DerivativeEngine
 ) -> dict[str, dict[str, Tensor]]:
@@ -363,7 +369,13 @@ def _state(
                 "."
             )
             source = f"interactions.{index}"
-            if rest == "body":
+            if rest == "":
+                # Scalars, which the tensor file holds with one axis.
+                state[path] = {
+                    name: _as(artifact.tensor(source, name).reshape(()), value)
+                    for name, value in tensors.items()
+                }
+            elif rest == "body":
                 value = ops[source].descriptor["avg_num_neighbors"]
                 state[path] = {
                     "neighbours": torch.tensor(float(value)).to(
@@ -374,7 +386,9 @@ def _state(
                 state[path] = _linear(
                     artifact, f"{source}.{rest.removeprefix('body.')}", tensors
                 )
-            elif rest in {"body.radial", "body.density"}:
+            elif rest in _NONLINEAR_LINEARS or (rest == "skip" and "bias" in tensors):
+                state[path] = _linear(artifact, f"{source}.{rest}", tensors)
+            elif rest in {"body.radial", "body.density", "radial", "density"}:
                 op = f"{source}.{rest.removeprefix('body.')}"
                 state[path] = {
                     name: _as(artifact.tensor(op, name), value)

@@ -79,6 +79,12 @@ class MACEModel(nn.Module):
         learned_density_first_layer: A learned density in the first layer;
             see the backbone.
         learned_density: A learned density in every later layer.
+        nonlinear_first_layer: A nonlinear first layer; see the backbone.
+        nonlinear: Nonlinear later layers.
+        convolution_irreps: What a nonlinear layer convolves; see the
+            backbone.
+        narrow_first_convolution: Convolve only its scalars in the first
+            layer.
         full_last_layer: Keep every irrep in the last layer; see the backbone.
         element_agnostic_product: One set of product weights for all
             elements; see the backbone.
@@ -111,6 +117,10 @@ class MACEModel(nn.Module):
         residual_first_layer: bool = False,
         learned_density_first_layer: bool = False,
         learned_density: bool = False,
+        nonlinear_first_layer: bool = False,
+        nonlinear: bool = False,
+        convolution_irreps: str | None = None,
+        narrow_first_convolution: bool = False,
         full_last_layer: bool = False,
         element_agnostic_product: bool = False,
         edge_axes: tuple[int, int, int] = (0, 1, 2),
@@ -135,6 +145,10 @@ class MACEModel(nn.Module):
                 residual_first_layer=residual_first_layer,
                 learned_density_first_layer=learned_density_first_layer,
                 learned_density=learned_density,
+                nonlinear_first_layer=nonlinear_first_layer,
+                nonlinear=nonlinear,
+                convolution_irreps=convolution_irreps,
+                narrow_first_convolution=narrow_first_convolution,
                 full_last_layer=full_last_layer,
                 element_agnostic_product=element_agnostic_product,
                 edge_axes=edge_axes,

@@ -75,23 +75,26 @@ _MODELS = frozenset({*_ZBL_INSIDE, "polar"})
 #: replaced: building the default instead trains another architecture under
 #: the name of the one asked for.
 #:
-#: What each spelling of the first interaction builds: whether the layer
-#: carries its skip onward for the product basis to add, rather than applying
-#: it to the message, and whether it normalizes by a density learned per atom
-#: rather than by the average neighbour count. Four models, not two names for
-#: one: the residual one takes its skip from the element embedding.
-_FIRST_INTERACTIONS: dict[str, tuple[bool, bool]] = {
-    "RealAgnosticInteractionBlock": (False, False),
-    "RealAgnosticResidualInteractionBlock": (True, False),
-    "RealAgnosticDensityInteractionBlock": (False, True),
-    "RealAgnosticDensityResidualInteractionBlock": (True, True),
+#: What each spelling of an interaction builds: whether the layer carries its
+#: skip onward for the product basis to add, rather than applying it to the
+#: message; whether it normalizes by a density learned per atom rather than by
+#: the average neighbour count; and whether it is the nonlinear block, which
+#: conditions its convolution on both elements and gates its output. Distinct
+#: models, not names for one: a residual first layer takes its skip from the
+#: element embedding.
+_FIRST_INTERACTIONS: dict[str, tuple[bool, bool, bool]] = {
+    "RealAgnosticInteractionBlock": (False, False, False),
+    "RealAgnosticResidualInteractionBlock": (True, False, False),
+    "RealAgnosticDensityInteractionBlock": (False, True, False),
+    "RealAgnosticDensityResidualInteractionBlock": (True, True, False),
+    "RealAgnosticResidualNonLinearInteractionBlock": (True, False, True),
 }
 
-#: The same for every later layer, which always carries its skip: whether it
-#: normalizes by a learned density.
-_INTERACTIONS: dict[str, bool] = {
-    "RealAgnosticResidualInteractionBlock": False,
-    "RealAgnosticDensityResidualInteractionBlock": True,
+#: The same for every later layer, which always carries its skip.
+_INTERACTIONS: dict[str, tuple[bool, bool]] = {
+    "RealAgnosticResidualInteractionBlock": (False, False),
+    "RealAgnosticDensityResidualInteractionBlock": (True, False),
+    "RealAgnosticResidualNonLinearInteractionBlock": (False, True),
 }
 
 _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
@@ -101,8 +104,6 @@ _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
     "distance_transform": ("None",),
     "apply_cutoff": (True,),
     "use_agnostic_product": (False,),
-    "edge_irreps": (None,),
-    "use_edge_irreps_first": (False,),
     "clebsch_gordan_basis": ("reduced",),
     "readout.gate": ("silu",),
     "readout.last_only": (False,),
@@ -424,14 +425,50 @@ class _InteractionSettings(NamedTuple):
 
     residual_first_layer: bool
     learned_density_first_layer: bool
+    nonlinear_first_layer: bool
     learned_density: bool
+    nonlinear: bool
+    convolution_irreps: str | None
+    narrow_first_convolution: bool
 
 
 def _interaction_settings(config: ResolvedConfig) -> _InteractionSettings:
-    residual_first, density_first = _FIRST_INTERACTIONS[config.model.interaction_first]
+    model = config.model
     return _InteractionSettings(
-        residual_first, density_first, _INTERACTIONS[config.model.interaction]
+        *_FIRST_INTERACTIONS[model.interaction_first],
+        *_INTERACTIONS[model.interaction],
+        convolution_irreps=model.edge_irreps,
+        narrow_first_convolution=model.use_edge_irreps_first,
     )
+
+
+def _unbuilt_convolution_irreps(config: ResolvedConfig) -> list[str]:
+    """The edge irreps a layer would be asked to honour and could not.
+
+    The frozen tree hands them to every block. Only the nonlinear one is
+    built to convolve at another width than its node features, which is where
+    every published model that sets them sets them.
+    """
+    model = config.model
+    if model.edge_irreps is None:
+        return []
+    refused = []
+    if model.num_interactions > 1 and not _INTERACTIONS[model.interaction][1]:
+        refused.append(
+            f"model.edge_irreps is {model.edge_irreps!r} with model.interaction "
+            f"{model.interaction!r}; it is built for "
+            f"'RealAgnosticResidualNonLinearInteractionBlock' only"
+        )
+    if (
+        model.use_edge_irreps_first
+        and not _FIRST_INTERACTIONS[model.interaction_first][2]
+    ):
+        refused.append(
+            f"model.use_edge_irreps_first is True with model.interaction_first "
+            f"{model.interaction_first!r}; it is built for "
+            f"'RealAgnosticResidualNonLinearInteractionBlock' only"
+        )
+    return refused
 
 
 def _refuse_unbuilt(config: ResolvedConfig) -> None:
@@ -458,6 +495,7 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
         if value not in choices:
             allowed = " or ".join(repr(choice) for choice in choices)
             unbuilt.append(f"model.{path} is {value!r}, and only {allowed} is built")
+    unbuilt += _unbuilt_convolution_irreps(config)
     if unbuilt:
         raise ModelStageError(
             "the configuration asks for a model this stage cannot build, and "

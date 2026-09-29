@@ -83,6 +83,7 @@ INTERACTIONS = (
     "RealAgnosticResidualInteractionBlock",
     "RealAgnosticDensityInteractionBlock",
     "RealAgnosticDensityResidualInteractionBlock",
+    "RealAgnosticResidualNonLinearInteractionBlock",
 )
 
 #: Readout blocks whose weights this knows how to walk. The dielectric
@@ -387,6 +388,65 @@ class Walk:
         return sorted(set(self.state) - self.used - set(self.derived))
 
 
+def layer_norm_mlp(walker: Walk, name: str, module, prefix: str) -> None:
+    """A linear, layer norm and SiLU stack, its parameters under their own
+    names: ``<layer>.weight`` and ``<layer>.bias``, as the module holds them."""
+    tensors = {}
+    for key, value in module.net.named_parameters():
+        walker.use(f"{prefix}.net.{key}")
+        tensors[key] = value.detach().cpu().numpy()
+    walker.op(name, "layer_norm_mlp", tensors, descriptor={"widths": list(module.hs)})
+
+
+def walk_nonlinear(walker: Walk, block, prefix: str) -> None:
+    """The nonlinear interaction: its linears, its two layer-norm networks and
+    the two scalars of its learned normalization.
+
+    The block's own op carries ``alpha`` and ``beta``: the message is divided
+    by ``alpha + beta * density``.
+    """
+    walker.use(f"{prefix}.alpha", f"{prefix}.beta")
+    walker.op(
+        prefix,
+        "interaction",
+        {
+            name: getattr(block, name).detach().cpu().numpy().reshape(())
+            for name in ("alpha", "beta")
+        },
+        descriptor={
+            "class": type(block).__name__,
+            "avg_num_neighbors": float(block.avg_num_neighbors),
+            "edge_irreps": str(block.edge_irreps),
+        },
+    )
+    linears = {
+        "linear_up": "linear_up",
+        "linear_res": "linear_res",
+        "source": "source_embedding",
+        "target": "target_embedding",
+        "linear_mid": "linear_1",
+        "linear_out": "linear_2",
+        "skip": "skip_tp",
+    }
+    for name, attribute in linears.items():
+        walker.linear(
+            f"{prefix}.{name}", getattr(block, attribute), f"{prefix}.{attribute}"
+        )
+    layer_norm_mlp(
+        walker, f"{prefix}.radial", block.conv_tp_weights, f"{prefix}.conv_tp_weights"
+    )
+    layer_norm_mlp(
+        walker, f"{prefix}.density", block.density_fn, f"{prefix}.density_fn"
+    )
+    for key in list(walker.state):
+        if key.startswith(f"{prefix}.conv_tp."):
+            walker.derive(
+                key,
+                "the edge tensor product holds no weights of its own; its "
+                "coupling constants and masks are rebuilt from the irreps",
+            )
+
+
 def walk(model, spelling: str) -> Walk:
     """Every op of the model, in canonical form."""
     numpy = importlib.import_module("numpy")
@@ -486,6 +546,9 @@ def walk(model, spelling: str) -> Walk:
         # which is how every published model was pickled.
         if f"{prefix}.avg_num_neighbors" in walker.state:
             walker.use(f"{prefix}.avg_num_neighbors")
+        if kind == "RealAgnosticResidualNonLinearInteractionBlock":
+            walk_nonlinear(walker, block, prefix)
+            continue
         walker.op(
             prefix,
             "interaction",

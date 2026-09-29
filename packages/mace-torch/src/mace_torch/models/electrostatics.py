@@ -236,6 +236,10 @@ class PolarModel(MACEModel):
         residual_first_layer: bool = False,
         learned_density_first_layer: bool = False,
         learned_density: bool = False,
+        nonlinear_first_layer: bool = False,
+        nonlinear: bool = False,
+        convolution_irreps: str | None = None,
+        narrow_first_convolution: bool = False,
     ) -> None:
         produced = sorted(
             spec.name for spec in observables if spec.name in self.PRODUCED
@@ -268,6 +272,10 @@ class PolarModel(MACEModel):
             residual_first_layer=residual_first_layer,
             learned_density_first_layer=learned_density_first_layer,
             learned_density=learned_density,
+            nonlinear_first_layer=nonlinear_first_layer,
+            nonlinear=nonlinear,
+            convolution_irreps=convolution_irreps,
+            narrow_first_convolution=narrow_first_convolution,
             # The density's dipoles are read off the degree one features, and
             # the solver holds a dipole as (y, z, x).
             edge_axes=(1, 2, 0),
