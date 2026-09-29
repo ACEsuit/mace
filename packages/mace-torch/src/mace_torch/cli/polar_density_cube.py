@@ -124,7 +124,7 @@ def load_calculator(model: str, device: str, default_dtype: str):
     Raises:
         ValueError: If the checkpoint is not a charge-aware model.
     """
-    from mace_core.kernels.precision import PrecisionConfig
+    from mace_core.config.precision import PrecisionConfig
 
     from mace_torch.calculators import MACECalculator
     from mace_torch.deploy.loader import load_deployed

@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
+from mace_core.config.precision import PrecisionConfig
 from mace_core.electrostatics import (
     ENTRY_POINT_GROUPS,
     SolverCapabilities,
@@ -20,7 +21,6 @@ from mace_core.electrostatics import (
 )
 from mace_core.electrostatics import registry as registry_module
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.electrostatics import ReferenceSolver
 from mace_torch.kernels.initialization import initialize_model_weights

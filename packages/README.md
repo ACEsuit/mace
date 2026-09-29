@@ -198,6 +198,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/config/legacy.py` | Every legacy training flag and what became of it, plus the translator. |
 | `mace_core/config/loss.py` | Loss kinds and per-observable weights. |
 | `mace_core/config/model.py` | Architecture, declared observables, readouts, and the polar section. |
+| `mace_core/config/precision.py` | Which dtype each op kind computes and accumulates in, the presets, and degradation on a device without float64. |
 | `mace_core/config/provenance.py` | Turning what a run asked for into what its model records. |
 | `mace_core/config/resolved.py` | The whole configuration and the rules that span its sections. |
 | `mace_core/config/runtime.py` | Run name, output directory, seed, device, distribution, logging, plots. |
@@ -232,7 +233,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/kernels/capabilities.py` | What a kernel backend declares it can build. |
 | `mace_core/kernels/descriptors.py` | Every dispatched op, described before a backend builds it. |
 | `mace_core/kernels/paths.py` | The tensor-product paths of the convolution and their order. |
-| `mace_core/kernels/precision.py` | Dtype names and the per-op precision configuration. |
+| `mace_core/kernels/precision.py` | Dtype names, and which is wider. |
 | `mace_core/kernels/protocol.py` | The interface a kernel backend implements. |
 | `mace_core/kernels/registry.py` | Finding kernel backends by entry point. |
 | `mace_core/metadata.py` | `ModelMetadata`: the versioned record every checkpoint carries. |
@@ -256,6 +257,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 |---|---|
 | `mace_torch/__init__.py` | The package version. |
 | `mace_torch/backends/__init__.py` | The shipped kernel backends. |
+| `mace_torch/backends/precision.py` | A backend whose ops are built at the precision configured for each, with casts at the boundary of those that differ. |
 | `mace_torch/backends/reference/__init__.py` | The reference backend, re-exported. |
 | `mace_torch/backends/reference/backend.py` | Plain-torch linear, convolution, contraction, radial basis and reductions. |
 | `mace_torch/backends/reference/spherical_harmonics.py` | Real spherical harmonics in the legacy convention. |

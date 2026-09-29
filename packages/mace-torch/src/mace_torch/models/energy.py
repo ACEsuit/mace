@@ -25,8 +25,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 import torch
+from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.precision import PrecisionConfig
 from torch import Tensor, nn
 
 from mace_torch.kernels import segment_sum
@@ -91,10 +91,11 @@ class EnergyTerms:
 
     Attributes:
         total_energy: ``[n_graphs]``, in the model's own dtype.
-        node_energy: ``[n_atoms]``, in the accumulation dtype.
+        node_energy: ``[n_atoms]``, in the node dtype: the accumulation dtype
+            for a head that widens it, the model's own otherwise.
         interaction_energy: ``[n_graphs]``, the total without the E0 sum.
         node_interaction_energy: ``[n_atoms]``, each atom's energy without
-            its isolated-atom energy, in the accumulation dtype.
+            its isolated-atom energy, in the node dtype.
     """
 
     total_energy: Tensor
@@ -121,6 +122,11 @@ class EnergyOutputHead(nn.Module):
             preference.
         supports_float64: Whether the device this will run on has float64. The
             accumulation type degrades to the model's own when it does not.
+        widen_node_energy: Whether the per-atom energies are handed out in the
+            accumulation dtype or in the model's own. A property of the model
+            family, not of the precision: the frozen tree's scale-shift, polar
+            and LES models widen them, its plain and magnetic models do not,
+            and the totals are in the model dtype for all of them.
     """
 
     e0_table: Tensor
@@ -136,6 +142,7 @@ class EnergyOutputHead(nn.Module):
         precision: PrecisionConfig,
         zbl_in_scale_shift: bool = True,
         supports_float64: bool = True,
+        widen_node_energy: bool = True,
     ) -> None:
         super().__init__()
         if len(scale_shift.scale) != len(heads):
@@ -148,6 +155,8 @@ class EnergyOutputHead(nn.Module):
         self.precision = precision
         self.accumulate = precision.resolved_accumulate(supports_float64)
         self.degraded = self.accumulate != precision.accumulate
+        self.widen_node_energy = widen_node_energy
+        self.node_precision = self.accumulate if widen_node_energy else precision.model
 
         self.register_buffer(
             "e0_table",
@@ -226,6 +235,7 @@ class EnergyOutputHead(nn.Module):
                 symbolic under tracing.
         """
         accumulate = _TORCH_DTYPE[self.accumulate]
+        node_dtype = _TORCH_DTYPE[self.node_precision]
         model_dtype = self.scale.dtype
         node_head = head_index[batch]
 
@@ -240,7 +250,7 @@ class EnergyOutputHead(nn.Module):
         # writes, with the same result and without materializing the one-hot.
         e0 = self.e0_table[node_head, element_index].to(model_dtype)
 
-        node_energy = scaled.to(accumulate) + e0.to(accumulate)
+        node_energy = scaled.to(node_dtype) + e0.to(node_dtype)
         interaction_total = segment_sum(scaled.to(accumulate), batch, num_graphs).to(
             model_dtype
         )
@@ -249,5 +259,5 @@ class EnergyOutputHead(nn.Module):
             total_energy=interaction_total + e0_total,
             node_energy=node_energy,
             interaction_energy=interaction_total,
-            node_interaction_energy=scaled.to(accumulate),
+            node_interaction_energy=scaled.to(node_dtype),
         )
