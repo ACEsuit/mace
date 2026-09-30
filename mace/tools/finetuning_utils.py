@@ -472,6 +472,9 @@ def load_foundations_elements_default(
             continue
         if not load_readout and name.startswith("readouts."):
             continue
+        # The joint embedding is transferred spec by spec above. A blanket copy
+        # would re-align the head columns positionally and silently undo it
+        # whenever both heads happen to have the same shape.
         if name.startswith("joint_embedding."):
             continue
         if model_state[name].shape != param.shape:
@@ -889,9 +892,6 @@ def load_foundations_mdp(
             continue
         if name not in model_state:
             continue
-        # The joint embedding is transferred spec by spec above. A blanket copy
-        # would re-align the head columns positionally and silently undo it
-        # whenever both heads happen to have the same shape.
         if model_state[name].shape != param.shape:
             continue
         model_state[name].copy_(param)
