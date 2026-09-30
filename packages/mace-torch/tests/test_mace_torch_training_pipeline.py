@@ -21,6 +21,11 @@ from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import load_default_catalogue
 from mace_torch.data import GraphDataset
 from mace_torch.models import MACEOutputs, ObservableHead
+from mace_torch.nn.interaction import (
+    InteractionBlock,
+    NonLinearInteractionBlock,
+    ResidualInteractionBlock,
+)
 from mace_torch.train import (
     ModelStageError,
     RunState,
@@ -650,13 +655,7 @@ def build_with(tmp_path, **model):
     "setting,value",
     [
         ("interaction", "RealAgnosticInteractionBlock"),
-        ("interaction_first", "RealAgnosticDensityInteractionBlock"),
-        ("radial_mlp", (8,)),
-        ("distance_transform", "Agnesi"),
-        ("apply_cutoff", False),
-        ("use_agnostic_product", True),
         ("edge_irreps", "4x0e"),
-        ("use_edge_irreps_first", True),
         ("clebsch_gordan_basis", "full"),
         ("readout", {"gate": "tanh"}),
         ("readout", {"last_only": True}),
@@ -670,20 +669,62 @@ def test_a_setting_the_model_cannot_build_is_refused(tmp_path, setting, value):
         build_with(tmp_path, **{setting: value})
 
 
-def test_the_first_layer_builds_from_either_spelling(tmp_path):
-    """The frozen tree builds the plain block in the first layer whichever of
-    the two it is given, so both are the same model."""
+def test_each_spelling_of_the_first_layer_builds_its_own_block(tmp_path):
+    """Two models, as in the frozen tree: the residual first layer takes its
+    skip from the element embedding and carries it to the product basis, the
+    plain one applies its skip to the message."""
     plain = build_with(tmp_path, interaction_first="RealAgnosticInteractionBlock")
     residual = build_with(
         tmp_path, interaction_first="RealAgnosticResidualInteractionBlock"
     )
-    assert sum(p.numel() for p in plain.parameters()) == sum(
+    assert isinstance(plain.backbone.backbone.interactions[0], InteractionBlock)
+    assert isinstance(
+        residual.backbone.backbone.interactions[0], ResidualInteractionBlock
+    )
+    assert sum(p.numel() for p in plain.parameters()) != sum(
         p.numel() for p in residual.parameters()
     )
 
 
+NONLINEAR = "RealAgnosticResidualNonLinearInteractionBlock"
+
+
+def test_edge_irreps_set_the_width_a_nonlinear_block_convolves_at(tmp_path):
+    model = build_with(
+        tmp_path,
+        interaction_first=NONLINEAR,
+        interaction=NONLINEAR,
+        edge_irreps="4x0e+4x1o",
+        use_edge_irreps_first=True,
+    )
+    first, later = model.backbone.backbone.interactions
+    assert isinstance(first, NonLinearInteractionBlock)
+    assert isinstance(later, NonLinearInteractionBlock)
+    assert (first.num_up_features, first.up_width) == (4, 1)
+    assert (later.num_up_features, later.up_width) == (4, 4)
+
+
+@pytest.mark.parametrize(
+    "setting",
+    [
+        {"interaction_first": NONLINEAR, "edge_irreps": "4x0e+4x1o"},
+        {
+            "interaction": NONLINEAR,
+            "edge_irreps": "4x0e",
+            "use_edge_irreps_first": True,
+        },
+    ],
+    ids=["later-layers-not-nonlinear", "first-layer-not-nonlinear"],
+)
+def test_edge_irreps_a_standard_block_would_read_are_refused(tmp_path, setting):
+    """The frozen tree hands them to every block, so a standard one that
+    ignored them would build another model."""
+    with pytest.raises(ModelStageError, match="edge_irreps"):
+        build_with(tmp_path, **setting)
+
+
 def test_every_refusal_is_reported_together(tmp_path):
     with pytest.raises(ModelStageError) as caught:
-        build_with(tmp_path, apply_cutoff=False, radial_mlp=(8,))
-    assert "model.apply_cutoff" in str(caught.value)
-    assert "model.radial_mlp" in str(caught.value)
+        build_with(tmp_path, clebsch_gordan_basis="full", readout={"gate": "tanh"})
+    assert "model.clebsch_gordan_basis" in str(caught.value)
+    assert "model.readout.gate" in str(caught.value)

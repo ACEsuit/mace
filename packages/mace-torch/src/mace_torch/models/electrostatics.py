@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from mace_core.electrostatics import (
@@ -230,9 +230,19 @@ class PolarModel(MACEModel):
         radial_kind: RadialKind = "bessel",
         precision: Precision = "float64",
         cutoff_order: int = 6,
+        distance_transform: Literal["none", "agnesi", "soft"] = "none",
+        apply_cutoff: bool = True,
+        radial_hidden: Sequence[int] = (64, 64, 64),
         readout_hidden: int | str = 16,
         num_heads: int = 1,
         element_agnostic_product: bool = False,
+        residual_first_layer: bool = False,
+        learned_density_first_layer: bool = False,
+        learned_density: bool = False,
+        nonlinear_first_layer: bool = False,
+        nonlinear: bool = False,
+        convolution_irreps: str | None = None,
+        narrow_first_convolution: bool = False,
     ) -> None:
         produced = sorted(
             spec.name for spec in observables if spec.name in self.PRODUCED
@@ -258,10 +268,20 @@ class PolarModel(MACEModel):
             radial_kind=radial_kind,
             precision=precision,
             cutoff_order=cutoff_order,
+            distance_transform=distance_transform,
+            apply_cutoff=apply_cutoff,
+            radial_hidden=radial_hidden,
             readout_hidden=readout_hidden,
             num_heads=num_heads,
             last_layer_irreps=hidden_irreps,
             element_agnostic_product=element_agnostic_product,
+            residual_first_layer=residual_first_layer,
+            learned_density_first_layer=learned_density_first_layer,
+            learned_density=learned_density,
+            nonlinear_first_layer=nonlinear_first_layer,
+            nonlinear=nonlinear,
+            convolution_irreps=convolution_irreps,
+            narrow_first_convolution=narrow_first_convolution,
             # The density's dipoles are read off the degree one features, and
             # the solver holds a dipole as (y, z, x).
             edge_axes=(1, 2, 0),

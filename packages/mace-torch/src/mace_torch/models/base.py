@@ -20,10 +20,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Literal
 
 import torch
-from mace_core.kernels.descriptors import RadialBasisKind as RadialKind
+from mace_core.kernels.descriptors import RadialKind
 from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
@@ -77,6 +77,20 @@ class MACEModel(nn.Module):
             the backbone and nothing after it: each has its own readout, and
             the energy head carries one row of constants per head.
         last_layer_irreps: What the last layer keeps; see the backbone.
+        residual_first_layer: A residual first layer; see the backbone.
+        learned_density_first_layer: A learned density in the first layer;
+            see the backbone.
+        learned_density: A learned density in every later layer.
+        nonlinear_first_layer: A nonlinear first layer; see the backbone.
+        nonlinear: Nonlinear later layers.
+        convolution_irreps: What a nonlinear layer convolves; see the
+            backbone.
+        narrow_first_convolution: Convolve only its scalars in the first
+            layer.
+        distance_transform: The distance transform; see the backbone.
+        apply_cutoff: Whether the radial basis carries the cutoff envelope;
+            see the backbone.
+        radial_hidden: The radial networks' hidden widths.
         element_agnostic_product: One set of product weights for all
             elements; see the backbone.
         edge_axes: The axis order the spherical harmonics read; see the
@@ -98,14 +112,24 @@ class MACEModel(nn.Module):
         cutoff: float = 5.0,
         correlation: int = 3,
         avg_num_neighbors: float = 1.0,
-        radial_kind: str = "bessel",
-        precision: str = "float64",
+        radial_kind: RadialKind = "bessel",
+        precision: Precision = "float64",
         pair_repulsion: bool = False,
         cutoff_order: int = 6,
+        distance_transform: Literal["none", "agnesi", "soft"] = "none",
+        apply_cutoff: bool = True,
+        radial_hidden: Sequence[int] = (64, 64, 64),
         node_inputs: Sequence[InputSpec] = (),
         readout_hidden: int | str = 16,
         num_heads: int = 1,
         last_layer_irreps: str = "0e",
+        residual_first_layer: bool = False,
+        learned_density_first_layer: bool = False,
+        learned_density: bool = False,
+        nonlinear_first_layer: bool = False,
+        nonlinear: bool = False,
+        convolution_irreps: str | None = None,
+        narrow_first_convolution: bool = False,
         element_agnostic_product: bool = False,
         edge_axes: tuple[int, int, int] = (0, 1, 2),
     ) -> None:
@@ -124,9 +148,19 @@ class MACEModel(nn.Module):
                 avg_num_neighbors=avg_num_neighbors,
                 radial_kind=radial_kind,
                 cutoff_order=cutoff_order,
+                distance_transform=distance_transform,
+                apply_cutoff=apply_cutoff,
+                radial_hidden=radial_hidden,
                 precision=precision,
                 node_inputs=node_inputs,
                 last_layer_irreps=last_layer_irreps,
+                residual_first_layer=residual_first_layer,
+                learned_density_first_layer=learned_density_first_layer,
+                learned_density=learned_density,
+                nonlinear_first_layer=nonlinear_first_layer,
+                nonlinear=nonlinear,
+                convolution_irreps=convolution_irreps,
+                narrow_first_convolution=narrow_first_convolution,
                 element_agnostic_product=element_agnostic_product,
                 edge_axes=edge_axes,
             )

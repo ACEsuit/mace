@@ -14,7 +14,7 @@ undone to save.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal, NamedTuple
 
 from ase.data import chemical_symbols
 from mace_core.config.model import ModelConfig
@@ -119,21 +119,39 @@ _MAGNETIC_INTERACTIONS = {
 #: replaced: building the default instead trains another architecture under
 #: the name of the one asked for.
 #:
-#: Both spellings of the first interaction build the same block. The first
-#: layer has no incoming features to skip from, and the frozen tree builds the
-#: plain block there whichever of the two it was given.
+#: What each spelling of an interaction builds: whether the layer carries its
+#: skip onward for the product basis to add, rather than applying it to the
+#: message; whether it normalizes by a density learned per atom rather than by
+#: the average neighbour count; and whether it is the nonlinear block, which
+#: conditions its convolution on both elements and gates its output. Distinct
+#: models, not names for one: a residual first layer takes its skip from the
+#: element embedding.
+_FIRST_INTERACTIONS: dict[str, tuple[bool, bool, bool]] = {
+    "RealAgnosticInteractionBlock": (False, False, False),
+    "RealAgnosticResidualInteractionBlock": (True, False, False),
+    "RealAgnosticDensityInteractionBlock": (False, True, False),
+    "RealAgnosticDensityResidualInteractionBlock": (True, True, False),
+    "RealAgnosticResidualNonLinearInteractionBlock": (True, False, True),
+}
+
+#: The same for every later layer, which always carries its skip.
+_INTERACTIONS: dict[str, tuple[bool, bool]] = {
+    "RealAgnosticResidualInteractionBlock": (False, False),
+    "RealAgnosticDensityResidualInteractionBlock": (True, False),
+    "RealAgnosticResidualNonLinearInteractionBlock": (False, True),
+}
+
+#: The configuration's spelling of a distance transform, and the backbone's.
+_DISTANCE_TRANSFORMS: dict[str, Literal["none", "agnesi", "soft"]] = {
+    "None": "none",
+    "Agnesi": "agnesi",
+    "Soft": "soft",
+}
+
 _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
-    "interaction": ("RealAgnosticResidualInteractionBlock",),
-    "interaction_first": (
-        "RealAgnosticInteractionBlock",
-        "RealAgnosticResidualInteractionBlock",
-    ),
-    "radial_mlp": ((64, 64, 64),),
-    "distance_transform": ("None",),
-    "apply_cutoff": (True,),
-    "use_agnostic_product": (False,),
-    "edge_irreps": (None,),
-    "use_edge_irreps_first": (False,),
+    "interaction": tuple(_INTERACTIONS),
+    "interaction_first": tuple(_FIRST_INTERACTIONS),
+    "distance_transform": tuple(_DISTANCE_TRANSFORMS),
     "clebsch_gordan_basis": ("reduced",),
     "readout.gate": ("silu",),
     "readout.last_only": (False,),
@@ -444,10 +462,15 @@ def build_model(
         precision=precision.model,
         pair_repulsion=config.model.pair_repulsion,
         cutoff_order=config.model.num_cutoff_basis,
+        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
+        apply_cutoff=config.model.apply_cutoff,
+        radial_hidden=config.model.radial_mlp,
         readout_hidden=config.model.readout.mlp_irreps,
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
         num_heads=len(heads),
+        **_interaction_settings(config)._asdict(),
+        element_agnostic_product=config.model.use_agnostic_product,
     )
     _report_backend(backend)
     if initialize:
@@ -528,8 +551,12 @@ def _polar_model(
         radial_kind=config.model.radial_type,
         precision=precision.model,
         cutoff_order=config.model.num_cutoff_basis,
+        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
+        apply_cutoff=config.model.apply_cutoff,
+        radial_hidden=config.model.radial_mlp,
         readout_hidden=config.model.readout.mlp_irreps,
         num_heads=len(heads),
+        **_interaction_settings(config)._asdict(),
         element_agnostic_product=config.model.use_agnostic_product,
     )
 
@@ -635,6 +662,57 @@ def _backend(
     return resolve_backend(config.model.backend, precision, supports_float64)
 
 
+class _InteractionSettings(NamedTuple):
+    """What the configured interactions build, as the backbone's settings."""
+
+    residual_first_layer: bool
+    learned_density_first_layer: bool
+    nonlinear_first_layer: bool
+    learned_density: bool
+    nonlinear: bool
+    convolution_irreps: str | None
+    narrow_first_convolution: bool
+
+
+def _interaction_settings(config: ResolvedConfig) -> _InteractionSettings:
+    model = config.model
+    return _InteractionSettings(
+        *_FIRST_INTERACTIONS[model.interaction_first],
+        *_INTERACTIONS[model.interaction],
+        convolution_irreps=model.edge_irreps,
+        narrow_first_convolution=model.use_edge_irreps_first,
+    )
+
+
+def _unbuilt_convolution_irreps(config: ResolvedConfig) -> list[str]:
+    """The edge irreps a layer would be asked to honour and could not.
+
+    The frozen tree hands them to every block. Only the nonlinear one is
+    built to convolve at another width than its node features, which is where
+    every published model that sets them sets them.
+    """
+    model = config.model
+    if model.edge_irreps is None:
+        return []
+    refused = []
+    if model.num_interactions > 1 and not _INTERACTIONS[model.interaction][1]:
+        refused.append(
+            f"model.edge_irreps is {model.edge_irreps!r} with model.interaction "
+            f"{model.interaction!r}; it is built for "
+            f"'RealAgnosticResidualNonLinearInteractionBlock' only"
+        )
+    if (
+        model.use_edge_irreps_first
+        and not _FIRST_INTERACTIONS[model.interaction_first][2]
+    ):
+        refused.append(
+            f"model.use_edge_irreps_first is True with model.interaction_first "
+            f"{model.interaction_first!r}; it is built for "
+            f"'RealAgnosticResidualNonLinearInteractionBlock' only"
+        )
+    return refused
+
+
 def _refuse_unbuilt(config: ResolvedConfig) -> None:
     """Refuse every model setting this stage would not build as written.
 
@@ -645,10 +723,6 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
     unbuilt = []
     built = dict(_BUILT_ONE_WAY)
     if config.model.model == "polar":
-        # Built both ways for the charge-aware model: the published ones share
-        # one set of product weights, and the frozen tree's command line
-        # defaults to one per element.
-        built["use_agnostic_product"] = (False, True)
         # The frozen tree computes the repulsion of this model and never adds
         # it, so the only faithful build is the one without it.
         built["pair_repulsion"] = (False,)
@@ -668,6 +742,7 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
         if value not in choices:
             allowed = " or ".join(repr(choice) for choice in choices)
             unbuilt.append(f"model.{path} is {value!r}, and only {allowed} is built")
+    unbuilt += _unbuilt_convolution_irreps(config)
     if unbuilt:
         raise ModelStageError(
             "the configuration asks for a model this stage cannot build, and "

@@ -78,7 +78,13 @@ REFUSED = {
 }
 
 #: Interaction blocks whose weights this knows how to walk.
-INTERACTIONS = ("RealAgnosticInteractionBlock", "RealAgnosticResidualInteractionBlock")
+INTERACTIONS = (
+    "RealAgnosticInteractionBlock",
+    "RealAgnosticResidualInteractionBlock",
+    "RealAgnosticDensityInteractionBlock",
+    "RealAgnosticDensityResidualInteractionBlock",
+    "RealAgnosticResidualNonLinearInteractionBlock",
+)
 
 #: Readout blocks whose weights this knows how to walk. The dielectric
 #: model's dipole and polarizability readouts are not among them yet, so its
@@ -382,6 +388,65 @@ class Walk:
         return sorted(set(self.state) - self.used - set(self.derived))
 
 
+def layer_norm_mlp(walker: Walk, name: str, module, prefix: str) -> None:
+    """A linear, layer norm and SiLU stack, its parameters under their own
+    names: ``<layer>.weight`` and ``<layer>.bias``, as the module holds them."""
+    tensors = {}
+    for key, value in module.net.named_parameters():
+        walker.use(f"{prefix}.net.{key}")
+        tensors[key] = value.detach().cpu().numpy()
+    walker.op(name, "layer_norm_mlp", tensors, descriptor={"widths": list(module.hs)})
+
+
+def walk_nonlinear(walker: Walk, block, prefix: str) -> None:
+    """The nonlinear interaction: its linears, its two layer-norm networks and
+    the two scalars of its learned normalization.
+
+    The block's own op carries ``alpha`` and ``beta``: the message is divided
+    by ``alpha + beta * density``.
+    """
+    walker.use(f"{prefix}.alpha", f"{prefix}.beta")
+    walker.op(
+        prefix,
+        "interaction",
+        {
+            name: getattr(block, name).detach().cpu().numpy().reshape(())
+            for name in ("alpha", "beta")
+        },
+        descriptor={
+            "class": type(block).__name__,
+            "avg_num_neighbors": float(block.avg_num_neighbors),
+            "edge_irreps": str(block.edge_irreps),
+        },
+    )
+    linears = {
+        "linear_up": "linear_up",
+        "linear_res": "linear_res",
+        "source": "source_embedding",
+        "target": "target_embedding",
+        "linear_mid": "linear_1",
+        "linear_out": "linear_2",
+        "skip": "skip_tp",
+    }
+    for name, attribute in linears.items():
+        walker.linear(
+            f"{prefix}.{name}", getattr(block, attribute), f"{prefix}.{attribute}"
+        )
+    layer_norm_mlp(
+        walker, f"{prefix}.radial", block.conv_tp_weights, f"{prefix}.conv_tp_weights"
+    )
+    layer_norm_mlp(
+        walker, f"{prefix}.density", block.density_fn, f"{prefix}.density_fn"
+    )
+    for key in list(walker.state):
+        if key.startswith(f"{prefix}.conv_tp."):
+            walker.derive(
+                key,
+                "the edge tensor product holds no weights of its own; its "
+                "coupling constants and masks are rebuilt from the irreps",
+            )
+
+
 def walk(model, spelling: str) -> Walk:
     """Every op of the model, in canonical form."""
     numpy = importlib.import_module("numpy")
@@ -431,9 +496,29 @@ def walk(model, spelling: str) -> Walk:
     )
     if hasattr(radial, "distance_transform"):
         transform = type(radial.distance_transform).__name__
-        raise ExtractionError(
-            f"the radial embedding applies a {transform} distance transform, "
-            f"whose parameters this converter does not carry."
+        carried = {
+            "AgnesiTransform": ("agnesi_transform", ("a", "q", "p", "covalent_radii")),
+            "SoftTransform": ("soft_transform", ("alpha", "covalent_radii")),
+        }
+        if transform not in carried:
+            raise ExtractionError(
+                f"the radial embedding applies a {transform} distance transform, "
+                f"whose parameters this converter does not carry. It carries "
+                f"{sorted(carried)}."
+            )
+        kind, names = carried[transform]
+        walker.use(*(f"radial_embedding.distance_transform.{name}" for name in names))
+        walker.op(
+            "distance_transform",
+            kind,
+            {
+                name: getattr(radial.distance_transform, name)
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(numpy.float64)
+                for name in names
+            },
         )
 
     if hasattr(model, "pair_repulsion_fn"):
@@ -481,6 +566,9 @@ def walk(model, spelling: str) -> Walk:
         # which is how every published model was pickled.
         if f"{prefix}.avg_num_neighbors" in walker.state:
             walker.use(f"{prefix}.avg_num_neighbors")
+        if kind == "RealAgnosticResidualNonLinearInteractionBlock":
+            walk_nonlinear(walker, block, prefix)
+            continue
         walker.op(
             prefix,
             "interaction",
@@ -507,6 +595,21 @@ def walk(model, spelling: str) -> Walk:
             layers,
             descriptor={"widths": widths, "activation": activation},
         )
+        density = getattr(block, "density_fn", None)
+        if density is not None:
+            density_widths = list(density.hs)
+            density_layers = {}
+            for layer in range(len(density_widths) - 1):
+                walker.use(f"{prefix}.density_fn.layer{layer}.weight")
+                density_layers[f"layer_{layer}"] = (
+                    getattr(density, f"layer{layer}").weight.detach().cpu().numpy()
+                )
+            walker.op(
+                f"{prefix}.density",
+                "radial_mlp",
+                density_layers,
+                descriptor={"widths": density_widths, "activation": None},
+            )
         for key in list(walker.state):
             if key.startswith(f"{prefix}.conv_tp."):
                 walker.derive(

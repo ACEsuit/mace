@@ -251,7 +251,7 @@ def isolated_atom_energies(artifact: NeutralArtifact) -> dict[str, dict[int, flo
 
 
 def _as(value: np.ndarray, like: Tensor) -> Tensor:
-    tensor = torch.from_numpy(np.ascontiguousarray(value)).to(like.dtype)
+    tensor = torch.from_numpy(np.array(value, order="C")).to(like.dtype)
     if tensor.shape != like.shape:
         raise NeutralImportError(
             f"a tensor of shape {tuple(tensor.shape)} arrived where the model "
@@ -346,6 +346,24 @@ def _linear(artifact: NeutralArtifact, op: str, expected: dict[str, Tensor]):
     }
 
 
+#: Each distance transform's tensors: the model's name for one, the
+#: artifact's.
+_TRANSFORM_TENSORS = {
+    "agnesi_transform": {
+        "amplitude": "a",
+        "exponent_q": "q",
+        "exponent_p": "p",
+        "covalent_radii": "covalent_radii",
+    },
+    "soft_transform": {"steepness": "alpha", "covalent_radii": "covalent_radii"},
+}
+
+#: The nonlinear interaction's linears, each an op of the same name.
+_NONLINEAR_LINEARS = frozenset(
+    {"linear_up", "linear_res", "source", "target", "linear_mid", "linear_out"}
+)
+
+
 def _state(
     artifact: NeutralArtifact, engine: DerivativeEngine
 ) -> dict[str, dict[str, Tensor]]:
@@ -363,7 +381,13 @@ def _state(
                 "."
             )
             source = f"interactions.{index}"
-            if rest == "body":
+            if rest == "":
+                # Scalars, which the tensor file holds with one axis.
+                state[path] = {
+                    name: _as(artifact.tensor(source, name).reshape(()), value)
+                    for name, value in tensors.items()
+                }
+            elif rest == "body":
                 value = ops[source].descriptor["avg_num_neighbors"]
                 state[path] = {
                     "neighbours": torch.tensor(float(value)).to(
@@ -374,9 +398,12 @@ def _state(
                 state[path] = _linear(
                     artifact, f"{source}.{rest.removeprefix('body.')}", tensors
                 )
-            elif rest == "body.radial":
+            elif rest in _NONLINEAR_LINEARS or (rest == "skip" and "bias" in tensors):
+                state[path] = _linear(artifact, f"{source}.{rest}", tensors)
+            elif rest in {"body.radial", "body.density", "radial", "density"}:
+                op = f"{source}.{rest.removeprefix('body.')}"
                 state[path] = {
-                    name: _as(artifact.tensor(f"{source}.radial", name), value)
+                    name: _as(artifact.tensor(op, name), value)
                     for name, value in tensors.items()
                 }
             elif rest == "skip":
@@ -387,6 +414,14 @@ def _state(
                 }
             else:
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
+        elif path == f"{backbone}distance_transform":
+            names = _TRANSFORM_TENSORS[ops["distance_transform"].op_kind]
+            state[path] = {}
+            for name, source in names.items():
+                value = artifact.tensor("distance_transform", source)
+                if tensors[name].dim() == 0:
+                    value = value.reshape(())
+                state[path][name] = _as(value, tensors[name])
         elif path.startswith(f"{backbone}products."):
             index, _, rest = path.removeprefix(f"{backbone}products.").partition(".")
             if rest == "contraction":

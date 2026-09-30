@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ase.data
 import torch
+from torch import Tensor
 
 from mace_torch.backends.radial import polynomial_envelope
 
@@ -225,6 +226,27 @@ class AgnesiTransform(torch.nn.Module):
             / (1.0 + torch.pow(scaled, self.exponent_q - self.exponent_p))
         )
 
+    def to_canonical(self) -> dict[str, Tensor]:
+        """The three parameters and the covalent radii, which a checkpoint
+        has to carry.
+
+        They are constants of the trained model rather than of the code. The
+        radii are copied from ASE when the model is built, and ASE's table has
+        changed under the published models: the ones checked hold 0.2 for
+        elements 97 onward, where ASE 3.29 has 2.0.
+        """
+        return {
+            "amplitude": self.amplitude.detach(),
+            "exponent_q": self.exponent_q.detach(),
+            "exponent_p": self.exponent_p.detach(),
+            "covalent_radii": self.covalent_radii.detach(),
+        }
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        with torch.no_grad():
+            for name in ("amplitude", "exponent_q", "exponent_p", "covalent_radii"):
+                getattr(self, name).copy_(state[name])
+
     def extra_repr(self) -> str:
         return (
             f"amplitude={self.amplitude.item():.4f}, "
@@ -278,6 +300,19 @@ class SoftTransform(torch.nn.Module):
         steepness = self.steepness / (upper_point - lower_clamp)
         switch = 0.5 * (1.0 + torch.tanh(steepness * (edge_lengths - midpoint)))
         return lower_clamp + (edge_lengths - lower_clamp) * switch
+
+    def to_canonical(self) -> dict[str, Tensor]:
+        """The steepness and the covalent radii, constants of the trained
+        model for the reason :meth:`AgnesiTransform.to_canonical` gives."""
+        return {
+            "steepness": self.steepness.detach(),
+            "covalent_radii": self.covalent_radii.detach(),
+        }
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        with torch.no_grad():
+            self.steepness.copy_(state["steepness"])
+            self.covalent_radii.copy_(state["covalent_radii"])
 
     def extra_repr(self) -> str:
         return f"steepness={self.steepness.item():.4f}"
