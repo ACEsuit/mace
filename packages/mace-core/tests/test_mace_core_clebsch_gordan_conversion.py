@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from mace_core.clebsch_gordan import IrrepsError
 from mace_core.clebsch_gordan.conversion import (
+    FLOAT32_PROJECTION_TOLERANCE,
     PROJECTION_TOLERANCE,
     BasisConversionError,
     _projection,
@@ -20,6 +21,7 @@ from mace_core.clebsch_gordan.conversion import (
     ir_mul_to_mul_ir,
     mul_ir_to_ir_mul,
     reduced_to_full,
+    source_tolerance,
     to_canonical,
 )
 from mace_core.clebsch_gordan.reduced_basis import (
@@ -290,3 +292,50 @@ def test_a_source_in_the_wrong_layout_is_refused():
             target,
             source=np.moveaxis(full, 0, -1),
         )
+
+
+def test_a_basis_held_at_float32_is_judged_at_float32():
+    """A model built in float32 holds its basis rounded, off the exact span by
+    that rounding. The float64 bound refuses it; the float32 one, chosen from
+    the values themselves, carries it with the function kept to float32."""
+    irreps, correlation, target = "0e+1o+2e", 3, "1o"
+    full = full_symmetric_tensor_product_basis(irreps, correlation, target)[target]
+    rounded = another_gauge(full, seed=9).astype(np.float32).astype(np.float64)
+    weights = np.random.default_rng(10).normal(size=(1, rounded.shape[0], 2))
+    assert source_tolerance(rounded) == FLOAT32_PROJECTION_TOLERANCE
+    with pytest.raises(BasisConversionError, match="relative residual"):
+        full_to_reduced(
+            weights,
+            irreps,
+            correlation,
+            target,
+            source=rounded,
+            tolerance=PROJECTION_TOLERANCE,
+        )
+    carried = full_to_reduced(weights, irreps, correlation, target, source=rounded)
+    reduced = reduced_symmetric_tensor_product_basis(irreps, correlation, target)[
+        target
+    ]
+    inputs = np.random.default_rng(11).normal(size=(3, full.shape[2]))
+    before = contract(rounded, inputs, weights, correlation)
+    after = contract(reduced, inputs, carried, correlation)
+    assert np.abs(before - after).max() < 1e-6 * np.abs(before).max()
+
+
+def test_a_float32_basis_of_another_space_is_still_refused():
+    """The looser bound is for rounding: a stray direction rounded to float32
+    is off by order one and refused as before."""
+    irreps, correlation, target = "0e+1o", 2, "0e"
+    full = full_symmetric_tensor_product_basis(irreps, correlation, target)[target]
+    stray = np.random.default_rng(12).normal(size=(1, *full.shape[1:]))
+    source = np.concatenate([full, stray]).astype(np.float32).astype(np.float64)
+    assert source_tolerance(source) == FLOAT32_PROJECTION_TOLERANCE
+    with pytest.raises(BasisConversionError, match="relative residual"):
+        full_to_reduced(
+            np.ones((1, source.shape[0], 1)), irreps, correlation, target, source=source
+        )
+
+
+def test_a_basis_held_at_float64_keeps_the_float64_bound():
+    full = full_symmetric_tensor_product_basis("0e+1o+2e", 3, "1o")["1o"]
+    assert source_tolerance(another_gauge(full, seed=13)) == PROJECTION_TOLERANCE

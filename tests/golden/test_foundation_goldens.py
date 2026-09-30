@@ -65,14 +65,12 @@ def test_foundation_model_reproduces_its_reference(name):
     snapshot = harness.snapshot_outputs(
         calc,
         _fixtures_for(spec),
-        dtype="float64",
+        dtype=spec.dtype,
         device="cpu",
         backend="e3nn",
     )
     reference = harness.load_reference(harness.REFERENCES_DIR / spec.reference)
-    harness.compare_to_reference(
-        snapshot, reference, row=harness.FP64_CPU_REFERENCE.name
-    )
+    harness.compare_to_reference(snapshot, reference, row=spec.tolerance_row)
 
 
 @pytest.mark.parametrize("name", ARTIFACT_PARAMS)
@@ -219,20 +217,25 @@ def test_every_evaluated_fixture_is_within_the_model_element_table(name):
 
 
 @pytest.mark.parametrize("name", ARTIFACT_PARAMS)
-def test_the_loader_call_forces_cpu_float64(name):
+def test_the_loader_call_states_cpu_and_its_dtype(name):
     """Dtype discipline, checked on the registry and on the loaded weights.
 
     `mace_mp` defaults to float32 and to CUDA when one is present, so a
     reference taken without both arguments is a reference to whatever the
     generating machine happened to be. The registry entry is what the test
-    replays, so the requirement is stated there and enforced here.
+    replays, so the requirement is stated there and enforced here. A float32
+    reference is a separate entry with its own file, beside the float64 one
+    for the same artifact.
     """
     spec = fa.ARTIFACTS[name]
-    assert spec.loader_kwargs["default_dtype"] == "float64"
+    assert spec.loader_kwargs["default_dtype"] in fa.TOLERANCE_ROWS
     assert spec.loader_kwargs["device"] == "cpu"
+    assert spec.reference.endswith(
+        {"float64": "_fp64.json", "float32": "_fp32.json"}[spec.dtype]
+    )
     calc, _ = _load(spec)
     parameter = next(calc.models[0].parameters())
-    assert parameter.dtype == torch.float64
+    assert parameter.dtype == getattr(torch, spec.dtype)
     assert parameter.device.type == "cpu"
 
 
@@ -240,16 +243,16 @@ def test_the_loader_call_forces_cpu_float64(name):
 def test_reference_carries_dtype_units_and_provenance(name):
     spec = fa.ARTIFACTS[name]
     reference = harness.load_reference(harness.REFERENCES_DIR / spec.reference)
-    assert reference["dtype"] == "float64"
+    assert reference["dtype"] == spec.dtype
     assert reference["device"] == "cpu"
     assert reference["backend"] == "e3nn"
     assert reference["units"] == {"energy": "eV", "length": "Ang"}
     provenance = reference["provenance"]
-    assert provenance["tolerance_row"] == harness.FP64_CPU_REFERENCE.name
+    assert provenance["tolerance_row"] == spec.tolerance_row
     if spec.release_url:
         assert provenance["release_url"] == spec.release_url
     assert spec.loader in provenance["recipe"]
-    assert "default_dtype='float64'" in provenance["recipe"]
+    assert f"default_dtype={spec.dtype!r}" in provenance["recipe"]
     pinned = set(reference["fixtures"])
     assert pinned == set(_fixtures_for(spec)), (
         f"{name}: the reference pins {sorted(pinned)} but the model's fixture "

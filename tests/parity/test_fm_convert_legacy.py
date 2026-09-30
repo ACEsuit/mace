@@ -274,7 +274,6 @@ def test_a_source_that_recorded_its_heads_says_so(converted):
 UNSUPPORTED = (
     ("mace.modules.models", "AtomicDipolesMACE"),
     ("mace.modules.models", "EnergyDipolesMACE"),
-    ("mace.modules.extensions", "PolarMACE"),
     ("mace.modules.extensions", "MACELES"),
     ("mace.modules.extensions", "MagneticMACE"),
     ("mace.modules.extensions", "MagneticScaleShiftMACE"),
@@ -291,6 +290,15 @@ def test_each_unsupported_class_is_refused_by_name(module, name):
     cls = getattr(importlib.import_module(module), name)
     with pytest.raises(EXTRACTOR["ExtractionError"], match=name):
         EXTRACTOR["classify"](cls.__new__(cls))
+
+
+def test_the_charge_aware_class_is_the_only_one_taken_off_the_refusals():
+    """It converts onto the charge-aware model; the six others still wait for
+    theirs."""
+    from mace.modules.extensions import PolarMACE
+
+    assert EXTRACTOR["classify"](PolarMACE.__new__(PolarMACE)) == "polar"
+    assert sorted(EXTRACTOR["REFUSED"]) == sorted(name for _, name in UNSUPPORTED)
 
 
 def test_a_subclass_of_a_supported_class_is_refused():
@@ -429,20 +437,32 @@ def with_tensor(sidecar_path, tmp_path, key, change):
     return write_neutral(tmp_path / "changed", artifact.sidecar, tensors)
 
 
-def test_trained_radial_frequencies_are_refused(converted, tmp_path):
+def test_the_radial_frequencies_are_carried(converted, tmp_path):
+    """Trained ones, or ones a float32 build rounded: either way the model's
+    own, and the converted model holds exactly those."""
     _, sidecar = converted
     changed = with_tensor(
         sidecar, tmp_path, "radial_basis::weights", lambda w: w * 1.01
     )
-    with pytest.raises(NeutralImportError, match="frequencies"):
-        import_neutral(changed, CATALOGUE)
+    written = read_neutral(changed).tensor("radial_basis", "weights")
+    radial = import_neutral(changed, CATALOGUE).engine.get_submodule(
+        "backbone.backbone.radial"
+    )
+    assert np.array_equal(radial.basis.frequencies.detach().numpy(), written)
 
 
-def test_other_repulsion_constants_are_refused(converted, tmp_path):
+def test_the_repulsion_constants_are_carried(converted, tmp_path):
+    """The covalent radii among them, which the frozen tree copies from the
+    ASE it was built with."""
     _, sidecar = converted
     changed = with_tensor(sidecar, tmp_path, "pair_repulsion::c", lambda c: c * 1.01)
-    with pytest.raises(NeutralImportError, match="repulsion's c"):
-        import_neutral(changed, CATALOGUE)
+    written = read_neutral(changed).tensor("pair_repulsion", "c")
+    repulsion = import_neutral(changed, CATALOGUE).engine.get_submodule(
+        "backbone.repulsion"
+    )
+    assert np.array_equal(
+        repulsion.screening_coefficients.detach().numpy(), written
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -525,9 +545,11 @@ def test_the_converted_checkpoint_carries_its_record(converted, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def dielectric(path: Path) -> Path:
+def dielectric(path: Path, hidden_irreps: str | None = None) -> Path:
     """A small dielectric model, built by the frozen tree on the anchor's
-    architecture and left at its random initialization."""
+    architecture and left at its random initialization. ``hidden_irreps``
+    replaces the anchor's node features, which carry no ``2e`` for the
+    polarizability to be read from."""
     import inspect
 
     from e3nn import o3
@@ -552,6 +574,9 @@ def dielectric(path: Path) -> Path:
             "RealAgnosticInteractionBlock"
         ],
     )
+    if hidden_irreps is not None:
+        config["hidden_irreps"] = o3.Irreps(hidden_irreps)
+        config["MLP_irreps"] = o3.Irreps("8x0e+8x1o+8x2e")
     torch.manual_seed(3)
     torch.save(modules.AtomicDielectricMACE(**config), path)
     return path
@@ -568,12 +593,31 @@ def test_a_dielectric_configuration_is_read_in_full(fp64, isolated, tmp_path):
     assert len(recorded) == 32
 
 
-def test_a_dielectric_model_s_weights_are_refused_by_readout(fp64, isolated, tmp_path):
-    """Its dipole and polarizability readouts are not mapped, and saying so by
-    name is the alternative to carrying them wrong."""
-    source = dielectric(tmp_path / "d.model")
-    with pytest.raises(EXTRACTOR["ExtractionError"], match="DipolePolarReadoutBlock"):
-        extract_here(source, tmp_path / "d")
+def test_a_dielectric_model_converts_and_reads_back_from_disk(fp64, isolated, tmp_path):
+    """Its one readout of all three quantities becomes three heads, and the
+    checkpoint of a model with no energy rebuilds with its element table."""
+    from ase.io import read
+
+    from mace.calculators import MACECalculator as LegacyCalculator
+    from mace_torch.calculators.ase_calculator import MACECalculator
+
+    source = dielectric(tmp_path / "d.model", hidden_irreps="8x0e+8x1o+8x2e")
+    imported = import_neutral(extract_here(source, tmp_path / "d"), CATALOGUE)
+    checkpoint = write_model(tmp_path / "v1", imported.engine, imported.metadata)
+    v1 = MACECalculator(model_paths=str(checkpoint), device="cpu")
+    legacy = LegacyCalculator(
+        model_paths=str(source),
+        device="cpu",
+        default_dtype="float64",
+        model_type="DipolePolarizabilityMACE",
+    )
+    for atoms in read(FIXTURES / "water_cluster.xyz", index=":"):
+        for calculator in (legacy, v1):
+            calculator.calculate(atoms.copy())
+        for key in ("dipole", "polarizability", "polarizability_sh", "charges"):
+            np.testing.assert_allclose(
+                v1.results[key], legacy.results[key], rtol=0, atol=1e-12, err_msg=key
+            )
 
 
 def test_a_checkpoint_from_before_the_neighbour_buffer_converts_the_same(

@@ -1,0 +1,263 @@
+{
+  "backend": "e3nn",
+  "device": "cpu",
+  "dtype": "float64",
+  "fixtures": {
+    "dimer_short": {
+      "formula": "CO",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 2,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            2
+          ],
+          "unit": "eV",
+          "value": [
+            -4340.179325312549,
+            -2124.9836601738225
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -6464.985449859827
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            2,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              0.0,
+              0.0,
+              -56249.143708132935
+            ],
+            [
+              0.0,
+              0.0,
+              56249.143708132935
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -6464.985449859827
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            2
+          ],
+          "unit": "eV",
+          "value": [
+            -3303.085575312549,
+            -77.27504200976
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "isolated_atom": {
+      "formula": "O",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 1,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            1
+          ],
+          "unit": "eV",
+          "value": [
+            -2040.381203522747
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -2040.2461706310805
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            1,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -2040.2461706310805
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            1
+          ],
+          "unit": "eV",
+          "value": [
+            7.3274146413154995
+          ]
+        }
+      },
+      "periodic": false
+    },
+    "water_cluster": {
+      "formula": "H6O3",
+      "inputs": {},
+      "metadata": {},
+      "n_atoms": 9,
+      "outputs": {
+        "energies": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            9
+          ],
+          "unit": "eV",
+          "value": [
+            -2047.5782492053418,
+            -16.116958237787564,
+            -16.146956845078137,
+            -2047.5698079170597,
+            -16.125993121429534,
+            -16.139856880911246,
+            -2047.6001273113457,
+            -16.14021757703235,
+            -16.088936622151518
+          ]
+        },
+        "energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -6239.195259824584
+        },
+        "forces": {
+          "kind": "per_atom_vector",
+          "shape": [
+            9,
+            3
+          ],
+          "unit": "eV/Ang",
+          "value": [
+            [
+              -0.19086699182303363,
+              0.9979113293185585,
+              -0.8974785011463092
+            ],
+            [
+              -0.2565523070311837,
+              -0.9423369461705675,
+              1.0440043063104842
+            ],
+            [
+              -0.10836001943401556,
+              -0.29114230381972633,
+              -0.08539761665935149
+            ],
+            [
+              0.5160826078247344,
+              1.7237993628428545,
+              0.661901150758575
+            ],
+            [
+              0.24492455477772296,
+              -0.6754874675653261,
+              0.578149239638655
+            ],
+            [
+              -0.1471678373744847,
+              -1.1865085683140442,
+              -1.0065018532782894
+            ],
+            [
+              -0.06938035656071387,
+              1.6290640174614763,
+              -1.636746055469476
+            ],
+            [
+              0.018474571940274333,
+              -1.3183582252245285,
+              1.2796607525892534
+            ],
+            [
+              -0.007154222319300158,
+              0.06305880147130316,
+              0.062408577256458375
+            ]
+          ]
+        },
+        "free_energy": {
+          "kind": "graph_scalar",
+          "shape": [],
+          "unit": "eV",
+          "value": -6239.195259824584
+        },
+        "node_energy": {
+          "kind": "per_atom_scalar",
+          "shape": [
+            9
+          ],
+          "unit": "eV",
+          "value": [
+            0.13036895872073728,
+            -0.11459503283150951,
+            -0.14459364012208198,
+            0.13881024700276612,
+            -0.12362991647347954,
+            -0.13749367595519146,
+            0.10849085271684089,
+            -0.13785437207629414,
+            -0.08657341719546352
+          ]
+        }
+      },
+      "periodic": false
+    }
+  },
+  "metadata": {
+    "model_class": "ScaleShiftMACE",
+    "r_max": 6.0
+  },
+  "provenance": {
+    "description": "MACE-OMOL extra large, one head, the total charge and spin embedded beside the elements. ASL licensed.",
+    "evaluated_with": "mace.calculators.MACECalculator, e3nn, CPU, float64",
+    "fixture_names": [
+      "dimer_short",
+      "isolated_atom",
+      "water_cluster"
+    ],
+    "fixture_tags": [
+      "molecular"
+    ],
+    "recipe": "mace.calculators.foundations_models.mace_omol(model='extra_large', default_dtype='float64', device='cpu')",
+    "sha256": "9b64b4fd5153ca578c694abc57806d8111050de6ff652e695c9b525bc4d36469",
+    "source": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_omol_0/MACE-omol-0-extra-large-1024.model",
+    "tolerance_row": "fp64_cpu_reference"
+  },
+  "schema_version": 1,
+  "units": {
+    "energy": "eV",
+    "length": "Ang"
+  }
+}

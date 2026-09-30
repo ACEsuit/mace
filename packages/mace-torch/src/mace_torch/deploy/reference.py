@@ -15,7 +15,7 @@ weight and none is meant to be.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +28,7 @@ from mace_core.elements import AtomicNumberTable
 
 from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
+from mace_torch.graph import DTYPES
 from mace_torch.physics import DerivativeEngine
 
 __all__ = [
@@ -170,6 +171,8 @@ def _evaluate(
     z_table: AtomicNumberTable,
     cutoff: float,
     head: int,
+    graph_inputs: Sequence[str] = (),
+    device: str = "cpu",
 ) -> dict[str, np.ndarray]:
     cell = np.asarray(atoms.get_cell().array, dtype=np.float64)
     periodic = atoms.get_pbc()
@@ -178,12 +181,25 @@ def _evaluate(
         positions=np.asarray(atoms.get_positions(), dtype=np.float64),
         cell=cell,
         pbc=(bool(periodic[0]), bool(periodic[1]), bool(periodic[2])),
+        properties={
+            name: atoms.info[name] for name in graph_inputs if name in atoms.info
+        },
     )
     graph = graph_from_configuration(
-        configuration, cutoff=cutoff, z_table=z_table, head=head
+        configuration,
+        cutoff=cutoff,
+        z_table=z_table,
+        head=head,
+        graph_inputs=graph_inputs,
     )
-    batch = collate_training([(graph, {}, {})], z_table=z_table)
-    output = engine(dict(batch.graph), compute=("forces", "stress"))
+    batch = collate_training(
+        [(graph, {}, {})], z_table=z_table, float_dtype=_float_dtype_of(engine)
+    )
+    flat = {
+        key: value.to(device) if isinstance(value, torch.Tensor) else value
+        for key, value in batch.graph.items()
+    }
+    output = engine(flat, compute=("forces", "stress"))
     values = {
         "energy": output.total_energy.detach().reshape(()),
         "forces": output.forces.detach() if output.forces is not None else None,
@@ -198,6 +214,12 @@ def _evaluate(
     }
 
 
+def _float_dtype_of(engine: DerivativeEngine) -> str:
+    """The name of the dtype the model computes in, which the batch is built at."""
+    names = {dtype: name for name, dtype in DTYPES.items()}
+    return names[next(engine.parameters()).dtype]
+
+
 def verify_against_reference(
     engine: DerivativeEngine,
     reference: str | Path,
@@ -208,8 +230,15 @@ def verify_against_reference(
     head: int = 0,
     atol: float = REFERENCE_ATOL,
     rtol: float = REFERENCE_RTOL,
+    graph_inputs: Sequence[str] = (),
+    device: str = "cpu",
 ) -> VerificationReport:
     """Evaluate the model on every structure of a reference and compare.
+
+    ``graph_inputs`` names the per-structure inputs the model reads, taken
+    from each structure's info or given their defaults, as the data path does.
+    Each structure is batched at the dtype the model computes in and moved to
+    ``device``, which is where the model has to be.
 
     Structures holding an element outside ``z_table`` are skipped and listed,
     since the model cannot evaluate them at all; if that leaves none, the
@@ -225,7 +254,15 @@ def verify_against_reference(
         if not set(int(z) for z in case.atoms.get_atomic_numbers()) <= set(z_table.zs):
             skipped.append(case.name)
             continue
-        got = _evaluate(engine, case.atoms, z_table=z_table, cutoff=cutoff, head=head)
+        got = _evaluate(
+            engine,
+            case.atoms,
+            z_table=z_table,
+            cutoff=cutoff,
+            head=head,
+            graph_inputs=graph_inputs,
+            device=device,
+        )
         deviations.extend(_compare(case.name, got, case.expected, atol, rtol))
     if not deviations:
         raise ReferenceError(

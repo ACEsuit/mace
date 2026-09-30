@@ -49,6 +49,7 @@ SUPPORTED = {
     "MACE": "plain",
     "ScaleShiftMACE": "scale_shift",
     "AtomicDielectricMACE": "dielectric",
+    "PolarMACE": "polar",
 }
 
 #: The classes refused by name, and what their conversion is waiting for. A
@@ -62,10 +63,6 @@ REFUSED = {
     "EnergyDipolesMACE": (
         "an energy and dipole model, which v1 reads out through observable "
         "heads rather than as a model class of its own"
-    ),
-    "PolarMACE": (
-        "an electrostatic model, whose conversion comes with the polar model "
-        "on the v1 architecture"
     ),
     "MACELES": (
         "a latent Ewald summation model, which is not on the v1 architecture yet"
@@ -86,11 +83,14 @@ INTERACTIONS = (
     "RealAgnosticResidualNonLinearInteractionBlock",
 )
 
-#: Readout blocks whose weights this knows how to walk. The dielectric
-#: model's dipole and polarizability readouts are not among them yet, so its
-#: configuration is read in full and its weights are refused by the readout's
-#: name.
-READOUTS = ("LinearReadoutBlock", "NonLinearReadoutBlock", "NonLinearBiasReadoutBlock")
+#: Readout blocks whose weights this knows how to walk.
+READOUTS = (
+    "LinearReadoutBlock",
+    "NonLinearReadoutBlock",
+    "NonLinearBiasReadoutBlock",
+    "LinearDipolePolarReadoutBlock",
+    "NonLinearDipolePolarReadoutBlock",
+)
 
 
 class ExtractionError(RuntimeError):
@@ -186,6 +186,11 @@ def legacy_config(model) -> dict[str, Any]:
     if plain:
         for key in ("atomic_inter_scale", "atomic_inter_shift"):
             config.pop(key, None)
+    if type(model).__name__ == "PolarMACE":
+        # The cutoff the forward sums to, which is not always what the recorded
+        # factor gives: the published models hold the cutoff of a factor of one
+        # beside a recorded factor of 1.5.
+        config["kspace_cutoff"] = float(model.kspace_cutoff)
     specs = config.get("embedding_specs")
     if specs is not None:
         # As ordered pairs: the frozen tree concatenates the embeddings in this
@@ -329,6 +334,49 @@ def basis_path_first(basis, order: int, target_dimension: int) -> Any:
     return numpy.ascontiguousarray(values)
 
 
+#: How far a stored basis may be from the float64 construction, relative to
+#: its largest entry, and still be that construction computed in float32. The
+#: frozen tree builds the higher orders by float32 products, a few units of
+#: float32 rounding apart; a basis of another construction is off by order one.
+FLOAT32_BASIS_TOLERANCE = 1e-5
+
+
+def float64_basis(contraction, target: str, order: int, stored, reduced: bool):
+    """The coupling basis rebuilt at float64, when the stored one is that
+    construction held at float32, and ``None`` otherwise, including when the
+    two are equal.
+
+    A model built in float32 holds its bases at float32, and keeps them so
+    when it is carried to float64. Carried as they are, that error enters the
+    conversion and the converted model computes neither the published
+    function nor the exact one. The basis is rebuilt with the frozen tree's
+    own construction, and used only when every stored entry is a float32
+    number, the zeros sit in the same places and the two agree to float32
+    precision: anything else is carried unchanged.
+    """
+    torch = importlib.import_module("torch")
+    values = stored.detach().cpu().double()
+    if not torch.equal(values, values.float().double()):
+        return None
+    construction = importlib.import_module("mace.tools.cg")
+    exact = construction.U_matrix_real(
+        irreps_in=contraction.coupling_irreps,
+        irreps_out=target,
+        correlation=order,
+        use_cueq_cg=reduced,
+        dtype=torch.float64,
+    )[-1]
+    if exact.shape != values.shape:
+        return None
+    if not torch.equal(exact == 0, values == 0):
+        return None
+    scale = float(exact.abs().max())
+    difference = float((exact - values).abs().max())
+    if difference == 0.0 or difference > FLOAT32_BASIS_TOLERANCE * scale:
+        return None
+    return exact
+
+
 def channel_irreps(irreps) -> str:
     """One channel of a declaration: its irreps without multiplicities, in the
     order the declaration has them."""
@@ -452,6 +500,15 @@ def walk_nonlinear(walker: Walk, block, prefix: str) -> None:
                 "the edge tensor product holds no weights of its own; its "
                 "coupling constants and masks are rebuilt from the irreps",
             )
+        elif key.startswith(f"{prefix}.equivariant_nonlin."):
+            # Earlier releases pickled e3nn's own gate, whose elementwise
+            # product holds an empty weight and a mask of the paths it keeps.
+            if key.endswith(".weight") and walker.state[key].numel():
+                raise ExtractionError(
+                    f"{key} holds {walker.state[key].numel()} weights, and the "
+                    f"gate this converter carries holds none."
+                )
+            walker.derive(key, "the gate holds no weights; rebuilt from the irreps")
 
 
 def walk(model, spelling: str) -> Walk:
@@ -471,18 +528,20 @@ def walk(model, spelling: str) -> Walk:
             f"the radial basis is a {type(basis).__name__}, and this converter "
             f"carries the Bessel basis only."
         )
-    walker.use("radial_embedding.bessel_fn.bessel_weights")
-    walker.derive(
-        "radial_embedding.bessel_fn.r_max", "the cutoff, carried in the configuration"
+    walker.use(
+        "radial_embedding.bessel_fn.bessel_weights",
+        "radial_embedding.bessel_fn.prefactor",
     )
     walker.derive(
-        "radial_embedding.bessel_fn.prefactor",
-        "sqrt(2 / r_max), derived from the cutoff",
+        "radial_embedding.bessel_fn.r_max", "the cutoff, carried in the configuration"
     )
     walker.op(
         "radial_basis",
         "bessel_basis",
-        {"weights": basis.bessel_weights.detach().cpu().numpy()},
+        {
+            "weights": basis.bessel_weights.detach().cpu().numpy(),
+            "prefactor": basis.prefactor.detach().cpu().numpy(),
+        },
         descriptor={
             "r_max": float(basis.r_max),
             "num_basis": int(basis.bessel_weights.numel()),
@@ -534,6 +593,18 @@ def walk(model, spelling: str) -> Walk:
         walker.use(
             *(f"pair_repulsion_fn.{name}" for name in names), "pair_repulsion_fn.p"
         )
+        for key in (
+            "pair_repulsion_fn.r_max",
+            "pair_repulsion_fn.cutoff.p",
+            "pair_repulsion_fn.cutoff.r_max",
+        ):
+            if key in walker.state:
+                walker.derive(
+                    key,
+                    "state of an earlier release of the repulsion, which the "
+                    "frozen tree's forward never reads: its envelope ends at the "
+                    "pair's covalent radii and has the order p",
+                )
         walker.op(
             "pair_repulsion",
             "zbl",
@@ -550,7 +621,7 @@ def walk(model, spelling: str) -> Walk:
             "atomic_energies",
             {"values": numpy.atleast_2d(energies).astype(numpy.float64)},
         )
-    if spelling == "scale_shift":
+    if spelling in ("scale_shift", "polar"):
         walker.use("scale_shift.scale", "scale_shift.shift")
         walker.op(
             "energy.scale_shift",
@@ -663,13 +734,17 @@ def walk(model, spelling: str) -> Walk:
                 flag = walker.state.get(f"{source}.weights_{slot}_zeroed")
                 zeroed[str(order)] = bool(flag) if flag is not None else False
             tensors = {}
+            rebuilt = []
             dimension = 2 * int(target[:-1]) + 1
             for order in range(1, correlation + 1):
                 walker.use(f"{source}.U_matrix_{order}")
                 tensors[f"weights.{order}"] = by_order[order].detach().cpu().numpy()
-                tensors[f"basis.{order}"] = basis_path_first(
-                    getattr(contraction, f"U_matrix_{order}"), order, dimension
-                )
+                basis = getattr(contraction, f"U_matrix_{order}")
+                exact = float64_basis(contraction, target, order, basis, use_reduced)
+                if exact is not None:
+                    basis = exact
+                    rebuilt.append(str(order))
+                tensors[f"basis.{order}"] = basis_path_first(basis, order, dimension)
             walker.op(
                 f"{prefix}.contraction.{target}",
                 "symmetric_contraction",
@@ -681,6 +756,7 @@ def walk(model, spelling: str) -> Walk:
                     "target": target,
                     "correlation": int(correlation),
                     "zeroed": zeroed,
+                    "basis_rebuilt_at_float64": rebuilt,
                 },
             )
         walker.linear(f"{prefix}.linear", product.linear, f"{prefix}.linear")
@@ -706,8 +782,11 @@ def walk(model, spelling: str) -> Walk:
                 f"readout {index} is a {kind}, whose weights this converter does "
                 f"not map. It maps {list(READOUTS)}."
             )
-        if kind == "LinearReadoutBlock":
+        if kind in ("LinearReadoutBlock", "LinearDipolePolarReadoutBlock"):
             walker.linear(prefix, readout.linear, f"{prefix}.linear")
+            continue
+        if kind == "NonLinearDipolePolarReadoutBlock":
+            dipole_polar_readout(walker, readout, prefix)
             continue
         walker.linear(f"{prefix}.first", readout.linear_1, f"{prefix}.linear_1")
         if kind == "NonLinearBiasReadoutBlock":
@@ -718,7 +797,194 @@ def walk(model, spelling: str) -> Walk:
         acts = getattr(readout.non_linearity, "acts", [])
         gate = [getattr(act, "f", act).__name__ for act in acts]
         walker.ops[f"{prefix}.first"]["descriptor"]["gate"] = gate[0] if gate else None
+    if spelling == "polar":
+        walk_polar(walker, model)
+    if spelling == "dielectric":
+        walk_dielectric(walker, model)
     return walker
+
+
+def dipole_polar_readout(walker: Walk, readout, prefix: str) -> None:
+    """The dielectric model's gated readout: its two linears, and the gate's
+    sections, scalars, gates and gated, as the descriptor of the first."""
+    walker.linear(f"{prefix}.first", readout.linear_1, f"{prefix}.linear_1")
+    walker.linear(f"{prefix}.second", readout.linear_2, f"{prefix}.linear_2")
+    gate = readout.equivariant_nonlin
+    walker.ops[f"{prefix}.first"]["descriptor"]["gate_sections"] = {
+        "scalars": str(gate.irreps_scalars),
+        "gates": str(gate.irreps_gates),
+        "gated": str(gate.irreps_gated),
+    }
+    # Pickled under a second name too, the same gate.
+    for key in list(walker.state):
+        if key.startswith(
+            (f"{prefix}.equivariant_nonlin.", f"{prefix}.non_linearity.")
+        ):
+            if key.endswith(".weight") and walker.state[key].numel():
+                raise ExtractionError(
+                    f"{key} holds {walker.state[key].numel()} weights, and the "
+                    f"gate this converter carries holds none."
+                )
+            walker.derive(key, "the gate holds no weights; rebuilt from the irreps")
+
+
+def walk_dielectric(walker: Walk, model) -> None:
+    """The constants beside the dielectric model's readouts.
+
+    The means and deviations are written when the model is built and never
+    read by its forward; the change of basis is the fixed map from spherical
+    to Cartesian polarizabilities.
+    """
+    torch = importlib.import_module("torch")
+    for name in (
+        "dipole_mean",
+        "dipole_std",
+        "polarizability_mean",
+        "polarizability_std",
+    ):
+        walker.derive(name, "recorded at construction and never read by the forward")
+    fixed = importlib.import_module("mace.tools.torch_tools").get_change_of_basis()
+    if not torch.allclose(
+        model.change_of_basis.double(), fixed.double(), atol=1e-12, rtol=0
+    ):
+        raise ExtractionError(
+            "the model's change of basis is not the fixed spherical to Cartesian "
+            "map, and v1 applies that map."
+        )
+    walker.derive("change_of_basis", "the fixed spherical to Cartesian map")
+
+
+def sparse_product(walker: Walk, name: str, product, prefix: str) -> None:
+    """A channel-pair product, one block per path with its normalization
+    folded in, keyed by where its two inputs start: ``path.<first>.<second>``,
+    each ``[multiplicity of the first, multiplicity of the second]``."""
+    if not bool((product.output_mask == 1).all()):
+        raise ExtractionError(
+            f"{prefix} masks some of its outputs, and the product this carries "
+            f"reaches every one."
+        )
+    walker.use(f"{prefix}.weight")
+    walker.derive(f"{prefix}.output_mask", "every output is reached")
+    flat = product.weight.detach().cpu().double()
+    tensors = {}
+    for meta in product._path_meta:
+        first, second = int(meta[0]), int(meta[2])
+        start, stop, weight = int(meta[6]), int(meta[7]), float(meta[8])
+        rows, columns = int(meta[10]), int(meta[11])
+        block = flat[start:stop].reshape(rows, columns) * weight
+        tensors[f"path.{first}.{second}"] = block.numpy()
+    walker.op(
+        name,
+        "sparse_product",
+        tensors,
+        descriptor={
+            "irreps_in1": str(product.irreps_in1),
+            "irreps_in2": str(product.irreps_in2),
+            "irreps_out": str(product.irreps_out),
+        },
+    )
+
+
+def bias_readout(walker: Walk, name: str, readout, prefix: str) -> None:
+    """Linear, gate, biased linear, gate, biased linear, as three linears."""
+    walker.linear(f"{name}.first", readout.linear_1, f"{prefix}.linear_1")
+    walker.linear(f"{name}.middle", readout.linear_mid, f"{prefix}.linear_mid")
+    walker.linear(f"{name}.last", readout.linear_2, f"{prefix}.linear_2")
+    for key in list(walker.state):
+        if key.startswith(f"{prefix}.equivariant_nonlin."):
+            if key.endswith(".weight") and walker.state[key].numel():
+                raise ExtractionError(
+                    f"{key} holds {walker.state[key].numel()} weights, and the "
+                    f"gate this converter carries holds none."
+                )
+            walker.derive(key, "the gate holds no weights; rebuilt from the irreps")
+
+
+def walk_polar(walker: Walk, model) -> None:
+    """The charge-aware half: the source maps, the layer mixer, the Fukui
+    readout, every field update and the local electron energy.
+
+    The long-range solver's own buffers are constants of its configuration,
+    rebuilt from it, and so is the per-component feature normalization.
+    """
+    for index, source in enumerate(model.lr_source_maps):
+        prefix = f"lr_source_maps.{index}"
+        walker.linear(f"source_maps.{index}", source.linear, f"{prefix}.linear")
+    for index, linear in enumerate(model.layer_feature_mixer.linears):
+        prefix = f"layer_feature_mixer.linears.{index}"
+        walker.linear(f"layer_mixer.{index}", linear, prefix)
+    bias_readout(walker, "fukui_readout", model.fukui_source_map, "fukui_source_map")
+    for index, update in enumerate(model.field_dependent_charges_maps):
+        prefix = f"field_dependent_charges_maps.{index}"
+        name = f"updates.{index}"
+        if float(update.field_norm_factor) != 1.0:
+            raise ExtractionError(
+                f"{prefix} divides its field by {float(update.field_norm_factor)}, "
+                f"and the update this converter carries divides by one."
+            )
+        walker.derive(f"{prefix}.field_norm_factor", "one, which divides by nothing")
+        embedding = update.potential_embedding
+        for target, source in (
+            ("from_potential", "potential_linear"),
+            ("from_features", "node_feats_linear"),
+            ("from_density", "charge_embedding"),
+        ):
+            walker.linear(
+                f"{name}.{target}",
+                getattr(embedding, source),
+                f"{prefix}.potential_embedding.{source}",
+            )
+        walker.linear(
+            f"{name}.element_embedding",
+            update.source_embedding,
+            f"{prefix}.source_embedding",
+        )
+        sparse_product(
+            walker, f"{name}.products", update.dot_products, f"{prefix}.dot_products"
+        )
+        layer_norm_mlp(
+            walker, f"{name}.mlp", update.nonlinearity, f"{prefix}.nonlinearity"
+        )
+        sparse_product(walker, f"{name}.modulation", update.tp_out, f"{prefix}.tp_out")
+        bias_readout(walker, f"{name}.readout", update.readout, f"{prefix}.readout")
+    energy = model.local_electron_energy
+    prefix = "local_electron_energy"
+    walker.linear(
+        "electron_energy.from_density", energy.linear_up_q, f"{prefix}.linear_up_q"
+    )
+    walker.linear(
+        "electron_energy.from_potential", energy.linear_up_v, f"{prefix}.linear_up_v"
+    )
+    sparse_product(
+        walker,
+        "electron_energy.density_products",
+        energy.dot_products_q,
+        f"{prefix}.dot_products_q",
+    )
+    sparse_product(
+        walker,
+        "electron_energy.potential_products",
+        energy.dot_products_v,
+        f"{prefix}.dot_products_v",
+    )
+    layer_norm_mlp(walker, "electron_energy.mlp", energy.mlp, f"{prefix}.mlp")
+    for key in list(walker.state):
+        if key.startswith(
+            (
+                "electric_potential_descriptor.",
+                "coulomb_energy.",
+                "external_field_contribution.",
+            )
+        ):
+            walker.derive(
+                key,
+                "a constant of the long-range solver, rebuilt from its configuration",
+            )
+    walker.derive("kspace_cutoff", "carried in the configuration as kspace_cutoff")
+    walker.derive(
+        "field_feature_norms",
+        "the per-order normalization of the configuration, repeated per component",
+    )
 
 
 # ---------------------------------------------------------------------------
