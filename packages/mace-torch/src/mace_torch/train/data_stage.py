@@ -21,6 +21,7 @@ from pathlib import Path
 
 from mace_core.config.data import DataConfig, HeadDataConfig
 from mace_core.config.e0s import E0sTable
+from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data import (
@@ -221,7 +222,7 @@ def run_data_stage(
 
     specs = target_specs(requested)
     head_names = tuple(heads)
-    graph_inputs = graph_inputs_of(config.model.model)
+    graph_inputs = graph_inputs_of(config.model)
 
     augmentations = build_augmentations(
         [(spec.name, spec.settings) for spec in config.data.augmentations]
@@ -276,25 +277,31 @@ def run_data_stage(
     )
 
 
-def graph_inputs_of(model: str) -> tuple[str, ...]:
-    """The inputs a registered model reads, per structure or per atom.
+def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
+    """The inputs a model reads, per structure or per atom.
 
-    Written into every graph built for it, from the file or from their
-    defaults, and into no other model's, which reads none.
+    The charge-aware, dipole and magnetic models', and the ones declared as
+    embedded features. Written into every graph built for it, from the file or
+    from their defaults.
     """
-    if model == "polar":
+    inputs: tuple[str, ...] = ()
+    if model.model == "polar":
         from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS
 
-        return POLAR_GRAPH_INPUTS
-    if model in ("dipole", "dielectric"):
+        inputs = POLAR_GRAPH_INPUTS
+    elif model.model in ("dipole", "dielectric"):
         from mace_torch.models.dipoles import DIPOLE_GRAPH_INPUTS
 
-        return DIPOLE_GRAPH_INPUTS["fixed" if model == "dipole" else "predicted"]
-    if model == "magnetic":
+        inputs = DIPOLE_GRAPH_INPUTS[
+            "fixed" if model.model == "dipole" else "predicted"
+        ]
+    elif model.model == "magnetic":
         from mace_torch.models.magnetic import MAGNETIC_GRAPH_INPUTS
 
-        return MAGNETIC_GRAPH_INPUTS
-    return ()
+        inputs = MAGNETIC_GRAPH_INPUTS
+    return inputs + tuple(
+        feature.name for feature in model.graph_features if feature.name not in inputs
+    )
 
 
 def _of_head(items: Sequence[Configuration], head: str) -> list[Configuration]:
@@ -608,5 +615,4 @@ def _evaluation_loader(
         float_dtype=precision.model,
         num_workers=config.data.num_workers,
         pin_memory=config.data.pin_memory,
-        seed=config.runtime.seed if shuffle else None,
     )

@@ -152,6 +152,20 @@ def test_the_polar_model_is_built_by_its_registry_name(tmp_path):
 
 
 @fp64_only
+def test_a_polar_model_builds_the_biased_readout_it_is_asked_for(tmp_path):
+    """MACE-Polar M and L read their energy out through it."""
+    config = polar_configuration(tmp_path)
+    readout = config.model.readout.model_copy(update={"bias": True})
+    _, model = built(
+        config.model_copy(
+            update={"model": config.model.model_copy(update={"readout": readout})}
+        )
+    )
+    head = model.model.get_submodule("backbone.outputs.heads.energy")
+    assert head.readouts[-1].middle is not None
+
+
+@fp64_only
 def test_a_polar_model_needs_its_long_range_section(tmp_path):
     config = polar_configuration(tmp_path)
     config = config.model_copy(

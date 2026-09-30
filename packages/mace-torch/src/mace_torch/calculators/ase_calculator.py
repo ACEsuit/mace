@@ -297,7 +297,7 @@ class MACECalculator(Calculator):
                 f"results for all of them."
             )
         self.observables = declared.pop()
-        inputs = {graph_inputs_of(model.config.model.model) for model in self.models}
+        inputs = {graph_inputs_of(model.config.model) for model in self.models}
         if len(inputs) != 1:
             raise ValueError(
                 "the committee mixes models that read different inputs, and one "

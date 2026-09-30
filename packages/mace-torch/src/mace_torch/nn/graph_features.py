@@ -11,6 +11,7 @@ kinds listed, rather than a key that quietly does nothing.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -37,6 +38,10 @@ class FeatureSpec:
         input_dim: How many components, for a continuous feature. An external
             field has three.
         level: Whether the value is per structure or already per atom.
+        offset: Added to a categorical value before it is used as a label, so
+            a range that starts below zero indexes from zero: a total charge
+            from -100 to 100 with an offset of 100 takes labels 0 to 200.
+        use_bias: Whether a continuous feature's two linear maps carry biases.
     """
 
     name: str
@@ -45,6 +50,8 @@ class FeatureSpec:
     num_classes: int = 0
     input_dim: int = 1
     level: FeatureLevel = "graph"
+    offset: int = 0
+    use_bias: bool = True
 
     def __post_init__(self) -> None:
         if self.kind == "categorical" and self.num_classes <= 0:
@@ -64,7 +71,9 @@ class GraphFeatureEmbedding(nn.Module):
 
     The result is added to the scalar channels of the node features rather than
     concatenated onto them, so the node declaration does not change with the
-    number of features declared.
+    number of features declared. The node features are flat and grouped by
+    irrep, so their scalars are the leading ``num_features * num_scalars``
+    columns.
 
     Args:
         specs: The features to embed.
@@ -103,9 +112,19 @@ class GraphFeatureEmbedding(nn.Module):
                 )
             else:
                 embedders[spec.name] = nn.Sequential(
-                    nn.Linear(spec.input_dim, spec.embedding_dim, dtype=dtype),
+                    nn.Linear(
+                        spec.input_dim,
+                        spec.embedding_dim,
+                        bias=spec.use_bias,
+                        dtype=dtype,
+                    ),
                     nn.SiLU(),
-                    nn.Linear(spec.embedding_dim, spec.embedding_dim, dtype=dtype),
+                    nn.Linear(
+                        spec.embedding_dim,
+                        spec.embedding_dim,
+                        bias=spec.use_bias,
+                        dtype=dtype,
+                    ),
                 )
             total += spec.embedding_dim
         self.embedders = nn.ModuleDict(embedders)
@@ -118,8 +137,12 @@ class GraphFeatureEmbedding(nn.Module):
 
         Args:
             graph: The flat dict, read only.
-            features: ``[n_atoms, width]``, flat and grouped by irrep.
+            features: ``[n_atoms, dimension]``, flat and grouped by irrep.
         """
+        return self.add_to(features, self.embed(graph, features.dtype))
+
+    def embed(self, graph: Mapping[str, Any], dtype: torch.dtype) -> Tensor:
+        """``[n_atoms, num_features * num_scalars]``: what is added."""
         batch = graph["batch"]
         pieces = []
         for spec in self.specs:
@@ -131,15 +154,47 @@ class GraphFeatureEmbedding(nn.Module):
                 )
             value = graph[spec.name]
             if spec.kind == "categorical":
-                embedded = self.embedders[spec.name](value.long().reshape(-1))
+                embedded = self.embedders[spec.name](
+                    (value + spec.offset).long().reshape(-1)
+                )
             else:
                 embedded = self.embedders[spec.name](
-                    value.reshape(-1, spec.input_dim).to(features.dtype)
+                    value.reshape(-1, spec.input_dim).to(dtype)
                 )
             pieces.append(embedded if spec.level == "node" else embedded[batch])
+        return self.project(torch.cat(pieces, dim=-1))
 
-        projected = self.project(torch.cat(pieces, dim=-1))
-        addition = projected.reshape(-1, self.num_features, self.num_scalars)
-        updated = features.clone()
-        updated[..., : self.num_scalars] = updated[..., : self.num_scalars] + addition
-        return updated
+    def add_to(self, features: Tensor, addition: Tensor) -> Tensor:
+        return torch.cat(
+            [features[:, : self.width] + addition, features[:, self.width :]], dim=-1
+        )
+
+    def to_canonical(self) -> dict[str, Tensor]:
+        """Every embedder's and the projection's parameters, by their path."""
+        return {name: value.detach() for name, value in self.named_parameters()}
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        with torch.no_grad():
+            for name, value in self.named_parameters():
+                value.copy_(state[name])
+
+    def initialize_weights(self, seed: int) -> None:
+        """A standard normal for each label's embedding, and the usual uniform
+        draw within ``1 / sqrt(fan_in)`` for each linear map."""
+        with torch.no_grad():
+            for index, (_, module) in enumerate(self.named_modules()):
+                generator = torch.Generator().manual_seed(seed + index)
+                if isinstance(module, nn.Embedding):
+                    draw = torch.randn(
+                        module.weight.shape, generator=generator, dtype=torch.float64
+                    )
+                    module.weight.copy_(draw.to(module.weight.dtype))
+                elif isinstance(module, nn.Linear):
+                    bound = 1.0 / math.sqrt(module.in_features)
+                    for value in (module.weight, module.bias):
+                        if value is None:
+                            continue
+                        draw = torch.rand(
+                            value.shape, generator=generator, dtype=torch.float64
+                        )
+                        value.copy_(((2 * draw - 1) * bound).to(value.dtype))

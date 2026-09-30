@@ -32,6 +32,7 @@ from torch import Tensor, nn
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.outputs import ENERGY_EXTRA_ROWS, MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
+from mace_torch.nn.graph_features import FeatureSpec
 from mace_torch.nn.radial import ZBLBasis
 
 __all__ = ["MACEModel"]
@@ -91,6 +92,12 @@ class MACEModel(nn.Module):
         apply_cutoff: Whether the radial basis carries the cutoff envelope;
             see the backbone.
         radial_hidden: The radial networks' hidden widths.
+        graph_features: Inputs embedded beside the elements; see the
+            backbone.
+        readout_last_only: Read out only the last layer.
+        readout_biased: The frozen tree's biased readout on the last layer.
+        readout_from_embedding: Also read an energy out of the node embedding,
+            before the first interaction.
         element_agnostic_product: One set of product weights for all
             elements; see the backbone.
         edge_axes: The axis order the spherical harmonics read; see the
@@ -119,6 +126,10 @@ class MACEModel(nn.Module):
         distance_transform: Literal["none", "agnesi", "soft"] = "none",
         apply_cutoff: bool = True,
         radial_hidden: Sequence[int] = (64, 64, 64),
+        graph_features: Sequence[FeatureSpec] = (),
+        readout_last_only: bool = False,
+        readout_biased: bool = False,
+        readout_from_embedding: bool = False,
         node_inputs: Sequence[InputSpec] = (),
         readout_hidden: int | str = 16,
         num_heads: int = 1,
@@ -151,6 +162,7 @@ class MACEModel(nn.Module):
                 distance_transform=distance_transform,
                 apply_cutoff=apply_cutoff,
                 radial_hidden=radial_hidden,
+                graph_features=graph_features,
                 precision=precision,
                 node_inputs=node_inputs,
                 last_layer_irreps=last_layer_irreps,
@@ -173,6 +185,11 @@ class MACEModel(nn.Module):
                 precision=precision,
                 readout_irreps=readout_hidden,
                 num_heads=num_heads,
+                last_only=readout_last_only,
+                biased=readout_biased,
+                embedding_irreps=(
+                    self.backbone.embedding_irreps if readout_from_embedding else None
+                ),
             )
             self.repulsion = (
                 ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None
@@ -204,4 +221,9 @@ class MACEModel(nn.Module):
                 graph["atomic_numbers"],
                 graph["edge_index"],
             )
-        return self.outputs(graph, features, repulsion)
+        embedding = (
+            self.backbone.embedding(graph)
+            if self.outputs.embedding_readout is not None
+            else None
+        )
+        return self.outputs(graph, features, repulsion, embedding)
