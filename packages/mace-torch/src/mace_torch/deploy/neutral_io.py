@@ -50,6 +50,7 @@ from mace_core.weights.neutral_format import NeutralArtifact, read_neutral
 from torch import Tensor
 
 from mace_torch import __version__
+from mace_torch.electrostatics.reference.gto_utils import gto_basis_kspace_cutoff
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import canonical_state, load_canonical_state
 
@@ -61,7 +62,7 @@ __all__ = [
 ]
 
 #: The model spelling each family of artifact becomes.
-_SPELLINGS = {"plain": "plain", "scale_shift": "scale_shift"}
+_SPELLINGS = {"plain": "plain", "scale_shift": "scale_shift", "polar": "polar"}
 
 #: Why a family that extracted cleanly still cannot be built here.
 _UNBUILT_FAMILIES = {
@@ -237,6 +238,9 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         model["readout"]["gate"] = "silu"
     if family == "plain":
         model["scaling"] = "none"
+    sections: dict[str, Any] = {}
+    if family == "polar":
+        model["polar"], sections["electrostatics"] = _polar_settings(take)
     unread = sorted(set(recorded) - read)
     if unread:
         raise NeutralImportError(
@@ -250,7 +254,88 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         head: {"e0s": {"table": {"values": values}}}
         for head, values in isolated_atom_energies(artifact).items()
     }
-    return ResolvedConfig.model_validate({"model": model, "data": {"heads": heads}})
+    return ResolvedConfig.model_validate(
+        {"model": model, "data": {"heads": heads}, **sections}
+    )
+
+
+#: The one field-update and field-readout block the frozen tree has, by the
+#: class name it records and the name v1 builds it under.
+_FIELD_UPDATES = {"AgnosticEmbeddedOneBodyVariableUpdate": "embedded_one_body"}
+_FIELD_READOUTS = {"OneBodyMLPFieldReadout": "one_body_mlp"}
+_POTENTIAL_EMBEDDINGS = {"AgnosticChargeBiasedLinearPotentialEmbedding"}
+
+
+def _polar_settings(take) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The charge-aware settings: the model's ``polar`` section, and the
+    ``electrostatics`` one the solver is set up from.
+
+    Three settings the frozen tree records change nothing it computes, and are
+    checked rather than carried: the potentials are returned or not, the
+    field is divided by one, and the update's nonlinearity class is discarded
+    by the block that reads it.
+    """
+    refusals = []
+    if not take("keep_last_layer_irreps"):
+        refusals.append(
+            "keep_last_layer_irreps is False, and the charge-aware model reads "
+            "its dipoles off the last layer's degree one features"
+        )
+    take("return_electrostatic_potentials")
+    if float(take("field_norm_factor")) != 1.0:
+        refusals.append("field_norm_factor is not one, and v1 divides by one")
+    update = take("fixedpoint_update_config") or {}
+    readout = take("field_readout_config") or {}
+    kind = update.get("type", "AgnosticEmbeddedOneBodyVariableUpdate")
+    embedding = update.get(
+        "potential_embedding_cls", "AgnosticChargeBiasedLinearPotentialEmbedding"
+    )
+    reading = readout.get("type", "OneBodyMLPFieldReadout")
+    for what, name, known in (
+        ("field update", kind, _FIELD_UPDATES),
+        ("potential embedding", embedding, _POTENTIAL_EMBEDDINGS),
+        ("field readout", reading, _FIELD_READOUTS),
+    ):
+        if name not in known:
+            refusals.append(f"the {what} is {name!r}, and v1 builds {sorted(known)}")
+    if refusals:
+        raise NeutralImportError(
+            "the artifact records a charge-aware model v1 cannot build: "
+            + "; ".join(refusals)
+            + "."
+        )
+    polar = {
+        "multipole_max_l": int(take("atomic_multipoles_max_l")),
+        "multipole_width": float(take("atomic_multipoles_smearing_width")),
+        "feature_max_l": int(take("field_feature_max_l")),
+        "feature_widths": [float(width) for width in take("field_feature_widths")],
+        "feature_norms": [float(norm) for norm in take("field_feature_norms")],
+        "num_recursion_steps": int(take("num_recursion_steps")),
+        "feature_self_interaction": bool(take("field_si")),
+        "energy_self_interaction": bool(take("include_electrostatic_self_interaction")),
+        "add_local_electron_energy": bool(take("add_local_electron_energy")),
+        "quadrupole_feature_corrections": bool(take("quadrupole_feature_corrections")),
+        "field_update": _FIELD_UPDATES[kind],
+        "field_readout": _FIELD_READOUTS[reading],
+    }
+    # The factor that gives the cutoff the source sums to. The frozen tree
+    # records a factor and sums to a stored cutoff, and the two disagree on
+    # the published models: they hold the cutoff of a factor of one.
+    take("kspace_cutoff_factor")
+    heuristic = gto_basis_kspace_cutoff(
+        [polar["multipole_width"], *polar["feature_widths"]],
+        max(polar["multipole_max_l"], polar["feature_max_l"]),
+    )
+    electrostatics = {
+        "enabled": True,
+        "kspace_cutoff_factor": float(take("kspace_cutoff")) / heuristic,
+        # A molecule summed in real space and every other structure
+        # periodically, which is what the frozen tree gives a structure
+        # evaluated alone. It decides per batch instead, and boxes a molecule
+        # batched with anything periodic.
+        "periodicity_profile": "per_structure",
+    }
+    return polar, electrostatics
 
 
 def isolated_atom_energies(artifact: NeutralArtifact) -> dict[str, dict[int, float]]:
@@ -493,6 +578,8 @@ def _state(
             }
         elif path == f"{outputs}embedding_readout":
             state[path] = _linear(artifact, "embedding_readout", tensors)
+        elif path.removeprefix("backbone.") in ops and path.startswith("backbone."):
+            state[path] = _polar_op(artifact, engine, path, tensors)
         elif path.startswith(f"{outputs}heads.energy.readouts."):
             state[path] = _linear(
                 artifact,
@@ -502,6 +589,51 @@ def _state(
         else:
             raise NeutralImportError(f"the model holds {path}, which no op fills.")
     return state
+
+
+def _polar_op(
+    artifact: NeutralArtifact, engine, path: str, expected: dict[str, Tensor]
+) -> dict[str, Tensor]:
+    """One op of the charge-aware half, by the kind the artifact records."""
+    op = path.removeprefix("backbone.")
+    kind = artifact.sidecar.ops[op].op_kind
+    if kind == "linear":
+        return _linear(artifact, op, expected)
+    if kind == "layer_norm_mlp":
+        return {
+            name: _as(artifact.tensor(op, name), value)
+            for name, value in expected.items()
+        }
+    if kind == "sparse_product":
+        return {"weight": _sparse(artifact, op, engine.get_submodule(path), expected)}
+    raise NeutralImportError(f"the model holds {path}, which a {kind} op cannot fill.")
+
+
+def _sparse(artifact: NeutralArtifact, op: str, module, expected) -> Tensor:
+    """A channel-pair product's path blocks, in the order the model holds them.
+
+    The invariant products hold one block per pair of input terms, the
+    modulation one per term of its first input against the scalars.
+    """
+    blocks = {
+        name: artifact.tensor(op, name) for name in artifact.sidecar.ops[op].tensors
+    }
+    if hasattr(module, "paths"):
+        order = [f"path.{left}.{right}" for _, _, left, right, _ in module.paths]
+    else:
+        order, offset = [], 0
+        for multiplicity, dimension in module.spans:
+            order.append(f"path.{offset}.0")
+            offset += multiplicity * dimension
+    missing = sorted(set(order) - set(blocks))
+    extra = sorted(set(blocks) - set(order))
+    if missing or extra:
+        raise NeutralImportError(
+            f"{op} holds the paths {sorted(blocks)} and the model's product "
+            f"{order}: the artifact misses {missing} and adds {extra}."
+        )
+    flat = np.concatenate([blocks[name].reshape(-1) for name in order])
+    return _as(flat, expected["weight"])
 
 
 def _energy_constants(artifact: NeutralArtifact, expected: dict[str, Tensor]):

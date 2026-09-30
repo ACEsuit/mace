@@ -274,7 +274,6 @@ def test_a_source_that_recorded_its_heads_says_so(converted):
 UNSUPPORTED = (
     ("mace.modules.models", "AtomicDipolesMACE"),
     ("mace.modules.models", "EnergyDipolesMACE"),
-    ("mace.modules.extensions", "PolarMACE"),
     ("mace.modules.extensions", "MACELES"),
     ("mace.modules.extensions", "MagneticMACE"),
     ("mace.modules.extensions", "MagneticScaleShiftMACE"),
@@ -291,6 +290,15 @@ def test_each_unsupported_class_is_refused_by_name(module, name):
     cls = getattr(importlib.import_module(module), name)
     with pytest.raises(EXTRACTOR["ExtractionError"], match=name):
         EXTRACTOR["classify"](cls.__new__(cls))
+
+
+def test_the_charge_aware_class_is_the_only_one_taken_off_the_refusals():
+    """It converts onto the charge-aware model; the six others still wait for
+    theirs."""
+    from mace.modules.extensions import PolarMACE
+
+    assert EXTRACTOR["classify"](PolarMACE.__new__(PolarMACE)) == "polar"
+    assert sorted(EXTRACTOR["REFUSED"]) == sorted(name for _, name in UNSUPPORTED)
 
 
 def test_a_subclass_of_a_supported_class_is_refused():

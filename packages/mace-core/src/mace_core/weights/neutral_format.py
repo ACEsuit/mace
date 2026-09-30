@@ -18,8 +18,9 @@ op naming a tensor the file lacks, is refused on read.
   version of the package that pickled it and of the converter, and whether the
   source recorded its heads at all.
 * ``family``: what kind of model it is, in this format's own words: ``plain``
-  (an energy model with no scale and shift), ``scale_shift`` (one with them) or
-  ``dielectric`` (dipoles and polarizabilities). A reader decides what to build
+  (an energy model with no scale and shift), ``scale_shift`` (one with them),
+  ``dielectric`` (dipoles and polarizabilities) or ``polar`` (an energy model
+  with a self-consistent charge density). A reader decides what to build
   from this and never from the source's class name.
 * ``config``: everything it takes to rebuild the model, as the source recorded
   it, with classes and irreps as their names and arrays as lists.
@@ -53,6 +54,14 @@ embedded beside the elements: ``embedders.<name>.weight`` for a categorical
 input's table, ``embedders.<name>.<layer>.weight`` and ``.bias`` for a
 continuous input's two maps, and ``project.0.weight`` for the projection of
 their concatenation, in the order the configuration declares them.
+
+A ``sparse_product`` is a product of two channel sets, path by path. Each path
+is a tensor ``path.<first>.<second>``, keyed by where its two inputs start, of
+shape ``[multiplicity of the first, multiplicity of the second]``, with its
+normalization folded in. A ``polar`` artifact carries these for its field
+updates and its local electron energy, beside ``source_maps.<i>``,
+``layer_mixer.<i>``, ``fukui_readout.{first,middle,last}``, ``updates.<i>.*`` and
+``electron_energy.*``.
 
 A ``layer_norm_mlp`` is linear, layer norm and SiLU, repeated, with a plain
 linear last. Its tensors are named ``<layer>.weight`` and ``<layer>.bias`` by
@@ -108,6 +117,7 @@ OpKind = Literal[
     "agnesi_transform",
     "soft_transform",
     "graph_feature_embedding",
+    "sparse_product",
     "symmetric_contraction",
     "interaction",
     "atomic_energies",
@@ -183,7 +193,7 @@ class NeutralSidecar(_Strict):
     format: Literal["mace-neutral"]
     version: Literal[1]
     provenance: Provenance
-    family: Literal["plain", "scale_shift", "dielectric"]
+    family: Literal["plain", "scale_shift", "dielectric", "polar"]
     config: dict[str, Any]
     heads: tuple[str, ...]
     dtype: Literal["float32", "float64"]

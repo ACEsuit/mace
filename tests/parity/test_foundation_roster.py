@@ -68,6 +68,7 @@ ROSTER = {
     )},
     **{f"off-{key}": ("mace_off_urls", key) for key in ("small", "medium", "large")},
     "omol": ("omol", "extra_large"),
+    **{key: ("polar_model_urls", key) for key in ("polar-1-s", "polar-1-m", "polar-1-l")},
 }
 
 #: Roster artifacts the converter does not carry yet, and what it stops at.
@@ -91,7 +92,7 @@ def artifact_path(name: str) -> Path:
     if table == "mace_mp_urls" and key == "medium-mpa-0":
         return fa.REPO_ROOT / fa.TRACKED_MPA0
     base = os.path.basename(_url(name))
-    if table == "mace_mp_urls":
+    if table in ("mace_mp_urls", "polar_model_urls"):
         base = "".join(c for c in base if c.isalnum() or c == "_")
     path = Path(foundations_models.get_cache_dir()) / base.split("?")[0]
     if path.is_file():
@@ -100,6 +101,8 @@ def artifact_path(name: str) -> Path:
         pytest.skip(f"{name} is not cached, and downloads are opt-in")
     if table == "mace_mp_urls":
         return Path(foundations_models.download_mace_mp_checkpoint(key))
+    if table == "polar_model_urls":
+        return Path(foundations_models.download_mace_polar_checkpoint(key))
     loader = foundations_models.mace_off if table == "mace_off_urls" else (
         foundations_models.mace_omol
     )
@@ -109,6 +112,9 @@ def artifact_path(name: str) -> Path:
 
 def _param(name: str):
     marks = [] if name == "mp-medium-mpa-0" else [pytest.mark.network]
+    if name.startswith("polar-"):
+        # The frozen tree unpickles these through graph_longrange.
+        marks.append(pytest.mark.polar)
     if name in NOT_YET:
         marks.append(
             pytest.mark.xfail(
@@ -178,6 +184,10 @@ def exact_rebuild(path: Path) -> torch.nn.Module:
             if float((state[key] - stored).abs().max()) <= tolerance * scale:
                 continue
         state[key] = value.to(state[key].dtype) if value.is_floating_point() else value
+    if "kspace_cutoff" in state:
+        # The cutoff the forward sums to, carried rather than derived; see
+        # the converter.
+        state["kspace_cutoff"] = trained.kspace_cutoff.to(state["kspace_cutoff"].dtype)
     fresh.load_state_dict(state)
     return fresh
 
@@ -209,6 +219,28 @@ def v1_outputs(imported, atoms, head: int) -> dict[str, np.ndarray]:
     return {name: value.double().numpy() for name, value in values.items()}
 
 
+def charge_aware(path: Path) -> bool:
+    return type(legacy_model(path)).__name__ == "PolarMACE"
+
+
+def legacy_calculator(path: Path, head: str, model=None):
+    """The frozen tree's calculator, on the file or on a model already built."""
+    from mace.calculators import MACECalculator
+
+    kind = "PolarMACE" if charge_aware(path) else "MACE"
+    if model is None:
+        return MACECalculator(
+            model_paths=str(path),
+            device="cpu",
+            default_dtype="float64",
+            head=head,
+            model_type=kind,
+        )
+    return MACECalculator(
+        models=[model], device="cpu", default_dtype="float64", head=head, model_type=kind
+    )
+
+
 def legacy_outputs(calculator, atoms) -> dict[str, np.ndarray]:
     atoms = atoms.copy()
     atoms.calc = calculator
@@ -236,6 +268,11 @@ def deviations(path: Path, calculator_for) -> list[tuple[str, str, str, float, f
                 continue
             got = v1_outputs(imported, atoms, index)
             for quantity, value in legacy_outputs(calculator, atoms).items():
+                if quantity == "stress" and charge_aware(path):
+                    # The frozen tree's charge-aware stress leaves out the
+                    # long-range energy's cell dependence; v1's is checked
+                    # against a finite difference instead.
+                    continue
                 difference = float(np.abs(got[quantity] - value).max())
                 found.append(
                     (head, fixture, quantity, difference, float(np.abs(value).max()))
@@ -245,18 +282,11 @@ def deviations(path: Path, calculator_for) -> list[tuple[str, str, str, float, f
 
 @pytest.mark.parametrize("name", PARAMS)
 def test_the_conversion_is_the_model_the_artifact_describes(name, fp64):
-    from mace.calculators import MACECalculator
-
     path = artifact_path(name)
     model = exact_rebuild(path)
     exceeded = [
         entry
-        for entry in deviations(
-            path,
-            lambda head: MACECalculator(
-                models=[model], device="cpu", default_dtype="float64", head=head
-            ),
-        )
+        for entry in deviations(path, lambda head: legacy_calculator(path, head, model))
         if entry[3] > IN_PROCESS * max(entry[4], 1.0)
     ]
     assert not exceeded, exceeded
@@ -266,16 +296,9 @@ def test_the_conversion_is_the_model_the_artifact_describes(name, fp64):
 def test_the_conversion_is_the_model_as_published(name, fp64):
     """At ten digits for an artifact built in float64, and at the float32 row
     for one whose pickle computes with float32 constants."""
-    from mace.calculators import MACECalculator
-
     path = artifact_path(name)
     rounded = float32_constants(path)
-    found = deviations(
-        path,
-        lambda head: MACECalculator(
-            model_paths=str(path), device="cpu", default_dtype="float64", head=head
-        ),
-    )
+    found = deviations(path, lambda head: legacy_calculator(path, head))
 
     def allowed(largest: float) -> float:
         if rounded:
@@ -369,3 +392,44 @@ def test_mace_mp_0b_medium_computes_its_pair_radii_in_float32(fp64):
         atoms,
     )["energy"]
     assert abs(float(published - uniform)) > 1e-7
+
+
+@pytest.mark.network
+@pytest.mark.polar
+def test_the_charge_aware_conversion_reproduces_its_committed_golden(fp64, tmp_path):
+    """Through the calculator, on a checkpoint written from the conversion,
+    so the whole surface the golden pins is compared: the charges, spins,
+    densities, Fukui functions and the three energy terms beside the energy
+    and forces. At the float32 row, which is where the float32 artifact's own
+    constants put it. The stress is left out: the frozen tree's leaves out
+    the long-range energy's cell dependence."""
+    from mace_torch.calculators.ase_calculator import MACECalculator
+    from mace_torch.train import write_model
+
+    from tests.golden import harness
+    from tests.golden.targets.foundation_references import POLAR_FIXTURES
+
+    imported, _ = converted(artifact_path("polar-1-s"))
+    checkpoint = write_model(tmp_path / "polar", imported.engine, imported.metadata)
+    calculator = MACECalculator(model_paths=str(checkpoint), device="cpu")
+    snapshot = harness.snapshot_outputs(
+        calculator,
+        harness.load_fixtures(names=list(POLAR_FIXTURES)),
+        dtype="float64",
+        device="cpu",
+        backend="reference",
+    )
+    reference = harness.load_reference(
+        harness.REFERENCES_DIR / "polar_foundation_cpu_fp64.json"
+    )
+    channels = sorted(
+        {
+            channel
+            for entry in reference["fixtures"].values()
+            for channel in entry["outputs"]
+            if channel != "stress"
+        }
+    )
+    harness.compare_to_reference(
+        snapshot, reference, row=FLOAT32.name, channels=channels
+    )
