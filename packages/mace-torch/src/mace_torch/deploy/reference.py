@@ -28,6 +28,7 @@ from mace_core.elements import AtomicNumberTable
 
 from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
+from mace_torch.graph import DTYPES
 from mace_torch.physics import DerivativeEngine
 
 __all__ = [
@@ -171,6 +172,7 @@ def _evaluate(
     cutoff: float,
     head: int,
     graph_inputs: Sequence[str] = (),
+    device: str = "cpu",
 ) -> dict[str, np.ndarray]:
     cell = np.asarray(atoms.get_cell().array, dtype=np.float64)
     periodic = atoms.get_pbc()
@@ -190,8 +192,14 @@ def _evaluate(
         head=head,
         graph_inputs=graph_inputs,
     )
-    batch = collate_training([(graph, {}, {})], z_table=z_table)
-    output = engine(dict(batch.graph), compute=("forces", "stress"))
+    batch = collate_training(
+        [(graph, {}, {})], z_table=z_table, float_dtype=_float_dtype_of(engine)
+    )
+    flat = {
+        key: value.to(device) if isinstance(value, torch.Tensor) else value
+        for key, value in batch.graph.items()
+    }
+    output = engine(flat, compute=("forces", "stress"))
     values = {
         "energy": output.total_energy.detach().reshape(()),
         "forces": output.forces.detach() if output.forces is not None else None,
@@ -206,6 +214,12 @@ def _evaluate(
     }
 
 
+def _float_dtype_of(engine: DerivativeEngine) -> str:
+    """The name of the dtype the model computes in, which the batch is built at."""
+    names = {dtype: name for name, dtype in DTYPES.items()}
+    return names[next(engine.parameters()).dtype]
+
+
 def verify_against_reference(
     engine: DerivativeEngine,
     reference: str | Path,
@@ -217,11 +231,14 @@ def verify_against_reference(
     atol: float = REFERENCE_ATOL,
     rtol: float = REFERENCE_RTOL,
     graph_inputs: Sequence[str] = (),
+    device: str = "cpu",
 ) -> VerificationReport:
     """Evaluate the model on every structure of a reference and compare.
 
     ``graph_inputs`` names the per-structure inputs the model reads, taken
     from each structure's info or given their defaults, as the data path does.
+    Each structure is batched at the dtype the model computes in and moved to
+    ``device``, which is where the model has to be.
 
     Structures holding an element outside ``z_table`` are skipped and listed,
     since the model cannot evaluate them at all; if that leaves none, the
@@ -244,6 +261,7 @@ def verify_against_reference(
             cutoff=cutoff,
             head=head,
             graph_inputs=graph_inputs,
+            device=device,
         )
         deviations.extend(_compare(case.name, got, case.expected, atol, rtol))
     if not deviations:

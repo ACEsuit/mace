@@ -32,7 +32,8 @@ import numpy as np
 import pytest
 import torch
 from mace_core.data.configuration import Configuration
-from mace_core.observables import load_default_catalogue
+from mace_core.kernels.precision import PrecisionConfig
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
 from mace_torch.deploy.neutral_io import import_neutral
@@ -43,7 +44,7 @@ from tests.golden import foundation_artifacts as fa
 from tests.golden.harness import load_fixtures, tolerance
 from tests.parity.test_fm_convert_legacy import EXTRACTOR, FIXTURES, extract_here
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 
 #: The in-process bound: ten digits, relative to the largest component of
 #: the quantity on that structure.
@@ -132,10 +133,16 @@ def legacy_model(path: Path) -> torch.nn.Module:
 
 
 @functools.lru_cache(maxsize=2)
-def converted(path: Path):
+def converted(path: Path, precision: PrecisionConfig | None = None):
     with tempfile.TemporaryDirectory() as directory:
         sidecar = extract_here(path, Path(directory) / "artifact")
-        return import_neutral(sidecar, CATALOGUE), _rebuilt_bases(sidecar)
+        imported = import_neutral(sidecar, CATALOGUE, precision=precision)
+        return imported, _rebuilt_bases(sidecar)
+
+
+#: What a float32 golden is evaluated in: float32 blocks, with the sums the
+#: v1 default accumulates in float64.
+FLOAT32_PRECISION = PrecisionConfig(model="float32")
 
 
 def _rebuilt_bases(sidecar: Path) -> bool:
@@ -192,7 +199,9 @@ def exact_rebuild(path: Path) -> torch.nn.Module:
     return fresh
 
 
-def v1_outputs(imported, atoms, head: int) -> dict[str, np.ndarray]:
+def v1_outputs(imported, atoms, head: int, device: str = "cpu") -> dict[str, np.ndarray]:
+    """The model's outputs on one structure, batched at the dtype it computes
+    in and evaluated on ``device``, where the model has to be."""
     inputs = graph_inputs_of(imported.config.model)
     configuration = Configuration(
         atomic_numbers=np.asarray(atoms.get_atomic_numbers()),
@@ -208,15 +217,22 @@ def v1_outputs(imported, atoms, head: int) -> dict[str, np.ndarray]:
         head=head,
         graph_inputs=inputs,
     )
-    batch = collate_training([(graph, {}, {})], z_table=imported.z_table)
-    output = imported.engine(dict(batch.graph), compute=("forces", "stress"))
+    float_dtype = str(next(imported.engine.parameters()).dtype).removeprefix("torch.")
+    batch = collate_training(
+        [(graph, {}, {})], z_table=imported.z_table, float_dtype=float_dtype
+    )
+    flat = {
+        key: value.to(device) if isinstance(value, torch.Tensor) else value
+        for key, value in batch.graph.items()
+    }
+    output = imported.engine(flat, compute=("forces", "stress"))
     values = {
         "energy": output.total_energy.detach().reshape(()),
         "forces": output.forces.detach(),
     }
     if any(atoms.get_pbc()):
         values["stress"] = output.stress.detach().reshape(3, 3)
-    return {name: value.double().numpy() for name, value in values.items()}
+    return {name: value.double().cpu().numpy() for name, value in values.items()}
 
 
 def charge_aware(path: Path) -> bool:
@@ -315,30 +331,42 @@ GOLDENS = {
     "mp_small": "mp-small",
     "mpa0_medium": "mp-medium-mpa-0",
     "off_small": "off-small",
+    "off_medium": "off-medium",
+    "mpa0_medium_fp32": "mp-medium-mpa-0",
+    "off_medium_fp32": "off-medium",
     "mh_0": "mp-mh-0",
+    "mh_1": "mp-mh-1",
+    "omol": "omol",
 }
 
 
-@pytest.mark.parametrize(
-    "golden",
-    [
-        pytest.param(
-            golden,
-            marks=[pytest.mark.network] if fa.ARTIFACTS[golden].network else [],
-            id=golden,
-        )
-        for golden in sorted(GOLDENS)
-    ],
-)
+GOLDEN_PARAMS = [
+    pytest.param(
+        golden,
+        marks=[pytest.mark.network] if fa.ARTIFACTS[golden].network else [],
+        id=golden,
+    )
+    for golden in sorted(GOLDENS)
+]
+
+
+@pytest.mark.parametrize("golden", GOLDEN_PARAMS)
 def test_the_conversion_reproduces_the_committed_golden(golden, fp64):
+    assert_reproduces_golden(golden, "cpu")
+
+
+def assert_reproduces_golden(golden: str, device: str) -> None:
+    """At the golden's own dtype and row, or at the float32 row for an
+    artifact that holds float32 constants."""
     spec = fa.ARTIFACTS[golden]
     path = artifact_path(GOLDENS[golden])
-    imported, _ = converted(path)
+    float32 = spec.dtype == "float32"
+    imported, _ = converted(path, FLOAT32_PRECISION if float32 else None)
     heads = list(getattr(legacy_model(path), "heads", ["Default"]))
     head = spec.loader_kwargs.get("head", heads[0])
-    row = FLOAT32 if float32_constants(path) else REFERENCE
+    row = FLOAT32 if float32_constants(path) else tolerance(spec.tolerance_row)
     report = verify_against_reference(
-        imported.engine,
+        imported.engine.to(device),
         fa.REPO_ROOT / "tests" / "golden" / "references" / spec.reference,
         FIXTURES,
         z_table=imported.z_table,
@@ -347,7 +375,9 @@ def test_the_conversion_reproduces_the_committed_golden(golden, fp64):
         atol=row.atol,
         rtol=row.rtol,
         graph_inputs=graph_inputs_of(imported.config.model),
+        device=device,
     )
+    imported.engine.to("cpu")
     assert report.passed, report.describe()
 
 
