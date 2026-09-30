@@ -136,11 +136,13 @@ def load_deployed(
         }
         for head in heads
     }
-    tables = {tuple(sorted(values)) for values in e0s.values()}
+    tables = {tuple(sorted(values)) for values in e0s.values() if values}
+    if metadata.elements:
+        tables.add(tuple(sorted(int(numbers_of[s]) for s in metadata.elements)))
     if len(tables) != 1:
         raise DeployError(
-            f"{path} records energies over different elements per head: "
-            f"{sorted(tables)}. One model has one element table."
+            f"{path} records its element table as {sorted(tables)}, over its "
+            f"heads' energies and its own record, where one model has one."
         )
     z_table = AtomicNumberTable(list(tables.pop()))
 

@@ -734,4 +734,5 @@ def _metadata(config: ResolvedConfig, data: TorchDataBundle) -> ModelMetadata:
             )
             for head in data.heads
         },
+        elements=[chemical_symbols[number] for number in data.z_table.zs],
     )
