@@ -27,6 +27,7 @@ PBCHandling = Literal[
     "molecule_in_box",
     "mixed_periodic",
     "auto",
+    "per_structure",
 ]
 
 
@@ -98,6 +99,8 @@ class GTOElectrostaticEnergy(torch.nn.Module):
             return self._forward_mixed_periodic
         if self.pbc_handling == "auto":
             return self._forward_auto
+        if self.pbc_handling == "per_structure":
+            return self._forward_per_structure
         raise ValueError(f"Unsupported pbc_handling: {self.pbc_handling}")
 
     def set_pbc_handling(self, pbc_handling: PBCHandling) -> None:
@@ -354,6 +357,44 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         )
         correction_energy = torch.where(is_slab, slab_correction, correction_energy)
         return energy + correction_energy
+
+    def _forward_per_structure(
+        self,
+        k_vectors: torch.Tensor,
+        k_norm2: torch.Tensor,
+        k_vector_batch: torch.Tensor,
+        k0_mask: torch.Tensor,
+        source_feats: torch.Tensor,
+        node_positions: torch.Tensor,
+        batch: torch.Tensor,
+        volume: torch.Tensor,
+        pbc: torch.Tensor,
+    ) -> torch.Tensor:
+        """Each open structure's energy in real space, every other one's
+        periodic, independent of the batch."""
+        energy = self._forward_mixed_periodic(
+            k_vectors=k_vectors,
+            k_norm2=k_norm2,
+            k_vector_batch=k_vector_batch,
+            k0_mask=k0_mask,
+            source_feats=source_feats,
+            node_positions=node_positions,
+            batch=batch,
+            volume=volume,
+            pbc=pbc,
+        )
+        open_graphs = torch.all(torch.logical_not(pbc), dim=1)
+        index = torch.nonzero(open_graphs[batch]).reshape(-1)
+        if index.numel() == 0:
+            return energy
+        exact = self._realspace_energy(
+            source_feats=source_feats[index],
+            node_positions=node_positions[index],
+            batch=batch[index],
+        )
+        # Summed per structure up to the last open one, so padded to them all.
+        exact = torch.cat([exact, exact.new_zeros(energy.shape[0] - exact.shape[0])])
+        return torch.where(open_graphs, exact.to(energy.dtype), energy)
 
     def _forward_auto(
         self,

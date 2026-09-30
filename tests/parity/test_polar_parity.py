@@ -184,7 +184,7 @@ def with_inputs(atoms, charge, spin, field):
     return atoms
 
 
-def legacy_batch(legacy, atoms):
+def legacy_batch(legacy, atoms, *more):
     from mace import data as legacy_data
     from mace.tools import AtomicNumberTable as LegacyTable
     from mace.tools import torch_geometric
@@ -196,16 +196,20 @@ def legacy_batch(legacy, atoms):
             "external_field": "external_field",
         },
     )
-    configuration = legacy_data.config_from_atoms(
-        atoms, key_specification=keyspec, head_name="Default"
+    items = [
+        legacy_data.AtomicData.from_config(
+            legacy_data.config_from_atoms(
+                structure, key_specification=keyspec, head_name="Default"
+            ),
+            z_table=LegacyTable([int(z) for z in legacy.atomic_numbers.tolist()]),
+            cutoff=float(legacy.r_max),
+            heads=legacy.heads,
+        )
+        for structure in (atoms, *more)
+    ]
+    loader = torch_geometric.DataLoader(
+        dataset=items, batch_size=len(items), shuffle=False
     )
-    item = legacy_data.AtomicData.from_config(
-        configuration,
-        z_table=LegacyTable([int(z) for z in legacy.atomic_numbers.tolist()]),
-        cutoff=float(legacy.r_max),
-        heads=legacy.heads,
-    )
-    loader = torch_geometric.DataLoader(dataset=[item], batch_size=1, shuffle=False)
     return next(iter(loader)).to_dict()
 
 
@@ -237,11 +241,43 @@ def v1_graph(atoms, numbers, cutoff):
     }
 
 
-def evaluate(name, agnostic=True):
-    atoms, (profile, normal), inputs = CASES[name]
+def v1_batch(*graphs):
+    """Graphs from :func:`v1_graph`, joined into one batch."""
+    offsets = np.cumsum([0] + [len(graph["positions"]) for graph in graphs[:-1]])
+    joined = {
+        key: torch.cat([graph[key] for graph in graphs])
+        for key in (
+            "positions",
+            "atomic_numbers",
+            "element_index",
+            "shifts",
+            "unit_shifts",
+            "cell",
+            "pbc",
+            "head",
+            "total_charge",
+            "total_spin",
+            "external_field",
+        )
+    }
+    joined["edge_index"] = torch.cat(
+        [graph["edge_index"] + int(offset) for graph, offset in zip(graphs, offsets)],
+        dim=1,
+    )
+    joined["batch"] = torch.cat(
+        [torch.full_like(graph["batch"], index) for index, graph in enumerate(graphs)]
+    )
+    joined["num_graphs"] = len(graphs)
+    return joined
+
+
+def evaluate(name, agnostic=True, profile=None):
+    atoms, (reached, normal), inputs = CASES[name]
     atoms = with_inputs(atoms, *inputs)
     legacy = legacy_polar(agnostic)
-    model, config = convert(legacy, profile, normal)
+    if profile is not None:
+        reached, normal = profile, None
+    model, config = convert(legacy, reached, normal)
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     reference = legacy(legacy_batch(legacy, atoms), training=False, compute_force=True)
     graph = v1_graph(atoms, numbers, config["cutoff"])
@@ -264,6 +300,49 @@ def test_the_converted_model_matches_the_live_legacy_model(
     across elements, and the frozen tree's command line defaults to one per
     element."""
     _, _, _, reference, result = evaluate(name, agnostic)
+    assert_matches(reference, result)
+
+
+@pytest.mark.parametrize("name", sorted(CASES))
+def test_the_per_structure_profile_is_the_frozen_tree_on_each_structure(
+    fp64, isolated, name
+):
+    """One profile for every case, where the test above picks the one the
+    frozen tree's dispatch reaches: it sums a lone molecule in real space and
+    a crystal or a slab periodically, and so does this."""
+    _, _, _, reference, result = evaluate(name, profile="per_structure")
+    assert_matches(reference, result)
+
+
+def test_a_molecule_is_the_same_whatever_its_batch_holds(fp64, isolated):
+    """The frozen tree decides per batch: a molecule batched with a crystal is
+    put in its box and corrected, and its energy moves. Per structure, it is
+    summed in real space either way."""
+    molecule = with_inputs(*CASES["neutral molecule"][0:1], *CASES["neutral molecule"][2])
+    crystal = with_inputs(*CASES["crystal"][0:1], *CASES["crystal"][2])
+    legacy = legacy_polar()
+    model, config = convert(legacy, "per_structure", None)
+    numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
+    engine = DerivativeEngine(model, ENERGY)
+    alone = engine(v1_graph(molecule, numbers, config["cutoff"]), compute=())
+    batched = engine(
+        v1_batch(
+            v1_graph(molecule, numbers, config["cutoff"]),
+            v1_graph(crystal, numbers, config["cutoff"]),
+        ),
+        compute=(),
+    )
+    assert gap(batched.total_energy[0], alone.total_energy[0]) < 1e-12
+    reference_alone = legacy(legacy_batch(legacy, molecule), training=False)
+    reference_batched = legacy(
+        legacy_batch(legacy, molecule, crystal), training=False
+    )
+    assert gap(alone.total_energy[0], reference_alone["energy"][0]) < 1e-10
+    assert gap(batched.total_energy[1], reference_batched["energy"][1]) < 1e-10
+    assert gap(reference_batched["energy"][0], reference_alone["energy"][0]) > 1e-6
+
+
+def assert_matches(reference, result):
     extras = result.extras
     compared = {
         "energy": (reference["energy"], result.total_energy),

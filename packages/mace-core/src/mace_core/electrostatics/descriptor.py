@@ -33,8 +33,17 @@ __all__ = [
 #: ``z_slab`` is periodic along two axes with vacuum along the slab normal, and
 #: takes the slab dipole correction. ``molecular`` is periodic along none: the
 #: system sits in the box the graph builder made around it. ``partial`` is a
-#: batch that mixes those, each structure handled by its own periodicity.
-PeriodicityProfile = Literal["full_periodic", "z_slab", "molecular", "partial"]
+#: batch that mixes those, each structure handled by its own periodicity, a
+#: molecule among them in the box around it with the monopole and dipole
+#: corrections that divide by that box's volume. ``per_structure`` is the same
+#: batch with each molecule summed exactly in real space instead: its value is
+#: then the isolated molecule's, whatever else the batch holds and whatever the
+#: box. Measured on MACE-Polar S, a water cluster in its padding box is 2.1e-3 eV
+#: from its real-space energy under ``partial``, and the gap changes with the
+#: box and with the molecule's orientation.
+PeriodicityProfile = Literal[
+    "full_periodic", "z_slab", "molecular", "partial", "per_structure"
+]
 
 PERIODICITY_PROFILES: tuple[str, ...] = get_args(PeriodicityProfile)
 
