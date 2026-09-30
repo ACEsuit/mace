@@ -186,12 +186,14 @@ def test_the_nonlinear_normalization_is_live(fp64, isolated):
     assert not torch.allclose(before, legacy_energies(legacy, structures), atol=1e-6)
 
 
-#: The two settings MACE-MH-1 and MACE-OMOL add to the backbone: the cutoff
+#: The settings MACE-MH-1 and MACE-OMOL add to the backbone: the cutoff
 #: envelope multiplied into what the radial networks produce rather than into
-#: the basis, and one set of product weights for every element.
+#: the basis, one set of product weights for every element, and radial
+#: networks of other widths than the default.
 BACKBONE_SETTINGS = {
     "envelope-after-the-radial-networks": {"apply_cutoff": False},
     "element-agnostic-product": {"use_agnostic_product": True},
+    "radial-widths": {"radial_MLP": [32, 16]},
 }
 
 
