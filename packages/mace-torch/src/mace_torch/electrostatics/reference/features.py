@@ -31,6 +31,7 @@ FeaturePBCHandling = Literal[
     "molecule_in_box",
     "mixed_periodic",
     "auto",
+    "per_structure",
 ]
 
 
@@ -373,6 +374,8 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             return self._precompute_geometry_mixed_periodic
         if self.pbc_handling == "auto":
             return self._precompute_geometry_auto
+        if self.pbc_handling == "per_structure":
+            return self._precompute_geometry_per_structure
         raise ValueError(f"Unsupported pbc_handling: {self.pbc_handling}")
 
     def _select_forward_dynamic_impl(self) -> Callable:
@@ -388,6 +391,8 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             return self._forward_dynamic_mixed_periodic
         if self.pbc_handling == "auto":
             return self._forward_dynamic_auto
+        if self.pbc_handling == "per_structure":
+            return self._forward_dynamic_per_structure
         raise ValueError(f"Unsupported pbc_handling: {self.pbc_handling}")
 
     def set_pbc_handling(self, pbc_handling: FeaturePBCHandling) -> None:
@@ -647,6 +652,58 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             volume=volume,
             pbc=pbc,
         )
+
+    def _precompute_geometry_per_structure(
+        self,
+        k_vectors: torch.Tensor,
+        k_norm2: torch.Tensor,
+        k_vector_batch: torch.Tensor,
+        k0_mask: torch.Tensor,
+        node_positions: torch.Tensor,
+        batch: torch.Tensor,
+        volume: torch.Tensor,
+        pbc: torch.Tensor,
+    ) -> dict:
+        """Each open structure in real space, every other one periodic.
+
+        The periodic solve runs over the whole batch as the mixed one does,
+        and the atoms of the structures periodic along no axis are then
+        summed again in real space, on their own, which is the exact answer
+        for an isolated system. So an open structure's value does not depend
+        on what else is in its batch, nor on the box around it.
+        """
+        cache = self._precompute_geometry_mixed_periodic(
+            k_vectors=k_vectors,
+            k_norm2=k_norm2,
+            k_vector_batch=k_vector_batch,
+            k0_mask=k0_mask,
+            node_positions=node_positions,
+            batch=batch,
+            volume=volume,
+            pbc=pbc,
+        )
+        open_nodes = cache["correction_node_masks"]["is_molecule_node"]
+        index = torch.nonzero(open_nodes).reshape(-1)
+        cache["open_index"] = index
+        cache["open_positions"] = node_positions[index]
+        cache["open_batch"] = batch[index]
+        return cache
+
+    def _forward_dynamic_per_structure(
+        self, source_feats: torch.Tensor, cache: dict
+    ) -> torch.Tensor:
+        features = self._forward_dynamic_mixed_periodic(
+            source_feats=source_feats, cache=cache
+        )
+        index = cache["open_index"]
+        if index.numel() == 0:
+            return features
+        exact, _, _ = self.realspace_features(
+            source_feats=source_feats[index],
+            node_positions=cache["open_positions"],
+            batch=cache["open_batch"],
+        )
+        return features.index_copy(0, index, exact.to(features.dtype))
 
     @staticmethod
     def _require_cache_mode(cache: dict, expected_mode: str) -> None:
