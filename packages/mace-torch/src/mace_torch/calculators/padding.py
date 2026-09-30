@@ -42,7 +42,7 @@ from dataclasses import dataclass, replace
 from typing import Literal, cast
 
 import numpy as np
-from mace_core.graph import GRAPH_INPUT_DEFAULTS
+from mace_core.graph import GRAPH_INPUT_DEFAULTS, NODE_INPUT_DEFAULTS
 from mace_core.observables import RequestedOutputs
 from mace_core.outputs import (
     CORE_FIELD_NAMES,
@@ -52,8 +52,6 @@ from mace_core.outputs import (
 )
 from torch import Tensor
 
-from mace_torch.models.electrostatics import POLAR_EXTRA_ROWS
-from mace_torch.models.outputs import ENERGY_EXTRA_ROWS
 from mace_torch.physics.outputs import ENGINE_EXTRA_ROWS
 
 __all__ = [
@@ -251,24 +249,35 @@ def pad_batch(
         "pbc": np.zeros(3, dtype=bool),
         "weight": np.asarray(0.0),
         "head": np.asarray(structure["head"]),
-        # Whatever per-structure inputs the real one carries, at their
-        # defaults, since a batch holds a field for every graph or for none.
+        # Whatever inputs the real one carries, per structure and per atom, at
+        # their defaults, since a batch holds a field for every graph or for
+        # none.
         **{
             name: np.asarray(default if len(default) > 1 else default[0])
             for name, default in GRAPH_INPUT_DEFAULTS.items()
+            if name in structure
+        },
+        **{
+            name: np.full(nodes, default)
+            for name, default in NODE_INPUT_DEFAULTS.items()
             if name in structure
         },
     }
     return [dict(structure), fake], info
 
 
-def output_rows(requested: RequestedOutputs) -> dict[str, Row]:
+def output_rows(
+    requested: RequestedOutputs, extra_rows: Mapping[str, str]
+) -> dict[str, Row]:
     """What every quantity a model can return has a row for.
 
     Read off the declarations: the core fields from the output type, each
-    declared observable and derivative from its spec, and the extras from the
-    energy head, the derivative engine and the charge-aware model that add
-    them.
+    declared observable and derivative from its spec, the extras the model
+    declares as it adds them, and the derivative engine's.
+
+    The derivatives of a quantity that is not a scalar, a dipole's ``dmu_dr``,
+    have no row: their leading axis is the quantity's components, not atoms,
+    and they are taken on a batch with no padding, as the Hessian is.
     """
     rows: dict[str, Row] = dict(CORE_FIELD_ROWS)
     for spec in requested.observables:
@@ -276,16 +285,12 @@ def output_rows(requested: RequestedOutputs) -> dict[str, Row]:
             FIELD_BY_OBSERVABLE.get(spec.name, spec.name),
             "atom" if spec.per_atom else "graph",
         )
-        for request in spec.derivatives:
+        for request in spec.derivatives if spec.is_scalar else ():
             rows.setdefault(
                 spec.derivative_name(request.wrt),
                 "atom" if request.wrt == "pos" else "graph",
             )
-    for name, row in {
-        **ENERGY_EXTRA_ROWS,
-        **ENGINE_EXTRA_ROWS,
-        **POLAR_EXTRA_ROWS,
-    }.items():
+    for name, row in {**extra_rows, **ENGINE_EXTRA_ROWS}.items():
         rows.setdefault(name, cast(Row, row))
     return rows
 

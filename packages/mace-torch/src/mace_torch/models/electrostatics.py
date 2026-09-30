@@ -233,7 +233,7 @@ class PolarModel(MACEModel):
         distance_transform: Literal["none", "agnesi", "soft"] = "none",
         apply_cutoff: bool = True,
         radial_hidden: Sequence[int] = (64, 64, 64),
-        readout_hidden: int = 16,
+        readout_hidden: int | str = 16,
         readout_biased: bool = False,
         readout_last_only: bool = False,
         num_heads: int = 1,
@@ -277,7 +277,7 @@ class PolarModel(MACEModel):
             readout_biased=readout_biased,
             readout_last_only=readout_last_only,
             num_heads=num_heads,
-            full_last_layer=True,
+            last_layer_irreps=hidden_irreps,
             element_agnostic_product=element_agnostic_product,
             residual_first_layer=residual_first_layer,
             learned_density_first_layer=learned_density_first_layer,
@@ -405,6 +405,10 @@ class PolarModel(MACEModel):
         correction = torch.zeros_like(density)
         correction[:, :, 0] = fukui * (spin_totals - totals)
         return density + correction, fukui
+
+    @property
+    def extra_rows(self) -> dict[str, str]:
+        return {**super().extra_rows, **POLAR_EXTRA_ROWS}
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The energy, its parts, and the density it came from.

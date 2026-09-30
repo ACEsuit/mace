@@ -43,6 +43,7 @@ from mace_torch.finetune.foundation import Foundation
 from mace_torch.finetune.transfer import readout_sources, transfer_foundation
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
+from mace_torch.models.dipoles import DipoleModel, DipoleSettings
 from mace_torch.models.electrostatics import PolarModel, PolarSettings
 from mace_torch.nn.graph_features import FeatureSpec
 from mace_torch.physics import DerivativeEngine
@@ -67,9 +68,17 @@ DEFAULT_HIDDEN_IRREPS = "0e+1o"
 #: trained model rather than a preference.
 _ZBL_INSIDE = {"scale_shift": True, "plain": False}
 
+#: The two response models, which read out a dipole and no energy: fixed
+#: charges and a dipole alone, or predicted charges, a dipole and a
+#: polarizability.
+_RESPONSE_MODELS = {
+    "dipole": DipoleSettings(charges="fixed"),
+    "dielectric": DipoleSettings(charges="predicted", polarizability=True),
+}
+
 #: Every registered model name. The charge-aware one scales and shifts its
 #: local energy as the scale-shift model does.
-_MODELS = frozenset({*_ZBL_INSIDE, "polar"})
+_MODELS = frozenset({*_ZBL_INSIDE, "polar", *_RESPONSE_MODELS})
 
 #: The model settings this stage builds one way only, and what that way is.
 #: The configuration can name others, since the schema covers every setting a
@@ -288,11 +297,26 @@ def build_model(
         raise ModelStageError(
             f"{config.model.model!r} is not a registered model. The choices are "
             f"{sorted(_MODELS)}: the two energy models differ in where the "
-            f"short-range repulsion is added, and `polar` carries a "
-            f"self-consistent density and a long-range term."
+            f"short-range repulsion is added, `polar` carries a "
+            f"self-consistent density and a long-range term, and `dipole` and "
+            f"`dielectric` read out a dipole and no energy."
         )
     _refuse_unbuilt(config)
     _check_electrostatics(config)
+    if config.model.model in _RESPONSE_MODELS:
+        model = _response_model(
+            config,
+            requested,
+            z_table=z_table,
+            statistics=statistics,
+            precision=precision,
+        )
+        if initialize:
+            initialize_model_weights(model, config.runtime.seed)
+        engine = DerivativeEngine(
+            model, None, inputs=catalogue.inputs, responses=requested.observables
+        )
+        return engine, requested
 
     energy = next(
         (spec for spec in requested.observables if spec.name == "energy"), None
@@ -346,7 +370,7 @@ def build_model(
         distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
         apply_cutoff=config.model.apply_cutoff,
         radial_hidden=config.model.radial_mlp,
-        readout_hidden=_readout_hidden(config),
+        readout_hidden=config.model.readout.mlp_irreps,
         graph_features=_graph_features(config),
         readout_last_only=config.model.readout.last_only,
         readout_biased=config.model.readout.bias,
@@ -428,7 +452,7 @@ def _polar_model(
         distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
         apply_cutoff=config.model.apply_cutoff,
         radial_hidden=config.model.radial_mlp,
-        readout_hidden=_readout_hidden(config),
+        readout_hidden=config.model.readout.mlp_irreps,
         readout_biased=config.model.readout.bias,
         readout_last_only=config.model.readout.last_only,
         num_heads=len(heads),
@@ -543,6 +567,49 @@ def _unbuilt_convolution_irreps(config: ResolvedConfig) -> list[str]:
     return refused
 
 
+def _response_model(
+    config: ResolvedConfig,
+    requested: RequestedOutputs,
+    *,
+    z_table: AtomicNumberTable,
+    statistics: DatasetStatistics,
+    precision: PrecisionConfig,
+) -> DipoleModel:
+    """A dipole or dielectric model, which reads out no energy.
+
+    Raises:
+        ModelStageError: If the declared observables are not ones the model
+            produces, or leave out the dipole it is built around.
+    """
+    settings = _RESPONSE_MODELS[config.model.model]
+    produced = {"dipole", "polarizability"} if settings.polarizability else {"dipole"}
+    declared = {spec.name for spec in requested.observables}
+    if "dipole" not in declared or not declared <= produced:
+        raise ModelStageError(
+            f"model.model is {config.model.model!r}, which produces "
+            f"{sorted(produced)} and nothing else, and the observables declared "
+            f"are {sorted(declared)}. Declare the dipole, and of the rest only "
+            f"what the model produces."
+        )
+    return DipoleModel(
+        get_backend(config.model.backend),
+        atomic_numbers=list(z_table.zs),
+        settings=settings,
+        num_layers=config.model.num_interactions,
+        num_features=config.model.num_channels,
+        lmax=config.model.max_ell,
+        hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
+        num_radial=config.model.num_radial_basis,
+        cutoff=config.model.r_max,
+        correlation=config.model.correlation,
+        avg_num_neighbors=statistics.avg_num_neighbors,
+        radial_kind=config.model.radial_type,
+        precision=precision.model,
+        cutoff_order=config.model.num_cutoff_basis,
+        readout_hidden=config.model.readout.mlp_irreps,
+    )
+
+
 def _refuse_unbuilt(config: ResolvedConfig) -> None:
     """Refuse every model setting this stage would not build as written.
 
@@ -555,6 +622,9 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
     if config.model.model == "polar":
         # The frozen tree computes the repulsion of this model and never adds
         # it, so the only faithful build is the one without it.
+        built["pair_repulsion"] = (False,)
+    if config.model.model in _RESPONSE_MODELS:
+        # A response model has no energy to add a repulsion to.
         built["pair_repulsion"] = (False,)
     for path, choices in built.items():
         value: object = config.model

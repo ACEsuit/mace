@@ -240,9 +240,10 @@ def run_data_stage(
 
 
 def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
-    """The per-structure inputs a model reads.
+    """The inputs a model reads, per structure or per atom.
 
-    The charge-aware model's, and the ones declared as embedded features.
+    The charge-aware and dipole models', and the ones declared as embedded
+    features.
     Written into every graph built for it, from the file or from their
     defaults.
     """
@@ -251,6 +252,12 @@ def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
         from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS
 
         inputs = POLAR_GRAPH_INPUTS
+    elif model.model in ("dipole", "dielectric"):
+        from mace_torch.models.dipoles import DIPOLE_GRAPH_INPUTS
+
+        inputs = DIPOLE_GRAPH_INPUTS[
+            "fixed" if model.model == "dipole" else "predicted"
+        ]
     return inputs + tuple(
         feature.name for feature in model.graph_features if feature.name not in inputs
     )
@@ -518,5 +525,4 @@ def _evaluation_loader(
         float_dtype=precision.model,
         num_workers=config.data.num_workers,
         pin_memory=config.data.pin_memory,
-        seed=config.runtime.seed if shuffle else None,
     )

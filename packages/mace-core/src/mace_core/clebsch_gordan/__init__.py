@@ -97,7 +97,11 @@ from mace_core.clebsch_gordan.conversion import (
     to_canonical,
 )
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
-from mace_core.clebsch_gordan.real_basis import real_basis_change, wigner_3j_real
+from mace_core.clebsch_gordan.real_basis import (
+    real_basis_change,
+    symmetric_matrix_basis,
+    wigner_3j_real,
+)
 from mace_core.clebsch_gordan.reduced_basis import (
     CouplingTree,
     full_path_labels,
@@ -126,6 +130,7 @@ __all__ = [
     "real_basis_change",
     "reduced_symmetric_tensor_product_basis",
     "reduced_to_full",
+    "symmetric_matrix_basis",
     "to_canonical",
     "wigner_3j_complex",
     "wigner_3j_real",
