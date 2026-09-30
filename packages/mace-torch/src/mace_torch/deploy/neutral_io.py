@@ -163,7 +163,12 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
             f"use_so3 is {recorded['use_so3']!r}, which v1 has no field for"
         )
     readout_class = take("readout_cls")
-    if readout_class not in _LAST_READOUTS:
+    # The frozen tree reads the class off the last readout, and a one-layer
+    # model's only readout is the linear first-layer one.
+    one_layer = int(recorded.get("num_interactions", 0)) == 1
+    if readout_class not in _LAST_READOUTS and not (
+        one_layer and readout_class == "LinearReadoutBlock"
+    ):
         refusals.append(
             f"the last readout is a {recorded['readout_cls']}, and v1 builds "
             f"{' or '.join(_LAST_READOUTS)} there"
@@ -223,6 +228,13 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         },
         "graph_features": graph_features,
     }
+    if one_layer:
+        # No later layer and no gated readout to build, and the frozen tree's
+        # reader fills both from the one layer there is: its interaction is
+        # the first layer's and its gate that of a linear readout, None.
+        # Neither builds anything, so the defaults stand in for them.
+        model["interaction"] = "RealAgnosticResidualInteractionBlock"
+        model["readout"]["gate"] = "silu"
     if family == "plain":
         model["scaling"] = "none"
     unread = sorted(set(recorded) - read)

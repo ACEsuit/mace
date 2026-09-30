@@ -286,7 +286,8 @@ class ObservableHead(nn.Module):
             invariants, which is why its width is not the others'.
         num_features: The channel width.
         nonlinear: Whether the last layer's readout carries a gate. The frozen
-            tree makes exactly this choice, and only for the last layer.
+            tree makes exactly this choice, and only for the last layer of
+            several: a one-layer model reads out linearly.
         hidden_scalars: The width of the gated readout's middle, per head.
         precision: The dtype every op is built at.
         num_heads: How many levels of theory read this observable out. Each
@@ -350,7 +351,9 @@ class ObservableHead(nn.Module):
         self._grouped: list[str] = []
         for index in reachable:
             grouped = expanded_irreps(self.layer_irreps[index], num_features)
-            last = index == len(self.layer_irreps) - 1
+            # The first layer's readout is linear even when it is also the
+            # last, which is the frozen tree's rule for a one-layer model.
+            last = index == len(self.layer_irreps) - 1 and index > 0
             if nonlinear and last:
                 readouts.append(
                     _GatedReadout(
