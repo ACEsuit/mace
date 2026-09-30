@@ -83,11 +83,14 @@ INTERACTIONS = (
     "RealAgnosticResidualNonLinearInteractionBlock",
 )
 
-#: Readout blocks whose weights this knows how to walk. The dielectric
-#: model's dipole and polarizability readouts are not among them yet, so its
-#: configuration is read in full and its weights are refused by the readout's
-#: name.
-READOUTS = ("LinearReadoutBlock", "NonLinearReadoutBlock", "NonLinearBiasReadoutBlock")
+#: Readout blocks whose weights this knows how to walk.
+READOUTS = (
+    "LinearReadoutBlock",
+    "NonLinearReadoutBlock",
+    "NonLinearBiasReadoutBlock",
+    "LinearDipolePolarReadoutBlock",
+    "NonLinearDipolePolarReadoutBlock",
+)
 
 
 class ExtractionError(RuntimeError):
@@ -779,8 +782,11 @@ def walk(model, spelling: str) -> Walk:
                 f"readout {index} is a {kind}, whose weights this converter does "
                 f"not map. It maps {list(READOUTS)}."
             )
-        if kind == "LinearReadoutBlock":
+        if kind in ("LinearReadoutBlock", "LinearDipolePolarReadoutBlock"):
             walker.linear(prefix, readout.linear, f"{prefix}.linear")
+            continue
+        if kind == "NonLinearDipolePolarReadoutBlock":
+            dipole_polar_readout(walker, readout, prefix)
             continue
         walker.linear(f"{prefix}.first", readout.linear_1, f"{prefix}.linear_1")
         if kind == "NonLinearBiasReadoutBlock":
@@ -793,7 +799,59 @@ def walk(model, spelling: str) -> Walk:
         walker.ops[f"{prefix}.first"]["descriptor"]["gate"] = gate[0] if gate else None
     if spelling == "polar":
         walk_polar(walker, model)
+    if spelling == "dielectric":
+        walk_dielectric(walker, model)
     return walker
+
+
+def dipole_polar_readout(walker: Walk, readout, prefix: str) -> None:
+    """The dielectric model's gated readout: its two linears, and the gate's
+    sections, scalars, gates and gated, as the descriptor of the first."""
+    walker.linear(f"{prefix}.first", readout.linear_1, f"{prefix}.linear_1")
+    walker.linear(f"{prefix}.second", readout.linear_2, f"{prefix}.linear_2")
+    gate = readout.equivariant_nonlin
+    walker.ops[f"{prefix}.first"]["descriptor"]["gate_sections"] = {
+        "scalars": str(gate.irreps_scalars),
+        "gates": str(gate.irreps_gates),
+        "gated": str(gate.irreps_gated),
+    }
+    # Pickled under a second name too, the same gate.
+    for key in list(walker.state):
+        if key.startswith(
+            (f"{prefix}.equivariant_nonlin.", f"{prefix}.non_linearity.")
+        ):
+            if key.endswith(".weight") and walker.state[key].numel():
+                raise ExtractionError(
+                    f"{key} holds {walker.state[key].numel()} weights, and the "
+                    f"gate this converter carries holds none."
+                )
+            walker.derive(key, "the gate holds no weights; rebuilt from the irreps")
+
+
+def walk_dielectric(walker: Walk, model) -> None:
+    """The constants beside the dielectric model's readouts.
+
+    The means and deviations are written when the model is built and never
+    read by its forward; the change of basis is the fixed map from spherical
+    to Cartesian polarizabilities.
+    """
+    torch = importlib.import_module("torch")
+    for name in (
+        "dipole_mean",
+        "dipole_std",
+        "polarizability_mean",
+        "polarizability_std",
+    ):
+        walker.derive(name, "recorded at construction and never read by the forward")
+    fixed = importlib.import_module("mace.tools.torch_tools").get_change_of_basis()
+    if not torch.allclose(
+        model.change_of_basis.double(), fixed.double(), atol=1e-12, rtol=0
+    ):
+        raise ExtractionError(
+            "the model's change of basis is not the fixed spherical to Cartesian "
+            "map, and v1 applies that map."
+        )
+    walker.derive("change_of_basis", "the fixed spherical to Cartesian map")
 
 
 def sparse_product(walker: Walk, name: str, product, prefix: str) -> None:

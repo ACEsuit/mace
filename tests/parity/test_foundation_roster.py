@@ -433,3 +433,106 @@ def test_the_charge_aware_conversion_reproduces_its_committed_golden(fp64, tmp_p
     harness.compare_to_reference(
         snapshot, reference, row=FLOAT32.name, channels=channels
     )
+
+
+def mdp_path() -> Path:
+    """MACE-MDP, cached, or downloaded when the network is allowed."""
+    from mace.calculators import foundations_models
+
+    name = os.path.basename(foundations_models.mace_mdp_default_url)
+    path = Path(foundations_models.get_cache_dir()) / name
+    if path.is_file():
+        return path
+    if os.environ.get("MACE_CI_ALLOW_NETWORK") != "1":
+        pytest.skip("MACE-MDP is not cached, and downloads are opt-in")
+    foundations_models.mace_mdp(return_raw_model=True, device="cpu")
+    return path
+
+
+@functools.lru_cache(maxsize=1)
+def mdp_calculator(checkpoint_dir: str):
+    """The converted MACE-MDP through the calculator, from a checkpoint read
+    back from disk, which is how a user reaches it."""
+    from mace_torch.calculators.ase_calculator import MACECalculator
+    from mace_torch.train import write_model
+
+    imported, _ = converted(mdp_path())
+    checkpoint = write_model(
+        Path(checkpoint_dir) / "mdp", imported.engine, imported.metadata
+    )
+    return MACECalculator(model_paths=str(checkpoint), device="cpu")
+
+
+#: What the dielectric calculator reports, beside what the frozen tree's does.
+DIELECTRIC_KEYS = ("dipole", "polarizability", "polarizability_sh", "charges")
+
+
+@pytest.mark.network
+def test_the_dielectric_conversion_is_the_model_as_published(fp64, tmp_path):
+    from mace.calculators import MACECalculator as LegacyCalculator
+
+    path = mdp_path()
+    legacy = LegacyCalculator(
+        model_paths=str(path),
+        device="cpu",
+        default_dtype="float64",
+        model_type="DipolePolarizabilityMACE",
+    )
+    v1 = mdp_calculator(str(tmp_path))
+    imported, _ = converted(path)
+    exceeded = []
+    for fixture, atoms in load_fixtures().items():
+        if not set(atoms.get_atomic_numbers().tolist()) <= set(imported.z_table.zs):
+            continue
+        for calculator in (legacy, v1):
+            calculator.calculate(atoms.copy())
+        for key in DIELECTRIC_KEYS:
+            expected = np.asarray(legacy.results[key])
+            difference = float(np.abs(np.asarray(v1.results[key]) - expected).max())
+            if difference > IN_PROCESS * max(float(np.abs(expected).max()), 1.0):
+                exceeded.append((fixture, key, difference))
+    assert not exceeded, exceeded
+
+
+@pytest.mark.network
+def test_the_dielectric_conversion_reproduces_its_committed_golden(fp64, tmp_path):
+    from tests.golden import harness
+    from tests.golden.targets.foundation_references import MDP_FIXTURES
+
+    path = mdp_path()
+    row = FLOAT32 if float32_constants(path) else REFERENCE
+    calculator = mdp_calculator(str(tmp_path))
+
+    class Outputs:
+        """What the calculator gives of what the golden pins: every channel
+        but the per-atom dipoles, which only the frozen tree's model route
+        reports."""
+
+        golden_surface = "model"
+
+        def golden_outputs(self, atoms):
+            atoms = atoms.copy()
+            calculator.calculate(atoms)
+            dmu_dr, dalpha_dr = calculator.get_dielectric_derivatives(atoms)
+            return {
+                **{key: np.asarray(calculator.results[key]) for key in DIELECTRIC_KEYS},
+                "dmu_dr": np.asarray(dmu_dr),
+                "dalpha_dr": np.asarray(dalpha_dr),
+            }
+
+    snapshot = harness.snapshot_outputs(
+        Outputs(),
+        harness.load_fixtures(names=list(MDP_FIXTURES)),
+        dtype="float64",
+        device="cpu",
+        backend="reference",
+    )
+    reference = harness.load_reference(
+        harness.REFERENCES_DIR / "mdp_foundation_cpu_fp64.json"
+    )
+    harness.compare_to_reference(
+        snapshot,
+        reference,
+        row=row.name,
+        channels=[*DIELECTRIC_KEYS, "dmu_dr", "dalpha_dr"],
+    )

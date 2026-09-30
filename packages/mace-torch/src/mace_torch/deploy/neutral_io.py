@@ -37,6 +37,7 @@ from mace_core.clebsch_gordan.reduced_basis import (
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
+from mace_core.kernels.canonical import linear_weight_table
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.metadata import (
     ConfigRecord,
@@ -62,17 +63,36 @@ __all__ = [
 ]
 
 #: The model spelling each family of artifact becomes.
-_SPELLINGS = {"plain": "plain", "scale_shift": "scale_shift", "polar": "polar"}
-
-#: Why a family that extracted cleanly still cannot be built here.
-_UNBUILT_FAMILIES = {
-    "dielectric": ("its dipole and polarizability readouts have no v1 counterpart yet"),
+_SPELLINGS = {
+    "plain": "plain",
+    "scale_shift": "scale_shift",
+    "polar": "polar",
+    "dielectric": "dielectric",
 }
+
 
 #: What the model reads out once converted. Stress needs nothing stored; it is
 #: the energy's strain derivative, declared so the converted model can report
 #: it and the verification can compare it.
 _OBSERVABLES = ("energy", "forces", "stress")
+
+#: What a dielectric model reads out once converted.
+_DIELECTRIC_OBSERVABLES = ("dipole", "polarizability")
+
+
+def _dielectric_settings(take, readout_class: str, refusals: list[str]) -> None:
+    """The dielectric model's two flags, and its readout, checked."""
+    if not take("use_polarizability") or take("only_dipole"):
+        refusals.append(
+            "the dielectric model reads out a dipole alone, and v1 builds the "
+            "one with its polarizability"
+        )
+    if readout_class != "NonLinearDipolePolarReadoutBlock":
+        refusals.append(
+            f"the dielectric model's last readout is a {readout_class}, and v1 "
+            f"builds NonLinearDipolePolarReadoutBlock there"
+        )
+
 
 #: The readouts the last layer may have been, and whether each is the biased
 #: one.
@@ -134,11 +154,6 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
     """
     sidecar = artifact.sidecar
     family = sidecar.family
-    if family in _UNBUILT_FAMILIES:
-        raise NeutralImportError(
-            f"the artifact is a {family} model, which cannot be built here: "
-            f"{_UNBUILT_FAMILIES[family]}."
-        )
     recorded = dict(sidecar.config)
     read: set[str] = set()
 
@@ -164,6 +179,9 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
             f"use_so3 is {recorded['use_so3']!r}, which v1 has no field for"
         )
     readout_class = take("readout_cls")
+    if family == "dielectric":
+        _dielectric_settings(take, readout_class, refusals)
+        readout_class = "NonLinearReadoutBlock"
     # The frozen tree reads the class off the last readout, and a one-layer
     # model's only readout is the linear first-layer one.
     one_layer = int(recorded.get("num_interactions", 0)) == 1
@@ -200,7 +218,9 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
     transform = take("distance_transform")
     model = {
         "model": _SPELLINGS[family],
-        "observables": list(_OBSERVABLES),
+        "observables": list(
+            _DIELECTRIC_OBSERVABLES if family == "dielectric" else _OBSERVABLES
+        ),
         "r_max": float(take("r_max")),
         "num_interactions": int(take("num_interactions")),
         "num_channels": multiplicities.pop(),
@@ -251,7 +271,7 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
     # are an answer already, and a checkpoint read back takes its heads and
     # their energies from here.
     heads = {
-        head: {"e0s": {"table": {"values": values}}}
+        head: {"e0s": {"table": {"values": values}}} if values else {}
         for head, values in isolated_atom_energies(artifact).items()
     }
     return ResolvedConfig.model_validate(
@@ -347,6 +367,9 @@ def isolated_atom_energies(artifact: NeutralArtifact) -> dict[str, dict[int, flo
     """
     heads = tuple(artifact.sidecar.heads)
     numbers = [int(z) for z in artifact.sidecar.config["atomic_numbers"]]
+    if "energy.atomic_energies" not in artifact.sidecar.ops:
+        # A model that reads out no energy has none.
+        return {head: {} for head in heads}
     table = artifact.tensor("energy.atomic_energies", "values").astype(np.float64)
     if table.shape != (len(heads), len(numbers)):
         raise NeutralImportError(
@@ -495,6 +518,7 @@ def _state(
     outputs = "backbone.outputs."
     ops = artifact.sidecar.ops
     state: dict[str, dict[str, Tensor]] = {}
+    dielectric: dict[str, dict[str, Tensor]] | None = None
     for path, tensors in expected.items():
         if path == f"{backbone}node_embedding":
             state[path] = _linear(artifact, "node_embedding", tensors)
@@ -580,6 +604,12 @@ def _state(
             state[path] = _linear(artifact, "embedding_readout", tensors)
         elif path.removeprefix("backbone.") in ops and path.startswith("backbone."):
             state[path] = _polar_op(artifact, engine, path, tensors)
+        elif path.startswith(f"{outputs}heads.") and artifact.sidecar.family == (
+            "dielectric"
+        ):
+            if dielectric is None:
+                dielectric = _dielectric_readouts(artifact, engine, expected)
+            state[path] = dielectric[path]
         elif path.startswith(f"{outputs}heads.energy.readouts."):
             state[path] = _linear(
                 artifact,
@@ -634,6 +664,153 @@ def _sparse(artifact: NeutralArtifact, op: str, module, expected) -> Tensor:
         )
     flat = np.concatenate([blocks[name].reshape(-1) for name in order])
     return _as(flat, expected["weight"])
+
+
+#: Which output copy of the frozen tree's dielectric readouts each head reads.
+#: They map to ``2x0e+1x1o+1x2e``: the charge, the polarizability's scalar, the
+#: dipole and the polarizability's ``2e``.
+_DIELECTRIC_COPIES = {
+    "charges": [0],
+    "polarizability_sh": [1, 3],
+    "atomic_dipoles": [2],
+}
+
+
+def _copies(irreps: str) -> list[tuple[str, int]]:
+    """Each copy as its irrep and its channel within that irrep's terms."""
+    seen: dict[str, int] = {}
+    copies = []
+    for multiplicity, irrep in Irreps.parse(irreps).terms:
+        for _ in range(multiplicity):
+            name = str(irrep)
+            copies.append((name, seen.get(name, 0)))
+            seen[name] = seen.get(name, 0) + 1
+    return copies
+
+
+def _entries(artifact: NeutralArtifact, op: str) -> dict[tuple[int, int], float]:
+    """A linear op's weight for each (output copy, input copy) it joins."""
+    descriptor = artifact.sidecar.ops[op].descriptor
+    weight = artifact.tensor(op, "weight").astype(np.float64)
+    table = linear_weight_table(descriptor["irreps_in"], descriptor["irreps_out"])
+    return {key: float(weight[index]) for key, index in table.items()}
+
+
+def _copied(
+    entries: dict[tuple[int, int], float],
+    irreps_in: str,
+    irreps_out: str,
+    in_map: list[int | None],
+    out_map: list[int | None],
+    expected: dict[str, Tensor],
+) -> dict[str, Tensor]:
+    """A linear written copy by copy from another's entries.
+
+    ``in_map`` and ``out_map`` give, for each input and output copy, the
+    source's copy it is, or ``None`` where the source has none, whose weight is
+    then zero.
+    """
+    weight = np.zeros(expected["weight"].shape)
+    for (out_copy, in_copy), index in linear_weight_table(
+        irreps_in, irreps_out
+    ).items():
+        source = (out_map[out_copy], in_map[in_copy])
+        if None not in source:
+            weight[index] = entries.get(source, 0.0)
+    return {
+        "weight": _as(weight, expected["weight"]),
+        "bias": expected["bias"].new_zeros(expected["bias"].shape),
+    }
+
+
+def _gate_roles(artifact: NeutralArtifact, layer: int, gate):
+    """Where each copy of a head's gated readout sits in the frozen tree's.
+
+    The frozen tree's middle is its scalars, one gate per gated channel and
+    the gated channels, all its heads' together; each v1 head has its own,
+    built from the same weights, with the sections it reads out.
+    """
+    sections = artifact.sidecar.ops[f"readouts.{layer}.first"].descriptor[
+        "gate_sections"
+    ]
+    scalars = Irreps.parse(sections["scalars"]).dimension if sections["scalars"] else 0
+    gated = Irreps.parse(sections["gated"]).terms if sections["gated"] else ()
+    first: dict[tuple, int] = {("scalar", c): c for c in range(scalars)}
+    gate_at = scalars
+    gated_at = scalars + sum(multiplicity for multiplicity, _ in gated)
+    for multiplicity, irrep in gated:
+        for channel in range(multiplicity):
+            first[("gate", str(irrep), channel)] = gate_at + channel
+            first[("gated", str(irrep), channel)] = gated_at + channel
+        gate_at += multiplicity
+        gated_at += multiplicity
+    second_in = artifact.sidecar.ops[f"readouts.{layer}.second"].descriptor["irreps_in"]
+    second = {
+        (("scalar", channel) if irrep == "0e" else ("gated", irrep, channel)): position
+        for position, (irrep, channel) in enumerate(_copies(second_in))
+    }
+    terms = _copies(gate.gated_declaration) if gate.gated_declaration else []
+    scalar_roles = [("scalar", channel) for _, channel in _copies(str(gate.scalars))]
+    first_roles = (
+        scalar_roles
+        + [("gate", irrep, channel) for irrep, channel in terms]
+        + [("gated", irrep, channel) for irrep, channel in terms]
+    )
+    second_roles = scalar_roles + [
+        ("gated", irrep, channel) for irrep, channel in terms
+    ]
+    return [first.get(role) for role in first_roles], [
+        second.get(role) for role in second_roles
+    ]
+
+
+def _dielectric_readouts(
+    artifact: NeutralArtifact, engine, expected: dict[str, dict[str, Tensor]]
+) -> dict[str, dict[str, Tensor]]:
+    """Every head of the dielectric model, from the frozen tree's readouts.
+
+    One of its readouts reads out all three quantities and slices them; v1
+    gives each its own head. A linear map joins each output copy to input
+    copies independently, so each head takes the rows of the copies it reads.
+    """
+    state: dict[str, dict[str, Tensor]] = {}
+    for name, sources in _DIELECTRIC_COPIES.items():
+        path = f"backbone.outputs.heads.{name}"
+        head = engine.get_submodule(path)
+        for position, layer in enumerate(head.reachable):
+            grouped = head._grouped[position]
+            identity: list[int | None] = list(range(len(_copies(grouped))))
+            if f"readouts.{layer}" in artifact.sidecar.ops:
+                key = f"{path}.readouts.{position}"
+                state[key] = _copied(
+                    _entries(artifact, f"readouts.{layer}"),
+                    grouped,
+                    head.spec.irreps,
+                    identity,
+                    list(sources),
+                    expected[key],
+                )
+                continue
+            readout = head.readouts[position]
+            first_in, second_in = _gate_roles(artifact, layer, readout.gate)
+            key = f"{path}.readouts.{position}"
+            state[f"{key}.first"] = _copied(
+                _entries(artifact, f"readouts.{layer}.first"),
+                grouped,
+                readout.gate.irreps_in,
+                identity,
+                first_in,
+                expected[f"{key}.first"],
+            )
+            state[f"{key}.second"] = _copied(
+                _entries(artifact, f"readouts.{layer}.second"),
+                readout.gate.irreps_out,
+                head.spec.irreps,
+                second_in,
+                list(sources),
+                expected[f"{key}.second"],
+            )
+    return state
 
 
 def _energy_constants(artifact: NeutralArtifact, expected: dict[str, Tensor]):
@@ -786,6 +963,10 @@ def _metadata(
             )
             for head, values in e0s.items()
         },
+        elements=[
+            chemical_symbols[int(z)]
+            for z in sorted(artifact.sidecar.config["atomic_numbers"])
+        ],
         notes=(
             f"Converted from a {provenance.source_class} checkpoint written by "
             f"version {provenance.source_version}, by converter version "
