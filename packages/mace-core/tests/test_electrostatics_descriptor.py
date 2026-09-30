@@ -32,8 +32,14 @@ def solve(profile="full_periodic", **settings) -> ElectrostaticsSolverDescriptor
     )
 
 
-def test_the_four_profiles_are_the_ones_named():
-    assert PERIODICITY_PROFILES == ("full_periodic", "z_slab", "molecular", "partial")
+def test_the_five_profiles_are_the_ones_named():
+    assert PERIODICITY_PROFILES == (
+        "full_periodic",
+        "z_slab",
+        "molecular",
+        "partial",
+        "per_structure",
+    )
 
 
 def test_an_unknown_profile_is_refused():

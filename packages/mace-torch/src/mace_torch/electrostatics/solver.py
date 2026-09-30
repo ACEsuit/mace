@@ -55,12 +55,14 @@ __all__ = [
 #: sum, a slab adds the dipole correction along its normal, an open molecule is
 #: summed exactly in real space, and a batch mixing them treats each structure
 #: by its own periodicity, a molecule among them in the box around it with the
-#: monopole and dipole corrections that divide by that box's volume.
+#: monopole and dipole corrections that divide by that box's volume, or, per
+#: structure, summed exactly in real space on its own.
 PBC_HANDLING: dict[str, str] = {
     "full_periodic": "pbc",
     "z_slab": "slab",
     "molecular": "realspace",
     "partial": "mixed_periodic",
+    "per_structure": "per_structure",
 }
 
 #: The options the reference understands.
