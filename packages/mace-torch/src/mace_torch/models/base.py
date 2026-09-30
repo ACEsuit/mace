@@ -88,6 +88,7 @@ class MACEModel(nn.Module):
         distance_transform: The distance transform; see the backbone.
         apply_cutoff: Whether the radial basis carries the cutoff envelope;
             see the backbone.
+        radial_hidden: The radial networks' hidden widths.
         full_last_layer: Keep every irrep in the last layer; see the backbone.
         element_agnostic_product: One set of product weights for all
             elements; see the backbone.
@@ -116,6 +117,7 @@ class MACEModel(nn.Module):
         cutoff_order: int = 6,
         distance_transform: Literal["none", "agnesi", "soft"] = "none",
         apply_cutoff: bool = True,
+        radial_hidden: Sequence[int] = (64, 64, 64),
         node_inputs: Sequence[InputSpec] = (),
         readout_hidden: int = 16,
         num_heads: int = 1,
@@ -147,6 +149,7 @@ class MACEModel(nn.Module):
                 cutoff_order=cutoff_order,
                 distance_transform=distance_transform,
                 apply_cutoff=apply_cutoff,
+                radial_hidden=radial_hidden,
                 precision=precision,
                 node_inputs=node_inputs,
                 residual_first_layer=residual_first_layer,

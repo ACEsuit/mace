@@ -107,7 +107,6 @@ _DISTANCE_TRANSFORMS: dict[str, Literal["none", "agnesi", "soft"]] = {
 _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
     "interaction": tuple(_INTERACTIONS),
     "interaction_first": tuple(_FIRST_INTERACTIONS),
-    "radial_mlp": ((64, 64, 64),),
     "distance_transform": tuple(_DISTANCE_TRANSFORMS),
     "clebsch_gordan_basis": ("reduced",),
     "readout.gate": ("silu",),
@@ -346,6 +345,7 @@ def build_model(
         cutoff_order=config.model.num_cutoff_basis,
         distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
         apply_cutoff=config.model.apply_cutoff,
+        radial_hidden=config.model.radial_mlp,
         readout_hidden=_readout_hidden(config),
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
@@ -423,6 +423,7 @@ def _polar_model(
         cutoff_order=config.model.num_cutoff_basis,
         distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
         apply_cutoff=config.model.apply_cutoff,
+        radial_hidden=config.model.radial_mlp,
         readout_hidden=_readout_hidden(config),
         num_heads=len(heads),
         **_interaction_settings(config)._asdict(),
