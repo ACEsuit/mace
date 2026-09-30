@@ -178,10 +178,14 @@ class ResolvedConfig(ReforgeBaseConfig):
         """
         if ENERGY_OBSERVABLE in self.model.observables:
             return self
+        # Set to something other than the default: a configuration written out
+        # in full carries the default for every head, and reads back with it
+        # set.
         offenders = sorted(
             f"data.heads.{name}.e0s"
             for name, head in self.data.heads.items()
             if "e0s" in head.model_fields_set
+            and head.e0s != type(head).model_fields["e0s"].default
         )
         if offenders:
             raise ValueError(
