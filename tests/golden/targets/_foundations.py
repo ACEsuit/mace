@@ -53,7 +53,7 @@ def regenerate(network: bool) -> None:
         snapshot = harness.snapshot_outputs(
             calc,
             fixtures,
-            dtype="float64",
+            dtype=spec.dtype,
             device="cpu",
             backend="e3nn",
             metadata={
@@ -79,8 +79,10 @@ def regenerate(network: bool) -> None:
                 "description": spec.description,
                 "fixture_tags": list(spec.fixture_tags),
                 "fixture_names": list(spec.fixture_names),
-                "evaluated_with": "mace.calculators.MACECalculator, e3nn, CPU, float64",
-                "tolerance_row": harness.FP64_CPU_REFERENCE.name,
+                "evaluated_with": (
+                    f"mace.calculators.MACECalculator, e3nn, CPU, {spec.dtype}"
+                ),
+                "tolerance_row": spec.tolerance_row,
             },
             allow_overwrite=True,
         )

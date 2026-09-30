@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
 
+from tests.golden import harness
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 TRACKED_MPA0 = "mace/calculators/foundations_models/mace-mpa-0-medium.model"
@@ -50,6 +52,26 @@ _OFF_SMALL_URL = (
 _MH_0_URL = (
     "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/"
     "mace-mh-0.model"
+)
+_MH_1_URL = (
+    "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mh_1/"
+    "mace-mh-1.model"
+)
+_OFF_MEDIUM_URL = (
+    "https://raw.githubusercontent.com/ACEsuit/mace-off/main/mace_off23/"
+    "MACE-OFF23_medium.model"
+)
+_OMOL_URL = (
+    "https://github.com/ACEsuit/mace-foundations/releases/download/mace_omol_0/"
+    "MACE-omol-0-extra-large-1024.model"
+)
+_EVERY_FIXTURE = (
+    "dimer_short",
+    "isolated_atom",
+    "slab_vacuum",
+    "slab_zero_vacuum",
+    "triclinic_bulk",
+    "water_cluster",
 )
 
 
@@ -83,12 +105,54 @@ class FoundationArtifact:
     fixture_names: Tuple[str, ...]
     description: str
     #: only for the network tier: the name of the dict in
-    #: foundations_models.py that must still hold ``origin``, and the key
+    #: foundations_models.py that must still hold ``origin``, and the key.
+    #: Empty for a loader that holds its URL inline, whose source is then
+    #: what must hold it.
     url_table: Tuple[str, str] = field(default=("", ""))
     #: where the same bytes are published, when the artifact is a local file.
     #: Recorded so a consumer that reaches the model by URL (a converter, a
     #: GPU parity run) can tell it is looking at this reference's artifact.
     release_url: str = ""
+
+    @property
+    def dtype(self) -> str:
+        """What the reference was evaluated in, as the loader call states it."""
+        return str(self.loader_kwargs["default_dtype"])
+
+    @property
+    def tolerance_row(self) -> str:
+        """The harness row the reference is compared at, fixed by its dtype.
+
+        A float32 evaluation is not reproducible bit for bit across machines
+        or thread counts, so it is held at the float32 row and never at the
+        float64 one.
+        """
+        return TOLERANCE_ROWS[self.dtype]
+
+
+#: The row each evaluation dtype is compared at.
+TOLERANCE_ROWS: Dict[str, str] = {
+    "float64": harness.FP64_CPU_REFERENCE.name,
+    "float32": harness.FP32.name,
+}
+
+
+def _in_float32(spec: FoundationArtifact, description: str) -> FoundationArtifact:
+    """The same artifact, loader call and fixtures, evaluated in float32."""
+    return FoundationArtifact(
+        name=f"{spec.name}_fp32",
+        loader=spec.loader,
+        loader_kwargs={**spec.loader_kwargs, "default_dtype": "float32"},
+        reference=spec.reference.replace("_fp64.json", "_fp32.json"),
+        sha256=spec.sha256,
+        origin=spec.origin,
+        network=spec.network,
+        fixture_tags=spec.fixture_tags,
+        fixture_names=spec.fixture_names,
+        description=description,
+        url_table=spec.url_table,
+        release_url=spec.release_url,
+    )
 
 
 ARTIFACTS: Dict[str, FoundationArtifact] = {
@@ -212,7 +276,87 @@ ARTIFACTS: Dict[str, FoundationArtifact] = {
         ),
         url_table=("mace_off_urls", "small"),
     ),
+    "mh_1": FoundationArtifact(
+        name="mh_1",
+        loader="mace_mp",
+        loader_kwargs={
+            "model": "mh-1",
+            "default_dtype": "float64",
+            "device": "cpu",
+            # As for mh-0: no head is called `default`, and the PBE materials
+            # head is the one the bulk and slab fixtures are for.
+            "head": "mp_pbe_refit_add",
+        },
+        reference="mh_1_e3nn_cpu_fp64.json",
+        sha256="a522eb7f59c7879963d41586528f4980baf33e086c94aa92e3eafdeccad3be47",
+        origin=_MH_1_URL,
+        network=True,
+        fixture_tags=(),
+        fixture_names=_EVERY_FIXTURE,
+        description=(
+            "MACE-MP mh-1, the second multi-head release: six levels of theory "
+            "(matpes_r2scan, mp_pbe_refit_add, spice_wB97M, oc20_usemppbe, "
+            "omol, omat_pbe) on the nonlinear interaction. Pinned on the PBE "
+            "materials head."
+        ),
+        url_table=("mace_mp_urls", "mh-1"),
+    ),
+    "off_medium": FoundationArtifact(
+        name="off_medium",
+        loader="mace_off",
+        loader_kwargs={
+            "model": "medium",
+            "default_dtype": "float64",
+            "device": "cpu",
+        },
+        reference="off_medium_e3nn_cpu_fp64.json",
+        sha256="4842c52ad210d6e1f84d6cf1ffa70fae25a7e0d755ed55cf223f43913f587db7",
+        origin=_OFF_MEDIUM_URL,
+        network=True,
+        fixture_tags=("molecular",),
+        fixture_names=("dimer_short", "isolated_atom", "water_cluster"),
+        description=(
+            "MACE-OFF23 medium, organic chemistry, downloaded from the mace-off "
+            "repository. ASL licensed."
+        ),
+        url_table=("mace_off_urls", "medium"),
+    ),
+    "omol": FoundationArtifact(
+        name="omol",
+        loader="mace_omol",
+        loader_kwargs={
+            "model": "extra_large",
+            "default_dtype": "float64",
+            "device": "cpu",
+        },
+        reference="omol_e3nn_cpu_fp64.json",
+        sha256="9b64b4fd5153ca578c694abc57806d8111050de6ff652e695c9b525bc4d36469",
+        origin=_OMOL_URL,
+        network=True,
+        # Molecules, at their default charge and spin: the loader forces the
+        # one head, and the embedding reads the two inputs from the graph.
+        fixture_tags=("molecular",),
+        fixture_names=("dimer_short", "isolated_atom", "water_cluster"),
+        description=(
+            "MACE-OMOL extra large, one head, the total charge and spin "
+            "embedded beside the elements. ASL licensed."
+        ),
+    ),
 }
+
+# The two medium tiers the JAX scope supports, pinned in float32 as well: that
+# is the precision mace_mp and mace_off default to, so it is the one most
+# users evaluate them in.
+ARTIFACTS["mpa0_medium_fp32"] = _in_float32(
+    ARTIFACTS["mpa0_medium"],
+    "MACE-MPA-0 medium, the tracked checkpoint, evaluated in float32: the "
+    "default dtype of an unqualified mace_mp().",
+)
+ARTIFACTS["off_medium_fp32"] = _in_float32(
+    ARTIFACTS["off_medium"],
+    "MACE-OFF23 medium, evaluated in float32: the default dtype of mace_off(). "
+    "ASL licensed.",
+)
 
 #: The tracked ANI checkpoint is deliberately absent; see
 #: test_foundation_goldens.py::test_the_tracked_anicc_checkpoint_cannot_be
@@ -356,4 +500,10 @@ def expected_origin_url(spec: FoundationArtifact) -> str:
     )
 
     table_name, key = spec.url_table
+    if not table_name:
+        # A loader that holds its URL inline: the URL its source downloads.
+        import inspect  # pylint: disable=import-outside-toplevel
+
+        source = inspect.getsource(getattr(foundations_models, spec.loader))
+        return spec.origin if spec.origin in source else source
     return getattr(foundations_models, table_name)[key]
