@@ -24,6 +24,18 @@ def _copy_radial_weights(
     getattr(dst, attr).data.copy_(getattr(src, attr).data)
 
 
+def _with_embedding_defaults(spec: dict) -> dict:
+    """Fill in optional embedding-spec keys so equivalent specs compare equal.
+
+    Foundation models saved before an optional key existed omit it, so a target
+    spec that sets it to the default would otherwise fail the equality check.
+    """
+    spec = dict(spec)
+    if spec["type"] == "continuous":
+        spec.setdefault("num_hidden_layers", 1)
+    return spec
+
+
 def load_foundations_elements(
     model: torch.nn.Module,
     model_foundations: torch.nn.Module,
@@ -94,6 +106,10 @@ def load_foundations_elements_default(
         model_specs = model.joint_embedding.specs
         foundation_embedding = getattr(model_foundations, "joint_embedding", None)
         foundation_specs = foundation_embedding.specs if foundation_embedding else {}
+        foundation_specs_full = {
+            name: _with_embedding_defaults(spec)
+            for name, spec in foundation_specs.items()
+        }
 
         foundation_head_start = 0
         foundation_head_slices = {}
@@ -118,15 +134,18 @@ def load_foundations_elements_default(
                 dim = spec["emb_dim"]
                 head_slices[name] = slice(head_start, head_start + dim)
                 head_start += dim
-            for embedding_spec in model_specs.items():
+            for spec_name, spec in model_specs.items():
 
-                spec_name = embedding_spec[0]
+                # embedding spec is the same as that in foundation model (ideal),
+                # once optional keys are filled in with their defaults
+                matches = foundation_specs_full.get(
+                    spec_name
+                ) == _with_embedding_defaults(spec)
                 submodule = model.joint_embedding.embedders[spec_name]
                 model_params = dict(submodule.named_parameters())
 
                 for param_name, param in model_params.items():
-                    # embedding spec is the *exactly* the same as that in foundation model (ideal)
-                    if embedding_spec in foundation_specs.items():
+                    if matches:
 
                         foundation_submodule = foundation_embedding.embedders[spec_name]
                         foundation_params = dict(
@@ -137,7 +156,7 @@ def load_foundations_elements_default(
                         torch.nn.init.uniform_(param.data, -0.05, 0.05)
 
                 # Which specs the foundation can supply weights for.
-                if embedding_spec in foundation_specs.items():
+                if matches:
                     spec_names.append(spec_name)
 
             # update head.
@@ -453,9 +472,6 @@ def load_foundations_elements_default(
             continue
         if not load_readout and name.startswith("readouts."):
             continue
-        # The joint embedding is transferred spec by spec above. A blanket copy
-        # would re-align the head columns positionally and silently undo it
-        # whenever both heads happen to have the same shape.
         if name.startswith("joint_embedding."):
             continue
         if model_state[name].shape != param.shape:
