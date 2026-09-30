@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
+from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
@@ -25,7 +26,8 @@ from torch import Tensor, nn
 
 from mace_torch.kernels import segment_sum
 from mace_torch.models.energy import EnergyOutputHead
-from mace_torch.models.heads import ObservableHead
+from mace_torch.models.heads import ObservableHead, per_head_irreps
+from mace_torch.nn.layout import expanded_irreps
 
 __all__ = ["ENERGY_EXTRA_ROWS", "ENERGY_OBSERVABLE", "MACEOutputs"]
 
@@ -58,6 +60,13 @@ class MACEOutputs(nn.Module):
         num_heads: How many levels of theory the model reads out. Every
             observable gets one readout per head, so what the heads share is
             the backbone and nothing after it.
+        last_only: Read out only the last layer; see :class:`ObservableHead`.
+        biased: The biased gated readout on the last layer; see
+            :class:`ObservableHead`.
+        embedding_irreps: One channel's declaration of the node embedding,
+            when the energy also reads it out: a linear map to one scalar per
+            head, added beside the isolated-atom energies. ``None`` for no
+            such readout.
     """
 
     def __init__(
@@ -71,6 +80,9 @@ class MACEOutputs(nn.Module):
         precision: Precision = "float64",
         hidden_scalars: int = 16,
         num_heads: int = 1,
+        last_only: bool = False,
+        biased: bool = False,
+        embedding_irreps: str | None = None,
     ) -> None:
         super().__init__()
         names = [spec.name for spec in observables]
@@ -115,10 +127,44 @@ class MACEOutputs(nn.Module):
                     hidden_scalars=hidden_scalars,
                     precision=precision,
                     num_heads=num_heads,
+                    last_only=last_only,
+                    biased=biased,
                 )
                 for spec in observables
             }
         )
+        if embedding_irreps is not None and energy_head is None:
+            raise ValueError(
+                "an embedding readout was asked for and no energy is declared. "
+                "It reads out an energy, so declare one or leave it out."
+            )
+        self.embedding_readout = (
+            backend.make_linear(
+                LinearDescriptor(
+                    irreps_in=expanded_irreps(embedding_irreps, num_features),
+                    irreps_out=per_head_irreps("0e", num_heads),
+                    precision=precision,
+                )
+            )
+            if embedding_irreps is not None
+            else None
+        )
+
+    def _embedding_energy(
+        self, embedding: Tensor | None, node_head: Tensor | None
+    ) -> Tensor | None:
+        """``[n_atoms]``: each atom's own head's readout of the embedding."""
+        if self.embedding_readout is None:
+            return None
+        if embedding is None:
+            raise ValueError(
+                "the model reads out an energy from the node embedding and was "
+                "not given one."
+            )
+        values = self.embedding_readout(embedding)
+        if node_head is not None:
+            values = values.gather(1, node_head.unsqueeze(1))
+        return values.squeeze(-1)
 
     def required_property_keys(self) -> tuple[str, ...]:
         """The data keys a training run has to supply, one per observable."""
@@ -149,6 +195,7 @@ class MACEOutputs(nn.Module):
         graph: Mapping[str, Any],
         features: list[Tensor],
         zbl_node_energy: Tensor | None = None,
+        embedding: Tensor | None = None,
     ) -> MACEOutput[Tensor]:
         """The declared observables, typed.
 
@@ -157,6 +204,8 @@ class MACEOutputs(nn.Module):
             features: One ``[n_atoms, channels, width]`` tensor per layer.
             zbl_node_energy: The short-range pair repulsion per atom, if the
                 model has one.
+            embedding: The node features before the first interaction, when
+                the energy has a readout of them.
         """
         batch = graph["batch"]
         num_graphs = int(graph["num_graphs"])
@@ -179,6 +228,7 @@ class MACEOutputs(nn.Module):
                     graph["head"],
                     batch,
                     num_graphs,
+                    self._embedding_energy(embedding, node_head),
                 )
                 fields["total_energy"] = terms.total_energy
                 fields["node_energies"] = terms.node_energy

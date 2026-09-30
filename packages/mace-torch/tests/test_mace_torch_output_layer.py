@@ -507,11 +507,12 @@ def test_graph_features_reach_the_scalars_and_leave_the_rest_alone():
     )
     graph = make_graph(*water())
     graph["total_charge"] = torch.zeros(1, dtype=torch.float64)
-    features = torch.randn(3, 4, 9, dtype=torch.float64)
+    # Flat and grouped by irrep: four scalar channels, then 4x1o and 4x2e.
+    features = torch.randn(3, 4 * 9, dtype=torch.float64)
 
     updated = embedding(graph, features)
-    assert torch.equal(updated[..., 1:], features[..., 1:])
-    assert not torch.equal(updated[..., :1], features[..., :1])
+    assert torch.equal(updated[:, 4:], features[:, 4:])
+    assert not torch.equal(updated[:, :4], features[:, :4])
 
 
 @fp64_only
@@ -528,7 +529,7 @@ def test_a_per_structure_feature_reaches_every_atom_of_that_structure():
     graph = make_graph(*water())
     graph["batch"] = torch.tensor([0, 0, 1])
     graph["total_spin"] = torch.tensor([1, 2])
-    features = torch.zeros(3, 2, 1, dtype=torch.float64)
+    features = torch.zeros(3, 2, dtype=torch.float64)
 
     updated = embedding(graph, features)
     assert torch.equal(updated[0], updated[1]), (

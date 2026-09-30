@@ -659,7 +659,6 @@ def build_with(tmp_path, **model):
         ("edge_irreps", "4x0e"),
         ("clebsch_gordan_basis", "full"),
         ("readout", {"gate": "tanh"}),
-        ("readout", {"last_only": True}),
         ("readout", {"from_embedding": True}),
     ],
 )

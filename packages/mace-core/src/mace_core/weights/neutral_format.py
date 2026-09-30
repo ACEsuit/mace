@@ -48,6 +48,12 @@ atomic number: the radii are the ones the model was trained with, which need
 not be the ones a current ASE would give. A ``soft_transform`` carries its
 steepness ``alpha`` and the radii the same way.
 
+A ``graph_feature_embedding``, under ``graph_features``, carries the inputs
+embedded beside the elements: ``embedders.<name>.weight`` for a categorical
+input's table, ``embedders.<name>.<layer>.weight`` and ``.bias`` for a
+continuous input's two maps, and ``project.0.weight`` for the projection of
+their concatenation, in the order the configuration declares them.
+
 A ``layer_norm_mlp`` is linear, layer norm and SiLU, repeated, with a plain
 linear last. Its tensors are named ``<layer>.weight`` and ``<layer>.bias`` by
 the layer's position in that sequence, each linear's weight ``[out, in]``.
@@ -101,6 +107,7 @@ OpKind = Literal[
     "layer_norm_mlp",
     "agnesi_transform",
     "soft_transform",
+    "graph_feature_embedding",
     "symmetric_contraction",
     "interaction",
     "atomic_energies",

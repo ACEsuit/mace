@@ -211,6 +211,7 @@ class EnergyOutputHead(nn.Module):
         head_index: Tensor,
         batch: Tensor,
         num_graphs: int,
+        embedding_node_energy: Tensor | None = None,
     ) -> EnergyTerms:
         """The energies, from per-layer site energies.
 
@@ -224,6 +225,9 @@ class EnergyOutputHead(nn.Module):
             batch: ``[n_atoms]``, which structure each atom belongs to.
             num_graphs: How many structures, as a plain int so it stays
                 symbolic under tracing.
+            embedding_node_energy: ``[n_atoms]``, a readout of the node
+                embedding, or ``None``. It is added beside the isolated-atom
+                energies, unscaled, which is where the frozen tree adds it.
         """
         accumulate = _TORCH_DTYPE[self.accumulate]
         model_dtype = self.scale.dtype
@@ -239,6 +243,8 @@ class EnergyOutputHead(nn.Module):
         # Gathering a row of the table is the one-hot matmul the frozen tree
         # writes, with the same result and without materializing the one-hot.
         e0 = self.e0_table[node_head, element_index].to(model_dtype)
+        if embedding_node_energy is not None:
+            e0 = e0 + embedding_node_energy
 
         node_energy = scaled.to(accumulate) + e0.to(accumulate)
         interaction_total = segment_sum(scaled.to(accumulate), batch, num_graphs).to(

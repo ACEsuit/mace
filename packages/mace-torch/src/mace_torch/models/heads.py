@@ -292,6 +292,11 @@ class ObservableHead(nn.Module):
         num_heads: How many levels of theory read this observable out. Each
             gets its own readout weights; see the module docstring for how
             they are laid out.
+        last_only: Read out only the last layer rather than summing a readout
+            of every layer.
+        biased: Give the last layer's gated readout a biased middle map, gated
+            again, and a bias on its output: the frozen tree's biased
+            nonlinear readout. Scalar observables only.
     """
 
     columns: Tensor
@@ -306,6 +311,8 @@ class ObservableHead(nn.Module):
         hidden_scalars: int = 16,
         precision: Precision = "float64",
         num_heads: int = 1,
+        last_only: bool = False,
+        biased: bool = False,
     ) -> None:
         super().__init__()
         if num_heads < 1:
@@ -331,6 +338,11 @@ class ObservableHead(nn.Module):
         ]
         if not reachable:
             _check_reachable(spec, self.layer_irreps[-1])
+        if last_only:
+            last = len(self.layer_irreps) - 1
+            if last not in reachable:
+                _check_reachable(spec, self.layer_irreps[last])
+            reachable = [last]
         self.reachable = reachable
 
         readouts: list[nn.Module] = []
@@ -348,6 +360,7 @@ class ObservableHead(nn.Module):
                         hidden_scalars,
                         precision,
                         num_heads=num_heads,
+                        biased=biased,
                     )
                 )
             else:
@@ -498,6 +511,18 @@ class ObservableHead(nn.Module):
                 head,
             ),
         )
+        if readout.middle is not None:
+            yield (
+                "middle",
+                readout.middle,
+                _head_indices(
+                    readout.gate.irreps_out,
+                    readout.middle_out_owners,
+                    readout.gate.irreps_in,
+                    readout.middle_in_owners,
+                    head,
+                ),
+            )
         yield (
             "second",
             readout.second,
@@ -535,6 +560,10 @@ class _GatedReadout(nn.Module):
     non-scalar channel and the non-scalar terms themselves. With several heads
     every section of the middle and of the output carries one copy per head,
     and the middle is masked to the atom's own head before the second map.
+
+    Biased, it is linear, gate, biased linear, gate, biased linear, with the
+    middle masked after each gate: the frozen tree's biased readout, whose
+    middle is scalars only.
     """
 
     hidden_heads: Tensor
@@ -547,6 +576,7 @@ class _GatedReadout(nn.Module):
         hidden_scalars: int,
         precision: Precision,
         num_heads: int = 1,
+        biased: bool = False,
     ) -> None:
         super().__init__()
         self.num_heads = num_heads
@@ -564,6 +594,11 @@ class _GatedReadout(nn.Module):
         # from. `scalars` is read only to check the output is not empty.
         if not scalars and not gated:
             raise ValueError(f"{irreps_out!r} declares no irreps to read out.")
+        if biased and gated:
+            raise ValueError(
+                f"the biased readout reads out scalars, and {irreps_out!r} "
+                f"declares {gated} beside them."
+            )
         middle = f"{hidden_scalars}x0e" + (f"+{gated}" if gated else "")
         num_gates = sum(mul for mul, _ in Irreps.parse(gated).terms) if gated else 0
         # The head of each copy on either side of the gate. Going in there are
@@ -586,10 +621,23 @@ class _GatedReadout(nn.Module):
                 precision=precision,
             )
         )
+        self.middle = (
+            backend.make_linear(
+                LinearDescriptor(
+                    irreps_in=self.gate.irreps_out,
+                    irreps_out=self.gate.irreps_in,
+                    has_bias=True,
+                    precision=precision,
+                )
+            )
+            if biased
+            else None
+        )
         self.second = backend.make_linear(
             LinearDescriptor(
                 irreps_in=self.gate.irreps_out,
                 irreps_out=per_head_irreps(irreps_out, num_heads),
+                has_bias=biased,
                 precision=precision,
             )
         )
@@ -603,9 +651,14 @@ class _GatedReadout(nn.Module):
         )
 
     def forward(self, features: Tensor, node_head: Tensor | None = None) -> Tensor:
-        middle = self.gate(self.first(features))
-        if self.num_heads > 1:
-            assert node_head is not None
-            keep = self.hidden_heads.unsqueeze(0) == node_head.unsqueeze(1)
-            middle = middle * keep.to(middle.dtype)
+        middle = self._own_head(self.gate(self.first(features)), node_head)
+        if self.middle is not None:
+            middle = self._own_head(self.gate(self.middle(middle)), node_head)
         return self.second(middle)
+
+    def _own_head(self, middle: Tensor, node_head: Tensor | None) -> Tensor:
+        if self.num_heads == 1:
+            return middle
+        assert node_head is not None
+        keep = self.hidden_heads.unsqueeze(0) == node_head.unsqueeze(1)
+        return middle * keep.to(middle.dtype)
