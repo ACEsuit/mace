@@ -226,6 +226,7 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/elements/default_keys.py` | The default file keys of a labelled structure file. |
 | `mace_core/elements/e0s.py` | Resolved isolated-atom energies, per head and element. |
 | `mace_core/elements/number_table.py` | The ordered element table a model was fitted for. |
+| `mace_core/foundation_roster.py` | The published foundation models, what each converts onto, and the one dropped. |
 | `mace_core/graph.py` | The graph schema: every field, its shape, dtype and padding, and collation. |
 | `mace_core/kernels/__init__.py` | The kernel contract, re-exported. |
 | `mace_core/kernels/canonical.py` | The canonical weight layout that makes checkpoints backend independent. |
