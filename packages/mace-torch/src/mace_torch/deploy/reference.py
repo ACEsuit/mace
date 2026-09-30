@@ -15,7 +15,7 @@ weight and none is meant to be.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -170,6 +170,7 @@ def _evaluate(
     z_table: AtomicNumberTable,
     cutoff: float,
     head: int,
+    graph_inputs: Sequence[str] = (),
 ) -> dict[str, np.ndarray]:
     cell = np.asarray(atoms.get_cell().array, dtype=np.float64)
     periodic = atoms.get_pbc()
@@ -178,9 +179,16 @@ def _evaluate(
         positions=np.asarray(atoms.get_positions(), dtype=np.float64),
         cell=cell,
         pbc=(bool(periodic[0]), bool(periodic[1]), bool(periodic[2])),
+        properties={
+            name: atoms.info[name] for name in graph_inputs if name in atoms.info
+        },
     )
     graph = graph_from_configuration(
-        configuration, cutoff=cutoff, z_table=z_table, head=head
+        configuration,
+        cutoff=cutoff,
+        z_table=z_table,
+        head=head,
+        graph_inputs=graph_inputs,
     )
     batch = collate_training([(graph, {}, {})], z_table=z_table)
     output = engine(dict(batch.graph), compute=("forces", "stress"))
@@ -208,8 +216,12 @@ def verify_against_reference(
     head: int = 0,
     atol: float = REFERENCE_ATOL,
     rtol: float = REFERENCE_RTOL,
+    graph_inputs: Sequence[str] = (),
 ) -> VerificationReport:
     """Evaluate the model on every structure of a reference and compare.
+
+    ``graph_inputs`` names the per-structure inputs the model reads, taken
+    from each structure's info or given their defaults, as the data path does.
 
     Structures holding an element outside ``z_table`` are skipped and listed,
     since the model cannot evaluate them at all; if that leaves none, the
@@ -225,7 +237,14 @@ def verify_against_reference(
         if not set(int(z) for z in case.atoms.get_atomic_numbers()) <= set(z_table.zs):
             skipped.append(case.name)
             continue
-        got = _evaluate(engine, case.atoms, z_table=z_table, cutoff=cutoff, head=head)
+        got = _evaluate(
+            engine,
+            case.atoms,
+            z_table=z_table,
+            cutoff=cutoff,
+            head=head,
+            graph_inputs=graph_inputs,
+        )
         deviations.extend(_compare(case.name, got, case.expected, atol, rtol))
     if not deviations:
         raise ReferenceError(

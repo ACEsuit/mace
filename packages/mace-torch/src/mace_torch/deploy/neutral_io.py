@@ -96,7 +96,6 @@ def _graph_features(specs: list[list[Any]]) -> list[dict[str, Any]]:
     ]
 
 
-
 class NeutralImportError(RuntimeError):
     """The artifact describes a model this cannot build faithfully."""
 

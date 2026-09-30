@@ -37,6 +37,7 @@ from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
 from mace_torch.deploy.neutral_io import import_neutral
 from mace_torch.deploy.reference import verify_against_reference
+from mace_torch.train.data_stage import graph_inputs_of
 
 from tests.golden import foundation_artifacts as fa
 from tests.golden.harness import load_fixtures, tolerance
@@ -70,9 +71,7 @@ ROSTER = {
 }
 
 #: Roster artifacts the converter does not carry yet, and what it stops at.
-NOT_YET = {
-    "omol": "the joint embedding of the total charge and spin, and its readout",
-}
+NOT_YET: dict[str, str] = {}
 
 
 def _url(name: str) -> str:
@@ -184,17 +183,20 @@ def exact_rebuild(path: Path) -> torch.nn.Module:
 
 
 def v1_outputs(imported, atoms, head: int) -> dict[str, np.ndarray]:
+    inputs = graph_inputs_of(imported.config.model)
     configuration = Configuration(
         atomic_numbers=np.asarray(atoms.get_atomic_numbers()),
         positions=np.asarray(atoms.get_positions(), dtype=np.float64),
         cell=np.asarray(atoms.get_cell().array, dtype=np.float64),
         pbc=tuple(bool(axis) for axis in atoms.get_pbc()),
+        properties={name: atoms.info[name] for name in inputs if name in atoms.info},
     )
     graph = graph_from_configuration(
         configuration,
         cutoff=float(imported.config.model.r_max),
         z_table=imported.z_table,
         head=head,
+        graph_inputs=inputs,
     )
     batch = collate_training([(graph, {}, {})], z_table=imported.z_table)
     output = imported.engine(dict(batch.graph), compute=("forces", "stress"))
@@ -321,6 +323,7 @@ def test_the_conversion_reproduces_the_committed_golden(golden, fp64):
         head=heads.index(head),
         atol=row.atol,
         rtol=row.rtol,
+        graph_inputs=graph_inputs_of(imported.config.model),
     )
     assert report.passed, report.describe()
 
