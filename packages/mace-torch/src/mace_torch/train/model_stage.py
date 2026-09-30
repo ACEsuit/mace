@@ -20,6 +20,7 @@ from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
+from mace_core.graph import GRAPH_INPUT_DEFAULTS
 from mace_core.kernels.precision import PrecisionConfig
 from mace_core.kernels.registry import get_backend
 from mace_core.metadata import (
@@ -43,6 +44,7 @@ from mace_torch.finetune.transfer import readout_sources, transfer_foundation
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.models.electrostatics import PolarModel, PolarSettings
+from mace_torch.nn.graph_features import FeatureSpec
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
@@ -111,8 +113,6 @@ _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
     "distance_transform": tuple(_DISTANCE_TRANSFORMS),
     "clebsch_gordan_basis": ("reduced",),
     "readout.gate": ("silu",),
-    "readout.last_only": (False,),
-    "readout.from_embedding": (False,),
 }
 
 
@@ -347,6 +347,10 @@ def build_model(
         distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
         apply_cutoff=config.model.apply_cutoff,
         readout_hidden=_readout_hidden(config),
+        graph_features=_graph_features(config),
+        readout_last_only=config.model.readout.last_only,
+        readout_biased=config.model.readout.bias,
+        readout_from_embedding=config.model.readout.from_embedding,
         # One readout per head, so a head that is a different level of theory
         # has weights of its own to fit it with.
         num_heads=len(heads),
@@ -452,6 +456,64 @@ def _interaction_settings(config: ResolvedConfig) -> _InteractionSettings:
     )
 
 
+def _graph_features(config: ResolvedConfig) -> tuple[FeatureSpec, ...]:
+    return tuple(
+        FeatureSpec(
+            name=feature.name,
+            kind=feature.kind,
+            embedding_dim=feature.embedding_dim,
+            num_classes=feature.num_classes,
+            input_dim=feature.input_dim,
+            level="graph" if feature.per == "graph" else "node",
+            offset=feature.offset,
+            use_bias=feature.use_bias,
+        )
+        for feature in config.model.graph_features
+    )
+
+
+def _unbuilt_graph_features(config: ResolvedConfig) -> list[str]:
+    """Embedded inputs the data path could not supply, and a readout of an
+    embedding that has nothing embedded in it."""
+    model = config.model
+    refused = []
+    for feature in model.graph_features:
+        name = feature.name
+        if name not in GRAPH_INPUT_DEFAULTS:
+            refused.append(
+                f"model.graph_features.{name} is not a per-structure input the "
+                f"graphs carry; they carry {sorted(GRAPH_INPUT_DEFAULTS)}"
+            )
+        elif feature.per != "graph":
+            refused.append(
+                f"model.graph_features.{name} is per {feature.per}, and "
+                f"{name} is one value per structure"
+            )
+        elif feature.kind == "continuous" and feature.input_dim != len(
+            GRAPH_INPUT_DEFAULTS[name]
+        ):
+            refused.append(
+                f"model.graph_features.{name} has input_dim {feature.input_dim}, "
+                f"and {name} has {len(GRAPH_INPUT_DEFAULTS[name])} component(s)"
+            )
+    if model.readout.from_embedding and not model.graph_features:
+        refused.append(
+            "model.readout.from_embedding is True with no model.graph_features; "
+            "the frozen tree builds the embedding readout only beside them"
+        )
+    if model.model == "polar":
+        for path, value in (
+            ("readout.bias", model.readout.bias),
+            ("graph_features", bool(model.graph_features)),
+        ):
+            if value:
+                refused.append(
+                    f"model.{path} is set for the 'polar' model, and it is "
+                    f"built for the energy models"
+                )
+    return refused
+
+
 def _unbuilt_convolution_irreps(config: ResolvedConfig) -> list[str]:
     """The edge irreps a layer would be asked to honour and could not.
 
@@ -502,6 +564,7 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
             allowed = " or ".join(repr(choice) for choice in choices)
             unbuilt.append(f"model.{path} is {value!r}, and only {allowed} is built")
     unbuilt += _unbuilt_convolution_irreps(config)
+    unbuilt += _unbuilt_graph_features(config)
     if unbuilt:
         raise ModelStageError(
             "the configuration asks for a model this stage cannot build, and "

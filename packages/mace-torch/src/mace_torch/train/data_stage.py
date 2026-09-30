@@ -20,6 +20,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from mace_core.config.data import DataConfig, HeadDataConfig
+from mace_core.config.model import ModelConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data import (
     Configuration,
@@ -188,7 +189,7 @@ def run_data_stage(
 
     specs = target_specs(requested)
     head_names = tuple(heads)
-    graph_inputs = graph_inputs_of(config.model.model)
+    graph_inputs = graph_inputs_of(config.model)
 
     def build(items: Sequence[Configuration]) -> GraphDataset:
         return GraphDataset(
@@ -238,17 +239,21 @@ def run_data_stage(
     )
 
 
-def graph_inputs_of(model: str) -> tuple[str, ...]:
-    """The per-structure inputs a registered model reads, by its name.
+def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
+    """The per-structure inputs a model reads.
 
+    The charge-aware model's, and the ones declared as embedded features.
     Written into every graph built for it, from the file or from their
-    defaults, and into no other model's, which reads none.
+    defaults.
     """
-    if model == "polar":
+    inputs: tuple[str, ...] = ()
+    if model.model == "polar":
         from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS
 
-        return POLAR_GRAPH_INPUTS
-    return ()
+        inputs = POLAR_GRAPH_INPUTS
+    return inputs + tuple(
+        feature.name for feature in model.graph_features if feature.name not in inputs
+    )
 
 
 def _of_head(items: Sequence[Configuration], head: str) -> list[Configuration]:

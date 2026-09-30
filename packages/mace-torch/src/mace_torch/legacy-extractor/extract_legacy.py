@@ -90,7 +90,7 @@ INTERACTIONS = (
 #: model's dipole and polarizability readouts are not among them yet, so its
 #: configuration is read in full and its weights are refused by the readout's
 #: name.
-READOUTS = ("LinearReadoutBlock", "NonLinearReadoutBlock")
+READOUTS = ("LinearReadoutBlock", "NonLinearReadoutBlock", "NonLinearBiasReadoutBlock")
 
 
 class ExtractionError(RuntimeError):
@@ -186,6 +186,11 @@ def legacy_config(model) -> dict[str, Any]:
     if plain:
         for key in ("atomic_inter_scale", "atomic_inter_shift"):
             config.pop(key, None)
+    specs = config.get("embedding_specs")
+    if specs is not None:
+        # As ordered pairs: the frozen tree concatenates the embeddings in this
+        # order, and the sidecar is written with its keys sorted.
+        config["embedding_specs"] = [[name, spec] for name, spec in specs.items()]
     return {key: jsonable(value) for key, value in config.items()}
 
 
@@ -237,7 +242,9 @@ def linear_to_canonical(linear) -> tuple[Any, Any]:
     blocks = {}
     offset = 0
     flat = linear.weight.detach().cpu().numpy().astype(numpy.float64)
-    for instruction in linear.instructions:
+    # A biased linear lists each bias as an instruction with no input; the
+    # biases are added unscaled and carried apart from the weights.
+    for instruction in (ins for ins in linear.instructions if ins.i_in >= 0):
         rows, columns = instruction.path_shape
         span = rows * columns
         blocks[(instruction.i_in, instruction.i_out)] = (
@@ -678,6 +685,19 @@ def walk(model, spelling: str) -> Walk:
             )
         walker.linear(f"{prefix}.linear", product.linear, f"{prefix}.linear")
 
+    if hasattr(model, "joint_embedding"):
+        tensors = {}
+        for key, value in model.joint_embedding.named_parameters():
+            walker.use(f"joint_embedding.{key}")
+            tensors[key] = value.detach().cpu().numpy()
+        walker.op("graph_features", "graph_feature_embedding", tensors)
+    if hasattr(model, "embedding_readout"):
+        walker.linear(
+            "embedding_readout",
+            model.embedding_readout.linear,
+            "embedding_readout.linear",
+        )
+
     for index, readout in enumerate(model.readouts):
         prefix = f"readouts.{index}"
         kind = type(readout).__name__
@@ -690,6 +710,10 @@ def walk(model, spelling: str) -> Walk:
             walker.linear(prefix, readout.linear, f"{prefix}.linear")
             continue
         walker.linear(f"{prefix}.first", readout.linear_1, f"{prefix}.linear_1")
+        if kind == "NonLinearBiasReadoutBlock":
+            walker.linear(
+                f"{prefix}.middle", readout.linear_mid, f"{prefix}.linear_mid"
+            )
         walker.linear(f"{prefix}.second", readout.linear_2, f"{prefix}.linear_2")
         acts = getattr(readout.non_linearity, "acts", [])
         gate = [getattr(act, "f", act).__name__ for act in acts]

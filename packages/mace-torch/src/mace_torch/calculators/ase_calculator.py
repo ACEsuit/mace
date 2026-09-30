@@ -202,14 +202,14 @@ class MACECalculator(Calculator):
                     f"calculator is the energy family's; the others have their "
                     f"own."
                 )
-        inputs = {graph_inputs_of(model.config.model.model) for model in self.models}
+        inputs = {graph_inputs_of(model.config.model) for model in self.models}
         if len(inputs) != 1:
             raise ValueError(
                 "the committee mixes models that read different per-structure "
                 "inputs, and one structure's graph carries one set."
             )
         self.graph_inputs = inputs.pop()
-        self.polar = bool(self.graph_inputs)
+        self.polar = first.config.model.model == "polar"
         self.r_max = cutoffs[0]
         self.z_table = first.z_table
         self.heads = first.heads

@@ -74,8 +74,28 @@ _UNBUILT_FAMILIES = {
 #: it and the verification can compare it.
 _OBSERVABLES = ("energy", "forces", "stress")
 
-#: The readout the last layer must have been for the v1 readout to be it.
-_LAST_READOUT = "NonLinearReadoutBlock"
+#: The readouts the last layer may have been, and whether each is the biased
+#: one.
+_LAST_READOUTS = {"NonLinearReadoutBlock": False, "NonLinearBiasReadoutBlock": True}
+
+
+def _graph_features(specs: list[list[Any]]) -> list[dict[str, Any]]:
+    """The frozen tree's embedding specs, ``[name, spec]`` pairs in the order
+    it concatenates them, as the model's graph features."""
+    return [
+        {
+            "name": name,
+            "kind": spec["type"],
+            "embedding_dim": int(spec["emb_dim"]),
+            "num_classes": int(spec.get("num_classes", 0)),
+            "input_dim": int(spec.get("in_dim", 1)),
+            "per": "graph" if spec.get("per", "graph") == "graph" else "atom",
+            "offset": int(spec.get("offset", 0)),
+            "use_bias": bool(spec.get("use_bias", True)),
+        }
+        for name, spec in specs
+    ]
+
 
 #: Relative tolerance on constants v1 recomputes instead of storing.
 _CONSTANT_TOLERANCE = 1e-12
@@ -143,17 +163,17 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         refusals.append(
             f"hidden_irreps is {hidden}, with different channel counts per irrep"
         )
-    for key, allowed in (
-        ("use_so3", False),
-        ("embedding_specs", None),
-    ):
-        if take(key) != allowed:
-            refusals.append(f"{key} is {recorded[key]!r}, which v1 has no field for")
-    if take("readout_cls") != _LAST_READOUT:
+    if take("use_so3") is not False:
         refusals.append(
-            f"the last readout is a {recorded['readout_cls']}, and v1 builds a "
-            f"{_LAST_READOUT} there"
+            f"use_so3 is {recorded['use_so3']!r}, which v1 has no field for"
         )
+    readout_class = take("readout_cls")
+    if readout_class not in _LAST_READOUTS:
+        refusals.append(
+            f"the last readout is a {recorded['readout_cls']}, and v1 builds "
+            f"{' or '.join(_LAST_READOUTS)} there"
+        )
+    graph_features = _graph_features(take("embedding_specs") or [])
     # A backend setting of the source, not part of the model it computes.
     take("cueq_config")
     # Checked against the ops rather than trusted: each contraction records the
@@ -204,7 +224,9 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
             "gate": str(take("gate")),
             "last_only": bool(take("use_last_readout_only")),
             "from_embedding": bool(take("use_embedding_readout")),
+            "bias": _LAST_READOUTS.get(readout_class, False),
         },
+        "graph_features": graph_features,
     }
     if family == "plain":
         model["scaling"] = "none"
@@ -432,6 +454,13 @@ def _state(
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
         elif path == f"{outputs}energy_head":
             state[path] = _energy_constants(artifact, tensors)
+        elif path == f"{backbone}graph_features":
+            state[path] = {
+                name: _as(artifact.tensor("graph_features", name), value)
+                for name, value in tensors.items()
+            }
+        elif path == f"{outputs}embedding_readout":
+            state[path] = _linear(artifact, "embedding_readout", tensors)
         elif path.startswith(f"{outputs}heads.energy.readouts."):
             state[path] = _linear(
                 artifact,
