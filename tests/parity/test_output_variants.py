@@ -1,9 +1,10 @@
 """The readout and input-feature settings, each against the frozen tree.
 
-MACE-OMOL uses all of them at once: the total charge and spin embedded beside
+MACE-OMOL uses the first four at once: the total charge and spin embedded beside
 the elements, an energy read out of that embedding and added beside the
 isolated-atom energies, a readout of the last layer only, and the biased
-readout there. Each is built here from the anchor's recipe, alone and
+readout there. MACE-Polar S has one layer, whose readout the frozen tree
+keeps linear. Each is built here from the anchor's recipe, alone and
 together, converted through the production extraction and held to the live
 legacy model.
 """
@@ -57,6 +58,7 @@ SETTINGS = {
     },
     "last-readout-only": {"use_last_readout_only": True},
     "biased-readout": {"readout_cls": modules.NonLinearBiasReadoutBlock},
+    "one-layer": {"num_interactions": 1},
     "all-of-mace-omol": {
         "embedding_specs": {"total_spin": SPIN, "total_charge": CHARGE},
         "use_embedding_readout": True,
@@ -95,8 +97,8 @@ def legacy_model(scale_shift: bool, **settings) -> torch.nn.Module:
         distance_transform=ANCHOR_CONFIG["distance_transform"],
         radial_type=ANCHOR_CONFIG["radial_type"],
         use_reduced_cg=ANCHOR_CONFIG["use_reduced_cg"],
-        **settings,
     )
+    common.update(settings)
     if scale_shift:
         model = modules.ScaleShiftMACE(
             atomic_inter_scale=1.7, atomic_inter_shift=0.3, **common
