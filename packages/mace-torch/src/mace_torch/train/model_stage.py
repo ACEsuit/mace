@@ -429,6 +429,8 @@ def _polar_model(
         apply_cutoff=config.model.apply_cutoff,
         radial_hidden=config.model.radial_mlp,
         readout_hidden=_readout_hidden(config),
+        readout_biased=config.model.readout.bias,
+        readout_last_only=config.model.readout.last_only,
         num_heads=len(heads),
         **_interaction_settings(config)._asdict(),
         element_agnostic_product=config.model.use_agnostic_product,
@@ -503,10 +505,7 @@ def _unbuilt_graph_features(config: ResolvedConfig) -> list[str]:
             "the frozen tree builds the embedding readout only beside them"
         )
     if model.model == "polar":
-        for path, value in (
-            ("readout.bias", model.readout.bias),
-            ("graph_features", bool(model.graph_features)),
-        ):
+        for path, value in (("graph_features", bool(model.graph_features)),):
             if value:
                 refused.append(
                     f"model.{path} is set for the 'polar' model, and it is "
