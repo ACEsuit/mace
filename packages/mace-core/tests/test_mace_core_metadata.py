@@ -107,22 +107,22 @@ def test_schema_version_is_written():
     assert json.loads(full_record().to_json())["schema_version"] == SCHEMA_VERSION
 
 
-def test_future_schema_version_is_rejected_clearly():
+@pytest.mark.parametrize(
+    "read",
+    [ModelMetadata.model_validate, lambda d: ModelMetadata.from_json(json.dumps(d))],
+    ids=["model_validate", "from_json"],
+)
+def test_another_schema_version_is_rejected_on_every_route(read):
     document = json.loads(full_record().to_json())
     document["schema_version"] = SCHEMA_VERSION + 1
-    with pytest.raises(MetadataSchemaError) as excinfo:
-        ModelMetadata.from_json(json.dumps(document))
+    document["a_field_of_the_next_version"] = 1
+    with pytest.raises(ValidationError) as excinfo:
+        read(document)
+    assert excinfo.value.error_count() == 1  # the version, not the unknown field
     message = str(excinfo.value)
     assert f"schema_version {SCHEMA_VERSION + 1}" in message
     assert f"reads schema_version {SCHEMA_VERSION}" in message
     assert "upgrade" in message
-
-
-def test_a_record_without_its_schema_version_is_rejected():
-    document = json.loads(full_record().to_json())
-    del document["schema_version"]
-    with pytest.raises(MetadataSchemaError, match="schema_version None"):
-        ModelMetadata.from_json(json.dumps(document))
 
 
 def test_infinity_survives_and_nan_is_refused():

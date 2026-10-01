@@ -3,7 +3,6 @@ made, stored as JSON beside the weights."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
 from typing import Any, Final
 
@@ -29,8 +28,7 @@ SCHEMA_VERSION: Final = 1
 
 
 class MetadataSchemaError(ValueError):
-    """Metadata this code cannot read back: an unknown schema version, or a
-    value JSON would change."""
+    """Metadata that would not read back from its JSON as the same record."""
 
 
 class _Record(BaseModel):
@@ -113,6 +111,21 @@ class ModelMetadata(_Record):
     citations: list[Citation] = Field(default_factory=list)
     notes: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reads_only_its_own_schema_version(cls, data: Any) -> Any:
+        # Before the fields are read: a newer record may hold fields this code
+        # does not know, and the version is the error worth reporting.
+        if isinstance(data, dict):
+            version = data.get("schema_version", SCHEMA_VERSION)
+            if version != SCHEMA_VERSION:
+                raise ValueError(
+                    f"model metadata has schema_version {version!r}, but this "
+                    f"mace-core reads schema_version {SCHEMA_VERSION}; a newer "
+                    "record needs an upgrade of mace-core"
+                )
+        return data
+
     @model_validator(mode="after")
     def _heads_name_known_sources(self) -> ModelMetadata:
         names = [source.name for source in self.data.sources]
@@ -141,17 +154,7 @@ class ModelMetadata(_Record):
     @classmethod
     def from_json(cls, text: str) -> ModelMetadata:
         """Read a record written by `to_json`."""
-        document = json.loads(text)
-        # Checked before validation: a newer record may hold fields this code
-        # does not know, and the version is the error worth reporting.
-        version = document.get("schema_version")
-        if version != SCHEMA_VERSION:
-            raise MetadataSchemaError(
-                f"model metadata has schema_version {version!r}, but this "
-                f"mace-core reads schema_version {SCHEMA_VERSION}; a newer "
-                "record needs an upgrade of mace-core"
-            )
-        return cls.model_validate(document)
+        return cls.model_validate_json(text)
 
 
 def format_citations(citations: Iterable[Citation]) -> str:
