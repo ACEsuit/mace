@@ -4,7 +4,6 @@ config base knows nothing of either; a command line composes them with
 `read_config_file` and `from_dict`."""
 
 import json
-from typing import Any
 
 import pytest
 from mace_core.config import (
@@ -55,12 +54,6 @@ def test_paths_keep_their_order_and_a_repeated_path_moves_to_where_it_is_last():
 
 def test_an_empty_inline_value_does_not_hide_the_next_option():
     assert parse_overrides(["--name=", "--seed", "5"]) == {"name": "", "seed": "5"}
-
-
-@pytest.mark.parametrize("token", ["--a..b", "--a.", "--.a"])
-def test_an_empty_key_in_a_path_is_a_config_error(token):
-    with pytest.raises(ConfigError, match=rf"override {token} has an empty key"):
-        parse_overrides([token, "1"])
 
 
 def test_a_value_starting_with_dashes_works_in_both_forms():
@@ -163,15 +156,6 @@ def test_a_yaml_anchor_does_not_share_an_override(tmp_path):
     document = read_config_file(path)
     assert document["a"] is document["b"]  # what the parser hands over
     assert apply_overrides(document, {"a.x": 1}) == {"a": {"x": 1}, "b": {}}
-
-
-def test_a_value_that_contains_itself_is_a_config_error():
-    loop: dict[str, Any] = {}
-    loop["b"] = loop
-    with pytest.raises(ConfigError, match="refers to itself"):
-        apply_overrides({"a": loop}, {})
-    with pytest.raises(ConfigError, match="refers to itself"):
-        apply_overrides({}, {"a": loop})
 
 
 # ---------------------------------------------------------------------------

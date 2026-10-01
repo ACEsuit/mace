@@ -54,7 +54,7 @@ def read_config_file(path: str | os.PathLike[str]) -> dict[str, Any]:
         raise ConfigError(f"cannot read config file {path}: {error}") from error
     try:
         document = parse(text)
-    except (ValueError, yaml.YAMLError, RecursionError) as error:  # toml, json: Value
+    except (ValueError, yaml.YAMLError) as error:  # toml, json: ValueError
         raise ConfigError(f"cannot parse config file {path}: {error}") from error
     if document is None:  # YAML reads an empty or comment-only file as None
         return {}

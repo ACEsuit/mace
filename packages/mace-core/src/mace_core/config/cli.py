@@ -22,12 +22,12 @@ __all__ = ["apply_overrides", "parse_overrides"]
 
 
 def parse_overrides(tokens: Iterable[str]) -> dict[str, Any]:
-    """`--a.b.c value` or `--a.b.c=value`, in order, to `{"a.b.c": value}`. A
-    value that is `null` or starts with `[` or `{` is parsed as JSON; any other
-    value stays a string for pydantic to coerce. A repeated path keeps its last
-    value, at its last position. A token that is not `--path`, a path without
-    its value or with an empty key (`--a..b`), and a JSON value that does not
-    parse are `ConfigError`s."""
+    """Turn command-line tokens into a dict of dotted path to value.
+
+    Both `--a.b value` and `--a.b=value` give `{"a.b": value}`. A value that
+    is `null` or starts with `[` or `{` is parsed as JSON; any other stays a
+    string for pydantic to coerce. A repeated path keeps its last value. A
+    token that fits none of this is a `ConfigError`."""
     if isinstance(tokens, str):
         raise TypeError(f"tokens is a string, {tokens!r}; pass a list of tokens")
     argv = list(tokens)
@@ -41,8 +41,6 @@ def parse_overrides(tokens: Iterable[str]) -> dict[str, Any]:
             raise ConfigError(
                 f"unknown config option '{token}'; options are --key.path value"
             )
-        if "" in dotted_path.split("."):
-            raise ConfigError(f"override {token} has an empty key in its path")
         if not has_inline_value:
             if position == len(argv):
                 raise ConfigError(f"override {token} is missing its value")
@@ -52,7 +50,7 @@ def parse_overrides(tokens: Iterable[str]) -> dict[str, Any]:
         if value == "null" or value[:1] in ("[", "{"):
             try:
                 parsed = json.loads(value)
-            except (ValueError, RecursionError) as error:
+            except ValueError as error:
                 raise ConfigError(
                     f"override {token} is not valid JSON: {error}"
                 ) from error
@@ -64,34 +62,36 @@ def parse_overrides(tokens: Iterable[str]) -> dict[str, Any]:
 def apply_overrides(
     document: Mapping[str, Any], overrides: Mapping[str, Any]
 ) -> dict[str, Any]:
-    """A copy of the parsed file with each override written at its dotted path,
-    in order. Mappings missing on the way are created and a parent that is not
-    a mapping is replaced. A mapping value merges key by key into a mapping
-    already there, so `--model '{"depth": 3}'` keeps the file's other `model`
-    keys; anything else replaces. Neither argument is written into; a value
-    that contains itself is a `ConfigError`."""
-    try:
-        copy = _copy_tree(document)
-        for dotted_path, value in overrides.items():
-            _write(copy, dotted_path.split("."), value)
-    except RecursionError:
-        raise ConfigError(
-            "the config contains a value that refers to itself or is nested too deeply"
-        ) from None
+    """Return a copy of a parsed config file with the overrides written in.
+
+    Each value goes to its dotted path, in order. A mapping merges into a
+    mapping already there, so `--model '{"depth": 3}'` keeps the file's other
+    `model` keys; any other value replaces what was there."""
+    copy = _copy_tree(document)
+    for dotted_path, value in overrides.items():
+        _set_at_path(copy, dotted_path.split("."), value)
     return copy
 
 
-def _write(mapping: dict[str, Any], keys: list[str], value: Any) -> None:
+def _set_at_path(mapping: dict[str, Any], keys: list[str], value: Any) -> None:
+    """Walk down the keys, creating dicts on the way (a parent that is not a
+    dict is replaced by one), and set or merge the value at the last key."""
     *parent_keys, last_key = keys
-    for key in parent_keys:  # create mappings on the way; replace non-mappings
+    for key in parent_keys:
         if not isinstance(mapping.get(key), dict):
             mapping[key] = {}
         mapping = mapping[key]
-    if isinstance(value, Mapping) and isinstance(mapping.get(last_key), dict):
-        for key, item in value.items():  # a JSON key is one key, dots included
-            _write(mapping[last_key], [key], item)
+    _set_or_merge(mapping, last_key, value)
+
+
+def _set_or_merge(mapping: dict[str, Any], key: str, value: Any) -> None:
+    """Set `mapping[key]`. A dict merges, key by key, into a dict already
+    there; anything else replaces what was there."""
+    if isinstance(value, Mapping) and isinstance(mapping.get(key), dict):
+        for inner_key, item in value.items():
+            _set_or_merge(mapping[key], inner_key, item)
     else:
-        mapping[last_key] = _copy_tree(value)
+        mapping[key] = _copy_tree(value)
 
 
 def _copy_tree(value: Any) -> Any:
