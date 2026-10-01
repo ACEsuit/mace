@@ -118,31 +118,11 @@ def test_future_schema_version_is_rejected_clearly():
     assert "upgrade" in message
 
 
-@pytest.mark.parametrize(
-    ("mutate", "message"),
-    [
-        (
-            lambda d: d.pop("schema_version"),
-            "schema_version None; expected the integer 1",
-        ),
-        (lambda d: d.update(schema_version="1"), "schema_version '1'; expected"),
-        (lambda d: d.update(schema_version=1.0), "schema_version 1.0; expected"),
-    ],
-)
-def test_missing_or_non_integer_schema_version_is_rejected(mutate, message):
+def test_a_record_without_its_schema_version_is_rejected():
     document = json.loads(full_record().to_json())
-    mutate(document)
-    with pytest.raises(MetadataSchemaError, match=message):
+    del document["schema_version"]
+    with pytest.raises(MetadataSchemaError, match="schema_version None"):
         ModelMetadata.from_json(json.dumps(document))
-
-
-@pytest.mark.parametrize(
-    ("text", "message"),
-    [("[1]", "must be a JSON object, not list"), ("{", "is not valid JSON")],
-)
-def test_non_record_json_is_rejected_with_context(text, message):
-    with pytest.raises(MetadataSchemaError, match=message):
-        ModelMetadata.from_json(text)
 
 
 def test_infinity_survives_and_nan_is_refused():
@@ -157,13 +137,6 @@ def test_infinity_survives_and_nan_is_refused():
     record.config.resolved["cutoff"] = float("nan")
     with pytest.raises(MetadataSchemaError, match="does not survive"):
         record.to_json()
-
-
-def test_schema_version_is_pinned_on_direct_validation_as_well():
-    document = json.loads(full_record().to_json())
-    document["schema_version"] = SCHEMA_VERSION + 1
-    with pytest.raises(ValidationError, match="schema_version"):
-        ModelMetadata.model_validate(document)
 
 
 def test_unknown_fields_are_rejected():

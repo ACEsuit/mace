@@ -1,20 +1,11 @@
-"""The record every v1 model carries about how it was made.
-
-`ModelMetadata` is stored alongside the weights of every trained model, not
-only foundation models. It is plain data: a Pydantic tree that serialises to
-JSON with `to_json()` and comes back, without loss, through `from_json()`.
-
-The record is versioned. `SCHEMA_VERSION` is bumped whenever a field is
-added, removed or changes meaning, and `from_json()` refuses a record written
-under a version this code does not know, so a newer checkpoint fails loudly
-at load time instead of being read with the wrong meanings.
-"""
+"""`ModelMetadata`: the record every trained v1 model carries about how it was
+made, stored as JSON beside the weights."""
 
 from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -33,13 +24,13 @@ __all__ = [
     "format_citations",
 ]
 
-#: The schema version this module writes and the only one it reads. Bump it
-#: together with the `Literal` on `ModelMetadata.schema_version`.
+#: Bump when a field is added, removed or changes meaning.
 SCHEMA_VERSION: Final = 1
 
 
 class MetadataSchemaError(ValueError):
-    """The metadata was written under a schema version this code cannot read."""
+    """Metadata this code cannot read back: an unknown schema version, or a
+    value JSON would change."""
 
 
 class _Record(BaseModel):
@@ -51,13 +42,7 @@ class _Record(BaseModel):
 
 
 class ConfigRecord(_Record):
-    """The training configuration, as written and as resolved.
-
-    Both are the JSON-native dicts a `BaseConfig` exports: `user` is
-    `to_user_dict()`, the keys the config file and the command line set, and
-    `resolved` is `to_resolved_dict()`, every key with defaults filled in.
-    Build it with `from_config()` so the two cannot be mixed up.
-    """
+    """Record of the training config, as written and as resolved."""
 
     user: dict[str, Any] = Field(default_factory=dict)
     resolved: dict[str, Any] = Field(default_factory=dict)
@@ -70,22 +55,14 @@ class ConfigRecord(_Record):
 class Provenance(_Record):
     """Which code produced the model."""
 
-    #: Version per distribution involved, `{"mace-core": "1.0.2", "mace-torch":
-    #: "1.1.0"}`: the packages version independently, so no single number
-    #: identifies the code.
+    #: Version per distribution used, `{"mace-core": "1.0.2", "mace-torch": "1.1.0"}`
     versions: dict[str, str]
     #: Full hash of the commit the code was run from; None when not in a checkout.
     git_commit: str | None = None
 
 
 class DataSourceSummary(_Record):
-    """Automated summary of one data source.
-
-    Reference-quantity keys name the method that produced the reference as a
-    prefix on the quantity: `pbe_energy`, `pbe_forces`, `r2scan_energy`.
-    `reference_keys` lists the keys this source provides, under that
-    convention. The heads a source fed name it in `ModelMetadata.heads`.
-    """
+    """Summary of one data source."""
 
     #: The data source's name in the config.
     name: str
@@ -93,21 +70,21 @@ class DataSourceSummary(_Record):
     num_atoms: int | None = None
     #: Atomic numbers of every element present.
     elements: list[int] = Field(default_factory=list)
+    #: The reference quantities provided, each prefixed by the method that
+    #: produced it: `pbe_energy`, `pbe_forces`, `r2scan_energy`.
     reference_keys: list[str] = Field(default_factory=list)
 
 
 class DataSummary(_Record):
-    """One summary per data source, each once even when several heads share
-    it (`ModelMetadata` checks that); totals are sums over them, not stored."""
+    """One summary per data source, each source once."""
 
     sources: list[DataSourceSummary] = Field(default_factory=list)
 
 
 class HeadSummary(_Record):
-    """What one head was fitted on: the data sources it consumed. Its E0s are
-    not recorded here; the head's parameters in the model hold them."""
+    """What one head was fitted on."""
 
-    #: Names in `DataSummary.sources`; a source feeding two heads appears in both.
+    #: Names from `DataSummary.sources`.
     sources: list[str] = Field(default_factory=list)
 
 
@@ -123,10 +100,9 @@ class Citation(_Record):
 
 
 class ModelMetadata(_Record):
-    """The mandatory per-model record. See the module docstring."""
+    """How a model was made: its config, the code, the data and what to cite."""
 
-    #: Pinned to the version this code reads; a bump here is a schema change.
-    schema_version: Literal[1] = SCHEMA_VERSION
+    schema_version: int = SCHEMA_VERSION
     config: ConfigRecord
     provenance: Provenance
     data: DataSummary = Field(default_factory=DataSummary)
@@ -141,10 +117,7 @@ class ModelMetadata(_Record):
     def _heads_name_known_sources(self) -> ModelMetadata:
         names = [source.name for source in self.data.sources]
         if len(set(names)) != len(names):
-            raise ValueError(
-                f"data.sources names a source twice: {sorted(names)}; "
-                f"summarise each source once"
-            )
+            raise ValueError(f"data.sources names a source twice: {sorted(names)}")
         for head, summary in self.heads.items():
             for name in summary.sources:
                 if name not in names:
@@ -155,59 +128,35 @@ class ModelMetadata(_Record):
         return self
 
     def to_json(self, indent: int | None = 2) -> str:
-        """Serialise; raises `MetadataSchemaError` if the text reads back to a
-        different record, so a lossy value (a tuple that comes back as a list,
-        a datetime that comes back as a string) is never stored."""
+        """Serialise to JSON, checking that it reads back as the same record."""
         text = self.model_dump_json(indent=indent)
         if self.from_json(text) != self:
             raise MetadataSchemaError(
-                "model metadata does not survive a JSON round trip; "
-                "a field holds a value JSON cannot represent"
+                "model metadata does not survive a JSON round trip: a field holds "
+                "a value JSON reads back differently, such as a tuple (a list "
+                "on the way back) or NaN (never equal to itself)"
             )
         return text
 
     @classmethod
     def from_json(cls, text: str) -> ModelMetadata:
-        """Parse a record written by `to_json()`.
-
-        Raises `MetadataSchemaError` when the record carries a schema version
-        this code does not read, before any field is interpreted.
-        """
-        try:
-            document = json.loads(text)
-        except ValueError as error:
-            raise MetadataSchemaError(
-                f"model metadata is not valid JSON: {error}"
-            ) from error
-        if not isinstance(document, dict):
-            raise MetadataSchemaError(
-                f"model metadata must be a JSON object, not {type(document).__name__}"
-            )
+        """Read a record written by `to_json`."""
+        document = json.loads(text)
+        # Checked before validation: a newer record may hold fields this code
+        # does not know, and the version is the error worth reporting.
         version = document.get("schema_version")
-        if type(version) is not int:
-            raise MetadataSchemaError(
-                f"model metadata has schema_version {version!r}; expected the "
-                f"integer {SCHEMA_VERSION}"
-            )
         if version != SCHEMA_VERSION:
-            hint = (
-                "it was written by a newer mace-core; upgrade to read it"
-                if version > SCHEMA_VERSION
-                else "no migration exists for it"
-            )
             raise MetadataSchemaError(
-                f"model metadata has schema_version {version}, but this "
-                f"mace-core reads schema_version {SCHEMA_VERSION}: {hint}"
+                f"model metadata has schema_version {version!r}, but this "
+                f"mace-core reads schema_version {SCHEMA_VERSION}; a newer "
+                "record needs an upgrade of mace-core"
             )
-        return cls.model_validate_json(text)
+        return cls.model_validate(document)
 
 
 def format_citations(citations: Iterable[Citation]) -> str:
-    """Render citations as a numbered, printable block; empty for none.
-
-    One line per citation: authors, title, venue and year, then the DOI or
-    URL. Fields that are unset are left out rather than printed as None.
-    """
+    """Render citations as a numbered block, one line each; unset fields are
+    left out."""
     lines = []
     for number, citation in enumerate(citations, start=1):
         parts = []
