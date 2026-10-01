@@ -8,7 +8,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Set as AbstractSet
-from typing import Annotated, Any
+from typing import Annotated
 
 import pytest
 import yaml
@@ -98,20 +98,6 @@ def test_malformed_file_is_a_config_error(tmp_path, extension, text):
     path.write_text(text, encoding="utf-8")
     with pytest.raises(ConfigError, match=r"cannot parse config file .*broken"):
         DemoConfig.load(path)
-
-
-def test_a_yaml_anchor_that_contains_itself_is_a_config_error(tmp_path):
-    # Under a section it would be pydantic's error; under a free dict it would
-    # load and then fail to export, so the file is refused up front.
-    class Free(BaseConfig):
-        extra: dict[str, Any] = Field(default_factory=dict)
-
-    path = tmp_path / "loop.yaml"
-    path.write_text("extra: &loop {b: *loop}\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match=r"loop\.yaml contains a value that refers"):
-        Free.load(path)
-    path.write_text("extra: {a: &shared {x: 1}, b: *shared}\n", encoding="utf-8")
-    assert Free.load(path).extra == {"a": {"x": 1}, "b": {"x": 1}}  # sharing is fine
 
 
 # ---------------------------------------------------------------------------

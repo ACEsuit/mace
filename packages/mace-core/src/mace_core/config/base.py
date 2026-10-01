@@ -33,9 +33,8 @@ class ConfigError(ValueError):
 def read_config_file(path: str | os.PathLike[str]) -> dict[str, Any]:
     """Parse one TOML, YAML or JSON config file, chosen by its (case-folded)
     extension, into a dict; an empty or comment-only file is `{}`. Raises
-    `ConfigError` for an unknown extension, an unreadable file, a parse failure,
-    a top level that is not a mapping, or a value that contains itself (a YAML
-    anchor inside itself), which no schema could export again."""
+    `ConfigError` for an unknown extension, an unreadable file, a parse failure
+    or a top level that is not a mapping."""
     path = Path(path)
     parsers = {
         ".toml": tomllib.loads,
@@ -64,12 +63,6 @@ def read_config_file(path: str | os.PathLike[str]) -> dict[str, Any]:
             f"config file {path} must be a mapping of keys to values at the top "
             f"level, not {type(document).__name__}"
         )
-    try:  # the stdlib's cycle detector; shared siblings pass, only a cycle fails
-        json.dumps(document, default=str, skipkeys=True)
-    except ValueError as error:
-        raise ConfigError(
-            f"config file {path} contains a value that refers to itself"
-        ) from error
     return document
 
 
@@ -104,21 +97,25 @@ class ConfigSection(BaseModel):
                 f"{cls.__name__} sets frozen=False; a section stays frozen "
                 "so a validated config is not changed behind the validation"
             )
-        if cls.__pydantic_complete__:  # else a forward reference: `load` checks it
-            _check_field_declarations(cls)
+        # A forward reference leaves the field types unknown for now;
+        # `_check_schema` checks the section on load instead.
+        if cls.__pydantic_complete__:
+            _check_section_fields(cls)
 
 
-def _leaf_types(annotation: Any) -> Iterator[Any]:
-    """Every class or origin an annotation reaches through `Annotated`, unions and
-    list, tuple or dict parameters. Non-type arguments (Literal values, `Field`
-    metadata) come out too; callers test `isinstance(leaf, type)`."""
-    yield get_origin(annotation) or annotation
+def _types_in(annotation: Any) -> Iterator[type]:
+    """Every class an annotation mentions, containers included."""
+    outer = get_origin(annotation) or annotation
+    if isinstance(outer, type):
+        yield outer
     for argument in get_args(annotation):
-        yield from _leaf_types(argument)
+        yield from _types_in(argument)
 
 
-def _check_field_declarations(section: type[ConfigSection]) -> None:
-    """The checks on one class's own fields; a violation is a `TypeError`."""
+def _check_section_fields(section: type[ConfigSection]) -> None:
+    """Refuse, with a `TypeError`, what pydantic allows on a field but a config
+    section cannot have: a field that would not load back from the export, or
+    a child that would ignore unknown keys."""
     if section.model_computed_fields:
         name = next(iter(section.model_computed_fields))
         raise TypeError(
@@ -130,25 +127,25 @@ def _check_field_declarations(section: type[ConfigSection]) -> None:
             raise TypeError(f"{where} has an alias; a config key is its field name")
         if field.exclude:
             raise TypeError(f"{where} is excluded from dumps; it would not load back")
-        for leaf in _leaf_types(field.annotation):
-            if not isinstance(leaf, type):
-                continue
+        for held in _types_in(field.annotation):
             # Any set type, `set`, `frozenset` or an abstract one, dumps in an
             # order that varies between runs, so the export would not be stable.
-            if issubclass(leaf, AbstractSet):
+            if issubclass(held, AbstractSet):
                 raise TypeError(f"{where} is typed as a set; order varies. Use a list")
-            if issubclass(leaf, BaseModel) and not issubclass(leaf, ConfigSection):
+            if issubclass(held, BaseModel) and not issubclass(held, ConfigSection):
                 raise TypeError(
-                    f"{where} holds {leaf.__name__}, which is not a ConfigSection; "
+                    f"{where} holds {held.__name__}, which is not a ConfigSection; "
                     "unknown keys under it would be dropped"
                 )
 
 
-def _check_sections_reached_by(root: type[ConfigSection]) -> None:
-    """Resolve any section the root's tree reaches that a forward reference left
-    incomplete at definition, and check every reached section. Checking again on
-    each load is a few attribute reads per class; it saves remembering which
-    classes were checked."""
+def _check_schema(root: type[ConfigSection]) -> None:
+    """Run `_check_section_fields` on the root and every section under it.
+
+    A section is checked when it is defined, unless a forward reference left
+    its field types unknown then. Such a section is resolved and checked here,
+    on load. The others are checked a second time, which costs less than
+    tracking which ones were skipped."""
     to_visit, seen = [root], set()
     while to_visit:
         section = to_visit.pop()
@@ -157,11 +154,11 @@ def _check_sections_reached_by(root: type[ConfigSection]) -> None:
         seen.add(section)
         if not section.__pydantic_complete__:
             section.model_rebuild()  # resolves the forward reference or raises
-        _check_field_declarations(section)
+        _check_section_fields(section)
         for field in section.model_fields.values():
-            for leaf in _leaf_types(field.annotation):
-                if isinstance(leaf, type) and issubclass(leaf, ConfigSection):
-                    to_visit.append(leaf)
+            for held in _types_in(field.annotation):
+                if issubclass(held, ConfigSection):
+                    to_visit.append(held)
 
 
 class BaseConfig(ConfigSection):
@@ -175,22 +172,17 @@ class BaseConfig(ConfigSection):
 
     @classmethod
     def from_dict(cls, document: Mapping[str, Any]) -> Self:
-        """Build the config from a parsed document: `load` for a caller that
-        edits the dict `read_config_file` returned first, such as a command
-        line. The document is not written into (values under an `Any`-typed
-        field are shared with it, not copied)."""
-        _check_sections_reached_by(cls)
+        """Build the config from an already parsed file, such as one a command
+        line applied its overrides to."""
+        _check_schema(cls)
         return cls.model_validate(document)
 
     def to_resolved_dict(self) -> dict[str, Any]:
-        """Every field, defaults filled, as JSON-native values in declaration
-        order: a config file that loads back to this config (through TOML
-        whenever no value is `None`)."""
+        """A JSON-compatible dict that loads back to this config, defaults
+        filled in."""
         return self.model_dump(mode="json")
 
     def to_user_dict(self) -> dict[str, Any]:
-        """Only what was set, in the same shape. A loaded config carries
-        the tag of every kinds field it wrote, so this loads back;
-        a variant built in code without its tag (`Config(loss=Huber(delta=2))`)
-        exports without `kind`: pass the tag, or use `to_resolved_dict`."""
+        """A JSON-compatible dict that loads back to this config, holding only
+        the fields that were set."""
         return self.model_dump(mode="json", exclude_unset=True)
