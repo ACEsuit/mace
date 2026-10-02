@@ -338,9 +338,12 @@ class ZBLBasis(torch.nn.Module):
             dim=-1,
             keepdim=True,
         )
-        coulomb = (
-            14.3996 * sender_atomic_numbers * receiver_atomic_numbers
-        ) / edge_lengths
+        # An integer tensor times a Python float takes the default dtype, not
+        # the model's: cast the charge product before the constant meets it.
+        charge_product = (sender_atomic_numbers * receiver_atomic_numbers).to(
+            edge_lengths.dtype
+        )
+        coulomb = 14.3996 * charge_product / edge_lengths
         pair_r_max = (
             self.covalent_radii[sender_atomic_numbers]
             + self.covalent_radii[receiver_atomic_numbers]

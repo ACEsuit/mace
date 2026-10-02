@@ -4,10 +4,15 @@
 full harness with process-state snapshot and restore is PAR-1's; until it lands
 the tests here compare pure-math blocks whose only global is the default dtype,
 which the fixture below sets and restores.
+
+The legacy jobs that collect the whole `tests/` tree install no v1 package, so
+without the v1 stack the directory is skipped rather than failing collection.
 """
 
 import pytest
 import torch
+
+pytest.importorskip("mace_torch", reason="the v1 stack is not installed in this job")
 
 
 @pytest.fixture(name="fp64")

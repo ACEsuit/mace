@@ -331,6 +331,23 @@ def test_zbl_energy_is_scattered_onto_the_receiver():
     assert torch.equal(energies[1:], torch.zeros(2))
 
 
+@fp64_only
+def test_zbl_computes_in_its_own_dtype_whatever_the_default():
+    """The atomic numbers are integers, so the Coulomb product must be cast to
+    the model's dtype explicitly: left to promotion it takes the *default*
+    dtype, and a float64 model called under a float32 default would round the
+    Coulomb constant to float32."""
+    zbl = ZBLBasis(polynomial_order=6)
+    node_atomic_numbers = torch.tensor([1, 6])
+    lengths = torch.tensor([[0.9], [0.9]])
+    edge_index = torch.tensor([[0, 1], [1, 0]])
+    reference = zbl(lengths, node_atomic_numbers, edge_index)
+    torch.set_default_dtype(torch.float32)  # the fixture restores it
+    under_float32_default = zbl(lengths, node_atomic_numbers, edge_index)
+    assert under_float32_default.dtype == torch.float64
+    assert torch.equal(under_float32_default, reference)
+
+
 def test_zbl_buffers_and_trainability():
     zbl = ZBLBasis(polynomial_order=6)
     assert_close(zbl.screening_coefficients, [0.1818, 0.5099, 0.2802, 0.02817], "zbl c")
