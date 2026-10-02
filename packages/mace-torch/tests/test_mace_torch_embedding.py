@@ -157,15 +157,6 @@ def test_the_basis_sees_the_transformed_lengths():
     assert not torch.allclose(features, reference(lengths))
 
 
-def test_no_transform_is_an_explicit_none():
-    """Configuration is explicit: the transform slot is None, never an absent
-    attribute probed with hasattr."""
-    assert _block().distance_transform is None
-    assert isinstance(
-        _block(distance_transform="soft").distance_transform, SoftTransform
-    )
-
-
 def test_a_padding_edge_contributes_exactly_nothing():
     """A self-loop edge shifted by 2*r_max has length 2*r_max and embeds to
     exactly zero: in the features in the default mode, through an exactly zero
@@ -232,6 +223,12 @@ def test_a_basis_config_builds_the_module_it_names(config, expected_module):
 )
 def test_a_transform_config_builds_the_module_it_names(config, expected_module):
     _assert_same_module(build_distance_transform(config), expected_module())
+
+
+def test_the_kind_none_builds_no_transform():
+    """The transform slot is an explicit None, never an absent attribute
+    probed with hasattr, and the block skips the step for it."""
+    assert build_distance_transform(NoDistanceTransformConfig()) is None
 
 
 def test_the_cutoff_config_builds_the_envelope_at_the_given_radius():

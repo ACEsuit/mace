@@ -1,5 +1,9 @@
 """The radial embedding sections of the model schema: what a config writes,
-what it defaults to, and what it is refused."""
+what it defaults to, and what it is refused.
+
+How a tagged union loads, exports and reports errors is the config base's and
+is tested there (`test_mace_core_config_kinds.py`); this file pins only what
+these sections add: the defaults, the kind names and the size bounds."""
 
 import pytest
 from mace_core.config import (
@@ -32,91 +36,52 @@ def error_locations(excinfo):
     return [".".join(map(str, error["loc"])) for error in excinfo.value.errors()]
 
 
-def test_an_empty_config_is_the_legacy_command_line_default():
+def test_the_defaults_are_the_legacy_command_line_defaults():
     """`--radial_type bessel --num_radial_basis 8 --distance_transform None
-    --num_cutoff_basis 5`."""
+    --num_cutoff_basis 5`. The flag sized every kind of basis, so each one
+    defaults to 8; the Gaussian class default of 128 is not the CLI default."""
     config = RadialRoot.from_dict({})
     assert config.radial_basis == BesselBasisConfig(num_basis=8, trainable=False)
     assert config.distance_transform == NoDistanceTransformConfig()
     assert config.cutoff == PolynomialCutoffConfig(polynomial_order=5)
-
-
-def test_every_basis_defaults_to_eight_functions():
-    """The legacy flag sized every kind; the Gaussian class default of 128 is
-    not the command-line default."""
-    for section in (BesselBasisConfig, GaussianBasisConfig, ChebyshevBasisConfig):
+    for section in (GaussianBasisConfig, ChebyshevBasisConfig):
         assert section().num_basis == 8
 
 
 @pytest.mark.parametrize(
-    ("written", "expected"),
+    ("field", "written", "expected"),
     [
-        ({"kind": "bessel", "trainable": True}, BesselBasisConfig(trainable=True)),
-        ({"kind": "gaussian", "num_basis": 16}, GaussianBasisConfig(num_basis=16)),
         (
+            "radial_basis",
+            {"kind": "bessel", "trainable": True},
+            BesselBasisConfig(trainable=True),
+        ),
+        (
+            "radial_basis",
+            {"kind": "gaussian", "num_basis": 16},
+            GaussianBasisConfig(num_basis=16),
+        ),
+        (
+            "radial_basis",
             {"kind": "chebyshev", "include_constant": True},
             ChebyshevBasisConfig(include_constant=True),
         ),
+        ("distance_transform", {"kind": "none"}, NoDistanceTransformConfig()),
+        (
+            "distance_transform",
+            {"kind": "agnesi", "amplitude": 1.2},
+            AgnesiTransformConfig(amplitude=1.2),
+        ),
+        (
+            "distance_transform",
+            {"kind": "soft", "steepness": 2.0},
+            SoftTransformConfig(steepness=2.0),
+        ),
     ],
-    ids=["bessel", "gaussian", "chebyshev"],
+    ids=["bessel", "gaussian", "chebyshev", "none", "agnesi", "soft"],
 )
-def test_the_kind_picks_the_basis(written, expected):
-    assert RadialRoot.from_dict({"radial_basis": written}).radial_basis == expected
-
-
-@pytest.mark.parametrize(
-    ("written", "expected"),
-    [
-        ({"kind": "none"}, NoDistanceTransformConfig()),
-        ({"kind": "agnesi", "amplitude": 1.2}, AgnesiTransformConfig(amplitude=1.2)),
-        ({"kind": "soft", "steepness": 2.0}, SoftTransformConfig(steepness=2.0)),
-    ],
-    ids=["none", "agnesi", "soft"],
-)
-def test_the_kind_picks_the_transform(written, expected):
-    config = RadialRoot.from_dict({"distance_transform": written})
-    assert config.distance_transform == expected
-
-
-def test_both_exports_load_back_to_the_same_config():
-    config = RadialRoot.from_dict(
-        {
-            "radial_basis": {"kind": "gaussian", "num_basis": 16},
-            "distance_transform": {"kind": "agnesi"},
-            "cutoff": {"polynomial_order": 6},
-        }
-    )
-    assert RadialRoot.from_dict(config.to_resolved_dict()) == config
-    assert RadialRoot.from_dict(config.to_user_dict()) == config
-    assert config.to_user_dict()["radial_basis"] == {
-        "kind": "gaussian",
-        "num_basis": 16,
-    }
-
-
-def test_an_unknown_kind_is_an_error_at_its_field():
-    with pytest.raises(ValidationError, match="fourier") as excinfo:
-        RadialRoot.from_dict({"radial_basis": {"kind": "fourier"}})
-    assert error_locations(excinfo) == ["radial_basis"]
-    with pytest.raises(ValidationError, match="Agnesi"):
-        RadialRoot.from_dict({"distance_transform": {"kind": "Agnesi"}})
-
-
-def test_a_basis_without_its_kind_is_an_error():
-    """The tag says which basis the other fields belong to; there is no
-    fallback to the default kind."""
-    with pytest.raises(ValidationError) as excinfo:
-        RadialRoot.from_dict({"radial_basis": {"num_basis": 16}})
-    assert error_locations(excinfo) == ["radial_basis"]
-
-
-def test_a_field_of_another_kind_is_an_error_under_the_chosen_one():
-    """`steepness` is the soft transform's; under agnesi it is an unknown key."""
-    with pytest.raises(ValidationError) as excinfo:
-        RadialRoot.from_dict(
-            {"distance_transform": {"kind": "agnesi", "steepness": 2.0}}
-        )
-    assert error_locations(excinfo) == ["distance_transform.agnesi.steepness"]
+def test_the_kind_picks_the_section(field, written, expected):
+    assert getattr(RadialRoot.from_dict({field: written}), field) == expected
 
 
 @pytest.mark.parametrize(
@@ -137,17 +102,3 @@ def test_sizes_the_module_cannot_build_are_errors(written, location):
     with pytest.raises(ValidationError) as excinfo:
         RadialRoot.from_dict(written)
     assert all(where.startswith(location) for where in error_locations(excinfo))
-
-
-def test_no_section_holds_the_cutoff_radius():
-    """`r_max` is one model-level field, shared by the basis, the envelope and
-    the neighbour list."""
-    for section in (
-        BesselBasisConfig,
-        GaussianBasisConfig,
-        ChebyshevBasisConfig,
-        AgnesiTransformConfig,
-        SoftTransformConfig,
-        PolynomialCutoffConfig,
-    ):
-        assert "r_max" not in section.model_fields
