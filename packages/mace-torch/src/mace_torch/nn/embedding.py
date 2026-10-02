@@ -9,9 +9,19 @@ envelope that goes with them.
 from __future__ import annotations
 
 import math
-from typing import Literal
 
 import torch
+from mace_core.config import (
+    AgnesiTransformConfig,
+    BesselBasisConfig,
+    ChebyshevBasisConfig,
+    DistanceTransformConfig,
+    GaussianBasisConfig,
+    NoDistanceTransformConfig,
+    PolynomialCutoffConfig,
+    RadialBasisConfig,
+    SoftTransformConfig,
+)
 
 from mace_torch.nn.radial import (
     AgnesiTransform,
@@ -23,14 +33,17 @@ from mace_torch.nn.radial import (
 )
 
 __all__ = [
-    "DistanceTransformKind",
+    "DistanceTransform",
     "LinearNodeEmbeddingBlock",
-    "RadialBasisKind",
+    "RadialBasis",
     "RadialEmbeddingBlock",
+    "build_cutoff",
+    "build_distance_transform",
+    "build_radial_basis",
 ]
 
-RadialBasisKind = Literal["bessel", "gaussian", "chebyshev"]
-DistanceTransformKind = Literal["none", "agnesi", "soft"]
+RadialBasis = BesselBasis | GaussianBasis | ChebyshevBasis
+DistanceTransform = AgnesiTransform | SoftTransform
 
 
 class LinearNodeEmbeddingBlock(torch.nn.Module):
@@ -65,10 +78,15 @@ class RadialEmbeddingBlock(torch.nn.Module):
     """The radial basis and the cutoff envelope of every edge, with an optional
     distance transform.
 
+    The block composes three modules it is handed, built from their config
+    sections by `build_radial_basis`, `build_distance_transform` and
+    `build_cutoff`. It does not check that the basis and the envelope were
+    built for the same ``r_max``; the builders take it once for both.
+
     The forward runs three steps in a fixed order that is load-bearing:
 
     1. the cutoff envelope is computed on the **raw** edge lengths;
-    2. the distance transform, if configured, is applied to the lengths;
+    2. the distance transform, if there is one, is applied to the lengths;
     3. the basis is evaluated on the (transformed) lengths.
 
     Both results are returned, always: the radial features ``[n_edges, num_basis]``
@@ -80,43 +98,20 @@ class RadialEmbeddingBlock(torch.nn.Module):
 
     def __init__(
         self,
-        r_max: float,
-        num_basis: int,
-        num_polynomial_cutoff: int,
-        radial_basis: RadialBasisKind = "bessel",
-        distance_transform: DistanceTransformKind = "none",
+        radial_basis: RadialBasis,
+        distance_transform: DistanceTransform | None,
+        cutoff: PolynomialCutoff,
         apply_cutoff: bool = True,
     ):
         super().__init__()
-        self.basis: torch.nn.Module
-        if radial_basis == "bessel":
-            self.basis = BesselBasis(r_max=r_max, num_basis=num_basis)
-        elif radial_basis == "gaussian":
-            self.basis = GaussianBasis(r_max=r_max, num_basis=num_basis)
-        elif radial_basis == "chebyshev":
-            self.basis = ChebyshevBasis(num_basis=num_basis)
-        else:
-            raise ValueError(
-                f"radial_basis={radial_basis!r} is not one of "
-                f"'bessel', 'gaussian', 'chebyshev'"
-            )
-        self.distance_transform: torch.nn.Module | None
-        if distance_transform == "none":
-            self.distance_transform = None
-        elif distance_transform == "agnesi":
-            self.distance_transform = AgnesiTransform()
-        elif distance_transform == "soft":
-            self.distance_transform = SoftTransform()
-        else:
-            raise ValueError(
-                f"distance_transform={distance_transform!r} is not one of "
-                f"'none', 'agnesi', 'soft'"
-            )
-        self.cutoff = PolynomialCutoff(
-            r_max=r_max, polynomial_order=num_polynomial_cutoff
-        )
-        self.num_basis = num_basis
+        self.basis = radial_basis
+        self.distance_transform = distance_transform
+        self.cutoff = cutoff
         self.apply_cutoff = apply_cutoff
+
+    @property
+    def num_basis(self) -> int:
+        return self.basis.num_basis
 
     def forward(
         self,
@@ -140,3 +135,58 @@ class RadialEmbeddingBlock(torch.nn.Module):
         if self.apply_cutoff:
             edge_radial_features = edge_radial_features * edge_cutoff
         return edge_radial_features, edge_cutoff
+
+    def extra_repr(self) -> str:
+        return f"apply_cutoff={self.apply_cutoff}"
+
+
+# ---------------------------------------------------------------------------
+# Config section -> module
+# ---------------------------------------------------------------------------
+
+
+def build_radial_basis(config: RadialBasisConfig, r_max: float) -> RadialBasis:
+    """The basis a config section describes, for a cutoff ``r_max`` in Angstrom.
+    The Chebyshev basis does not use ``r_max``."""
+    match config:
+        case BesselBasisConfig():
+            return BesselBasis(
+                r_max=r_max, num_basis=config.num_basis, trainable=config.trainable
+            )
+        case GaussianBasisConfig():
+            return GaussianBasis(
+                r_max=r_max, num_basis=config.num_basis, trainable=config.trainable
+            )
+        case ChebyshevBasisConfig():
+            return ChebyshevBasis(
+                num_basis=config.num_basis, include_constant=config.include_constant
+            )
+        case _:
+            raise TypeError(f"no radial basis is built from {type(config).__name__}")
+
+
+def build_distance_transform(
+    config: DistanceTransformConfig,
+) -> DistanceTransform | None:
+    """The transform a config section describes; ``None`` for the kind ``none``."""
+    match config:
+        case NoDistanceTransformConfig():
+            return None
+        case AgnesiTransformConfig():
+            return AgnesiTransform(
+                exponent_q=config.exponent_q,
+                exponent_p=config.exponent_p,
+                amplitude=config.amplitude,
+                trainable=config.trainable,
+            )
+        case SoftTransformConfig():
+            return SoftTransform(steepness=config.steepness, trainable=config.trainable)
+        case _:
+            raise TypeError(
+                f"no distance transform is built from {type(config).__name__}"
+            )
+
+
+def build_cutoff(config: PolynomialCutoffConfig, r_max: float) -> PolynomialCutoff:
+    """The envelope a config section describes, for a cutoff ``r_max`` in Angstrom."""
+    return PolynomialCutoff(r_max=r_max, polynomial_order=config.polynomial_order)

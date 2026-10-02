@@ -7,7 +7,22 @@ per-node atomic numbers), and what is asserted is the output alone.
 
 import pytest
 import torch
-from mace_torch.nn.embedding import LinearNodeEmbeddingBlock, RadialEmbeddingBlock
+from mace_core.config import (
+    AgnesiTransformConfig,
+    BesselBasisConfig,
+    ChebyshevBasisConfig,
+    GaussianBasisConfig,
+    NoDistanceTransformConfig,
+    PolynomialCutoffConfig,
+    SoftTransformConfig,
+)
+from mace_torch.nn.embedding import (
+    LinearNodeEmbeddingBlock,
+    RadialEmbeddingBlock,
+    build_cutoff,
+    build_distance_transform,
+    build_radial_basis,
+)
 from mace_torch.nn.radial import ChebyshevBasis, ZBLBasis
 
 from mace.modules.blocks import LinearNodeEmbeddingBlock as LegacyNodeEmbedding
@@ -47,6 +62,16 @@ def _graph(seed: int = 0, num_nodes: int = 12, num_edges: int = 40):
 
 
 LEGACY_TRANSFORM_NAME = {"none": "None", "agnesi": "Agnesi", "soft": "Soft"}
+V1_BASIS_CONFIG = {
+    "bessel": BesselBasisConfig,
+    "gaussian": GaussianBasisConfig,
+    "chebyshev": ChebyshevBasisConfig,
+}
+V1_TRANSFORM_CONFIG = {
+    "none": NoDistanceTransformConfig,
+    "agnesi": AgnesiTransformConfig,
+    "soft": SoftTransformConfig,
+}
 
 
 @pytest.mark.parametrize("radial_basis", ["bessel", "gaussian", "chebyshev"])
@@ -67,11 +92,13 @@ def test_radial_embedding_block_parity(
         apply_cutoff=apply_cutoff,
     )
     v1 = RadialEmbeddingBlock(
-        r_max=R_MAX,
-        num_basis=6,
-        num_polynomial_cutoff=5,
-        radial_basis=radial_basis,
-        distance_transform=distance_transform,
+        radial_basis=build_radial_basis(
+            V1_BASIS_CONFIG[radial_basis](num_basis=6), R_MAX
+        ),
+        distance_transform=build_distance_transform(
+            V1_TRANSFORM_CONFIG[distance_transform]()
+        ),
+        cutoff=build_cutoff(PolynomialCutoffConfig(polynomial_order=5), R_MAX),
         apply_cutoff=apply_cutoff,
     )
     legacy_radial, legacy_cutoff = legacy(lengths, node_attrs, edge_index, SPECIES)

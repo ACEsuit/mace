@@ -10,22 +10,42 @@ transform, an envelope computed from the transformed lengths would differ by
 import pytest
 import torch
 from conftest import fp64_only
+from mace_core.config import (
+    AgnesiTransformConfig,
+    BesselBasisConfig,
+    ChebyshevBasisConfig,
+    GaussianBasisConfig,
+    NoDistanceTransformConfig,
+    PolynomialCutoffConfig,
+    SoftTransformConfig,
+)
 from mace_torch.nn.embedding import (
-    DistanceTransformKind,
     LinearNodeEmbeddingBlock,
-    RadialBasisKind,
     RadialEmbeddingBlock,
+    build_cutoff,
+    build_distance_transform,
+    build_radial_basis,
 )
 from mace_torch.nn.radial import (
     AgnesiTransform,
     BesselBasis,
+    ChebyshevBasis,
+    GaussianBasis,
     PolynomialCutoff,
     SoftTransform,
 )
 
 EMBEDDING_R_MAX = 3.0
-RADIAL_BASES = ["bessel", "gaussian", "chebyshev"]
-DISTANCE_TRANSFORMS = ["none", "agnesi", "soft"]
+RADIAL_BASES = {
+    "bessel": BesselBasisConfig(num_basis=4),
+    "gaussian": GaussianBasisConfig(num_basis=4),
+    "chebyshev": ChebyshevBasisConfig(num_basis=4),
+}
+DISTANCE_TRANSFORMS = {
+    "none": NoDistanceTransformConfig(),
+    "agnesi": AgnesiTransformConfig(),
+    "soft": SoftTransformConfig(),
+}
 
 
 def _embedding_inputs():
@@ -36,16 +56,18 @@ def _embedding_inputs():
 
 
 def _block(
-    radial_basis: RadialBasisKind = "bessel",
-    distance_transform: DistanceTransformKind = "none",
+    radial_basis: str = "bessel",
+    distance_transform: str = "none",
     apply_cutoff: bool = True,
 ) -> RadialEmbeddingBlock:
     return RadialEmbeddingBlock(
-        r_max=EMBEDDING_R_MAX,
-        num_basis=4,
-        num_polynomial_cutoff=6,
-        radial_basis=radial_basis,
-        distance_transform=distance_transform,
+        radial_basis=build_radial_basis(RADIAL_BASES[radial_basis], EMBEDDING_R_MAX),
+        distance_transform=build_distance_transform(
+            DISTANCE_TRANSFORMS[distance_transform]
+        ),
+        cutoff=build_cutoff(
+            PolynomialCutoffConfig(polynomial_order=6), EMBEDDING_R_MAX
+        ),
         apply_cutoff=apply_cutoff,
     )
 
@@ -159,11 +181,74 @@ def test_a_padding_edge_contributes_exactly_nothing():
     assert (bare != 0).any()  # the bare basis itself does not vanish
 
 
-def test_unknown_kinds_are_errors_naming_the_value():
-    with pytest.raises(ValueError, match="radial_basis='fourier'"):
-        _block(radial_basis="fourier")  # ty: ignore[invalid-argument-type]
-    with pytest.raises(ValueError, match="distance_transform='Agnesi'"):
-        _block(distance_transform="Agnesi")  # ty: ignore[invalid-argument-type]
+# ---------------------------------------------------------------------------
+# The builders: config section -> module
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_module"),
+    [
+        (
+            BesselBasisConfig(num_basis=5, trainable=True),
+            lambda: BesselBasis(r_max=EMBEDDING_R_MAX, num_basis=5, trainable=True),
+        ),
+        (
+            GaussianBasisConfig(num_basis=5, trainable=True),
+            lambda: GaussianBasis(r_max=EMBEDDING_R_MAX, num_basis=5, trainable=True),
+        ),
+        (
+            ChebyshevBasisConfig(num_basis=5, include_constant=True),
+            lambda: ChebyshevBasis(num_basis=5, include_constant=True),
+        ),
+    ],
+    ids=["bessel", "gaussian", "chebyshev"],
+)
+def test_a_basis_config_builds_the_module_it_names(config, expected_module):
+    """Every field reaches the module: same class, same buffers and parameters,
+    same numbers. The expected module is a factory so that it is built under
+    the test's default dtype, not at collection."""
+    built = build_radial_basis(config, EMBEDDING_R_MAX)
+    _assert_same_module(built, expected_module())
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_module"),
+    [
+        (
+            AgnesiTransformConfig(
+                exponent_q=1.1, exponent_p=4.0, amplitude=0.9, trainable=True
+            ),
+            lambda: AgnesiTransform(
+                exponent_q=1.1, exponent_p=4.0, amplitude=0.9, trainable=True
+            ),
+        ),
+        (
+            SoftTransformConfig(steepness=3.0, trainable=True),
+            lambda: SoftTransform(steepness=3.0, trainable=True),
+        ),
+    ],
+    ids=["agnesi", "soft"],
+)
+def test_a_transform_config_builds_the_module_it_names(config, expected_module):
+    _assert_same_module(build_distance_transform(config), expected_module())
+
+
+def test_the_cutoff_config_builds_the_envelope_at_the_given_radius():
+    built = build_cutoff(PolynomialCutoffConfig(polynomial_order=3), r_max=4.0)
+    _assert_same_module(built, PolynomialCutoff(r_max=4.0, polynomial_order=3))
+
+
+def _assert_same_module(built, expected):
+    assert type(built) is type(expected)
+    assert built.extra_repr() == expected.extra_repr()
+    built_state, expected_state = built.state_dict(), expected.state_dict()
+    assert built_state.keys() == expected_state.keys()
+    for name, tensor in expected_state.items():
+        assert torch.equal(built_state[name], tensor), name
+    assert [name for name, _ in built.named_parameters()] == [
+        name for name, _ in expected.named_parameters()
+    ]
 
 
 @fp64_only
