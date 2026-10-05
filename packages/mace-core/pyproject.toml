@@ -17,7 +17,15 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = [
+    # The suite passes at this floor (2.7.4 on Python 3.10) and at current
+    # releases.
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "tomli>=2.0; python_version < '3.11'",
+    # `typing.Self` is 3.11+; the floor is 3.10.
+    "typing-extensions>=4.4",
+]
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
