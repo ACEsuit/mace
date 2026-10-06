@@ -254,11 +254,15 @@ def read_configurations(
                 len(isolated_atom_energies),
                 path,
             )
-        if not keep_isolated_atoms:
-            atoms_list = [a for a in atoms_list if not _is_isolated_atom(a)]
+
+    # Indexed before the isolated atoms are dropped, so an error names the
+    # structure's position in the file.
+    indexed = list(enumerate(atoms_list))
+    if extract_isolated_atom_energies and not keep_isolated_atoms:
+        indexed = [(i, atoms) for i, atoms in indexed if not _is_isolated_atom(atoms)]
 
     configurations: list[Configuration] = []
-    for index, atoms in enumerate(atoms_list):
+    for index, atoms in indexed:
         try:
             configuration = configuration_from_atoms(
                 atoms,

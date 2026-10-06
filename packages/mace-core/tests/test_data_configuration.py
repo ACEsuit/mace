@@ -362,6 +362,28 @@ def test_the_shape_error_names_the_structure_and_the_file(tmp_path):
     assert path in str(caught.value)
 
 
+def test_the_shape_error_counts_the_isolated_atoms_that_were_dropped(tmp_path):
+    """The index is the structure's position in the file, the same one the
+    isolated-atom errors use, not its position after the E0 extraction."""
+    bad = water(REF_energy=0.0)
+    bad.info["REF_stress"] = np.zeros(9)
+    path = write(tmp_path, [isolated_atom(8, -3.0), water(REF_energy=0.0), bad])
+    with pytest.raises(ValueError, match="structure 2 of"):
+        read_configurations(
+            path, KeySpecification.from_defaults(), extract_isolated_atom_energies=True
+        )
+
+
+def test_two_configurations_compare_by_identity():
+    """A field-by-field comparison would put numpy arrays through `==`, which
+    raises for any array longer than one."""
+    first = configuration_from_atoms(water(), KeySpecification.from_defaults())
+    second = configuration_from_atoms(water(), KeySpecification.from_defaults())
+    assert first == first
+    assert first != second
+    assert len({first, second}) == 2
+
+
 # ---------------------------------------------------------------------------
 # Whether a label is present
 # ---------------------------------------------------------------------------

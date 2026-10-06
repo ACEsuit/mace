@@ -38,9 +38,13 @@ DEFAULT_CONFIG_TYPE = "Default"
 DEFAULT_HEAD = "Default"
 
 
-@dataclass
+@dataclass(eq=False)
 class Configuration:
     """One labelled structure, as parsed.
+
+    Two configurations are equal only when they are the same object. A
+    field-by-field ``==`` would compare numpy arrays, whose ``==`` is
+    elementwise and cannot be read as one boolean.
 
     Args:
         atomic_numbers: ``[n_atoms]`` integer atomic numbers (Z).
