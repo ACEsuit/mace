@@ -6,8 +6,8 @@ that suite: which key each property is read from, what a missing key does to
 its weight, how the weights compose, and which single-atom structures are
 consumed as E0 references.
 
-Two places where this deliberately does not match legacy are asserted here as
-well, each next to the case it changes, so neither is a surprise found later by
+Where this deliberately does not match legacy, that is asserted here as well,
+next to the case it changes, so none of it is a surprise found later by
 somebody diffing outputs.
 """
 
@@ -18,9 +18,8 @@ import numpy as np
 import pytest
 from ase import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
+from ase.stress import voigt_6_to_full_3x3_stress
 from mace_core.data import (
-    ATOM_CONVENTION_NAMES,
-    GRAPH_CONVENTION_NAMES,
     AtomicNumberTable,
     Configuration,
     DefaultKeys,
@@ -33,24 +32,25 @@ from mace_core.data import (
     read_configurations,
 )
 
-#: The default file keys, written out rather than read from the enum. The point
-#: of the table is that these exact strings are what every labelled dataset on
-#: disk uses, so a test that compared the enum against itself would pass
-#: through a rename that broke every one of those files.
+#: The default file keys and where each is stored, written out rather than read
+#: from the enum. The point of the table is that these exact strings and places
+#: are what every labelled dataset on disk uses, so a test that compared the
+#: enum against itself would pass through a rename, or a property moving from
+#: one half to the other, that broke every one of those files.
 DEFAULT_KEY_TABLE = {
-    "ENERGY": "REF_energy",
-    "FORCES": "REF_forces",
-    "STRESS": "REF_stress",
-    "VIRIALS": "REF_virials",
-    "DIPOLE": "dipole",
-    "POLARIZABILITY": "polarizability",
-    "HEAD": "head",
-    "CHARGES": "REF_charges",
-    "TOTAL_CHARGE": "total_charge",
-    "TOTAL_SPIN": "total_spin",
-    "ELEC_TEMP": "elec_temp",
-    "MAGMOM": "REF_magmom",
-    "MAGFORCES": "REF_magforces",
+    "ENERGY": ("REF_energy", "graph"),
+    "FORCES": ("REF_forces", "atom"),
+    "STRESS": ("REF_stress", "graph"),
+    "VIRIALS": ("REF_virials", "graph"),
+    "DIPOLE": ("dipole", "graph"),
+    "POLARIZABILITY": ("polarizability", "graph"),
+    "HEAD": ("head", "graph"),
+    "CHARGES": ("REF_charges", "atom"),
+    "TOTAL_CHARGE": ("total_charge", "graph"),
+    "TOTAL_SPIN": ("total_spin", "graph"),
+    "ELEC_TEMP": ("elec_temp", "graph"),
+    "MAGMOM": ("REF_magmom", "atom"),
+    "MAGFORCES": ("REF_magforces", "atom"),
 }
 
 
@@ -103,13 +103,21 @@ def write(tmp_path, atoms_list, name="structures.xyz") -> str:
 
 
 def test_the_default_keys_are_exactly_these_thirteen():
-    assert {member.name: member.value for member in DefaultKeys} == DEFAULT_KEY_TABLE
+    assert {
+        member.name: (member.value, member.storage) for member in DefaultKeys
+    } == DEFAULT_KEY_TABLE
     assert len(DEFAULT_KEY_TABLE) == 13
+
+
+@pytest.mark.parametrize("storage", ["atoms", "arrays", "info", ""])
+def test_a_storage_that_does_not_exist_raises_rather_than_matching_nothing(storage):
+    with pytest.raises(ValueError, match=repr(storage)):
+        DefaultKeys.names_stored_per(storage)
 
 
 def test_the_command_line_spelling_is_derived_from_the_member_name():
     assert DefaultKeys.keydict() == {
-        f"{name.lower()}_key": value for name, value in DEFAULT_KEY_TABLE.items()
+        f"{name.lower()}_key": key for name, (key, _) in DEFAULT_KEY_TABLE.items()
     }
     assert DefaultKeys.keydict()["energy_key"] == "REF_energy"
     assert DefaultKeys.keydict()["magforces_key"] == "REF_magforces"
@@ -128,58 +136,6 @@ def test_every_default_key_is_routed_to_exactly_one_half():
     routed = set(key_spec.graph_keys) | set(key_spec.atom_keys)
     assert routed == set(DefaultKeys.convention_names())
     assert not set(key_spec.graph_keys) & set(key_spec.atom_keys)
-
-
-def test_the_two_halves_are_read_off_the_key_table():
-    """One statement of where each property lives, not two.
-
-    The halves used to be two frozensets written out beside the table. Adding a
-    member to one and not the other gave a name that could be handed a file key
-    it would never be read with, or one the table knew and nothing would parse.
-    """
-    assert (
-        set(DefaultKeys.convention_names())
-        == GRAPH_CONVENTION_NAMES | ATOM_CONVENTION_NAMES
-    )
-    assert not GRAPH_CONVENTION_NAMES & ATOM_CONVENTION_NAMES
-    for member in DefaultKeys:
-        expected = (
-            GRAPH_CONVENTION_NAMES
-            if member.storage == "graph"
-            else ATOM_CONVENTION_NAMES
-        )
-        assert member.convention_name in expected
-
-
-def test_a_declared_feature_and_a_default_key_use_the_same_two_words():
-    """`per: atom` and the key table's storage are one vocabulary.
-
-    They were `atom`/`graph` on one side and `info`/`arrays` on the other, with
-    a hand-written translation between them. ase's two words survive only in
-    the xyz backend, where ase is what is being touched.
-    """
-    spec = EmbeddingFeatureSpec.from_mapping("charge_state", {"per": "atom"})
-    assert spec.per in {member.storage for member in DefaultKeys}
-    key_spec = KeySpecification.from_defaults().add_embedding_features(
-        {"charge_state": spec}
-    )
-    assert "charge_state" in key_spec.atom_keys
-
-
-def test_the_magnetic_arrays_resolve_with_no_magnetic_flag_set():
-    """They are part of the default table, not a magnetic-model extra."""
-    key_spec = KeySpecification.from_defaults()
-    assert set(key_spec.atom_keys) == ATOM_CONVENTION_NAMES
-    assert key_spec.atom_keys["magmom"] == "REF_magmom"
-    assert key_spec.atom_keys["magforces"] == "REF_magforces"
-
-
-def test_the_graph_level_inputs_are_per_structure_keys():
-    key_spec = KeySpecification.from_defaults()
-    assert key_spec.graph_keys["elec_temp"] == "elec_temp"
-    assert key_spec.graph_keys["total_spin"] == "total_spin"
-    assert key_spec.graph_keys["total_charge"] == "total_charge"
-    assert key_spec.graph_keys["polarizability"] == "polarizability"
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +200,29 @@ def test_an_embedding_feature_stored_nowhere_real_raises(per):
         KeySpecification().add_embedding_features({"site_spin": {"per": per}})
 
 
+@pytest.mark.parametrize("per", ["bond", "cell", ""])
+def test_a_typed_spec_is_held_to_the_same_rule(per):
+    """Built directly, not through a mapping. It used to be accepted and
+    routed to the per-structure half, since only "atom" was tested for."""
+    with pytest.raises(ValueError, match="per"):
+        EmbeddingFeatureSpec(per=per)
+
+
+@pytest.mark.parametrize(("name", "per"), [("charges", "graph"), ("charges", "atom")])
+def test_a_feature_named_like_a_default_property_raises(name, per):
+    """In the other half it would sit in both, and the parser would keep
+    whichever half it read last. In the same half it would replace the file
+    key the property is read from, which is the override's job."""
+    with pytest.raises(ValueError, match=f"{name}_key"):
+        KeySpecification.from_defaults().add_embedding_features({name: {"per": per}})
+
+
+def test_a_feature_declared_twice_raises():
+    key_spec = KeySpecification().add_embedding_features({"spin": {"per": "atom"}})
+    with pytest.raises(ValueError, match="declared twice"):
+        key_spec.add_embedding_features({"spin": {"per": "graph"}})
+
+
 def test_an_embedding_feature_that_says_nothing_about_storage_raises():
     with pytest.raises(ValueError, match="per"):
         KeySpecification().add_embedding_features({"site_spin": {"key": "s"}})
@@ -275,7 +254,7 @@ def test_an_embedding_feature_reads_through_a_real_file(tmp_path):
 
 def reference_key_spec() -> KeySpecification:
     return KeySpecification(
-        graph_keys={"energy": "REF_energy", "stress": "REF_stress", "head": "head"},
+        graph_keys={"energy": "REF_energy", "stress": "REF_stress"},
         atom_keys={"forces": "REF_forces"},
     )
 
@@ -292,7 +271,10 @@ def test_a_configuration_carries_the_structure_and_its_labels():
     assert np.allclose(config.positions, atoms.get_positions())
     assert config.properties["energy"] == -1.5
     assert np.allclose(config.properties["forces"], forces)
-    assert np.allclose(config.properties["stress"], atoms.info["REF_stress"])
+    assert np.allclose(
+        config.properties["stress"],
+        voigt_6_to_full_3x3_stress(atoms.info["REF_stress"]),
+    )
     assert config.pbc == (True, True, True)
     assert config.cell is not None
     assert np.allclose(config.cell, np.eye(3) * 4.0)
@@ -307,22 +289,6 @@ def test_a_property_the_file_does_not_carry_is_none_at_zero_weight():
     for name in ("energy", "forces", "stress"):
         assert config.properties[name] is None
         assert config.property_weights[name] == 0.0
-
-
-def test_the_structure_weight_is_the_product_of_both_weights():
-    atoms = water(
-        REF_energy=0.0, config_type="slab", config_weight=2.0, config_energy_weight=5.0
-    )
-    config = configuration_from_atoms(
-        atoms,
-        reference_key_spec(),
-        config_type_weights={"slab": 3.0},
-        head_name="dft",
-    )
-    assert config.config_type == "slab"
-    assert config.weight == pytest.approx(6.0)
-    assert config.property_weights["energy"] == pytest.approx(5.0)
-    assert config.head == "dft"
 
 
 def test_an_unknown_config_type_weighs_one_rather_than_raising():
@@ -343,6 +309,98 @@ def test_an_aperiodic_structure_keeps_the_zero_cell_it_was_given():
     assert np.allclose(config.cell, np.zeros((3, 3)))
 
 
+def test_the_head_is_the_callers_and_is_stored_once():
+    """Legacy also kept it among the properties, where it held whatever the
+    file said when the structure was converted directly, and the caller's head
+    when it was read through a file. Now it lives on the configuration only."""
+    atoms = water(REF_energy=0.0, head="from_the_file")
+    config = configuration_from_atoms(
+        atoms, KeySpecification.from_defaults(), head_name="dft"
+    )
+    assert config.head == "dft"
+    assert "head" not in config.properties
+    assert "head" not in config.property_weights
+
+
+@pytest.mark.parametrize("name", ["stress", "virials"])
+@pytest.mark.parametrize(
+    "value",
+    [np.arange(9.0).reshape(3, 3), np.array([0.0, 4.0, 8.0, 5.0, 2.0, 1.0])],
+    ids=["matrix", "voigt"],
+)
+def test_a_stress_or_virial_is_always_a_full_matrix(name, value):
+    """The six Voigt components are ase's order: xx, yy, zz, yz, xz, xy."""
+    atoms = water(REF_energy=0.0)
+    atoms.info[DefaultKeys[name.upper()].value] = value
+    config = configuration_from_atoms(atoms, KeySpecification.from_defaults())
+    expected = value if value.shape == (3, 3) else voigt_6_to_full_3x3_stress(value)
+    assert config.properties[name].shape == (3, 3)
+    assert np.array_equal(config.properties[name], expected)
+    if value.shape == (6,):
+        assert config.properties[name][1, 2] == config.properties[name][2, 1] == 5.0
+        assert config.properties[name][0, 1] == config.properties[name][1, 0] == 1.0
+
+
+@pytest.mark.parametrize("shape", [(9,), (3,), (1, 9), ()])
+@pytest.mark.parametrize("name", ["stress", "virials"])
+def test_a_stress_or_virial_of_any_other_shape_raises(name, shape):
+    """A flat nine included: reshaping it would guess the order it was
+    written in."""
+    atoms = water(REF_energy=0.0)
+    atoms.info[DefaultKeys[name.upper()].value] = np.zeros(shape)
+    with pytest.raises(ValueError, match=rf"{name} has shape"):
+        configuration_from_atoms(atoms, KeySpecification.from_defaults())
+
+
+def test_the_shape_error_names_the_structure_and_the_file(tmp_path):
+    good = water(REF_energy=0.0)
+    bad = water(REF_energy=0.0)
+    bad.info["REF_stress"] = np.zeros(9)
+    path = write(tmp_path, [good, bad])
+    with pytest.raises(ValueError, match="structure 1 of") as caught:
+        read_configurations(path, KeySpecification.from_defaults())
+    assert path in str(caught.value)
+
+
+# ---------------------------------------------------------------------------
+# Whether a label is present
+# ---------------------------------------------------------------------------
+
+
+def test_a_zero_weight_and_an_absent_label_are_told_apart():
+    """The weight cannot say which is which, so it must not be asked.
+
+    A file is free to write `config_forces_weight=0.0` for a structure whose
+    forces are there, and an absent label is zeroed too. Both give `0.0`, so a
+    consumer reading the weight to find out whether a label exists is reading
+    two different facts through one number.
+    """
+    key_spec = KeySpecification.from_defaults()
+
+    weighted_to_zero = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    weighted_to_zero.arrays["REF_forces"] = np.zeros((2, 3))
+    weighted_to_zero.info["config_forces_weight"] = 0.0
+    absent = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+    present = configuration_from_atoms(weighted_to_zero, key_spec)
+    missing = configuration_from_atoms(absent, key_spec)
+
+    assert (
+        present.property_weights["forces"] == missing.property_weights["forces"] == 0.0
+    )
+    assert present.is_labelled("forces")
+    assert not missing.is_labelled("forces")
+
+
+def test_an_undeclared_property_is_not_labelled_either():
+    """`is_labelled` answers about training data, not about declarations."""
+    configuration = configuration_from_atoms(
+        Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        KeySpecification.from_defaults(),
+    )
+    assert not configuration.is_labelled("a_property_nobody_declared")
+
+
 # ---------------------------------------------------------------------------
 # Reading a file
 # ---------------------------------------------------------------------------
@@ -358,8 +416,12 @@ def test_all_thirteen_default_keys_survive_a_write_and_a_read(tmp_path):
 
     assert properties["energy"] == pytest.approx(-14.5)
     assert np.allclose(properties["forces"], written.arrays["REF_forces"])
-    assert np.allclose(properties["stress"], written.info["REF_stress"])
-    assert np.allclose(properties["virials"], written.info["REF_virials"])
+    assert np.allclose(
+        properties["stress"], voigt_6_to_full_3x3_stress(written.info["REF_stress"])
+    )
+    assert np.allclose(
+        properties["virials"], voigt_6_to_full_3x3_stress(written.info["REF_virials"])
+    )
     assert np.allclose(
         np.reshape(properties["polarizability"], (3, 3)), np.arange(9.0).reshape(3, 3)
     )
@@ -369,15 +431,15 @@ def test_all_thirteen_default_keys_survive_a_write_and_a_read(tmp_path):
     assert properties["elec_temp"] == pytest.approx(300.0)
     assert np.allclose(properties["magmom"], [[0.0, 0.0, 2.2]] * 3)
     assert np.allclose(properties["magforces"], [[0.1, 0.2, 0.3]] * 3)
-    # the head is stamped by the read, not read from the file
+    # the head is the caller's, and it is not a property
     assert config.head == "Default"
-    assert properties["head"] == "Default"
+    assert "head" not in properties
 
-    # every declared property has a weight, and twelve of the thirteen read
+    # every property has a weight, and eleven of the twelve read
     assert set(config.property_weights) == set(properties)
     assert {n for n, w in config.property_weights.items() if w == 1.0} == {
         name.lower() for name in DEFAULT_KEY_TABLE
-    } - {"dipole"}
+    } - {"dipole", "head"}
 
 
 def test_the_default_dipole_key_cannot_be_read_back_from_a_file(tmp_path):
@@ -427,7 +489,11 @@ def test_a_custom_file_key_reads_only_when_the_specification_names_it(
     through a zero weight rather than by raising."""
     atoms = water(REF_energy=0.0)
     atoms.new_array("REF_forces", np.zeros((3, 3)))
-    value = np.arange(9.0).reshape(3, 3) if store == "arrays" else np.float64(7.5)
+    value = (
+        np.arange(9.0).reshape(3, 3)
+        if store == "arrays" or name == "stress"
+        else np.float64(7.5)
+    )
     if store == "info":
         atoms.info[custom] = value
     else:
@@ -477,7 +543,7 @@ def test_the_head_name_is_stamped_on_every_structure(tmp_path):
         path, KeySpecification.from_defaults(), head_name="dft_head"
     )
     assert [c.head for c in parsed.configurations] == ["dft_head"] * 2
-    assert [c.properties["head"] for c in parsed.configurations] == ["dft_head"] * 2
+    assert all("head" not in c.properties for c in parsed.configurations)
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +574,11 @@ def test_a_reserved_key_is_rewritten_and_recovered_from_the_calculator(tmp_path)
 
     assert config.properties["energy"] == pytest.approx(-14.5)
     assert np.allclose(config.properties["forces"], np.arange(9.0).reshape(3, 3) / 10.0)
-    assert np.allclose(config.properties["stress"], np.linspace(0.1, 0.6, 6))
+    # the calculator holds Voigt components; the configuration holds the matrix
+    assert np.allclose(
+        config.properties["stress"],
+        voigt_6_to_full_3x3_stress(np.linspace(0.1, 0.6, 6)),
+    )
 
 
 def test_the_callers_key_specification_is_never_touched(tmp_path):
@@ -547,6 +617,18 @@ def test_a_reserved_key_with_nothing_to_recover_yields_none(tmp_path):
     (config,) = parsed.configurations
     assert config.properties["energy"] is None
     assert config.property_weights["energy"] == 1.0
+
+
+def test_a_reserved_key_is_rewritten_onto_its_default_spelling():
+    """The rewrite has to land where the parser then looks.
+
+    Spelled once, on the key table. A second copy here would keep saying
+    `REF_energy` while the table moved.
+    """
+    from mace_core.data.xyz import _RESERVED_KEYS
+
+    for name, reserved in _RESERVED_KEYS.items():
+        assert reserved.rewritten == DefaultKeys[name.upper()].value
 
 
 # ---------------------------------------------------------------------------
@@ -672,6 +754,49 @@ def test_a_marked_isolated_atom_without_an_energy_records_zero(tmp_path, caplog)
     assert parsed.isolated_atom_energies == {8: -3.0, 1: 0.0}
     assert "Recording zero" in caplog.text
     assert parsed.configurations == []
+
+
+def test_repeated_isolated_atoms_that_agree_are_accepted(tmp_path):
+    path = write(tmp_path, [isolated_atom(8, -3.0), isolated_atom(8, -3.0)])
+    parsed = read_configurations(
+        path,
+        KeySpecification.from_defaults(),
+        extract_isolated_atom_energies=True,
+        no_data_ok=True,
+    )
+    assert parsed.isolated_atom_energies == {8: -3.0}
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_isolated_atoms_that_disagree_raise_in_either_order(tmp_path, order):
+    """A deliberate divergence from legacy, which kept the last one. Two spin
+    states of an oxygen atom are both legitimate references, and keeping the
+    last made the E0 depend on the order of the file."""
+    atoms = [isolated_atom(8, -2.0), isolated_atom(8, -1.5)]
+    path = write(tmp_path, [atoms[i] for i in order] + [isolated_atom(1, -0.5)])
+    with pytest.raises(ValueError, match="element 8") as caught:
+        read_configurations(
+            path,
+            KeySpecification.from_defaults(),
+            extract_isolated_atom_energies=True,
+            no_data_ok=True,
+        )
+    assert "-2.0" in str(caught.value)
+    assert "-1.5" in str(caught.value)
+    assert "element 1" not in str(caught.value)
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_an_energy_wins_over_a_marked_atom_without_one(tmp_path, order):
+    atoms = [isolated_atom(8, -3.0), isolated_atom(8, None)]
+    path = write(tmp_path, [atoms[i] for i in order])
+    parsed = read_configurations(
+        path,
+        KeySpecification.from_defaults(),
+        extract_isolated_atom_energies=True,
+        no_data_ok=True,
+    )
+    assert parsed.isolated_atom_energies == {8: -3.0}
 
 
 def test_a_reference_energy_is_read_through_the_rewritten_key(tmp_path):
@@ -836,49 +961,3 @@ def test_an_element_the_table_does_not_have_raises():
 def test_two_tables_with_the_same_order_are_equal():
     assert atomic_number_table_from_zs([8, 1]) == AtomicNumberTable([1, 8])
     assert AtomicNumberTable([1, 8]) != AtomicNumberTable([8, 1])
-
-
-def test_a_zero_weight_and_an_absent_label_are_told_apart():
-    """The weight cannot say which is which, so it must not be asked.
-
-    A file is free to write `config_forces_weight=0.0` for a structure whose
-    forces are there, and an absent label is zeroed too. Both give `0.0`, so a
-    consumer reading the weight to find out whether a label exists is reading
-    two different facts through one number.
-    """
-    key_spec = KeySpecification.from_defaults()
-
-    weighted_to_zero = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    weighted_to_zero.arrays["REF_forces"] = np.zeros((2, 3))
-    weighted_to_zero.info["config_forces_weight"] = 0.0
-    absent = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-
-    present = configuration_from_atoms(weighted_to_zero, key_spec)
-    missing = configuration_from_atoms(absent, key_spec)
-
-    assert (
-        present.property_weights["forces"] == missing.property_weights["forces"] == 0.0
-    )
-    assert present.is_labelled("forces")
-    assert not missing.is_labelled("forces")
-
-
-def test_an_undeclared_property_is_not_labelled_either():
-    """`is_labelled` answers about training data, not about declarations."""
-    configuration = configuration_from_atoms(
-        Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
-        KeySpecification.from_defaults(),
-    )
-    assert not configuration.is_labelled("a_property_nobody_declared")
-
-
-def test_a_reserved_key_is_rewritten_onto_its_default_spelling():
-    """The rewrite has to land where the parser then looks.
-
-    Spelled once, on the key table. A second copy here would keep saying
-    `REF_energy` while the table moved.
-    """
-    from mace_core.data.xyz import _RESERVED_KEYS
-
-    for name, reserved in _RESERVED_KEYS.items():
-        assert reserved.rewritten == DefaultKeys[name.upper()].value

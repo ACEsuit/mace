@@ -30,14 +30,18 @@ surface and this table cannot drift apart.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Literal, get_args
 
-__all__ = ["DefaultKeys", "Storage"]
+__all__ = ["STORAGES", "DefaultKeys", "Storage"]
 
 #: Where a value is read from. Two places, because a structure file stores a
 #: per-structure value and a per-atom array in different ones and there is no
 #: third.
 Storage = Literal["graph", "atom"]
+
+#: The values of :data:`Storage`, for the checks a type checker cannot make
+#: on a string that arrives at run time.
+STORAGES: tuple[Storage, ...] = get_args(Storage)
 
 
 class DefaultKeys(Enum):
@@ -91,7 +95,18 @@ class DefaultKeys(Enum):
 
     @classmethod
     def names_stored_per(cls, storage: Storage) -> frozenset[str]:
-        """The convention names read from ``"graph"`` or from ``"atom"``."""
+        """The convention names read from ``"graph"`` or from ``"atom"``.
+
+        Raises:
+            ValueError: for any other storage. A misspelling such as
+                ``"atoms"`` would otherwise match no member and answer with an
+                empty set, which reads as "nothing is stored there".
+        """
+        if storage not in STORAGES:
+            raise ValueError(
+                f"{storage!r} is not a storage. A value is stored per "
+                f"{' or per '.join(repr(s) for s in STORAGES)}."
+            )
         return frozenset(
             member.convention_name for member in cls if member.storage == storage
         )

@@ -36,9 +36,16 @@ def test_the_constants_are_the_values_the_stack_was_built_against(name, value):
     assert getattr(units, name) == pytest.approx(value, rel=1e-12)
 
 
+def test_every_factor_the_module_exports_is_pinned():
+    """A factor added to `units` without a line in PINNED fails here, rather
+    than going unchecked by the two tests that iterate over PINNED."""
+    exported = {
+        name for name in units.__all__ if isinstance(getattr(units, name), float)
+    }
+    assert exported == set(PINNED)
+
+
 def test_the_constants_are_ase_s_and_not_a_second_copy():
-    """Compared as a whole mapping, so a constant added above without a line
-    here fails rather than going unchecked."""
     assert {name: getattr(units, name) for name in PINNED} == {
         "BOHR": ase.units.Bohr,
         "HARTREE": ase.units.Hartree,
@@ -61,31 +68,15 @@ def test_the_base_units_are_ase_s_base_units():
 
 # ---------------------------------------------------------------------------
 # The sign conventions
+#
+# The wording of the three derivative conventions is checked character for
+# character against the characterization suite by
+# tests/architecture/test_convention_statements.py, and is not restated here.
 # ---------------------------------------------------------------------------
-
-
-def test_the_three_derivative_conventions_say_what_they_must():
-    assert units.FORCE_SIGN_CONVENTION == "forces = -dE/d(positions), in eV/Ang."
-    assert units.STRESS_SIGN_CONVENTION == (
-        "stress = (1/V) dE/d(strain), in eV/Ang^3, with V = |det(cell)|."
-    )
-    assert units.VIRIAL_SIGN_CONVENTION == (
-        "virials = -stress * V = -dE/d(strain), in eV."
-    )
 
 
 def test_the_magnetic_force_carries_the_same_sign_as_a_force():
     assert units.MAGFORCE_SIGN_CONVENTION == "magforces = -dE/d(magmom)."
-
-
-def test_the_stress_is_the_one_quantity_that_is_not_negated():
-    """The asymmetry is the thing a port normalises away: forces and virials
-    are negated gradients, the stress is not, and the virial is the negative of
-    the very quantity the stress is built from."""
-    assert "-dE/d(positions)" in units.FORCE_SIGN_CONVENTION
-    assert "-dE/d(strain)" in units.VIRIAL_SIGN_CONVENTION
-    assert "-dE" not in units.STRESS_SIGN_CONVENTION
-    assert "(1/V) dE/d(strain)" in units.STRESS_SIGN_CONVENTION
 
 
 def test_every_convention_is_reachable_by_the_name_of_its_quantity():

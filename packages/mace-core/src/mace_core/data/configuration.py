@@ -48,7 +48,9 @@ class Configuration:
         properties: Labels and graph-level inputs, keyed by convention name.
             A declared property whose key was absent from the file is present
             here as ``None`` rather than missing, so ``None`` is what says the
-            label is unavailable. See :meth:`is_labelled`.
+            label is unavailable. See :meth:`is_labelled`. A stress or a
+            virial is always a ``[3, 3]`` matrix here, whatever layout the file
+            used. The head is not among them: it is :attr:`head`.
         property_weights: Per-property weight in the loss, one entry per key in
             ``properties``. An absent label is also zeroed here, as a safety
             net for a consumer that reads only the weight, but the zero does
@@ -63,7 +65,8 @@ class Configuration:
         weight: Weight of the whole structure in the loss.
         config_type: Free-form label used to group error tables, and to mark
             the isolated atoms an E0 is read from.
-        head: Which head this structure trains, for multi-head fits.
+        head: Which head this structure trains, for multi-head fits. The only
+            place it is stored.
     """
 
     atomic_numbers: np.ndarray

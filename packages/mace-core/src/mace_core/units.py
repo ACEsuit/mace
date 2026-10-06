@@ -11,6 +11,14 @@ revision reaches the two stacks together instead of leaving one of them on the
 old numbers. ``test_units.py`` pins the values that revision would move, which
 is what keeps "follows ase" from meaning "changes without anyone noticing".
 
+Layout conventions
+------------------
+
+* A cell is ``[3, 3]`` with the lattice vectors as **rows**, ase's layout.
+* A stress or a virial is a full ``[3, 3]`` matrix, not ase's six Voigt
+  components. The parser accepts the six on the way in and expands them; any
+  other shape is an error rather than a guess.
+
 Sign conventions
 ----------------
 

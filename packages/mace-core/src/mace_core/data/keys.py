@@ -25,7 +25,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from mace_core.elements.default_keys import DefaultKeys, Storage
+from mace_core.elements.default_keys import STORAGES, DefaultKeys, Storage
 
 __all__ = [
     "ATOM_CONVENTION_NAMES",
@@ -69,6 +69,18 @@ class EmbeddingFeatureSpec:
     per: Storage
     key: str | None = None
 
+    def __post_init__(self) -> None:
+        # Here rather than in `from_mapping`, so a spec built directly is held
+        # to the same rule. `per` is a `Literal`, but nothing enforces that at
+        # run time, and any value other than "atom" would otherwise be routed
+        # to the per-structure half.
+        if self.per not in STORAGES:
+            raise ValueError(
+                f"per: {self.per!r} is not a place a value can be read from. "
+                f"Use per: atom for a per-atom array or per: graph for one "
+                f"value per structure."
+            )
+
     @classmethod
     def from_mapping(cls, name: str, spec: Mapping[str, Any]) -> EmbeddingFeatureSpec:
         """Build one from the plain mapping a config file or the CLI supplies."""
@@ -80,13 +92,10 @@ class EmbeddingFeatureSpec:
                 f"Add per: atom for a per-atom array or per: graph for one "
                 f"value per structure."
             ) from None
-        if per not in ("atom", "graph"):
-            raise ValueError(
-                f"embedding feature {name!r} declares per: {per!r}, which is "
-                f"not a place a value can be read from. Use per: atom for a "
-                f"per-atom array or per: graph for one value per structure."
-            )
-        return cls(per=per, key=spec.get("key"))
+        try:
+            return cls(per=per, key=spec.get("key"))
+        except ValueError as error:
+            raise ValueError(f"embedding feature {name!r}: {error}") from None
 
     def file_key(self, name: str) -> str:
         """The key to read this feature from, defaulting to the feature name."""
@@ -165,6 +174,15 @@ class KeySpecification:
         Returns ``self``. A feature with ``per: atom`` becomes a per-atom key
         and one with ``per: graph`` a per-structure key, read from its declared
         ``key`` or, failing that, from its own name.
+
+        Raises:
+            ValueError: if a feature is named like a property this
+                specification already resolves. A name is one quantity, read
+                from one place: declared in the other half, it would sit in
+                both and the parser would keep whichever half it read last;
+                declared in the same half, it would silently replace the file
+                key the property is read from. A different file key for a
+                property is what the ``<name>_key`` override is for.
         """
         for name, spec in embedding_specs.items():
             feature = (
@@ -172,6 +190,17 @@ class KeySpecification:
                 if isinstance(spec, EmbeddingFeatureSpec)
                 else EmbeddingFeatureSpec.from_mapping(name, spec)
             )
+            if name in self.graph_keys or name in self.atom_keys:
+                hint = (
+                    f"To read {name!r} from another file key, set {name}_key."
+                    if name in _known_convention_names()
+                    else "It is declared twice."
+                )
+                raise ValueError(
+                    f"embedding feature {name!r} is already a property of this "
+                    f"key specification. Give the feature a name of its own. "
+                    f"{hint}"
+                )
             target = self.atom_keys if feature.per == "atom" else self.graph_keys
             target[name] = feature.file_key(name)
         return self

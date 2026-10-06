@@ -21,6 +21,7 @@ from typing import Any
 import ase.io
 import numpy as np
 from ase import Atoms
+from ase.stress import voigt_6_to_full_3x3_stress
 
 from mace_core.data.configuration import (
     DEFAULT_CONFIG_TYPE,
@@ -71,6 +72,16 @@ class _ReservedKey:
     stored_in: str
 
 
+#: The structure-level tensors a configuration always holds as a full
+#: ``[3, 3]`` matrix. A file may also give the six Voigt components in ase's
+#: order (xx, yy, zz, yz, xz, xy), which is what ``Atoms.get_stress`` returns
+#: and so what the reserved ``stress`` key recovers; those are expanded here.
+#: Any other shape is refused, a flat nine included: reshaping it would have to
+#: guess whether it was written row by row.
+_FULL_MATRIX_PROPERTIES = frozenset(
+    {DefaultKeys.STRESS.convention_name, DefaultKeys.VIRIALS.convention_name}
+)
+
 #: Configuring one of these as the file key for a label stopped being safe in
 #: ase 3.23: the value written under it is read back into
 #: ``atoms.calc.results`` instead of into ``atoms.info``, so a parser looking
@@ -113,12 +124,22 @@ def configuration_from_atoms(
     told this structure has no such label, and an absent entry would instead
     look like a property nobody declared.
 
+    The head is not a property. It is ``head_name``, stored once, on
+    :attr:`Configuration.head`, whatever the file holds under the head key.
+
+    A stress or virial is stored as a ``[3, 3]`` matrix; see
+    :data:`_FULL_MATRIX_PROPERTIES` for the layouts a file may use.
+
     Args:
         atoms: The structure, already read.
         key_spec: Which file key each convention name is read from.
         config_type_weights: Per-config-type multiplier on the structure
             weight. An unlisted config type gets ``1.0``; it is not an error.
         head_name: The head this structure trains.
+
+    Raises:
+        ValueError: if a stress or virial has a shape that is neither
+            ``[3, 3]`` nor six Voigt components.
     """
     config_type = atoms.info.get("config_type", DEFAULT_CONFIG_TYPE)
     type_weight = (config_type_weights or {}).get(config_type, 1.0)
@@ -127,10 +148,16 @@ def configuration_from_atoms(
     property_weights: dict[str, float] = {
         name: atoms.info.get(f"config_{name}_weight", 1.0)
         for name in key_spec.property_names()
+        if name != _HEAD
     }
 
     for name, file_key in key_spec.graph_keys.items():
-        properties[name] = atoms.info.get(file_key)
+        if name == _HEAD:
+            continue
+        value = atoms.info.get(file_key)
+        if name in _FULL_MATRIX_PROPERTIES and value is not None:
+            value = _as_full_matrix(name, value)
+        properties[name] = value
         if file_key not in atoms.info:
             property_weights[name] = 0.0
     for name, file_key in key_spec.atom_keys.items():
@@ -148,6 +175,24 @@ def configuration_from_atoms(
         weight=atoms.info.get("config_weight", 1.0) * type_weight,
         config_type=config_type,
         head=head_name,
+    )
+
+
+#: Kept in the key table, where ``--head_key`` names it, but never read into
+#: ``properties``: the head a structure trains is the caller's ``head_name``.
+_HEAD = DefaultKeys.HEAD.convention_name
+
+
+def _as_full_matrix(name: str, value: Any) -> np.ndarray:
+    array = np.asarray(value, dtype=float)
+    if array.shape == (3, 3):
+        return array
+    if array.shape == (6,):
+        return voigt_6_to_full_3x3_stress(array)
+    raise ValueError(
+        f"{name} has shape {array.shape}. It is read as a 3x3 matrix, or as "
+        f"the six Voigt components (xx, yy, zz, yz, xz, xy). A flat list of "
+        f"nine is refused rather than reshaped; write the matrix itself."
     )
 
 
@@ -185,7 +230,9 @@ def read_configurations(
 
     Raises:
         ValueError: if no structure in the file carries an energy, forces or a
-            dipole, and ``no_data_ok`` is not set.
+            dipole, and ``no_data_ok`` is not set; if a stress or virial has a
+            shape that cannot be read as a ``[3, 3]`` matrix; or if two isolated
+            atoms of one element give different reference energies.
     """
     # ase returns a single structure or a list depending on the index; ":"
     # always gives a list, but the signature does not say so.
@@ -195,10 +242,6 @@ def read_configurations(
     resolved = _rewrite_reserved_keys(key_spec.copy(), atoms_list)
 
     _check_something_is_labelled(resolved, atoms_list, str(path), no_data_ok)
-
-    head_key = resolved.graph_keys.get("head", "head")
-    for atoms in atoms_list:
-        atoms.info[head_key] = head_name
 
     isolated_atom_energies: dict[int, float] = {}
     if extract_isolated_atom_energies:
@@ -214,16 +257,20 @@ def read_configurations(
         if not keep_isolated_atoms:
             atoms_list = [a for a in atoms_list if not _is_isolated_atom(a)]
 
-    return ParsedConfigurations(
-        configurations=[
-            configuration_from_atoms(
+    configurations: list[Configuration] = []
+    for index, atoms in enumerate(atoms_list):
+        try:
+            configuration = configuration_from_atoms(
                 atoms,
                 resolved,
                 config_type_weights=config_type_weights,
                 head_name=head_name,
             )
-            for atoms in atoms_list
-        ],
+        except ValueError as error:
+            raise ValueError(f"structure {index} of {str(path)!r}: {error}") from None
+        configurations.append(configuration)
+    return ParsedConfigurations(
+        configurations=configurations,
         isolated_atom_energies=isolated_atom_energies,
     )
 
@@ -331,21 +378,64 @@ def _is_isolated_atom(atoms: Atoms) -> bool:
 def _extract_isolated_atom_energies(
     atoms_list: Sequence[Atoms], energy_key: str
 ) -> dict[int, float]:
-    energies: dict[int, float] = {}
+    """One reference energy per element, independent of the file's order.
+
+    Several isolated atoms of one element are accepted when they agree. When
+    they do not, nothing in the file says which is meant (two spin states of
+    an oxygen atom are both legitimate isolated-atom energies), so taking any
+    one of them would make the E0 depend on the order of the structures. That
+    is an error, naming the structures that disagree.
+
+    A marked atom without an energy contributes zero, with a warning, and only
+    when no other isolated atom of its element carries an energy.
+    """
+    labelled: dict[int, dict[float, list[int]]] = {}
+    unlabelled: dict[int, list[int]] = {}
     for index, atoms in enumerate(atoms_list):
         if not _is_isolated_atom(atoms):
             continue
         atomic_number = int(atoms.get_atomic_numbers()[0])
         energy = atoms.info.get(energy_key)
         if energy is None:
-            logger.warning(
-                "Structure %d is marked as an isolated atom but carries no "
-                "energy under %r. Recording zero for element %d.",
-                index,
-                energy_key,
-                atomic_number,
-            )
-            energies[atomic_number] = 0.0
+            unlabelled.setdefault(atomic_number, []).append(index)
         else:
-            energies[atomic_number] = float(energy)
+            labelled.setdefault(atomic_number, {}).setdefault(float(energy), []).append(
+                index
+            )
+
+    conflicts = {
+        atomic_number: by_energy
+        for atomic_number, by_energy in labelled.items()
+        if len(by_energy) > 1
+    }
+    if conflicts:
+        details = "; ".join(
+            f"element {atomic_number}: "
+            + ", ".join(
+                f"{energy!r} (structures {indices})"
+                for energy, indices in sorted(by_energy.items())
+            )
+            for atomic_number, by_energy in sorted(conflicts.items())
+        )
+        raise ValueError(
+            f"isolated atoms of one element give different reference energies "
+            f"under {energy_key!r}: {details}. Keep one isolated atom per "
+            f"element, or mark the others with another config_type."
+        )
+
+    energies = {
+        atomic_number: next(iter(by_energy))
+        for atomic_number, by_energy in labelled.items()
+    }
+    for atomic_number, indices in unlabelled.items():
+        if atomic_number in energies:
+            continue
+        logger.warning(
+            "Structure(s) %s are marked as an isolated atom but carry no "
+            "energy under %r. Recording zero for element %d.",
+            indices,
+            energy_key,
+            atomic_number,
+        )
+        energies[atomic_number] = 0.0
     return energies

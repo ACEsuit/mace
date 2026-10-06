@@ -16,6 +16,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
+
 #: Importing any of these from `mace_core` defeats the purpose of the package.
 #: `mace` is the frozen oracle, which stops being independent of the thing it
 #: judges the moment the new stack can reach it; the rest are the frameworks
@@ -38,7 +40,9 @@ print(json.dumps({
 """
 
 
+@pytest.fixture(scope="module")
 def probe() -> dict:
+    """One fresh interpreter for the module: both tests read the same run."""
     import json
 
     result = subprocess.run(
@@ -47,8 +51,8 @@ def probe() -> dict:
     return json.loads(result.stdout.splitlines()[-1])
 
 
-def test_importing_everything_pulls_in_no_framework_and_no_legacy():
-    reached = set(probe()["modules"]) & set(FORBIDDEN)
+def test_importing_everything_pulls_in_no_framework_and_no_legacy(probe):
+    reached = set(probe["modules"]) & set(FORBIDDEN)
     assert not reached, (
         f"mace_core reached {sorted(reached)}. The package is the shared "
         f"contract between two frameworks, and the frozen oracle is only an "
@@ -56,6 +60,6 @@ def test_importing_everything_pulls_in_no_framework_and_no_legacy():
     )
 
 
-def test_the_probe_imported_more_than_the_top_level_module():
+def test_the_probe_imported_more_than_the_top_level_module(probe):
     """Guards the test above: a probe that imported nothing would pass it."""
-    assert probe()["imported"] > 1
+    assert probe["imported"] > 1
