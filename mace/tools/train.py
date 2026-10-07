@@ -227,7 +227,8 @@ def train(
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
-            if epoch > start_epoch:
+            # The restored scheduler precedes the next epoch's update too.
+            if epoch > 0:
                 lr_scheduler.step(
                     metrics=valid_loss
                 )  # Can break if exponential LR, TODO fix that!
