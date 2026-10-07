@@ -831,7 +831,7 @@ only the bag spells.
 | `calc.export.mace_omol` | `mace_omol` | `mace/calculators/__init__.py:12` | KEEP — a recent, large, published multi-head model; converts with heads intact | `tests/foundations/test_foundations.py::test_mace_omol_elements_subset_reproduces_energy_forces` |
 | `calc.export.mace_anicc` | `mace_anicc` | `mace/calculators/__init__.py:12` | DROP — a 2023 organic-chemistry model superseded by MACE-OFF, and the only loader with a divergent signature (`model_path` instead of `model`): an API exception for an obsolete artifact. Its tracked checkpoint `mace/calculators/foundations_models/ani500k_large_CC.model` goes with it; the release notes say "use MACE-OFF" | — |
 
-## 10. Optional-dependency extras (12)
+## 10. Optional-dependency extras (13)
 
 From `setup.cfg` `[options.extras_require]`. Two facts here feed design decisions rather than
 packaging: `magnetic` pins **`sphericart-torch`**, a shipped dependency on a non-e3nn
@@ -846,6 +846,7 @@ copy — so the tree depends on both at once (§19).
 | `extra.schedulefree` | `[schedulefree]` | `setup.cfg` | KEEP | `tests/extensions/schedulefree` |
 | `extra.torchsim` | `[torchsim]` | `setup.cfg` | KEEP — a first-class deployment path, not a secondary integration; the coupling to torch-sim's still-moving API becomes MACE's problem, so the version is pinned in `requirements/` | `tests/extensions/torchsim` |
 | `extra.magnetic` | `[magnetic]` | `setup.cfg` | KEEP — `sphericart-torch` + `torch-geometric` | `tests/extensions/magnetic` |
+| `extra.polar` | `[polar]` | `setup.cfg` | KEEP | `tests/extensions/polar` |
 | `extra.cueq` | `[cueq]` | `setup.cfg` | KEEP — the backend extra naming is worth revisiting | `tests/golden/test_backend_parity_golden.py::test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed` |
 | `extra.cueq-cuda-12` | `[cueq-cuda-12]` | `setup.cfg` | KEEP — idem; the ops major must match `torch.version.cuda`, not the newest available, and a CUDA 11 host wants this one | `tests/unit/test_ci_gates.py::test_the_job_reads_the_extras_out_of_setup_cfg` (the `cueq-wheel-extras` PR job resolves each one; this keeps setup.cfg and that job in step) |
 | `extra.cueq-cuda-13` | `[cueq-cuda-13]` | `setup.cfg` | KEEP — idem; cu13 ops start at cuequivariance 0.7.0 | `tests/unit/test_ci_gates.py::test_the_job_reads_the_extras_out_of_setup_cfg` (the `cueq-wheel-extras` PR job resolves each one; this keeps setup.cfg and that job in step) |
@@ -1223,7 +1224,7 @@ file on every run.
 | 7. Registries | 21 | registry key |
 | 8. Loss classes | 10 | class name |
 | 9. Calculator constructor + exports | 27 + 9 | parameter name, `__all__` |
-| 10. Optional extras | 12 | extra name |
+| 10. Optional extras | 13 | extra name |
 | 11. Model output keys | 43 | dict key |
 | 12. Calculator + eval output keys | 31 + 13 | results key, written key |
 | 13. Environment variables | 9 + 3 | variable name |

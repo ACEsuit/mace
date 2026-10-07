@@ -690,8 +690,8 @@ class PolarMACE(ScaleShiftMACE):
     ):
         if not GRAPH_LONGRANGE_AVAILABLE:
             raise ImportError(
-                "Cannot import 'graph_longrange'. Please install graph_electrostatics "
-                "from https://github.com/WillBaldwin0/graph_electrostatics."
+                "Cannot import 'graph_longrange'. Install it with "
+                "`pip install mace-torch[polar]`."
             )
         try:
             hidden_irreps: o3.Irreps = kwargs["hidden_irreps"]
@@ -991,8 +991,8 @@ class PolarMACE(ScaleShiftMACE):
     ) -> Dict[str, Optional[torch.Tensor]]:
         if not GRAPH_LONGRANGE_AVAILABLE:
             raise ImportError(
-                "Cannot import 'graph_longrange'. Please install graph_electrostatics "
-                "from https://github.com/WillBaldwin0/graph_electrostatics."
+                "Cannot import 'graph_longrange'. Install it with "
+                "`pip install mace-torch[polar]`."
             )
         ctx = prepare_graph(
             data,
