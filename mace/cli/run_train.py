@@ -977,7 +977,8 @@ def run(args) -> None:
                     "loaded; training starts from scratch"
                 )
         if opt_start_epoch is not None:
-            start_epoch = opt_start_epoch
+            # Checkpoint filenames identify the epoch already trained.
+            start_epoch = opt_start_epoch + 1
 
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
