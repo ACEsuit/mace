@@ -50,25 +50,22 @@ class LinearNodeEmbeddingBlock(torch.nn.Module):
     """One-hot element attributes -> scalar node channels, a plain weight matrix.
 
     The element attributes are scalars (``l = 0``), so the equivariant linear
-    layer legacy used reduces to ``node_attributes @ weight`` with no bias. The
-    weight is initialised ``N(0, 1 / num_elements)``, which is the distribution
-    an equivariant linear layer with ``N(0, 1)`` weights and ``1 / sqrt(fan_in)``
-    path normalisation produces; a legacy weight ``W`` maps to
-    ``W / sqrt(num_elements)`` here.
+    layer legacy used reduces to ``node_attributes @ weight / sqrt(num_elements)``
+    with no bias.
     """
 
     def __init__(self, num_elements: int, num_channels: int):
         super().__init__()
         self.num_elements = num_elements
         self.num_channels = num_channels
+        self.normalisation = 1.0 / math.sqrt(num_elements)
         self.weight = torch.nn.Parameter(
             torch.randn(num_elements, num_channels, dtype=torch.get_default_dtype())
-            / math.sqrt(num_elements)
         )
 
     def forward(self, node_attributes: torch.Tensor) -> torch.Tensor:
         """``[n_nodes, num_elements]`` one-hot -> ``[n_nodes, num_channels]``."""
-        return node_attributes @ self.weight
+        return (node_attributes @ self.weight) * self.normalisation
 
     def extra_repr(self) -> str:
         return f"num_elements={self.num_elements}, num_channels={self.num_channels}"

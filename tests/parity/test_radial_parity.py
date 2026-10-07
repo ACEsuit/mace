@@ -138,9 +138,9 @@ def test_chebyshev_basis_parity_at_the_magnetic_configuration(include_constant, 
     )
 
 
-def test_linear_node_embedding_parity_with_the_legacy_weight_rescaled(fp64):
-    """Legacy's equivariant linear layer on `0e` inputs is `x @ W / sqrt(fan_in)`;
-    the v1 weight is that product, so a converter divides by `sqrt(num_elements)`."""
+def test_linear_node_embedding_parity_with_the_legacy_weight(fp64):
+    """Legacy's equivariant linear layer on `0e` inputs is `x @ W / sqrt(fan_in)`,
+    the same product v1 computes, so the weight copies across as is."""
     from e3nn import o3
 
     num_elements, num_channels = 3, 8
@@ -151,6 +151,6 @@ def test_linear_node_embedding_parity_with_the_legacy_weight_rescaled(fp64):
     v1 = LinearNodeEmbeddingBlock(num_elements=num_elements, num_channels=num_channels)
     legacy_weight = legacy.linear.weight.detach().reshape(num_elements, num_channels)
     with torch.no_grad():
-        v1.weight.copy_(legacy_weight / num_elements**0.5)
+        v1.weight.copy_(legacy_weight)
     node_attrs = torch.eye(num_elements)[[0, 2, 1, 2]]
     assert_parity(v1(node_attrs), legacy(node_attrs), "node embedding")

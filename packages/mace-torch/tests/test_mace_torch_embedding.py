@@ -7,6 +7,8 @@ transform, an envelope computed from the transformed lengths would differ by
 0.87 at r = 0.9 Ang, a different model rather than a rounding difference.
 """
 
+import math
+
 import pytest
 import torch
 from conftest import fp64_only
@@ -78,23 +80,26 @@ def _block(
 
 
 def test_node_embedding_is_a_row_lookup_of_the_weight():
-    """One-hot in, so the output of node i is the row of its element."""
+    """One-hot in, so the output of node i is the row of its element, scaled
+    by the `1/sqrt(num_elements)` path normalisation."""
     block = LinearNodeEmbeddingBlock(num_elements=3, num_channels=5)
     assert block.weight.shape == (3, 5)
     one_hot = torch.eye(3)[[2, 0, 2, 1]]
     out = block(one_hot)
     assert out.shape == (4, 5)
-    assert torch.equal(out, block.weight[[2, 0, 2, 1]])
+    torch.testing.assert_close(out, block.weight[[2, 0, 2, 1]] / math.sqrt(3))
     assert block.weight.requires_grad
 
 
 def test_node_embedding_initialisation_scale():
-    """`N(0, 1/num_elements)`: the distribution of an equivariant linear layer
-    with unit-normal weights and `1/sqrt(fan_in)` normalisation."""
+    """Unit-normal weights; the output carries the `1/sqrt(num_elements)` path
+    normalisation."""
     torch.manual_seed(0)
     block = LinearNodeEmbeddingBlock(num_elements=16, num_channels=4096)
-    assert block.weight.std().item() == pytest.approx(1 / 4.0, rel=0.05)
-    assert block.weight.mean().item() == pytest.approx(0.0, abs=0.01)
+    assert block.weight.std().item() == pytest.approx(1.0, rel=0.05)
+    assert block.weight.mean().item() == pytest.approx(0.0, abs=0.02)
+    out = block(torch.eye(16))
+    assert out.std().item() == pytest.approx(1 / 4.0, rel=0.05)
 
 
 # ---------------------------------------------------------------------------
