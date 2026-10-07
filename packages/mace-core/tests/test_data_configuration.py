@@ -44,7 +44,6 @@ DEFAULT_KEY_TABLE = {
     "VIRIALS": ("REF_virials", "graph"),
     "DIPOLE": ("dipole", "graph"),
     "POLARIZABILITY": ("polarizability", "graph"),
-    "HEAD": ("head", "graph"),
     "CHARGES": ("REF_charges", "atom"),
     "TOTAL_CHARGE": ("total_charge", "graph"),
     "TOTAL_SPIN": ("total_spin", "graph"),
@@ -66,7 +65,7 @@ def water(**info) -> Atoms:
 
 
 def labelled_water() -> Atoms:
-    """A structure carrying a value under all thirteen default keys."""
+    """A structure carrying a value under all twelve default keys."""
     atoms = water()
     atoms.info["REF_energy"] = -14.5
     atoms.info["REF_stress"] = np.linspace(0.1, 0.6, 6)
@@ -102,11 +101,11 @@ def write(tmp_path, atoms_list, name="structures.xyz") -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_the_default_keys_are_exactly_these_thirteen():
+def test_the_default_keys_are_exactly_these_twelve():
     assert {
         member.name: (member.value, member.storage) for member in DefaultKeys
     } == DEFAULT_KEY_TABLE
-    assert len(DEFAULT_KEY_TABLE) == 13
+    assert len(DEFAULT_KEY_TABLE) == 12
 
 
 @pytest.mark.parametrize("storage", ["atoms", "arrays", "info", ""])
@@ -318,6 +317,7 @@ def test_the_head_is_the_callers_and_is_stored_once():
         atoms, KeySpecification.from_defaults(), head_name="dft"
     )
     assert config.head == "dft"
+    assert "head" not in KeySpecification.from_defaults().property_names()
     assert "head" not in config.properties
     assert "head" not in config.property_weights
 
@@ -428,7 +428,7 @@ def test_an_undeclared_property_is_not_labelled_either():
 # ---------------------------------------------------------------------------
 
 
-def test_all_thirteen_default_keys_survive_a_write_and_a_read(tmp_path):
+def test_all_twelve_default_keys_survive_a_write_and_a_read(tmp_path):
     written = labelled_water()
     parsed = read_configurations(
         write(tmp_path, [written]), KeySpecification.from_defaults()
@@ -461,7 +461,7 @@ def test_all_thirteen_default_keys_survive_a_write_and_a_read(tmp_path):
     assert set(config.property_weights) == set(properties)
     assert {n for n, w in config.property_weights.items() if w == 1.0} == {
         name.lower() for name in DEFAULT_KEY_TABLE
-    } - {"dipole", "head"}
+    } - {"dipole"}
 
 
 def test_the_default_dipole_key_cannot_be_read_back_from_a_file(tmp_path):

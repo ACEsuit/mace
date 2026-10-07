@@ -124,8 +124,8 @@ def configuration_from_atoms(
     told this structure has no such label, and an absent entry would instead
     look like a property nobody declared.
 
-    The head is not a property. It is ``head_name``, stored once, on
-    :attr:`Configuration.head`, whatever the file holds under the head key.
+    The head is not a property and is not read from the file. It is
+    ``head_name``, stored once, on :attr:`Configuration.head`.
 
     A stress or virial is stored as a ``[3, 3]`` matrix; see
     :data:`_FULL_MATRIX_PROPERTIES` for the layouts a file may use.
@@ -148,12 +148,9 @@ def configuration_from_atoms(
     property_weights: dict[str, float] = {
         name: atoms.info.get(f"config_{name}_weight", 1.0)
         for name in key_spec.property_names()
-        if name != _HEAD
     }
 
     for name, file_key in key_spec.graph_keys.items():
-        if name == _HEAD:
-            continue
         value = atoms.info.get(file_key)
         if name in _FULL_MATRIX_PROPERTIES and value is not None:
             value = _as_full_matrix(name, value)
@@ -176,11 +173,6 @@ def configuration_from_atoms(
         config_type=config_type,
         head=head_name,
     )
-
-
-#: Kept in the key table, where ``--head_key`` names it, but never read into
-#: ``properties``: the head a structure trains is the caller's ``head_name``.
-_HEAD = DefaultKeys.HEAD.convention_name
 
 
 def _as_full_matrix(name: str, value: Any) -> np.ndarray:

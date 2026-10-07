@@ -1,6 +1,6 @@
 """The default file keys a labelled structure file is read with.
 
-These thirteen names are a **data contract**, not a default anyone is free to
+These twelve names are a **data contract**, not a default anyone is free to
 adjust: every labelled dataset on disk was written against them, so renaming
 one does not break a build, it silently stops reading somebody's forces.
 
@@ -58,7 +58,6 @@ class DefaultKeys(Enum):
     VIRIALS = ("REF_virials", "graph")
     DIPOLE = ("dipole", "graph")
     POLARIZABILITY = ("polarizability", "graph")
-    HEAD = ("head", "graph")
     CHARGES = ("REF_charges", "atom")
     TOTAL_CHARGE = ("total_charge", "graph")
     TOTAL_SPIN = ("total_spin", "graph")
@@ -81,7 +80,7 @@ class DefaultKeys(Enum):
 
     @classmethod
     def keydict(cls) -> dict[str, str]:
-        """``{"<convention name>_key": "<default file key>"}`` for all thirteen.
+        """``{"<convention name>_key": "<default file key>"}`` for all twelve.
 
         The ``_key`` suffix is the command-line spelling, so this is also the
         set of overrides a key specification accepts.
@@ -90,7 +89,7 @@ class DefaultKeys(Enum):
 
     @classmethod
     def convention_names(cls) -> tuple[str, ...]:
-        """The thirteen convention names, in declaration order."""
+        """The twelve convention names, in declaration order."""
         return tuple(member.convention_name for member in cls)
 
     @classmethod

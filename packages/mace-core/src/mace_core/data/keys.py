@@ -116,7 +116,7 @@ class KeySpecification:
 
     @classmethod
     def from_defaults(cls) -> KeySpecification:
-        """All thirteen default keys, routed to the half each is stored in."""
+        """All twelve default keys, routed to the half each is stored in."""
         return cls().apply_overrides(DefaultKeys.keydict())
 
     def copy(self) -> KeySpecification:

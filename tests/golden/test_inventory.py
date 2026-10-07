@@ -240,7 +240,7 @@ def test_a_v1_package_suite_is_as_coarse_a_pin_as_a_legacy_tier():
 
     specific = (
         f"{legacy} + `packages/mace-core/tests/test_data_configuration.py"
-        "::test_the_default_keys_are_exactly_these_thirteen`"
+        "::test_the_default_keys_are_exactly_these_twelve`"
     )
     assert check_inventory.check_pins([_row("x.a", pinned=specific)]) == []
 
@@ -253,7 +253,7 @@ def test_a_v1_pin_may_not_stand_alone_in_a_cell():
     is not able to check."""
     alone = (
         "`packages/mace-core/tests/test_data_configuration.py"
-        "::test_the_default_keys_are_exactly_these_thirteen`"
+        "::test_the_default_keys_are_exactly_these_twelve`"
     )
     problems = check_inventory.check_pins([_row("x.a", pinned=alone)])
     assert any("free text" in p for p in problems), problems
