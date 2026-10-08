@@ -36,13 +36,17 @@ def test_the_constants_are_the_values_the_stack_was_built_against(name, value):
     assert getattr(units, name) == pytest.approx(value, rel=1e-12)
 
 
-def test_every_factor_the_module_exports_is_pinned():
-    """A factor added to `units` without a line in PINNED fails here, rather
-    than going unchecked by the two tests that iterate over PINNED."""
-    exported = {
-        name for name in units.__all__ if isinstance(getattr(units, name), float)
+def test_every_factor_the_module_defines_is_pinned():
+    """A factor added to `units` without a line in PINNED fails here, whether
+    or not it is also added to `__all__`, rather than going unchecked by the
+    two tests that iterate over PINNED."""
+    defined = {
+        name
+        for name, value in vars(units).items()
+        if not name.startswith("_") and isinstance(value, float)
     }
-    assert exported == set(PINNED)
+    assert defined == set(PINNED)
+    assert defined <= set(units.__all__)
 
 
 def test_the_constants_are_ase_s_and_not_a_second_copy():
@@ -79,10 +83,17 @@ def test_the_magnetic_force_carries_the_same_sign_as_a_force():
     assert units.MAGFORCE_SIGN_CONVENTION == "magforces = -dE/d(magmom)."
 
 
-def test_every_convention_is_reachable_by_the_name_of_its_quantity():
-    assert units.SIGN_CONVENTIONS == {
-        "forces": units.FORCE_SIGN_CONVENTION,
-        "stress": units.STRESS_SIGN_CONVENTION,
-        "virials": units.VIRIAL_SIGN_CONVENTION,
-        "magforces": units.MAGFORCE_SIGN_CONVENTION,
+def test_every_convention_is_filed_under_the_quantity_it_states():
+    """Each statement opens with the name of the quantity it defines, so the
+    key it is filed under is checked against the statement rather than
+    against a second copy of the mapping. A convention constant left out of
+    the mapping fails too."""
+    for quantity, statement in units.SIGN_CONVENTIONS.items():
+        assert statement.startswith(f"{quantity} = "), (quantity, statement)
+    constants = {
+        getattr(units, name)
+        for name in vars(units)
+        if name.endswith("_SIGN_CONVENTION")
     }
+    assert set(units.SIGN_CONVENTIONS.values()) == constants
+    assert len(units.SIGN_CONVENTIONS) == len(constants)
