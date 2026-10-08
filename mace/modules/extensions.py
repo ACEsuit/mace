@@ -1113,7 +1113,28 @@ class PolarMACE(ScaleShiftMACE):
         # Only the compatibility mode inspects tensor PBCs for dispatch.
         realspace = self.pbc_handling == "realspace"
         if self.pbc_handling == "auto":
-            realspace = not bool(torch.any(pbc))
+            graph_has_pbc = pbc.reshape(-1, 3).any(dim=-1)
+            if (
+                (not is_lammps)
+                and bool(graph_has_pbc.any())
+                and (not bool(graph_has_pbc.all()))
+            ):
+                return self._forward_auto_split_pbc(
+                    data,
+                    graph_has_pbc,
+                    training=training,
+                    compute_force=compute_force,
+                    compute_virials=compute_virials,
+                    compute_stress=compute_stress,
+                    compute_displacement=compute_displacement,
+                    compute_hessian=compute_hessian,
+                    compute_edge_forces=compute_edge_forces,
+                    compute_atomic_stresses=compute_atomic_stresses,
+                    lammps_mliap=lammps_mliap,
+                    fermi_level=fermi_level,
+                    external_field=external_field,
+                )
+            realspace = not bool(graph_has_pbc.any())
         if realspace:
             k_vectors = positions.new_empty((0, 3))
             kv_norms_squared = positions.new_empty((0,))
@@ -1401,6 +1422,143 @@ class PolarMACE(ScaleShiftMACE):
             "fukui_functions": final_fukui_sources,
         }
 
+
+    def _select_polar_graphs(self, data, graph_mask):
+        batch = data["batch"]
+        node_keep = graph_mask[batch]
+        edge_index = data["edge_index"]
+        edge_keep = node_keep[edge_index[0]] & node_keep[edge_index[1]]
+        old_graphs = torch.nonzero(graph_mask, as_tuple=False).view(-1)
+        graph_remap = batch.new_full((graph_mask.numel(),), -1)
+        graph_remap[old_graphs] = torch.arange(
+            old_graphs.numel(), device=batch.device, dtype=batch.dtype
+        )
+        old_nodes = torch.nonzero(node_keep, as_tuple=False).view(-1)
+        node_remap = batch.new_full((batch.numel(),), -1)
+        node_remap[old_nodes] = torch.arange(
+            old_nodes.numel(), device=batch.device, dtype=batch.dtype
+        )
+        n_nodes = int(batch.numel())
+        n_graphs = int(graph_mask.numel())
+        n_edges = int(edge_index.size(1))
+        selected = {}
+        for key, value in data.items():
+            if not torch.is_tensor(value):
+                selected[key] = value
+                continue
+            if key == "edge_index":
+                selected[key] = node_remap[edge_index[:, edge_keep]]
+                continue
+            if key == "batch":
+                selected[key] = graph_remap[batch[node_keep]]
+                continue
+            if key == "ptr":
+                new_batch = graph_remap[batch[node_keep]]
+                counts = torch.bincount(new_batch, minlength=int(old_graphs.numel()))
+                selected[key] = torch.cat(
+                    [counts.new_zeros(1), torch.cumsum(counts, dim=0)]
+                )
+                continue
+            if key in ("cell", "rcell"):
+                selected[key] = value.reshape(n_graphs, 3, 3)[graph_mask]
+                continue
+            if value.dim() == 0:
+                selected[key] = value
+                continue
+            if value.size(0) == n_nodes:
+                selected[key] = value[node_keep]
+            elif value.size(0) == n_edges:
+                selected[key] = value[edge_keep]
+            elif value.size(0) == n_graphs:
+                selected[key] = value[graph_mask]
+            else:
+                selected[key] = value
+        return selected
+
+    def _merge_polar_outputs(self, data, graph_has_pbc, periodic_out, open_out):
+        batch = data["batch"]
+        node_periodic = graph_has_pbc[batch]
+        n_graphs = int(graph_has_pbc.numel())
+        n_nodes = int(batch.numel())
+        merged = {}
+        for key in set(periodic_out) | set(open_out):
+            periodic_value = periodic_out.get(key)
+            open_value = open_out.get(key)
+            if periodic_value is None and open_value is None:
+                merged[key] = None
+                continue
+            if periodic_value is None:
+                merged[key] = open_value
+                continue
+            if open_value is None:
+                merged[key] = periodic_value
+                continue
+            if not torch.is_tensor(periodic_value):
+                merged[key] = periodic_value
+                continue
+            n_periodic = int(graph_has_pbc.sum())
+            n_open = n_graphs - n_periodic
+            if periodic_value.dim() > 0 and periodic_value.size(0) == n_periodic and open_value.size(0) == n_open:
+                out = periodic_value.new_zeros((n_graphs,) + tuple(periodic_value.shape[1:]))
+                out[graph_has_pbc] = periodic_value
+                out[~graph_has_pbc] = open_value
+                merged[key] = out
+            elif periodic_value.dim() > 0 and periodic_value.size(0) == int(node_periodic.sum()) and open_value.size(0) == int((~node_periodic).sum()):
+                out = periodic_value.new_zeros((n_nodes,) + tuple(periodic_value.shape[1:]))
+                out[node_periodic] = periodic_value
+                out[~node_periodic] = open_value
+                merged[key] = out
+            else:
+                merged[key] = periodic_value
+        return merged
+
+    def _forward_auto_split_pbc(
+        self,
+        data,
+        graph_has_pbc,
+        training=False,
+        compute_force=True,
+        compute_virials=False,
+        compute_stress=False,
+        compute_displacement=False,
+        compute_hessian=False,
+        compute_edge_forces=False,
+        compute_atomic_stresses=False,
+        lammps_mliap=False,
+        fermi_level=None,
+        external_field=None,
+    ):
+        periodic = self._select_polar_graphs(data, graph_has_pbc)
+        open_mol = self._select_polar_graphs(data, ~graph_has_pbc)
+        periodic_out = self.forward(
+            periodic,
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_displacement=compute_displacement,
+            compute_hessian=compute_hessian,
+            compute_edge_forces=compute_edge_forces,
+            compute_atomic_stresses=compute_atomic_stresses,
+            lammps_mliap=lammps_mliap,
+            fermi_level=None,
+            external_field=None,
+        )
+        open_out = self.forward(
+            open_mol,
+            training=training,
+            compute_force=compute_force,
+            compute_virials=compute_virials,
+            compute_stress=compute_stress,
+            compute_displacement=compute_displacement,
+            compute_hessian=compute_hessian,
+            compute_edge_forces=compute_edge_forces,
+            compute_atomic_stresses=compute_atomic_stresses,
+            lammps_mliap=lammps_mliap,
+            fermi_level=None,
+            external_field=None,
+        )
+        return self._merge_polar_outputs(data, graph_has_pbc, periodic_out, open_out)
 
 # === magnetic mace utilities  ===
 class SHModule(torch.nn.Module):
