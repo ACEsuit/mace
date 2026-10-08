@@ -57,6 +57,7 @@ from mace_core.kernels.registry import (
     ENTRY_POINT_GROUPS,
     BackendNotAvailableError,
     DiscoveredBackend,
+    DuplicateBackendError,
     available_backends,
     get_backend,
 )
@@ -74,6 +75,7 @@ __all__ = [
     "ChannelwiseTPConvDescriptor",
     "Descriptor",
     "DiscoveredBackend",
+    "DuplicateBackendError",
     "FullyConnectedTPDescriptor",
     "InternalWeights",
     "KernelBackend",
