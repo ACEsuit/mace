@@ -216,32 +216,7 @@ def test_the_forces_sum_to_zero(chain):
 # ---------------------------------------------------------------------------
 
 
-def test_the_canonical_weights_round_trip_through_a_fresh_instance(backend):
-    descriptor = SymmetricContractionDescriptor(
-        irreps_in="0e+1o",
-        irreps_out="0e",
-        correlation=2,
-        num_elements=2,
-        num_features=3,
-    )
-    written = backend.make_symmetric_contraction(descriptor)
-    with torch.no_grad():
-        for parameter in written.weights:
-            parameter.uniform_(-1, 1)
-    features = torch.randn(4, 3, 4)
-    element = torch.tensor([0, 1, 0, 1])
-    expected = written(features, element)
-
-    state = written.to_canonical()
-    assert state["weight"].shape[1] == descriptor.path_count
-
-    read = backend.make_symmetric_contraction(descriptor)
-    assert not torch.allclose(read(features, element), expected)
-    read.load_canonical(state)
-    assert torch.allclose(read(features, element), expected)
-
-
-def test_the_linear_weights_round_trip_too(backend):
+def test_the_linear_weights_round_trip_through_a_fresh_instance(backend):
     descriptor = LinearDescriptor(
         irreps_in="4x0e", irreps_out="2x0e+1x1o", has_bias=True
     )

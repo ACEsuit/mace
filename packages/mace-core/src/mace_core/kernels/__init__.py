@@ -18,17 +18,18 @@ tree does the other way round:
   the op is frozen into the module tree.
 * **One canonical weight layout.** The frozen tree has five conversion command
   line tools because each backend stores weights its own way. The layout
-  carries its normalization folded into the weight, so the scales a fresh
-  draw uses are part of the format and are stated here too.
+  holds the raw weights and states the per-path normalization every backend
+  applies in the forward, and the scale a fresh draw uses, so both are part of
+  the format.
 """
 
 from mace_core.kernels.canonical import (
     CANONICAL_LAYOUT,
     KERNEL_SPEC_VERSION,
     canonical_weight_shape,
-    fully_connected_tp_weight_scale,
-    linear_weight_scale,
-    symmetric_contraction_weight_scale,
+    fully_connected_tp_path_normalization,
+    linear_path_normalization,
+    symmetric_contraction_initial_scale,
 )
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
@@ -85,8 +86,8 @@ __all__ = [
     "UnsupportedDescriptorError",
     "available_backends",
     "canonical_weight_shape",
-    "fully_connected_tp_weight_scale",
+    "fully_connected_tp_path_normalization",
     "get_backend",
-    "linear_weight_scale",
-    "symmetric_contraction_weight_scale",
+    "linear_path_normalization",
+    "symmetric_contraction_initial_scale",
 ]

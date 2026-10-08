@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from mace_core.clebsch_gordan.irreps import Irrep
 from mace_core.kernels import (
     CANONICAL_LAYOUT,
     DISPATCHED_OPS,
@@ -28,7 +29,10 @@ from mace_core.kernels import (
     UnsupportedDescriptorError,
     available_backends,
     canonical_weight_shape,
+    fully_connected_tp_path_normalization,
     get_backend,
+    linear_path_normalization,
+    symmetric_contraction_initial_scale,
 )
 from mace_core.kernels import registry as registry_module
 
@@ -247,6 +251,47 @@ def test_an_unknown_framework_is_refused_rather_than_searched():
 
 def test_the_two_frameworks_have_separate_groups():
     assert ENTRY_POINT_GROUPS["torch"] != ENTRY_POINT_GROUPS["jax"]
+
+
+# ---------------------------------------------------------------------------
+# The canonical layout's normalization
+# ---------------------------------------------------------------------------
+
+
+def test_the_linear_normalization_is_the_matching_input_multiplicity():
+    """``e3nn``'s ``"element"`` path normalization, written out: the fan-in of
+    an output irrep is every input multiplicity carrying it, summed over
+    repeated terms."""
+    assert linear_path_normalization("16x0e+4x1o", Irrep(0, 1)) == 16.0**-0.5
+    assert linear_path_normalization("16x0e+4x1o", Irrep(1, -1)) == 4.0**-0.5
+    assert linear_path_normalization("4x0e+2x0e", Irrep(0, 1)) == 6.0**-0.5
+
+
+def test_an_irrep_nothing_feeds_has_no_weights_and_no_normalization():
+    """One rather than a division by zero: the map cannot produce that output
+    at all, so there is no weight for the factor to apply to."""
+    assert linear_path_normalization("16x0e", Irrep(2, 1)) == 1.0
+
+
+def test_the_skip_normalization_sums_every_path_into_one_output():
+    """``e3nn``'s fan-in for the fully connected product is per output, over
+    every pair of input terms reaching it. ``4x0e+2x0e`` against ``3x0e``
+    is 4*3 + 2*3 = 18 for both paths, not 12 and 6."""
+    scalar = Irrep(0, 1)
+    assert fully_connected_tp_path_normalization(
+        "4x0e+2x0e", "3x0e", scalar
+    ) == pytest.approx(18.0**-0.5)
+    assert fully_connected_tp_path_normalization(
+        "8x0e+2x1o", "3x0e", Irrep(1, -1)
+    ) == pytest.approx(6.0**-0.5)
+    assert fully_connected_tp_path_normalization("8x1o", "3x0e", scalar) == 1.0
+
+
+def test_the_contraction_draw_is_over_the_block_path_count():
+    """The frozen tree's ``randn / num_params``, per block."""
+    assert symmetric_contraction_initial_scale(4) == 0.25
+    assert symmetric_contraction_initial_scale(1) == 1.0
+    assert symmetric_contraction_initial_scale(0) == 1.0
 
 
 # ---------------------------------------------------------------------------

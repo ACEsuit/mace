@@ -15,11 +15,6 @@ from typing import Any
 
 import pytest
 import torch
-from mace_core.clebsch_gordan.irreps import Irrep
-from mace_core.kernels.canonical import (
-    fully_connected_tp_weight_scale,
-    linear_weight_scale,
-)
 from mace_core.kernels.descriptors import (
     FullyConnectedTPDescriptor,
     LinearDescriptor,
@@ -99,28 +94,56 @@ def test_the_draw_does_not_touch_the_global_generator():
 # ---------------------------------------------------------------------------
 
 
-def test_a_linear_weight_is_scaled_by_its_fan_in():
-    """The canonical layout carries the normalization in the number, so a draw
-    that ignored it would train at a different effective rate than a converted
-    checkpoint of the same architecture."""
-    op = BACKEND.make_linear(LinearDescriptor(irreps_in="64x0e", irreps_out="8x0e"))
-    op.initialize_weights(3)
-    assert float(op.weight.detach().std()) == pytest.approx(64.0**-0.5, rel=0.1)
+def test_linear_and_skip_weights_are_drawn_standard_normal():
+    """The canonical weight is the raw one ``e3nn`` stores. Its ``1 / sqrt(fan_in)``
+    is applied in the forward, so a draw that folded it in as well would apply
+    it twice and train at a different effective rate."""
+    linear = BACKEND.make_linear(LinearDescriptor(irreps_in="64x0e", irreps_out="8x0e"))
+    linear.initialize_weights(3)
+    assert float(linear.weight.detach().std()) == pytest.approx(1.0, rel=0.1)
+    skip = BACKEND.make_fully_connected_tp(
+        FullyConnectedTPDescriptor(
+            irreps_in1="64x0e", irreps_in2="4x0e", irreps_out="8x0e"
+        )
+    )
+    skip.initialize_weights(3)
+    assert float(skip.weight.detach().std()) == pytest.approx(1.0, rel=0.1)
 
 
-def test_the_two_scales_are_the_ones_the_conversion_folds_in():
-    """The fan-in of a linear counts the inputs sharing the output's irrep; the
-    skip connection's counts the element attributes as well, because it sees
-    every one of them."""
-    assert linear_weight_scale("16x0e+4x1o", Irrep(0, 1)) == pytest.approx(16.0**-0.5)
-    assert linear_weight_scale("16x0e+4x1o", Irrep(1, -1)) == pytest.approx(4.0**-0.5)
-    assert fully_connected_tp_weight_scale(8, 3) == pytest.approx(24.0**-0.5)
+def test_the_linear_forward_applies_the_fan_in():
+    """Written out: 64 inputs of one through weights of one is 64, and the
+    ``e3nn`` normalization divides by ``sqrt(64)``. The repeated ``0e`` input
+    terms share one fan-in, ``4 + 12 = 16``."""
+    linear = BACKEND.make_linear(LinearDescriptor(irreps_in="64x0e", irreps_out="1x0e"))
+    with torch.no_grad():
+        linear.weight.fill_(1.0)
+    assert float(linear(torch.ones(1, 64, dtype=torch.float64))[0, 0]) == pytest.approx(
+        8.0
+    )
+
+    split = BACKEND.make_linear(
+        LinearDescriptor(irreps_in="4x0e+12x0e", irreps_out="1x0e")
+    )
+    with torch.no_grad():
+        split.weight.fill_(1.0)
+    assert float(split(torch.ones(1, 16, dtype=torch.float64))[0, 0]) == pytest.approx(
+        4.0
+    )
 
 
-def test_an_irrep_nothing_feeds_has_no_weights_and_no_scale():
-    """One rather than a division by zero: the map cannot produce that output
-    at all, so there is no weight for the scale to apply to."""
-    assert linear_weight_scale("16x0e", Irrep(2, 1)) == 1.0
+def test_the_skip_forward_shares_one_fan_in_across_the_paths_into_an_output():
+    """``e3nn`` counts the fan-in per output: ``4x0e+2x0e`` against ``3x0e``
+    is 18, so one active attribute and weights of one give ``6 / sqrt(18)``."""
+    skip = BACKEND.make_fully_connected_tp(
+        FullyConnectedTPDescriptor(
+            irreps_in1="4x0e+2x0e", irreps_in2="3x0e", irreps_out="1x0e"
+        )
+    )
+    with torch.no_grad():
+        skip.weight.fill_(1.0)
+    attributes = torch.tensor([[1.0, 0.0, 0.0]], dtype=torch.float64)
+    out = skip(torch.ones(1, 6, dtype=torch.float64), attributes)
+    assert float(out[0, 0]) == pytest.approx(6.0 / 18.0**0.5)
 
 
 def test_a_bias_starts_at_zero():
@@ -131,19 +154,27 @@ def test_a_bias_starts_at_zero():
     assert float(op.bias.detach().abs().max()) == 0.0
 
 
-def test_the_symmetric_contraction_is_the_unscaled_one():
-    """The one weighted op the canonical layout applies no factor to."""
+def test_the_symmetric_contraction_draws_over_each_block_path_count():
+    """The frozen tree's ``randn / num_params`` per ``(output irrep, body
+    order)`` block. The full basis of ``0e+1o`` into ``0e`` has blocks of 1, 2
+    and 4 paths, so a draw that ignored the count would be off by a factor of
+    two or four in the larger two."""
     op = BACKEND.make_symmetric_contraction(
         SymmetricContractionDescriptor(
             irreps_in="0e+1o",
             irreps_out="0e",
-            correlation=2,
-            num_elements=4,
-            num_features=64,
+            correlation=3,
+            num_elements=8,
+            num_features=128,
+            basis="full",
         )
     )
     op.initialize_weights(9)
-    assert float(op.weights[0].detach().std()) == pytest.approx(1.0, rel=0.2)
+    counts = [int(weight.shape[1]) for weight in op.weights]
+    assert counts == [1, 2, 4]
+    for weight, count in zip(op.weights, counts, strict=True):
+        spread = float(weight.detach().std())
+        assert spread * count == pytest.approx(1.0, rel=0.1)
 
 
 # ---------------------------------------------------------------------------
@@ -237,8 +268,7 @@ def test_a_moved_model_still_draws_its_weights():
     The draw happens on the host, because a device generator seeded the same
     way gives different numbers and a recorded seed has to rebuild the same
     model anywhere. So the drawn tensor has to be moved to where the parameter
-    is. The contraction is the one that would hide this, since it applies no
-    scale and its copy crosses devices without complaint.
+    is, and every op is checked because each one draws on its own.
     """
     for name, op in built_narrow().items():
         op.to(OTHER_DEVICE).initialize_weights(3)
