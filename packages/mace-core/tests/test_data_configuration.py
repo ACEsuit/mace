@@ -124,19 +124,20 @@ def test_the_command_line_spelling_is_derived_from_the_member_name():
     assert DefaultKeys.keydict()["magforces_key"] == "REF_magforces"
 
 
-def test_every_default_key_is_routed_to_exactly_one_half():
-    """A convention name in neither half is never parsed, and nothing says so.
-
-    The two halves are derived from the key table now, so the membership half
-    of this cannot fail. What it still asserts is the routing: that
-    `from_defaults` actually puts every name somewhere, and puts none of them
-    in both, which goes through `apply_overrides` and is not a restatement of
-    the derivation.
-    """
+def test_from_defaults_routes_every_key_to_the_half_the_table_names():
+    """Checked against the written-out table, not against the enum it is
+    built from."""
     key_spec = KeySpecification.from_defaults()
-    routed = set(key_spec.graph_keys) | set(key_spec.atom_keys)
-    assert routed == set(DefaultKeys.convention_names())
-    assert not set(key_spec.graph_keys) & set(key_spec.atom_keys)
+    assert key_spec.graph_keys == {
+        name.lower(): key
+        for name, (key, per, _) in DEFAULT_KEY_TABLE.items()
+        if per == "graph"
+    }
+    assert key_spec.atom_keys == {
+        name.lower(): key
+        for name, (key, per, _) in DEFAULT_KEY_TABLE.items()
+        if per == "atom"
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +173,89 @@ def test_a_copy_does_not_share_its_dictionaries():
     clone = original.copy()
     clone.graph_keys["energy"] = "somewhere_else"
     assert original.graph_keys["energy"] == "REF_energy"
+
+
+def test_a_name_in_both_halves_is_refused_by_the_constructor():
+    with pytest.raises(ValueError, match="'site_spin' is in both halves"):
+        KeySpecification(graph_keys={"site_spin": "a"}, atom_keys={"site_spin": "b"})
+
+
+def test_a_name_in_both_halves_is_refused_by_update():
+    """The per-structure value would otherwise be silently lost: the parser
+    keeps whichever half it reads last."""
+    key_spec = KeySpecification.from_defaults()
+    with pytest.raises(ValueError, match="'charges' is in both halves"):
+        key_spec.update(graph_keys={"charges": "qq"})
+    # and the failed update left the specification as it was
+    assert "charges" not in key_spec.graph_keys
+    assert key_spec.atom_keys["charges"] == "REF_charges"
+
+
+@pytest.mark.parametrize(
+    ("graph_keys", "atom_keys", "name"),
+    [
+        ({"energy": "REF_energy", "forces": "REF_forces"}, {}, "forces"),
+        ({}, {"energy": "REF_energy"}, "energy"),
+        ({}, {"stress": "REF_stress"}, "stress"),
+        ({"magmom": "REF_magmom"}, {}, "magmom"),
+    ],
+)
+def test_a_default_name_in_the_wrong_half_is_refused(graph_keys, atom_keys, name):
+    """Forces read from the per-structure values find nothing, and would be
+    reported as an absent label at weight zero."""
+    with pytest.raises(ValueError, match=rf"'{name}' is in the \w+ half"):
+        KeySpecification(graph_keys=graph_keys, atom_keys=atom_keys)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "atomic_numbers",
+        "positions",
+        "properties",
+        "property_weights",
+        "cell",
+        "pbc",
+        "weight",
+        "config_type",
+        "head",
+    ],
+)
+def test_a_configuration_field_name_is_refused_on_every_path(name):
+    """The head, for one, would otherwise be stored twice: on the
+    configuration, from the caller, and among the properties, from the file,
+    holding two different values."""
+    with pytest.raises(ValueError, match=f"'{name}' is a field of Configuration"):
+        KeySpecification.from_defaults().add_embedding_features(
+            {name: {"per": "graph"}}
+        )
+    with pytest.raises(ValueError, match=f"'{name}' is a field of Configuration"):
+        KeySpecification.from_defaults().update(graph_keys={name: name})
+    with pytest.raises(ValueError, match=f"'{name}' is a field of Configuration"):
+        KeySpecification(atom_keys={name: name})
+
+
+@pytest.mark.parametrize("per", ["graph", "atom"])
+def test_a_feature_named_like_a_default_property_raises_in_either_order(per):
+    """Before or after the overrides, and whether or not the specification
+    already resolves the name: the answer cannot depend on the order the two
+    were applied in."""
+    overrides = {"charges_key": "qq"}
+    with pytest.raises(ValueError, match="charges_key"):
+        KeySpecification().add_embedding_features({"charges": {"per": per}})
+    with pytest.raises(ValueError, match="charges_key"):
+        KeySpecification().apply_overrides(overrides).add_embedding_features(
+            {"charges": {"per": per}}
+        )
+
+
+def test_a_directly_edited_specification_is_checked_again_when_copied():
+    """`read_configurations` copies the specification before anything else,
+    so this is where a parse refuses it."""
+    key_spec = KeySpecification.from_defaults()
+    key_spec.graph_keys["forces"] = "REF_forces"
+    with pytest.raises(ValueError, match="'forces' is in both halves"):
+        key_spec.copy()
 
 
 def test_an_embedding_feature_lands_in_the_half_its_per_names():

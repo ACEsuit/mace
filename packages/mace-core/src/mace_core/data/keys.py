@@ -25,6 +25,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from mace_core.data.configuration import RESERVED_PROPERTY_NAMES
 from mace_core.elements.default_keys import STORAGES, DefaultKeys, Storage
 
 __all__ = [
@@ -106,13 +107,35 @@ class EmbeddingFeatureSpec:
 class KeySpecification:
     """Convention name to file key, split by where the value is stored.
 
+    Every way of building or extending one goes through the same check, so a
+    specification that exists is a valid one:
+
+    * a name is in one half only, since it is one quantity read from one place;
+    * a default convention name is in the half the key table gives it, since
+      reading ``forces`` among the per-structure values finds nothing and
+      reports it as a missing label;
+    * no name is a field of
+      :class:`~mace_core.data.configuration.Configuration`
+      (:data:`~mace_core.data.configuration.RESERVED_PROPERTY_NAMES`), since
+      that value is stored on the configuration itself.
+
+    The dictionaries can still be written to directly; the check then runs
+    again when the specification is copied, which is the first thing
+    :func:`~mace_core.data.xyz.read_configurations` does with it.
+
     Args:
         graph_keys: Per-structure properties.
         atom_keys: Per-atom properties.
+
+    Raises:
+        ValueError: if either half breaks one of the rules above.
     """
 
     graph_keys: dict[str, str] = field(default_factory=dict)
     atom_keys: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _check_halves(self.graph_keys, self.atom_keys)
 
     @classmethod
     def from_defaults(cls) -> KeySpecification:
@@ -130,12 +153,16 @@ class KeySpecification:
         graph_keys: Mapping[str, str] | None = None,
         atom_keys: Mapping[str, str] | None = None,
     ) -> KeySpecification:
-        """Merge explicit keys in, by convention name. Returns ``self``."""
-        if graph_keys is not None:
-            self.graph_keys.update(graph_keys)
-        if atom_keys is not None:
-            self.atom_keys.update(atom_keys)
-        return self
+        """Merge explicit keys in, by convention name. Returns ``self``.
+
+        Raises:
+            ValueError: if the result breaks a rule of the class. ``self`` is
+                then left as it was.
+        """
+        return self._replace_halves(
+            {**self.graph_keys, **(graph_keys or {})},
+            {**self.atom_keys, **(atom_keys or {})},
+        )
 
     def apply_overrides(self, overrides: Mapping[str, Any]) -> KeySpecification:
         """Apply ``<convention name>_key`` overrides. Returns ``self``.
@@ -147,15 +174,17 @@ class KeySpecification:
         nothing anywhere saying why the labels never arrived.
         """
         known = _known_convention_names()
+        graph_keys = dict(self.graph_keys)
+        atom_keys = dict(self.atom_keys)
         unknown: list[str] = []
         for setting, value in overrides.items():
             if not setting.endswith("_key"):
                 continue
             name = setting[: -len("_key")]
             if name in GRAPH_CONVENTION_NAMES:
-                self.graph_keys[name] = value
+                graph_keys[name] = value
             elif name in ATOM_CONVENTION_NAMES:
-                self.atom_keys[name] = value
+                atom_keys[name] = value
             else:
                 unknown.append(setting)
         if unknown:
@@ -164,7 +193,7 @@ class KeySpecification:
                 f"that can be given a file key are {sorted(known)}; to read "
                 f"anything else, declare it as an embedding feature."
             )
-        return self
+        return self._replace_halves(graph_keys, atom_keys)
 
     def add_embedding_features(
         self, embedding_specs: Mapping[str, EmbeddingFeatureSpec | Mapping[str, Any]]
@@ -176,33 +205,42 @@ class KeySpecification:
         ``key`` or, failing that, from its own name.
 
         Raises:
-            ValueError: if a feature is named like a property this
-                specification already resolves. A name is one quantity, read
-                from one place: declared in the other half, it would sit in
-                both and the parser would keep whichever half it read last;
-                declared in the same half, it would silently replace the file
-                key the property is read from. A different file key for a
-                property is what the ``<name>_key`` override is for.
+            ValueError: if a feature is named like a default property, whether
+                or not this specification already resolves it, or like a
+                feature already declared, or like a field of a configuration.
+                A name is one quantity, read from one place. A different file
+                key for a default property is what the ``<name>_key`` override
+                is for.
         """
+        graph_keys = dict(self.graph_keys)
+        atom_keys = dict(self.atom_keys)
         for name, spec in embedding_specs.items():
             feature = (
                 spec
                 if isinstance(spec, EmbeddingFeatureSpec)
                 else EmbeddingFeatureSpec.from_mapping(name, spec)
             )
-            if name in self.graph_keys or name in self.atom_keys:
-                hint = (
-                    f"To read {name!r} from another file key, set {name}_key."
-                    if name in _known_convention_names()
-                    else "It is declared twice."
-                )
+            if name in _known_convention_names():
                 raise ValueError(
-                    f"embedding feature {name!r} is already a property of this "
-                    f"key specification. Give the feature a name of its own. "
-                    f"{hint}"
+                    f"embedding feature {name!r} is named like a default "
+                    f"property. Give the feature a name of its own; to read "
+                    f"{name!r} from another file key, set {name}_key."
                 )
-            target = self.atom_keys if feature.per == "atom" else self.graph_keys
+            if name in graph_keys or name in atom_keys:
+                raise ValueError(
+                    f"embedding feature {name!r} is declared twice. Give each "
+                    f"feature a name of its own."
+                )
+            target = atom_keys if feature.per == "atom" else graph_keys
             target[name] = feature.file_key(name)
+        return self._replace_halves(graph_keys, atom_keys)
+
+    def _replace_halves(
+        self, graph_keys: dict[str, str], atom_keys: dict[str, str]
+    ) -> KeySpecification:
+        _check_halves(graph_keys, atom_keys)
+        self.graph_keys = graph_keys
+        self.atom_keys = atom_keys
         return self
 
     def property_names(self) -> tuple[str, ...]:
@@ -213,3 +251,30 @@ class KeySpecification:
         of iteration, not for correctness.
         """
         return (*self.atom_keys, *self.graph_keys)
+
+
+def _check_halves(graph_keys: Mapping[str, str], atom_keys: Mapping[str, str]) -> None:
+    """Raise if the two halves break a rule of :class:`KeySpecification`."""
+    problems: list[str] = []
+    for name in sorted(set(graph_keys) & set(atom_keys)):
+        problems.append(
+            f"{name!r} is in both halves; it is one quantity, so keep it in "
+            f"the one it is stored in"
+        )
+    for half, keys, other in (
+        ("graph", graph_keys, ATOM_CONVENTION_NAMES),
+        ("atom", atom_keys, GRAPH_CONVENTION_NAMES),
+    ):
+        for name in sorted(set(keys) & other):
+            problems.append(
+                f"{name!r} is in the {half} half, but it is stored per "
+                f"{'atom' if half == 'graph' else 'graph'}; set {name}_key to "
+                f"change only its file key"
+            )
+    for name in sorted(RESERVED_PROPERTY_NAMES & (set(graph_keys) | set(atom_keys))):
+        problems.append(
+            f"{name!r} is a field of Configuration and is stored there, not "
+            f"read as a property; rename it"
+        )
+    if problems:
+        raise ValueError("invalid key specification: " + "; ".join(problems) + ".")
