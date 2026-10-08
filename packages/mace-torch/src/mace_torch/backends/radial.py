@@ -10,8 +10,10 @@ subtly different.
 Conventions shared by every class:
 
 * distances are in Angstrom and enter as a column tensor ``[n_edges, 1]``;
-* buffers are created in ``torch.get_default_dtype()`` at construction, so a
-  module built under ``float64`` computes in ``float64``.
+* buffers are created in the ``dtype`` passed at construction, and in
+  ``torch.get_default_dtype()`` when none is, so a module built under
+  ``float64`` computes in ``float64``. The reference backend always passes the
+  descriptor's precision rather than leaning on the process default.
 """
 
 from __future__ import annotations
@@ -47,28 +49,27 @@ class BesselBasis(torch.nn.Module):
     r_max: torch.Tensor
     prefactor: torch.Tensor
 
-    def __init__(self, r_max: float, num_basis: int = 8, trainable: bool = False):
+    def __init__(
+        self,
+        r_max: float,
+        num_basis: int = 8,
+        trainable: bool = False,
+        dtype: torch.dtype | None = None,
+    ):
         super().__init__()
+        dtype = dtype or torch.get_default_dtype()
         frequencies = (
             math.pi
             / r_max
-            * torch.linspace(
-                start=1.0,
-                end=num_basis,
-                steps=num_basis,
-                dtype=torch.get_default_dtype(),
-            )
+            * torch.linspace(start=1.0, end=num_basis, steps=num_basis, dtype=dtype)
         )
         if trainable:
             self.frequencies = torch.nn.Parameter(frequencies)
         else:
             self.register_buffer("frequencies", frequencies)
+        self.register_buffer("r_max", torch.tensor(r_max, dtype=dtype))
         self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
-        )
-        self.register_buffer(
-            "prefactor",
-            torch.tensor(math.sqrt(2.0 / r_max), dtype=torch.get_default_dtype()),
+            "prefactor", torch.tensor(math.sqrt(2.0 / r_max), dtype=dtype)
         )
 
     @property
@@ -155,10 +156,19 @@ class GaussianBasis(torch.nn.Module):
 
     centers: torch.Tensor
 
-    def __init__(self, r_max: float, num_basis: int = 128, trainable: bool = False):
+    def __init__(
+        self,
+        r_max: float,
+        num_basis: int = 128,
+        trainable: bool = False,
+        dtype: torch.dtype | None = None,
+    ):
         super().__init__()
         centers = torch.linspace(
-            start=0.0, end=r_max, steps=num_basis, dtype=torch.get_default_dtype()
+            start=0.0,
+            end=r_max,
+            steps=num_basis,
+            dtype=dtype or torch.get_default_dtype(),
         )
         if trainable:
             self.centers = torch.nn.Parameter(centers)
@@ -212,11 +222,13 @@ class PolynomialCutoff(torch.nn.Module):
 
     r_max: torch.Tensor
 
-    def __init__(self, r_max: float, polynomial_order: int = 6):
+    def __init__(
+        self, r_max: float, polynomial_order: int = 6, dtype: torch.dtype | None = None
+    ):
         super().__init__()
         self.polynomial_order = int(polynomial_order)
         self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=torch.get_default_dtype())
+            "r_max", torch.tensor(r_max, dtype=dtype or torch.get_default_dtype())
         )
 
     def forward(self, edge_lengths: torch.Tensor) -> torch.Tensor:

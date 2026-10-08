@@ -34,6 +34,7 @@ from mace_core.kernels.canonical import (
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
+    Descriptor,
     FullyConnectedTPDescriptor,
     LinearDescriptor,
     RadialBasisDescriptor,
@@ -58,9 +59,17 @@ from mace_torch.kernels.ops import (
     symmetric_contraction,
 )
 
-__all__ = ["ReferenceBackend"]
+__all__ = ["ReferenceBackend", "ReferenceCapabilities"]
 
 _TORCH_DTYPE = {"float64": torch.float64, "float32": torch.float32}
+
+#: The two bases, by the name a descriptor records. A lookup rather than a
+#: conditional, so a name outside the set raises instead of selecting the
+#: fallback branch.
+_BASIS_BUILDERS = {
+    "reduced": reduced_symmetric_tensor_product_basis,
+    "full": full_symmetric_tensor_product_basis,
+}
 
 
 def _linear_plan(descriptor: LinearDescriptor):
@@ -261,11 +270,12 @@ class ReferenceSymmetricContraction(nn.Module):
         super().__init__()
         self.descriptor = descriptor
         dtype = _TORCH_DTYPE[descriptor.precision]
-        build = (
-            reduced_symmetric_tensor_product_basis
-            if descriptor.basis == "reduced"
-            else full_symmetric_tensor_product_basis
-        )
+        if descriptor.basis not in _BASIS_BUILDERS:
+            raise ValueError(
+                f"basis={descriptor.basis!r} is not a Clebsch-Gordan basis this "
+                f"backend builds. The bases are {sorted(_BASIS_BUILDERS)}."
+            )
+        build = _BASIS_BUILDERS[descriptor.basis]
         self.orders = descriptor.correlation
         self.targets = [str(ir) for _, ir in Irreps.parse(descriptor.irreps_out)]
         weights, bases = [], []
@@ -552,28 +562,43 @@ class ReferenceSegmentReduce(nn.Module):
 
 
 class ReferenceSphericalHarmonics(nn.Module):
-    """Real spherical harmonics in this project's convention."""
+    """Real spherical harmonics in this project's convention.
+
+    Computed in the descriptor's precision whatever the input's, so the dtype
+    is the one the model was built with and not whatever the caller had.
+    """
 
     def __init__(self, descriptor: SphericalHarmonicsDescriptor) -> None:
         super().__init__()
         self.descriptor = descriptor
+        self.dtype = _TORCH_DTYPE[descriptor.precision]
 
     def forward(self, directions: Tensor) -> Tensor:
         return spherical_harmonics(
-            directions, self.descriptor.lmax, self.descriptor.normalize
+            directions.to(self.dtype), self.descriptor.lmax, self.descriptor.normalize
         )
 
 
 class ReferenceRadialBasis(nn.Module):
-    """The radial embedding, with the cutoff envelope already applied."""
+    """The radial embedding, with the cutoff envelope already applied.
+
+    Built and computed in the descriptor's precision, never in the process
+    default dtype, and enveloped by a polynomial cutoff of the descriptor's
+    ``cutoff_order``.
+    """
 
     def __init__(self, descriptor: RadialBasisDescriptor) -> None:
         super().__init__()
         self.descriptor = descriptor
+        self.dtype = _TORCH_DTYPE[descriptor.precision]
         if descriptor.kind == "bessel":
-            self.basis = BesselBasis(descriptor.cutoff, descriptor.num_basis)
+            self.basis = BesselBasis(
+                descriptor.cutoff, descriptor.num_basis, dtype=self.dtype
+            )
         elif descriptor.kind == "gaussian":
-            self.basis = GaussianBasis(descriptor.cutoff, descriptor.num_basis)
+            self.basis = GaussianBasis(
+                descriptor.cutoff, descriptor.num_basis, dtype=self.dtype
+            )
         elif descriptor.kind == "chebyshev":
             self.basis = ChebyshevBasis(descriptor.num_basis)
         else:
@@ -581,10 +606,45 @@ class ReferenceRadialBasis(nn.Module):
                 f"{descriptor.kind!r} is not a radial basis this backend builds. "
                 f"The kinds are 'bessel', 'gaussian' and 'chebyshev', lowercase."
             )
-        self.cutoff = PolynomialCutoff(descriptor.cutoff)
+        self.cutoff = PolynomialCutoff(
+            descriptor.cutoff, descriptor.cutoff_order, dtype=self.dtype
+        )
 
     def forward(self, lengths: Tensor) -> Tensor:
+        """``[n_edges, 1]`` lengths in Angstrom -> ``[n_edges, num_basis]``."""
+        lengths = lengths.to(self.dtype)
         return self.basis(lengths) * self.cutoff(lengths)
+
+
+class ReferenceCapabilities(BackendCapabilities):
+    """The coarse fields, plus the two shapes the reference does not build.
+
+    Stated here rather than only inside the op constructors, so that
+    :meth:`supports` and the factories give the same answer: a model build
+    that asks first and builds second must never be told yes and then fail.
+    """
+
+    def unsupported_reason(self, descriptor: Descriptor) -> str | None:
+        reason = super().unsupported_reason(descriptor)
+        if reason is not None:
+            return reason
+        if (
+            isinstance(descriptor, SegmentReduceDescriptor)
+            and descriptor.reduction != "sum"
+        ):
+            return (
+                f"the reference reduces by 'sum' only, not by {descriptor.reduction!r}"
+            )
+        if isinstance(descriptor, FullyConnectedTPDescriptor) and any(
+            irrep.degree != 0 or irrep.parity != 1
+            for _, irrep in Irreps.parse(descriptor.irreps_in2)
+        ):
+            return (
+                f"the reference builds the fully connected tensor product only "
+                f"against scalars, and irreps_in2={descriptor.irreps_in2!r} is "
+                f"not scalars"
+            )
+        return None
 
 
 class ReferenceBackend:
@@ -593,7 +653,7 @@ class ReferenceBackend:
     name = "reference"
 
     def capabilities(self) -> BackendCapabilities:
-        return BackendCapabilities(
+        return ReferenceCapabilities(
             ops=DISPATCHED_OPS | REFERENCE_ONLY_OPS,
             devices=frozenset({"cpu", "cuda"}),
             dtypes=frozenset({"float64", "float32"}),

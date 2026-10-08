@@ -30,7 +30,10 @@ from mace_core.kernels import (
     SymmetricContractionDescriptor,
     UnsupportedDescriptorError,
 )
-from mace_torch.backends.reference import ReferenceBackend
+from mace_torch.backends.reference import (
+    ReferenceBackend,
+    ReferenceSymmetricContraction,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -253,15 +256,41 @@ def test_the_reference_is_declared_as_an_entry_point_that_resolves():
     assert declared["reference"].load() is ReferenceBackend
 
 
-def test_the_skip_connection_refuses_a_non_scalar_second_input(backend):
-    """A wrong skip connection is a wrong model that still trains, so the
-    unbuilt case raises instead of returning something plausible."""
-    with pytest.raises(NotImplementedError, match="only against scalars"):
-        backend.make_fully_connected_tp(
+@pytest.mark.parametrize(
+    ("factory", "descriptor", "reason"),
+    [
+        (
+            "make_fully_connected_tp",
             FullyConnectedTPDescriptor(
                 irreps_in1="4x0e", irreps_in2="1x1o", irreps_out="4x0e"
-            )
-        )
+            ),
+            "only against scalars",
+        ),
+        ("make_segment_reduce", SegmentReduceDescriptor(reduction="max"), "'sum'"),
+        ("make_segment_reduce", SegmentReduceDescriptor(reduction="mean"), "'sum'"),
+    ],
+    ids=["skip against a vector", "segment max", "segment mean"],
+)
+def test_what_the_factory_refuses_supports_refuses_too(
+    backend, factory, descriptor, reason
+):
+    """A build that asks first and builds second must not be told yes and then
+    fail. These two shapes used to pass `supports` and raise in the factory.
+    A wrong skip connection is a wrong model that still trains, so the unbuilt
+    case raises instead of returning something plausible."""
+    assert not backend.capabilities().supports(descriptor)
+    with pytest.raises(UnsupportedDescriptorError, match=reason):
+        getattr(backend, factory)(descriptor)
+
+
+def test_the_contraction_constructor_refuses_a_basis_it_does_not_know(backend):
+    """The descriptor refuses a typo itself, so this needs one forced past it.
+    The constructor still looks the basis up rather than reading "reduced or
+    else full", so nothing reaching it can select the full basis by accident."""
+    descriptor = SymmetricContractionDescriptor(irreps_in="0e+1o", irreps_out="0e")
+    object.__setattr__(descriptor, "basis", "Reduced")
+    with pytest.raises(ValueError, match="'Reduced'"):
+        ReferenceSymmetricContraction(descriptor)
 
 
 # ---------------------------------------------------------------------------
@@ -365,17 +394,20 @@ def test_the_chebyshev_basis_is_the_polynomial_it_claims_to_be(backend):
 
     The length is not folded into ``[-1, 1]``, because legacy never folded it:
     a checkpoint trained with this basis saw the ``cosh`` branch, so the
-    reference has to reproduce it. Compared against torch's own polynomials.
+    reference has to reproduce it. Compared against torch's own polynomials,
+    with the envelope at order five, the legacy command line's default, so
+    the descriptor's ``cutoff_order`` is shown to be read rather than the
+    module default of six.
     """
     from mace_torch.backends.radial import polynomial_envelope
 
     operation = backend.make_radial_basis(
-        RadialBasisDescriptor(kind="chebyshev", num_basis=8, cutoff=5.0)
+        RadialBasisDescriptor(kind="chebyshev", num_basis=8, cutoff=5.0, cutoff_order=5)
     )
     lengths = torch.linspace(0.05, 4.95, 40).reshape(-1, 1)
     orders = torch.arange(1, 9, dtype=lengths.dtype)
     polynomials = torch.special.chebyshev_polynomial_t(lengths, orders)
-    envelope = polynomial_envelope(lengths, torch.tensor(5.0), 6)
+    envelope = polynomial_envelope(lengths, torch.tensor(5.0), 5)
     expected = polynomials * envelope
     torch.testing.assert_close(operation(lengths), expected)
 
@@ -429,3 +461,34 @@ def test_a_mixed_contraction_round_trips_through_a_fresh_instance(backend):
     features = torch.randn(6, 4, Irreps.parse("0e+1o").dimension)
     elements = torch.randint(0, 2, (6,))
     assert torch.equal(written(features, elements), restored(features, elements))
+
+
+# ---------------------------------------------------------------------------
+# Precision
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+@pytest.mark.parametrize("kind", ["bessel", "gaussian", "chebyshev"])
+def test_a_radial_basis_computes_in_its_descriptor_precision(backend, precision, kind):
+    """Not in the process default, which this file sets to float64. A float32
+    descriptor used to build float64 buffers here and return float64."""
+    operation = backend.make_radial_basis(
+        RadialBasisDescriptor(kind=kind, precision=precision)
+    )
+    lengths = torch.tensor([[1.5]], dtype=torch.float64)
+    assert operation(lengths).dtype == getattr(torch, precision)
+    assert all(
+        buffer.dtype == getattr(torch, precision)
+        for buffer in operation.buffers()
+        if buffer.is_floating_point()
+    )
+
+
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+def test_the_harmonics_compute_in_their_descriptor_precision(backend, precision):
+    operation = backend.make_spherical_harmonics(
+        SphericalHarmonicsDescriptor(lmax=2, precision=precision)
+    )
+    vectors = torch.tensor([[0.3, -0.5, 0.8]], dtype=torch.float64)
+    assert operation(vectors).dtype == getattr(torch, precision)

@@ -36,6 +36,7 @@ from mace_core.kernels.capabilities import (
     UnsupportedDescriptorError,
 )
 from mace_core.kernels.descriptors import (
+    CLEBSCH_GORDAN_BASES,
     ChannelwiseTPConvDescriptor,
     Descriptor,
     FullyConnectedTPDescriptor,
@@ -64,6 +65,7 @@ from mace_core.kernels.registry import (
 
 __all__ = [
     "CANONICAL_LAYOUT",
+    "CLEBSCH_GORDAN_BASES",
     "DISPATCHED_OPS",
     "ENTRY_POINT_GROUPS",
     "INTERNAL_WEIGHT_OPS",
