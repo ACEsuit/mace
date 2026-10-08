@@ -4,7 +4,7 @@ These twelve names are a **data contract**, not a default anyone is free to
 adjust: every labelled dataset on disk was written against them, so renaming
 one does not break a build, it silently stops reading somebody's forces.
 
-Three things are fixed per name, and all three live here so none of them can be
+Four things are fixed per name, and all four live here so none of them can be
 stated twice:
 
 *convention name*
@@ -20,6 +20,13 @@ stated twice:
     is the same word :class:`~mace_core.data.keys.EmbeddingFeatureSpec` takes
     from a user, on purpose: a declared feature and a default key are the same
     kind of thing and were spelled two different ways.
+
+*shape*
+    the shape of one value: of the whole value for a per-structure property,
+    of one atom's entry for a per-atom one, so ``forces`` is ``(3,)`` here and
+    ``(n_atoms, 3)`` on a configuration. A
+    :class:`~mace_core.data.configuration.Configuration` refuses a value of
+    any other shape.
 
 The member names below are the convention names, uppercased;
 :meth:`DefaultKeys.keydict` derives the ``<name>_key`` spelling that the
@@ -45,38 +52,50 @@ STORAGES: tuple[Storage, ...] = get_args(Storage)
 
 
 class DefaultKeys(Enum):
-    """Convention name (the member), default file key (its value), and storage.
+    """Convention name (the member), default file key (its value), storage and
+    the shape of one value.
 
-    ``member.value`` stays the file key, so the enum still reads as the table it
-    was. ``member.storage`` is the half that used to be written out again as two
-    frozensets in :mod:`mace_core.data.keys`.
+    ``member.value`` is the file key, so the enum reads as the table it is.
+    ``member.storage`` is ``"graph"`` or ``"atom"``. ``member.value_shape`` is
+    the shape of one structure's value, or of one atom's entry for a per-atom
+    property; :meth:`expected_shape` gives the shape a configuration holds.
     """
 
-    ENERGY = ("REF_energy", "graph")
-    FORCES = ("REF_forces", "atom")
-    STRESS = ("REF_stress", "graph")
-    VIRIALS = ("REF_virials", "graph")
-    DIPOLE = ("dipole", "graph")
-    POLARIZABILITY = ("polarizability", "graph")
-    CHARGES = ("REF_charges", "atom")
-    TOTAL_CHARGE = ("total_charge", "graph")
-    TOTAL_SPIN = ("total_spin", "graph")
-    ELEC_TEMP = ("elec_temp", "graph")
-    MAGMOM = ("REF_magmom", "atom")
-    MAGFORCES = ("REF_magforces", "atom")
+    ENERGY = ("REF_energy", "graph", ())
+    FORCES = ("REF_forces", "atom", (3,))
+    STRESS = ("REF_stress", "graph", (3, 3))
+    VIRIALS = ("REF_virials", "graph", (3, 3))
+    DIPOLE = ("dipole", "graph", (3,))
+    POLARIZABILITY = ("polarizability", "graph", (3, 3))
+    CHARGES = ("REF_charges", "atom", ())
+    TOTAL_CHARGE = ("total_charge", "graph", ())
+    TOTAL_SPIN = ("total_spin", "graph", ())
+    ELEC_TEMP = ("elec_temp", "graph", ())
+    MAGMOM = ("REF_magmom", "atom", (3,))
+    MAGFORCES = ("REF_magforces", "atom", (3,))
 
-    def __new__(cls, file_key: str, storage: Storage) -> DefaultKeys:
+    def __new__(
+        cls, file_key: str, storage: Storage, value_shape: tuple[int, ...]
+    ) -> DefaultKeys:
         member = object.__new__(cls)
         member._value_ = file_key
         member.storage = storage
+        member.value_shape = value_shape
         return member
 
     storage: Storage
+    value_shape: tuple[int, ...]
 
     @property
     def convention_name(self) -> str:
         """What the rest of the stack calls this property."""
         return self.name.lower()
+
+    def expected_shape(self, n_atoms: int) -> tuple[int, ...]:
+        """The shape this property has on a structure of ``n_atoms`` atoms."""
+        if self.storage == "atom":
+            return (n_atoms, *self.value_shape)
+        return self.value_shape
 
     @classmethod
     def keydict(cls) -> dict[str, str]:

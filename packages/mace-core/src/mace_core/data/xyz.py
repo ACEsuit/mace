@@ -21,7 +21,6 @@ from typing import Any
 import ase.io
 import numpy as np
 from ase import Atoms
-from ase.stress import voigt_6_to_full_3x3_stress
 
 from mace_core.data.configuration import (
     DEFAULT_CONFIG_TYPE,
@@ -72,16 +71,6 @@ class _ReservedKey:
     stored_in: str
 
 
-#: The structure-level tensors a configuration always holds as a full
-#: ``[3, 3]`` matrix. A file may also give the six Voigt components in ase's
-#: order (xx, yy, zz, yz, xz, xy), which is what ``Atoms.get_stress`` returns
-#: and so what the reserved ``stress`` key recovers; those are expanded here.
-#: Any other shape is refused, a flat nine included: reshaping it would have to
-#: guess whether it was written row by row.
-_FULL_MATRIX_PROPERTIES = frozenset(
-    {DefaultKeys.STRESS.convention_name, DefaultKeys.VIRIALS.convention_name}
-)
-
 #: Configuring one of these as the file key for a label stopped being safe in
 #: ase 3.23: the value written under it is read back into
 #: ``atoms.calc.results`` instead of into ``atoms.info``, so a parser looking
@@ -127,8 +116,8 @@ def configuration_from_atoms(
     The head is not a property and is not read from the file. It is
     ``head_name``, stored once, on :attr:`Configuration.head`.
 
-    A stress or virial is stored as a ``[3, 3]`` matrix; see
-    :data:`_FULL_MATRIX_PROPERTIES` for the layouts a file may use.
+    Shapes are checked, and a Voigt stress or virial expanded, by
+    :class:`Configuration` itself.
 
     Args:
         atoms: The structure, already read.
@@ -138,8 +127,8 @@ def configuration_from_atoms(
         head_name: The head this structure trains.
 
     Raises:
-        ValueError: if a stress or virial has a shape that is neither
-            ``[3, 3]`` nor six Voigt components.
+        ValueError: if a label has a shape other than the one its convention
+            name fixes; see :class:`Configuration`.
     """
     config_type = atoms.info.get("config_type", DEFAULT_CONFIG_TYPE)
     type_weight = (config_type_weights or {}).get(config_type, 1.0)
@@ -151,10 +140,7 @@ def configuration_from_atoms(
     }
 
     for name, file_key in key_spec.graph_keys.items():
-        value = atoms.info.get(file_key)
-        if name in _FULL_MATRIX_PROPERTIES and value is not None:
-            value = _as_full_matrix(name, value)
-        properties[name] = value
+        properties[name] = atoms.info.get(file_key)
         if file_key not in atoms.info:
             property_weights[name] = 0.0
     for name, file_key in key_spec.atom_keys.items():
@@ -172,19 +158,6 @@ def configuration_from_atoms(
         weight=atoms.info.get("config_weight", 1.0) * type_weight,
         config_type=config_type,
         head=head_name,
-    )
-
-
-def _as_full_matrix(name: str, value: Any) -> np.ndarray:
-    array = np.asarray(value, dtype=float)
-    if array.shape == (3, 3):
-        return array
-    if array.shape == (6,):
-        return voigt_6_to_full_3x3_stress(array)
-    raise ValueError(
-        f"{name} has shape {array.shape}. It is read as a 3x3 matrix, or as "
-        f"the six Voigt components (xx, yy, zz, yz, xz, xy). A flat list of "
-        f"nine is refused rather than reshaped; write the matrix itself."
     )
 
 
@@ -222,9 +195,9 @@ def read_configurations(
 
     Raises:
         ValueError: if no structure in the file carries an energy, forces or a
-            dipole, and ``no_data_ok`` is not set; if a stress or virial has a
-            shape that cannot be read as a ``[3, 3]`` matrix; or if two isolated
-            atoms of one element give different reference energies.
+            dipole, and ``no_data_ok`` is not set; if a label has a shape other
+            than the one its convention name fixes; or if two isolated atoms of
+            one element give different reference energies.
     """
     # ase returns a single structure or a list depending on the index; ":"
     # always gives a list, but the signature does not say so.

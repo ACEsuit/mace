@@ -32,24 +32,25 @@ from mace_core.data import (
     read_configurations,
 )
 
-#: The default file keys and where each is stored, written out rather than read
-#: from the enum. The point of the table is that these exact strings and places
-#: are what every labelled dataset on disk uses, so a test that compared the
-#: enum against itself would pass through a rename, or a property moving from
-#: one half to the other, that broke every one of those files.
+#: The default file keys, where each is stored and the shape of one value (of
+#: one atom's entry, for a per-atom property), written out rather than read
+#: from the enum. The point of the table is that these exact strings, places
+#: and shapes are what every labelled dataset on disk uses, so a test that
+#: compared the enum against itself would pass through a rename, or a property
+#: moving from one half to the other, that broke every one of those files.
 DEFAULT_KEY_TABLE = {
-    "ENERGY": ("REF_energy", "graph"),
-    "FORCES": ("REF_forces", "atom"),
-    "STRESS": ("REF_stress", "graph"),
-    "VIRIALS": ("REF_virials", "graph"),
-    "DIPOLE": ("dipole", "graph"),
-    "POLARIZABILITY": ("polarizability", "graph"),
-    "CHARGES": ("REF_charges", "atom"),
-    "TOTAL_CHARGE": ("total_charge", "graph"),
-    "TOTAL_SPIN": ("total_spin", "graph"),
-    "ELEC_TEMP": ("elec_temp", "graph"),
-    "MAGMOM": ("REF_magmom", "atom"),
-    "MAGFORCES": ("REF_magforces", "atom"),
+    "ENERGY": ("REF_energy", "graph", ()),
+    "FORCES": ("REF_forces", "atom", (3,)),
+    "STRESS": ("REF_stress", "graph", (3, 3)),
+    "VIRIALS": ("REF_virials", "graph", (3, 3)),
+    "DIPOLE": ("dipole", "graph", (3,)),
+    "POLARIZABILITY": ("polarizability", "graph", (3, 3)),
+    "CHARGES": ("REF_charges", "atom", ()),
+    "TOTAL_CHARGE": ("total_charge", "graph", ()),
+    "TOTAL_SPIN": ("total_spin", "graph", ()),
+    "ELEC_TEMP": ("elec_temp", "graph", ()),
+    "MAGMOM": ("REF_magmom", "atom", (3,)),
+    "MAGFORCES": ("REF_magforces", "atom", (3,)),
 }
 
 
@@ -103,7 +104,8 @@ def write(tmp_path, atoms_list, name="structures.xyz") -> str:
 
 def test_the_default_keys_are_exactly_these_twelve():
     assert {
-        member.name: (member.value, member.storage) for member in DefaultKeys
+        member.name: (member.value, member.storage, member.value_shape)
+        for member in DefaultKeys
     } == DEFAULT_KEY_TABLE
     assert len(DEFAULT_KEY_TABLE) == 12
 
@@ -116,7 +118,7 @@ def test_a_storage_that_does_not_exist_raises_rather_than_matching_nothing(stora
 
 def test_the_command_line_spelling_is_derived_from_the_member_name():
     assert DefaultKeys.keydict() == {
-        f"{name.lower()}_key": key for name, (key, _) in DEFAULT_KEY_TABLE.items()
+        f"{name.lower()}_key": key for name, (key, _, _) in DEFAULT_KEY_TABLE.items()
     }
     assert DefaultKeys.keydict()["energy_key"] == "REF_energy"
     assert DefaultKeys.keydict()["magforces_key"] == "REF_magforces"
@@ -352,6 +354,97 @@ def test_a_stress_or_virial_of_any_other_shape_raises(name, shape):
         configuration_from_atoms(atoms, KeySpecification.from_defaults())
 
 
+def test_a_directly_built_configuration_holds_the_same_shapes():
+    """The shape rule belongs to the configuration, not to one parser, so a
+    configuration built by hand is held to it too."""
+    with pytest.raises(ValueError, match="stress has shape"):
+        Configuration(
+            atomic_numbers=np.array([1]),
+            positions=np.zeros((1, 3)),
+            properties={"stress": np.zeros(9)},
+        )
+    voigt = np.array([0.0, 4.0, 8.0, 5.0, 2.0, 1.0])
+    config = Configuration(
+        atomic_numbers=np.array([1]),
+        positions=np.zeros((1, 3)),
+        properties={"virials": voigt},
+    )
+    assert np.array_equal(
+        config.properties["virials"], voigt_6_to_full_3x3_stress(voigt)
+    )
+
+
+#: Shapes a label must be refused in, on a three-atom structure. Each is a
+#: layout somebody could plausibly write: a flat matrix, a per-atom array with
+#: a component missing or an extra axis, a scalar wrapped in a list.
+WRONG_SHAPES = [
+    ("energy", (1,)),
+    ("forces", (3, 2)),
+    ("forces", (9,)),
+    ("forces", (2, 3)),
+    ("dipole", (5,)),
+    ("dipole", (1, 3)),
+    ("polarizability", (9,)),
+    ("polarizability", (6,)),
+    ("charges", (3, 1)),
+    ("charges", (2,)),
+    ("total_charge", (2,)),
+    ("total_spin", (1,)),
+    ("elec_temp", (3,)),
+    ("magmom", (3,)),
+    ("magforces", (3, 1)),
+]
+
+
+@pytest.mark.parametrize(("name", "shape"), WRONG_SHAPES)
+def test_every_default_label_of_the_wrong_shape_raises(name, shape):
+    with pytest.raises(ValueError, match=rf"{name} has shape") as caught:
+        Configuration(
+            atomic_numbers=np.array([8, 1, 1]),
+            positions=np.zeros((3, 3)),
+            properties={name: np.zeros(shape)},
+        )
+    _, per, value_shape = DEFAULT_KEY_TABLE[name.upper()]
+    full_shape = (3, *value_shape) if per == "atom" else value_shape
+    assert f"Expected {full_shape}" in str(caught.value)
+
+
+def test_a_name_outside_the_default_table_keeps_its_shape():
+    """A multi-level-of-theory name or an embedding feature has no row to
+    check against, so it is carried as given."""
+    config = Configuration(
+        atomic_numbers=np.array([1]),
+        positions=np.zeros((1, 3)),
+        properties={"pbe_stress": np.zeros(9), "applied_field": np.zeros((2, 2))},
+    )
+    assert config.properties["pbe_stress"].shape == (9,)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("positions", np.zeros((2, 3)), "positions has shape"),
+        ("positions", np.zeros(3), "positions has shape"),
+        ("cell", np.zeros(9), "cell has shape"),
+        ("pbc", (True, True), "pbc is"),
+    ],
+)
+def test_the_structure_itself_is_shape_checked(field, value, message):
+    arguments = {"atomic_numbers": np.array([1]), "positions": np.zeros((1, 3))}
+    arguments[field] = value
+    with pytest.raises(ValueError, match=message):
+        Configuration(**arguments)
+
+
+def test_the_head_is_refused_as_a_property_of_a_configuration():
+    with pytest.raises(ValueError, match="'head'"):
+        Configuration(
+            atomic_numbers=np.array([1]),
+            positions=np.zeros((1, 3)),
+            properties={"head": "dft"},
+        )
+
+
 def test_the_shape_error_names_the_structure_and_the_file(tmp_path):
     good = water(REF_energy=0.0)
     bad = water(REF_energy=0.0)
@@ -414,13 +507,16 @@ def test_a_zero_weight_and_an_absent_label_are_told_apart():
     assert not missing.is_labelled("forces")
 
 
-def test_an_undeclared_property_is_not_labelled_either():
-    """`is_labelled` answers about training data, not about declarations."""
+def test_asking_about_an_undeclared_property_raises():
+    """Every declared property is present, as None when absent, so a name that
+    is missing is a misspelling, and False would read as "unlabelled"."""
     configuration = configuration_from_atoms(
         Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
         KeySpecification.from_defaults(),
     )
-    assert not configuration.is_labelled("a_property_nobody_declared")
+    with pytest.raises(ValueError, match="'force'") as caught:
+        configuration.is_labelled("force")
+    assert "'forces'" in str(caught.value)
 
 
 # ---------------------------------------------------------------------------
@@ -444,9 +540,7 @@ def test_all_twelve_default_keys_survive_a_write_and_a_read(tmp_path):
     assert np.allclose(
         properties["virials"], voigt_6_to_full_3x3_stress(written.info["REF_virials"])
     )
-    assert np.allclose(
-        np.reshape(properties["polarizability"], (3, 3)), np.arange(9.0).reshape(3, 3)
-    )
+    assert np.array_equal(properties["polarizability"], np.arange(9.0).reshape(3, 3))
     assert np.allclose(properties["charges"], [-0.8, 0.4, 0.4])
     assert properties["total_charge"] == pytest.approx(-1.0)
     assert properties["total_spin"] == pytest.approx(2.0)
