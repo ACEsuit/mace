@@ -225,9 +225,17 @@ class SphericalHarmonicsDescriptor(Descriptor):
     """Real spherical harmonics of the edge directions.
 
     Reference-only: a backend may decline it and the reference builds it, since
-    it is a cheap closed form. The convention is the one
-    :mod:`mace_core.clebsch_gordan.real_basis` states, and a backend that
-    supplies its own must produce that convention rather than its own.
+    it is a cheap closed form. The convention is e3nn's with
+    ``normalization="component"``, the one legacy models were trained in: y is
+    the polar axis, so the ``l = 1`` block is ``sqrt(3) (x, y, z)``, and each
+    ``l`` block has squared norm ``2l + 1`` on the unit sphere. A backend that
+    supplies its own must produce this convention rather than its own.
+
+    These are the harmonics of :mod:`mace_core.clebsch_gordan.real_basis`
+    evaluated at the permuted direction ``(z, x, y)``, scaled by
+    ``sqrt(2l + 1)``. The permutation is cyclic and so a proper rotation, which
+    is why the Clebsch-Gordan tables built in that basis couple these harmonics
+    equivariantly without any change.
     """
 
     lmax: int = 0
