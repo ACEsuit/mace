@@ -8,11 +8,11 @@ finds nothing and reports it as a missing label, which is indistinguishable
 from a file that genuinely has no forces.
 
 **The two halves are called ``graph`` and ``atom`` throughout**, which is the
-same pair of words a user writes in an embedding feature's ``per:``. They were
-once ``info`` and ``arrays`` here and ``graph`` and ``atom`` there, which is one
-distinction under two names with a hand-written translation between them.
-``info`` and ``arrays`` are ase's words for ase's two stores, and they now
-appear only in :mod:`mace_core.data.xyz`, where ase is actually touched.
+same pair of words a user writes in an embedding feature's ``per:``, so a
+declared feature and a default key name the same distinction the same way and
+nothing translates between them. ``info`` and ``arrays`` are ase's words for
+ase's two stores, and they appear only in :mod:`mace_core.data.xyz`, where ase
+is actually touched.
 
 This object is the only place a file key appears. Everything downstream of
 parsing is keyed by convention name -- see
