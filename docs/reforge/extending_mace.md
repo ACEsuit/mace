@@ -90,7 +90,7 @@ derivative observable:
 # mace_torch/extras/magnetic/observables.py  — the extra ships its own declarations
 from mace_core.observables import DerivativeRequest, InputSpec
 
-MAGMOM = InputSpec(name="magmom", irreps="1e", per_atom=True, units="muB")
+MAGMOM = InputSpec(name="magmom", irreps="1o", per_atom=True, units="muB")
 # -dE/dmagmom, declared on the energy: a per-atom vector like the moment itself
 MAGFORCES = DerivativeRequest(wrt="magmom", name="magforces", sign=-1, units="eV/muB")
 ```
@@ -118,7 +118,7 @@ from mace_core.observables import ObservableSpec
 
 # a learned equivariant readout over node features, same convention as magmom
 MAGNETIC_MOMENT = ObservableSpec(
-    name="magnetic_moment", irreps="1e", per_atom=True, units="muB"
+    name="magnetic_moment", irreps="1o", per_atom=True, units="muB"
 )
 ```
 

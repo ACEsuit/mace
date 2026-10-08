@@ -200,7 +200,9 @@ DISPOSITIONS: dict[str, Disposition] = {
         irreps="0e",
         note=(
             "the per-atom spin population, a scalar. Not to be confused with a "
-            "magnetic moment, which is an axial vector ('1e')."
+            "magnetic moment, which the magnetic model takes as a '1o' vector "
+            "(mace/modules/extensions.py:1559 expands it in spherical "
+            "harmonics, 0e+1o+2e+...)."
         ),
     ),
     "electrostatic_potentials": Spec(irreps="0e"),

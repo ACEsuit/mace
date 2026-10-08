@@ -366,14 +366,15 @@ def test_a_new_input_feature_makes_its_derivative_declarable():
                 ],
             }
         ],
-        inputs=[{"name": "magmom", "irreps": "1e", "per_atom": True, "units": "muB"}],
+        inputs=[{"name": "magmom", "irreps": "1o", "per_atom": True, "units": "muB"}],
     )
     magforces = catalogue.derivative("energy", "magmom")
     assert magforces.name == "magforces"
     assert magforces.sign == -1
     assert magforces.per_atom is True
-    # A magnetic moment is an axial vector, so its conjugate force is too.
-    assert magforces.irreps == "1e"
+    # The magnetic model expands the moment in spherical harmonics, so it is a
+    # polar `1o` vector there, and the gradient of a scalar against it is too.
+    assert magforces.irreps == "1o"
     assert catalogue.names() == ("energy", "magforces")
 
 
