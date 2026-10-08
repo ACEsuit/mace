@@ -22,6 +22,7 @@ from mace_core.kernels import (
     BackendCapabilities,
     BackendNotAvailableError,
     ChannelwiseTPConvDescriptor,
+    DuplicateBackendError,
     LinearDescriptor,
     RadialBasisDescriptor,
     SphericalHarmonicsDescriptor,
@@ -181,8 +182,9 @@ class PretendBackend:
 
 
 class PretendEntryPoint:
-    def __init__(self, name, factory=None, failure=None):
+    def __init__(self, name, factory=None, failure=None, value=None):
         self.name = name
+        self.value = value or f"pretend_package:{name}"
         self._factory = factory
         self._failure = failure
 
@@ -242,6 +244,33 @@ def test_asking_for_a_name_nobody_registered_lists_what_there_is(registered):
     message = str(caught.value)
     assert "['pretend']" in message
     assert ENTRY_POINT_GROUPS["torch"] in message
+
+
+def test_two_backends_under_one_name_are_refused_naming_both(registered):
+    """Resolution used to keep whichever entry point came last, so a third
+    party could shadow `reference` by being installed after it."""
+    registered(
+        PretendEntryPoint("reference", PretendBackend, value="mace_torch:Real"),
+        PretendEntryPoint("reference", PretendBackend, value="intruder:Shadow"),
+    )
+    for discover in (
+        lambda: available_backends("torch"),
+        lambda: get_backend("reference", "torch"),
+    ):
+        with pytest.raises(DuplicateBackendError) as caught:
+            discover()
+        assert "mace_torch:Real" in str(caught.value)
+        assert "intruder:Shadow" in str(caught.value)
+
+
+def test_one_registration_seen_twice_is_one_backend(registered):
+    """The same declaration found twice, as a distribution on two path entries
+    can be, is not a conflict."""
+    registered(
+        PretendEntryPoint("pretend", PretendBackend, value="pretend:Backend"),
+        PretendEntryPoint("pretend", PretendBackend, value="pretend:Backend"),
+    )
+    assert [backend.name for backend in available_backends("torch")] == ["pretend"]
 
 
 def test_an_unknown_framework_is_refused_rather_than_searched():
