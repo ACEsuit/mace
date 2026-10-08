@@ -11,13 +11,15 @@ op, and the descriptor is never consulted again: nothing resolves in ``forward``
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass
+from typing import ClassVar, Literal, get_args
 
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.precision import Precision
+from mace_core.kernels.canonical import CANONICAL_LAYOUT
+from mace_core.kernels.precision import PRECISIONS, Precision
 
 __all__ = [
+    "CLEBSCH_GORDAN_BASES",
     "ChannelwiseTPConvDescriptor",
     "Descriptor",
     "FullyConnectedTPDescriptor",
@@ -29,15 +31,66 @@ __all__ = [
 ]
 
 
+ClebschGordanBasis = Literal["reduced", "full"]
+
+#: The Clebsch-Gordan bases a symmetric contraction can be written against.
+CLEBSCH_GORDAN_BASES: tuple[str, ...] = get_args(ClebschGordanBasis)
+
+
+def _require_member(field_name: str, value: object, allowed: tuple) -> None:
+    """Raise unless ``value`` is one of ``allowed``.
+
+    A ``Literal`` annotation is a promise to the type checker only. A value
+    read from a configuration file or a checkpoint reaches the constructor
+    unchecked, and a typo would otherwise select whatever the code does in its
+    fallback branch.
+    """
+    if value not in allowed:
+        raise ValueError(
+            f"{field_name}={value!r} is not one of {list(allowed)}. Spell it "
+            f"exactly as listed; nothing is inferred from a near miss."
+        )
+
+
+def _highest_degree(*declarations: str) -> int:
+    """The largest ``l`` any of the irreps declarations carries."""
+    return max(
+        (ir.degree for text in declarations for _, ir in Irreps.parse(text)),
+        default=0,
+    )
+
+
 @dataclass(frozen=True)
 class Descriptor:
     """What every op descriptor carries.
 
     Attributes:
         precision: The dtype the op computes in, by name.
+        op: The factory this descriptor is for, as
+            :attr:`~mace_core.kernels.capabilities.BackendCapabilities.ops`
+            lists it. A class constant, not a field.
+        layout: The layout of the features and weights the op reads and
+            writes, or ``None`` for an op with no irreps semantics. A class
+            constant, not a field: every op with irreps works in the canonical
+            ``mul_ir``, since that is what a checkpoint holds.
     """
 
+    op: ClassVar[str] = ""
+    layout: ClassVar[str | None] = None
+
     precision: Precision = "float64"
+
+    def __post_init__(self) -> None:
+        _require_member("precision", self.precision, PRECISIONS)
+
+    @property
+    def highest_degree(self) -> int:
+        """The largest rotation order ``l`` the op's declared irreps carry.
+
+        What :attr:`~mace_core.kernels.capabilities.BackendCapabilities.max_lmax`
+        is checked against. Zero for an op with no irreps.
+        """
+        return 0
 
     @property
     def weight_numel(self) -> int:
@@ -63,9 +116,16 @@ class LinearDescriptor(Descriptor):
             by a constant.
     """
 
+    op: ClassVar[str] = "linear"
+    layout: ClassVar[str | None] = CANONICAL_LAYOUT
+
     irreps_in: str = "0e"
     irreps_out: str = "0e"
     has_bias: bool = False
+
+    @property
+    def highest_degree(self) -> int:
+        return _highest_degree(self.irreps_in, self.irreps_out)
 
     @property
     def weight_numel(self) -> int:
@@ -106,10 +166,17 @@ class ChannelwiseTPConvDescriptor(Descriptor):
     through its interaction blocks.
     """
 
+    op: ClassVar[str] = "channelwise_tp_conv"
+    layout: ClassVar[str | None] = CANONICAL_LAYOUT
+
     irreps_node: str = "0e"
     irreps_edge: str = "0e"
     irreps_out: str = "0e"
     num_radial: int = 8
+
+    @property
+    def highest_degree(self) -> int:
+        return _highest_degree(self.irreps_node, self.irreps_edge, self.irreps_out)
 
     @property
     def weight_numel(self) -> int:
@@ -123,7 +190,9 @@ class SymmetricContractionDescriptor(Descriptor):
 
     Attributes:
         irreps_in: The node features being contracted.
-        irreps_out: The output irreps to keep.
+        irreps_out: The output irreps to keep, one copy of each per channel.
+            A multiplicity other than one is refused: the channels are the
+            ``num_features`` axis, not a multiplicity in the irreps.
         correlation: The body order.
         num_elements: How many chemical elements carry their own weights.
         num_features: The channel width.
@@ -133,12 +202,32 @@ class SymmetricContractionDescriptor(Descriptor):
             the defect this contract exists to remove.
     """
 
+    op: ClassVar[str] = "symmetric_contraction"
+    layout: ClassVar[str | None] = CANONICAL_LAYOUT
+
     irreps_in: str = "0e"
     irreps_out: str = "0e"
     correlation: int = 1
     num_elements: int = 1
     num_features: int = 1
-    basis: Literal["reduced", "full"] = "reduced"
+    basis: ClebschGordanBasis = "reduced"
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _require_member("basis", self.basis, CLEBSCH_GORDAN_BASES)
+        for multiplicity, irrep in Irreps.parse(self.irreps_out):
+            if multiplicity != 1:
+                raise ValueError(
+                    f"irreps_out={self.irreps_out!r} gives {irrep} a "
+                    f"multiplicity of {multiplicity}. The contraction's irreps "
+                    f"are per channel and the channels are num_features, so "
+                    f"write the output irrep once, as {irrep}, and set "
+                    f"num_features for the width."
+                )
+
+    @property
+    def highest_degree(self) -> int:
+        return _highest_degree(self.irreps_in, self.irreps_out)
 
     @property
     def path_count(self) -> int:
@@ -152,11 +241,10 @@ class SymmetricContractionDescriptor(Descriptor):
             reduced_symmetric_tensor_product_basis,
         )
 
-        build = (
-            reduced_symmetric_tensor_product_basis
-            if self.basis == "reduced"
-            else full_symmetric_tensor_product_basis
-        )
+        build = {
+            "reduced": reduced_symmetric_tensor_product_basis,
+            "full": full_symmetric_tensor_product_basis,
+        }[self.basis]
         total = 0
         for order in range(1, self.correlation + 1):
             for array in build(self.irreps_in, order, self.irreps_out).values():
@@ -179,9 +267,16 @@ class FullyConnectedTPDescriptor(Descriptor):
         irreps_out: What it produces.
     """
 
+    op: ClassVar[str] = "fully_connected_tp"
+    layout: ClassVar[str | None] = CANONICAL_LAYOUT
+
     irreps_in1: str = "0e"
     irreps_in2: str = "0e"
     irreps_out: str = "0e"
+
+    @property
+    def highest_degree(self) -> int:
+        return _highest_degree(self.irreps_in1, self.irreps_in2, self.irreps_out)
 
     @property
     def weight_numel(self) -> int:
@@ -205,6 +300,9 @@ class FullyConnectedTPDescriptor(Descriptor):
         return pairs * Irreps.parse(self.irreps_in2).dimension
 
 
+Reduction = Literal["sum", "mean", "max"]
+
+
 @dataclass(frozen=True)
 class SegmentReduceDescriptor(Descriptor):
     """A reduction of values into segments. No irreps semantics.
@@ -216,8 +314,14 @@ class SegmentReduceDescriptor(Descriptor):
         num_features: The width of each value.
     """
 
-    reduction: Literal["sum", "mean", "max"] = "sum"
+    op: ClassVar[str] = "segment_reduce"
+
+    reduction: Reduction = "sum"
     num_features: int = 1
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _require_member("reduction", self.reduction, get_args(Reduction))
 
 
 @dataclass(frozen=True)
@@ -238,8 +342,17 @@ class SphericalHarmonicsDescriptor(Descriptor):
     equivariantly without any change.
     """
 
+    op: ClassVar[str] = "spherical_harmonics"
+
     lmax: int = 0
     normalize: bool = True
+
+    @property
+    def highest_degree(self) -> int:
+        return self.lmax
+
+
+RadialBasisKind = Literal["bessel", "gaussian", "chebyshev"]
 
 
 @dataclass(frozen=True)
@@ -250,11 +363,19 @@ class RadialBasisDescriptor(Descriptor):
         kind: Which basis. Lowercase names, matching the configuration.
         num_basis: How many functions.
         cutoff: The cutoff radius, in Angstrom.
-        extra: Basis-specific parameters, as a sorted tuple of pairs so the
-            descriptor stays hashable.
+        cutoff_order: The order ``p`` of the polynomial cutoff envelope. The
+            default is the envelope's own module default, not a model's: the
+            legacy command line defaults ``--num_cutoff_basis`` to 5, so a
+            model always passes the order it was configured with.
     """
 
-    kind: Literal["bessel", "gaussian", "chebyshev"] = "bessel"
+    op: ClassVar[str] = "radial_basis"
+
+    kind: RadialBasisKind = "bessel"
     num_basis: int = 8
     cutoff: float = 5.0
-    extra: tuple[tuple[str, float], ...] = field(default_factory=tuple)
+    cutoff_order: int = 6
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _require_member("kind", self.kind, get_args(RadialBasisKind))

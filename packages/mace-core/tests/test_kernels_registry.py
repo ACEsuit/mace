@@ -5,6 +5,7 @@ half of the dispatch layer that both the torch and the jax implementations read,
 and a checkpoint records.
 """
 
+import dataclasses
 import importlib.util
 import subprocess
 import sys
@@ -23,8 +24,10 @@ from mace_core.kernels import (
     BackendNotAvailableError,
     ChannelwiseTPConvDescriptor,
     DuplicateBackendError,
+    FullyConnectedTPDescriptor,
     LinearDescriptor,
     RadialBasisDescriptor,
+    SegmentReduceDescriptor,
     SphericalHarmonicsDescriptor,
     SymmetricContractionDescriptor,
     UnsupportedDescriptorError,
@@ -36,6 +39,10 @@ from mace_core.kernels import (
     symmetric_contraction_initial_scale,
 )
 from mace_core.kernels import registry as registry_module
+
+#: Every op the contract names, for a capability under test that should be
+#: refused for some other reason than not declaring the op.
+EVERY_OP = DISPATCHED_OPS | REFERENCE_ONLY_OPS
 
 # ---------------------------------------------------------------------------
 # Descriptors
@@ -104,31 +111,112 @@ def test_an_op_whose_weights_come_from_outside_owns_none():
     assert ChannelwiseTPConvDescriptor(num_radial=8).weight_numel == 0
 
 
+@pytest.mark.parametrize("basis", ["Reduced", "reduce", "", "cueq"])
+def test_a_basis_outside_the_closed_set_is_refused_at_construction(basis):
+    """A typo used to select the full basis silently, because the code read
+    "reduced or else full". It is model state, so a near miss is an error."""
+    with pytest.raises(ValueError, match=repr(basis)):
+        SymmetricContractionDescriptor(basis=basis)
+
+
+def test_a_basis_typo_is_refused_through_replace_too():
+    """`dataclasses.replace` builds a new instance through the constructor, so
+    the same check has to run there. Asserted rather than assumed."""
+    with pytest.raises(ValueError, match="'Reduced'"):
+        dataclasses.replace(SymmetricContractionDescriptor(), basis="Reduced")
+
+
+@pytest.mark.parametrize(
+    ("descriptor", "field", "value"),
+    [
+        (LinearDescriptor, "precision", "flaot64"),
+        (SegmentReduceDescriptor, "reduction", "Sum"),
+        (RadialBasisDescriptor, "kind", "Bessel"),
+    ],
+)
+def test_every_closed_string_field_refuses_a_value_outside_its_set(
+    descriptor, field, value
+):
+    with pytest.raises(ValueError, match=f"{field}={value!r}"):
+        descriptor(**{field: value})
+
+
+def test_a_contraction_output_multiplicity_is_refused_by_name():
+    """The irreps are per channel. `2x0e` used to build one `0e` and quietly
+    drop the second copy, while the declared dimension said two."""
+    with pytest.raises(ValueError, match=r"irreps_out='0e\+2x1o'.*multiplicity of 2"):
+        SymmetricContractionDescriptor(irreps_out="0e+2x1o")
+
+
+def test_the_radial_cutoff_order_is_a_field_with_the_envelope_default():
+    """Six is the envelope's own default; a model passes its own, and the
+    legacy command line's is five."""
+    assert RadialBasisDescriptor().cutoff_order == 6
+    assert RadialBasisDescriptor(cutoff_order=5).cutoff_order == 5
+
+
 # ---------------------------------------------------------------------------
 # Capabilities
 # ---------------------------------------------------------------------------
 
 
 def test_the_coarse_filter_rejects_a_precision_that_was_not_declared():
-    capabilities = BackendCapabilities(dtypes=frozenset({"float32"}))
+    capabilities = BackendCapabilities(ops=EVERY_OP, dtypes=frozenset({"float32"}))
     assert not capabilities.supports(LinearDescriptor(precision="float64"))
     assert capabilities.supports(LinearDescriptor(precision="float32"))
 
 
 def test_a_basis_the_backend_did_not_declare_is_refused_by_name():
-    capabilities = BackendCapabilities(bases=frozenset({"reduced"}))
-    with pytest.raises(UnsupportedDescriptorError, match="does not support"):
+    capabilities = BackendCapabilities(ops=EVERY_OP, bases=frozenset({"reduced"}))
+    with pytest.raises(UnsupportedDescriptorError, match="'full' Clebsch-Gordan"):
         capabilities.require(SymmetricContractionDescriptor(basis="full"), "pretend")
 
 
+def test_an_op_the_backend_did_not_declare_is_refused():
+    """`ops` is a coarse field like the others, and was the one never read."""
+    capabilities = BackendCapabilities(ops=frozenset({"linear"}))
+    assert capabilities.supports(LinearDescriptor())
+    assert not capabilities.supports(SegmentReduceDescriptor())
+    with pytest.raises(UnsupportedDescriptorError, match="'segment_reduce'"):
+        capabilities.require(SegmentReduceDescriptor(), "pretend")
+
+
+def test_a_layout_the_backend_did_not_declare_is_refused_for_ops_with_irreps():
+    """An op with irreps reads and writes the canonical layout. One without
+    irreps has no layout, so the field does not apply to it."""
+    capabilities = BackendCapabilities(ops=EVERY_OP, layouts=frozenset({"ir_mul"}))
+    assert not capabilities.supports(LinearDescriptor())
+    assert not capabilities.supports(SymmetricContractionDescriptor())
+    assert capabilities.supports(SegmentReduceDescriptor())
+    assert capabilities.supports(RadialBasisDescriptor())
+
+
 def test_an_lmax_beyond_the_declared_one_is_refused():
-    capabilities = BackendCapabilities(max_lmax=2)
+    capabilities = BackendCapabilities(ops=EVERY_OP, max_lmax=2)
     assert capabilities.supports(SphericalHarmonicsDescriptor(lmax=2))
     assert not capabilities.supports(SphericalHarmonicsDescriptor(lmax=3))
 
 
+@pytest.mark.parametrize(
+    "descriptor",
+    [
+        LinearDescriptor(irreps_in="4x0e+4x3o", irreps_out="4x3o"),
+        ChannelwiseTPConvDescriptor(irreps_edge="0e+1o+2e+3o", irreps_out="0e"),
+        SymmetricContractionDescriptor(irreps_in="0e+1o+2e+3o", irreps_out="0e"),
+        FullyConnectedTPDescriptor(irreps_in1="2x3o", irreps_out="2x3o"),
+    ],
+    ids=lambda descriptor: descriptor.op,
+)
+def test_max_lmax_is_checked_for_every_op_with_irreps(descriptor):
+    """It used to be read for spherical harmonics only, so a backend declaring
+    lmax 2 was handed an l = 3 tensor product without a word."""
+    assert descriptor.highest_degree == 3
+    assert BackendCapabilities(ops=EVERY_OP, max_lmax=3).supports(descriptor)
+    assert not BackendCapabilities(ops=EVERY_OP, max_lmax=2).supports(descriptor)
+
+
 def test_a_backend_may_declare_no_limit():
-    assert BackendCapabilities(max_lmax=0).supports(
+    assert BackendCapabilities(ops=EVERY_OP, max_lmax=0).supports(
         SphericalHarmonicsDescriptor(lmax=11)
     )
 
@@ -158,14 +246,21 @@ def test_a_backend_can_override_the_exact_answer():
 
     @dataclass(frozen=True)
     class Fussy(BackendCapabilities):
-        def supports(self, descriptor):
-            if isinstance(descriptor, RadialBasisDescriptor):
-                return descriptor.num_basis % 2 == 0
-            return super().supports(descriptor)
+        def unsupported_reason(self, descriptor):
+            reason = super().unsupported_reason(descriptor)
+            odd = (
+                isinstance(descriptor, RadialBasisDescriptor)
+                and descriptor.num_basis % 2 == 1
+            )
+            if reason is None and odd:
+                return "an odd basis size"
+            return reason
 
-    fussy = Fussy()
+    fussy = Fussy(ops=EVERY_OP)
     assert fussy.supports(RadialBasisDescriptor(num_basis=8))
     assert not fussy.supports(RadialBasisDescriptor(num_basis=7))
+    with pytest.raises(UnsupportedDescriptorError, match="an odd basis size"):
+        fussy.require(RadialBasisDescriptor(num_basis=7), "fussy")
 
 
 # ---------------------------------------------------------------------------
