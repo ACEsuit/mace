@@ -215,15 +215,10 @@ def test_the_specificity_floor_is_a_floor_and_not_a_ban_on_directories():
     for name in check_inventory.TOO_COARSE_TO_PIN:
         assert (check_inventory.REPO / name).is_dir(), name
 
-    # and the depth rule and the named list agree about the tiers. The depth
-    # is counted from the suite root, so a v1 package's suite is compared
-    # against `tests` and not against `packages/<distribution>/tests`: from
-    # the repository root it would look two levels deeper than the legacy
-    # tier it is the analogue of, and the two rules would disagree about it.
+    # and the depth rule and the named list agree about the tiers
     for name in check_inventory.TOO_COARSE_TO_PIN:
-        relative = check_inventory._pin_root_relative(name)
-        if relative != "tests":
-            assert len(Path(relative).parts) < check_inventory.MIN_PIN_DIRECTORY_DEPTH
+        if name != "tests":
+            assert len(Path(name).parts) < check_inventory.MIN_PIN_DIRECTORY_DEPTH
 
 
 def test_a_v1_package_suite_is_as_coarse_a_pin_as_a_legacy_tier():
@@ -231,12 +226,13 @@ def test_a_v1_package_suite_is_as_coarse_a_pin_as_a_legacy_tier():
 
     The rewrite's tests do not live under `tests/`, so both halves of the pin
     rules have to reach them: the path has to resolve, and a whole package
-    suite has to be rejected the way a whole legacy tier is.
+    suite has to be rejected the way a whole legacy tier is. The depth rule
+    does that by itself, counting from the package's own `tests`.
     """
     legacy = "`tests/unit/test_data_utils.py::test_default_keys_are_exactly_these_thirteen`"
     coarse = f"{legacy} + `packages/mace-core/tests`"
     problems = check_inventory.check_pins([_row("x.a", pinned=coarse)])
-    assert any("mace-core suite" in p for p in problems), problems
+    assert any("only 1 levels deep" in p for p in problems), problems
 
     specific = (
         f"{legacy} + `packages/mace-core/tests/test_data_configuration.py"

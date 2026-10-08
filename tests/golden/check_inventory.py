@@ -98,13 +98,6 @@ TOO_COARSE_TO_PIN = {
     "tests/integrations": "the whole integrations tier",
     "tests/benchmarks": "the whole benchmark tier",
     "tests/golden": "the whole golden tier",
-    # A v1 package's whole suite, the packages/ equivalent of `tests/unit`.
-    # Named rather than left to the depth rule: `packages/<dist>/tests` is
-    # already three parts deep, so the depth rule would let it through.
-    "packages/mace-core/tests": "the whole mace-core suite",
-    "packages/mace-torch/tests": "the whole mace-torch suite",
-    "packages/mace-jax/tests": "the whole mace-jax suite",
-    "packages/mace-launcher/tests": "the whole mace-launcher suite",
 }
 
 #: A v1 test path: `packages/<distribution>/tests/...`. The rewrite's tests do
