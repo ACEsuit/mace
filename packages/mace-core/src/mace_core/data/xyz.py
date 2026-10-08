@@ -21,6 +21,8 @@ from typing import Any
 import ase.io
 import numpy as np
 from ase import Atoms
+from ase.calculators.calculator import all_properties
+from ase.io.extxyz import per_config_properties
 
 from mace_core.data.configuration import (
     DEFAULT_CONFIG_TYPE,
@@ -28,7 +30,7 @@ from mace_core.data.configuration import (
     Configuration,
 )
 from mace_core.data.keys import KeySpecification
-from mace_core.elements.default_keys import DefaultKeys
+from mace_core.elements.default_keys import DefaultKeys, Storage
 
 __all__ = [
     "ISOLATED_ATOM_CONFIG_TYPE",
@@ -71,10 +73,24 @@ class _ReservedKey:
     stored_in: str
 
 
-#: Configuring one of these as the file key for a label stopped being safe in
-#: ase 3.23: the value written under it is read back into
-#: ``atoms.calc.results`` instead of into ``atoms.info``, so a parser looking
-#: in ``info`` finds nothing at all.
+#: The file keys ase moves out of the structure and into
+#: ``atoms.calc.results`` when it reads an extended-XYZ file, by the half the
+#: file stored them in: a per-structure key in ase's per-configuration
+#: calculator properties, and a per-atom array named like any calculator
+#: property. These are ase's own lists, read rather than copied, so the parser
+#: follows whatever ase decides. A configured key in one of them is read back
+#: from the calculator; looking only in ``info`` or ``arrays`` would find
+#: nothing and report the label as absent.
+_CALCULATOR_KEYS: dict[Storage, frozenset[str]] = {
+    "graph": frozenset(per_config_properties),
+    "atom": frozenset(all_properties),
+}
+
+#: The three calculator keys the parse also rewrites, as legacy did: the key is
+#: moved onto its ``REF_`` spelling for the duration of the parse, and the value
+#: is back-filled there from the calculator's getter, ``None`` when it fails.
+#: Every other calculator key is read where ase put it, through
+#: :data:`_CALCULATOR_KEYS`, with no rewrite.
 _RESERVED_KEYS: dict[str, _ReservedKey] = {
     "energy": _ReservedKey(
         "energy", DefaultKeys.ENERGY.value, "get_potential_energy", "info"
@@ -111,7 +127,8 @@ def configuration_from_atoms(
     A declared property the file does not carry is stored as ``None`` with
     weight ``0.0``, rather than left out: a zero weight is how a loss term is
     told this structure has no such label, and an absent entry would instead
-    look like a property nobody declared.
+    look like a property nobody declared. A key ase moved into the calculator
+    is read from there.
 
     The head is not a property and is not read from the file. It is
     ``head_name``, stored once, on :attr:`Configuration.head`.
@@ -139,14 +156,11 @@ def configuration_from_atoms(
         for name in key_spec.property_names()
     }
 
-    for name, file_key in key_spec.graph_keys.items():
-        properties[name] = atoms.info.get(file_key)
-        if file_key not in atoms.info:
-            property_weights[name] = 0.0
-    for name, file_key in key_spec.atom_keys.items():
-        properties[name] = atoms.arrays.get(file_key)
-        if file_key not in atoms.arrays:
-            property_weights[name] = 0.0
+    for per, keys in (("graph", key_spec.graph_keys), ("atom", key_spec.atom_keys)):
+        for name, file_key in keys.items():
+            present, properties[name] = _stored_value(atoms, file_key, per)
+            if not present:
+                property_weights[name] = 0.0
 
     return Configuration(
         atomic_numbers=atoms.get_atomic_numbers(),
@@ -159,6 +173,21 @@ def configuration_from_atoms(
         config_type=config_type,
         head=head_name,
     )
+
+
+def _stored_value(atoms: Atoms, file_key: str, per: Storage) -> tuple[bool, Any]:
+    """Whether ``file_key`` is present on ``atoms``, and its value.
+
+    Looked up in ``info`` for a per-structure key and ``arrays`` for a per-atom
+    one, then, for a key ase reserves, in the calculator's results.
+    """
+    store = atoms.info if per == "graph" else atoms.arrays
+    if file_key in store:
+        return True, store[file_key]
+    results = getattr(atoms.calc, "results", {})
+    if file_key in _CALCULATOR_KEYS[per] and file_key in results:
+        return True, results[file_key]
+    return False, None
 
 
 def read_configurations(
@@ -305,12 +334,15 @@ def _check_something_is_labelled(
     energy_key = key_spec.graph_keys["energy"]
     forces_key = key_spec.atom_keys["forces"]
     # A specification with no dipole entry still has to name a key in the
-    # message below, and this is the name legacy reports.
-    dipole_key = key_spec.graph_keys.get("dipole", "REF_dipole")
+    # message below: the default one.
+    dipole_key = key_spec.graph_keys.get("dipole", DefaultKeys.DIPOLE.value)
 
-    has_energy = any(energy_key in atoms.info for atoms in atoms_list)
-    has_forces = any(forces_key in atoms.arrays for atoms in atoms_list)
-    has_dipole = any(dipole_key in atoms.info for atoms in atoms_list)
+    def present(file_key: str, per: Storage) -> bool:
+        return any(_stored_value(atoms, file_key, per)[0] for atoms in atoms_list)
+
+    has_energy = present(energy_key, "graph")
+    has_forces = present(forces_key, "atom")
+    has_dipole = present(dipole_key, "graph")
 
     if not (has_energy or has_forces or has_dipole):
         message = (
@@ -364,7 +396,7 @@ def _extract_isolated_atom_energies(
         if not _is_isolated_atom(atoms):
             continue
         atomic_number = int(atoms.get_atomic_numbers()[0])
-        energy = atoms.info.get(energy_key)
+        _, energy = _stored_value(atoms, energy_key, "graph")
         if energy is None:
             unlabelled.setdefault(atomic_number, []).append(index)
         else:

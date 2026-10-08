@@ -635,37 +635,89 @@ def test_all_twelve_default_keys_survive_a_write_and_a_read(tmp_path):
     assert config.head == "Default"
     assert "head" not in properties
 
-    # every property has a weight, and eleven of the twelve read
+    # every property has a weight, and all twelve read
     assert set(config.property_weights) == set(properties)
     assert {n for n, w in config.property_weights.items() if w == 1.0} == {
         name.lower() for name in DEFAULT_KEY_TABLE
-    } - {"dipole"}
+    }
 
 
-def test_the_default_dipole_key_cannot_be_read_back_from_a_file(tmp_path):
-    """The one default key that does not survive a round trip.
-
-    ase reserves ``dipole`` as a per-structure calculator property, so a value
-    written into ``info`` is read back into ``calc.results`` and never reaches
-    the place the parser looks. The property becomes None at weight zero, which
-    is why every dipole workflow names a different key. Pinned as behaviour the
-    rewrite inherited, not endorsed: this test is what would notice a fix.
-    """
+def test_the_default_dipole_key_is_read_back_from_the_calculator(tmp_path):
+    """ase reserves ``dipole`` as a per-structure calculator property, so a
+    value written into ``info`` is read back into ``calc.results``. The parser
+    reads it from there; a renamed key reads from ``info`` as before."""
     atoms = water(REF_energy=0.0)
     atoms.new_array("REF_forces", np.zeros((3, 3)))
     atoms.info["dipole"] = np.array([0.1, -0.2, 0.3])
-    atoms.info["REF_dipole"] = np.array([0.1, -0.2, 0.3])
+    atoms.info["REF_dipole"] = np.array([0.4, 0.5, 0.6])
     path = write(tmp_path, [atoms])
+    read_back = ase.io.read(path)
+    assert isinstance(read_back, Atoms)
+    assert "dipole" not in read_back.info
 
     parsed = read_configurations(path, KeySpecification.from_defaults())
-    assert parsed.configurations[0].properties["dipole"] is None
-    assert parsed.configurations[0].property_weights["dipole"] == 0.0
+    assert np.allclose(parsed.configurations[0].properties["dipole"], [0.1, -0.2, 0.3])
+    assert parsed.configurations[0].property_weights["dipole"] == 1.0
 
     renamed = read_configurations(
         path,
         KeySpecification.from_defaults().apply_overrides({"dipole_key": "REF_dipole"}),
     )
-    assert np.allclose(renamed.configurations[0].properties["dipole"], [0.1, -0.2, 0.3])
+    assert np.allclose(renamed.configurations[0].properties["dipole"], [0.4, 0.5, 0.6])
+
+
+@pytest.mark.parametrize(
+    ("setting", "file_key", "name", "store", "value"),
+    [
+        ("energy_key", "free_energy", "energy", "info", -3.25),
+        ("charges_key", "charges", "charges", "arrays", np.array([-0.8, 0.4, 0.4])),
+        ("magmom_key", "magmoms", "magmom", "arrays", np.full((3, 3), 0.5)),
+    ],
+)
+def test_any_key_ase_moves_into_the_calculator_is_read_from_there(
+    tmp_path, setting, file_key, name, store, value
+):
+    """Not only the three keys the parse rewrites: every name ase treats as a
+    calculator property disappears from ``info`` and ``arrays`` on reading,
+    and would otherwise come back as None at weight zero."""
+    atoms = water(REF_energy=0.0)
+    atoms.new_array("REF_forces", np.zeros((3, 3)))
+    if store == "info":
+        atoms.info[file_key] = value
+    else:
+        atoms.new_array(file_key, value)
+    path = write(tmp_path, [atoms])
+    read_back = ase.io.read(path)
+    assert isinstance(read_back, Atoms)
+    assert file_key not in read_back.info
+    assert file_key not in read_back.arrays
+
+    parsed = read_configurations(
+        path, KeySpecification.from_defaults().apply_overrides({setting: file_key})
+    )
+    (config,) = parsed.configurations
+    assert np.allclose(config.properties[name], value)
+    assert config.property_weights[name] == 1.0
+
+
+def test_a_dipole_in_the_calculator_passes_the_presence_check(tmp_path):
+    """A dipole-only file has to count as labelled wherever ase put the
+    dipole."""
+    atoms = water()
+    atoms.info["dipole"] = np.array([0.1, -0.2, 0.3])
+    parsed = read_configurations(
+        write(tmp_path, [atoms]), KeySpecification.from_defaults()
+    )
+    assert np.allclose(parsed.configurations[0].properties["dipole"], [0.1, -0.2, 0.3])
+
+
+def test_a_specification_without_a_dipole_names_the_default_dipole_key(tmp_path):
+    path = write(tmp_path, [water()])
+    key_spec = KeySpecification(
+        graph_keys={"energy": "REF_energy"}, atom_keys={"forces": "REF_forces"}
+    )
+    with pytest.raises(ValueError, match="'dipole'"):
+        read_configurations(path, key_spec)
 
 
 @pytest.mark.parametrize(
