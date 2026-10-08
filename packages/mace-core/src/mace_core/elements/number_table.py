@@ -14,6 +14,7 @@ constructor would silently reorder the second case.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Sequence
 
 __all__ = ["AtomicNumberTable", "atomic_number_table_from_zs"]
@@ -24,10 +25,25 @@ class AtomicNumberTable:
 
     Args:
         zs: The atomic numbers (Z), in the order the model's element embedding
-            expects them. Taken as given: not sorted, not de-duplicated.
+            expects them. Taken as given: not sorted.
+
+    Raises:
+        ValueError: if an atomic number appears twice. Two embedding indices
+            would then name one element, and :meth:`z_to_index` would only
+            ever return the first. Dropping the repeat would shift every later
+            index, so the order is refused rather than repaired; build the
+            table with :func:`atomic_number_table_from_zs` to de-duplicate.
     """
 
     def __init__(self, zs: Sequence[int]) -> None:
+        repeated = sorted(z for z, count in Counter(zs).items() if count > 1)
+        if repeated:
+            raise ValueError(
+                f"atomic numbers {repeated} appear more than once in "
+                f"{list(zs)!r}. Each element takes exactly one embedding "
+                f"index; remove the repeats, or build the table with "
+                f"atomic_number_table_from_zs to sort and de-duplicate."
+            )
         self.zs = zs
 
     def __len__(self) -> int:

@@ -1205,6 +1205,13 @@ def test_the_class_takes_the_order_it_is_given():
     assert table.z_to_index(8) == 0
 
 
+def test_the_class_refuses_an_element_listed_twice():
+    """Two indices would name one element, and dropping the repeat would shift
+    every index after it."""
+    with pytest.raises(ValueError, match=r"atomic numbers \[1\] appear more"):
+        AtomicNumberTable([1, 8, 1])
+
+
 def test_an_element_the_table_does_not_have_raises():
     with pytest.raises(ValueError):
         atomic_number_table_from_zs([1, 8]).z_to_index(79)
