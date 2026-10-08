@@ -21,6 +21,10 @@ written reduced.
 Neither direction is bit-exact in weight space, and it cannot be: the map is a
 projection. What it preserves is the function, so it is tested on values and
 never on weight equality.
+
+Both directions compute at float64 whatever the input, and hand the result back
+in the input's floating dtype; anything that is not a floating array comes back
+as float64.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.clebsch_gordan.irreps import Irrep, Irreps
 from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,
@@ -47,17 +51,30 @@ __all__ = [
 ]
 
 
-def _projection(irreps_in: str | Irreps, correlation: int, target: str) -> np.ndarray:
+def _target_text(target: str | Irrep) -> str:
+    """The canonical spelling of one output irrep, refusing a declaration."""
+    return str(target if isinstance(target, Irrep) else Irrep.parse(target))
+
+
+def _output_dtype(weights: np.ndarray) -> np.dtype:
+    """The dtype a conversion hands back: the input's, if it is floating."""
+    if np.issubdtype(weights.dtype, np.floating):
+        return weights.dtype
+    return np.dtype(np.float64)
+
+
+def _projection(
+    irreps_in: str | Irreps, correlation: int, target: str | Irrep
+) -> np.ndarray:
     """The matrix carrying full-basis weights onto reduced-basis ones.
 
     Returns shape ``(n_full, n_reduced)``. Its transpose is the weight map: a
     full path contributes to a reduced one in proportion to how much of it
     survives symmetrization.
     """
-    full = full_symmetric_tensor_product_basis(irreps_in, correlation, target)[target]
-    reduced = reduced_symmetric_tensor_product_basis(irreps_in, correlation, target)[
-        target
-    ]
+    key = _target_text(target)
+    full = full_symmetric_tensor_product_basis(irreps_in, correlation, key)[key]
+    reduced = reduced_symmetric_tensor_product_basis(irreps_in, correlation, key)[key]
     if full.shape[0] == 0 or reduced.shape[0] == 0:
         return np.zeros((full.shape[0], reduced.shape[0]), dtype=np.float64)
     # symmetrize sums over the permutations rather than averaging, so it
@@ -80,7 +97,7 @@ def full_to_reduced(
     weights: np.ndarray,
     irreps_in: str | Irreps,
     correlation: int,
-    target: str,
+    target: str | Irrep,
     axis: int = -2,
 ) -> np.ndarray:
     """Carry full-basis weights onto the reduced basis. Exact and unique.
@@ -90,33 +107,37 @@ def full_to_reduced(
             ``[Z, A, mul]`` arrangement puts it at ``-2``, which is the default.
         irreps_in: The input irreps the basis was built over.
         correlation: The body order.
-        target: The output irrep these weights belong to.
+        target: The one output irrep these weights belong to, such as ``"1o"``.
         axis: Which axis indexes the paths.
 
     Returns:
-        The same array with the path axis replaced by the reduced one.
+        An array of the same shape except along ``axis``, which now has the
+        reduced basis's length. Computed at float64 and returned in the dtype
+        of ``weights`` if that is floating, float64 otherwise.
 
     Raises:
         ValueError: If the path axis does not have the length the full basis
             has. The message gives both numbers, since the usual cause is
             weights built for a different correlation.
+        IrrepsError: If ``target`` is not a single irrep such as ``"1o"``.
     """
+    weights = np.asarray(weights)
     matrix = _projection(irreps_in, correlation, target)
-    moved = np.moveaxis(weights, axis, -1)
+    moved = np.moveaxis(weights, axis, -1).astype(np.float64)
     if moved.shape[-1] != matrix.shape[0]:
         raise ValueError(
             f"the path axis has length {moved.shape[-1]}, but the full basis "
-            f"for {target!r} at correlation {correlation} has "
+            f"for {str(target)!r} at correlation {correlation} has "
             f"{matrix.shape[0]} paths."
         )
-    return np.moveaxis(moved @ matrix, -1, axis)
+    return np.moveaxis(moved @ matrix, -1, axis).astype(_output_dtype(weights))
 
 
 def reduced_to_full(
     weights: np.ndarray,
     irreps_in: str | Irreps,
     correlation: int,
-    target: str,
+    target: str | Irrep,
     axis: int = -2,
 ) -> np.ndarray:
     """Carry reduced-basis weights back onto the full basis. Export only.
@@ -125,17 +146,21 @@ def reduced_to_full(
     representative: of all the full-basis weight vectors that produce the same
     function, the one closest to the origin. A checkpoint never takes this
     route, because every persisted v1 checkpoint is reduced.
+
+    Arguments, dtype handling and errors are those of :func:`full_to_reduced`
+    with the two bases exchanged.
     """
+    weights = np.asarray(weights)
     matrix = _projection(irreps_in, correlation, target)
-    moved = np.moveaxis(weights, axis, -1)
+    moved = np.moveaxis(weights, axis, -1).astype(np.float64)
     if moved.shape[-1] != matrix.shape[1]:
         raise ValueError(
             f"the path axis has length {moved.shape[-1]}, but the reduced "
-            f"basis for {target!r} at correlation {correlation} has "
+            f"basis for {str(target)!r} at correlation {correlation} has "
             f"{matrix.shape[1]} paths."
         )
     recovered = moved @ np.linalg.pinv(matrix)
-    return np.moveaxis(recovered, -1, axis)
+    return np.moveaxis(recovered, -1, axis).astype(_output_dtype(weights))
 
 
 def to_canonical(per_order: Sequence[np.ndarray], axis: int = -2) -> np.ndarray:

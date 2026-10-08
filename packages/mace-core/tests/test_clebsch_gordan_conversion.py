@@ -6,8 +6,11 @@ would be asserting something false; asserting the function is what the
 conversion actually promises.
 """
 
+import re
+
 import numpy as np
 import pytest
+from mace_core.clebsch_gordan import IrrepsError
 from mace_core.clebsch_gordan.conversion import (
     from_canonical,
     full_to_reduced,
@@ -91,6 +94,27 @@ def test_the_conversion_is_not_bit_exact_in_weight_space():
 def test_the_path_axis_length_is_checked_with_both_numbers_in_the_message():
     with pytest.raises(ValueError, match="path axis has length 7"):
         full_to_reduced(np.zeros((2, 7, 4)), "0e+1o", 2, "0e")
+
+
+@pytest.mark.parametrize("convert", [full_to_reduced, reduced_to_full])
+@pytest.mark.parametrize("target", ["1x0e", " 0e", "0e+1o"])
+def test_a_target_that_is_not_one_irrep_is_refused_by_name(convert, target):
+    """Each of these used to surface as a bare ``KeyError`` from a dict."""
+    with pytest.raises(IrrepsError, match=re.escape(repr(target))):
+        convert(np.zeros((2, 3, 4)), "0e+1o", 2, target)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_the_conversion_hands_back_the_dtype_it_was_given(dtype):
+    """Computed at float64 either way; float32 in is float32 out."""
+    irreps, correlation, target = "0e+1o+2e", 3, "1o"
+    full = full_symmetric_tensor_product_basis(irreps, correlation, target)[target]
+    weights = np.random.default_rng(3).normal(size=(2, full.shape[0], 4))
+    carried = full_to_reduced(weights.astype(dtype), irreps, correlation, target)
+    assert carried.dtype == dtype
+    assert reduced_to_full(carried, irreps, correlation, target).dtype == dtype
+    exact = full_to_reduced(weights, irreps, correlation, target)
+    assert np.abs(carried - exact).max() < 1e-5
 
 
 # ---------------------------------------------------------------------------

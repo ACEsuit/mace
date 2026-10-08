@@ -92,10 +92,22 @@ def test_the_written_form_is_the_documented_one():
     assert tree.target == Irrep(2, 1)
 
 
-@pytest.mark.parametrize("text", ["0e", "0:0e|1o", "x:0e", ""])
+@pytest.mark.parametrize(
+    "text", ["0e", "0:0e|1o", "x:0e", "", "0:2x1o", "0:0e+1o|1:1o", "0: 0e", " 0:0e"]
+)
 def test_a_malformed_label_names_the_step_it_choked_on(text):
+    """``0:2x1o`` and ``0:0e+1o`` used to parse, dropping what followed the
+    first irrep."""
     with pytest.raises(ValueError, match="coupling step"):
         CouplingTree.parse(text)
+
+
+@pytest.mark.parametrize(
+    "steps", [(), ((-1, Irrep(0, 1)),), ((0, "0e"),), ((0.0, Irrep(0, 1)),)]
+)
+def test_a_tree_refuses_steps_it_could_not_have_been_built_from(steps):
+    with pytest.raises(ValueError):
+        CouplingTree(steps)
 
 
 @pytest.mark.parametrize(("irreps_in", "correlation", "keep_ir"), GRID)

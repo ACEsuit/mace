@@ -7,6 +7,7 @@ here is what stops that reappearing.
 """
 
 import itertools
+import re
 
 import numpy as np
 import pytest
@@ -14,8 +15,10 @@ from mace_core.clebsch_gordan import reduced_basis
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.clebsch_gordan.real_basis import real_basis_change, wigner_3j_real
 from mace_core.clebsch_gordan.reduced_basis import (
+    full_path_labels,
     full_symmetric_tensor_product_basis,
     path_count,
+    path_labels,
     reduced_symmetric_tensor_product_basis,
 )
 
@@ -108,11 +111,54 @@ def test_float32_is_a_cast_and_not_a_different_computation():
     assert np.abs(narrow["0e"].astype(np.float64) - wide["0e"]).max() < 1e-6
 
 
-def test_the_errors_name_the_offending_value():
-    with pytest.raises(ValueError, match="correlation"):
-        reduced_symmetric_tensor_product_basis("0e", 0, "0e")
-    with pytest.raises(ValueError, match="float64"):
-        reduced_symmetric_tensor_product_basis("0e", 1, "0e", dtype="float16")
+# Every public entry point that takes the same arguments validates them the
+# same way, so none of them can be the one that loops or truncates.
+BUILDERS = [
+    reduced_symmetric_tensor_product_basis,
+    full_symmetric_tensor_product_basis,
+    path_labels,
+    full_path_labels,
+    path_count,
+]
+BASES = [reduced_symmetric_tensor_product_basis, full_symmetric_tensor_product_basis]
+
+
+@pytest.mark.parametrize("build", BUILDERS, ids=lambda f: f.__name__)
+@pytest.mark.parametrize("correlation", [0, -1, 1.0, True])
+def test_every_builder_refuses_a_correlation_that_is_not_a_positive_integer(
+    build, correlation
+):
+    """The label functions used to recurse without end on 0 and below."""
+    with pytest.raises(ValueError, match=re.escape(f"got {correlation!r}")):
+        build("0e+1o", correlation, "0e")
+
+
+@pytest.mark.parametrize("build", BASES, ids=lambda f: f.__name__)
+@pytest.mark.parametrize("dtype", ["float16", "int8", "bool", "float"])
+def test_every_basis_refuses_an_unsupported_dtype(build, dtype):
+    """``int8`` would truncate every entry to zero, so it cannot pass silently."""
+    with pytest.raises(ValueError, match=re.escape(repr(dtype))):
+        build("0e+1o", 2, "0e", dtype=dtype)
+
+
+@pytest.mark.parametrize("build", BUILDERS, ids=lambda f: f.__name__)
+@pytest.mark.parametrize(
+    ("keep_ir", "complaint"),
+    [("2x0e", "multiplicity of 2"), ("0e+0e", "more than once")],
+)
+def test_every_builder_refuses_a_keep_ir_that_would_collapse(build, keep_ir, complaint):
+    """Both used to come back as a single ``0e`` entry, without a word."""
+    with pytest.raises(ValueError, match=complaint):
+        build("0e+1o", 2, keep_ir)
+
+
+@pytest.mark.parametrize("build", BUILDERS, ids=lambda f: f.__name__)
+def test_every_builder_refuses_an_input_term_with_no_copies(build):
+    with pytest.raises(IrrepsError, match="'0x0e'"):
+        build("0x0e+1o", 2, "0e")
+
+
+def test_a_malformed_declaration_names_the_term():
     with pytest.raises(IrrepsError, match="1u"):
         Irreps.parse("1u")
 
@@ -138,6 +184,37 @@ def test_the_real_3j_is_real_and_keeps_the_norm(l1, l2, l3):
     table = wigner_3j_real(l1, l2, l3)
     assert table.dtype == np.float64
     assert float((table**2).sum()) == pytest.approx(1.0, abs=ATOL)
+
+
+@pytest.mark.parametrize(
+    ("degree", "parity"), [(1.5, 1), (True, 1), (-1, 1), (1, 0), (1, True), (1, 1.0)]
+)
+def test_an_irrep_refuses_anything_but_integer_degree_and_signed_parity(degree, parity):
+    """The constructor, not only the parser, is a construction path."""
+    with pytest.raises(IrrepsError):
+        Irrep(degree, parity)
+
+
+@pytest.mark.parametrize(
+    "terms",
+    [
+        (),
+        ((0, Irrep(0, 1)),),
+        ((-1, Irrep(0, 1)),),
+        ((1.0, Irrep(0, 1)),),
+        ((1, "0e"),),
+    ],
+)
+def test_irreps_refuses_terms_the_parser_would_refuse(terms):
+    with pytest.raises(IrrepsError):
+        Irreps(terms)
+
+
+@pytest.mark.parametrize("text", ["1x0e", " 0e", "0e+1o", "0e\n", "2e3"])
+def test_a_single_irrep_is_parsed_strictly(text):
+    """Where one irrep is expected, a declaration is a caller's mistake."""
+    with pytest.raises(IrrepsError, match=re.escape(repr(text))):
+        Irrep.parse(text)
 
 
 def test_the_irrep_order_is_the_documented_one():

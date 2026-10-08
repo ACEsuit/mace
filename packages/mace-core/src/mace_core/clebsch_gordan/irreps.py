@@ -14,11 +14,12 @@ measure out of a library.
 
 from __future__ import annotations
 
+import numbers
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-__all__ = ["IRREPS_GRAMMAR", "Irrep", "Irreps"]
+__all__ = ["IRREPS_GRAMMAR", "Irrep", "Irreps", "IrrepsError"]
 
 IRREPS_GRAMMAR = (
     "a '+'-separated sum of terms, each '<l><parity>' or "
@@ -27,7 +28,17 @@ IRREPS_GRAMMAR = (
     "'128x0e+128x1o'."
 )
 
-_TERM = re.compile(r"^(?:(\d+)x)?(\d+)([eo])$")
+_TERM = re.compile(r"(?:(\d+)x)?(\d+)([eo])", re.ASCII)
+_SINGLE = re.compile(r"(\d+)([eo])", re.ASCII)
+
+
+class IrrepsError(ValueError):
+    """A value that is not a well-formed irrep or irreps declaration."""
+
+
+def _is_integer(value: object) -> bool:
+    """An integer, and not a bool: ``True`` would otherwise pass as degree 1."""
+    return isinstance(value, numbers.Integral) and not isinstance(value, bool)
 
 
 @dataclass(frozen=True, order=False)
@@ -35,18 +46,52 @@ class Irrep:
     """One irreducible representation, of degree ``degree`` and parity ``parity``.
 
     Attributes:
-        degree: The rotation order ``l``. Spans ``2l + 1`` components.
-        parity: ``+1`` for even under inversion, ``-1`` for odd.
+        degree: The rotation order ``l``, a non-negative integer. Spans
+            ``2l + 1`` components.
+        parity: The integer ``+1`` for even under inversion, ``-1`` for odd.
+
+    Raises:
+        IrrepsError: If ``degree`` is not a non-negative integer or ``parity``
+            is not ``+1`` or ``-1``. Bools and floats are refused rather than
+            coerced, so ``Irrep(1.5, 1)`` and ``Irrep(True, 1)`` both raise.
     """
 
     degree: int
     parity: int
 
     def __post_init__(self) -> None:
-        if self.degree < 0:
-            raise ValueError(f"degree must be non-negative, got {self.degree}")
-        if self.parity not in (1, -1):
-            raise ValueError(f"parity must be +1 or -1, got {self.parity}")
+        if not _is_integer(self.degree) or self.degree < 0:
+            raise IrrepsError(
+                f"degree must be a non-negative integer, got {self.degree!r}. "
+                f"Pass the rotation order l, for example Irrep(2, 1)."
+            )
+        if not _is_integer(self.parity) or self.parity not in (1, -1):
+            raise IrrepsError(
+                f"parity must be the integer 1 (even) or -1 (odd), got {self.parity!r}."
+            )
+        object.__setattr__(self, "degree", int(self.degree))
+        object.__setattr__(self, "parity", int(self.parity))
+
+    @classmethod
+    def parse(cls, text: str) -> Irrep:
+        """Parse one irrep written ``<l><parity>``, such as ``"1o"``.
+
+        Stricter than :meth:`Irreps.parse` on purpose: a multiplicity, a
+        ``+`` or surrounding whitespace means the caller passed a declaration
+        where one irrep was expected, and dropping the rest would silently
+        answer a different question.
+
+        Raises:
+            IrrepsError: If ``text`` is anything else. The message quotes it.
+        """
+        match = _SINGLE.fullmatch(text) if isinstance(text, str) else None
+        if match is None:
+            raise IrrepsError(
+                f"{text!r} is not a single irrep. Expected '<l><parity>' with "
+                f"no multiplicity, no '+' and no spaces, for example '0e' or '1o'."
+            )
+        degree, parity = match.groups()
+        return cls(int(degree), 1 if parity == "e" else -1)
 
     @property
     def dimension(self) -> int:
@@ -74,39 +119,73 @@ class Irrep:
             yield Irrep(degree, self.parity * other.parity)
 
 
-class IrrepsError(ValueError):
-    """A string that is not a well-formed irreps declaration."""
-
-
 @dataclass(frozen=True)
 class Irreps:
     """A direct sum of irreps with multiplicities, in the order written.
 
     The order is preserved rather than sorted: it is the layout of the values
     themselves, and sorting it would silently move every weight.
+
+    Attributes:
+        terms: ``(multiplicity, irrep)`` pairs, at least one, each multiplicity
+            an integer of at least 1.
+
+    Raises:
+        IrrepsError: If there are no terms, a term is not a
+            ``(multiplicity, Irrep)`` pair, or a multiplicity is not a positive
+            integer. A term with multiplicity 0 is refused rather than kept,
+            because it would still answer ``ir in irreps`` with yes while
+            contributing no components.
     """
 
     terms: tuple[tuple[int, Irrep], ...]
+
+    def __post_init__(self) -> None:
+        terms = tuple(tuple(term) for term in self.terms)
+        if not terms:
+            raise IrrepsError(f"the declaration is empty. Expected {IRREPS_GRAMMAR}")
+        for term in terms:
+            if len(term) != 2 or not isinstance(term[1], Irrep):
+                raise IrrepsError(
+                    f"{term!r} is not a (multiplicity, Irrep) pair, for example "
+                    f"(16, Irrep(0, 1))."
+                )
+            multiplicity, irrep = term
+            if not _is_integer(multiplicity) or multiplicity < 1:
+                raise IrrepsError(
+                    f"the multiplicity of {irrep} is {multiplicity!r}, and it must "
+                    f"be an integer of at least 1. Leave the term out instead of "
+                    f"declaring it with no copies."
+                )
+        object.__setattr__(
+            self, "terms", tuple((int(mul), irrep) for mul, irrep in terms)
+        )
 
     @classmethod
     def parse(cls, text: str) -> Irreps:
         """Parse a declaration such as ``"128x0e+128x1o"``.
 
         Raises:
-            IrrepsError: If the declaration is empty or a term is malformed.
-                The message quotes the offending term and states the grammar.
+            IrrepsError: If the declaration is empty, a term is malformed, or a
+                term has multiplicity 0. The message quotes the offending term.
         """
         if not text or not text.strip():
             raise IrrepsError(f"the declaration is empty. Expected {IRREPS_GRAMMAR}")
         terms = []
         for piece in text.split("+"):
-            match = _TERM.match(piece.strip())
+            match = _TERM.fullmatch(piece.strip())
             if match is None:
                 raise IrrepsError(
                     f"{piece.strip()!r} is not a valid term in {text!r}. "
                     f"Expected {IRREPS_GRAMMAR}"
                 )
             multiplicity, degree, parity = match.groups()
+            if multiplicity is not None and int(multiplicity) == 0:
+                raise IrrepsError(
+                    f"{piece.strip()!r} in {text!r} declares no copies of its "
+                    f"irrep. Leave the term out, or give it a multiplicity of at "
+                    f"least 1."
+                )
             terms.append(
                 (
                     1 if multiplicity is None else int(multiplicity),

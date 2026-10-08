@@ -18,7 +18,7 @@ from functools import cache
 
 import numpy as np
 
-from mace_core.clebsch_gordan.irreps import Irrep, Irreps
+from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError, _is_integer
 from mace_core.clebsch_gordan.real_basis import wigner_3j_real
 
 __all__ = [
@@ -50,10 +50,35 @@ class CouplingTree:
 
     Attributes:
         steps: One ``(slice_index, intermediate)`` pair per coupled factor, in
-            coupling order.
+            coupling order. At least one.
+
+    Raises:
+        ValueError: If ``steps`` is empty or a step is not a pair of a
+            non-negative integer and an
+            :class:`~mace_core.clebsch_gordan.irreps.Irrep`.
     """
 
     steps: tuple[tuple[int, Irrep], ...]
+
+    def __post_init__(self) -> None:
+        steps = tuple(tuple(step) for step in self.steps)
+        if not steps:
+            raise ValueError("a coupling tree needs at least one step")
+        for step in steps:
+            if (
+                len(step) != 2
+                or not _is_integer(step[0])
+                or step[0] < 0
+                or not isinstance(step[1], Irrep)
+            ):
+                raise ValueError(
+                    f"{step!r} is not a coupling step. Expected a pair of a "
+                    f"non-negative slice index and an Irrep, for example "
+                    f"(1, Irrep(1, -1))."
+                )
+        object.__setattr__(
+            self, "steps", tuple((int(index), irrep) for index, irrep in steps)
+        )
 
     @property
     def correlation(self) -> int:
@@ -76,21 +101,29 @@ class CouplingTree:
 
     @classmethod
     def parse(cls, text: str) -> CouplingTree:
-        """Read back what :meth:`__str__` writes.
+        """Read back exactly what :meth:`__str__` writes.
 
         Raises:
-            ValueError: If a step is not ``<slice index>:<irrep>``. The message
-                quotes the offending step.
+            ValueError: If a step is not ``<slice index>:<irrep>`` with a
+                single irrep and no spaces. The message quotes the offending
+                step, so ``"0:2x1o"`` and ``"0:0e+1o"`` are refused rather than
+                read as ``0:1o`` and ``0:0e``.
         """
         steps = []
         for piece in text.split("|"):
-            index, _, irrep = piece.partition(":")
-            if not _ or not index.strip().isdigit():
+            index, separator, irrep = piece.partition(":")
+            if not separator or not (index.isascii() and index.isdigit()):
                 raise ValueError(
                     f"{piece!r} is not a coupling step in {text!r}. Expected "
                     f"'<slice index>:<irrep>', for example '1:1o'."
                 )
-            steps.append((int(index), Irreps.parse(irrep.strip()).terms[0][1]))
+            try:
+                intermediate = Irrep.parse(irrep)
+            except IrrepsError as error:
+                raise ValueError(
+                    f"{piece!r} is not a coupling step in {text!r}: {error}"
+                ) from error
+            steps.append((int(index), intermediate))
         return cls(tuple(steps))
 
 
@@ -98,6 +131,53 @@ class CouplingTree:
 #: before it. The gap either side of it is many orders of magnitude on every
 #: grid point measured, so the exact value is not delicate.
 _INDEPENDENCE_TOLERANCE = 1e-9
+
+
+def _check_correlation(correlation: int) -> None:
+    if not _is_integer(correlation) or correlation < 1:
+        raise ValueError(
+            f"correlation must be an integer of at least 1, got {correlation!r}. "
+            f"It is the body order of one basis: a model of correlation 3 asks "
+            f"for 1, 2 and 3 in turn."
+        )
+
+
+def _check_dtype(dtype: str) -> None:
+    if dtype not in ("float64", "float32"):
+        raise ValueError(
+            f"dtype must be 'float64' or 'float32', got {dtype!r}. The basis is "
+            f"always computed at float64; this only sets the returned type."
+        )
+
+
+def _input_text(irreps_in: str | Irreps) -> str:
+    """The canonical spelling of ``irreps_in``, which is the cache key."""
+    return str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
+
+
+def _output_irreps(keep_ir: str | Irreps) -> list[Irrep]:
+    """The irreps ``keep_ir`` asks for, each once and without a multiplicity.
+
+    Each kept irrep is one key of the returned mapping and carries its own
+    weights, so a multiplicity has no meaning here and a repeated irrep would
+    collapse into one key. Both are refused instead of silently merged.
+    """
+    wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
+    seen: list[Irrep] = []
+    for multiplicity, irrep in wanted:
+        if multiplicity != 1:
+            raise ValueError(
+                f"keep_ir {str(keep_ir)!r} gives {irrep} a multiplicity of "
+                f"{multiplicity}. It names output irreps, each built once; write "
+                f"{str(irrep)!r} instead."
+            )
+        if irrep in seen:
+            raise ValueError(
+                f"keep_ir {str(keep_ir)!r} lists {irrep} more than once. Each "
+                f"output irrep is built once; list it a single time."
+            )
+        seen.append(irrep)
+    return seen
 
 
 def _reachable(irreps_in: Irreps, correlation: int) -> list[Irrep]:
@@ -210,7 +290,7 @@ def _basis_for(
     irreps_in_text: str, correlation: int, target_text: str
 ) -> tuple[np.ndarray, tuple[CouplingTree, ...]]:
     irreps_in = Irreps.parse(irreps_in_text)
-    target = Irreps.parse(target_text).terms[0][1]
+    target = Irrep.parse(target_text)
     enumerated = list(_paths(irreps_in, correlation, target))
     empty = _no_paths(irreps_in, correlation, target)
     if not enumerated:
@@ -237,15 +317,18 @@ def reduced_symmetric_tensor_product_basis(
     keep_ir: str | Irreps,
     dtype: str = "float64",
 ) -> dict[str, np.ndarray]:
-    """The reduced basis, one array per kept output irrep.
+    """The reduced basis of one body order, one array per kept output irrep.
 
     Args:
         irreps_in: The input irreps, as a declaration string or an
             :class:`~mace_core.clebsch_gordan.irreps.Irreps`. Multiplicities are
             part of the declaration and widen the basis accordingly.
-        correlation: How many factors the symmetric product couples. The body
-            order, written as ``nu`` in the papers.
-        keep_ir: Which output irreps to build. Each is returned separately,
+        correlation: The body order of this basis, written ``nu`` in the
+            papers: exactly how many factors the symmetric product couples. A
+            model of correlation ``nu`` calls this once per body order
+            ``1 .. nu``.
+        keep_ir: Which output irreps to build, each once and without a
+            multiplicity, such as ``"0e+1o"``. Each is returned separately,
             because each carries its own weights.
         dtype: ``"float64"`` or ``"float32"``. The basis is always *computed* at
             float64, since it is build-time data and its cost is paid once; this
@@ -255,26 +338,22 @@ def reduced_symmetric_tensor_product_basis(
         A mapping from each kept irrep's string form to an array of shape
         ``(n_paths, ir.dimension) + (irreps_in.dimension,) * correlation``. The
         leading axis is the path axis, in the pinned order, and is the axis the
-        weights multiply.
+        weights multiply. An irrep the symmetric product does not carry at this
+        body order gets ``n_paths == 0``.
 
     Raises:
-        ValueError: If ``correlation`` is below 1, or ``dtype`` is neither
-            supported name.
+        ValueError: If ``correlation`` is not an integer of at least 1,
+            ``dtype`` is neither supported name, or ``keep_ir`` gives an irrep a
+            multiplicity or lists it twice.
+        IrrepsError: If either declaration is malformed.
     """
-    if correlation < 1:
-        raise ValueError(f"correlation must be at least 1, got {correlation}")
-    if dtype not in ("float64", "float32"):
-        raise ValueError(
-            f"dtype must be 'float64' or 'float32', got {dtype!r}. The basis is "
-            f"always computed at float64; this only sets the returned type."
-        )
-    text = str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
-    wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
-    out = {}
-    for _, ir in wanted:
-        basis, _labels = _basis_for(text, correlation, str(ir))
-        out[str(ir)] = basis.astype(dtype, copy=True)
-    return out
+    _check_correlation(correlation)
+    _check_dtype(dtype)
+    text = _input_text(irreps_in)
+    return {
+        str(ir): _basis_for(text, correlation, str(ir))[0].astype(dtype, copy=True)
+        for ir in _output_irreps(keep_ir)
+    }
 
 
 def path_labels(
@@ -295,21 +374,29 @@ def path_labels(
     Args:
         irreps_in: The input irreps, as a declaration string or an
             :class:`~mace_core.clebsch_gordan.irreps.Irreps`.
-        correlation: How many factors the symmetric product couples.
-        keep_ir: Which output irreps to label.
+        correlation: The body order, an integer of at least 1.
+        keep_ir: Which output irreps to label, each once.
 
     Returns:
         A mapping from each kept irrep's string form to its tuple of
         :class:`CouplingTree`.
+
+    Raises:
+        ValueError: As :func:`reduced_symmetric_tensor_product_basis`.
     """
-    text = str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
-    wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
-    return {str(ir): _basis_for(text, correlation, str(ir))[1] for _, ir in wanted}
+    _check_correlation(correlation)
+    text = _input_text(irreps_in)
+    return {
+        str(ir): _basis_for(text, correlation, str(ir))[1]
+        for ir in _output_irreps(keep_ir)
+    }
 
 
 def path_count(irreps_in: str | Irreps, correlation: int, keep_ir: str | Irreps) -> int:
-    """How many trainable paths the basis carries, summed over the kept irreps.
+    """How many trainable paths the basis of one body order carries.
 
+    Summed over the kept irreps, at exactly ``correlation``; a model of
+    correlation ``nu`` carries the sum of this over body orders ``1 .. nu``.
     This is the number that changed with the host on the frozen tree, which is
     why it has a golden of its own.
     """
@@ -322,7 +409,7 @@ def _full_basis_for(
     irreps_in_text: str, correlation: int, target_text: str
 ) -> tuple[np.ndarray, tuple[CouplingTree, ...]]:
     irreps_in = Irreps.parse(irreps_in_text)
-    target = Irreps.parse(target_text).terms[0][1]
+    target = Irrep.parse(target_text)
     enumerated = list(_paths(irreps_in, correlation, target))
     empty = _no_paths(irreps_in, correlation, target)
     if not enumerated:
@@ -345,9 +432,10 @@ def full_symmetric_tensor_product_basis(
 ) -> dict[str, np.ndarray]:
     """The unreduced basis: every coupling path, before the symmetry is used.
 
-    Same enumeration, same order and same per-path normalization as
-    :func:`reduced_symmetric_tensor_product_basis`; what it skips is the step
-    that removes the paths the permutation symmetry makes redundant.
+    Same enumeration, same order, same arguments, same validation and same
+    per-path normalization as :func:`reduced_symmetric_tensor_product_basis`;
+    what it skips is the step that removes the paths the permutation symmetry
+    makes redundant.
 
     It exists for one reason. The typical checkpoint in the wild carries this
     basis, because the legacy command line defaults the reduced flag to false,
@@ -355,14 +443,16 @@ def full_symmetric_tensor_product_basis(
     one. Its extra directions are pure gauge: they span a larger space but
     produce the same functions on symmetric inputs. The path counts on the
     measured anchor are in :mod:`mace_core.clebsch_gordan`.
+
+    Raises:
+        ValueError: As :func:`reduced_symmetric_tensor_product_basis`.
     """
-    if correlation < 1:
-        raise ValueError(f"correlation must be at least 1, got {correlation}")
-    text = str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
-    wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
+    _check_correlation(correlation)
+    _check_dtype(dtype)
+    text = _input_text(irreps_in)
     return {
         str(ir): _full_basis_for(text, correlation, str(ir))[0].astype(dtype, copy=True)
-        for _, ir in wanted
+        for ir in _output_irreps(keep_ir)
     }
 
 
@@ -376,7 +466,13 @@ def full_path_labels(
     subsequence of these, which is what makes the projection between the two
     bases readable: a reduced path keeps its own name rather than acquiring a
     new index.
+
+    Raises:
+        ValueError: As :func:`reduced_symmetric_tensor_product_basis`.
     """
-    text = str(irreps_in if isinstance(irreps_in, Irreps) else Irreps.parse(irreps_in))
-    wanted = keep_ir if isinstance(keep_ir, Irreps) else Irreps.parse(keep_ir)
-    return {str(ir): _full_basis_for(text, correlation, str(ir))[1] for _, ir in wanted}
+    _check_correlation(correlation)
+    text = _input_text(irreps_in)
+    return {
+        str(ir): _full_basis_for(text, correlation, str(ir))[1]
+        for ir in _output_irreps(keep_ir)
+    }
