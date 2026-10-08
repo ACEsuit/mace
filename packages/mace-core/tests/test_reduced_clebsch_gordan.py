@@ -10,6 +10,7 @@ import itertools
 
 import numpy as np
 import pytest
+from mace_core.clebsch_gordan import reduced_basis
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.clebsch_gordan.real_basis import real_basis_change, wigner_3j_real
 from mace_core.clebsch_gordan.reduced_basis import (
@@ -20,26 +21,20 @@ from mace_core.clebsch_gordan.reduced_basis import (
 
 ATOL = 1e-12
 
-# The anchor the ticket measures on the legacy cueq-only path, summed over the
-# correlation orders a model of that body order actually builds.
+# The anchor the ticket measures on the legacy cueq-only path, per single body
+# order. A model of correlation 3 carries the sum over the three, 13, 16 and 20.
 ANCHOR_IRREPS = "0e+1o+2e+3o"
 ANCHOR_PER_ORDER = {
     "0e": (1, 4, 8),
     "1o": (1, 3, 12),
     "2e": (1, 5, 14),
 }
-ANCHOR_TOTALS = {"0e": 13, "1o": 16, "2e": 20}
 
 
 @pytest.mark.parametrize(("target", "per_order"), sorted(ANCHOR_PER_ORDER.items()))
 def test_the_path_counts_reproduce_the_measured_anchor(target, per_order):
     for correlation, expected in enumerate(per_order, start=1):
         assert path_count(ANCHOR_IRREPS, correlation, target) == expected
-
-
-@pytest.mark.parametrize(("target", "total"), sorted(ANCHOR_TOTALS.items()))
-def test_the_totals_over_the_body_orders_reproduce_the_anchor(target, total):
-    assert sum(path_count(ANCHOR_IRREPS, nu, target) for nu in (1, 2, 3)) == total
 
 
 def test_the_twenty_nine_the_defect_used_to_change():
@@ -76,12 +71,21 @@ def test_the_paths_are_linearly_independent():
 
 
 def test_the_basis_is_the_same_on_every_call():
-    """No dependence on dictionary order, on a random seed, or on what is
-    installed. The basis is model state, and model state cannot vary."""
-    first = reduced_symmetric_tensor_product_basis("0e+1o", 2, "0e")["0e"]
-    second = reduced_symmetric_tensor_product_basis("0e+1o", 2, "0e")["0e"]
+    """No dependence on dictionary order or on a random seed. The basis is model
+    state, and model state cannot vary. The cache is cleared between the two
+    calls, or the second would be served the first one's array and the
+    comparison could not fail."""
+    first = reduced_symmetric_tensor_product_basis(ANCHOR_IRREPS, 3, "1o")["1o"]
+    reduced_basis._basis_for.cache_clear()
+    second = reduced_symmetric_tensor_product_basis(ANCHOR_IRREPS, 3, "1o")["1o"]
     assert np.array_equal(first, second)
-    assert first is not second, "a caller must not be able to mutate the cache"
+
+
+def test_a_caller_cannot_mutate_the_cached_basis():
+    first = reduced_symmetric_tensor_product_basis("0e+1o", 2, "0e")["0e"]
+    first[...] = 0.0
+    second = reduced_symmetric_tensor_product_basis("0e+1o", 2, "0e")["0e"]
+    assert np.abs(second).max() > 0
 
 
 def test_the_returned_shape_states_the_layout():

@@ -1,10 +1,20 @@
 """`mace_core` derives the equivariant mathematics rather than importing it.
 
 The import contracts already forbid torch, jax and e3nn. This adds
-`cuequivariance`, and it adds a check the contracts cannot make: that no module
-under `mace_core` imports either of the two libraries the reduced basis used to
-come from, **at any depth and by any spelling**, including inside a function and
-including through `importlib`.
+`cuequivariance`, and three checks the contracts cannot make:
+
+- no ``import`` or ``from ... import`` statement anywhere in a module, at any
+  depth including inside a function, names one of those libraries;
+- every call to ``__import__``, ``importlib.import_module`` or
+  ``importlib.util.find_spec``, however it is spelled or spaced, names its
+  module as a string literal, and that literal is not one of them. A module
+  name held in a variable is refused outright, because a static scan cannot
+  see what it will hold;
+- importing ``mace_core`` in a fresh interpreter loads none of them.
+
+What this does not catch is a module reached in some other way at run time,
+such as an entry point's ``load()`` or an ``exec`` of built source. The fresh
+interpreter check covers whatever runs at import time, and nothing later.
 
 It matters because of what the dependency did rather than because of the
 dependency itself. On the frozen tree the reduced basis exists only when
@@ -16,7 +26,6 @@ import that creeps back in is how that returns.
 from __future__ import annotations
 
 import ast
-import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -61,6 +70,19 @@ def test_no_module_imports_a_framework_or_a_kernel_library(module):
             )
 
 
+#: The calls that import, or look up, a module named by a string.
+DYNAMIC_IMPORTERS = ("__import__", "import_module", "find_spec")
+
+
+def _called_name(call: ast.Call) -> str:
+    """``f`` for ``f(...)``, ``attr`` for ``x.y.attr(...)``, else empty."""
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return ""
+
+
 @pytest.mark.parametrize(
     "module", core_modules(), ids=lambda p: str(p.relative_to(CORE_SOURCE))
 )
@@ -68,39 +90,44 @@ def test_no_module_reaches_a_framework_through_importlib(module):
     """The hole a static import check leaves open, and the one the frozen tree
     actually used: `cg.py` decides on `CUET_AVAILABLE`, set by a guarded
     import."""
-    source = module.read_text(encoding="utf-8")
-    for name in FORBIDDEN:
-        assert f'import_module("{name}' not in source
-        assert f"import_module('{name}" not in source
-        assert f'find_spec("{name}' not in source
-        assert f"find_spec('{name}" not in source
+    tree = ast.parse(module.read_text(encoding="utf-8"))
+    where = module.relative_to(REPO_ROOT)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        called = _called_name(node)
+        if called not in DYNAMIC_IMPORTERS:
+            continue
+        named = node.args[0] if node.args else None
+        for keyword in node.keywords:
+            if keyword.arg == "name":
+                named = keyword.value
+        assert isinstance(named, ast.Constant) and isinstance(named.value, str), (
+            f"{where} line {node.lineno} calls {called} with a module name that "
+            f"is not a string literal, so this scan cannot tell what it imports. "
+            f"Name the module literally."
+        )
+        assert named.value.split(".")[0] not in FORBIDDEN, (
+            f"{where} line {node.lineno} reaches {named.value!r} through "
+            f"{called}. mace_core derives this mathematics instead."
+        )
 
 
-@pytest.mark.parametrize("library", ["e3nn", "cuequivariance", "torch", "jax"])
-def test_importing_mace_core_pulls_in_no_framework(library):
+def test_importing_mace_core_pulls_in_no_framework():
     """Run in a fresh interpreter, and that is not fussiness.
 
     Asserting this in-process passes or fails on what else the session happened
     to import, and this suite runs beside an oracle test that imports
     `cuequivariance` on purpose. The first version of this test failed for
-    exactly that reason, which is the argument for the subprocess.
+    exactly that reason, which is the argument for the subprocess. One probe
+    checks every library and names all that leaked.
     """
     probe = (
         "import sys, mace_core, mace_core.clebsch_gordan\n"
-        f"assert {library!r} not in sys.modules, "
-        f"'importing mace_core pulled in {library}'\n"
+        f"leaked = [name for name in {FORBIDDEN!r} if name in sys.modules]\n"
+        "assert not leaked, f'importing mace_core pulled in {leaked}'\n"
     )
-    subprocess.run([sys.executable, "-c", probe], check=True)
-
-
-def test_the_basis_does_not_change_with_what_is_installed():
-    """The defect, stated as a test. `cuequivariance` is importable in this
-    environment or it is not; either way the count is the same number."""
-    from mace_core.clebsch_gordan.reduced_basis import path_count
-
-    installed = importlib.util.find_spec("cuequivariance") is not None
-    counts = [path_count("0e+1o+2e+3o", nu, "0e+1o") for nu in (1, 2, 3)]
-    assert sum(counts) == 29, (
-        f"the reduced basis gave {sum(counts)} paths with cuequivariance "
-        f"{'installed' if installed else 'absent'}. It must give 29 either way."
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=False
     )
+    assert result.returncode == 0, result.stderr

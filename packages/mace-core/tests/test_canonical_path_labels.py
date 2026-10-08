@@ -8,6 +8,8 @@ that choice recoverable from the file: a path is named by the tree that built
 it, not by where it landed.
 """
 
+import itertools
+
 import numpy as np
 import pytest
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps
@@ -18,7 +20,6 @@ from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     path_labels,
     reduced_symmetric_tensor_product_basis,
-    symmetrize,
 )
 
 ATOL = 1e-12
@@ -129,9 +130,11 @@ def test_asking_for_one_irrep_gives_the_same_labels_as_asking_for_several():
 def _rebuild(tree: CouplingTree, irreps_in: Irreps) -> np.ndarray:
     """Build a path's tensor from its label alone, with no index into the basis.
 
-    Reimplemented here rather than imported: the point of the test is that the
-    label carries the whole construction, including the normalization, so a
-    reader of the file can regenerate the tensor without the generator.
+    The construction is written out here rather than imported: the coupling
+    chain, the symmetrization over the factors and the normalization are all
+    local, so a reader of the file can regenerate the tensor without the
+    generator. The one thing taken from the package is the real 3j table,
+    which ``test_canonical_layout_written_out.py`` pins against closed forms.
     """
     pieces = list(irreps_in.slices())
     width = irreps_in.dimension
@@ -147,8 +150,10 @@ def _rebuild(tree: CouplingTree, irreps_in: Irreps) -> np.ndarray:
         grown = np.zeros((intermediate.dimension, *path.shape[1:], width))
         grown[..., piece] = np.einsum("oml,m...->o...l", coupling, path)
         path, running = grown, intermediate
-    path = symmetrize(path, tree.correlation)
-    path = path / np.linalg.norm(path)
+    symmetric = np.zeros_like(path)
+    for order in itertools.permutations(range(1, tree.correlation + 1)):
+        symmetric += np.transpose(path, (0, *order))
+    path = symmetric / np.linalg.norm(symmetric)
     flat = path.reshape(-1)
     leading = np.flatnonzero(np.abs(flat) > 1e-9)
     if leading.size and flat[leading[0]] < 0:
