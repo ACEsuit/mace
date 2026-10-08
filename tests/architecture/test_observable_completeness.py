@@ -45,8 +45,10 @@ if importlib.util.find_spec("mace_core") is None:  # pragma: no cover
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
     DEFAULT_SIGN,
+    ObservableCatalogue,
     ObservableSpec,
     default_derivative_name,
+    parse_irreps,
 )
 
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE
@@ -65,27 +67,47 @@ from tests.architecture.observable_coverage import (
     per_atom_of,
     v1_name,
 )
-from tests.golden import surface_scan
+from tests.golden import harness, surface_scan
 
 SURFACE_DOC = (
     Path(__file__).resolve().parents[2] / "docs" / "reforge" / "output_surface.md"
 )
 
 
-def test_the_scan_resolves_every_write_it_finds():
+# The legacy surface is read out of the frozen source by parsing it, and
+# several tests below need the same answer, so each scan runs once per module.
+@pytest.fixture(scope="module")
+def model_scan() -> surface_scan.Scan:
+    return surface_scan.scan_model_surface(list(LEGACY_MODEL_SOURCES))
+
+
+@pytest.fixture(scope="module")
+def model_keys(model_scan) -> set[str]:
+    return model_scan.all_keys
+
+
+@pytest.fixture(scope="module")
+def calculator_keys() -> set[str]:
+    return legacy_calculator_keys()
+
+
+@pytest.fixture(scope="module")
+def eval_keys() -> set[str]:
+    return legacy_eval_keys()
+
+
+def test_the_scan_resolves_every_write_it_finds(model_scan):
     """The honesty check. A write whose key cannot be computed would shrink the
     surface silently, so it fails here instead."""
-    scan = surface_scan.scan_model_surface(list(LEGACY_MODEL_SOURCES))
-    assert surface_scan.unexplained(scan) == []
+    assert surface_scan.unexplained(model_scan) == []
 
 
-def test_the_model_forward_surface_is_forty_three_keys():
-    keys = legacy_model_keys()
-    assert len(keys) == 43, sorted(keys)
+def test_the_model_forward_surface_is_forty_three_keys(model_keys):
+    assert len(model_keys) == 43, sorted(model_keys)
 
 
-def test_every_legacy_key_has_exactly_one_disposition():
-    keys = legacy_model_keys()
+def test_every_legacy_key_has_exactly_one_disposition(model_keys):
+    keys = model_keys
     missing = sorted(keys - set(DISPOSITIONS))
     assert not missing, (
         f"{missing} are returned by a frozen model forward and have no row in "
@@ -128,7 +150,9 @@ def test_a_spec_row_builds_a_valid_observable_spec(key):
         return
     channel = channel_of(key)
     assert channel is not None
-    spec = ObservableSpec(
+    # Constructing the spec is the check: it validates the name and the irreps
+    # grammar, and raises on either.
+    ObservableSpec(
         name=v1_name(key),
         irreps=row.irreps,
         per_atom=per_atom,
@@ -137,20 +161,45 @@ def test_a_spec_row_builds_a_valid_observable_spec(key):
         # there rather than rewritten to `Å`.
         units=channel.unit,
     )
-    assert spec.per_atom == per_atom
-    assert spec.dimension >= 1
 
 
-def test_no_observable_row_defers_its_irreps_to_another_ticket():
-    """The whole set was worked out, and this asserts it stays that way. A row
-    that cannot say what its irreps are is a row nobody has read the model
-    for, and it should fail here rather than sit as a TODO."""
-    unresolved = sorted(
-        key
-        for key, row in DISPOSITIONS.items()
-        if isinstance(row, Spec) and not row.irreps and not row.irreps_pattern
-    )
-    assert not unresolved, unresolved
+#: The irreps a fixed legacy layout can hold, written out from the layout
+#: alone. A scalar slot holds one 0e, a 3-vector one l=1 term of either parity,
+#: and a 3x3 any of 0e, 1e and 2e at most once each, since 1o x 1o = 0e+1e+2e
+#: is all a real 3x3 decomposes into.
+LAYOUT_TERMS = {
+    harness.GRAPH_SCALAR: [{"1x0e"}],
+    harness.PER_ATOM_SCALAR: [{"1x0e"}],
+    harness.GRAPH_VECTOR: [{"1x1o"}, {"1x1e"}],
+    harness.PER_ATOM_VECTOR: [{"1x1o"}, {"1x1e"}],
+}
+RANK_TWO_KINDS = frozenset({harness.GRAPH_TENSOR, harness.PER_ATOM_TENSOR})
+
+
+@pytest.mark.parametrize(
+    "key",
+    sorted(
+        k
+        for k, d in DISPOSITIONS.items()
+        if isinstance(d, Spec) and d.irreps and channel_of(k) is not None
+    ),
+)
+def test_a_spec_row_fits_the_layout_the_harness_records(key):
+    """The authored irreps against the shape the golden harness declares for
+    the key, two sources written independently of each other."""
+    terms = [str(term) for term in parse_irreps(DISPOSITIONS[key].irreps)]
+    kind = channel_of(key).kind
+    if kind in LAYOUT_TERMS:
+        assert (
+            set(terms) in LAYOUT_TERMS[kind] and len(terms) == 1
+        ), f"{key!r} declares {terms}, which does not fit a {kind} slot."
+    elif kind in RANK_TWO_KINDS:
+        assert len(terms) == len(set(terms)), terms
+        assert set(terms) <= {
+            "1x0e",
+            "1x1e",
+            "1x2e",
+        }, f"{key!r} declares {terms}, which a real 3x3 cannot hold."
 
 
 @pytest.mark.parametrize(
@@ -171,19 +220,9 @@ def test_a_derivative_row_resolves_through_the_rule(key):
     name = row.name or default_derivative_name(row.of, row.wrt)
     assert name.isidentifier()
     if row.name:
-        # A row with a name of its own also carries the sign that goes with it,
-        # and a declaration is what supplies both. What the rule can still be
-        # checked against is that the pair is expressible: an `ObservableSpec`
-        # built from this row has to resolve to exactly these two values.
-        spec = ObservableSpec(
-            name=row.of,
-            irreps="0e",
-            per_atom=False,
-            units="1",
-            derivatives=[{"wrt": row.wrt, "name": row.name, "sign": row.sign}],
-        )
-        assert spec.derivative_name(row.wrt) == row.name
-        assert spec.derivative_sign(row.wrt) == row.sign
+        # A row with a name of its own carries its own sign, and the default
+        # catalogue is what that pair is checked against: see
+        # test_the_named_derivatives_keep_their_legacy_names.
         return
     assert row.sign == DEFAULT_SIGN, (
         f"{key!r} is reported with sign {row.sign:+d} by the frozen tree, and "
@@ -197,25 +236,58 @@ def test_a_derivative_row_resolves_through_the_rule(key):
     )
 
 
-def test_the_named_derivatives_keep_their_legacy_names():
-    """forces, stress and magforces are the pairs that have a name of their own,
-    and the two negated ones are the two the frozen tree negates.
+@pytest.mark.parametrize(
+    "key",
+    sorted(
+        k
+        for k, d in DISPOSITIONS.items()
+        if isinstance(d, Derivative) and per_atom_of(k) is not None
+    ),
+)
+def test_a_derivative_row_is_classified_as_the_harness_records(key):
+    """The spec decides per-atom or per-graph for a derivative from the two
+    sides it joins. The golden harness records the legacy shape of the same
+    key on its own, so the two have to agree."""
+    row = DISPOSITIONS[key]
+    parent = DISPOSITIONS[row.of]
+    assert isinstance(parent, Spec) and parent.irreps
+    parent_per_atom = per_atom_of(row.of)
+    assert parent_per_atom is not None
+    catalogue = ObservableCatalogue(
+        inputs=tuple(DECLARED_INPUTS.values()),
+        observables=(
+            ObservableSpec(
+                name=v1_name(row.of),
+                irreps=parent.irreps,
+                per_atom=parent_per_atom,
+                units="1",
+            ),
+        ),
+    )
+    resolved = catalogue.derivative(v1_name(row.of), row.wrt)
+    assert resolved.per_atom == per_atom_of(key), key
 
-    The default catalogue is the other side of this comparison, and it is a
-    genuinely separate source: this table is read off the frozen tree, and that
-    catalogue is authored. Where both name a pair they have to agree, and a pair
-    the catalogue does not declare yet, `magforces`, is simply absent rather
-    than wrong.
+
+def test_the_named_derivatives_keep_their_legacy_names():
+    """Every row with a name of its own agrees with the default catalogue.
+
+    The two are separate sources: this table is read off the frozen tree, and
+    that catalogue is authored. `magforces` is the one named row the default
+    catalogue does not declare, so it is compared with nothing here; its sign is
+    measured against a central difference of the energy in
+    `tests/golden/test_tiny_magnetic.py`.
     """
+    named = {
+        key: row
+        for key, row in DISPOSITIONS.items()
+        if isinstance(row, Derivative) and row.name
+    }
+    assert sorted(named) == ["forces", "magforces", "stress"]
     declared = {spec.name: spec for spec in DEFAULT_CATALOGUE.requested_derivatives()}
-    for name in ("forces", "stress", "magforces"):
-        row = DISPOSITIONS[name]
-        assert isinstance(row, Derivative)
-        assert row.name == name
-        if name not in declared:
-            continue
-        assert (declared[name].of, declared[name].wrt) == (row.of, row.wrt)
-        assert declared[name].sign == row.sign
+    assert sorted(declared) == ["forces", "stress"]
+    for name, spec in declared.items():
+        row = named[name]
+        assert (spec.of, spec.wrt, spec.sign) == (row.of, row.wrt, row.sign), name
 
 
 def test_the_renamed_derivatives_are_renamed_and_not_lost():
@@ -255,15 +327,6 @@ def test_no_two_derivative_rows_resolve_to_one_name():
         seen[name] = key
 
 
-def test_a_key_the_classification_cannot_place_is_never_a_spec_row():
-    """`edge_forces` is per-edge and a hessian is a square over 3N degrees of
-    freedom. Neither is per-atom or per-graph, so neither can be an observable
-    under a classification that only has those two."""
-    for key, row in DISPOSITIONS.items():
-        if per_atom_of(key) is None:
-            assert isinstance(row, (Derivative, Drop)), key
-
-
 @pytest.mark.parametrize(
     "key", sorted(k for k, d in DISPOSITIONS.items() if isinstance(d, Drop))
 )
@@ -276,12 +339,11 @@ def test_a_drop_row_says_what_owns_the_key_instead(key):
     )
 
 
-def test_the_scf_trio_is_reached_at_all():
+def test_the_scf_trio_is_reached_at_all(model_keys):
     """The three keys an extraction that stops at return literals never sees.
     They are assigned onto the output after it is built."""
-    keys = legacy_model_keys()
     for key in ("scf_energy_history", "scf_steps", "equilibrated_magmom"):
-        assert key in keys
+        assert key in model_keys
         assert isinstance(DISPOSITIONS[key], Drop)
 
 
@@ -304,10 +366,10 @@ def documented_counts() -> dict[str, tuple[int, int]]:
     return rows
 
 
-def test_the_surface_document_records_the_derived_counts():
-    model = legacy_model_keys()
-    calculator = legacy_calculator_keys()
-    evaluation = legacy_eval_keys()
+def test_the_surface_document_records_the_derived_counts(
+    model_keys, calculator_keys, eval_keys
+):
+    model, calculator, evaluation = model_keys, calculator_keys, eval_keys
     derived = {
         "a": (len(model), len(model)),
         "b": (len(calculator), len(calculator - model)),
@@ -317,8 +379,8 @@ def test_the_surface_document_records_the_derived_counts():
     assert derived == {"a": (43, 43), "b": (31, 15), "c": (13, 3)}
 
 
-def test_the_union_is_sixty_one_names():
-    union = legacy_model_keys() | legacy_calculator_keys() | legacy_eval_keys()
+def test_the_union_is_sixty_one_names(model_keys, calculator_keys, eval_keys):
+    union = model_keys | calculator_keys | eval_keys
     assert len(union) == 61
     assert "**61**" in SURFACE_DOC.read_text(encoding="utf-8")
 

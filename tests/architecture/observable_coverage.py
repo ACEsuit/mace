@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
 
-from mace_core.observables import default_derivative_name
+from mace_core.observables import DEFAULT_CATALOGUE, InputSpec, default_derivative_name
 
 from tests.golden import harness, surface_scan
 
@@ -69,11 +69,17 @@ PER_GRAPH_KINDS = frozenset(
     }
 )
 
-#: The inputs a derivative row may be taken against. ``pos`` and ``strain``
-#: are the two every model has and are declared in the shipped defaults;
+#: The inputs a derivative row may be taken against, by name. ``pos`` and
+#: ``strain`` are the two every model has and come from ``DEFAULT_CATALOGUE``;
 #: ``magmom`` is the third the frozen tree actually differentiates against, and
 #: is declared by whichever configuration turns the magnetic model on.
-DECLARED_INPUTS = frozenset({"pos", "strain", "magmom"})
+DECLARED_INPUTS: dict[str, InputSpec] = {
+    spec.name: spec
+    for spec in (
+        *DEFAULT_CATALOGUE.inputs,
+        InputSpec(name="magmom", irreps="1o", per_atom=True, units="muB"),
+    )
+}
 
 
 @dataclass(frozen=True)

@@ -247,10 +247,11 @@ def test_the_defaults_declare_energy_and_its_two_derivatives():
 
 
 def test_the_default_names_and_signs_come_from_the_declaration_and_not_from_code():
-    """The reason the table was removed: this is now a property of the data.
+    """The names and signs are a property of the declaration.
 
-    If these were still special-cased in code, the assertion would pass with
-    the declaration saying nothing at all.
+    Stripping `name` and `sign` from the default declarations has to fall back
+    to the generated names. If they were special-cased in code, the stripped
+    catalogue would still resolve to `forces` and `stress`.
     """
     resolved = {
         spec.name: spec.sign for spec in DEFAULT_CATALOGUE.requested_derivatives()
@@ -349,8 +350,8 @@ def test_a_new_input_feature_makes_its_derivative_declarable():
     declared inputs rather than over positions and the strain.
 
     It is also the case that pays for the name and the sign living in the
-    declaration. `magforces` used to be a row in a table inside this package,
-    and this catalogue reaches it with no code at all.
+    declaration: nothing in this package knows `magforces`, and this catalogue
+    reaches it with no code at all.
     """
     catalogue = catalogue_from(
         [
