@@ -12,11 +12,31 @@ from mace_core.config.base import (
     read_config_file,
 )
 from mace_core.config.cli import apply_overrides, parse_overrides
+from mace_core.config.model import (
+    AgnesiTransformConfig,
+    BesselBasisConfig,
+    ChebyshevBasisConfig,
+    DistanceTransformConfig,
+    GaussianBasisConfig,
+    NoDistanceTransformConfig,
+    PolynomialCutoffConfig,
+    RadialBasisConfig,
+    SoftTransformConfig,
+)
 
 __all__ = [
+    "AgnesiTransformConfig",
     "BaseConfig",
+    "BesselBasisConfig",
+    "ChebyshevBasisConfig",
     "ConfigError",
     "ConfigSection",
+    "DistanceTransformConfig",
+    "GaussianBasisConfig",
+    "NoDistanceTransformConfig",
+    "PolynomialCutoffConfig",
+    "RadialBasisConfig",
+    "SoftTransformConfig",
     "apply_overrides",
     "parse_overrides",
     "read_config_file",
