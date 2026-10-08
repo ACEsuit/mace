@@ -386,24 +386,23 @@ def test_a_radial_basis_differentiates_twice_everywhere_it_is_reached(
 
 
 def test_the_chebyshev_basis_is_the_polynomial_it_claims_to_be(backend):
-    """The recurrence and the closed form are the same function, away from the
-    endpoints where the closed form can be evaluated at all.
+    """The op is ``T_1 .. T_n`` of the raw length, times the cutoff envelope.
 
-    So exchanging one for the other is a change of arithmetic and not of model:
-    a trained checkpoint computes the same numbers under either.
+    The length is not folded into ``[-1, 1]``, because legacy never folded it:
+    a checkpoint trained with this basis saw the ``cosh`` branch, so the
+    reference has to reproduce it. Compared against torch's own polynomials.
     """
-    from mace_torch.backends.radial import polynomial_cutoff
+    from mace_torch.backends.radial import polynomial_envelope
 
     operation = backend.make_radial_basis(
         RadialBasisDescriptor(kind="chebyshev", num_basis=8, cutoff=5.0)
     )
     lengths = torch.linspace(0.05, 4.95, 40).reshape(-1, 1)
-    folded = torch.clamp(2.0 * lengths / 5.0 - 1.0, -1.0, 1.0)
-    orders = torch.arange(0, 8, dtype=lengths.dtype)
-    closed_form = torch.cos(orders * torch.acos(folded)) * polynomial_cutoff(
-        lengths, 5.0
-    )
-    assert torch.allclose(operation(lengths), closed_form, rtol=0, atol=1e-12)
+    orders = torch.arange(1, 9, dtype=lengths.dtype)
+    polynomials = torch.special.chebyshev_polynomial_t(lengths, orders)
+    envelope = polynomial_envelope(lengths, torch.tensor(5.0), 6)
+    expected = polynomials * envelope
+    torch.testing.assert_close(operation(lengths), expected)
 
 
 def test_the_contraction_writes_its_paths_in_the_enumerated_order(backend):
