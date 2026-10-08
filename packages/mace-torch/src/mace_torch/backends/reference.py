@@ -14,6 +14,7 @@ by holding it.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from typing import cast
 
@@ -26,8 +27,9 @@ from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
 from mace_core.kernels.canonical import (
-    fully_connected_tp_weight_scale,
-    linear_weight_scale,
+    fully_connected_tp_path_normalization,
+    linear_path_normalization,
+    symmetric_contraction_initial_scale,
 )
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.descriptors import (
@@ -89,18 +91,18 @@ def _linear_plan(descriptor: LinearDescriptor):
     return rows, columns, sources, weight, bias_rows
 
 
-def _linear_weight_scales(irreps_in: str, irreps_out: str) -> list[float]:
-    """The canonical scale of every weight of a linear plan, in plan order.
+def _linear_path_normalizations(irreps_in: str, irreps_out: str) -> list[float]:
+    """The forward factor of every weight of a linear plan, in plan order.
 
-    One entry per weight, so the draw is a multiplication rather than a loop
-    over paths. The order is `_linear_plan`'s: output copies outermost, and
-    within one output copy the matching input copies in declaration order.
+    One entry per weight, so the forward applies it as one multiplication. The
+    order is `_linear_plan`'s: output copies outermost, and within one output
+    copy the matching input copies in declaration order.
     """
     source = Irreps.parse(irreps_in)
     target = Irreps.parse(irreps_out)
     scales: list[float] = []
     for out_multiplicity, out_irrep in target:
-        scale = linear_weight_scale(irreps_in, out_irrep)
+        scale = linear_path_normalization(irreps_in, out_irrep)
         for _ in range(out_multiplicity):
             for in_multiplicity, in_irrep in source:
                 if in_irrep != out_irrep:
@@ -109,18 +111,23 @@ def _linear_weight_scales(irreps_in: str, irreps_out: str) -> list[float]:
     return scales
 
 
-def _skip_weight_scales(descriptor: FullyConnectedTPDescriptor) -> list[float]:
-    """The same, for the skip connection, whose fan-in counts both inputs."""
+def _skip_path_normalizations(descriptor: FullyConnectedTPDescriptor) -> list[float]:
+    """The same, for the skip connection, whose fan-in counts both inputs.
+
+    One factor per output irrep, shared by every path landing on it, which is
+    how ``e3nn`` counts the fan-in.
+    """
     source = Irreps.parse(descriptor.irreps_in1)
     target = Irreps.parse(descriptor.irreps_out)
-    num_scalars = Irreps.parse(descriptor.irreps_in2).dimension
     scales: list[float] = []
     for out_multiplicity, out_irrep in target:
+        scale = fully_connected_tp_path_normalization(
+            descriptor.irreps_in1, descriptor.irreps_in2, out_irrep
+        )
         for _ in range(out_multiplicity):
             for in_multiplicity, in_irrep in source:
                 if in_irrep != out_irrep:
                     continue
-                scale = fully_connected_tp_weight_scale(in_multiplicity, num_scalars)
                 scales.extend([scale] * in_multiplicity)
     return scales
 
@@ -146,13 +153,20 @@ def _draw(like: Tensor, seed: int) -> Tensor:
 
 
 class ReferenceLinear(nn.Module):
-    """An equivariant linear map with first-class bias."""
+    """An equivariant linear map with first-class bias.
+
+    The weight is canonical and raw. The forward multiplies each weight by its
+    ``1 / sqrt(fan_in)``, from
+    :func:`~mace_core.kernels.canonical.linear_path_normalization`, before
+    building the map, as ``e3nn`` does, so the gradient with respect to the
+    stored weight is the frozen tree's. The bias is added unscaled.
+    """
 
     row: Tensor
     column: Tensor
     source: Tensor
     bias_row: Tensor
-    weight_scale: Tensor
+    path_normalization: Tensor
 
     def __init__(self, descriptor: LinearDescriptor) -> None:
         super().__init__()
@@ -167,9 +181,11 @@ class ReferenceLinear(nn.Module):
         self.weight = nn.Parameter(torch.zeros(count, dtype=dtype))
         self.bias = nn.Parameter(torch.zeros(len(bias_rows), dtype=dtype))
         self.register_buffer(
-            "weight_scale",
+            "path_normalization",
             torch.tensor(
-                _linear_weight_scales(descriptor.irreps_in, descriptor.irreps_out),
+                _linear_path_normalizations(
+                    descriptor.irreps_in, descriptor.irreps_out
+                ),
                 dtype=dtype,
             ),
             persistent=False,
@@ -178,7 +194,7 @@ class ReferenceLinear(nn.Module):
     def forward(self, features: Tensor) -> Tensor:
         return equivariant_linear(
             features,
-            self.weight,
+            self.weight * self.path_normalization,
             self.row,
             self.column,
             self.source,
@@ -188,14 +204,15 @@ class ReferenceLinear(nn.Module):
         )
 
     def initialize_weights(self, seed: int) -> None:
-        """A standard normal, scaled per path. The bias starts at zero.
+        """A standard normal, unscaled, since the forward applies the fan-in.
+        The bias starts at zero.
 
         A bias is an offset on the scalar outputs, and starting it anywhere
         other than zero would shift the model's energy before it has seen a
         structure. The frozen tree's linear does the same.
         """
         with torch.no_grad():
-            self.weight.copy_(_draw(self.weight, seed) * self.weight_scale)
+            self.weight.copy_(_draw(self.weight, seed))
             self.bias.zero_()
 
     def to_canonical(self) -> dict[str, Tensor]:
@@ -279,16 +296,19 @@ class ReferenceSymmetricContraction(nn.Module):
         self.bases = nn.ModuleList(bases)
 
     def initialize_weights(self, seed: int) -> None:
-        """A standard normal, unscaled.
+        """A standard normal over the block's path count, the frozen tree's draw.
 
-        The symmetric contraction is the one weighted op the canonical layout
-        applies no factor to, so the draw is the frozen tree's own: one normal
-        per element, path and channel. Each tensor of the flat list gets its
-        own offset, or the body orders of one output irrep would start equal.
+        One normal per element, path and channel, divided by the number of
+        paths in its ``(output irrep, body order)`` block, as
+        :func:`~mace_core.kernels.canonical.symmetric_contraction_initial_scale`
+        states. The forward applies no factor. Each tensor of the flat list
+        gets its own offset, or the body orders of one output irrep would
+        start equal.
         """
         with torch.no_grad():
             for position, parameter in enumerate(self.weights):
-                parameter.copy_(_draw(parameter, seed + position))
+                scale = symmetric_contraction_initial_scale(int(parameter.shape[1]))
+                parameter.copy_(_draw(parameter, seed + position) * scale)
 
     def _group(self, position: int) -> list[Tensor]:
         """One output irrep's weights, by integer index.
@@ -358,6 +378,15 @@ def _coupling_coefficients(descriptor: ChannelwiseTPConvDescriptor) -> np.ndarra
     allow, in the pinned irrep order, written into a dense
     ``[paths, dim_out, dim_in, dim_edge]`` array. Dense because this is the
     reference; a backend with a real kernel keeps them sparse.
+
+    Each path carries the factor ``sqrt(2 l_out + 1)`` on its unit-norm
+    Wigner 3j symbol. That is the per-path weight of the frozen tree's
+    ``e3nn`` tensor product, built with ``"component"`` irrep normalization,
+    ``"element"`` path normalization and one ``uvu`` instruction per output
+    term: the fan-in of each instruction is the edge multiplicity, one, so the
+    path weight is ``sqrt(2 l_out + 1)`` exactly. Several paths written to one
+    output irrep here are separate output terms there, so they are summed with
+    that factor each and no further fan-in.
     """
     node = Irreps.parse(descriptor.irreps_node)
     edge = Irreps.parse(descriptor.irreps_edge)
@@ -369,9 +398,9 @@ def _coupling_coefficients(descriptor: ChannelwiseTPConvDescriptor) -> np.ndarra
                 if out_ir not in set(in_ir.couple(edge_ir)):
                     continue
                 block = np.zeros((target.dimension, node.dimension, edge.dimension))
-                block[out_slice, in_slice, edge_slice] = wigner_3j_real(
-                    out_ir.degree, in_ir.degree, edge_ir.degree
-                )
+                block[out_slice, in_slice, edge_slice] = math.sqrt(
+                    out_ir.dimension
+                ) * wigner_3j_real(out_ir.degree, in_ir.degree, edge_ir.degree)
                 paths.append(block)
     if not paths:
         return np.zeros((0, target.dimension, node.dimension, edge.dimension))
@@ -379,11 +408,11 @@ def _coupling_coefficients(descriptor: ChannelwiseTPConvDescriptor) -> np.ndarra
 
 
 class ReferenceChannelwiseTPConv(nn.Module):
+    """The message-passing tensor product. Node-level, always."""
+
     #: Annotated because `register_buffer` alone leaves it typed as a `Module`,
     #: and then reading its shape reads as subscripting a module.
     coefficients: Tensor
-
-    """The message-passing tensor product. Node-level, always."""
 
     def __init__(self, descriptor: ChannelwiseTPConvDescriptor) -> None:
         super().__init__()
@@ -420,18 +449,23 @@ class ReferenceChannelwiseTPConv(nn.Module):
 
 
 class ReferenceFullyConnectedTP(nn.Module):
-    row: Tensor
-    column: Tensor
-    source: Tensor
-    weight_scale: Tensor
-
     """The skip connection's tensor product against the element attributes.
 
     Only the case the models use is built: the second input is scalars, the
     element one-hots, so the product is a per-element linear map. The general
     case raises rather than returning something plausible, because a wrong skip
     connection is a wrong model that still trains.
+
+    The weight is canonical and raw, ``[num_scalars, weights per scalar]``, and
+    the forward multiplies it by the ``1 / sqrt(fan_in)`` of
+    :func:`~mace_core.kernels.canonical.fully_connected_tp_path_normalization`,
+    as ``e3nn`` does.
     """
+
+    row: Tensor
+    column: Tensor
+    source: Tensor
+    path_normalization: Tensor
 
     def __init__(self, descriptor: FullyConnectedTPDescriptor) -> None:
         super().__init__()
@@ -460,12 +494,13 @@ class ReferenceFullyConnectedTP(nn.Module):
         self.register_buffer("source", torch.tensor(sources, dtype=torch.long))
         self.weight = nn.Parameter(torch.zeros(self.num_scalars, count, dtype=dtype))
         self.register_buffer(
-            "weight_scale",
-            torch.tensor(_skip_weight_scales(descriptor), dtype=dtype),
+            "path_normalization",
+            torch.tensor(_skip_path_normalizations(descriptor), dtype=dtype),
             persistent=False,
         )
 
     def forward(self, features: Tensor, attributes: Tensor) -> Tensor:
+        weight = self.weight * self.path_normalization
         empty = features.new_zeros(0)
         empty_rows = self.row.new_zeros(0)
         # Zeros rather than `None`: with no scalar channels to weight by, the
@@ -476,7 +511,7 @@ class ReferenceFullyConnectedTP(nn.Module):
         for scalar in range(self.num_scalars):
             mapped = equivariant_linear(
                 features,
-                self.weight[scalar],
+                weight[scalar],
                 self.row,
                 self.column,
                 self.source,
@@ -488,13 +523,9 @@ class ReferenceFullyConnectedTP(nn.Module):
         return total
 
     def initialize_weights(self, seed: int) -> None:
-        """A standard normal, scaled by the fan-in of both inputs.
-
-        The skip connection sees every element attribute, so its fan-in counts
-        them as well as the node features' multiplicity.
-        """
+        """A standard normal, unscaled, since the forward applies the fan-in."""
         with torch.no_grad():
-            self.weight.copy_(_draw(self.weight, seed) * self.weight_scale)
+            self.weight.copy_(_draw(self.weight, seed))
 
     def to_canonical(self) -> dict[str, Tensor]:
         return {"weight": self.weight.detach()}

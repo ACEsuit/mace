@@ -19,24 +19,32 @@ The canonical form is stated here once:
 The reference backend holds the canonical form directly, so for it both
 functions are views.
 
-**The canonical form carries its normalization folded into the weight.** The
-frozen tree keeps a weight drawn from a standard normal and multiplies it by a
-per-path factor inside the operation; here the factor is already in the number,
-so an operation is a plain contraction and a checkpoint means the same thing
-whatever reads it. That makes the factor part of the format rather than part of
-an implementation, which is why the scales are stated here and used by every
-backend that draws a fresh set of weights.
+**The canonical form holds raw weights, and the normalization lives in the
+forward**, exactly where the frozen tree's ``e3nn`` operations keep it. A
+canonical linear or skip-connection weight is the number ``e3nn`` stores,
+drawn from a standard normal, and every backend multiplies it by a fixed
+per-path factor when it computes. Folding the factor into the weight instead
+gives the same forward and a gradient ``sqrt(fan_in)`` times larger, which is
+a different effective learning rate for that weight and so a different
+training run. The factors are part of the format, which is why they are stated
+here and read by every backend:
 
-The factors are what the frozen tree's ``e3nn`` operations apply:
+* a **linear** map multiplies by ``1 / sqrt(fan_in)``, the total input
+  multiplicity feeding the output irrep, which is ``e3nn``'s ``"element"``
+  path normalization;
+* the **skip connection's** fully connected tensor product multiplies by
+  ``1 / sqrt(fan_in)`` where the fan-in is ``e3nn``'s: the sum of
+  ``multiplicity_in1 * multiplicity_in2`` over every pair of input terms that
+  couples to the output irrep, so every path landing on the same output shares
+  one factor. The second input is scalars, the element attributes, so the
+  ``sqrt(2l + 1)`` of ``"component"`` normalization cancels against the
+  coupling of an irrep with a scalar and does not appear;
+* the **symmetric contraction** multiplies by nothing.
 
-* a **linear** map divides by the square root of the total input multiplicity
-  feeding the output irrep;
-* the **skip connection's** tensor product against the element attributes
-  divides by the square root of the product of the two input multiplicities,
-  because ``e3nn``'s per-instruction factor and the coupling of an irrep with a
-  scalar cancel the output dimension between them;
-* the **symmetric contraction** applies none, so a fresh weight there is a
-  standard normal.
+A fresh draw follows the frozen tree too. Linear and skip-connection weights
+are a standard normal and a bias is zero. A symmetric-contraction weight is a
+standard normal divided by the number of paths in its ``(output irrep, body
+order)`` block, which is a scale on the draw and not on the forward.
 """
 
 from __future__ import annotations
@@ -47,9 +55,9 @@ __all__ = [
     "CANONICAL_LAYOUT",
     "KERNEL_SPEC_VERSION",
     "canonical_weight_shape",
-    "fully_connected_tp_weight_scale",
-    "linear_weight_scale",
-    "symmetric_contraction_weight_scale",
+    "fully_connected_tp_path_normalization",
+    "linear_path_normalization",
+    "symmetric_contraction_initial_scale",
 ]
 
 #: The version of this contract. A backend records it, and a checkpoint carries
@@ -65,19 +73,22 @@ def canonical_weight_shape(
 ) -> tuple[int, int, int]:
     """The shape of a symmetric-contraction weight array, ``[Z, A, mul]``.
 
-    The legacy nested per-``(irrep_out, body order)`` tensors are contiguous
-    slices of this one along the path axis, in the pinned order, so splitting
-    and joining them is free.
+    The per-``(output irrep, body order)`` blocks a backend computes with are
+    contiguous slices of this one along the path axis, in the pinned order:
+    body order outermost, output irrep within it. A backend that consumes them
+    output irrep outermost, as the reference does, has to permute the blocks
+    when it reads and writes this array; it is not a plain split.
     """
     return (num_elements, path_count, num_features)
 
 
-def linear_weight_scale(irreps_in: str, irrep_out: Irrep) -> float:
-    """The factor a fresh linear weight writing to ``irrep_out`` carries.
+def linear_path_normalization(irreps_in: str, irrep_out: Irrep) -> float:
+    """The factor a linear map applies, in the forward, to a weight writing to
+    ``irrep_out``.
 
     An equivariant linear map connects a term only to a term of the same irrep,
     so the fan-in of an output copy is the total multiplicity of the inputs
-    that share its irrep.
+    that share its irrep, summed over every input term carrying it.
 
     Returns:
         ``1 / sqrt(fan_in)``, or ``1.0`` when nothing feeds the irrep, which is
@@ -91,21 +102,40 @@ def linear_weight_scale(irreps_in: str, irrep_out: Irrep) -> float:
     return 1.0 if fan_in == 0 else float(fan_in) ** -0.5
 
 
-def fully_connected_tp_weight_scale(
-    multiplicity_in1: int, multiplicity_in2: int
+def fully_connected_tp_path_normalization(
+    irreps_in1: str, irreps_in2: str, irrep_out: Irrep
 ) -> float:
-    """The factor a fresh skip-connection weight carries.
+    """The factor the skip connection's tensor product applies, in the forward,
+    to every path writing to ``irrep_out``.
 
-    Args:
-        multiplicity_in1: The node features' multiplicity for this path.
-        multiplicity_in2: How many element attributes, the second input's
-            width.
+    ``e3nn``'s ``"element"`` normalization: the fan-in sums
+    ``multiplicity_in1 * multiplicity_in2`` over every pair of input terms whose
+    product contains ``irrep_out``. A first input of ``4x0e+2x0e`` against
+    ``3x0e`` therefore gives both paths into ``0e`` the factor ``1 / sqrt(18)``,
+    not ``1 / sqrt(12)`` and ``1 / sqrt(6)`` each.
+
+    Returns:
+        ``1 / sqrt(fan_in)``, or ``1.0`` when no pair reaches the irrep.
     """
-    product = multiplicity_in1 * multiplicity_in2
-    return 1.0 if product == 0 else float(product) ** -0.5
+    second = Irreps.parse(irreps_in2)
+    fan_in = sum(
+        multiplicity_in1 * multiplicity_in2
+        for multiplicity_in1, irrep_in1 in Irreps.parse(irreps_in1)
+        for multiplicity_in2, irrep_in2 in second
+        if irrep_out in set(irrep_in1.couple(irrep_in2))
+    )
+    return 1.0 if fan_in == 0 else float(fan_in) ** -0.5
 
 
-def symmetric_contraction_weight_scale() -> float:
-    """One. Stated as a function so that a backend reads a scale for every op
-    rather than remembering which of the three is the exception."""
-    return 1.0
+def symmetric_contraction_initial_scale(path_count: int) -> float:
+    """The factor a fresh symmetric-contraction weight block is drawn at.
+
+    A standard normal divided by the number of paths in the ``(output irrep,
+    body order)`` block, the frozen tree's draw. Unlike the two path
+    normalizations above this is a scale on the draw, not on the forward.
+
+    Returns:
+        ``1 / path_count``, or ``1.0`` for a block with no paths, which has no
+        weights for the scale to apply to.
+    """
+    return 1.0 if path_count == 0 else 1.0 / path_count

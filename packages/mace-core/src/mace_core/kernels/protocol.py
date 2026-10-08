@@ -97,10 +97,13 @@ class InternalWeights(Protocol):
     def initialize_weights(self, seed: int) -> None:
         """Draw a fresh set, in the canonical layout and at the canonical scale.
 
-        The scales are :mod:`mace_core.kernels.canonical`'s, so two backends
-        initialised from the same seed differ in their draw and not in the size
-        of what they drew. A backend that used its own scale would train at a
-        different effective learning rate than the checkpoint format implies.
+        The scales are :mod:`mace_core.kernels.canonical`'s: a standard normal
+        for the linear and skip-connection weights, whose ``1 / sqrt(fan_in)``
+        is applied in the forward and never folded into the draw, a zero bias,
+        and a standard normal over the block's path count for the symmetric
+        contraction. Two backends initialised from the same seed then differ in
+        their draw and not in the size of what they drew, and a weight trains
+        at the effective learning rate the frozen tree's does.
 
         Args:
             seed: Chosen by the caller per op, so that two ops of the same shape
@@ -157,8 +160,10 @@ class KernelBackend(Protocol):
         """Real spherical harmonics, or ``None`` to leave them to the reference.
 
         A backend that supplies its own must produce the convention
-        :mod:`mace_core.clebsch_gordan.real_basis` states. Producing a
-        different one is not an optimization, it is a different model.
+        :class:`~mace_core.kernels.descriptors.SphericalHarmonicsDescriptor`
+        states, which is e3nn's with ``normalization="component"``, the one
+        legacy models were trained in. Producing a different one is not an
+        optimization, it is a different model.
         """
         ...
 
