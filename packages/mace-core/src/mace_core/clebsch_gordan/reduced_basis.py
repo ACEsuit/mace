@@ -1,47 +1,13 @@
-"""The reduced symmetric tensor-product basis.
+"""The reduced symmetric tensor-product basis, and the unreduced one beside it.
 
-One basis, every device, every backend. On the frozen tree this basis is
-reachable only when ``cuequivariance`` happens to be installed, so a CPU or AMD
-host silently trains a different and more heavily parametrized network for the
-same hyperparameters: 29 parameters against 86 on the measured grid point.
-Nothing here branches on what is installed, because a basis is model state and
-not a property of the machine.
+The path order, the reduction, the path selection and the per-path
+normalization implemented here are the on-disk weight format. They are stated
+once, in the docstring of :mod:`mace_core.clebsch_gordan`, together with the
+measured anchor; this module implements them and does not restate them.
 
-**The path order and the per-path normalization defined here are the on-disk
-weight format.** Both are stated below, and both are chosen rather than
-inherited:
-
-*Order.* Paths are enumerated by coupling one input factor at a time, outermost
-first, iterating intermediate irreps in the total order of
-:class:`~mace_core.clebsch_gordan.irreps.Irrep` and input slices in the order
-the declaration writes them. The enumeration is therefore a pure function of
-``(irreps_in, correlation, keep_ir)``, with no dependence on dictionary
-iteration or on floating-point comparisons.
-
-*Reduction.* The symmetric product is invariant under permuting its factors, so
-the enumerated paths are linearly dependent. They are symmetrized and then
-reduced by a modified Gram-Schmidt **in enumeration order**, which is what makes
-the surviving set deterministic: an SVD would give the same span with an
-arbitrary basis inside it and a sign that moves between LAPACK versions.
-
-*Selection.* Which of the dependent paths survives is a free choice, and it is
-the one that order and normalization do not pin. Two implementations that
-enumerate differently span the same space with different vectors, and no
-reordering relates them: measured against ``cuequivariance`` on the grid the
-layout ticket uses, four of five points agree up to a signed permutation while
-the fifth needs two small dense blocks, of size 2 and 3, in the ``2e`` slot at
-body order three. So every surviving path carries its :class:`CouplingTree`,
-the sequence of consumed input slices and running intermediate irreps that
-produced it. A label names a path independently of where it sits, which is what
-lets a backend match by name instead of by position and say which trees
-disagreed when they do.
-
-*Normalization.* Each surviving path is scaled to unit Frobenius norm, and its
-sign fixed so that its first structurally non-zero entry is positive.
-
-Verified against the anchor the ticket measures, ``irreps_in=0e+1o+2e+3o`` at
-``correlation=3``: 13 paths for ``0e``, 16 for ``1o``, 20 for ``2e``, and so 29
-for ``keep_ir=0e+1o``. Those are the numbers the legacy cueq-only path produces.
+A call builds the basis of exactly one body order. A model of correlation
+``nu`` builds one per body order ``1 .. nu`` and concatenates their weights in
+ascending body order (:func:`~mace_core.clebsch_gordan.conversion.to_canonical`).
 """
 
 from __future__ import annotations
@@ -70,18 +36,21 @@ __all__ = [
 class CouplingTree:
     """Which coupling path a basis vector came from.
 
-    A path couples the input factors one at a time, outermost last. Step ``k``
-    records the index of the input slice consumed at that step, counting the
-    slices of ``irreps_in`` in the order
-    :meth:`~mace_core.clebsch_gordan.irreps.Irreps.slices` yields them, and the
-    running intermediate irrep that coupling produced. The last step's irrep is
-    therefore the output irrep, and the number of steps is the body order.
+    A path couples the input slices one at a time, and the steps are recorded
+    in that order: step 0 takes one slice as it is, and every later step
+    couples the running irrep with one more slice into a new running irrep.
+    Each step records the index of the slice it consumed, counting the slices
+    of ``irreps_in`` in the order
+    :meth:`~mace_core.clebsch_gordan.irreps.Irreps.slices` yields them, and
+    the running irrep it produced. The last step's irrep is therefore the
+    output irrep, and the number of steps is the body order.
 
     The label is the path's identity in the file format. Positions move when a
     backend segments the weights its own way; a label does not.
 
     Attributes:
-        steps: One ``(slice_index, intermediate)`` pair per coupled factor.
+        steps: One ``(slice_index, intermediate)`` pair per coupled factor, in
+            coupling order.
     """
 
     steps: tuple[tuple[int, Irrep], ...]
@@ -98,7 +67,7 @@ class CouplingTree:
 
     @property
     def factors(self) -> tuple[int, ...]:
-        """The consumed input slices, innermost first."""
+        """The consumed input slices, in coupling order: first coupled first."""
         return tuple(index for index, _ in self.steps)
 
     def __str__(self) -> str:
@@ -171,10 +140,14 @@ def _paths(irreps_in: Irreps, correlation: int, target: Irrep):
 
 
 def symmetrize(path: np.ndarray, correlation: int) -> np.ndarray:
-    """Average a path over the permutations of its input axes.
+    """Sum a path over the permutations of its input axes.
 
     Axis 0 carries the output irrep and is held fixed; the remaining
-    ``correlation`` axes are the interchangeable factors.
+    ``correlation`` axes are the interchangeable factors. The result is the
+    sum, not the average, so it is ``correlation!`` times the symmetric
+    projection. The reduced basis renormalizes every path afterwards, so the
+    factor does not reach it; a caller that needs the projection itself, as
+    :mod:`~mace_core.clebsch_gordan.conversion` does, divides it out.
     """
     total = np.zeros_like(path)
     for order in itertools.permutations(range(1, correlation + 1)):
@@ -380,12 +353,8 @@ def full_symmetric_tensor_product_basis(
     basis, because the legacy command line defaults the reduced flag to false,
     so converting a full-basis artifact is the common path and not the exotic
     one. Its extra directions are pure gauge: they span a larger space but
-    produce the same functions on symmetric inputs.
-
-    On the anchor ``0e+1o+2e+3o`` at correlation 3 summed over body orders, it
-    is 28 paths for ``0e``, 58 for ``1o`` and 73 for ``2e``, against 13, 16 and
-    20 reduced. The 86 of ``keep_ir=0e+1o`` against 29 is the gap that used to
-    open and close with what was installed.
+    produce the same functions on symmetric inputs. The path counts on the
+    measured anchor are in :mod:`mace_core.clebsch_gordan`.
     """
     if correlation < 1:
         raise ValueError(f"correlation must be at least 1, got {correlation}")

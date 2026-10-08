@@ -1,30 +1,37 @@
-"""The Wigner 3j table in the real basis the models actually use.
+"""The Wigner 3j table in the real basis, and the one statement of that basis.
 
 The coefficients in :mod:`mace_core.clebsch_gordan.coefficients` are in the
 complex spherical basis. Everything downstream works over real features, so
-they have to be carried across, and which real basis that is is a convention.
+they are carried to a real basis here. This docstring is the only place the
+convention is stated; the package docstring and the tests point here.
 
-**The convention is the textbook one**, stated here once because two tickets
-depend on it agreeing: components run ``m = -l .. +l``, and the real
-combinations are
+**The combinations.** Components of degree ``l`` run ``m = -l .. +l``, and the
+real combinations are the textbook ones, with the Condon-Shortley phase in the
+complex harmonics:
 
     m < 0:   (i/sqrt2) ( Y_l^m - (-1)^m Y_l^-m )
     m = 0:   Y_l^0
     m > 0:   (1/sqrt2) ( Y_l^-m + (-1)^m Y_l^m )
 
-This is *not* e3nn's basis, and the difference is not a relabelling. Measured
-against ``o3.spherical_harmonics`` on random directions, e3nn agrees up to a
-signed permutation at l = 0 and l = 1 and then diverges: at l = 2 the
-transformation mixes m = 0 with m = +2 through a rotation. Reproducing e3nn
-element for element would mean reproducing its construction, which is a
-different orthogonal basis of the same space carrying no justification beyond
-being the one that library chose.
+**Relation to e3nn.** The harmonics the models evaluate are e3nn's, with
+component normalization and ``y`` as the polar axis; the v1 implementation
+reproduces them (``tests/parity/test_spherical_harmonics_parity.py``). Those
+are exactly the textbook real harmonics above evaluated at the permuted point
+``(z, x, y)``, times ``sqrt(4 pi)``. That permutation is a proper rotation, so
+it acts on each degree by an orthogonal matrix, and a 3j table is an
+intertwiner: it is unchanged when one rotation acts on all three of its
+indices. The tables are therefore correct in either frame, and
+:func:`wigner_3j_real` equals ``e3nn.o3.wigner_3j`` up to one overall sign per
+triple ``(l1, l2, l3)``. Over every triple with degrees up to 5, 26 triples
+differ by that sign and none differ in any other way. A sign per triple is
+absorbed by the weight that multiplies the path, so it is a gauge choice and
+not a numerical difference. ``tests/parity/test_clebsch_gordan_parity.py``
+pins both facts, including which triples flip.
 
-So v1 states its own, and the legacy converter absorbs the difference, exactly
-as it already has to absorb the node embedding's factor of sqrt(num_elements).
-Equivalence is what gets tested: the spans agree and the change of basis is
-orthogonal. Nothing observable depends on which of the two is used, because the
-weights that multiply the basis are learned.
+Comparing the harmonics themselves against e3nn's on random directions shows a
+signed permutation at ``l = 0`` and ``l = 1`` and, at ``l = 2``, a rotation that
+mixes ``m = 0`` with ``m = +2``. That is the change of frame acting on the
+harmonics, not a property of the tables.
 """
 
 from __future__ import annotations

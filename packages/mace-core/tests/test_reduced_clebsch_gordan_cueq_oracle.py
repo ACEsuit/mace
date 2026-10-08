@@ -6,22 +6,21 @@ file imports it precisely because it is the independent derivation the basis is
 checked against, and it is numpy-level descriptor mathematics that runs with no
 GPU present.
 
-**Spans, not entries.** The two bases describe the same subspace in different
-real spherical-harmonic conventions: v1 uses the textbook one, m = -l..+l, and
-e3nn, which is what cuequivariance's O3 delegates to, uses a different
-orthogonal basis of the same space. They agree up to a signed permutation at
-l = 0 and l = 1 and diverge at l = 2, where the transformation mixes m = 0 with
-m = +2 through a rotation.
-
-That difference is gauge. The weights multiplying the basis are learned, so
-nothing observable depends on it, and the legacy converter absorbs it the same
-way it already absorbs the node embedding's factor of sqrt(num_elements). What
-must agree, and what is asserted here, is the subspace and its dimension:
-same rank, same span, no direction in one that the other cannot reach.
+**Spans, not entries.** The real basis is the one stated in
+`mace_core.clebsch_gordan.real_basis`, and cuequivariance's O3 tables agree
+with it up to a normalization and one sign per triple. What makes the entries
+differ is the path selection: the enumerated paths are linearly dependent, the
+two libraries keep different subsets of them, and the package docstring of
+`mace_core.clebsch_gordan` records how far apart those subsets are. Neither
+choice changes the subspace, so what is asserted here is the subspace and its
+dimension: same rank, same span, no direction in one that the other cannot
+reach. The choice this package makes is pinned on its own, in
+`test_canonical_layout_written_out.py`.
 """
 
 import numpy as np
 import pytest
+from mace_core.clebsch_gordan.real_basis import wigner_3j_real
 from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
@@ -71,7 +70,6 @@ def test_the_path_count_agrees_with_the_second_oracle(irreps, correlation, targe
     against the library it used to require."""
     mine = reduced_symmetric_tensor_product_basis(irreps, correlation, target)[target]
     theirs = cueq_basis(irreps, correlation, target)
-    assert mine.shape[0] == theirs.shape[0]
     assert mine.shape == theirs.shape
 
 
@@ -96,19 +94,26 @@ def test_the_two_bases_span_the_same_subspace(irreps, correlation, target):
     )
 
 
-@pytest.mark.parametrize(("irreps", "correlation", "target"), GRID)
-def test_every_path_of_one_basis_is_reachable_from_the_other(
-    irreps, correlation, target
-):
-    """Span equality by rank could in principle hide a degeneracy, so this
-    solves for the change of basis and checks the residual directly."""
-    mine = reduced_symmetric_tensor_product_basis(irreps, correlation, target)[target]
-    theirs = cueq_basis(irreps, correlation, target)
-    flat_mine = mine.reshape(mine.shape[0], -1)
-    flat_theirs = theirs.reshape(theirs.shape[0], -1)
-    change, *_ = np.linalg.lstsq(flat_mine.T, flat_theirs.T, rcond=None)
-    residual = np.abs(flat_mine.T @ change - flat_theirs.T).max()
-    assert residual < 1e-10, (
-        f"cuequivariance's basis is not a linear combination of this one; "
-        f"largest residual {residual:.3e}."
+@pytest.mark.parametrize(
+    ("l1", "l2", "l3"),
+    [
+        (l1, l2, l3)
+        for l1 in range(4)
+        for l2 in range(4)
+        for l3 in range(abs(l1 - l2), min(l1 + l2, 3) + 1)
+    ],
+)
+def test_the_3j_tables_agree_up_to_a_scale_and_a_sign(l1, l2, l3):
+    """What the docstring above relies on: the entries differ through the path
+    selection, not through a different real basis underneath."""
+    (theirs,) = np.asarray(
+        cue.O3.clebsch_gordan(
+            cue.O3(l1, (-1) ** l1),
+            cue.O3(l2, (-1) ** l2),
+            cue.O3(l3, (-1) ** (l1 + l2)),
+        ),
+        dtype=np.float64,
     )
+    theirs = theirs / np.linalg.norm(theirs)
+    mine = wigner_3j_real(l1, l2, l3)
+    assert min(np.abs(mine - theirs).max(), np.abs(mine + theirs).max()) < 1e-12

@@ -5,9 +5,9 @@ Pure numpy and pure Python. This module imports neither ``e3nn`` nor
 and the dependency was a library monopoly rather than a mathematical one.
 
 The coefficients here are in the **complex** spherical basis, indexed by
-``m = -l .. +l``. Turning them into the real basis the models actually use is
-:mod:`mace_core.clebsch_gordan.real_basis`, and that step carries a convention
-question this module deliberately does not answer. See that module.
+``m = -l .. +l``. Carrying them to the real basis is
+:mod:`mace_core.clebsch_gordan.real_basis`, which is where that basis, and its
+relation to e3nn's, is stated.
 
 Exactness. The Racah sum is evaluated over :class:`fractions.Fraction`, so the
 only floating-point operations are one square root and one multiplication per
