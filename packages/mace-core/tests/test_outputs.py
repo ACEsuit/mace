@@ -117,6 +117,33 @@ def test_extras_may_not_shadow_a_core_field(key):
         MACEOutput(extras={key: np.zeros(3)})
 
 
+# Every way of putting a key into `extras` after construction. The derivative
+# engine fills outputs after the model returned, so this is the main path and
+# not an edge case.
+WRITES_AFTER_CONSTRUCTION = {
+    "item": lambda output, key: output.extras.__setitem__(key, np.zeros(3)),
+    "update": lambda output, key: output.extras.update({key: np.zeros(3)}),
+    "setdefault": lambda output, key: output.extras.setdefault(key, np.zeros(3)),
+    "reassign": lambda output, key: setattr(output, "extras", {key: np.zeros(3)}),
+}
+
+
+@pytest.mark.parametrize("write", sorted(WRITES_AFTER_CONSTRUCTION))
+@pytest.mark.parametrize(
+    ("key", "match"),
+    [
+        ("forces", "cannot also be"),
+        ("energy", "cannot also be"),
+        ("node_energy", "retired"),
+    ],
+)
+def test_the_extras_guard_holds_when_extras_is_filled_later(write, key, match):
+    output = MACEOutput[np.ndarray]()
+    with pytest.raises(ValueError, match=match):
+        WRITES_AFTER_CONSTRUCTION[write](output, key)
+    assert key not in output.extras
+
+
 def test_a_name_that_is_not_a_core_field_is_fine_in_extras():
     """Deliberately not a near-miss of a field name. `node_energy` would be a
     bad example here: it is the legacy spelling of `node_energies`, so using it

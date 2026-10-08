@@ -30,13 +30,20 @@ __all__ = [
 #: "invalid" leaves the reader to guess between four plausible spellings.
 IRREPS_GRAMMAR = (
     "a '+'-separated sum of terms, each written '<l><parity>' or "
-    "'<multiplicity>x<l><parity>', where <l> is a non-negative integer and "
-    "<parity> is 'e' (even) or 'o' (odd). Examples: '0e' (a scalar), '1o' (a "
+    "'<multiplicity>x<l><parity>', where <multiplicity> is a positive integer, "
+    "<l> is a non-negative integer, both are written in ASCII digits with no "
+    "leading zeros, and <parity> is 'e' (even) or 'o' (odd). Examples: '0e' (a "
+    "scalar), '1o' (a "
     "polar vector), '1e' (an axial vector), '0e+2e' (a symmetric rank-2 "
     "tensor), '128x0e+128x1o+128x2e'."
 )
 
-_TERM = re.compile(r"^(?:(\d+)x)?(\d+)([eo])$")
+#: ``[0-9]`` rather than ``\d``, which also matches non-ASCII digits that
+#: ``int`` would then accept. A multiplicity of zero spans no components, and a
+#: leading zero makes ``007e`` read as ``l = 7``; both are refused.
+_TERM = re.compile(r"^(?:([1-9][0-9]*)x)?(0|[1-9][0-9]*)([eo])$")
+
+_PARITIES = ("e", "o")
 
 
 class IrrepsGrammarError(ValueError):
@@ -53,13 +60,38 @@ class IrrepTerm:
             components.
         parity: ``"e"`` or ``"o"``, the behaviour under inversion. The
             distinction is load-bearing rather than decorative: a force is
-            ``1o`` and a magnetic moment is ``1e``, and a model that confuses
+            ``1o`` and an angular momentum is ``1e``, and a model that confuses
             them is wrong under inversion while looking right under rotation.
+
+    Raises:
+        IrrepsGrammarError: If ``multiplicity`` is not a positive integer,
+            ``degree`` is not a non-negative integer, or ``parity`` is not
+            ``"e"`` or ``"o"``. Checked on construction, so a term built
+            directly is held to the same rules as one parsed from a string.
     """
 
     multiplicity: int
     degree: int
     parity: str
+
+    def __post_init__(self) -> None:
+        # `bool` is a subclass of `int`, so `True` would otherwise pass as 1.
+        if type(self.multiplicity) is not int or self.multiplicity < 1:
+            raise IrrepsGrammarError(
+                f"an irreps term has multiplicity {self.multiplicity!r}. The "
+                f"multiplicity is a positive integer: a term with none spans "
+                f"no components."
+            )
+        if type(self.degree) is not int or self.degree < 0:
+            raise IrrepsGrammarError(
+                f"an irreps term has degree {self.degree!r}. The degree l is a "
+                f"non-negative integer."
+            )
+        if self.parity not in _PARITIES:
+            raise IrrepsGrammarError(
+                f"an irreps term has parity {self.parity!r}. The parity is "
+                f"'e' (even) or 'o' (odd)."
+            )
 
     @property
     def dimension(self) -> int:

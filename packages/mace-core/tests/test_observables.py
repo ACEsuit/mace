@@ -12,6 +12,7 @@ from mace_core.observables import (
     DerivativeRequest,
     InputSpec,
     IrrepsGrammarError,
+    IrrepTerm,
     ObservableCatalogue,
     ObservableSpec,
     default_derivative_name,
@@ -64,10 +65,46 @@ def test_a_term_keeps_its_written_order_and_its_parity():
     ]
 
 
-@pytest.mark.parametrize("text", ["", "   ", "1", "1x", "x0e", "0e+", "1u", "-1o"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "   ",
+        "1",
+        "1x",
+        "x0e",
+        "0e+",
+        "1u",
+        "-1o",
+        # A multiplicity of zero spans no components.
+        "0x1o",
+        "2x0e+0x1o",
+        # A leading zero would make `007e` read as l = 7.
+        "007e",
+        "01x0e",
+        # Non-ASCII digits, which `int` would otherwise accept.
+        "\u0661o",
+    ],
+)
 def test_a_malformed_declaration_is_rejected(text):
     with pytest.raises(IrrepsGrammarError):
         parse_irreps(text)
+
+
+@pytest.mark.parametrize(
+    ("multiplicity", "degree", "parity"),
+    [
+        (0, 1, "o"),
+        (-2, 1, "o"),
+        (1, -1, "e"),
+        (1, 0, "x"),
+        (True, 0, "e"),
+        (1, 1.0, "o"),
+    ],
+)
+def test_a_term_built_directly_is_held_to_the_grammar(multiplicity, degree, parity):
+    with pytest.raises(IrrepsGrammarError):
+        IrrepTerm(multiplicity=multiplicity, degree=degree, parity=parity)
 
 
 def test_a_grammar_error_names_the_observable_and_the_grammar():
@@ -180,9 +217,10 @@ def test_a_name_without_a_sign_is_refused():
         DerivativeRequest(wrt="pos", name="forces")
 
 
-@pytest.mark.parametrize("sign", [0, 2, -3])
-def test_a_sign_that_is_not_plus_or_minus_one_is_refused(sign):
-    with pytest.raises(ValidationError, match="A sign is \\+1 or -1"):
+@pytest.mark.parametrize("sign", [0, 2, -3, True, False, 1.0, -1.0, "-1"])
+def test_a_sign_that_is_not_the_integer_plus_or_minus_one_is_refused(sign):
+    """`True` and `1.0` compare equal to 1, and pydantic would coerce `"-1"`."""
+    with pytest.raises(ValidationError, match="A sign is the integer \\+1 or -1"):
         DerivativeRequest(wrt="pos", name="forces", sign=sign)
 
 
@@ -254,26 +292,56 @@ def test_the_default_stress_row_is_the_positive_strain_gradient():
 # ---------------------------------------------------------------------------
 
 
+QUADRUPOLE_ROW = {
+    "name": "quadrupole",
+    "irreps": "0e+2e",
+    "per_atom": True,
+    "units": "e*Å^2",
+}
+
+
 def test_a_new_rank_two_per_atom_observable_is_one_declaration():
-    catalogue = catalogue_from(
-        [
-            {
-                "name": "quadrupole",
-                "irreps": "0e+2e",
-                "per_atom": True,
-                "units": "e*Å^2",
-                "derivatives": ["pos", "strain"],
-            }
-        ]
-    )
+    catalogue = catalogue_from([{**QUADRUPOLE_ROW, "derivatives": ["strain"]}])
     quadrupole = catalogue.observable("quadrupole")
     assert quadrupole.per_atom is True
     assert quadrupole.dimension == 6
-    assert catalogue.names() == (
-        "quadrupole",
-        "d_quadrupole_d_pos",
-        "d_quadrupole_d_strain",
+    assert catalogue.names() == ("quadrupole", "d_quadrupole_d_strain")
+    derivative = catalogue.derivative("quadrupole", "strain")
+    # One value per atom: a per-atom quantity against a per-graph input.
+    assert derivative.per_atom is True
+    # Not a scalar, so the irreps are a tensor product this package does not
+    # compute.
+    assert derivative.irreps is None
+
+
+def test_a_per_atom_scalar_against_the_strain_is_per_atom():
+    """The case the frozen tree's per-atom stresses belong to: one strain
+    derivative per atom, carrying the strain's irreps."""
+    catalogue = catalogue_from(
+        [{"name": "site_energy", "irreps": "0e", "per_atom": True, "units": "eV"}]
     )
+    derivative = catalogue.derivative("site_energy", "strain")
+    assert derivative.per_atom is True
+    assert derivative.irreps == "0e+2e"
+
+
+def test_a_per_atom_observable_against_a_per_atom_input_is_refused():
+    """d(per-atom q)/d(pos) is an (n_atoms, n_atoms, ...) block, which neither
+    classification describes. Requested, it is refused at declaration."""
+    with pytest.raises(ValidationError) as caught:
+        catalogue_from([{**QUADRUPOLE_ROW, "derivatives": ["pos"]}])
+    message = str(caught.value)
+    assert "'quadrupole'" in message
+    assert "'pos'" in message
+    assert "n_atoms, n_atoms" in message
+
+
+def test_an_unrepresentable_derivative_cannot_be_resolved_either():
+    """Naming works for a pair nobody requested, so the refusal has to hold
+    there too, or a consumer could still be handed a wrong classification."""
+    catalogue = catalogue_from([QUADRUPOLE_ROW])
+    with pytest.raises(ValueError, match="n_atoms, n_atoms"):
+        catalogue.derivative("quadrupole", "pos")
 
 
 def test_a_new_input_feature_makes_its_derivative_declarable():
@@ -328,7 +396,10 @@ def test_a_derivative_against_an_undeclared_input_is_an_error():
     assert "['pos', 'strain']" in message
 
 
-def test_a_derived_name_may_not_collide_with_a_declared_observable():
+@pytest.mark.parametrize("requested", [["pos"], []])
+def test_an_observable_may_not_wear_a_generated_derivative_name(requested):
+    """Whether or not the derivative it names was requested: the spelling
+    claims the observable is d(energy)/d(pos), and a declared row is not."""
     with pytest.raises(ValidationError) as caught:
         catalogue_from(
             [
@@ -338,10 +409,47 @@ def test_a_derived_name_may_not_collide_with_a_declared_observable():
                     "per_atom": True,
                     "units": "eV/Å",
                 },
-                {**ENERGY_ROW, "derivatives": ["pos"]},
+                {**ENERGY_ROW, "derivatives": requested},
             ]
         )
     assert "'d_energy_d_pos'" in str(caught.value)
+    assert "spelled like a generated derivative name" in str(caught.value)
+
+
+def test_an_observable_may_not_share_a_name_with_an_input():
+    with pytest.raises(ValidationError) as caught:
+        catalogue_from(
+            [{"name": "pos", "irreps": "1o", "per_atom": True, "units": "Å"}]
+        )
+    assert "observable 'pos' has the name of a declared input" in str(caught.value)
+
+
+def test_a_declared_derivative_name_may_not_share_a_name_with_an_input():
+    with pytest.raises(ValidationError) as caught:
+        catalogue_from(
+            [
+                {
+                    **ENERGY_ROW,
+                    "derivatives": [{"wrt": "pos", "name": "strain", "sign": -1}],
+                }
+            ]
+        )
+    assert "'strain'" in str(caught.value)
+    assert "already the name of a declared input" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("name", "instead"), [("total_energy", "energy"), ("node_energy", "node_energies")]
+)
+def test_a_name_the_output_type_reserves_is_refused(name, instead):
+    """`total_energy` is where `energy` is stored and `node_energy` is a retired
+    spelling. Either would pass here and fail only when a model filled it."""
+    with pytest.raises(ValidationError) as caught:
+        ObservableSpec(name=name, irreps="0e", per_atom=False, units="eV")
+    assert f"Use {instead!r} instead" in str(caught.value)
+    with pytest.raises(ValidationError) as caught:
+        DerivativeRequest(wrt="pos", name=name, sign=-1)
+    assert f"Use {instead!r} instead" in str(caught.value)
 
 
 def test_a_declared_name_may_not_collide_with_a_declared_observable():

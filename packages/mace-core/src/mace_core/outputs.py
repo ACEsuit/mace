@@ -26,6 +26,7 @@ Units follow the project convention: eV, Å, and eV/Å for a force.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field, fields
 from typing import Generic, TypeVar
 
@@ -35,6 +36,7 @@ __all__ = [
     "OBSERVABLE_BY_FIELD",
     "RETIRED_NAMES",
     "MACEOutput",
+    "OutputExtras",
     "TensorT",
 ]
 
@@ -42,6 +44,64 @@ __all__ = [
 #: "something with a .shape" would be a structural claim about torch and jax
 #: that this package cannot check and does not need.
 TensorT = TypeVar("TensorT")
+
+
+def _check_extras_key(name: str) -> None:
+    """Reject an ``extras`` key that a core field already owns, or a retired one.
+
+    Writing ``extras["forces"]`` is otherwise silent: the value is stored,
+    ``output.forces`` stays ``None``, and every consumer that reads the field
+    sees nothing. A retired spelling such as ``node_energy`` is the same fault
+    one rename away: the value sits beside the field holding the same quantity.
+    """
+    field_name = FIELD_BY_OBSERVABLE.get(name, name)
+    if field_name in CORE_FIELD_NAMES:
+        raise ValueError(
+            f"{name!r} is stored in the core field {field_name!r} of MACEOutput "
+            f"and cannot also be a key of `extras`: a consumer reading the "
+            f"field would see nothing. Assign `output.{field_name}` instead."
+        )
+    if name in RETIRED_NAMES:
+        raise ValueError(
+            f"{name!r} is a spelling this type retired and cannot be a key of "
+            f"`extras`: the value would sit beside the field holding the same "
+            f"quantity. Assign the field instead ({name} -> "
+            f"{RETIRED_NAMES[name]})."
+        )
+
+
+class OutputExtras(MutableMapping[str, TensorT], Generic[TensorT]):
+    """The ``extras`` of a :class:`MACEOutput`: a dictionary that checks its keys.
+
+    Every way of adding a key goes through :meth:`__setitem__`, including
+    ``update`` and ``setdefault``, so a key a core field owns is refused when
+    the derivative engine fills ``extras`` after the model call, not only when
+    the output is constructed.
+    """
+
+    def __init__(self, values: Mapping[str, TensorT] | None = None) -> None:
+        self._values: dict[str, TensorT] = {}
+        if values is not None:
+            self.update(values)
+
+    def __getitem__(self, name: str) -> TensorT:
+        return self._values[name]
+
+    def __setitem__(self, name: str, value: TensorT) -> None:
+        _check_extras_key(name)
+        self._values[name] = value
+
+    def __delitem__(self, name: str) -> None:
+        del self._values[name]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __repr__(self) -> str:
+        return f"OutputExtras({self._values!r})"
 
 
 @dataclass
@@ -70,7 +130,10 @@ class MACEOutput(Generic[TensorT]):
             inventory carries the measurement.
         dipole: Total dipole per graph, shape ``(n_graphs, 3)``.
         extras: Every other declared observable, keyed by its
-            :class:`~mace_core.observables.ObservableSpec` name.
+            :class:`~mace_core.observables.ObservableSpec` name. Always an
+            :class:`OutputExtras`: a mapping passed in, or assigned later, is
+            copied into a new one, so a key a core field owns or a retired
+            spelling is refused however it arrives.
 
     The object is mutable on purpose. Forces and stress are computed by a
     derivative engine *around* the model call rather than inside a module's
@@ -84,38 +147,14 @@ class MACEOutput(Generic[TensorT]):
     stress: TensorT | None = None
     virials: TensorT | None = None
     dipole: TensorT | None = None
-    extras: dict[str, TensorT] = field(default_factory=dict)
+    extras: MutableMapping[str, TensorT] = field(default_factory=OutputExtras)
 
-    def __post_init__(self) -> None:
-        """Reject an ``extras`` key that a core field already owns.
-
-        Writing ``extras["forces"]`` is otherwise silent: the value is stored,
-        ``output.forces`` stays ``None``, and every consumer that reads the
-        field sees nothing. That is the shape of bug this class exists to
-        remove, so it is an error at construction instead.
-        """
-        shadowed = sorted(
-            name
-            for name in self.extras
-            if FIELD_BY_OBSERVABLE.get(name, name) in CORE_FIELD_NAMES
-        )
-        if shadowed:
-            raise ValueError(
-                f"{shadowed} are core fields of MACEOutput and cannot also be "
-                f"keys of `extras`: a consumer reading the field would see "
-                f"nothing. Assign them as fields instead."
-            )
-        retired = sorted(name for name in self.extras if name in RETIRED_NAMES)
-        if retired:
-            replacements = ", ".join(
-                f"{name} -> {RETIRED_NAMES[name]}" for name in retired
-            )
-            raise ValueError(
-                f"{retired} are spellings this type retired and cannot be keys "
-                f"of `extras`: the value would sit beside the field holding the "
-                f"same quantity, which is the dual storage the rename exists to "
-                f"prevent. Assign the field instead ({replacements})."
-            )
+    def __setattr__(self, name: str, value: object) -> None:
+        # The dataclass constructor assigns through here too, so this one
+        # conversion covers construction and a later `output.extras = {...}`.
+        if name == "extras":
+            value = OutputExtras(value)  # ty: ignore[invalid-argument-type]
+        super().__setattr__(name, value)
 
     def get(self, name: str) -> TensorT | None:
         """The value stored under ``name``, or ``None`` if there is none.

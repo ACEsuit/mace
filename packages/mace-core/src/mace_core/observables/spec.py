@@ -18,18 +18,29 @@ Three objects, and they do different jobs:
 
 ``DerivativeSpec``
     derived, never declared: the result of asking an observable for its
-    derivative with respect to an input. Its name and sign come from
-    :mod:`mace_core.observables.derivatives`.
+    derivative with respect to an input. Its name and sign are the ones the
+    observable's :class:`DerivativeRequest` declares, and otherwise the
+    ``d_<q>_d_<x>`` rule of :mod:`mace_core.observables.derivatives` with the
+    gradient's own sign.
 
-``ObservableCatalogue`` holds a set of them and is what the defaults file loads
-into. Validation lives there rather than in the individual specs because the
-interesting errors are between rows: a derivative asked against an input nobody
-declared, or two rows whose derived names collide.
+``ObservableCatalogue`` holds a set of inputs and observables;
+:data:`~mace_core.observables.DEFAULT_CATALOGUE` is one, declared in
+:mod:`mace_core.observables.defaults`. Validation of a single row lives on the
+row, and validation between rows lives on the catalogue: a derivative asked
+against an input nobody declared, a per-atom quantity differentiated against a
+per-atom input, or two names that collide.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from mace_core.observables.derivatives import (
     DEFAULT_SIGN,
@@ -41,6 +52,7 @@ from mace_core.observables.grammar import (
     irreps_dimension,
     parse_irreps,
 )
+from mace_core.outputs import OBSERVABLE_BY_FIELD, RETIRED_NAMES
 
 __all__ = [
     "DerivativeRequest",
@@ -53,12 +65,30 @@ __all__ = [
 _SCALAR = (IrrepTerm(multiplicity=1, degree=0, parity="e"),)
 
 
+#: Names :class:`~mace_core.outputs.MACEOutput` uses for storage but that are
+#: not observable names, mapped to the name to declare instead. Declaring one
+#: would pass here and fail only when a model filled ``extras`` under it.
+_STORAGE_ONLY_NAMES: dict[str, str] = {**OBSERVABLE_BY_FIELD, **RETIRED_NAMES}
+
+
 def _check_name(value: str, kind: str) -> str:
     if not value.isidentifier():
         raise ValueError(
             f"{kind} name {value!r} is not usable: a name must be a valid "
             f"Python identifier, because it is also the key the value is "
             f"stored under and part of any derivative name derived from it."
+        )
+    return value
+
+
+def _check_output_name(value: str, kind: str) -> str:
+    """Check a name that a model output is stored under."""
+    _check_name(value, kind)
+    if value in _STORAGE_ONLY_NAMES:
+        raise ValueError(
+            f"{kind} name {value!r} is not usable: MACEOutput reserves it, "
+            f"and a value declared under it could not be stored. Use "
+            f"{_STORAGE_ONLY_NAMES[value]!r} instead."
         )
     return value
 
@@ -98,10 +128,9 @@ class InputSpec(BaseModel):
 class DerivativeRequest(BaseModel):
     """A derivative an observable asks for.
 
-    Both the name and the sign belong to the declaration. Deriving them from a
-    table in code was the same fact written three times, and it meant a
-    quantity with a name of its own could not be added without editing this
-    package. The name is still decided **once**, here, and every consumer reads
+    Both the name and the sign belong to the declaration, so a derivative with
+    a name of its own, ``forces`` or ``magforces``, is added without editing
+    this package. The name is decided **once**, here, and every consumer reads
     it off the resolved spec, so nothing about this lets a consumer invent one.
 
     Giving a ``name`` obliges the declaration to give a ``sign`` too. A renamed
@@ -118,7 +147,9 @@ class DerivativeRequest(BaseModel):
     #: ``d_<quantity>_d_<input>``.
     name: str | None = None
     #: ``reported = sign * d(quantity)/d(input)``, either ``+1`` or ``-1``.
-    #: ``None`` takes the gradient's own sign.
+    #: ``None`` takes the gradient's own sign. Only the integers ``1`` and
+    #: ``-1`` are accepted: ``True``, ``1.0`` and ``"-1"`` are refused rather
+    #: than coerced into a sign.
     sign: int | None = None
     #: Left to the declaration. Deriving it would mean unit algebra over the
     #: quantity and the input, which this ticket does not own.
@@ -132,16 +163,23 @@ class DerivativeRequest(BaseModel):
             return {"wrt": value}
         return value
 
+    @field_validator("sign", mode="before")
+    @classmethod
+    def _check_sign(cls, value: object, info: ValidationInfo) -> object:
+        # `type(...) is int` rather than `isinstance`: `bool` is an `int`.
+        if value is not None and (type(value) is not int or value not in (1, -1)):
+            raise ValueError(
+                f"the derivative with respect to {info.data.get('wrt')!r} "
+                f"declares sign {value!r}. A sign is the integer +1 or -1; a "
+                f"scale factor is not a sign and belongs to whatever computes "
+                f"the quantity."
+            )
+        return value
+
     @model_validator(mode="after")
     def _validate(self) -> DerivativeRequest:
-        if self.sign is not None and self.sign not in (1, -1):
-            raise ValueError(
-                f"the derivative with respect to {self.wrt!r} declares sign "
-                f"{self.sign!r}. A sign is +1 or -1; a scale factor is not a "
-                f"sign and belongs to whatever computes the quantity."
-            )
         if self.name is not None:
-            _check_name(self.name, "derivative")
+            _check_output_name(self.name, "derivative")
             if self.sign is None:
                 raise ValueError(
                     f"the derivative with respect to {self.wrt!r} is named "
@@ -173,8 +211,12 @@ class DerivativeSpec(BaseModel):
     wrt: str
     #: ``reported = sign * d(of)/d(wrt)``.
     sign: int
-    #: Inherited from the input: a derivative against a per-atom input has one
-    #: value per atom, whatever the differentiated quantity is.
+    #: ``True`` when either side is per-atom. A per-graph quantity against a
+    #: per-atom input (the energy against the positions) has one value per
+    #: atom, and so does a per-atom quantity against a per-graph input (a
+    #: per-atom energy against the strain). A per-atom quantity against a
+    #: per-atom input is an ``(n_atoms, n_atoms, ...)`` block, which neither
+    #: classification describes, and the catalogue refuses it.
     per_atom: bool
     #: Known when the differentiated quantity is a single scalar, in which case
     #: the gradient carries the input's irreps. ``None`` otherwise, because the
@@ -210,7 +252,15 @@ class ObservableSpec(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self) -> ObservableSpec:
-        _check_name(self.name, "observable")
+        _check_output_name(self.name, "observable")
+        if is_default_shaped_name(self.name):
+            raise ValueError(
+                f"observable name {self.name!r} is spelled like a generated "
+                f"derivative name, `d_<quantity>_d_<input>`, which states that "
+                f"it is the derivative of a declared quantity. If it is one, "
+                f"request it in that quantity's `derivatives`; otherwise "
+                f"rename it."
+            )
         parse_irreps(self.irreps, observable=self.name)
         seen: set[str] = set()
         for request in self.derivatives:
@@ -275,7 +325,14 @@ class ObservableCatalogue(BaseModel):
         self._reject_duplicates([spec.name for spec in self.inputs], "input")
         self._reject_duplicates([spec.name for spec in self.observables], "observable")
         declared = {spec.name for spec in self.inputs}
-        taken = {spec.name for spec in self.observables}
+        for observable in self.observables:
+            if observable.name in declared:
+                raise ValueError(
+                    f"observable {observable.name!r} has the name of a declared "
+                    f"input. An input and an output cannot share a key; rename "
+                    f"one of them."
+                )
+        taken = declared | {spec.name for spec in self.observables}
         for observable in self.observables:
             for request in observable.derivatives:
                 if request.wrt not in declared:
@@ -285,13 +342,15 @@ class ObservableCatalogue(BaseModel):
                         f"not a declared input. Declare it under `inputs`, or "
                         f"use one of {sorted(declared)}."
                     )
+                _derivative_per_atom(observable, self.input(request.wrt))
                 name = observable.derivative_name(request.wrt)
                 if name in taken:
                     raise ValueError(
                         f"the derivative of {observable.name!r} with respect "
                         f"to {request.wrt!r} is named {name!r}, which is "
-                        f"already taken. Rename the observable that holds it, "
-                        f"or drop the derivative."
+                        f"already the name of a declared input, observable or "
+                        f"derivative. Rename one of them, or drop the "
+                        f"derivative."
                     )
                 taken.add(name)
         return self
@@ -333,6 +392,10 @@ class ObservableCatalogue(BaseModel):
         Naming and signing are properties of the pair, not of the request, so a
         consumer can ask what a derivative *would* be called without the
         declaration having listed it.
+
+        Raises:
+            KeyError: If the observable or the input is not declared.
+            ValueError: If both are per-atom, which is not representable.
         """
         spec = self.observable(observable)
         input_spec = self.input(wrt)
@@ -344,7 +407,7 @@ class ObservableCatalogue(BaseModel):
             of=spec.name,
             wrt=wrt,
             sign=spec.derivative_sign(wrt),
-            per_atom=input_spec.per_atom,
+            per_atom=_derivative_per_atom(spec, input_spec),
             irreps=input_spec.irreps if spec.is_scalar else None,
             units=request.units,
         )
@@ -362,3 +425,23 @@ class ObservableCatalogue(BaseModel):
         return tuple(spec.name for spec in self.observables) + tuple(
             spec.name for spec in self.requested_derivatives()
         )
+
+
+def _derivative_per_atom(observable: ObservableSpec, input_spec: InputSpec) -> bool:
+    """Whether ``d(observable)/d(input)`` has one value per atom.
+
+    Raises:
+        ValueError: If both are per-atom. Each atom's value then depends on
+            every atom's input, an ``(n_atoms, n_atoms, ...)`` block that is
+            neither per-atom nor per-graph.
+    """
+    if observable.per_atom and input_spec.per_atom:
+        raise ValueError(
+            f"the derivative of the per-atom observable {observable.name!r} "
+            f"with respect to the per-atom input {input_spec.name!r} has one "
+            f"block per pair of atoms, shape (n_atoms, n_atoms, ...), which "
+            f"this specification cannot represent. Differentiate a per-graph "
+            f"quantity against {input_spec.name!r}, or differentiate "
+            f"{observable.name!r} against a per-graph input such as the strain."
+        )
+    return observable.per_atom or input_spec.per_atom
