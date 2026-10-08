@@ -83,16 +83,38 @@ A per-system input (total charge, spin, electronic temperature) uses the same re
 
 The magnetic model does **not** read out a magnetic moment: its only readout is **energy** (invariant
 scalars). The magnetic output is the moment's **conjugate force**, `magforces = −dE/dmagmom`, obtained
-by autograd exactly like `forces = −dE/dpositions`. It is a per-atom `1o` vector, declared as a
-derivative observable:
+by autograd exactly like `forces = −dE/dpositions`. It is a per-atom `1o` vector. A derivative is
+requested on the observable it differentiates, so `magforces` is one more request on the energy,
+beside the `forces` and `stress` the default catalogue already asks for:
 
 ```python
 # mace_torch/extras/magnetic/observables.py  — the extra ships its own declarations
-from mace_core.observables import DerivativeRequest, InputSpec
+from mace_core.observables import (
+    DEFAULT_CATALOGUE,
+    DerivativeRequest,
+    InputSpec,
+    ObservableCatalogue,
+    ObservableSpec,
+)
 
 MAGMOM = InputSpec(name="magmom", irreps="1o", per_atom=True, units="muB")
-# -dE/dmagmom, declared on the energy: a per-atom vector like the moment itself
-MAGFORCES = DerivativeRequest(wrt="magmom", name="magforces", sign=-1, units="eV/muB")
+
+_DEFAULT_ENERGY = DEFAULT_CATALOGUE.observable("energy")
+# -dE/dmagmom, requested on the energy: a per-atom vector like the moment itself
+ENERGY = ObservableSpec(
+    name="energy",
+    irreps="0e",
+    per_atom=False,
+    units="eV",
+    derivatives=(
+        *_DEFAULT_ENERGY.derivatives,  # forces, stress
+        DerivativeRequest(wrt="magmom", name="magforces", sign=-1, units="eV/muB"),
+    ),
+)
+
+MAGNETIC_CATALOGUE = ObservableCatalogue(
+    inputs=(*DEFAULT_CATALOGUE.inputs, MAGMOM), observables=(ENERGY,)
+)
 ```
 
 ```toml

@@ -134,8 +134,8 @@ class Derivative:
             gets wrong is either a misclassified row or a real gap in the
             grammar, and both have to be resolved rather than recorded.
         name: What v1 calls it, when that is not the rule's own
-            ``d_<of>_d_<wrt>``. Stated here rather than read out of the
-            declarations file on purpose: this table is the independent
+            ``d_<of>_d_<wrt>``. Stated here rather than read out of
+            ``DEFAULT_CATALOGUE`` on purpose: this table is the independent
             statement of what the frozen tree does, and a test that derived
             both sides from the same source would agree with itself.
         note: Why the row is worth a second look, where it is.
@@ -238,8 +238,29 @@ DISPOSITIONS: dict[str, Disposition] = {
             "for the head that produces them."
         ),
     ),
-    "atomic_virials": Spec(irreps="0e+2e"),
-    "atomic_stresses": Spec(irreps="0e+2e"),
+    "atomic_virials": Spec(
+        irreps="0e+2e",
+        note=(
+            "an observable and not the strain derivative of `node_energy`, "
+            "although the spec can name that derivative, per-atom, as "
+            "`d_node_energies_d_strain`. The two are different splits of one "
+            "total. `get_atomic_virials_stresses` gives each edge's virial "
+            "half to its sender and half to its receiver "
+            "(mace/modules/utils.py:411-418), while d(e_i)/d(strain) "
+            "differentiates atom i's own energy through every edge it depends "
+            "on. Measured on the tiny_scaleshift anchor over triclinic_bulk: "
+            "both sum to the total virial to 2e-16, and they differ per atom "
+            "by up to 8.0e-2 against a largest entry of 1.3e-1."
+        ),
+    ),
+    "atomic_stresses": Spec(
+        irreps="0e+2e",
+        note=(
+            "`atomic_virials` divided by the cell volume, with the opposite "
+            "sign (mace/modules/utils.py:422-430), so the same split and not "
+            "a derivative either; see that row."
+        ),
+    ),
     # --- families whose shape is a model hyperparameter ---------------------
     "density_coefficients": Spec(
         irreps_pattern="two concatenated ladders 0e+1o+2e+...+<atomic_multipoles_max_l>",
@@ -400,8 +421,9 @@ DISPOSITIONS: dict[str, Disposition] = {
             "the second derivative of the energy with respect to the "
             "positions, and the derivative grammar is first order by design: "
             "it names d(quantity)/d(input) for a declared quantity and a "
-            "declared input, and all three of its special cases are first "
-            "order. Reading it instead as the first derivative of the forces "
+            "declared input, and every derivative it names, generated or "
+            "declared, is first order. Reading it instead as the first "
+            "derivative of the forces "
             "does not rescue it, and the sign is how that shows: "
             "`compute_hessians_vmap` differentiates `-1 * forces` "
             "(mace/modules/utils.py:168), so the key holds +d2E/dpos2, which "

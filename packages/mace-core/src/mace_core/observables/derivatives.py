@@ -5,17 +5,12 @@ to a declared input ``x`` is called ``d_<q>_d_<x>`` and is reported with the
 gradient's own sign.
 
 A quantity whose derivative has a name of its own, and a sign of its own, says
-so **in the declarations file**. It used to say so in a table here, and that
-table was the same fact written a third time: the machine-readable pair lived
-here, the prose lived in :mod:`mace_core.units`, and the declarations file
-carried it in a comment because the schema could not express it. A comment that
-says what a field would say is a missing field. It had also already drifted,
-holding a row for ``("energy", "magmom")`` that no shipped catalogue declares.
-
-The consequence that matters is not tidiness. With the names in code, a fourth
-one, torques as ``-dE/d(orientation)`` or a polarizability as
-``d(dipole)/d(field)``, meant editing this package, which is exactly what a
-declarative grammar exists to prevent.
+so **in its declaration**: the ``name`` and ``sign`` of a
+:class:`~mace_core.observables.DerivativeRequest` on the observable. Nothing in
+this module knows any such name. ``forces`` and ``stress`` are declared that way
+in :data:`~mace_core.observables.DEFAULT_CATALOGUE`, and a further one, torques
+as ``-dE/d(orientation)`` or a polarizability as ``d(dipole)/d(field)``, is one
+more request in a catalogue rather than an edit to this package.
 """
 
 from __future__ import annotations

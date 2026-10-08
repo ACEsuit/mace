@@ -178,9 +178,9 @@ class MACEOutput(Generic[TensorT]):
         The names are the ones a declaration uses, not the storage fields, so
         ``total_energy`` appears here as ``energy``. That is what makes
         ``set(catalogue.names()) & set(output.names())`` mean what it reads as:
-        yielding the field name instead put the two vocabularies one alias
-        apart, and the intersection dropped the energy in silence while
-        ``"energy" in output`` was `True` the whole time. Use :meth:`get` to
+        yielding the field name would put the two vocabularies one alias
+        apart, and the intersection would drop the energy in silence while
+        ``"energy" in output`` was `True`. Use :meth:`get` to
         reach a value, which accepts either spelling; ``getattr`` over these is
         the one thing they are not for.
         """
@@ -217,9 +217,10 @@ RETIRED_NAMES: dict[str, str] = {"node_energy": "node_energies"}
 
 #: The one place an observable's name and its storage field differ. The field
 #: says "total" because the type also carries per-atom energies, while the
-#: observable is named ``energy`` because that is the name the derivative
-#: grammar's special cases are keyed on (``energy`` + positions -> ``forces``).
-#: Written down as one entry rather than left to each consumer to remember.
+#: observable is named ``energy`` because that is the name
+#: :data:`~mace_core.observables.DEFAULT_CATALOGUE` declares it under, with
+#: ``forces`` and ``stress`` requested on it. Written down as one entry rather
+#: than left to each consumer to remember.
 FIELD_BY_OBSERVABLE: dict[str, str] = {"energy": "total_energy"}
 
 #: The same map read the other way, for going from storage back to the name a

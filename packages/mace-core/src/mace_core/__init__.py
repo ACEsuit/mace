@@ -1,7 +1,7 @@
 """Framework-agnostic contract and pure math for MACE v1.
 
 This package imports no framework. Everything here is expressed over plain
-Python, numpy and pydantic, so the same types carry ``torch.Tensor`` in
+Python and pydantic, so the same types carry ``torch.Tensor`` in
 ``mace_torch`` and ``jax.Array`` in ``mace_jax``.
 
 Re-exports the public surface of the lightweight submodules. Heavy ones (the

@@ -73,7 +73,7 @@ from mace_torch.nn import register_input_embedding
 from mace_torch.observables import register_observables
 
 from .embedding import MagmomEmbedding
-from .observables import MAGMOM, MAGFORCES
+from .observables import MAGNETIC_CATALOGUE
 from .transforms import RotateMagmom
 from .model import MagneticScaleShiftMACE, MagneticSCFMACE
 
@@ -81,7 +81,7 @@ register_input_embedding("magmom")(MagmomEmbedding)
 register_transform("rotate_magmom")(RotateMagmom)
 register_model("MagneticScaleShiftMACE")(MagneticScaleShiftMACE)
 register_model("MagneticSCFMACE")(MagneticSCFMACE)
-register_observables(inputs=[MAGMOM], derivatives=[MAGFORCES])   # magforces
+register_observables(MAGNETIC_CATALOGUE)   # magmom, and magforces requested on the energy
 ```
 
 `config.toml` is byte-for-byte the one from the in-tree example — it refers to the feature only by

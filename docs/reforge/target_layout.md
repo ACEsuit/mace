@@ -51,7 +51,7 @@ packages/mace-core/
 │   │   ├── __init__.py                 # the public surface of the package
 │   │   ├── spec.py                     # InputSpec, ObservableSpec, DerivativeSpec, ObservableCatalogue (pydantic)
 │   │   ├── grammar.py                  # the irreps string grammar: parse + validate + dimension (no algebra)
-│   │   ├── derivatives.py              # d_<q>_d_<x> naming, and the three special cases with their signs
+│   │   ├── derivatives.py              # the d_<q>_d_<x> naming rule and the default sign; a name of its own is declared, not tabled here
 │   │   └── defaults.py                 # DEFAULT_CATALOGUE: energy + its position and strain derivatives, the declaration every observable copies
 │   │
 │   ├── kernels/
@@ -491,9 +491,9 @@ silently wrong forces); it stays usable for inference (`supports_double_backward
 
 ### 3.2 A new observable (config only)
 
-- **Extender touches:** one `ObservableSpec` declaration giving `name`, `irreps`, `per_atom`, `units`, and the declared inputs to differentiate against. The scaling of the head that produces it is set in the model config and its loss weight in `LossConfig`, both keyed by this name. No module, no decorator. A derivative is named by the rule `d_<q>_d_<x>`, with `forces`, `stress` and `magforces` as the three special cases, so asking for a derivative against a newly declared input needs no code either.
+- **Extender touches:** one `ObservableSpec` declaration giving `name`, `irreps`, `per_atom`, `units`, and the declared inputs to differentiate against. The scaling of the head that produces it is set in the model config and its loss weight in `LossConfig`, both keyed by this name. No module, no decorator. A derivative is named by the rule `d_<q>_d_<x>` unless its `DerivativeRequest` declares a `name` and a `sign` of its own, as `DEFAULT_CATALOGUE` does for `forces` and `stress`, so asking for a derivative against a newly declared input needs no code either.
 - **Core touched:** zero files. The model exposes the row automatically because `BaseMACE` iterates over the declared observables; `MACEOutput` carries the six core fields and everything else by name in `extras`.
-- **Enabling it:** list it in the model config's observables, in a catalogue that extends `DEFAULT_CATALOGUE`.
+- **Enabling it:** list it in the model config's observables, in an `ObservableCatalogue` built from `DEFAULT_CATALOGUE`'s inputs and observables plus the new row (`ObservableCatalogue(inputs=DEFAULT_CATALOGUE.inputs, observables=(*DEFAULT_CATALOGUE.observables, MYOBS))`). A catalogue is frozen and has no merge method; building a new one runs the cross-row validation again.
 - **Test:** `packages/mace-core/tests/test_observables.py` validates the grammar and the derivative naming (pure); if it is autograd-derived, `tests/parity` verifies finite-diff.
 
 ### 3.3 A new loss / transform (plugin registry)
