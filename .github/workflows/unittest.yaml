@@ -124,7 +124,9 @@ jobs:
         run: |
           pip install -U pip
           pip install ".[dev, cueq]"
-          pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
+          # MACE-Polar uses graph_longrange's force_pbc_evaluator API, removed
+          # after this revision. Pin until compatible releases are available.
+          pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git@1fd8c4548d44db93c1f0182761799383cfec382b
 
       - name: Log installed environment (with cueq + graph_longrange)
         run: |

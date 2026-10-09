@@ -183,7 +183,7 @@ class AtomicData(torch_geometric.data.Data):
         z_table: AtomicNumberTable,
         cutoff: float,
         heads: Optional[list] = None,
-        **kwargs,  # pylint: disable=unused-argument
+        **_kwargs,
     ) -> "AtomicData":
         if heads is None:
             heads = ["Default"]

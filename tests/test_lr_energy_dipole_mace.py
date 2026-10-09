@@ -133,9 +133,7 @@ def test_cli_yaml_trains_when_only_model_name_changes(tmp_path):
     isolated_h = Atoms("H", positions=[[0, 0, 0]])
     isolated_o.info.update(REF_energy=-1.0, config_type="IsolatedAtom")
     isolated_h.info.update(REF_energy=-0.5, config_type="IsolatedAtom")
-    water = Atoms(
-        "OHH", positions=[[0, 0, 0], [0.9, 0, 0], [0, 0.9, 0]]
-    )
+    water = Atoms("OHH", positions=[[0, 0, 0], [0.9, 0, 0], [0, 0.9, 0]])
     configs = [isolated_o, isolated_h]
     for index in range(4):
         current = water.copy()
@@ -193,7 +191,9 @@ plot: false
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    trained = torch.load(tmp_path / "lr_yaml.model", map_location="cpu", weights_only=False)
+    trained = torch.load(
+        tmp_path / "lr_yaml.model", map_location="cpu", weights_only=False
+    )
     assert isinstance(trained, modules.LREnergyDipoleMACE)
 
 

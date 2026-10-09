@@ -570,7 +570,7 @@ def to_numpy(tensor: torch.Tensor) -> np.ndarray:
     return tensor.cpu().detach().numpy()
 
 
-class InferenceMetric(Metric):
+class InferenceMetric(Metric):  # pylint: disable=abstract-method
     """Metric class for collecting reference and predicted values for scatterplot visualization."""
 
     def __init__(self):
