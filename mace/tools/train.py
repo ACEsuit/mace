@@ -595,7 +595,7 @@ def evaluate(
     return avg_loss, aux
 
 
-class MACELoss(Metric):
+class MACELoss(Metric):  # pylint: disable=abstract-method
     def __init__(self, loss_fn: torch.nn.Module):
         super().__init__()
         self.loss_fn = loss_fn
