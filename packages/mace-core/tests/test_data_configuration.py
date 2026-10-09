@@ -13,6 +13,8 @@ somebody diffing outputs.
 
 from __future__ import annotations
 
+from typing import Any
+
 import ase.io
 import numpy as np
 import pytest
@@ -514,7 +516,10 @@ def test_a_name_outside_the_default_table_keeps_its_shape():
     ],
 )
 def test_the_structure_itself_is_shape_checked(field, value, message):
-    arguments = {"atomic_numbers": np.array([1]), "positions": np.zeros((1, 3))}
+    arguments: dict[str, Any] = {
+        "atomic_numbers": np.array([1]),
+        "positions": np.zeros((1, 3)),
+    }
     arguments[field] = value
     with pytest.raises(ValueError, match=message):
         Configuration(**arguments)
@@ -1218,8 +1223,32 @@ def test_the_class_refuses_an_element_listed_twice():
 
 
 def test_an_element_the_table_does_not_have_raises():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"element 79 is not in the table \[1, 8\]"):
         atomic_number_table_from_zs([1, 8]).z_to_index(79)
+
+
+def test_a_table_from_a_numpy_array_looks_up_like_one_from_a_list():
+    """A checkpoint stores the table as an array, which has no ``.index``."""
+    table = AtomicNumberTable(np.array([8, 1, 6]))
+    assert table == AtomicNumberTable([8, 1, 6])
+    assert table.z_to_index(6) == 2
+    assert table.z_to_index(np.int64(1)) == 1
+    assert all(type(z) is int for z in table.zs)
+
+
+def test_a_non_integer_atomic_number_is_refused():
+    with pytest.raises(TypeError):
+        AtomicNumberTable([1.0, 8.0])  # ty: ignore[invalid-argument-type]
+
+
+def test_the_table_does_not_follow_the_callers_list():
+    """The table is hashable, so it must not change after construction."""
+    zs = [1, 8]
+    table = AtomicNumberTable(zs)
+    lookup = {table: "water"}
+    zs.append(6)
+    assert table.zs == (1, 8)
+    assert lookup[AtomicNumberTable([1, 8])] == "water"
 
 
 def test_two_tables_with_the_same_order_are_equal():
