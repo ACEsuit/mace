@@ -333,21 +333,24 @@ def _check_something_is_labelled(
         )
     energy_key = key_spec.graph_keys["energy"]
     forces_key = key_spec.atom_keys["forces"]
-    # A specification with no dipole entry still has to name a key in the
-    # message below: the default one.
-    dipole_key = key_spec.graph_keys.get("dipole", DefaultKeys.DIPOLE.value)
+    dipole_key = key_spec.graph_keys.get("dipole")
 
     def present(file_key: str, per: Storage) -> bool:
         return any(_stored_value(atoms, file_key, per)[0] for atoms in atoms_list)
 
     has_energy = present(energy_key, "graph")
     has_forces = present(forces_key, "atom")
-    has_dipole = present(dipole_key, "graph")
+    # A dipole the specification does not declare is never read into a
+    # configuration, so it cannot be what makes the file count as labelled.
+    has_dipole = dipole_key is not None and present(dipole_key, "graph")
 
     if not (has_energy or has_forces or has_dipole):
+        searched = [energy_key, forces_key]
+        if dipole_key is not None:
+            searched.append(dipole_key)
         message = (
-            f"none of {energy_key!r}, {forces_key!r} and {dipole_key!r} is "
-            f"present in any structure in {path!r}"
+            f"none of {', '.join(map(repr, searched))} is present in any "
+            f"structure in {path!r}"
         )
         if not no_data_ok:
             raise ValueError(

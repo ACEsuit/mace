@@ -711,12 +711,17 @@ def test_a_dipole_in_the_calculator_passes_the_presence_check(tmp_path):
     assert np.allclose(parsed.configurations[0].properties["dipole"], [0.1, -0.2, 0.3])
 
 
-def test_a_specification_without_a_dipole_names_the_default_dipole_key(tmp_path):
-    path = write(tmp_path, [water()])
+def test_an_undeclared_dipole_does_not_pass_the_presence_check(tmp_path):
+    """A dipole the specification does not name is never read, so a file whose
+    energy and forces keys both miss must still raise, even though ase holds a
+    dipole in the calculator. The message names only the keys searched."""
+    atoms = water()
+    atoms.info["dipole"] = np.array([0.1, -0.2, 0.3])
+    path = write(tmp_path, [atoms])
     key_spec = KeySpecification(
         graph_keys={"energy": "REF_energy"}, atom_keys={"forces": "REF_forces"}
     )
-    with pytest.raises(ValueError, match="'dipole'"):
+    with pytest.raises(ValueError, match="none of 'REF_energy', 'REF_forces' is"):
         read_configurations(path, key_spec)
 
 
