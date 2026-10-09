@@ -1,12 +1,13 @@
 """Framework-agnostic contract and pure math for MACE v1.
 
-This package imports no framework: everything here is plain Python, numpy and
-ase, so the same types serve the torch and the jax implementations alike.
+This package imports no framework. Everything here is expressed over plain
+Python, pydantic, numpy and ase, so the same types carry ``torch.Tensor`` in
+``mace_torch`` and ``jax.Array`` in ``mace_jax``.
 
-The configuration system and the model metadata are re-exported here. The
-other submodules are imported from their own modules, because some of them are
-not cheap to import and a caller that only wants a unit constant should not
-pay for a file parser:
+The configuration system, the model metadata, the observable specification and
+the typed model output are re-exported here. The other submodules are imported
+from their own modules, because some of them are not cheap to import and a
+caller that only wants a unit constant should not pay for a file parser:
 
 ``mace_core.data``
     :class:`~mace_core.data.configuration.Configuration`, the boundary object
@@ -26,12 +27,26 @@ from importlib.metadata import PackageNotFoundError, version
 
 from mace_core.config import BaseConfig, ConfigError, ConfigSection
 from mace_core.metadata import ModelMetadata, format_citations
+from mace_core.observables import (
+    DEFAULT_CATALOGUE,
+    DerivativeSpec,
+    InputSpec,
+    ObservableCatalogue,
+    ObservableSpec,
+)
+from mace_core.outputs import MACEOutput
 
 __all__ = [
+    "DEFAULT_CATALOGUE",
     "BaseConfig",
     "ConfigError",
     "ConfigSection",
+    "DerivativeSpec",
+    "InputSpec",
+    "MACEOutput",
     "ModelMetadata",
+    "ObservableCatalogue",
+    "ObservableSpec",
     "__version__",
     "format_citations",
 ]
