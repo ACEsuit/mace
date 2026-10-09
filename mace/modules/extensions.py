@@ -33,6 +33,7 @@ from mace.modules.blocks import (
 from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import (
+    compute_polarizability as _compute_polarizability,
     compute_total_charge_dipole_permuted,
     get_atomic_virials_stresses,
     get_outputs,
@@ -988,6 +989,8 @@ class PolarMACE(ScaleShiftMACE):
         lammps_mliap: bool = False,
         fermi_level: Optional[torch.Tensor] = None,
         external_field: Optional[torch.Tensor] = None,
+        compute_polarizability: bool = False,
+        polarizability_method: str = "dipole",
     ) -> Dict[str, Optional[torch.Tensor]]:
         if not GRAPH_LONGRANGE_AVAILABLE:
             raise ImportError(
@@ -1038,6 +1041,8 @@ class PolarMACE(ScaleShiftMACE):
             fermi_level = data["fermi_level"]
         if external_field is None:
             external_field = data["external_field"]
+        if compute_polarizability and not external_field.requires_grad:
+            external_field = external_field.clone().requires_grad_(True)
         external_potential = torch.hstack(
             (torch.zeros_like(fermi_level).unsqueeze(-1), external_field)
         )
@@ -1339,6 +1344,20 @@ class PolarMACE(ScaleShiftMACE):
             + torch.sum(external_potential[:, 1:] * total_dipole, dim=-1)
         )
 
+        # Before get_outputs, which frees the graph unless training.
+        # "dipole": alpha = -d(dipole)/d(external_field), one autograd pass.
+        # "energy": alpha = -d2(energy)/d(external_field)2, two passes; also
+        # yields dipole_from_energy. See mace.modules.utils.compute_polarizability.
+        polarizability: Optional[torch.Tensor] = None
+        dipole_from_energy: Optional[torch.Tensor] = None
+        if compute_polarizability:
+            polarizability, dipole_from_energy = _compute_polarizability(
+                energy=total_energy,
+                dipole=total_dipole,
+                external_field=external_field,
+                method=polarizability_method,
+            )
+
         forces, virials, stress, hessian, edge_forces, _ = get_outputs(
             energy=total_energy,
             positions=positions,
@@ -1393,6 +1412,8 @@ class PolarMACE(ScaleShiftMACE):
             "charges": charge_density_mul_ir[:, 0],
             "spins": spin_density_mul_ir[:, 0],
             "dipole": total_dipole,
+            "polarizability": polarizability,
+            "dipole_from_energy": dipole_from_energy,
             "total_charge": total_charge,
             "electrostatic_energy": electro_energy,
             "electron_energy": le_total,

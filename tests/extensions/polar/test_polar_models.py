@@ -101,7 +101,9 @@ except (ImportError, ModuleNotFoundError):
         return stress.flat[[0, 4, 8, 5, 2, 1]] if voigt else stress
 
 
-from tests.helpers import GRAPH_LONGRANGE_AVAILABLE  # pylint: disable=wrong-import-position
+from tests.helpers import (
+    GRAPH_LONGRANGE_AVAILABLE,
+)  # pylint: disable=wrong-import-position
 
 pytestmark = [
     pytest.mark.polar,
@@ -111,6 +113,7 @@ pytestmark = [
 ]
 
 from tests.helpers import REPO_ROOT, TESTS_ROOT  # noqa: E402
+
 RUN_TRAIN = REPO_ROOT / "mace" / "cli" / "run_train.py"
 
 # ---------------------------------------------------------------------------
@@ -500,7 +503,9 @@ def _polar_slab_atoms(vacuum: float) -> Atoms:
     symbols = ["O", "H", "H"]
     positions = [[0.0, 0.0, 0.0], [0.8, 0.8, 0.6], [0.8, 0.8, -0.6]]
     cell = [[a, 0.0, 0.0], [0.0, a, 0.0], [0.0, 0.0, vacuum]]
-    return Atoms(symbols=symbols, positions=positions, cell=cell, pbc=(True, True, False))
+    return Atoms(
+        symbols=symbols, positions=positions, cell=cell, pbc=(True, True, False)
+    )
 
 
 def _run_polar_slab(model, dtype, vacuum: float) -> dict:
@@ -848,6 +853,103 @@ def test_polar_calculator_implements_dipole():
     dipole = atoms.get_dipole_moment()
     assert dipole.shape == (3,)
     np.testing.assert_allclose(dipole, calc.results["dipole"])
+
+
+def _polar_calc_and_atoms():
+    torch.manual_seed(0)
+    model = _build_minimal_model(torch.device("cpu"), torch.float64).eval()
+    calc = MACECalculator(
+        models=model,
+        device="cpu",
+        default_dtype="float64",
+        model_type="PolarMACE",
+    )
+    return calc, _water_atoms()
+
+
+def _central_difference_over_field(calc, atoms, prop, h=1e-4):
+    """d(prop)/d(atoms.info["external_field"]) by central differences,
+    shape (3,) for a scalar property and (3, 3) with [i, j] = d prop_i / d E_j."""
+    cols = []
+    for j in range(3):
+        vals = []
+        for sign in (1.0, -1.0):
+            field = np.zeros(3)
+            field[j] = sign * h
+            atoms.info["external_field"] = field
+            calc.reset()
+            vals.append(np.asarray(calc.get_property(prop, atoms)))
+        cols.append((vals[0] - vals[1]) / (2.0 * h))
+    atoms.info.pop("external_field")
+    return np.stack(cols, axis=-1)
+
+
+def test_polar_calculator_polarizability_dipole_method_matches_finite_difference():
+    """method="dipole" (the default) is -d(dipole)/d(external_field), checked
+    against a central difference of the dipole readout over the field."""
+    calc, atoms = _polar_calc_and_atoms()
+
+    alpha = calc.get_polarizability(atoms)
+    assert alpha.shape == (3, 3)
+    np.testing.assert_allclose(alpha, calc.get_polarizability(atoms, method="dipole"))
+
+    alpha_fd = -_central_difference_over_field(calc, atoms, "dipole")
+    np.testing.assert_allclose(alpha, alpha_fd, atol=1e-6)
+
+
+def test_polar_calculator_polarizability_energy_method_matches_finite_difference():
+    """method="energy" is -d2(energy)/d(external_field)2, checked against a
+    central difference of the (exact, autograd) d(energy)/d(external_field)."""
+    calc, atoms = _polar_calc_and_atoms()
+
+    alpha = calc.get_polarizability(atoms, method="energy")
+    assert alpha.shape == (3, 3)
+
+    def energy_gradient(atoms_):
+        batch = calc._atoms_to_batch(atoms_)  # pylint: disable=protected-access
+        out = calc.models[0](
+            batch.to_dict(),
+            compute_polarizability=True,
+            polarizability_method="energy",
+            compute_force=False,
+        )
+        return out["dipole_from_energy"].detach().cpu().numpy()[0]
+
+    # d(energy)/d(field) is itself a finite difference of the energy.
+    e_grad_fd = _central_difference_over_field(calc, atoms, "energy")
+    np.testing.assert_allclose(energy_gradient(atoms), e_grad_fd, atol=1e-6)
+
+    h = 1e-4
+    alpha_fd = np.zeros((3, 3))
+    for j in range(3):
+        grads = []
+        for sign in (1.0, -1.0):
+            probe = atoms.copy()
+            probe.info["external_field"] = np.eye(3)[j] * sign * h
+            grads.append(energy_gradient(probe))
+        alpha_fd[:, j] = -(grads[0] - grads[1]) / (2.0 * h)
+    np.testing.assert_allclose(alpha, alpha_fd, atol=1e-6)
+
+
+def test_polar_calculator_polarizability_energy_method_is_symmetric():
+    """The energy route is a second derivative, so it is symmetric for any
+    model. The two routes are not compared with each other: they coincide for
+    a variational model and differ otherwise, and neither is a contract."""
+    calc, atoms = _polar_calc_and_atoms()
+    alpha_energy = calc.get_polarizability(atoms, method="energy")
+    np.testing.assert_allclose(alpha_energy, alpha_energy.T, atol=1e-8)
+
+    with pytest.raises(ValueError, match="polarizability method"):
+        calc.get_polarizability(atoms, method="hessian")
+
+
+def test_polar_model_polarizability_is_opt_in():
+    """A plain forward leaves the field alone and returns no polarizability."""
+    calc, atoms = _polar_calc_and_atoms()
+    batch = calc._atoms_to_batch(atoms)  # pylint: disable=protected-access
+    out = calc.models[0](batch.to_dict(), compute_force=False)
+    assert out["polarizability"] is None
+    assert out["dipole_from_energy"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -1250,12 +1352,8 @@ def test_polar_stress_matches_fd_large_periodic_boxes(
 # Regression values
 # ---------------------------------------------------------------------------
 
-_REG_REF_PATH = (
-    TESTS_ROOT / "references" / "polar_regression_reference.json"
-)
-_LOCAL_BENCH_ROOT = (
-    TESTS_ROOT / "references" / "x23_lattice_energy"
-)
+_REG_REF_PATH = TESTS_ROOT / "references" / "polar_regression_reference.json"
+_LOCAL_BENCH_ROOT = TESTS_ROOT / "references" / "x23_lattice_energy"
 
 if _REG_REF_PATH.exists():
     _REF = json.loads(_REG_REF_PATH.read_text())

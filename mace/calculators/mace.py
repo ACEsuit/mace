@@ -1013,6 +1013,43 @@ class MACECalculator(Calculator):
             return hessians[0]
         return hessians
 
+    def get_polarizability(self, atoms=None, method: str = "dipole"):
+        """Polarizability tensor alpha_ij = d(dipole_i)/d(field_j), shape (3, 3),
+        evaluated at the field in atoms.info["external_field"] (zero if unset).
+
+        :param method: "dipole" (default) differentiates the model's dipole
+            readout once with respect to the field. "energy" differentiates the
+            energy twice (the model forward also returns the intermediate
+            d(energy)/d(field) as "dipole_from_energy"). PolarMACE is not
+            variational, so the two methods do not agree in general.
+        """
+        if atoms is None and self.atoms is None:
+            raise ValueError("atoms not set")
+        if atoms is None:
+            atoms = self.atoms
+        if self.model_type != "PolarMACE":
+            raise NotImplementedError("Only implemented for PolarMACE models")
+        batch = self._atoms_to_batch(atoms)
+        with torch_tools.default_dtype(self.default_dtype):
+            outputs = [
+                model(
+                    self._clone_batch(batch).to_dict(),
+                    compute_polarizability=True,
+                    polarizability_method=method,
+                    compute_force=False,
+                    compute_stress=False,
+                    training=self.use_compile,
+                )
+                for model in self.models
+            ]
+        # [0]: the real graph; a padding graph, if any, comes after it.
+        polarizabilities = [
+            out["polarizability"].detach().cpu().numpy()[0] for out in outputs
+        ]
+        if self.num_models == 1:
+            return polarizabilities[0]
+        return polarizabilities
+
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.
         :param atoms: ase.Atoms object

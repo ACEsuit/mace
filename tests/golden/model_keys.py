@@ -31,7 +31,8 @@ The key sets, read out of the ``forward`` return dicts on this tree
                              charges_history, fermi_level, external_field,
                              spins, total_charge, electrostatic_energy,
                              electron_energy, electrostatic_potentials,
-                             spin_charge_density, fukui_functions
+                             spin_charge_density, fukui_functions,
+                             polarizability (opt-in)
     MagneticScaleShiftMACE   + magforces
     MagneticSCFMACE          + equilibrated_magmom, scf_energy_history,
                              scf_steps
