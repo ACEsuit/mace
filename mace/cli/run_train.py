@@ -401,7 +401,13 @@ def run(args) -> None:
         logging.info(
             "==================Using multiheads finetuning mode=================="
         )
-        args.loss = "universal"
+        if args.model in ("EnergyDipoleMACE", "LREnergyDipoleMACE"):
+            logging.info(
+                "Keeping %s loss for multihead energy/dipole fine-tuning",
+                args.loss,
+            )
+        else:
+            args.loss = "universal"
 
         all_ase_readable = all(
             all(check_path_ase_read(f) for f in head_config.train_file)
