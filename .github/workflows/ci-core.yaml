@@ -289,7 +289,10 @@ jobs:
                                 -e packages/mace-torch \
                                 -e packages/mace-jax \
                                 -e packages/mace-launcher
-          python -m pip install pytest
+          # Test dependencies only. numpy is here because mace-core's own
+          # tests bind MACEOutput to numpy arrays; mace-core does not import
+          # it, so it is not one of that package's dependencies.
+          python -m pip install pytest numpy
       - name: Run the package suites
         run: python -m pytest packages/*/tests -v
 
