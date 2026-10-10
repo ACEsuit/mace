@@ -171,8 +171,9 @@ class MACELES(ScaleShiftMACE):
             "alpha_1o_nonlinear_readout", False
         )
         self.alpha_1o_linear_w_pos = les_arguments.get("alpha_1o_linear_w_pos", True)
-        self.alpha_1o_readout_channels = les_arguments.get( 
-            "alpha_1o_readout_channels", 1         # default, alpha_1o = s v v^T (s^2 with alpha_1o_linear_w_pos)
+        # default 1: alpha_1o = s v v^T (s^2 with alpha_1o_linear_w_pos)
+        self.alpha_1o_readout_channels = les_arguments.get(
+            "alpha_1o_readout_channels", 1
         )
         if self.alpha_1o_readout_channels not in (1, None):
             raise ValueError("alpha_1o_readout_channels must be 1 or null")
@@ -504,7 +505,8 @@ class MACELES(ScaleShiftMACE):
                     node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
                         num_atoms_arange
                     ]  # type: ignore
-                    if node_alphas.dim() == 2: # 1x0e + 1x1o readout (alpha_1o_readout_channels: 1): s v v^T
+                    # 1x0e + 1x1o readout (alpha_1o_readout_channels: 1): s v v^T
+                    if node_alphas.dim() == 2:
                         s = node_alphas[:, 0]
                         v = node_alphas[:, 1:4]
                         if (
