@@ -1022,6 +1022,20 @@ def get_params_options(
         "local_electron_energy",
         "layer_feature_mixer",
     ]
+    # les.yaml `lr_factors: {<LES readout>: factor}` scales the learning rate of
+    # individual LES readouts (e.g. les_alpha_1o_readouts); the rest keep args.lr.
+    les_lr_factors = (getattr(args, "les_arguments", None) or {}).get("lr_factors", {})
+    les_readout_names = [
+        name
+        for name in optional_submodule_names
+        if name.startswith("les_") and name.endswith("readouts")
+    ]
+    unknown = sorted(set(les_lr_factors) - set(les_readout_names))
+    if unknown:
+        raise ValueError(
+            f"les.yaml lr_factors: unknown LES readouts {unknown}; "
+            f"expected some of {les_readout_names}"
+        )
     for submodule_name in optional_submodule_names:
         submodule = getattr(model, submodule_name, None)
         if submodule is None:
@@ -1036,6 +1050,10 @@ def get_params_options(
                 "weight_decay": 0.0,
             }
         )
+        if submodule_name in les_lr_factors:
+            param_options["params"][-1]["lr"] = (
+                les_lr_factors[submodule_name] * args.lr
+            )
 
     if (
         hasattr(model, "onebody_magmombasis_coeffs")
