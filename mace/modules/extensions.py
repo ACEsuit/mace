@@ -171,6 +171,18 @@ class MACELES(ScaleShiftMACE):
             "alpha_1o_nonlinear_readout", False
         )
         self.alpha_1o_linear_w_pos = les_arguments.get("alpha_1o_linear_w_pos", True)
+        # default 1: alpha_1o = s v v^T (s^2 with alpha_1o_linear_w_pos)
+        self.alpha_1o_readout_channels = les_arguments.get(
+            "alpha_1o_readout_channels", 1
+        )
+        if self.alpha_1o_readout_channels not in (1, None):
+            raise ValueError("alpha_1o_readout_channels must be 1 or null")
+        if self.alpha_1o_nonlinear_readout:
+            if les_arguments.get("alpha_1o_readout_channels") is not None:
+                raise ValueError(
+                    "alpha_1o_readout_channels applies to the linear l=1 readout only"
+                )
+            self.alpha_1o_readout_channels = None
         self.make_alpha_positive = les_arguments.get("make_alpha_positive", False)
         self.make_kappa_positive = les_arguments.get("make_kappa_positive", False)
 
@@ -262,14 +274,23 @@ class MACELES(ScaleShiftMACE):
                         logging.info(
                             "Using l=1 readout to predict anisotropic polarizability."
                         )
-                        self.les_alpha_1o_readouts.append(
-                            _copy_mace_readout_tp(
-                                self.readouts[0],
-                                use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
-                                make_w_pos=self.alpha_1o_linear_w_pos,
-                                cueq_config=cueq_config,
+                        if self.alpha_1o_readout_channels == 1:
+                            self.les_alpha_1o_readouts.append(
+                                _copy_mace_readout(
+                                    self.readouts[0],
+                                    change_irrep_out="1x0e + 1x1o",
+                                    cueq_config=cueq_config,
+                                )
                             )
-                        )
+                        else:
+                            self.les_alpha_1o_readouts.append(
+                                _copy_mace_readout_tp(
+                                    self.readouts[0],
+                                    use_nonlinear_readout=self.alpha_1o_nonlinear_readout,
+                                    make_w_pos=self.alpha_1o_linear_w_pos,
+                                    cueq_config=cueq_config,
+                                )
+                            )
                     if not ("1o" in mace_irreps or "2e" in mace_irreps):
                         raise ValueError(
                             "Unsupported irreps for anisotropic polarizability. Expected '1o' or '2e' in the readout irreps."
@@ -484,6 +505,16 @@ class MACELES(ScaleShiftMACE):
                     node_alphas = les_alpha_readout(node_feats_list[feat_idx])[
                         num_atoms_arange
                     ]  # type: ignore
+                    # 1x0e + 1x1o readout (alpha_1o_readout_channels: 1): s v v^T
+                    if node_alphas.dim() == 2:
+                        s = node_alphas[:, 0]
+                        v = node_alphas[:, 1:4]
+                        if (
+                            hasattr(self, "alpha_1o_linear_w_pos")
+                            and self.alpha_1o_linear_w_pos
+                        ):
+                            s = s**2
+                        node_alphas = s[:, None, None] * v[:, :, None] * v[:, None, :]
                     node_alphas_list.append(node_alphas)
                 if (
                     hasattr(self, "les_alpha_2e_readouts")

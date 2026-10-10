@@ -17,6 +17,7 @@ from mace.modules.blocks import LinearLesReadoutBlock, NonLinearLesReadoutBlock
 from mace.modules.extensions import MACELES
 from mace.modules.models import ScaleShiftMACE
 from mace.tools.arg_parser import build_default_arg_parser
+from mace.tools.scripts_utils import get_params_options
 from mace.tools.torch_tools import default_dtype
 from tests.helpers import (
     CUDA_AVAILABLE,
@@ -465,3 +466,88 @@ def test_keep_neutral_does_not_mutate_stored_bec(
 
     assert bec_neutral.ndim == 3, "this guards the aliasing-prone 3-D layout"
     assert np.allclose(bec_neutral, bec_raw)
+
+
+@pytest.mark.les
+@pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
+def test_maceles_multipolar_parameters_registered_in_optimizer():
+    config = dict(MODEL_CONFIG, hidden_irreps=o3.Irreps("32x0e + 32x1o + 32x2e"))
+    les_arguments = {
+        "use_atomwise": False,
+        "use_dipole": True,
+        "use_quad": True,
+        "use_induced_charge": True,
+        "use_induced_dipole": True,
+        "use_anisotropic_polarizability": True,
+        "alpha_irreps": "0e+1o+2e",
+    }
+    with default_dtype(torch.float32):
+        model = MACELES(les_arguments=les_arguments, **config)
+    args = argparse.Namespace(
+        lr=0.01,
+        weight_decay=5e-7,
+        amsgrad=True,
+        beta=0.9,
+        freeze=None,
+        lr_params_factors="{}",
+    )
+    groups = get_params_options(args, model)["params"]
+    group_names = {group["name"] for group in groups}
+    for container in [
+        "les_readouts",
+        "les_u_readouts",
+        "les_quad_1o_readouts",
+        "les_quad_2e_readouts",
+        "les_alpha_readouts",
+        "les_alpha_1o_readouts",
+        "les_alpha_2e_readouts",
+        "les_kappa_readouts",
+    ]:
+        assert list(getattr(model, container).parameters()), f"{container} is empty"
+        assert container in group_names
+
+
+@pytest.mark.les
+@pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
+def test_maceles_les_lr_factors():
+    config = dict(MODEL_CONFIG, hidden_irreps=o3.Irreps("32x0e + 32x1o + 32x2e"))
+    les_arguments = {
+        "use_atomwise": False,
+        "use_dipole": True,
+        "use_induced_dipole": True,
+        "use_anisotropic_polarizability": True,
+        "alpha_irreps": "0e+1o+2e",
+    }
+    with default_dtype(torch.float32):
+        model = MACELES(les_arguments=les_arguments, **config)
+
+    def lrs(les_args):
+        args = argparse.Namespace(
+            lr=0.01,
+            weight_decay=5e-7,
+            amsgrad=True,
+            beta=0.9,
+            freeze=None,
+            lr_params_factors="{}",
+            les_arguments=les_args,
+        )
+        groups = get_params_options(args, model)["params"]
+        return {group["name"]: group.get("lr", args.lr) for group in groups}
+
+    # no lr_factors: every group keeps the base lr
+    assert all(lr == pytest.approx(0.01) for lr in lrs(les_arguments).values())
+
+    scaled = lrs(
+        dict(
+            les_arguments,
+            lr_factors={"les_alpha_1o_readouts": 0.1, "les_u_readouts": 0.0},
+        )
+    )
+    assert scaled["les_alpha_1o_readouts"] == pytest.approx(0.001)
+    assert scaled["les_u_readouts"] == pytest.approx(0.0)
+    for name, lr in scaled.items():
+        if name not in ("les_alpha_1o_readouts", "les_u_readouts"):
+            assert lr == pytest.approx(0.01), name
+
+    with pytest.raises(ValueError, match="unknown LES readouts"):
+        lrs(dict(les_arguments, lr_factors={"les_alpha": 0.1}))
