@@ -952,6 +952,30 @@ def test_polar_model_polarizability_is_opt_in():
     assert out["dipole_from_energy"] is None
 
 
+def test_polar_calculator_polarizability_validates_electrostatic_pbcs():
+    """get_polarizability applies the same mode/geometry check as calculate:
+    a periodic cell under a forced open-boundary mode is refused, not evaluated."""
+    calc, atoms = _polar_calc_and_atoms()
+    calc.set_electrostatic_pbcs("realspace")
+    atoms.set_cell([10.0, 10.0, 10.0])
+    atoms.pbc = True
+    with pytest.raises(ValueError, match="incompatible with PBC"):
+        calc.get_polarizability(atoms)
+
+
+@pytest.mark.parametrize("pbc", [(True, True, True), (True, True, False)])
+def test_polar_calculator_polarizability_refuses_periodic_structures(pbc):
+    """A periodic cell that calculate() accepts is still refused: the total
+    dipole, and so its field derivative, is not well defined under PBC."""
+    calc, atoms = _polar_calc_and_atoms()
+    atoms.set_cell([10.0, 10.0, 10.0])
+    atoms.pbc = pbc
+    atoms.calc = calc
+    atoms.get_potential_energy()  # the same structure is a valid energy call
+    with pytest.raises(ValueError, match="non-periodic structure"):
+        calc.get_polarizability(atoms)
+
+
 # ---------------------------------------------------------------------------
 # Evaluation with charge and spin
 # ---------------------------------------------------------------------------

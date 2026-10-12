@@ -1022,6 +1022,10 @@ class MACECalculator(Calculator):
             energy twice (the model forward also returns the intermediate
             d(energy)/d(field) as "dipole_from_energy"). PolarMACE is not
             variational, so the two methods do not agree in general.
+
+        Only defined for non-periodic structures: the total dipole is not well
+        defined under periodic boundary conditions, so any periodic direction
+        raises a ValueError.
         """
         if atoms is None and self.atoms is None:
             raise ValueError("atoms not set")
@@ -1029,6 +1033,13 @@ class MACECalculator(Calculator):
             atoms = self.atoms
         if self.model_type != "PolarMACE":
             raise NotImplementedError("Only implemented for PolarMACE models")
+        self._validate_electrostatic_pbcs(atoms)
+        if any(atoms.pbc):
+            raise ValueError(
+                "get_polarizability requires a non-periodic structure: the total "
+                "dipole is not well defined under periodic boundary conditions "
+                f"(got pbc={tuple(bool(flag) for flag in atoms.pbc)})"
+            )
         batch = self._atoms_to_batch(atoms)
         with torch_tools.default_dtype(self.default_dtype):
             outputs = [

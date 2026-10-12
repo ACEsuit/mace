@@ -32,8 +32,8 @@ from mace.modules.blocks import (
 )
 from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.models import ScaleShiftMACE
+from mace.modules.utils import compute_polarizability as _compute_polarizability
 from mace.modules.utils import (
-    compute_polarizability as _compute_polarizability,
     compute_total_charge_dipole_permuted,
     get_atomic_virials_stresses,
     get_outputs,

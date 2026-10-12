@@ -777,7 +777,9 @@ def compute_polarizability(
         dipole = dipole_from_energy
     d_dipole_d_external_field = torch.stack(
         [
-            torch.autograd.grad(dipole[:, i].sum(), external_field, retain_graph=True)[0]
+            torch.autograd.grad(dipole[:, i].sum(), external_field, retain_graph=True)[
+                0
+            ]
             for i in range(3)
         ],
         dim=1,

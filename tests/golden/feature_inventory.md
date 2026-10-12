@@ -853,7 +853,7 @@ copy — so the tree depends on both at once (§19).
 | `extra.dev` | `[dev]` | `setup.cfg` | KEEP — the lint/format toolchain | the lint job itself |
 | `extra.test` | `[test]` | `setup.cfg` | KEEP — pytest and its plugins, split out of `dev` so a test job need not install the linters | the suite itself |
 
-## 11. Model output keys (43)
+## 11. Model output keys (44)
 
 The keys of the dicts the model `forward`s return. This is the contract every consumer reads —
 the ASE calculator, `mace_eval_configs`, the LAMMPS runtimes, the training loop — so a renamed
@@ -901,6 +901,7 @@ move and which is absorbed into a declared observable.
 | `out.model.fermi_level` | `fermi_level` — first declared by `PolarMACE` | `mace/modules/extensions.py:1336` | KEEP — idem | `tests/extensions/polar/test_polar_output_keys.py::test_the_electrostatic_keys_are_present_with_the_right_extent` |
 | `out.model.external_field` | `external_field` — first declared by `PolarMACE` | `mace/modules/extensions.py:1337` | KEEP — idem | `tests/extensions/polar/test_polar_output_keys.py::test_the_electrostatic_keys_are_present_with_the_right_extent` |
 | `out.model.fukui_functions` | `fukui_functions` — first declared by `PolarMACE` | `mace/modules/extensions.py:1346` | KEEP — the fukui reactivity output | `tests/extensions/polar/test_polar_models.py::test_polar_calculator_returns_fukui_functions_by_default` |
+| `out.model.dipole_from_energy` | `dipole_from_energy` — first declared by `PolarMACE` | `mace/modules/extensions.py:1416` | KEEP — `d(energy)/d(external_field)`, returned only by the opt-in `energy` polarizability route; distinct from `dipole` because the model is not variational | `tests/extensions/polar/test_polar_models.py::test_polar_calculator_polarizability_energy_method_matches_finite_difference` |
 | `out.model.charges_history` | `charges_history` — first declared by `PolarMACE` | `mace/modules/extensions.py:1333` | MERGE — the per-iteration trace of the fixed-point solve; a solver diagnostic, so it belongs to the solver-dispatch layer rather than the model's outputs | `tests/extensions/polar/test_polar_output_keys.py::test_the_density_keys_keep_their_rank` |
 | `out.model.magforces` | `magforces` — first declared by `MagneticScaleShiftMACE` | `mace/modules/extensions.py:1951` | KEEP — `dE/dm`, a declared derivative exactly like forces | `tests/extensions/magnetic` + `tests/golden/test_tiny_magnetic.py::test_anchor_reproduces_its_reference` |
 | `out.model.scf_steps` | `scf_steps` — first declared by `MagneticSCFMACE` | `mace/modules/extensions.py:2102` | MERGE — SCF solver diagnostics belong to the model-transform hook, not to the model's output contract | `tests/extensions/magnetic::test_run_magnetic_scf` |
@@ -1224,7 +1225,7 @@ file on every run.
 | 8. Loss classes | 10 | class name |
 | 9. Calculator constructor + exports | 27 + 9 | parameter name, `__all__` |
 | 10. Optional extras | 12 | extra name |
-| 11. Model output keys | 43 | dict key |
+| 11. Model output keys | 44 | dict key |
 | 12. Calculator + eval output keys | 31 + 13 | results key, written key |
 | 13. Environment variables | 9 + 3 | variable name |
 | 14. Pytest markers | 13 | marker name |
