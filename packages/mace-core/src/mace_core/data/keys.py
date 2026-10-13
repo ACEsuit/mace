@@ -1,0 +1,280 @@
+"""Which file key each convention name is read from.
+
+Two dictionaries, because a structure file stores two kinds of thing and they
+are looked up in different places: one value per structure (an energy, a
+stress, a total charge) and one per atom (forces, charges, magnetic moments).
+The split is not cosmetic. Asking for ``forces`` among the per-structure values
+finds nothing and reports it as a missing label, which is indistinguishable
+from a file that genuinely has no forces.
+
+**The two halves are called ``graph`` and ``atom`` throughout**, which is the
+same pair of words a user writes in an embedding feature's ``per:``, so a
+declared feature and a default key name the same distinction the same way and
+nothing translates between them. ``info`` and ``arrays`` are ase's words for
+ase's two stores, and they appear only in :mod:`mace_core.data.xyz`, where ase
+is actually touched.
+
+This object is the only place a file key appears. Everything downstream of
+parsing is keyed by convention name -- see
+:mod:`mace_core.data.configuration`.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from typing import Any
+
+from mace_core.data.configuration import RESERVED_PROPERTY_NAMES
+from mace_core.elements.default_keys import STORAGES, DefaultKeys, Storage
+
+__all__ = [
+    "ATOM_CONVENTION_NAMES",
+    "GRAPH_CONVENTION_NAMES",
+    "EmbeddingFeatureSpec",
+    "KeySpecification",
+]
+
+#: The default convention names stored once per structure. Read off the key
+#: table rather than listed again: a name in the table and in neither of these
+#: is never parsed, and a name in one of these and not in the table can be
+#: given a file key it will never be read with.
+GRAPH_CONVENTION_NAMES: frozenset[str] = DefaultKeys.names_stored_per("graph")
+
+#: The default convention names stored once per atom. ``magmom`` and
+#: ``magforces`` are here, on the default path, and not behind a magnetic
+#: switch: they are part of the default key table, so every parse resolves
+#: them and a magnetically labelled file reads without any flag being set.
+ATOM_CONVENTION_NAMES: frozenset[str] = DefaultKeys.names_stored_per("atom")
+
+
+def _known_convention_names() -> frozenset[str]:
+    return GRAPH_CONVENTION_NAMES | ATOM_CONVENTION_NAMES
+
+
+@dataclass(frozen=True)
+class EmbeddingFeatureSpec:
+    """A user-declared input feature the model is given alongside the structure.
+
+    Declaring one is the only way a quantity that is neither a position nor a
+    label becomes nameable: the parser learns to read it, and the derivative
+    grammar can then be asked for a derivative with respect to it.
+
+    Args:
+        per: ``"atom"`` for a per-atom array, ``"graph"`` for one value per
+            structure. Nothing else is accepted, because the two are read from
+            different places in the file and there is no third place.
+        key: The file key to read it from. Defaults to the feature's own name.
+    """
+
+    per: Storage
+    key: str | None = None
+
+    def __post_init__(self) -> None:
+        # Here rather than in `from_mapping`, so a spec built directly is held
+        # to the same rule. `per` is a `Literal`, but nothing enforces that at
+        # run time, and any value other than "atom" would otherwise be routed
+        # to the per-structure half.
+        if self.per not in STORAGES:
+            raise ValueError(
+                f"per: {self.per!r} is not a place a value can be read from. "
+                f"Use per: atom for a per-atom array or per: graph for one "
+                f"value per structure."
+            )
+
+    @classmethod
+    def from_mapping(cls, name: str, spec: Mapping[str, Any]) -> EmbeddingFeatureSpec:
+        """Build one from the plain mapping a config file or the CLI supplies."""
+        try:
+            per = spec["per"]
+        except KeyError:
+            raise ValueError(
+                f"embedding feature {name!r} does not say where it is stored. "
+                f"Add per: atom for a per-atom array or per: graph for one "
+                f"value per structure."
+            ) from None
+        try:
+            return cls(per=per, key=spec.get("key"))
+        except ValueError as error:
+            raise ValueError(f"embedding feature {name!r}: {error}") from None
+
+    def file_key(self, name: str) -> str:
+        """The key to read this feature from, defaulting to the feature name."""
+        return self.key if self.key is not None else name
+
+
+@dataclass
+class KeySpecification:
+    """Convention name to file key, split by where the value is stored.
+
+    Every way of building or extending one goes through the same check, so a
+    specification that exists is a valid one:
+
+    * a name is in one half only, since it is one quantity read from one place;
+    * a default convention name is in the half the key table gives it, since
+      reading ``forces`` among the per-structure values finds nothing and
+      reports it as a missing label;
+    * no name is a field of
+      :class:`~mace_core.data.configuration.Configuration`
+      (:data:`~mace_core.data.configuration.RESERVED_PROPERTY_NAMES`), since
+      that value is stored on the configuration itself.
+
+    The dictionaries can still be written to directly; the check then runs
+    again when the specification is copied, which is the first thing
+    :func:`~mace_core.data.xyz.read_configurations` does with it.
+
+    Args:
+        graph_keys: Per-structure properties.
+        atom_keys: Per-atom properties.
+
+    Raises:
+        ValueError: if either half breaks one of the rules above.
+    """
+
+    graph_keys: dict[str, str] = field(default_factory=dict)
+    atom_keys: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _check_halves(self.graph_keys, self.atom_keys)
+
+    @classmethod
+    def from_defaults(cls) -> KeySpecification:
+        """All twelve default keys, routed to the half each is stored in."""
+        return cls().apply_overrides(DefaultKeys.keydict())
+
+    def copy(self) -> KeySpecification:
+        """An independent copy. Rewriting keys on it cannot reach the original."""
+        return replace(
+            self, graph_keys=dict(self.graph_keys), atom_keys=dict(self.atom_keys)
+        )
+
+    def update(
+        self,
+        graph_keys: Mapping[str, str] | None = None,
+        atom_keys: Mapping[str, str] | None = None,
+    ) -> KeySpecification:
+        """Merge explicit keys in, by convention name. Returns ``self``.
+
+        Raises:
+            ValueError: if the result breaks a rule of the class. ``self`` is
+                then left as it was.
+        """
+        return self._replace_halves(
+            {**self.graph_keys, **(graph_keys or {})},
+            {**self.atom_keys, **(atom_keys or {})},
+        )
+
+    def apply_overrides(self, overrides: Mapping[str, Any]) -> KeySpecification:
+        """Apply ``<convention name>_key`` overrides. Returns ``self``.
+
+        Entries whose name does not end in ``_key`` are ignored, so a whole
+        settings mapping can be handed over without filtering it first. An
+        entry that *does* end in ``_key`` but names no known convention is an
+        error: silently dropping it would leave the property unparsed, with
+        nothing anywhere saying why the labels never arrived.
+        """
+        known = _known_convention_names()
+        graph_keys = dict(self.graph_keys)
+        atom_keys = dict(self.atom_keys)
+        unknown: list[str] = []
+        for setting, value in overrides.items():
+            if not setting.endswith("_key"):
+                continue
+            name = setting[: -len("_key")]
+            if name in GRAPH_CONVENTION_NAMES:
+                graph_keys[name] = value
+            elif name in ATOM_CONVENTION_NAMES:
+                atom_keys[name] = value
+            else:
+                unknown.append(setting)
+        if unknown:
+            raise ValueError(
+                f"no property is named by {sorted(unknown)}. The properties "
+                f"that can be given a file key are {sorted(known)}; to read "
+                f"anything else, declare it as an embedding feature."
+            )
+        return self._replace_halves(graph_keys, atom_keys)
+
+    def add_embedding_features(
+        self, embedding_specs: Mapping[str, EmbeddingFeatureSpec | Mapping[str, Any]]
+    ) -> KeySpecification:
+        """Extend the specification with user-declared input features.
+
+        Returns ``self``. A feature with ``per: atom`` becomes a per-atom key
+        and one with ``per: graph`` a per-structure key, read from its declared
+        ``key`` or, failing that, from its own name.
+
+        Raises:
+            ValueError: if a feature is named like a default property, whether
+                or not this specification already resolves it, or like a
+                feature already declared, or like a field of a configuration.
+                A name is one quantity, read from one place. A different file
+                key for a default property is what the ``<name>_key`` override
+                is for.
+        """
+        graph_keys = dict(self.graph_keys)
+        atom_keys = dict(self.atom_keys)
+        for name, spec in embedding_specs.items():
+            feature = (
+                spec
+                if isinstance(spec, EmbeddingFeatureSpec)
+                else EmbeddingFeatureSpec.from_mapping(name, spec)
+            )
+            if name in _known_convention_names():
+                raise ValueError(
+                    f"embedding feature {name!r} is named like a default "
+                    f"property. Give the feature a name of its own; to read "
+                    f"{name!r} from another file key, set {name}_key."
+                )
+            if name in graph_keys or name in atom_keys:
+                raise ValueError(
+                    f"embedding feature {name!r} is declared twice. Give each "
+                    f"feature a name of its own."
+                )
+            target = atom_keys if feature.per == "atom" else graph_keys
+            target[name] = feature.file_key(name)
+        return self._replace_halves(graph_keys, atom_keys)
+
+    def _replace_halves(
+        self, graph_keys: dict[str, str], atom_keys: dict[str, str]
+    ) -> KeySpecification:
+        _check_halves(graph_keys, atom_keys)
+        self.graph_keys = graph_keys
+        self.atom_keys = atom_keys
+        return self
+
+    def property_names(self) -> tuple[str, ...]:
+        """Every convention name this specification resolves, per-atom first.
+
+        The order is the one the legacy weight loop used, and it is the order
+        ``property_weights`` is built in. It matters only for reproducibility
+        of iteration, not for correctness.
+        """
+        return (*self.atom_keys, *self.graph_keys)
+
+
+def _check_halves(graph_keys: Mapping[str, str], atom_keys: Mapping[str, str]) -> None:
+    """Raise if the two halves break a rule of :class:`KeySpecification`."""
+    problems: list[str] = []
+    for name in sorted(set(graph_keys) & set(atom_keys)):
+        problems.append(
+            f"{name!r} is in both halves; it is one quantity, so keep it in "
+            f"the one it is stored in"
+        )
+    for half, keys, other in (
+        ("graph", graph_keys, ATOM_CONVENTION_NAMES),
+        ("atom", atom_keys, GRAPH_CONVENTION_NAMES),
+    ):
+        for name in sorted(set(keys) & other):
+            problems.append(
+                f"{name!r} is in the {half} half, but it is stored per "
+                f"{'atom' if half == 'graph' else 'graph'}; set {name}_key to "
+                f"change only its file key"
+            )
+    for name in sorted(RESERVED_PROPERTY_NAMES & (set(graph_keys) | set(atom_keys))):
+        problems.append(
+            f"{name!r} is a field of Configuration and is stored there, not "
+            f"read as a property; rename it"
+        )
+    if problems:
+        raise ValueError("invalid key specification: " + "; ".join(problems) + ".")
