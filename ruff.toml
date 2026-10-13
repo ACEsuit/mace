@@ -1,7 +1,7 @@
-# The declared floor (setup.cfg: python_requires >= 3.10). PEP 585 (`list[T]`)
+# The declared floor (setup.cfg: python_requires >= 3.11). PEP 585 (`list[T]`)
 # and PEP 604 (`X | Y`) are both natively valid here, so FA102 is a no-op over
 # most of the tree — which is correct: those annotations are fine at runtime.
-target-version = "py310"
+target-version = "py311"
 
 # The vendored trees are excluded from every toolchain, as they always were.
 extend-exclude = [

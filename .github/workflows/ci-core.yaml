@@ -29,11 +29,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
-          # 3.10, the version .mypy.ini declares. mypy parses third-party stubs
+          # 3.11, the version .mypy.ini declares. mypy parses third-party stubs
           # against python_version, and numpy 2.5's are PEP 695, so on a newer
           # interpreter the run stops at a parse error and checks nothing. The
-          # hooks pass identically on 3.10.
-          python-version: "3.10"
+          # hooks pass identically on 3.11.
+          python-version: "3.11"
           extras: dev
           # The pylint hook is `language: system`: packages the linted code
           # imports must be importable in this environment.
@@ -166,9 +166,9 @@ jobs:
           exit "$status"
 
   unit:
-    # The only 5-version matrix: python-version bugs are import/API-shaped and
-    # this suite is cheap. No pytest-split: if tests/unit needs sharding, the
-    # tests are misclassified.
+    # The only full-matrix suite on pull requests: python-version bugs are
+    # import/API-shaped and this suite is cheap. No pytest-split: if tests/unit
+    # needs sharding, the tests are misclassified.
     needs: [ legacy-lint, packages-lint ]
     runs-on: ubuntu-latest
     name: unit (py${{ matrix.python-version }})
@@ -176,7 +176,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ '3.10', '3.11', '3.12', '3.13' ]
+        python-version: [ '3.11', '3.12', '3.13' ]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
@@ -190,7 +190,7 @@ jobs:
           # the rewrite is measured against, so a change that moves them has
           # to fail the pull request that made it, not a run nobody reads the
           # next morning. They are CPU-only, network-free, carry no capability
-          # marker and no `slow` mark, so they collect on all four versions.
+          # marker and no `slow` mark, so they collect on every version.
           #
           # tests/architecture is NOT here: it moved to the `architecture` job
           # below, which is the only one that installs both trees editable and
@@ -257,7 +257,7 @@ jobs:
     # legacy environment first would keep passing on the day one of them grows
     # a dependency on it.
     #
-    # Same four versions as the unit job, for the same reason: what breaks
+    # Same versions as the unit job, for the same reason: what breaks
     # across python versions here is import- and packaging-shaped, and the job
     # takes seconds.
     needs: [ legacy-lint, packages-lint ]
@@ -267,7 +267,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ '3.10', '3.11', '3.12', '3.13' ]
+        python-version: [ '3.11', '3.12', '3.13' ]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -307,7 +307,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.10","3.13"]') || fromJSON('["3.10","3.11","3.12","3.13"]') }}
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.11","3.13"]') || fromJSON('["3.11","3.12","3.13"]') }}
         split-group: [ 1, 2 ]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
