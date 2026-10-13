@@ -120,20 +120,32 @@ jobs:
     # The only full-matrix suite on pull requests: python-version bugs are
     # import/API-shaped and this suite is cheap. No pytest-split: if tests/unit
     # needs sharding, the tests are misclassified.
+    #
+    # Every other leg resolves the newest torch, so the min-torch leg is the
+    # only job that exercises the torch floor setup.cfg declares. Keep the two
+    # in sync.
     needs: lint
     runs-on: ubuntu-latest
-    name: unit (py${{ matrix.python-version }})
+    name: unit (py${{ matrix.python-version }}${{ matrix.torch && format(', torch {0}', matrix.torch) || '' }})
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         python-version: [ '3.11', '3.12', '3.13' ]
+        # Empty means the newest torch. The include entry cannot be merged
+        # into the 3.11 leg without overwriting this value, so it becomes a
+        # job of its own rather than repinning that leg.
+        torch: [ '' ]
+        include:
+          - python-version: '3.11'
+            torch: '2.5.0'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
           python-version: ${{ matrix.python-version }}
           extras: dev
+          pip-packages: ${{ matrix.torch && format('torch=={0}', matrix.torch) || '' }}
       - uses: ./.github/actions/run-tests
         with:
           # tests/golden rides along here rather than in a nightly: the
