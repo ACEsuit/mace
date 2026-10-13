@@ -117,9 +117,9 @@ jobs:
           exit "$status"
 
   unit:
-    # The only 5-version matrix: python-version bugs are import/API-shaped and
-    # this suite is cheap. No pytest-split: if tests/unit needs sharding, the
-    # tests are misclassified.
+    # The only full-matrix suite on pull requests: python-version bugs are
+    # import/API-shaped and this suite is cheap. No pytest-split: if tests/unit
+    # needs sharding, the tests are misclassified.
     needs: lint
     runs-on: ubuntu-latest
     name: unit (py${{ matrix.python-version }})
@@ -127,7 +127,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ '3.10', '3.11', '3.12', '3.13' ]
+        python-version: [ '3.11', '3.12', '3.13' ]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
@@ -141,7 +141,7 @@ jobs:
           # the rewrite is measured against, so a change that moves them has
           # to fail the pull request that made it, not a run nobody reads the
           # next morning. They are CPU-only, network-free, carry no capability
-          # marker and no `slow` mark, so they collect on all four versions.
+          # marker and no `slow` mark, so they collect on every version.
           tests: tests/unit tests/golden
           markers: not slow
           numprocs: auto
@@ -157,7 +157,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.10","3.13"]') || fromJSON('["3.10","3.11","3.12","3.13"]') }}
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.11","3.13"]') || fromJSON('["3.11","3.12","3.13"]') }}
         split-group: [ 1, 2 ]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
