@@ -405,7 +405,7 @@ def _legacy_to_reference_map(
     legacy = np.moveaxis(legacy, -1, 0)
     targets = np.stack([_symmetric_part(path, order).reshape(-1) for path in legacy])
     flat_basis = basis.detach().numpy().reshape(basis.shape[0], -1)
-    solution, residual, *_ = np.linalg.lstsq(flat_basis.T, targets.T, rcond=None)
+    solution, *_ = np.linalg.lstsq(flat_basis.T, targets.T, rcond=None)
     np.testing.assert_allclose(
         flat_basis.T @ solution, targets.T, atol=CLOSED_FORM.atol
     )

@@ -16,6 +16,7 @@ from mace_core.config import (
     PolynomialCutoffConfig,
     SoftTransformConfig,
 )
+from mace_torch.backends.radial import ChebyshevBasis
 from mace_torch.nn.embedding import (
     LinearNodeEmbeddingBlock,
     RadialEmbeddingBlock,
@@ -23,7 +24,6 @@ from mace_torch.nn.embedding import (
     build_distance_transform,
     build_radial_basis,
 )
-from mace_torch.backends.radial import ChebyshevBasis
 from mace_torch.nn.radial import ZBLBasis
 
 from mace.modules.blocks import LinearNodeEmbeddingBlock as LegacyNodeEmbedding
