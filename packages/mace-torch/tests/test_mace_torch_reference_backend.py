@@ -1,10 +1,10 @@
 """The reference backend: every factory, the force path, and the checkpoint.
 
 The force path test is the one that matters. It differentiates an energy
-through spherical harmonics, a tensor product and a scatter, with respect to
-positions, and then differentiates that again. Every op in the chain has to
-carry a differentiable backward or the second derivative is silently wrong, and
-training on forces is exactly that second derivative.
+through spherical harmonics, the radial basis and its MLP, a tensor product and
+a scatter, with respect to positions, and then differentiates that again. Every
+op in the chain has to carry a differentiable backward or the second derivative
+is silently wrong, and training on forces is exactly that second derivative.
 """
 
 import importlib.metadata
@@ -25,6 +25,7 @@ from mace_core.kernels import (
     FullyConnectedTPDescriptor,
     LinearDescriptor,
     RadialBasisDescriptor,
+    RadialMLPDescriptor,
     SegmentReduceDescriptor,
     SphericalHarmonicsDescriptor,
     SymmetricContractionDescriptor,
@@ -138,6 +139,13 @@ def chain(backend):
             irreps_node="0e+1o", irreps_edge="0e+1o", irreps_out="0e+1o"
         )
     )
+    # One weight per coupling path and channel, read off the built
+    # convolution, which is what exposing `num_paths` is for.
+    channels = 2
+    mlp = backend.make_radial_mlp(
+        RadialMLPDescriptor(channels=(8, 16, convolution.num_paths * channels))
+    )
+    mlp.initialize_weights(0)
     contraction = backend.make_symmetric_contraction(
         SymmetricContractionDescriptor(
             irreps_in="0e+1o",
@@ -156,13 +164,8 @@ def chain(backend):
         vectors = positions[receiver] - positions[sender]
         lengths = vectors.norm(dim=-1, keepdim=True)
         attributes = harmonics(vectors)
-        # The radial MLP is external to the op, so its width has to match the
-        # number of coupling paths the convolution declares. Reading it off the
-        # built op is the point of exposing `num_paths`.
-        weights = (
-            radial(lengths)[:, : convolution.num_paths].unsqueeze(-1).expand(-1, -1, 2)
-        )
-        features = torch.zeros(positions.shape[0], 2, 4, dtype=positions.dtype)
+        weights = mlp(radial(lengths)).view(-1, convolution.num_paths, channels)
+        features = torch.zeros(positions.shape[0], channels, 4, dtype=positions.dtype)
         features[:, :, 0] = 1.0
         messages = convolution(
             features, attributes, weights, sender, receiver, positions.shape[0]
@@ -231,6 +234,85 @@ def test_the_linear_weights_round_trip_through_a_fresh_instance(backend):
     read = backend.make_linear(descriptor)
     read.load_canonical(written.to_canonical())
     assert torch.allclose(read(features), written(features))
+
+
+# ---------------------------------------------------------------------------
+# The radial MLP
+# ---------------------------------------------------------------------------
+
+RADIAL_MLP_KINDS = ["normalized_silu", "layer_norm_silu"]
+
+
+def _drawn_mlp(backend, kind, channels=(8, 16, 12), precision="float64"):
+    mlp = backend.make_radial_mlp(
+        RadialMLPDescriptor(channels=channels, kind=kind, precision=precision)
+    )
+    mlp.initialize_weights(1)
+    return mlp
+
+
+@pytest.mark.parametrize("kind", RADIAL_MLP_KINDS)
+def test_the_radial_mlp_holds_the_weights_its_descriptor_counts(backend, kind):
+    mlp = _drawn_mlp(backend, kind, channels=(8, 16, 16, 12))
+    assert sum(p.numel() for p in mlp.parameters()) == mlp.descriptor.weight_numel
+    assert sum(t.numel() for t in mlp.to_canonical().values()) == (
+        mlp.descriptor.weight_numel
+    )
+
+
+@pytest.mark.parametrize("kind", RADIAL_MLP_KINDS)
+def test_the_radial_mlp_round_trips_through_a_fresh_instance(backend, kind):
+    written = _drawn_mlp(backend, kind)
+    with torch.no_grad():
+        for parameter in written.parameters():
+            parameter.uniform_(-1, 1)
+    read = backend.make_radial_mlp(written.descriptor)
+    read.load_canonical(written.to_canonical())
+    radial = torch.randn(5, 8)
+    assert torch.equal(read(radial), written(radial))
+
+
+@pytest.mark.parametrize("kind", RADIAL_MLP_KINDS)
+def test_the_radial_mlp_differentiates_twice_in_input_and_weights(backend, kind):
+    """The forces reach the MLP through its input, and force training then
+    differentiates them with respect to its weights."""
+    mlp = _drawn_mlp(backend, kind, channels=(4, 5, 3))
+    parameters = list(mlp.parameters())
+    radial = torch.randn(3, 4, requires_grad=True)
+
+    def apply(radial, *weights):
+        names = [name for name, _ in mlp.named_parameters()]
+        state = dict(zip(names, weights, strict=True))
+        return torch.func.functional_call(mlp, state, (radial,))
+
+    inputs = (radial, *(p.detach().clone().requires_grad_(True) for p in parameters))
+    assert torch.autograd.gradcheck(apply, inputs)
+    assert torch.autograd.gradgradcheck(apply, inputs)
+
+
+@pytest.mark.parametrize("kind", RADIAL_MLP_KINDS)
+def test_the_radial_mlp_compiles_whole_for_every_edge_count(backend, kind):
+    """No graph break, and the edge count enters as a symbolic dimension."""
+    from torch._dynamo import reset
+    from torch._dynamo.testing import CompileCounter
+
+    mlp = _drawn_mlp(backend, kind)
+    reset()
+    counter = CompileCounter()
+    compiled = torch.compile(mlp, backend=counter, fullgraph=True, dynamic=True)
+    for edges in (3, 7, 12, 20, 33):
+        radial = torch.randn(edges, 8)
+        assert torch.allclose(compiled(radial), mlp(radial))
+    assert counter.frame_count <= 2
+
+
+@pytest.mark.parametrize("kind", RADIAL_MLP_KINDS)
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+def test_the_radial_mlp_holds_its_descriptor_precision(backend, kind, precision):
+    mlp = _drawn_mlp(backend, kind, precision=precision)
+    expected = {"float32": torch.float32, "float64": torch.float64}[precision]
+    assert all(p.dtype == expected for p in mlp.parameters())
+    assert mlp(torch.randn(4, 8, dtype=expected)).dtype == expected
 
 
 # ---------------------------------------------------------------------------

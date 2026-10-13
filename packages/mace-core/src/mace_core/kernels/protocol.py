@@ -13,12 +13,15 @@ between this and the frozen tree's dispatch, which branches inside the
 interaction blocks on whether an attribute happens to be set.
 
 **The op set is closed.** It is exactly the operations that differ between
-backends, and it does not grow to accommodate one. Two of them are
-reference-only: spherical harmonics and the radial basis are cheap closed forms
-that a backend *may* override and is not required to, and declining is a normal
-answer rather than a failure.
+backends, and it does not grow to accommodate one. Three of them are
+reference-only: a backend *may* override them and is not required to, and
+declining is a normal answer rather than a failure. Spherical harmonics and the
+radial basis are cheap closed forms. The radial MLP is a few dense matrix
+products that the framework already runs well on its own; what a backend gains
+from it is fusing it into the convolution, which is a span and is negotiated
+through the span factory, handed both descriptors.
 
-**Three of the ops hold their own weights**, and those three have a contract of
+**Four of the ops hold their own weights**, and those four have a contract of
 their own: they read and write the canonical layout, and they can draw a fresh
 set. The last of the three is not an optimization. An op that allocates zeros
 and waits to be loaded is correct for every use that loads a checkpoint, and it
@@ -37,6 +40,7 @@ from mace_core.kernels.descriptors import (
     FullyConnectedTPDescriptor,
     LinearDescriptor,
     RadialBasisDescriptor,
+    RadialMLPDescriptor,
     SegmentReduceDescriptor,
     SphericalHarmonicsDescriptor,
     SymmetricContractionDescriptor,
@@ -68,12 +72,15 @@ DISPATCHED_OPS: frozenset[str] = frozenset(
 )
 
 #: The ops a backend may decline, leaving them to the reference.
-REFERENCE_ONLY_OPS: frozenset[str] = frozenset({"spherical_harmonics", "radial_basis"})
+REFERENCE_ONLY_OPS: frozenset[str] = frozenset(
+    {"spherical_harmonics", "radial_basis", "radial_mlp"}
+)
 
 #: The ops that hold weights, and therefore implement :class:`InternalWeights`.
-#: The other two dispatched ops take theirs from outside, or have none.
+#: The convolution takes its weights from the radial MLP, and the reduction
+#: has none.
 INTERNAL_WEIGHT_OPS: frozenset[str] = frozenset(
-    {"linear", "symmetric_contraction", "fully_connected_tp"}
+    {"linear", "symmetric_contraction", "fully_connected_tp", "radial_mlp"}
 )
 
 
@@ -100,8 +107,9 @@ class InternalWeights(Protocol):
         The scales are :mod:`mace_core.kernels.canonical`'s: a standard normal
         for the linear and skip-connection weights, whose ``1 / sqrt(fan_in)``
         is applied in the forward and never folded into the draw, a zero bias,
-        and a standard normal over the block's path count for the symmetric
-        contraction. Two backends initialised from the same seed then differ in
+        a standard normal over the block's path count for the symmetric
+        contraction, and for the radial MLP whichever draw its kind states.
+        Two backends initialised from the same seed then differ in
         their draw and not in the size of what they drew, and a weight trains
         at the effective learning rate the frozen tree's does.
 
@@ -169,6 +177,14 @@ class KernelBackend(Protocol):
 
     def make_radial_basis(self, descriptor: RadialBasisDescriptor) -> Any | None:
         """The radial embedding, or ``None`` to leave it to the reference."""
+        ...
+
+    def make_radial_mlp(self, descriptor: RadialMLPDescriptor) -> Any | None:
+        """The radial MLP, or ``None`` to leave it to the reference.
+
+        Its weights are canonical whoever builds it, so declining changes where
+        it runs and not what a checkpoint holds.
+        """
         ...
 
     def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> Any | None:

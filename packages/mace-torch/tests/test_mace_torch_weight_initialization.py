@@ -15,13 +15,15 @@ from typing import Any
 
 import pytest
 import torch
+from mace_core.kernels.canonical import SILU_SECOND_MOMENT_SCALE
 from mace_core.kernels.descriptors import (
     FullyConnectedTPDescriptor,
     LinearDescriptor,
+    RadialMLPDescriptor,
     SymmetricContractionDescriptor,
 )
 from mace_core.kernels.protocol import INTERNAL_WEIGHT_OPS, InternalWeights
-from mace_torch.backends.reference import ReferenceBackend
+from mace_torch.backends.reference import ReferenceBackend, ReferenceLayerNormSiluMLP
 from mace_torch.kernels import initialize_model_weights, op_seed
 
 BACKEND = ReferenceBackend()
@@ -32,6 +34,8 @@ SKIP = FullyConnectedTPDescriptor(
 CONTRACTION = SymmetricContractionDescriptor(
     irreps_in="0e+1o", irreps_out="0e", correlation=2, num_elements=2, num_features=4
 )
+RADIAL_MLP = RadialMLPDescriptor(channels=(8, 16, 12))
+LAYER_NORM_MLP = RadialMLPDescriptor(channels=(8, 16, 12), kind="layer_norm_silu")
 
 
 def built() -> dict[str, Any]:
@@ -39,6 +43,7 @@ def built() -> dict[str, Any]:
         "linear": BACKEND.make_linear(LINEAR),
         "fully_connected_tp": BACKEND.make_fully_connected_tp(SKIP),
         "symmetric_contraction": BACKEND.make_symmetric_contraction(CONTRACTION),
+        "radial_mlp": BACKEND.make_radial_mlp(RADIAL_MLP),
     }
 
 
@@ -48,7 +53,8 @@ def built() -> dict[str, Any]:
 
 
 def test_every_op_that_holds_weights_can_draw_a_fresh_set():
-    """The three named in the contract, and no fourth one quietly added."""
+    """The four named in the contract, and no fifth one quietly added."""
+    assert set(built()) == INTERNAL_WEIGHT_OPS
     for name, op in built().items():
         assert name in INTERNAL_WEIGHT_OPS
         assert isinstance(op, InternalWeights), name
@@ -177,6 +183,75 @@ def test_the_symmetric_contraction_draws_over_each_block_path_count():
         assert spread * count == pytest.approx(1.0, rel=0.1)
 
 
+def test_the_normalized_radial_mlp_forward_applies_the_fan_in():
+    """64 inputs of one through weights of one is 64, divided by ``sqrt(64)``.
+    The draw is a standard normal, unscaled, for the same reason as the
+    linear's."""
+    mlp = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=(64, 1)))
+    with torch.no_grad():
+        mlp.weights[0].fill_(1.0)
+    assert float(mlp(torch.ones(1, 64, dtype=torch.float64))[0, 0]) == pytest.approx(
+        8.0
+    )
+    wide = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=(64, 64, 64)))
+    wide.initialize_weights(3)
+    for weight in wide.weights:
+        assert float(weight.detach().std()) == pytest.approx(1.0, rel=0.1)
+
+
+def test_the_normalized_radial_mlp_scales_its_hidden_activation():
+    """Widths of one and weights of one leave only the activation, which is a
+    SiLU times the pinned second-moment scale."""
+    mlp = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=(1, 1, 1)))
+    with torch.no_grad():
+        for weight in mlp.weights:
+            weight.fill_(1.0)
+    radial = torch.tensor([[0.7]], dtype=torch.float64)
+    expected = SILU_SECOND_MOMENT_SCALE * torch.nn.functional.silu(radial)
+    assert torch.allclose(mlp(radial), expected)
+
+
+def test_the_layer_norm_radial_mlp_starts_as_zero_matrices_and_identity_norms():
+    """Its layer norms are the identity when built, not zero: a zero scale
+    would remove every hidden feature. The matrices and biases are zero and
+    wait for a draw like every other op's."""
+    mlp = BACKEND.make_radial_mlp(LAYER_NORM_MLP)
+    state = mlp.to_canonical()
+    for name in ("layer_0", "layer_1", "bias_0", "bias_1", "norm_bias_0"):
+        assert float(state[name].abs().max()) == 0.0, name
+    assert torch.equal(state["norm_weight_0"], torch.ones(16, dtype=torch.float64))
+    assert set(state) == {
+        "layer_0",
+        "layer_1",
+        "bias_0",
+        "bias_1",
+        "norm_weight_0",
+        "norm_bias_0",
+    }
+
+
+def test_the_layer_norm_radial_mlp_draws_like_a_torch_linear():
+    """Weight and bias uniform on ``1 / sqrt(fan_in)``; the norms stay the
+    identity; and the same seed gives the same draw."""
+    mlp = BACKEND.make_radial_mlp(
+        RadialMLPDescriptor(channels=(64, 64, 64), kind="layer_norm_silu")
+    )
+    assert isinstance(mlp, ReferenceLayerNormSiluMLP)
+    mlp.initialize_weights(5)
+    bound = 64**-0.5
+    for parameter in [*mlp.weights, *mlp.biases]:
+        values = parameter.detach()
+        assert float(values.abs().max()) <= bound
+        # A uniform on [-b, b] has standard deviation b / sqrt(3).
+        assert float(values.std()) == pytest.approx(bound / 3**0.5, rel=0.15)
+    assert all(float(w.detach().min()) == 1.0 for w in mlp.norm_weights)
+    assert all(float(b.detach().abs().max()) == 0.0 for b in mlp.norm_biases)
+    again = BACKEND.make_radial_mlp(mlp.descriptor)
+    again.initialize_weights(5)
+    for first, second in zip(mlp.parameters(), again.parameters(), strict=True):
+        assert torch.equal(first, second)
+
+
 # ---------------------------------------------------------------------------
 # The walk over a model
 # ---------------------------------------------------------------------------
@@ -226,9 +301,9 @@ OTHER_DEVICE = (
     else None
 )
 
-#: The same three ops at float32. Metal has no float64 at all, so a float64
-#: module cannot even be moved there; the device question is the same at either
-#: precision.
+#: The same four ops at float32, with both radial MLP kinds. Metal has no
+#: float64 at all, so a float64 module cannot even be moved there; the device
+#: question is the same at either precision.
 NARROW_LINEAR = LinearDescriptor(
     irreps_in="4x0e+4x1o",
     irreps_out="4x0e+4x1o",
@@ -256,6 +331,14 @@ def built_narrow() -> dict[str, Any]:
                 num_elements=2,
                 num_features=4,
                 precision="float32",
+            )
+        ),
+        "radial_mlp": BACKEND.make_radial_mlp(
+            RadialMLPDescriptor(channels=(8, 16, 12), precision="float32")
+        ),
+        "radial_mlp_layer_norm": BACKEND.make_radial_mlp(
+            RadialMLPDescriptor(
+                channels=(8, 16, 12), kind="layer_norm_silu", precision="float32"
             )
         ),
     }

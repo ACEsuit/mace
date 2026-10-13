@@ -20,7 +20,8 @@ The legacy side is the module legacy models build: ``e3nn``'s linear and fully
 connected tensor product through ``mace.modules.wrapper_ops`` (``e3nn``'s own
 linear for the bias case, which the wrapper never asks for), the channelwise
 tensor product with the instructions ``mace.modules.irreps_tools`` computes,
-and ``mace.modules.symmetric_contraction``.
+``mace.modules.symmetric_contraction``, and the two radial MLPs: ``e3nn``'s
+``FullyConnectedNet`` and ``mace.modules.radial.RadialMLP``.
 """
 
 import itertools
@@ -29,16 +30,20 @@ import math
 import numpy as np
 import pytest
 import torch
+from e3nn import nn as e3nn_nn
 from e3nn import o3
 from mace_core.kernels import (
+    LAYER_NORM_EPSILON,
     ChannelwiseTPConvDescriptor,
     FullyConnectedTPDescriptor,
     LinearDescriptor,
+    RadialMLPDescriptor,
     SymmetricContractionDescriptor,
 )
 from mace_torch.backends.reference import ReferenceBackend
 
 from mace.modules.irreps_tools import tp_out_irreps_with_instructions
+from mace.modules.radial import RadialMLP as LegacyRadialMLP
 from mace.modules.symmetric_contraction import SymmetricContraction
 from mace.modules.wrapper_ops import FullyConnectedTensorProduct, TensorProduct
 from mace.modules.wrapper_ops import Linear as LegacyLinear
@@ -531,3 +536,126 @@ def test_the_contraction_draw_has_the_legacy_spread_per_block(fp64):
         assert legacy_weight.shape == reference_weight.shape
         assert float(reference_weight.std()) * path_count == pytest.approx(1.0, rel=0.1)
         assert float(legacy_weight.std()) * path_count == pytest.approx(1.0, rel=0.1)
+
+
+# ---------------------------------------------------------------------------
+# The radial MLP
+# ---------------------------------------------------------------------------
+
+RADIAL_MLP_CHANNELS = [(8, 12), (8, 16, 12), (8, 64, 64, 64, 24)]
+
+
+def _compare_radial_mlps(reference, legacy, pairs, what):
+    """Forward, and the gradient with respect to the input and to every weight.
+
+    ``pairs`` matches each canonical tensor with the legacy parameter it is,
+    and whether the legacy one is held transposed.
+    """
+    radial = torch.randn(17, reference.descriptor.channels[0], generator=_generator(5))
+    radial.requires_grad_(True)
+    reference_out = reference(radial)
+    legacy_out = legacy(radial)
+    assert_parity(reference_out, legacy_out, f"{what} forward")
+
+    cotangent = torch.randn(reference_out.shape, generator=_generator(6))
+    canonical = reference.to_canonical()
+    reference_parameters = dict(reference.named_parameters())
+    names = list(pairs)
+    reference_grads = torch.autograd.grad(
+        (reference_out * cotangent).sum(),
+        [radial] + [_parameter_of(reference_parameters, canonical[n]) for n in names],
+    )
+    legacy_grads = torch.autograd.grad(
+        (legacy_out * cotangent).sum(), [radial] + [pairs[n][0] for n in names]
+    )
+    assert_parity(reference_grads[0], legacy_grads[0], f"{what} d input")
+    for name, ours, theirs in zip(
+        names, reference_grads[1:], legacy_grads[1:], strict=True
+    ):
+        transposed = pairs[name][1]
+        assert_parity(ours, theirs.T if transposed else theirs, f"{what} d {name}")
+
+
+def _parameter_of(parameters, canonical_view):
+    """The parameter a canonical view was detached from."""
+    for parameter in parameters.values():
+        if parameter.data_ptr() == canonical_view.data_ptr():
+            return parameter
+    raise LookupError("a canonical tensor that is not a view of a parameter")
+
+
+@pytest.mark.parametrize("channels", RADIAL_MLP_CHANNELS)
+def test_the_normalized_radial_mlp_is_e3nns_fully_connected_net(fp64, channels):
+    """Same stored weights, same orientation: ``e3nn`` holds ``[fan_in,
+    fan_out]`` and divides in the forward, as the canonical layout does."""
+    torch.manual_seed(0)
+    legacy = e3nn_nn.FullyConnectedNet(list(channels), torch.nn.functional.silu)
+    reference = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=channels))
+    legacy_weights = [
+        getattr(legacy, f"layer{i}").weight for i in range(len(channels) - 1)
+    ]
+    reference.load_canonical(
+        {f"layer_{i}": weight.detach() for i, weight in enumerate(legacy_weights)}
+    )
+    pairs = {f"layer_{i}": (weight, False) for i, weight in enumerate(legacy_weights)}
+    _compare_radial_mlps(reference, legacy, pairs, "normalized radial MLP")
+
+
+@pytest.mark.parametrize("channels", RADIAL_MLP_CHANNELS)
+def test_the_layer_norm_radial_mlp_is_the_legacy_radial_mlp(fp64, channels):
+    """The legacy layers are ``torch.nn.Linear``, which hold the transpose."""
+    torch.manual_seed(0)
+    legacy = LegacyRadialMLP(list(channels))
+    linears = [m for m in legacy.net if isinstance(m, torch.nn.Linear)]
+    norms = [m for m in legacy.net if isinstance(m, torch.nn.LayerNorm)]
+    with torch.no_grad():
+        for norm in norms:
+            norm.weight.uniform_(0.5, 1.5, generator=_generator(7))
+            norm.bias.uniform_(-0.5, 0.5, generator=_generator(8))
+    reference = BACKEND.make_radial_mlp(
+        RadialMLPDescriptor(channels=channels, kind="layer_norm_silu")
+    )
+    pairs = {}
+    for i, linear in enumerate(linears):
+        pairs[f"layer_{i}"] = (linear.weight, True)
+        pairs[f"bias_{i}"] = (linear.bias, False)
+    for i, norm in enumerate(norms):
+        pairs[f"norm_weight_{i}"] = (norm.weight, False)
+        pairs[f"norm_bias_{i}"] = (norm.bias, False)
+    reference.load_canonical(
+        {
+            name: (tensor.detach().T if transposed else tensor.detach())
+            for name, (tensor, transposed) in pairs.items()
+        }
+    )
+    assert all(norm.eps == LAYER_NORM_EPSILON for norm in norms)
+    _compare_radial_mlps(reference, legacy, pairs, "layer norm radial MLP")
+
+
+def test_the_normalized_radial_mlp_draws_at_the_legacy_spread(fp64):
+    """``e3nn`` draws a standard normal and so does the canonical draw."""
+    reference = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=(64, 64, 64)))
+    reference.initialize_weights(3)
+    legacy = e3nn_nn.FullyConnectedNet([64, 64, 64], torch.nn.functional.silu)
+    for i, weight in enumerate(reference.weights):
+        legacy_weight = getattr(legacy, f"layer{i}").weight
+        assert float(weight.detach().std()) == pytest.approx(
+            float(legacy_weight.detach().std()), rel=0.05
+        )
+
+
+def test_the_layer_norm_radial_mlp_draws_where_torch_linear_does(fp64):
+    """Uniform on ``1 / sqrt(fan_in)``, weight and bias alike."""
+    reference = BACKEND.make_radial_mlp(
+        RadialMLPDescriptor(channels=(64, 64, 64), kind="layer_norm_silu")
+    )
+    reference.initialize_weights(3)
+    legacy = LegacyRadialMLP([64, 64, 64])
+    linears = [m for m in legacy.net if isinstance(m, torch.nn.Linear)]
+    for weight, linear in zip(reference.weights, linears, strict=True):
+        bound = 64**-0.5
+        assert float(weight.detach().abs().max()) <= bound
+        assert float(linear.weight.detach().abs().max()) <= bound
+        assert float(weight.detach().std()) == pytest.approx(
+            float(linear.weight.detach().std()), rel=0.05
+        )

@@ -1,4 +1,4 @@
-"""Pair repulsion, distance transforms and the radial MLP.
+"""Pair repulsion and distance transforms.
 
 Everything in this module is pure mathematics on interatomic distances: a
 distance in Angstrom in, numbers out, with no graph beyond the element pair an
@@ -25,7 +25,6 @@ from mace_torch.backends.radial import polynomial_envelope
 
 __all__ = [
     "AgnesiTransform",
-    "RadialMLP",
     "SoftTransform",
     "ZBLBasis",
 ]
@@ -282,33 +281,3 @@ class SoftTransform(torch.nn.Module):
 
     def extra_repr(self) -> str:
         return f"steepness={self.steepness.item():.4f}"
-
-
-# ---------------------------------------------------------------------------
-# Radial MLP
-# ---------------------------------------------------------------------------
-
-
-class RadialMLP(torch.nn.Module):
-    """``Linear -> LayerNorm -> SiLU`` stacks over radial features; ``--radial_MLP``.
-
-    ``channels`` lists the widths, input first. No normalisation or activation
-    follows the last linear layer, so the output is unbounded.
-    """
-
-    def __init__(self, channels: list[int]):
-        super().__init__()
-        layers: list[torch.nn.Module] = []
-        in_channels = channels[0]
-        for index, out_channels in enumerate(channels[1:], start=1):
-            layers.append(torch.nn.Linear(in_channels, out_channels, bias=True))
-            in_channels = out_channels
-            if index < len(channels) - 1:
-                layers.append(torch.nn.LayerNorm(out_channels))
-                layers.append(torch.nn.SiLU())
-        self.layers = torch.nn.Sequential(*layers)
-        self.channels = list(channels)
-
-    def forward(self, radial_features: torch.Tensor) -> torch.Tensor:
-        """``[n_edges, channels[0]]`` -> ``[n_edges, channels[-1]]``."""
-        return self.layers(radial_features)

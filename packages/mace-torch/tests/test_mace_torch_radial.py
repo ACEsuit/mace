@@ -29,7 +29,6 @@ from mace_torch.backends.radial import (
 )
 from mace_torch.nn.radial import (
     AgnesiTransform,
-    RadialMLP,
     SoftTransform,
     ZBLBasis,
 )
@@ -438,28 +437,6 @@ def test_transforms_are_trainable_on_request():
     assert agnesi.exponent_p.requires_grad
     assert SoftTransform(trainable=True).steepness.requires_grad
     assert not SoftTransform().steepness.requires_grad
-
-
-# ===========================================================================
-# Radial MLP
-# ===========================================================================
-
-
-def test_radial_mlp_structure_and_shapes(dtype):
-    mlp = RadialMLP([8, 16, 4])
-    kinds = [type(module).__name__ for module in mlp.layers]
-    # no normalisation or activation after the last layer: the output is unbounded
-    assert kinds == ["Linear", "LayerNorm", "SiLU", "Linear"]
-    assert mlp.channels == [8, 16, 4]
-    out = mlp(torch.zeros(5, 8))
-    assert out.shape == (5, 4)
-    assert out.dtype == dtype
-
-
-def test_radial_mlp_single_layer_has_no_activation():
-    mlp = RadialMLP([3, 2])
-    assert [type(module).__name__ for module in mlp.layers] == ["Linear"]
-    assert mlp(torch.ones(1, 3)).shape == (1, 2)
 
 
 # ===========================================================================

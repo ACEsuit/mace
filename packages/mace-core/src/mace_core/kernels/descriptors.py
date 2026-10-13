@@ -25,6 +25,7 @@ __all__ = [
     "FullyConnectedTPDescriptor",
     "LinearDescriptor",
     "RadialBasisDescriptor",
+    "RadialMLPDescriptor",
     "SegmentReduceDescriptor",
     "SphericalHarmonicsDescriptor",
     "SymmetricContractionDescriptor",
@@ -156,8 +157,11 @@ class ChannelwiseTPConvDescriptor(Descriptor):
         irreps_node: The sender node features.
         irreps_edge: The edge attributes, normally spherical harmonics.
         irreps_out: The message irreps before the node-level reduction.
-        num_radial: Width of the radial embedding whose MLP supplies the
-            weights.
+
+    The weights are per edge, ``[n_edges, n_paths, num_features]``: the output
+    of a radial MLP (:class:`RadialMLPDescriptor`) read path by path, with the
+    channels varying fastest. A backend that fuses the two does so through the
+    span factory, which is handed both descriptors.
 
     The op is **always node-level**: it returns ``[n_nodes, ...]``, never
     ``[n_edges, ...]``. Whether the reduction over edges is fused into the
@@ -172,7 +176,6 @@ class ChannelwiseTPConvDescriptor(Descriptor):
     irreps_node: str = "0e"
     irreps_edge: str = "0e"
     irreps_out: str = "0e"
-    num_radial: int = 8
 
     @property
     def highest_degree(self) -> int:
@@ -180,7 +183,7 @@ class ChannelwiseTPConvDescriptor(Descriptor):
 
     @property
     def weight_numel(self) -> int:
-        """Zero. The weights come from the radial MLP, which is external."""
+        """Zero. The weights come from the radial MLP, which is its own op."""
         return 0
 
 
@@ -379,3 +382,60 @@ class RadialBasisDescriptor(Descriptor):
     def __post_init__(self) -> None:
         super().__post_init__()
         _require_member("kind", self.kind, get_args(RadialBasisKind))
+
+
+RadialMLPKind = Literal["normalized_silu", "layer_norm_silu"]
+
+
+@dataclass(frozen=True)
+class RadialMLPDescriptor(Descriptor):
+    """The dense network that turns a radial embedding into per-edge weights.
+
+    One per interaction, feeding the convolution its path weights, and the same
+    op with one output produces the learned density of the density blocks.
+
+    Attributes:
+        channels: The layer widths, input first and output last. The input is
+            the radial embedding's width. No activation follows the last layer,
+            so the output is unbounded.
+        kind: Which of the two networks the frozen tree trains.
+            ``"normalized_silu"`` is ``e3nn``'s ``FullyConnectedNet``, used by
+            every interaction block but one: unbiased layers scaled by
+            ``1 / sqrt(fan_in)``, and a SiLU scaled to unit second moment
+            between them. ``"layer_norm_silu"`` is the nonlinear residual
+            block's: biased layers with a layer norm and a SiLU between them.
+            :mod:`~mace_core.kernels.canonical` states both exactly.
+    """
+
+    op: ClassVar[str] = "radial_mlp"
+
+    channels: tuple[int, ...] = (8, 64, 64, 64)
+    kind: RadialMLPKind = "normalized_silu"
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _require_member("kind", self.kind, get_args(RadialMLPKind))
+        # A list from a configuration file would make the descriptor
+        # unhashable, and a descriptor is a cache key.
+        object.__setattr__(self, "channels", tuple(self.channels))
+        if len(self.channels) < 2:
+            raise ValueError(
+                f"channels={self.channels!r} needs at least an input and an "
+                f"output width."
+            )
+        if any(not isinstance(width, int) or width < 1 for width in self.channels):
+            raise ValueError(
+                f"channels={self.channels!r} has a width that is not a positive "
+                f"integer."
+            )
+
+    @property
+    def weight_numel(self) -> int:
+        """Every matrix entry, plus the biases and the layer norms that the
+        ``"layer_norm_silu"`` kind carries."""
+        layers = list(zip(self.channels[:-1], self.channels[1:], strict=True))
+        total = sum(fan_in * fan_out for fan_in, fan_out in layers)
+        if self.kind == "layer_norm_silu":
+            total += sum(fan_out for _, fan_out in layers)
+            total += 2 * sum(self.channels[1:-1])
+        return total
