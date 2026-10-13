@@ -1,0 +1,214 @@
+"""MACEOutput: the typed replacement for the forward's dictionary of tensors.
+
+The tests run on numpy arrays throughout. That is the point rather than a
+convenience: ``MACEOutput`` is generic over the tensor type so that one class
+serves torch, jax and neither, and a test suite that only ever exercised it
+with torch would not notice the day it stopped being framework-free.
+"""
+
+import subprocess
+import sys
+
+import numpy as np
+import pytest
+from mace_core.observables import DEFAULT_CATALOGUE
+from mace_core.outputs import (
+    CORE_FIELD_NAMES,
+    FIELD_BY_OBSERVABLE,
+    OBSERVABLE_BY_FIELD,
+    RETIRED_NAMES,
+    MACEOutput,
+)
+
+
+def test_the_six_core_fields_are_the_declared_ones():
+    """The type's shape, pinned. `extras` is not one of them."""
+    assert CORE_FIELD_NAMES == (
+        "total_energy",
+        "node_energies",
+        "forces",
+        "stress",
+        "virials",
+        "dipole",
+    )
+
+
+def test_an_empty_output_holds_nothing():
+    output = MACEOutput[np.ndarray]()
+    assert output.names() == ()
+    assert output.get("forces") is None
+    assert "forces" not in output
+
+
+def test_core_fields_round_trip_numpy_arrays():
+    forces = np.zeros((4, 3))
+    output = MACEOutput(total_energy=np.array([-1.5]), forces=forces)
+    assert output.get("total_energy") is output.total_energy
+    assert output.get("forces") is forces
+    assert output.names() == ("energy", "forces")
+
+
+def test_energy_reaches_the_total_energy_field_under_either_name():
+    """The one place an observable name and a field name differ."""
+    assert FIELD_BY_OBSERVABLE == {"energy": "total_energy"}
+    assert OBSERVABLE_BY_FIELD == {"total_energy": "energy"}
+    output = MACEOutput(total_energy=np.array([2.0]))
+    assert output.get("energy") is output.get("total_energy")
+    assert "energy" in output
+
+
+def test_extras_carries_what_the_core_fields_do_not():
+    """The escape hatch is load-bearing: 43 legacy keys, six core fields."""
+    output = MACEOutput(extras={"latent_charges": np.zeros(4)})
+    assert "latent_charges" in output
+    latent_charges = output.get("latent_charges")
+    assert latent_charges is not None
+    assert latent_charges.shape == (4,)
+    assert output.names() == ("latent_charges",)
+
+
+def test_a_name_nobody_wrote_is_absent_rather_than_an_error():
+    """A consumer iterating declared observables asks for names that a given
+    model did not compute; that is not an error, it is a `None`."""
+    output = MACEOutput(extras={"charges": np.zeros(2)})
+    assert output.get("magforces") is None
+    assert "magforces" not in output
+
+
+def test_two_outputs_do_not_share_an_extras_dictionary():
+    """`extras` has a default factory; a shared mutable default would make one
+    model's outputs appear in another's."""
+    first = MACEOutput[np.ndarray]()
+    second = MACEOutput[np.ndarray]()
+    first.extras["dipole_moment"] = np.zeros(3)
+    assert second.extras == {}
+
+
+def test_importing_mace_core_imports_no_framework():
+    """Run in a fresh interpreter on purpose. Asserting this in-process would
+    pass whenever some earlier test in the session had already imported torch,
+    which is the case the assertion exists for. One interpreter answers for
+    every framework, so it is started once."""
+    probe = (
+        "import sys, mace_core, mace_core.observables, mace_core.outputs\n"
+        "print(sorted({'torch', 'jax', 'e3nn'} & set(sys.modules)))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], check=True, capture_output=True, text=True
+    )
+    assert result.stdout.strip() == "[]", (
+        f"importing mace_core pulled in {result.stdout.strip()}"
+    )
+
+
+@pytest.mark.parametrize("key", ["forces", "energy", "total_energy", "dipole"])
+def test_extras_may_not_shadow_a_core_field(key):
+    """A value written into `extras` under a core field's name would be stored
+    and never read: the field it shadows stays `None`."""
+    with pytest.raises(ValueError, match="cannot also be"):
+        MACEOutput(extras={key: np.zeros(3)})
+
+
+# Every way of putting a key into `extras` after construction. The derivative
+# engine fills outputs after the model returned, so this is the main path and
+# not an edge case.
+WRITES_AFTER_CONSTRUCTION = {
+    "item": lambda output, key: output.extras.__setitem__(key, np.zeros(3)),
+    "update": lambda output, key: output.extras.update({key: np.zeros(3)}),
+    "setdefault": lambda output, key: output.extras.setdefault(key, np.zeros(3)),
+    "reassign": lambda output, key: setattr(output, "extras", {key: np.zeros(3)}),
+}
+
+
+@pytest.mark.parametrize("write", sorted(WRITES_AFTER_CONSTRUCTION))
+@pytest.mark.parametrize(
+    ("key", "match"),
+    [
+        ("forces", "cannot also be"),
+        ("energy", "cannot also be"),
+        ("node_energy", "retired"),
+    ],
+)
+def test_the_extras_guard_holds_when_extras_is_filled_later(write, key, match):
+    output = MACEOutput[np.ndarray]()
+    with pytest.raises(ValueError, match=match):
+        WRITES_AFTER_CONSTRUCTION[write](output, key)
+    assert key not in output.extras
+
+
+def test_membership_and_listing_agree_on_every_name():
+    """The two accessors have to use one vocabulary.
+
+    If `"energy" in output` resolved the alias while `names()` yielded the
+    storage field, a consumer intersecting a catalogue's names with an output's
+    would drop the energy while membership said it was there. Asserted over
+    both directions rather than over the one alias, so a second entry in
+    `FIELD_BY_OBSERVABLE` is covered too.
+    """
+    # Pinned to `np.ndarray` rather than left to inference. numpy types an
+    # array's shape, so inferring the parameter from a 1-D energy beside a 2-D
+    # force array makes it a union, and `dict` is invariant in its value type:
+    # the `extras` literal is then unassignable. Nothing about the class, and
+    # widening `extras` to a `Mapping` to quiet it would make a result object
+    # mutable-looking to fix a test.
+    output: MACEOutput[np.ndarray] = MACEOutput(
+        total_energy=np.array([-1.5]),
+        forces=np.zeros((4, 3)),
+        extras={"latent_charges": np.zeros(4)},
+    )
+    for name in output.names():
+        assert name in output, name
+        assert output.get(name) is not None, name
+    for observable, field in FIELD_BY_OBSERVABLE.items():
+        assert field not in output.names()
+        if getattr(output, field) is not None:
+            assert observable in output.names()
+
+
+def test_a_catalogue_name_finds_its_value_in_an_output():
+    """The correlation the two vocabularies exist to allow."""
+    catalogue = DEFAULT_CATALOGUE
+    output = MACEOutput(total_energy=np.array([-1.5]), forces=np.zeros((4, 3)))
+    shared = set(catalogue.names()) & set(output.names())
+    assert shared == {"energy", "forces"}
+    assert all(output.get(name) is not None for name in shared)
+
+
+def test_a_retired_spelling_cannot_sit_beside_the_field_that_replaced_it():
+    """The half a rename cannot enforce on its own.
+
+    `node_energy` is the frozen tree's spelling and v1 carries `node_energies`
+    instead, deliberately: keeping both would let the same quantity be stored
+    twice. The rename alone does not stop it, because `extras` accepts any key
+    the guard does not know, so `extras["node_energy"]` sat happily beside a
+    filled `node_energies` field.
+    """
+    with pytest.raises(ValueError, match="retired"):
+        MACEOutput(node_energies=np.zeros(4), extras={"node_energy": np.ones(4)})
+
+
+def test_a_retired_spelling_is_still_not_a_name_this_type_answers_to():
+    """Refusing it as an `extras` key is not the same as reviving it.
+
+    Carrying both spellings is what the rename decided against, so `get` must
+    keep missing it. Otherwise the guard above would have quietly turned the
+    retired name back into a working alias.
+    """
+    output = MACEOutput(node_energies=np.zeros(4))
+    assert output.get("node_energy") is None
+    assert "node_energy" not in output
+    assert output.names() == ("node_energies",)
+    assert set(RETIRED_NAMES) & set(CORE_FIELD_NAMES) == set()
+    assert set(RETIRED_NAMES) & set(FIELD_BY_OBSERVABLE) == set()
+
+
+def test_a_retired_spelling_is_refused_in_extras_even_when_the_field_is_empty():
+    """The guard refuses the word, not only the collision.
+
+    An output that carries the legacy spelling and no `node_energies` is still
+    refused, because the two names mean one quantity and only one of them is
+    this type's. Stated as its own case so a later relaxation to "only when the
+    field is filled" is a deliberate change rather than a slip.
+    """
+    with pytest.raises(ValueError, match="retired"):
+        MACEOutput(extras={"node_energy": np.ones(4)})
