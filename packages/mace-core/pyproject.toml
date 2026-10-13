@@ -18,6 +18,11 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    # The basis is numpy arrays end to end. Declared rather than inherited from
+    # whatever a developer happens to have: the packages job installs this
+    # distribution alone, so an undeclared import is an unresolved one there
+    # and passes on any machine that has it for another reason.
+    "numpy>=1.23",
     # The suite passes at this floor (2.7.4 on Python 3.10) and at current
     # releases.
     "pydantic>=2.7",

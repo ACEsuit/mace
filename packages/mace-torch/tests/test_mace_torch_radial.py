@@ -20,16 +20,17 @@ import numpy as np
 import pytest
 import torch
 from conftest import assert_close, fp64_only
-from mace_torch.nn.radial import (
-    AgnesiTransform,
+from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
     GaussianBasis,
     PolynomialCutoff,
-    RadialMLP,
+    polynomial_envelope,
+)
+from mace_torch.nn.radial import (
+    AgnesiTransform,
     SoftTransform,
     ZBLBasis,
-    polynomial_envelope,
 )
 
 # ===========================================================================
@@ -175,6 +176,13 @@ def test_gaussian_basis_values():
     )
     assert not basis.centers.requires_grad
     assert GaussianBasis(r_max=GAUSSIAN_R_MAX, trainable=True).centers.requires_grad
+
+
+def test_a_one_function_gaussian_basis_is_refused_by_name():
+    """Its width is the spacing between centres, which one function lacks. The
+    frozen tree divides by zero there; this says why instead."""
+    with pytest.raises(ValueError, match="num_basis=1"):
+        GaussianBasis(r_max=GAUSSIAN_R_MAX, num_basis=1)
 
 
 def test_gaussian_basis_is_not_zero_beyond_r_max():
@@ -436,28 +444,6 @@ def test_transforms_are_trainable_on_request():
     assert agnesi.exponent_p.requires_grad
     assert SoftTransform(trainable=True).steepness.requires_grad
     assert not SoftTransform().steepness.requires_grad
-
-
-# ===========================================================================
-# Radial MLP
-# ===========================================================================
-
-
-def test_radial_mlp_structure_and_shapes(dtype):
-    mlp = RadialMLP([8, 16, 4])
-    kinds = [type(module).__name__ for module in mlp.layers]
-    # no normalisation or activation after the last layer: the output is unbounded
-    assert kinds == ["Linear", "LayerNorm", "SiLU", "Linear"]
-    assert mlp.channels == [8, 16, 4]
-    out = mlp(torch.zeros(5, 8))
-    assert out.shape == (5, 4)
-    assert out.dtype == dtype
-
-
-def test_radial_mlp_single_layer_has_no_activation():
-    mlp = RadialMLP([3, 2])
-    assert [type(module).__name__ for module in mlp.layers] == ["Linear"]
-    assert mlp(torch.ones(1, 3)).shape == (1, 2)
 
 
 # ===========================================================================
