@@ -235,7 +235,7 @@ def test_a_v1_package_suite_is_as_coarse_a_pin_as_a_legacy_tier():
     assert any("only 1 levels deep" in p for p in problems), problems
 
     specific = (
-        f"{legacy} + `packages/mace-core/tests/test_data_configuration.py"
+        f"{legacy} + `packages/mace-core/tests/test_mace_core_data_configuration.py"
         "::test_the_default_keys_are_exactly_these_twelve`"
     )
     assert check_inventory.check_pins([_row("x.a", pinned=specific)]) == []
@@ -248,7 +248,7 @@ def test_a_v1_pin_may_not_stand_alone_in_a_cell():
     matches it -- so a cell that opens with a v1 pin is claiming something it
     is not able to check."""
     alone = (
-        "`packages/mace-core/tests/test_data_configuration.py"
+        "`packages/mace-core/tests/test_mace_core_data_configuration.py"
         "::test_the_default_keys_are_exactly_these_twelve`"
     )
     problems = check_inventory.check_pins([_row("x.a", pinned=alone)])
@@ -261,7 +261,7 @@ def test_a_v1_pin_naming_a_test_that_does_not_exist_is_caught():
     exist to prevent."""
     legacy = "`tests/unit/test_data_utils.py::test_default_keys_are_exactly_these_thirteen`"
 
-    missing = f"{legacy} + `packages/mace-core/tests/test_data_configuration.py::test_nope`"
+    missing = f"{legacy} + `packages/mace-core/tests/test_mace_core_data_configuration.py::test_nope`"
     problems = check_inventory.check_pins([_row("x.a", pinned=missing)])
     assert any("test_nope" in p for p in problems), problems
 

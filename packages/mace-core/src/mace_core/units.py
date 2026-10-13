@@ -8,8 +8,9 @@ below is the factor that takes a quantity *into* that base, so
 
 The factors are read from :mod:`ase.units` rather than written out, so a CODATA
 revision reaches the two stacks together instead of leaving one of them on the
-old numbers. ``test_units.py`` pins the values that revision would move, which
-is what keeps "follows ase" from meaning "changes without anyone noticing".
+old numbers. ``test_mace_core_units.py`` pins the values that revision would
+move, which is what keeps "follows ase" from meaning "changes without anyone
+noticing".
 
 Layout conventions
 ------------------
