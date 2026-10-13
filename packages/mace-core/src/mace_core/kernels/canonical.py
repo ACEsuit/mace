@@ -45,6 +45,20 @@ A fresh draw follows the frozen tree too. Linear and skip-connection weights
 are a standard normal and a bias is zero. A symmetric-contraction weight is a
 standard normal divided by the number of paths in its ``(output irrep, body
 order)`` block, which is a scale on the draw and not on the forward.
+
+**The radial MLP** holds one dense ``[fan_in, fan_out]`` matrix per layer, the
+orientation ``x @ W`` reads and the one ``e3nn`` stores; ``torch.nn.Linear``
+holds the transpose. Its two variants keep their normalization where the frozen
+tree keeps it:
+
+* ``"normalized_silu"`` multiplies each layer's weight by ``1 / sqrt(fan_in)``
+  in the forward, and each hidden activation by
+  :data:`SILU_SECOND_MOMENT_SCALE`. A fresh weight is a standard normal. There
+  is no bias.
+* ``"layer_norm_silu"`` applies no factor. Each layer carries a bias, and each
+  hidden layer a layer norm with epsilon :data:`LAYER_NORM_EPSILON`. A fresh
+  weight and bias are uniform on ``[-1 / sqrt(fan_in), 1 / sqrt(fan_in)]``,
+  ``torch.nn.Linear``'s draw, and a fresh layer norm is the identity.
 """
 
 from __future__ import annotations
@@ -54,9 +68,14 @@ from mace_core.clebsch_gordan.irreps import Irrep, Irreps
 __all__ = [
     "CANONICAL_LAYOUT",
     "KERNEL_SPEC_VERSION",
+    "LAYER_NORM_EPSILON",
+    "SILU_SECOND_MOMENT_SCALE",
     "canonical_weight_shape",
+    "exact_silu_second_moment_scale",
     "fully_connected_tp_path_normalization",
     "linear_path_normalization",
+    "radial_mlp_initial_bound",
+    "radial_mlp_layer_normalization",
     "symmetric_contraction_initial_scale",
 ]
 
@@ -66,6 +85,21 @@ KERNEL_SPEC_VERSION = "1.0"
 
 #: The one layout a checkpoint is ever written in.
 CANONICAL_LAYOUT = "mul_ir"
+
+#: The multiplier that gives ``silu`` unit second moment on standard normal
+#: input, as **every trained MACE artifact carries it**.
+#:
+#: It is not the exact value. ``e3nn`` estimates it from a million standard
+#: normal samples under a fixed seed, and the exact value,
+#: :func:`exact_silu_second_moment_scale`, is 1.6765324703310915: 0.16 per cent
+#: away. That is far outside any tolerance these models are compared at, so the
+#: estimate is part of the format. A model trained against it computes a
+#: different function under the exact value.
+SILU_SECOND_MOMENT_SCALE = 1.679176792398942
+
+#: The epsilon of the ``"layer_norm_silu"`` radial MLP's layer norms, which is
+#: ``torch.nn.LayerNorm``'s default and what the frozen tree trained with.
+LAYER_NORM_EPSILON = 1e-5
 
 
 def canonical_weight_shape(
@@ -139,3 +173,43 @@ def symmetric_contraction_initial_scale(path_count: int) -> float:
         weights for the scale to apply to.
     """
     return 1.0 if path_count == 0 else 1.0 / path_count
+
+
+def exact_silu_second_moment_scale() -> float:
+    """The multiplier that would give ``silu`` exactly unit second moment.
+
+    Gauss-Hermite quadrature against the standard normal weight. It exists to
+    be compared with :data:`SILU_SECOND_MOMENT_SCALE`, not to replace it.
+    """
+    import numpy as np
+
+    nodes, weights = np.polynomial.hermite_e.hermegauss(200)
+    weights = weights / np.sqrt(2.0 * np.pi)
+    activated = nodes / (1.0 + np.exp(-nodes))
+    return float(np.sum(weights * activated**2) ** -0.5)
+
+
+def radial_mlp_layer_normalization(kind: str, fan_in: int) -> float:
+    """The factor a radial MLP layer applies, in the forward, to its weight.
+
+    Returns:
+        ``1 / sqrt(fan_in)`` for ``"normalized_silu"``, and ``1.0`` for
+        ``"layer_norm_silu"``, whose layer norms do that job instead.
+
+    Raises:
+        ValueError: For a kind that is neither, rather than a default factor.
+    """
+    if kind == "normalized_silu":
+        return float(fan_in) ** -0.5
+    if kind == "layer_norm_silu":
+        return 1.0
+    raise ValueError(f"{kind!r} is not a radial MLP kind")
+
+
+def radial_mlp_initial_bound(fan_in: int) -> float:
+    """The half-width of the uniform draw of a ``"layer_norm_silu"`` layer.
+
+    ``1 / sqrt(fan_in)``, which is what ``torch.nn.Linear`` draws its weight
+    and its bias from, and so what the frozen tree's layers started at.
+    """
+    return float(fan_in) ** -0.5

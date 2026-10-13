@@ -27,8 +27,12 @@ from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
 from mace_core.kernels.canonical import (
+    LAYER_NORM_EPSILON,
+    SILU_SECOND_MOMENT_SCALE,
     fully_connected_tp_path_normalization,
     linear_path_normalization,
+    radial_mlp_initial_bound,
+    radial_mlp_layer_normalization,
     symmetric_contraction_initial_scale,
 )
 from mace_core.kernels.capabilities import BackendCapabilities
@@ -38,6 +42,7 @@ from mace_core.kernels.descriptors import (
     FullyConnectedTPDescriptor,
     LinearDescriptor,
     RadialBasisDescriptor,
+    RadialMLPDescriptor,
     SegmentReduceDescriptor,
     SphericalHarmonicsDescriptor,
     SymmetricContractionDescriptor,
@@ -59,7 +64,12 @@ from mace_torch.kernels.ops import (
     symmetric_contraction,
 )
 
-__all__ = ["ReferenceBackend", "ReferenceCapabilities"]
+__all__ = [
+    "ReferenceBackend",
+    "ReferenceCapabilities",
+    "ReferenceLayerNormSiluMLP",
+    "ReferenceNormalizedSiluMLP",
+]
 
 _TORCH_DTYPE = {"float64": torch.float64, "float32": torch.float32}
 
@@ -616,6 +626,193 @@ class ReferenceRadialBasis(nn.Module):
         return self.basis(lengths) * self.cutoff(lengths)
 
 
+def _layer_widths(descriptor: RadialMLPDescriptor) -> list[tuple[int, int]]:
+    """``(fan_in, fan_out)`` of every layer, input first."""
+    return list(zip(descriptor.channels[:-1], descriptor.channels[1:], strict=True))
+
+
+class ReferenceNormalizedSiluMLP(nn.Module):
+    """The ``"normalized_silu"`` radial MLP: ``e3nn``'s ``FullyConnectedNet``.
+
+    Each layer holds its raw ``[fan_in, fan_out]`` weight and multiplies it by
+    ``1 / sqrt(fan_in)`` on every call, so the gradient with respect to the
+    stored weight is the frozen tree's. Each hidden activation is a SiLU times
+    :data:`~mace_core.kernels.canonical.SILU_SECOND_MOMENT_SCALE`.
+    """
+
+    layer_normalization: Tensor
+
+    def __init__(self, descriptor: RadialMLPDescriptor) -> None:
+        super().__init__()
+        self.descriptor = descriptor
+        dtype = _TORCH_DTYPE[descriptor.precision]
+        widths = _layer_widths(descriptor)
+        self.weights = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(fan_in, fan_out, dtype=dtype))
+                for fan_in, fan_out in widths
+            ]
+        )
+        self.register_buffer(
+            "layer_normalization",
+            torch.tensor(
+                [
+                    radial_mlp_layer_normalization(descriptor.kind, fan_in)
+                    for fan_in, _ in widths
+                ],
+                dtype=dtype,
+            ),
+            persistent=False,
+        )
+
+    def forward(self, radial: Tensor) -> Tensor:
+        """``[n_edges, channels[0]]`` -> ``[n_edges, channels[-1]]``."""
+        activated = radial
+        last = len(self.weights) - 1
+        for index, weight in enumerate(self.weights):
+            activated = activated @ (weight * self.layer_normalization[index])
+            if index != last:
+                activated = SILU_SECOND_MOMENT_SCALE * torch.nn.functional.silu(
+                    activated
+                )
+        return activated
+
+    def initialize_weights(self, seed: int) -> None:
+        """A standard normal per layer, unscaled, since the forward applies the
+        fan-in. Each layer draws from ``seed`` plus its position."""
+        with torch.no_grad():
+            for index, weight in enumerate(self.weights):
+                weight.copy_(_draw(weight, seed + index))
+
+    def to_canonical(self) -> dict[str, Tensor]:
+        """A view: ``layer_{i}``, one raw matrix per layer."""
+        return {
+            f"layer_{index}": weight.detach()
+            for index, weight in enumerate(self.weights)
+        }
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        with torch.no_grad():
+            for index, weight in enumerate(self.weights):
+                weight.copy_(state[f"layer_{index}"])
+
+
+class ReferenceLayerNormSiluMLP(nn.Module):
+    """The ``"layer_norm_silu"`` radial MLP: the nonlinear residual block's.
+
+    ``x @ W + b`` per layer, then a layer norm and a SiLU on every layer but the
+    last. The weight is held ``[fan_in, fan_out]``, the transpose of the
+    ``torch.nn.Linear`` the frozen tree holds, so that both kinds store their
+    matrices the same way round.
+    """
+
+    def __init__(self, descriptor: RadialMLPDescriptor) -> None:
+        super().__init__()
+        self.descriptor = descriptor
+        dtype = _TORCH_DTYPE[descriptor.precision]
+        widths = _layer_widths(descriptor)
+        hidden = [fan_out for _, fan_out in widths[:-1]]
+        self.weights = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(fan_in, fan_out, dtype=dtype))
+                for fan_in, fan_out in widths
+            ]
+        )
+        self.biases = nn.ParameterList(
+            [nn.Parameter(torch.zeros(fan_out, dtype=dtype)) for _, fan_out in widths]
+        )
+        self.norm_weights = nn.ParameterList(
+            [nn.Parameter(torch.ones(width, dtype=dtype)) for width in hidden]
+        )
+        self.norm_biases = nn.ParameterList(
+            [nn.Parameter(torch.zeros(width, dtype=dtype)) for width in hidden]
+        )
+
+    def forward(self, radial: Tensor) -> Tensor:
+        """``[n_edges, channels[0]]`` -> ``[n_edges, channels[-1]]``."""
+        activated = radial
+        last = len(self.weights) - 1
+        for index, weight in enumerate(self.weights):
+            activated = activated @ weight + self.biases[index]
+            if index != last:
+                norm_weight = self.norm_weights[index]
+                activated = torch.nn.functional.layer_norm(
+                    activated,
+                    norm_weight.shape,
+                    norm_weight,
+                    self.norm_biases[index],
+                    LAYER_NORM_EPSILON,
+                )
+                activated = torch.nn.functional.silu(activated)
+        return activated
+
+    def initialize_weights(self, seed: int) -> None:
+        """``torch.nn.Linear``'s draw and an identity layer norm.
+
+        Weight and bias uniform on ``[-1 / sqrt(fan_in), 1 / sqrt(fan_in)]``,
+        both from one generator seeded with ``seed`` plus the layer's position,
+        drawn on the host in float64 for the reason :func:`_draw` gives.
+        """
+        with torch.no_grad():
+            for index, (weight, bias) in enumerate(
+                zip(self.weights, self.biases, strict=True)
+            ):
+                bound = radial_mlp_initial_bound(int(weight.shape[0]))
+                generator = torch.Generator().manual_seed(seed + index)
+                for parameter in (weight, bias):
+                    unit = torch.rand(
+                        parameter.shape, generator=generator, dtype=torch.float64
+                    )
+                    parameter.copy_(
+                        ((2.0 * unit - 1.0) * bound).to(
+                            device=parameter.device, dtype=parameter.dtype
+                        )
+                    )
+            for norm_weight, norm_bias in zip(
+                self.norm_weights, self.norm_biases, strict=True
+            ):
+                norm_weight.fill_(1.0)
+                norm_bias.zero_()
+
+    def to_canonical(self) -> dict[str, Tensor]:
+        """A view: ``layer_{i}`` and ``bias_{i}`` per layer, and
+        ``norm_weight_{i}`` and ``norm_bias_{i}`` per hidden layer."""
+        state = {}
+        for index, (weight, bias) in enumerate(
+            zip(self.weights, self.biases, strict=True)
+        ):
+            state[f"layer_{index}"] = weight.detach()
+            state[f"bias_{index}"] = bias.detach()
+        for index, (norm_weight, norm_bias) in enumerate(
+            zip(self.norm_weights, self.norm_biases, strict=True)
+        ):
+            state[f"norm_weight_{index}"] = norm_weight.detach()
+            state[f"norm_bias_{index}"] = norm_bias.detach()
+        return state
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        with torch.no_grad():
+            for index, (weight, bias) in enumerate(
+                zip(self.weights, self.biases, strict=True)
+            ):
+                weight.copy_(state[f"layer_{index}"])
+                bias.copy_(state[f"bias_{index}"])
+            for index, (norm_weight, norm_bias) in enumerate(
+                zip(self.norm_weights, self.norm_biases, strict=True)
+            ):
+                norm_weight.copy_(state[f"norm_weight_{index}"])
+                norm_bias.copy_(state[f"norm_bias_{index}"])
+
+
+#: The radial MLP classes, by the kind a descriptor records.
+_RADIAL_MLPS: dict[
+    str, type[ReferenceNormalizedSiluMLP] | type[ReferenceLayerNormSiluMLP]
+] = {
+    "normalized_silu": ReferenceNormalizedSiluMLP,
+    "layer_norm_silu": ReferenceLayerNormSiluMLP,
+}
+
+
 class ReferenceCapabilities(BackendCapabilities):
     """The coarse fields, plus the two shapes the reference does not build.
 
@@ -705,6 +902,12 @@ class ReferenceBackend:
     ) -> ReferenceRadialBasis:
         self._check(descriptor)
         return ReferenceRadialBasis(descriptor)
+
+    def make_radial_mlp(
+        self, descriptor: RadialMLPDescriptor
+    ) -> ReferenceNormalizedSiluMLP | ReferenceLayerNormSiluMLP:
+        self._check(descriptor)
+        return _RADIAL_MLPS[descriptor.kind](descriptor)
 
     def make_interaction_layer(self, descriptors) -> None:
         """The reference fuses nothing. ``None`` means op by op, which is the

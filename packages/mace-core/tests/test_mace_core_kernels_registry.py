@@ -18,8 +18,10 @@ from mace_core.kernels import (
     CANONICAL_LAYOUT,
     DISPATCHED_OPS,
     ENTRY_POINT_GROUPS,
+    INTERNAL_WEIGHT_OPS,
     KERNEL_SPEC_VERSION,
     REFERENCE_ONLY_OPS,
+    SILU_SECOND_MOMENT_SCALE,
     BackendCapabilities,
     BackendNotAvailableError,
     ChannelwiseTPConvDescriptor,
@@ -27,15 +29,19 @@ from mace_core.kernels import (
     FullyConnectedTPDescriptor,
     LinearDescriptor,
     RadialBasisDescriptor,
+    RadialMLPDescriptor,
     SegmentReduceDescriptor,
     SphericalHarmonicsDescriptor,
     SymmetricContractionDescriptor,
     UnsupportedDescriptorError,
     available_backends,
     canonical_weight_shape,
+    exact_silu_second_moment_scale,
     fully_connected_tp_path_normalization,
     get_backend,
     linear_path_normalization,
+    radial_mlp_initial_bound,
+    radial_mlp_layer_normalization,
     symmetric_contraction_initial_scale,
 )
 from mace_core.kernels import registry as registry_module
@@ -108,7 +114,34 @@ def test_the_basis_is_a_recorded_field_and_changes_the_count():
 
 
 def test_an_op_whose_weights_come_from_outside_owns_none():
-    assert ChannelwiseTPConvDescriptor(num_radial=8).weight_numel == 0
+    assert ChannelwiseTPConvDescriptor().weight_numel == 0
+
+
+def test_the_normalized_radial_mlp_counts_its_matrices_only():
+    """``e3nn``'s ``FullyConnectedNet`` has no bias: 8*64 + 64*64 + 64*192."""
+    descriptor = RadialMLPDescriptor(channels=(8, 64, 64, 192))
+    assert descriptor.weight_numel == 8 * 64 + 64 * 64 + 64 * 192
+
+
+def test_the_layer_norm_radial_mlp_counts_its_biases_and_norms_too():
+    """A bias per layer, and a scale and a shift per hidden layer: the last
+    layer carries no norm."""
+    descriptor = RadialMLPDescriptor(channels=(8, 16, 4), kind="layer_norm_silu")
+    assert descriptor.weight_numel == (8 * 16 + 16) + (16 * 4 + 4) + 2 * 16
+
+
+def test_radial_mlp_widths_read_from_a_list_still_key_a_cache():
+    """A configuration file gives a list, and an unhashable descriptor cannot
+    be resolved once per distinct op."""
+    from_list = RadialMLPDescriptor(channels=[8, 16, 4])  # ty: ignore[invalid-argument-type]
+    assert from_list.channels == (8, 16, 4)
+    assert hash(from_list) == hash(RadialMLPDescriptor(channels=(8, 16, 4)))
+
+
+@pytest.mark.parametrize("channels", [(8,), (), (8, 0, 4), (8, -1)])
+def test_a_radial_mlp_without_an_input_and_an_output_width_is_refused(channels):
+    with pytest.raises(ValueError, match="channels="):
+        RadialMLPDescriptor(channels=channels)
 
 
 @pytest.mark.parametrize("basis", ["Reduced", "reduce", "", "cueq"])
@@ -132,6 +165,7 @@ def test_a_basis_typo_is_refused_through_replace_too():
         (LinearDescriptor, "precision", "flaot64"),
         (SegmentReduceDescriptor, "reduction", "Sum"),
         (RadialBasisDescriptor, "kind", "Bessel"),
+        (RadialMLPDescriptor, "kind", "e3nn"),
     ],
 )
 def test_every_closed_string_field_refuses_a_value_outside_its_set(
@@ -411,6 +445,30 @@ def test_the_skip_normalization_sums_every_path_into_one_output():
     assert fully_connected_tp_path_normalization("8x1o", "3x0e", scalar) == 1.0
 
 
+def test_the_silu_scale_is_the_estimate_trained_models_carry():
+    """Pinned as the literal, and the gap to the exact value pinned with it, so
+    replacing the estimate with the exact number fails here rather than moving
+    every trained model by 0.16 per cent."""
+    assert SILU_SECOND_MOMENT_SCALE == 1.679176792398942
+    exact = exact_silu_second_moment_scale()
+    assert exact == pytest.approx(1.6765324703310915, rel=1e-12)
+    assert (SILU_SECOND_MOMENT_SCALE - exact) / exact == pytest.approx(
+        1.5773e-3, rel=1e-3
+    )
+
+
+def test_only_the_normalized_radial_mlp_scales_its_layers_in_the_forward():
+    assert radial_mlp_layer_normalization("normalized_silu", 64) == 0.125
+    assert radial_mlp_layer_normalization("layer_norm_silu", 64) == 1.0
+    with pytest.raises(ValueError, match="'e3nn'"):
+        radial_mlp_layer_normalization("e3nn", 64)
+
+
+def test_the_layer_norm_radial_mlp_draws_like_a_torch_linear():
+    """``torch.nn.Linear`` draws weight and bias on ``1 / sqrt(fan_in)``."""
+    assert radial_mlp_initial_bound(16) == 0.25
+
+
 def test_the_contraction_draw_is_over_the_block_path_count():
     """The frozen tree's ``randn / num_params``, per block."""
     assert symmetric_contraction_initial_scale(4) == 0.25
@@ -426,6 +484,9 @@ def test_the_contraction_draw_is_over_the_block_path_count():
 def test_the_op_set_is_closed_and_the_two_halves_do_not_overlap():
     assert not DISPATCHED_OPS & REFERENCE_ONLY_OPS
     assert len(DISPATCHED_OPS) == 5
+    reference_only = {"spherical_harmonics", "radial_basis", "radial_mlp"}
+    assert reference_only == REFERENCE_ONLY_OPS
+    assert INTERNAL_WEIGHT_OPS <= DISPATCHED_OPS | REFERENCE_ONLY_OPS
     assert CANONICAL_LAYOUT == "mul_ir"
     assert KERNEL_SPEC_VERSION
 
