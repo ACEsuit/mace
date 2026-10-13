@@ -25,6 +25,19 @@ dependencies = [
     "tomli>=2.0; python_version < '3.11'",
     # `typing.Self` is 3.11+; the floor is 3.10.
     "typing-extensions>=4.4",
+    # numpy is the array type every value in this package is expressed over.
+    #
+    # ase is here deliberately, and it is the one dependency that looks like it
+    # does not belong in a framework-agnostic package. The extended-XYZ contract
+    # this package parses is *defined* in terms of ase: which of info/arrays a key
+    # lands in, which keys are reserved for calculator results, how a cell and its
+    # periodic-boundary flags are spelled. Reimplementing that would mean
+    # reimplementing ase's decisions and then differing from them on some file
+    # nobody tested. ase brings in no framework of its own, so the purity rule --
+    # no torch, no jax, no e3nn -- is untouched. The floor is 3.23 because that is
+    # the release whose reserved-key behaviour the parser is written against.
+    "numpy>=1.23",
+    "ase>=3.23",
 ]
 
 [project.urls]
