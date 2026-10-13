@@ -111,8 +111,15 @@ class BackendCapabilities:
                 f"it does not consume the {descriptor.basis!r} Clebsch-Gordan "
                 f"basis; its bases are {sorted(self.bases)}"
             )
-        if isinstance(descriptor, RadialBasisDescriptor) and descriptor.num_basis < 1:
-            return f"a radial basis of {descriptor.num_basis} functions is empty"
+        if isinstance(descriptor, RadialBasisDescriptor):
+            if descriptor.num_basis < 1:
+                return f"a radial basis of {descriptor.num_basis} functions is empty"
+            if descriptor.kind == "gaussian" and descriptor.num_basis < 2:
+                return (
+                    "a gaussian basis needs at least two functions: its width "
+                    "is the spacing between centres, cutoff / (num_basis - 1), "
+                    "and one function has no spacing"
+                )
         return None
 
     def require(self, descriptor: Descriptor, backend_name: str) -> None:

@@ -178,6 +178,13 @@ def test_gaussian_basis_values():
     assert GaussianBasis(r_max=GAUSSIAN_R_MAX, trainable=True).centers.requires_grad
 
 
+def test_a_one_function_gaussian_basis_is_refused_by_name():
+    """Its width is the spacing between centres, which one function lacks. The
+    frozen tree divides by zero there; this says why instead."""
+    with pytest.raises(ValueError, match="num_basis=1"):
+        GaussianBasis(r_max=GAUSSIAN_R_MAX, num_basis=1)
+
+
 def test_gaussian_basis_is_not_zero_beyond_r_max():
     """Only the envelope makes a long edge contribute nothing, which is why the
     padding trick depends on `PolynomialCutoff` and not on the basis."""

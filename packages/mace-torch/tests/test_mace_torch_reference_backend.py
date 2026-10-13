@@ -350,8 +350,13 @@ def test_the_reference_is_declared_as_an_entry_point_that_resolves():
         ),
         ("make_segment_reduce", SegmentReduceDescriptor(reduction="max"), "'sum'"),
         ("make_segment_reduce", SegmentReduceDescriptor(reduction="mean"), "'sum'"),
+        (
+            "make_radial_basis",
+            RadialBasisDescriptor(kind="gaussian", num_basis=1),
+            "at least two functions",
+        ),
     ],
-    ids=["skip against a vector", "segment max", "segment mean"],
+    ids=["skip against a vector", "segment max", "segment mean", "one gaussian"],
 )
 def test_what_the_factory_refuses_supports_refuses_too(
     backend, factory, descriptor, reason

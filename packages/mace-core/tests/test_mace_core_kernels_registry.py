@@ -182,6 +182,20 @@ def test_a_contraction_output_multiplicity_is_refused_by_name():
         SymmetricContractionDescriptor(irreps_out="0e+2x1o")
 
 
+def test_a_radial_basis_too_small_to_define_is_refused_by_every_backend():
+    """The base capability check, so no backend can say yes and then fail to
+    build. A gaussian's width is the spacing between its centres, which one
+    function does not have; the other kinds are defined from one up."""
+    capabilities = BackendCapabilities(ops=EVERY_OP)
+    for kind in ("bessel", "gaussian", "chebyshev"):
+        assert not capabilities.supports(RadialBasisDescriptor(kind=kind, num_basis=0))
+    assert not capabilities.supports(
+        RadialBasisDescriptor(kind="gaussian", num_basis=1)
+    )
+    assert capabilities.supports(RadialBasisDescriptor(kind="gaussian", num_basis=2))
+    assert capabilities.supports(RadialBasisDescriptor(kind="bessel", num_basis=1))
+
+
 def test_the_radial_cutoff_order_is_a_field_with_the_envelope_default():
     """Six is the envelope's own default; a model passes its own, and the
     legacy command line's is five."""

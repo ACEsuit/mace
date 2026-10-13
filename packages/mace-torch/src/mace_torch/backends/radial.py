@@ -164,6 +164,12 @@ class GaussianBasis(torch.nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
+        if num_basis < 2:
+            raise ValueError(
+                f"num_basis={num_basis}: a gaussian basis needs at least two "
+                f"functions, since its width is the spacing between centres, "
+                f"r_max / (num_basis - 1)."
+            )
         centers = torch.linspace(
             start=0.0,
             end=r_max,
