@@ -386,6 +386,12 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
         ).copy()
         config["field_readout_config"] = getattr(model, "_field_readout_config").copy()
         config["keep_last_layer_irreps"] = model.keep_last_layer_irreps
+        config["compute_dipole_from_electric_field"] = getattr(
+            model, "compute_dipole_from_electric_field", False
+        )
+        config["compute_polarizability"] = getattr(
+            model, "compute_polarizability", False
+        )
     return config
 
 
