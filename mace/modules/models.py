@@ -660,6 +660,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
         edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
         use_edge_irreps_first: bool = False,  # pylint: disable=unused-argument
+        readout_cls: Optional[Callable] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
@@ -1229,6 +1230,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         oeq_config: Optional[Dict[str, Any]] = None,  # pylint: disable=unused-argument
         edge_irreps: Optional[o3.Irreps] = None,  # pylint: disable=unused-argument
         use_edge_irreps_first: bool = False,  # pylint: disable=unused-argument
+        readout_cls: Optional[Callable] = None,  # pylint: disable=unused-argument
     ):
         super().__init__()
         self.register_buffer(
