@@ -408,6 +408,22 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument(
+        "--fukui_regularisation",
+        help="PolarMACE: r in s/(s^2+(r*sum|f|)^2) replacing 1/s when normalising the signed "
+        "Fukui weights; bounds them where their sum cancels (0 = off; 0.1 recommended). "
+        "Unset: off for a new model, inherited when fine-tuning a foundation model",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--dipole_cap",
+        help="PolarMACE: '[onset, ceiling]' in e*A for a smooth cap on l=1 charge dipoles, or "
+        "'none' for no cap. Unset: no cap for a new model, inherited when fine-tuning a "
+        "foundation model",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         "--scaling",
         help="type of scaling to the output",
         type=str,

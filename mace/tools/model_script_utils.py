@@ -347,6 +347,12 @@ def _build_model(
             use_agnostic_product=args.use_agnostic_product,
         )
     if args.model == "PolarMACE" and model_config_foundation is not None:
+        # Stability options given on the command line, including an explicit 0 or 'none',
+        # override the foundation's; unset ones keep whatever the foundation carries.
+        if getattr(args, "fukui_regularisation", None) is not None:
+            model_config_foundation["fukui_regularisation"] = args.fukui_regularisation
+        if getattr(args, "dipole_cap", None) is not None:
+            model_config_foundation["dipole_cap"] = _parse_literal_or_none(args.dipole_cap)
         return modules.PolarMACE(**model_config_foundation)
     if args.model == "PolarMACE":
         field_feature_widths = _parse_literal_or_none(args.field_feature_widths)
@@ -387,6 +393,8 @@ def _build_model(
             field_norm_factor=args.field_norm_factor,
             fixedpoint_update_config=fixedpoint_update_config,
             field_readout_config=field_readout_config,
+            fukui_regularisation=getattr(args, "fukui_regularisation", None) or 0.0,
+            dipole_cap=_parse_literal_or_none(getattr(args, "dipole_cap", None)),
         )
     if args.model == "FoundationMACE":
         return modules.ScaleShiftMACE(**model_config_foundation)

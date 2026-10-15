@@ -237,6 +237,8 @@ Group default: KEEP as the electrostatics-extra config section, pinned by the po
 | `train.field_norm_factor` | `--field_norm_factor` | `mace/tools/arg_parser.py:383` | KEEP | `tests/foundations/test_foundations.py::test_polar_extract_config_roundtrip` + `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |
 | `train.fixedpoint_update_config` | `--fixedpoint_update_config` | `mace/tools/arg_parser.py:389` | KEEP — the fixed-point solver settings; the expert electrostatics config section | `tests/extensions/polar/test_polar_block_configs.py` (the parse, the registry lookup, and the one option inside it that is ignored) |
 | `train.field_readout_config` | `--field_readout_config` | `mace/tools/arg_parser.py:395` | KEEP — idem | `tests/extensions/polar/test_polar_block_configs.py` (idem; unknown keys are discarded rather than refused) |
+| `train.fukui_regularisation` | `--fukui_regularisation` | `mace/tools/arg_parser.py:411` | KEEP — opt-in regularised normalisation of PolarMACE's signed Fukui weights; off by default | `tests/extensions/polar/test_polar_stability.py::test_fukui_regularisation_keeps_every_graph_summing_to_one_and_bounds_the_weights` + `tests/extensions/polar/test_polar_stability.py::test_stability_flags_reach_a_foundation_fine_tune` |
+| `train.dipole_cap` | `--dipole_cap` | `mace/tools/arg_parser.py:419` | KEEP — opt-in smooth cap on PolarMACE's l=1 charge dipoles; off by default | `tests/extensions/polar/test_polar_stability.py::test_dipole_cap_bounds_the_charge_dipole_and_leaves_the_rest_alone` + `tests/extensions/polar/test_polar_stability.py::test_stability_flags_reach_a_foundation_fine_tune` |
 
 ### 3.4 Outputs and scaling (8)
 
