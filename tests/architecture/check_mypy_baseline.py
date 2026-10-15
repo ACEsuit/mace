@@ -58,13 +58,13 @@ def run_mypy() -> Counter:
     # like the real one. Compared against a full baseline it invents hundreds
     # of improvements and a few regressions, none of them real. It happens when
     # a third-party stub uses syntax newer than `python_version` in .mypy.ini:
-    # numpy 2.5's stubs are PEP 695 and do not parse as 3.10.
+    # numpy 2.5's stubs are PEP 695 and do not parse as 3.11.
     if "errors prevented further checking" in result.stdout:
         raise SystemExit(
             "mypy stopped early, so this run says nothing about the tree.\n"
             "A dependency's stubs are newer than the python_version in "
             ".mypy.ini. Run the check on the interpreter that config names "
-            "(3.10), or update the config deliberately.\n\n"
+            "(3.11), or update the config deliberately.\n\n"
             + "\n".join(result.stdout.splitlines()[-5:])
         )
     counts: Counter = Counter()
