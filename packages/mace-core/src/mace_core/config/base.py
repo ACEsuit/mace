@@ -7,20 +7,14 @@ parsed. Nothing here knows about a command line: that is `cli`.
 
 import json
 import os
-import sys
+import tomllib
 from collections.abc import Iterator, Mapping
 from collections.abc import Set as AbstractSet
 from pathlib import Path
-from typing import Any, get_args, get_origin
+from typing import Any, Self, get_args, get_origin
 
 import yaml
 from pydantic import BaseModel, ConfigDict
-from typing_extensions import Self
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 __all__ = ["BaseConfig", "ConfigError", "ConfigSection", "read_config_file"]
 

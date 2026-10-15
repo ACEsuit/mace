@@ -17,10 +17,6 @@ Two overlaps are hard failures, because they are the pairs that fight:
     black  and ruff-format   two formatters, opposite rewrites
     mypy   and ty            two type checkers, contradictory verdicts
 
-Ruff *lint* on `mace/**` is deliberately not a conflict. It is reduced there to
-the single FA102 rule, which guards a real TorchScript constraint, and linting
-never rewrites a file.
-
 Scope: the governed trees are `mace/**`, `packages/**` and the declared seams.
 Everything else is ungoverned on purpose and reported as such, not as a
 failure. `tests/` in particular is not formatted, by a standing decision, and
@@ -147,16 +143,6 @@ def mypy_scope() -> str:
     return ""
 
 
-def legacy_guard_runs() -> bool:
-    """legacy-lint must invoke the FA102 guard over the frozen tree.
-
-    ruff.toml reduces ruff to one rule there, but a rule nothing invokes
-    guards nothing, and the hooks are scoped away from that tree.
-    """
-    text = CI.read_text(encoding="utf-8") if CI.exists() else ""
-    return "ruff check mace/" in text
-
-
 def main() -> int:
     patterns = hook_patterns()
     missing = sorted(set(TOOLCHAIN_OF) - set(patterns))
@@ -207,14 +193,6 @@ def main() -> int:
         for path in unowned[:10]:
             print(f"  {path}")
     if overlaps or unowned:
-        return 1
-
-    if not legacy_guard_runs():
-        print(
-            "ruff.toml keeps FA102 over mace/, but no job invokes ruff on that "
-            "tree, so the guard is configured and never runs. legacy-lint needs "
-            "a `ruff check mace/` step."
-        )
         return 1
 
     pin_problems = check_pins()

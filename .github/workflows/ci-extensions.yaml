@@ -116,7 +116,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
-          python-version: "3.10"
+          python-version: "3.11"
           extras: dev
           pip-packages: -r requirements/polar.txt
       - name: Cache foundation model downloads
@@ -149,7 +149,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
-          python-version: "3.10"
+          python-version: "3.11"
           extras: dev, cueq
           pip-packages: -r requirements/polar.txt
       - uses: ./.github/actions/run-tests
@@ -168,7 +168,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
-          python-version: "3.10"
+          python-version: "3.11"
           extras: dev
           pip-packages: -r requirements/les.txt
       # First CI coverage of LES ever; documented xfails (see test file).
@@ -193,7 +193,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
-          python-version: "3.10"
+          python-version: "3.11"
           extras: dev, magnetic
       - uses: ./.github/actions/run-tests
         with:

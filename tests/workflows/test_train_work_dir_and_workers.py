@@ -135,6 +135,24 @@ def test_every_dataloader_is_given_the_worker_count():
     assert not missing, "DataLoader built without num_workers: " + ", ".join(missing)
 
 
+def test_every_dataloader_is_given_the_worker_start_method():
+    """Python 3.14 changed the Linux default to forkserver, which cannot hand
+    the in-memory dataset to a worker. A loader built without the context is
+    the one that breaks a run with workers on that interpreter."""
+    tree = ast.parse(inspect.getsource(run_train_module))
+    values = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not ast.unparse(node.func).endswith("DataLoader"):
+            continue
+        keywords = {kw.arg: ast.unparse(kw.value) for kw in node.keywords}
+        values.append(keywords.get("multiprocessing_context"))
+
+    assert values, "no DataLoader found in run_train"
+    assert set(values) == {"tools.worker_start_method(args.num_workers)"}, values
+
+
 # ---------------------------------------------------------------------------
 # --pin_memory
 # ---------------------------------------------------------------------------

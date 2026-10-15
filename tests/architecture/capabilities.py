@@ -21,18 +21,10 @@ Both migrate, so both are here, and the meta-tests hold each to its own rules.
 
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
-
-# tomllib is 3.11+. pytest declares tomli on 3.10, and every environment that
-# runs this file runs it under pytest or beside it, so the fallback always
-# resolves; a bare `import tomllib` would break collection on the 3.10 leg of
-# the matrix.
-try:  # pragma: no cover - one branch per interpreter
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib  # type: ignore[no-redef]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = Path(__file__).with_name("capabilities.toml")

@@ -7,24 +7,21 @@ name = "mace-core"
 dynamic = ["version"]
 description = "Framework-agnostic contract and pure math for MACE v1."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "MACE developers" }]
 classifiers = [
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    # The suite passes at this floor (2.7.4 on Python 3.10) and at current
+    # The suite passes at this floor (2.7.4 on Python 3.11) and at current
     # releases.
     "pydantic>=2.7",
     "pyyaml>=6.0",
-    "tomli>=2.0; python_version < '3.11'",
-    # `typing.Self` is 3.11+; the floor is 3.10.
-    "typing-extensions>=4.4",
     # numpy is the array type every value in this package is expressed over.
     #
     # ase is here deliberately, and it is the one dependency that looks like it

@@ -746,6 +746,7 @@ def run(args) -> None:
             drop_last=(not args.lbfgs),
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
+            multiprocessing_context=tools.worker_start_method(args.num_workers),
             generator=torch.Generator().manual_seed(args.seed),
         )
         head_config.train_loader = train_loader_head
@@ -782,6 +783,7 @@ def run(args) -> None:
         drop_last=(train_sampler is None and not args.lbfgs),
         pin_memory=args.pin_memory,
         num_workers=args.num_workers,
+        multiprocessing_context=tools.worker_start_method(args.num_workers),
         generator=torch.Generator().manual_seed(args.seed),
     )
 
@@ -828,6 +830,7 @@ def run(args) -> None:
             drop_last=False,
             pin_memory=args.pin_memory,
             num_workers=args.num_workers,
+            multiprocessing_context=tools.worker_start_method(args.num_workers),
             generator=torch.Generator().manual_seed(args.seed),
         )
 
@@ -1127,6 +1130,7 @@ def run(args) -> None:
                 shuffle=(test_sampler is None),
                 drop_last=drop_last,
                 num_workers=args.num_workers,
+                multiprocessing_context=tools.worker_start_method(args.num_workers),
                 pin_memory=args.pin_memory,
             )
             test_data_loader[test_name] = test_loader
