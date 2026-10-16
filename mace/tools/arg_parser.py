@@ -759,6 +759,7 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
             "    per: graph\n"
             "    in_dim: 1\n"
             "    emb_dim: 32\n"
+            "    num_hidden_layers: 1  # optional, default 1\n"
         ),
         default=None,
     )
