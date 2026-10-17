@@ -85,3 +85,30 @@ def test_resume_uses_the_stage_two_lr_of_the_current_command_line(
     run_mace_train(resumed)
 
     assert set(swa_lrs(latest_checkpoint(tmp_path, swa=True))) == {0.0002}
+
+
+def final_lrs(checkpoint: Path) -> list:
+    """The learning rate of each optimizer param group in a checkpoint."""
+    state = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    return [group["lr"] for group in state["optimizer"]["param_groups"]]
+
+
+@pytest.mark.timeout(900)
+def test_the_first_resumed_stage_two_epoch_trains_at_the_stage_two_lr(
+    tmp_path, regression_set
+):
+    """The epoch a resumed run opens stage two with already uses `--swa_lr`."""
+    run_mace_train(base_training_params(tmp_path, regression_set, max_num_epochs=3))
+
+    resumed = base_training_params(
+        tmp_path,
+        regression_set,
+        max_num_epochs=3,
+        restart_latest=None,
+        swa=None,
+        start_swa=2,
+        swa_lr=0.0005,
+    )
+    run_mace_train(resumed)
+
+    assert set(final_lrs(latest_checkpoint(tmp_path, swa=True))) == {0.0005}

@@ -987,6 +987,12 @@ def run(args) -> None:
                 # stage two has none, and one written with it has the old value.
                 for param_group in optimizer.param_groups:
                     param_group["swa_lr"] = args.swa_lr
+                if start_epoch >= swa.start:
+                    # The training loop only steps the stage-two scheduler after the
+                    # first epoch it runs, so a run that resumes into stage two would
+                    # train that epoch at the old learning rate. Anneal here instead
+                    # (a no-op for a run that already is at swa_lr).
+                    swa.scheduler.step()
 
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
