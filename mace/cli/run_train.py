@@ -981,6 +981,12 @@ def run(args) -> None:
                 )
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
+            if swa is not None:
+                # Restoring the optimizer replaces its param groups, including the
+                # "swa_lr" that SWALR stored there: a checkpoint written without
+                # stage two has none, and one written with it has the old value.
+                for param_group in optimizer.param_groups:
+                    param_group["swa_lr"] = args.swa_lr
 
     ema: Optional[ExponentialMovingAverage] = None
     if args.ema:
