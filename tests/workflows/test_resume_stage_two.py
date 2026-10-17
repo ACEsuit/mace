@@ -19,21 +19,20 @@ from tests.workflows.test_cli_contracts import base_training_params
 
 
 def latest_checkpoint(directory: Path, swa: bool) -> Path:
-    suffix = "_swa.pt" if swa else ".pt"
+    """The checkpoint with the highest epoch, of stage two or of stage one."""
     candidates = [
         path
         for path in directory.glob("contract_run-7_epoch-*.pt")
-        if path.name.endswith("_swa.pt") == swa and path.name.endswith(suffix)
+        if path.stem.endswith("_swa") == swa
     ]
-    assert (
-        candidates
-    ), f"no {'stage-two' if swa else 'stage-one'} checkpoint in {directory}"
+    assert candidates, f"no {'stage-two' if swa else 'stage-one'} checkpoint found"
     return max(
         candidates, key=lambda path: int(path.stem.split("epoch-")[1].split("_")[0])
     )
 
 
 def swa_lrs(checkpoint: Path) -> list:
+    """The `swa_lr` of each optimizer param group stored in a checkpoint."""
     state = torch.load(checkpoint, map_location="cpu", weights_only=False)
     return [group.get("swa_lr") for group in state["optimizer"]["param_groups"]]
 
@@ -55,9 +54,7 @@ def test_stage_two_can_be_added_when_resuming_a_stage_one_run(tmp_path, regressi
     )
     run_mace_train(resumed)
 
-    assert swa_lrs(latest_checkpoint(tmp_path, swa=True)) == [0.0005] * len(
-        swa_lrs(latest_checkpoint(tmp_path, swa=True))
-    )
+    assert set(swa_lrs(latest_checkpoint(tmp_path, swa=True))) == {0.0005}
 
 
 @pytest.mark.timeout(900)
