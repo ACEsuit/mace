@@ -372,6 +372,44 @@ def test_weighted_huber_energy_forces_stress_loss():
     assert loss_w(ref, pred).item() == pytest.approx(8.0 * 0.125 + 4.0 * 0.25)
 
 
+def test_weighted_huber_loss_ignores_missing_stress_label():
+    # A config without a stress label has stress_weight 0 and a zero-filled
+    # target, so a non-zero predicted stress must not be penalised.
+    ref = make_ref(num_atoms_per_graph=(2,), stress_weight=torch.tensor([0.0]))
+    pred = clone_pred(ref)
+    pred["stress"][0, 0, 0] = 2.0
+    loss = WeightedHuberEnergyForcesStressLoss(huber_delta=1.0)
+    assert loss(ref, pred).item() == pytest.approx(0.0)
+
+    # with the label present: |2| > delta -> 1 * (2 - 0.5) = 1.5, mean over 9
+    ref_labelled = make_ref(num_atoms_per_graph=(2,))
+    assert loss(ref_labelled, pred).item() == pytest.approx(1.5 / 9)
+
+
+def test_weighted_huber_loss_config_weight_zero_switches_config_off():
+    # 2 configs of 2 atoms; config 1 has config_weight 0.
+    ref = make_ref(num_atoms_per_graph=(2, 2), weight=torch.tensor([1.0, 0.0]))
+    pred = clone_pred(ref)
+    # energy: config 0 per-atom diff 0.5 -> 0.125; config 1 per-atom diff 2 -> 1.5
+    # (masked); mean over 2 configs = 0.125 / 2
+    pred["energy"] = torch.tensor([1.0, 4.0])
+    # forces: one element of config 1 off by 2 -> masked
+    pred["forces"][3, 0] = 2.0
+    loss = WeightedHuberEnergyForcesStressLoss(huber_delta=1.0)
+    assert loss(ref, pred).item() == pytest.approx(0.125 / 2)
+
+
+def test_weighted_huber_loss_per_config_forces_weight():
+    # 2 configs of 1 atom; config 0 has no forces label.
+    ref = make_ref(num_atoms_per_graph=(1, 1), forces_weight=torch.tensor([0.0, 1.0]))
+    pred = clone_pred(ref)
+    pred["forces"][0, 0] = 2.0
+    pred["forces"][1, 0] = 2.0
+    loss = WeightedHuberEnergyForcesStressLoss(huber_delta=1.0)
+    # only config 1 counts: 1.5, mean over 6 force components
+    assert loss(ref, pred).item() == pytest.approx(1.5 / 6)
+
+
 # ---------------------------------------------------------------------------
 # UniversalLoss
 # ---------------------------------------------------------------------------
@@ -892,13 +930,12 @@ def test_a_zero_config_weight_dilutes_rather_than_renormalizing():
     assert masked == pytest.approx(both / 2)
 
 
-def test_the_weighted_huber_loss_ignores_config_and_property_weights():
-    """Unlike every other class here, this one drops the per-config weights.
+def test_the_weighted_huber_loss_applies_config_and_property_weights():
+    """The per-config weights multiply each element-wise huber term.
 
-    Pinned because it is surprising: the constructor takes global weights and
-    honours them, so the natural assumption is that the per-config ones apply
-    too. They do not, and a test that only ever passes weights of 1.0 -- as
-    the hand-value test above does -- cannot tell the difference.
+    A test that only ever passes weights of 1.0 -- as the hand-value test
+    above does -- cannot tell whether they are applied. Here every term is
+    scaled by weight * property_weight = 81.
     """
     ref = make_ref(num_atoms_per_graph=(2,))
     pred = clone_pred(ref)
@@ -914,4 +951,4 @@ def test_the_weighted_huber_loss_ignores_config_and_property_weights():
 
     for field in ("weight", "energy_weight", "forces_weight", "stress_weight"):
         setattr(ref, field, torch.tensor([9.0]))
-    assert loss(ref, pred).item() == pytest.approx(unweighted)
+    assert loss(ref, pred).item() == pytest.approx(81.0 * unweighted)
