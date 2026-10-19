@@ -106,12 +106,11 @@ packages/mace-torch/
 │   │
 │   ├── kernels/
 │   │   ├── dtypes.py                   # binds mace_core's Precision names to torch.dtype — the framework seam
-│   │   ├── ops.py                      # the 3 hot ops as torch.library.custom_op: channelwise_tp_conv, symmetric_contraction, segment_reduce
-│   │   ├── fake.py                     # register_fake (shape-only meta impls) → torch.compile with no graph-break
-│   │   └── autograd_ref.py             # reference autograd.Function (double-backward) for the 3 hot ops
+│   │   ├── ops.py                      # the hot ops as torch.library.custom_op (segment_sum, symmetric_contraction, channelwise_tp_conv, equivariant_linear), each with register_fake and a double-backward register_autograd
+│   │   └── initialization.py           # initialize_model_weights: the per-op seeded draw over a built module tree
 │   │
 │   ├── backends/
-│   │   ├── reference.py                # ReferenceBackend: implements KernelBackend in plain torch, NO e3nn (native TP/linear/contraction; the correctness oracle, CPU-ok)
+│   │   ├── reference.py                # ReferenceBackend: implements KernelBackend in plain torch, NO e3nn (native TP/linear/contraction/radial MLP; the correctness oracle, CPU-ok)
 │   │   ├── harmonics.py                # spherical harmonics in the e3nn convention (reference-only, non-hot)
 │   │   ├── radial.py                   # BesselBasis, ChebyshevBasis, GaussianBasis, PolynomialCutoff (reference-only, non-hot)
 │   │   ├── cueq/
@@ -125,7 +124,7 @@ packages/mace-torch/
 │   │
 │   ├── nn/                             # blocks WITHOUT @compile_mode('script') from day 1
 │   │   ├── embedding.py                # LinearNodeEmbeddingBlock, RadialEmbeddingBlock
-│   │   ├── radial.py                   # ZBLBasis, AgnesiTransform, SoftTransform, RadialMLP
+│   │   ├── radial.py                   # ZBLBasis, AgnesiTransform, SoftTransform (the radial MLP is the radial_mlp kernel op)
 │   │   ├── interaction.py              # the 6 RealAgnostic*InteractionBlock (fusion-agnostic forward: calls channelwise_tp_conv)
 │   │   ├── product_basis.py            # EquivariantProductBasisBlock (uses the symmetric_contraction op; no layout torch.transpose)
 │   │   ├── symmetric_contraction.py    # SymmetricContraction as a native op (no fx.symbolic_trace, no CodeGenMixin)

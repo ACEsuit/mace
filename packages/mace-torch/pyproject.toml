@@ -22,13 +22,14 @@ classifiers = [
 # the torch binding of it, so the dependency belongs at this level and is the
 # whole point of the package existing separately.
 #
-# The floor is 2.4 because `torch.library.custom_op` and its `register_fake` /
-# `register_autograd` arrived there, and the kernel dispatch is written against
-# them. Earlier releases have only the `autograd.Function` route, which
-# `torch.compile(fullgraph=True)` cannot see through without a graph break.
+# The floor is the repository's, 2.5, the first release with wheels for every
+# supported Python. The kernel dispatch needs 2.4 or later on its own:
+# `torch.library.custom_op` and its `register_fake` / `register_autograd`
+# arrived there, and earlier releases have only the `autograd.Function` route,
+# which `torch.compile(fullgraph=True)` cannot see through without a graph break.
 dependencies = [
     "mace-core",
-    "torch>=2.4",
+    "torch>=2.5",
     # Covalent radii for the ZBL repulsion and the distance transforms.
     "ase",
 ]
