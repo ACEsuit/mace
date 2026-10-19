@@ -9,11 +9,11 @@ the Fukui functions) -- because the electrostatics is the part that has no
 analogue in any energy model and therefore no other reference.
 
 **There is no polarizability here, and that is not an omission.**
-``AtomicDielectricMACE`` is the only class in the tree that emits that key
-(``mace/modules/models.py:1190``); ``PolarMACE`` emits a dipole and its
-electrostatics and never a polarizability -- the word does not occur in the
-class. A test that "checks the polarizability of the polar model" checks
-nothing, so the polarizability golden is next door, on MACE-MDP.
+``PolarMACE`` emits a dipole and its electrostatics; a polarizability only on
+request (``compute_polarizability=True`` in the forward, or
+``MACECalculator.get_polarizability``), and a plain energy call must not grow
+that channel by accident (``test_polar_mace_emits_no_polarizability``). The
+polarizability golden that exists is next door, on MACE-MDP.
 
 Marked ``polar`` **and** ``network``: the model is downloaded, and the forward
 needs ``graph_longrange``. Locally either one missing is a clean skip; the
@@ -107,9 +107,10 @@ def test_polar_mace_emits_no_polarizability(polar_calc, fixtures):
 
     Pinned as a contract because the reference cannot express it: a reference
     records the channels that were produced, and "this key was never produced"
-    looks exactly like "nobody asked for it". If a future PolarMACE gains a
-    polarizability, this fails and says the golden has to be extended
-    deliberately rather than acquiring a channel by accident.
+    looks exactly like "nobody asked for it". PolarMACE has a polarizability,
+    but only on request (``compute_polarizability`` in the forward,
+    ``MACECalculator.get_polarizability``), so a plain energy call must not
+    acquire the channel by accident; a golden for it is a deliberate extension.
 
     Deliberately *not* asserted against ``implemented_properties``, which
     would look like the obvious check and is worthless: ``MACECalculator``
@@ -120,10 +121,6 @@ def test_polar_mace_emits_no_polarizability(polar_calc, fixtures):
     two golden files ran in one process. See
     ``test_mdp_foundation.py::test_implemented_properties_leak_onto_the_shared_ase_list``.
     """
-    import inspect  # noqa: PLC0415
-
-    from mace.modules.extensions import PolarMACE  # noqa: PLC0415
-
     polar_calc.set_electrostatic_pbcs("realspace")
     probe = fixtures["water_cluster"].copy()
     probe.calc = polar_calc
@@ -131,7 +128,6 @@ def test_polar_mace_emits_no_polarizability(polar_calc, fixtures):
     assert "polarizability" not in polar_calc.results
     assert "polarizability_sh" not in polar_calc.results
     assert type(polar_calc.models[0]).__name__ == "PolarMACE"
-    assert "polarizability" not in inspect.getsource(PolarMACE)
 
 
 def test_the_reference_pins_the_electrostatics_and_not_only_the_energy():
