@@ -39,6 +39,7 @@ import ast
 import configparser
 import re
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -260,25 +261,9 @@ LAUNCHER_PYPROJECT = REPO / "packages" / "mace-launcher" / "pyproject.toml"
 
 
 def _project_scripts(pyproject: Path) -> dict[str, str]:
-    """Read `[project.scripts]` out of a pyproject, without a TOML library.
-
-    `tomllib` is 3.11+, this file is imported by a test that runs on 3.10, and
-    the rest of the module deliberately depends on nothing but the standard
-    library at its oldest supported version. The table is flat and every value
-    is a quoted string, so it needs no general TOML parser.
-    """
-    scripts: dict[str, str] = {}
-    in_section = False
-    for line in pyproject.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("["):
-            in_section = stripped == "[project.scripts]"
-            continue
-        if not in_section or not stripped or stripped.startswith("#"):
-            continue
-        name, _, target = stripped.partition("=")
-        scripts[name.strip()] = target.strip().strip('"').strip("'")
-    return scripts
+    """Read `[project.scripts]` out of a pyproject."""
+    project = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
+    return dict(project.get("scripts", {}))
 
 
 def source_entry_points() -> dict[str, Decl]:

@@ -29,11 +29,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
-          # 3.10, the version .mypy.ini declares. mypy parses third-party stubs
+          # 3.11, the version .mypy.ini declares. mypy parses third-party stubs
           # against python_version, and numpy 2.5's are PEP 695, so on a newer
           # interpreter the run stops at a parse error and checks nothing. The
-          # hooks pass identically on 3.10.
-          python-version: "3.10"
+          # hooks pass identically on 3.11.
+          python-version: "3.11"
           extras: dev
           # The pylint hook is `language: system`: packages the linted code
           # imports must be importable in this environment.
@@ -55,13 +55,6 @@ jobs:
         env:
           SKIP: ruff-check,ruff-format,ty
         run: pre-commit run --all-files --show-diff-on-failure
-      - name: TorchScript union guard
-        # ruff over mace/ is reduced by ruff.toml to FA102 alone. It runs here,
-        # in the job that owns the frozen tree, rather than as a hook: the ruff
-        # hooks are scoped to the new tree and skipped by this job, so the
-        # guard would otherwise be configured and never invoked. Linting does
-        # not rewrite a file, so this does not make ruff a second owner.
-        run: ruff check mace/
       - name: mypy against the committed baseline
         # mypy has never run here, so the frozen tree carries a backlog it is
         # not this migration's job to fix: the tree is the numerical oracle and
@@ -166,23 +159,35 @@ jobs:
           exit "$status"
 
   unit:
-    # The only 5-version matrix: python-version bugs are import/API-shaped and
-    # this suite is cheap. No pytest-split: if tests/unit needs sharding, the
-    # tests are misclassified.
+    # The only full-matrix suite on pull requests: python-version bugs are
+    # import/API-shaped and this suite is cheap. No pytest-split: if tests/unit
+    # needs sharding, the tests are misclassified.
+    #
+    # Every other leg resolves the newest torch, so the min-torch leg is the
+    # only job that exercises the torch floor setup.cfg declares. Keep the two
+    # in sync.
     needs: [ legacy-lint, packages-lint ]
     runs-on: ubuntu-latest
-    name: unit (py${{ matrix.python-version }})
+    name: unit (py${{ matrix.python-version }}${{ matrix.torch && format(', torch {0}', matrix.torch) || '' }})
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ '3.10', '3.11', '3.12', '3.13' ]
+        python-version: [ '3.11', '3.12', '3.13', '3.14' ]
+        # Empty means the newest torch. The include entry cannot be merged
+        # into the 3.11 leg without overwriting this value, so it becomes a
+        # job of its own rather than repinning that leg.
+        torch: [ '' ]
+        include:
+          - python-version: '3.11'
+            torch: '2.5.0'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-mace
         with:
           python-version: ${{ matrix.python-version }}
           extras: dev
+          pip-packages: ${{ matrix.torch && format('torch=={0}', matrix.torch) || '' }}
       - uses: ./.github/actions/run-tests
         with:
           # tests/golden rides along here rather than in a nightly: the
@@ -190,7 +195,7 @@ jobs:
           # the rewrite is measured against, so a change that moves them has
           # to fail the pull request that made it, not a run nobody reads the
           # next morning. They are CPU-only, network-free, carry no capability
-          # marker and no `slow` mark, so they collect on all four versions.
+          # marker and no `slow` mark, so they collect on every version.
           #
           # tests/architecture is NOT here: it moved to the `architecture` job
           # below, which is the only one that installs both trees editable and
@@ -257,7 +262,7 @@ jobs:
     # legacy environment first would keep passing on the day one of them grows
     # a dependency on it.
     #
-    # Same four versions as the unit job, for the same reason: what breaks
+    # Same versions as the unit job, for the same reason: what breaks
     # across python versions here is import- and packaging-shaped, and the job
     # takes seconds.
     needs: [ legacy-lint, packages-lint ]
@@ -267,7 +272,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ '3.10', '3.11', '3.12', '3.13' ]
+        python-version: [ '3.11', '3.12', '3.13', '3.14' ]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -306,7 +311,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.10","3.13"]') || fromJSON('["3.10","3.11","3.12","3.13"]') }}
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.11","3.14"]') || fromJSON('["3.11","3.12","3.13","3.14"]') }}
         split-group: [ 1, 2 ]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
