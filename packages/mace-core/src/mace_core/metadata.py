@@ -7,7 +7,7 @@ import re
 from collections.abc import Iterable
 from typing import Annotated, Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from mace_core.config import BaseConfig
 
@@ -38,6 +38,10 @@ SCHEMA_VERSION: Final = "1.0"
 
 _SCHEMA_VERSION_PATTERN: Final = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
+#: Validation context key set by `ModelMetadata.from_json`, the route that
+#: reads a record rather than builds one, and so requires its version.
+_READING: Final = "mace_core.metadata.reading"
+
 
 class MetadataSchemaError(ValueError):
     """Metadata that would not read back from its JSON as the same record."""
@@ -53,9 +57,10 @@ def _parse_schema_version(version: object) -> tuple[int, int] | None:
     return int(match[1]), int(match[2])
 
 
-def _check_schema_version(version: object) -> None:
+def _check_schema_version(version: object, *, present: bool = True) -> None:
     """Raise `ValueError` unless this code reads a record of `version`.
 
+    `present` is False when the record has no `schema_version` key at all.
     Every message names the record's version, the version this code writes and
     the installed mace-core release."""
     # Here rather than at the top: `mace_core` imports this module.
@@ -66,6 +71,12 @@ def _check_schema_version(version: object) -> None:
         f"mace-core {__version__} reads schema_version {SCHEMA_VERSION} and the "
         f"older minors of major {major}"
     )
+    if not present:
+        raise ValueError(
+            f"model metadata has no schema_version; {reads}. A record written "
+            "by to_json always carries one, so this one was not written by "
+            "mace-core or was edited"
+        )
     record = _parse_schema_version(version)
     if record is None:
         raise ValueError(
@@ -94,6 +105,17 @@ class _Record(BaseModel):
     model_config = ConfigDict(extra="forbid", ser_json_inf_nan="constants")
 
 
+#: A name or a version string. An empty one names nothing, so it is refused.
+_Name = Annotated[str, Field(min_length=1)]
+
+#: Version per distribution, `{"mace-core": "1.0.2", "mace-torch": "1.1.0"}`.
+_DistributionVersions = dict[_Name, _Name]
+
+#: A deviation or an error: a magnitude, so never negative, and finite, since an
+#: infinite one is a failure that should not have been recorded as a result.
+_Magnitude = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+
+
 class ConfigRecord(_Record):
     """Record of the training config, as written and as resolved."""
 
@@ -108,8 +130,8 @@ class ConfigRecord(_Record):
 class Provenance(_Record):
     """Which code produced the model."""
 
-    #: Version per distribution used, `{"mace-core": "1.0.2", "mace-torch": "1.1.0"}`
-    versions: dict[str, str]
+    #: Version per distribution used.
+    versions: _DistributionVersions
     #: Full hash of the commit the code was run from; None when not in a checkout.
     git_commit: str | None = None
 
@@ -118,7 +140,7 @@ class DataSourceSummary(_Record):
     """Summary of one data source."""
 
     #: The data source's name in the config.
-    name: str
+    name: _Name
     num_configurations: int | None = None
     num_atoms: int | None = None
     #: Atomic numbers of every element present.
@@ -152,10 +174,6 @@ class Citation(_Record):
     url: str | None = None
 
 
-#: A deviation or an error: a magnitude, so never negative, and finite, since an
-#: infinite one is a failure that should not have been recorded as a result.
-_Magnitude = Annotated[float, Field(ge=0, allow_inf_nan=False)]
-
 #: The two Clebsch-Gordan bases a set of weights can be laid out in.
 ClebschGordanBasis = Literal["full", "reduced"]
 
@@ -182,24 +200,24 @@ class ParityGate(_Record):
     model."""
 
     #: Name of the tolerance row the deviations were held to.
-    tolerance_row: str = Field(min_length=1)
+    tolerance_row: _Name
     #: Largest absolute difference between the two models, per quantity
     #: compared, in that quantity's units.
-    max_absolute_deviation: dict[str, _Magnitude] = Field(min_length=1)
+    max_absolute_deviation: dict[_Name, _Magnitude] = Field(min_length=1)
 
 
 class ConversionRecord(_Record):
     """How a model converted from a legacy checkpoint was converted."""
 
     #: What the file read was, such as `"mace-torch-pickle"`.
-    source_format: str = Field(min_length=1)
+    source_format: _Name
     #: Hex SHA-256 of the file read.
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     #: Distribution versions found in the source, `mace-torch` among them.
-    source_versions: dict[str, str]
+    source_versions: _DistributionVersions
     #: Distribution versions that ran the conversion. They stay with the model
     #: when later work replaces `provenance`, such as a fine-tuning run.
-    converter_versions: dict[str, str] = Field(min_length=1)
+    converter_versions: _DistributionVersions = Field(min_length=1)
     #: True when the source had no head names and the converter assigned one.
     headless: bool
     #: None when the weights kept the basis they were read in.
@@ -220,7 +238,7 @@ class StageSummary(_Record):
     """How one training stage ended."""
 
     #: The stage's name in the config.
-    name: str = Field(min_length=1)
+    name: _Name
     #: Epochs actually run, fewer than the config allows when the stage
     #: stopped early.
     epochs: int = Field(ge=0)
@@ -244,7 +262,7 @@ class TrainingSummary(_Record):
     #: One entry per stage, in the order they ran.
     stages: list[StageSummary] = Field(min_length=1)
     #: Keyed by head name, then by observable name.
-    validation_errors: dict[str, dict[str, ObservableErrors]] = Field(
+    validation_errors: dict[_Name, dict[_Name, ObservableErrors]] = Field(
         default_factory=dict
     )
 
@@ -266,7 +284,7 @@ class ModelMetadata(_Record):
     provenance: Provenance
     data: DataSummary = Field(default_factory=DataSummary)
     #: Keyed by head name, as in the config; a single-head model has one entry.
-    heads: dict[str, HeadSummary] = Field(default_factory=dict)
+    heads: dict[_Name, HeadSummary] = Field(default_factory=dict)
     #: DOI of the model itself, not of the papers describing it.
     doi: str | None = None
     citations: list[Citation] = Field(default_factory=list)
@@ -278,11 +296,16 @@ class ModelMetadata(_Record):
 
     @model_validator(mode="before")
     @classmethod
-    def _reads_a_schema_version_it_knows(cls, data: Any) -> Any:
+    def _reads_a_schema_version_it_knows(cls, data: Any, info: ValidationInfo) -> Any:
         # Before the fields are read: a newer record may hold fields this code
-        # does not know, and the version is the error worth reporting.
+        # does not know, and the version is the error worth reporting. A record
+        # read from JSON must carry its version; one built in code without it
+        # is being written, and takes the current one.
         if isinstance(data, dict):
-            _check_schema_version(data.get("schema_version", SCHEMA_VERSION))
+            reading = bool(info.context and info.context.get(_READING))
+            present = "schema_version" in data
+            if present or reading:
+                _check_schema_version(data.get("schema_version"), present=present)
             data = {**data, "schema_version": SCHEMA_VERSION}
         return data
 
@@ -324,8 +347,9 @@ class ModelMetadata(_Record):
 
     @classmethod
     def from_json(cls, text: str) -> ModelMetadata:
-        """Read a record written by `to_json`."""
-        return cls.model_validate_json(text)
+        """Read a record written by `to_json`. Unlike building one, reading
+        requires `schema_version`."""
+        return cls.model_validate_json(text, context={_READING: True})
 
 
 def format_citations(citations: Iterable[Citation]) -> str:

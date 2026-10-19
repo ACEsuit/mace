@@ -283,6 +283,71 @@ def test_a_record_lacking_the_optional_fields_takes_their_defaults():
     assert record.notes == ""
 
 
+def test_reading_json_requires_the_schema_version():
+    document = as_document(minimal_record())
+    del document["schema_version"]
+    with pytest.raises(ValidationError) as excinfo:
+        ModelMetadata.from_json(json.dumps(document))
+    message = str(excinfo.value)
+    assert "has no schema_version" in message
+    assert f"reads schema_version {SCHEMA_VERSION}" in message
+    assert f"mace-core {mace_core.__version__}" in message
+
+
+@pytest.mark.parametrize(
+    "build",
+    [ModelMetadata.model_validate, lambda d: ModelMetadata(**d)],
+    ids=["model_validate", "construction"],
+)
+def test_building_a_record_takes_the_current_schema_version(build):
+    document = as_document(minimal_record())
+    del document["schema_version"]
+    assert build(document).schema_version == SCHEMA_VERSION
+
+
+#: Where a name or a version sits in a full record, and how to empty it.
+EMPTY_NAMES = {
+    "provenance version": ("provenance", "versions", "mace-core", ""),
+    "provenance distribution": ("provenance", "versions", "", "1.0.0"),
+    "source version": ("conversion", "source_versions", "mace-torch", ""),
+    "source distribution": ("conversion", "source_versions", "", "0.3.16"),
+    "converter version": ("conversion", "converter_versions", "mace-core", ""),
+    "converter distribution": ("conversion", "converter_versions", "", "1.0.0"),
+    "compared quantity": (
+        "conversion",
+        "parity_gate",
+        "max_absolute_deviation",
+        "",
+        0.0,
+    ),
+    "tolerance row": ("conversion", "parity_gate", "tolerance_row", ""),
+    "source format": ("conversion", "source_format", ""),
+    "data source": ("data", "sources", 0, "name", ""),
+    "stage": ("training", "stages", 0, "name", ""),
+    "head with errors": ("training", "validation_errors", "", {}),
+    "observable with errors": (
+        "training",
+        "validation_errors",
+        "pbe",
+        "",
+        {"rmse": 0.0, "mae": 0.0},
+    ),
+    "head": ("heads", "", {"sources": []}),
+}
+
+
+@pytest.mark.parametrize("where", EMPTY_NAMES.values(), ids=EMPTY_NAMES.keys())
+def test_an_empty_name_or_version_is_refused(where):
+    *path, key, value = where
+    document = as_document(full_record())
+    node = document
+    for step in path:
+        node = node[step]
+    node[key] = value
+    with pytest.raises(ValidationError, match="string_too_short"):
+        ModelMetadata.from_json(json.dumps(document))
+
+
 def test_infinity_survives_and_nan_is_refused():
     # pydantic's default writes inf/nan as null, which would silently turn a
     # config value into a different one. NaN is never equal to itself, so it
@@ -513,7 +578,6 @@ def test_nothing_was_converted_means_no_clebsch_gordan_entry():
         ({"source_sha256": "0123456789ABCDEF" * 4}, "string_pattern_mismatch"),
         ({"source_versions": {"torch": "2.5.1"}}, "no 'mace-torch' entry"),
         ({"converter_versions": {}}, "too_short"),
-        ({"source_format": ""}, "string_too_short"),
     ],
 )
 def test_a_conversion_record_refuses_what_a_converter_cannot_have_seen(change, match):
