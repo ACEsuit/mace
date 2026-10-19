@@ -3,8 +3,9 @@ made, stored as JSON beside the weights."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
-from typing import Any, Final
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -13,22 +14,76 @@ from mace_core.config import BaseConfig
 __all__ = [
     "SCHEMA_VERSION",
     "Citation",
+    "ClebschGordanConversion",
     "ConfigRecord",
+    "ConversionRecord",
     "DataSourceSummary",
     "DataSummary",
     "HeadSummary",
     "MetadataSchemaError",
     "ModelMetadata",
+    "ObservableErrors",
+    "ParityGate",
     "Provenance",
+    "StageSummary",
+    "TrainingSummary",
     "format_citations",
 ]
 
-#: Bump when a field is added, removed or changes meaning.
-SCHEMA_VERSION: Final = 1
+#: The schema version this code writes, `"<major>.<minor>"`. A minor bump only
+#: adds fields, each with a default; renaming or removing a field, or changing
+#: what one means, is a major bump. A record is read when it has this major and
+#: this minor or an older one.
+SCHEMA_VERSION: Final = "1.0"
+
+_SCHEMA_VERSION_PATTERN: Final = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 
 class MetadataSchemaError(ValueError):
     """Metadata that would not read back from its JSON as the same record."""
+
+
+def _parse_schema_version(version: object) -> tuple[int, int] | None:
+    """`(major, minor)` of a version string, or None when it is not one."""
+    if not isinstance(version, str):
+        return None
+    match = _SCHEMA_VERSION_PATTERN.fullmatch(version)
+    if match is None:
+        return None
+    return int(match[1]), int(match[2])
+
+
+def _check_schema_version(version: object) -> None:
+    """Raise `ValueError` unless this code reads a record of `version`.
+
+    Every message names the record's version, the version this code writes and
+    the installed mace-core release."""
+    # Here rather than at the top: `mace_core` imports this module.
+    from mace_core import __version__
+
+    major, minor = (int(part) for part in SCHEMA_VERSION.split("."))
+    reads = (
+        f"mace-core {__version__} reads schema_version {SCHEMA_VERSION} and the "
+        f"older minors of major {major}"
+    )
+    record = _parse_schema_version(version)
+    if record is None:
+        raise ValueError(
+            f"model metadata has schema_version {version!r}, which is not a "
+            f"'<major>.<minor>' string; {reads}"
+        )
+    if record[0] < major:
+        raise ValueError(
+            f"model metadata has schema_version {version!r}, of an older major "
+            f"than this code; {reads}. Records are not migrated across majors: "
+            "reconvert the model with this mace-core"
+        )
+    if record[0] > major or record[1] > minor:
+        raise ValueError(
+            f"model metadata has schema_version {version!r}, newer than this "
+            f"code; {reads}. Upgrade mace-core to a release that reads "
+            f"schema_version {version}"
+        )
 
 
 class _Record(BaseModel):
@@ -97,10 +152,116 @@ class Citation(_Record):
     url: str | None = None
 
 
+#: A deviation or an error: a magnitude, so never negative, and finite, since an
+#: infinite one is a failure that should not have been recorded as a result.
+_Magnitude = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+
+#: The two Clebsch-Gordan bases a set of weights can be laid out in.
+ClebschGordanBasis = Literal["full", "reduced"]
+
+
+class ClebschGordanConversion(_Record):
+    """The Clebsch-Gordan basis a conversion read its weights in and the one it
+    wrote them in."""
+
+    read: ClebschGordanBasis
+    written: ClebschGordanBasis
+
+    @model_validator(mode="after")
+    def _converts_something(self) -> ClebschGordanConversion:
+        if self.read == self.written:
+            raise ValueError(
+                f"the Clebsch-Gordan basis was read and written as {self.read!r}, "
+                "which converts nothing; record clebsch_gordan_conversion as None"
+            )
+        return self
+
+
+class ParityGate(_Record):
+    """The parity check a converter ran between the source and the converted
+    model."""
+
+    #: Name of the tolerance row the deviations were held to.
+    tolerance_row: str = Field(min_length=1)
+    #: Largest absolute difference between the two models, per quantity
+    #: compared, in that quantity's units.
+    max_absolute_deviation: dict[str, _Magnitude] = Field(min_length=1)
+
+
+class ConversionRecord(_Record):
+    """How a model converted from a legacy checkpoint was converted."""
+
+    #: What the file read was, such as `"mace-torch-pickle"`.
+    source_format: str = Field(min_length=1)
+    #: Hex SHA-256 of the file read.
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    #: Distribution versions found in the source, `mace-torch` among them.
+    source_versions: dict[str, str]
+    #: Distribution versions that ran the conversion. They stay with the model
+    #: when later work replaces `provenance`, such as a fine-tuning run.
+    converter_versions: dict[str, str] = Field(min_length=1)
+    #: True when the source had no head names and the converter assigned one.
+    headless: bool
+    #: None when the weights kept the basis they were read in.
+    clebsch_gordan_conversion: ClebschGordanConversion | None = None
+    parity_gate: ParityGate
+
+    @model_validator(mode="after")
+    def _source_names_mace_torch(self) -> ConversionRecord:
+        if "mace-torch" not in self.source_versions:
+            raise ValueError(
+                "conversion.source_versions has no 'mace-torch' entry; a legacy "
+                "checkpoint was written by mace-torch, so record its version"
+            )
+        return self
+
+
+class StageSummary(_Record):
+    """How one training stage ended."""
+
+    #: The stage's name in the config.
+    name: str = Field(min_length=1)
+    #: Epochs actually run, fewer than the config allows when the stage
+    #: stopped early.
+    epochs: int = Field(ge=0)
+    stop_reason: Literal["max_epochs", "patience", "converged", "interrupted"]
+
+
+class ObservableErrors(_Record):
+    """The final validation errors of one observable, in its declared units."""
+
+    rmse: _Magnitude
+    mae: _Magnitude
+
+
+class TrainingSummary(_Record):
+    """How the run that produced the model ended.
+
+    What the run was asked to do is the config's, in `config.resolved`; this
+    holds only what happened. The units of an error are those of its
+    observable's declaration there."""
+
+    #: One entry per stage, in the order they ran.
+    stages: list[StageSummary] = Field(min_length=1)
+    #: Keyed by head name, then by observable name.
+    validation_errors: dict[str, dict[str, ObservableErrors]] = Field(
+        default_factory=dict
+    )
+
+    @model_validator(mode="after")
+    def _stages_named_once(self) -> TrainingSummary:
+        names = [stage.name for stage in self.stages]
+        if len(set(names)) != len(names):
+            raise ValueError(f"training.stages names a stage twice: {names}")
+        return self
+
+
 class ModelMetadata(_Record):
     """How a model was made: its config, the code, the data and what to cite."""
 
-    schema_version: int = SCHEMA_VERSION
+    #: Always `SCHEMA_VERSION` once read: a record of an older minor is read
+    #: into this schema, its missing fields set to their defaults.
+    schema_version: str = SCHEMA_VERSION
     config: ConfigRecord
     provenance: Provenance
     data: DataSummary = Field(default_factory=DataSummary)
@@ -110,20 +271,19 @@ class ModelMetadata(_Record):
     doi: str | None = None
     citations: list[Citation] = Field(default_factory=list)
     notes: str = ""
+    #: Set only on a model converted from a legacy checkpoint.
+    conversion: ConversionRecord | None = None
+    #: Set only on a model produced by a training run.
+    training: TrainingSummary | None = None
 
     @model_validator(mode="before")
     @classmethod
-    def _reads_only_its_own_schema_version(cls, data: Any) -> Any:
+    def _reads_a_schema_version_it_knows(cls, data: Any) -> Any:
         # Before the fields are read: a newer record may hold fields this code
         # does not know, and the version is the error worth reporting.
         if isinstance(data, dict):
-            version = data.get("schema_version", SCHEMA_VERSION)
-            if version != SCHEMA_VERSION:
-                raise ValueError(
-                    f"model metadata has schema_version {version!r}, but this "
-                    f"mace-core reads schema_version {SCHEMA_VERSION}; a newer "
-                    "record needs an upgrade of mace-core"
-                )
+            _check_schema_version(data.get("schema_version", SCHEMA_VERSION))
+            data = {**data, "schema_version": SCHEMA_VERSION}
         return data
 
     @model_validator(mode="after")
@@ -137,6 +297,17 @@ class ModelMetadata(_Record):
                     raise ValueError(
                         f"heads.{head}.sources names {name!r}, which is not in "
                         f"data.sources; add its summary or drop the name"
+                    )
+        return self
+
+    @model_validator(mode="after")
+    def _training_names_known_heads(self) -> ModelMetadata:
+        if self.training is not None:
+            for head in self.training.validation_errors:
+                if head not in self.heads:
+                    raise ValueError(
+                        f"training.validation_errors names head {head!r}, which "
+                        "is not in heads; add its summary or drop the errors"
                     )
         return self
 

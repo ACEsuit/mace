@@ -16,6 +16,9 @@ What is here so far:
   command line to compose with it.
 - `mace_core.metadata` — `ModelMetadata`, the versioned record every trained
   model carries (config as written and as resolved, provenance, a summary per
-  data source, per head the sources it consumed, DOI, citations and notes),
-  with a JSON round trip, `ConfigRecord.from_config()` to embed a config in
-  its fixed-point form, and `format_citations()`.
+  data source, per head the sources it consumed, DOI, citations and notes,
+  and, when they apply, how a legacy checkpoint was converted and how the
+  training run ended), with a JSON round trip, `ConfigRecord.from_config()` to
+  embed a config in its fixed-point form, and `format_citations()`. The
+  schema is versioned `major.minor`: a record of the reader's major and an
+  equal or older minor loads, anything else is refused.

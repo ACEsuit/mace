@@ -7,6 +7,7 @@ would not be doing its job.
 """
 
 import pytest
+from mace_core.config import BaseConfig, ConfigSection
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
     DerivativeRequest,
@@ -509,3 +510,90 @@ def test_a_derivative_can_be_named_without_having_been_requested():
     # The differentiated quantity is not a scalar, so the gradient's irreps are
     # a tensor product this package deliberately does not compute.
     assert derived.irreps is None
+
+
+# ---------------------------------------------------------------------------
+# The catalogue inside a config
+# ---------------------------------------------------------------------------
+
+
+class CatalogueConfig(BaseConfig):
+    """A config with a catalogue field, as a model section would hold one."""
+
+    observables: ObservableCatalogue = DEFAULT_CATALOGUE
+
+
+#: A catalogue none of the defaults describe: a third input, a per-atom
+#: observable, a renamed derivative with its own sign and one by bare name.
+CUSTOM_CATALOGUE = {
+    "inputs": [
+        *BASE_INPUTS,
+        {"name": "magmom", "irreps": "1o", "per_atom": True, "units": "μB"},
+    ],
+    "observables": [
+        {
+            **ENERGY_ROW,
+            "derivatives": [
+                {"wrt": "pos", "name": "forces", "sign": -1, "units": "eV/Å"},
+                {"wrt": "magmom", "name": "magforces", "sign": -1},
+                "strain",
+            ],
+        },
+        {"name": "charges", "irreps": "0e", "per_atom": True, "units": "e"},
+    ],
+}
+
+
+@pytest.mark.parametrize(
+    "spec", [InputSpec, DerivativeRequest, ObservableSpec, ObservableCatalogue]
+)
+def test_the_declared_classes_are_config_sections(spec):
+    assert issubclass(spec, ConfigSection)
+
+
+@pytest.mark.parametrize(
+    "document", [{}, {"observables": CUSTOM_CATALOGUE}], ids=["default", "custom"]
+)
+def test_a_catalogue_in_a_config_survives_the_resolved_dict(document):
+    config = CatalogueConfig.from_dict(document)
+    resolved = config.to_resolved_dict()
+    again = CatalogueConfig.from_dict(resolved)
+    assert again == config
+    if not document:
+        assert again.observables == DEFAULT_CATALOGUE
+    assert again.to_resolved_dict() == resolved
+
+
+def test_a_custom_catalogue_reads_back_with_its_derivatives():
+    config = CatalogueConfig.from_dict({"observables": CUSTOM_CATALOGUE})
+    again = CatalogueConfig.from_dict(config.to_resolved_dict())
+    assert again.observables.names() == (
+        "energy",
+        "charges",
+        "forces",
+        "magforces",
+        "d_energy_d_strain",
+    )
+    assert again.observables.derivative("energy", "magmom").sign == -1
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        (),
+        ("inputs", 0),
+        ("observables", 0),
+        ("observables", 0, "derivatives", 0),
+    ],
+    ids=["catalogue", "input", "observable", "derivative"],
+)
+def test_a_catalogue_in_a_config_refuses_an_unknown_key(path):
+    document = CatalogueConfig.from_dict(
+        {"observables": CUSTOM_CATALOGUE}
+    ).to_resolved_dict()
+    node = document["observables"]
+    for key in path:
+        node = node[key]
+    node["unit"] = "eV"
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        CatalogueConfig.from_dict(document)
