@@ -61,7 +61,7 @@ def test_the_manifest_holds_every_capability_probe():
     have their own job in `ci-extensions.yaml`. A manifest short by one would
     be a capability with no recorded migration state and nothing to say so.
     """
-    from tests.conftest import CAPABILITY_PROBES  # noqa: PLC0415
+    from tests.conftest import CAPABILITY_PROBES
 
     declared = set(capabilities.probes())
     assert declared == set(CAPABILITY_PROBES), (
