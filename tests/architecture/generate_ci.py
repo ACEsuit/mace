@@ -43,13 +43,12 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 # Importable both as a script and as `tests.architecture.generate_ci`, so the
 # meta-test and the command line share one module rather than two copies of it.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tests.architecture import capabilities  # noqa: E402
+from tests.architecture import capabilities
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
@@ -71,7 +70,7 @@ END = "# <<< generated from capabilities.toml: {name}"
 GENERATOR = "tests/architecture/generate_ci.py"
 
 
-def _filter_outputs() -> List[str]:
+def _filter_outputs() -> list[str]:
     """The `changes` job's outputs: one per capability that owns a filter.
 
     The `|| 'true'` fallback is what makes the job correct outside a pull
@@ -89,10 +88,10 @@ def _filter_outputs() -> List[str]:
     return lines
 
 
-def _wrap(text: str, width: int, prefix: str) -> List[str]:
+def _wrap(text: str, width: int, prefix: str) -> list[str]:
     """Wrap a note into comment lines, so a long rationale stays readable."""
     words = text.split()
-    lines: List[str] = []
+    lines: list[str] = []
     current = prefix
     for word in words:
         candidate = f"{current} {word}" if current != prefix else f"{prefix}{word}"
@@ -106,7 +105,7 @@ def _wrap(text: str, width: int, prefix: str) -> List[str]:
     return lines
 
 
-def _filter_body() -> List[str]:
+def _filter_body() -> list[str]:
     """The paths-filter `filters:` document.
 
     The shared set is emitted as a YAML anchor rather than repeated, exactly as
@@ -127,11 +126,11 @@ def _filter_body() -> List[str]:
     return lines
 
 
-def _floor_rows() -> List[Tuple[str, int, str]]:
+def _floor_rows() -> list[tuple[str, int, str]]:
     return [(f.path, f.floor, f.owner) for f in capabilities.coverage_floors()]
 
 
-def _floor_lines() -> List[str]:
+def _floor_lines() -> list[str]:
     """The floor rows themselves, grouped under the capability that owns them.
 
     Two whitespace-separated fields per data line and nothing else. Both
@@ -139,7 +138,7 @@ def _floor_lines() -> List[str]:
     `tests/unit/test_ci_gates.py` parses the same heredoc with a two-way
     `split()`, so the owner goes in a group comment rather than a trailing one.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     owner = None
     for path, floor, floor_owner in _floor_rows():
         if floor_owner != owner:
@@ -149,7 +148,7 @@ def _floor_lines() -> List[str]:
     return lines
 
 
-def _nightly_floors() -> List[str]:
+def _nightly_floors() -> list[str]:
     """The enforced table: the data lines of the FLOORS heredoc.
 
     Only the rows are generated. The reasoning above the heredoc -- which files
@@ -169,7 +168,7 @@ def _nightly_floors() -> List[str]:
     return lines + _floor_lines()
 
 
-def _core_floors() -> List[str]:
+def _core_floors() -> list[str]:
     """The informative rendering: every floor's file, its percentage, no gate.
 
     No `--fail-under` anywhere in here, and that is deliberate rather than an
@@ -198,10 +197,10 @@ def _core_floors() -> List[str]:
 
 
 #: Region name -> (path, the lines to put between the markers).
-REGIONS: Dict[str, Tuple[Path, List[str]]] = {}
+REGIONS: dict[str, tuple[Path, list[str]]] = {}
 
 
-def _regions() -> Dict[str, Tuple[Path, List[str]]]:
+def _regions() -> dict[str, tuple[Path, list[str]]]:
     return {
         "filter-outputs": (CI_EXTENSIONS, _filter_outputs()),
         "filter-paths": (CI_EXTENSIONS, _filter_body()),
@@ -210,7 +209,7 @@ def _regions() -> Dict[str, Tuple[Path, List[str]]]:
     }
 
 
-def _replace(text: str, name: str, body: List[str]) -> str:
+def _replace(text: str, name: str, body: list[str]) -> str:
     """Swap the body of one generated region, preserving its indentation."""
     begin = BEGIN.format(name=name)
     end = END.format(name=name)
@@ -237,15 +236,15 @@ def render(path: Path) -> str:
     return text
 
 
-def files() -> List[Path]:
-    seen: List[Path] = []
+def files() -> list[Path]:
+    seen: list[Path] = []
     for owner, _ in _regions().values():
         if owner not in seen:
             seen.append(owner)
     return seen
 
 
-def drift() -> List[Path]:
+def drift() -> list[Path]:
     """The workflow files whose generated regions no longer match the manifest."""
     return [
         path for path in files() if path.read_text(encoding="utf-8") != render(path)
