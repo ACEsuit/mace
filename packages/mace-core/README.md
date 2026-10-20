@@ -20,5 +20,5 @@ What is here so far:
   and, when they apply, how a legacy checkpoint was converted and how the
   training run ended), with a JSON round trip, `ConfigRecord.from_config()` to
   embed a config in its fixed-point form, and `format_citations()`. The
-  schema is versioned `major.minor`: a record of the reader's major and an
-  equal or older minor loads, anything else is refused.
+  schema is versioned `major.minor`; which records a release reads is stated
+  at `SCHEMA_VERSION`.
