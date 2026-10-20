@@ -106,14 +106,13 @@ packages/mace-torch/
 │   │
 │   ├── kernels/
 │   │   ├── dtypes.py                   # binds mace_core's Precision names to torch.dtype — the framework seam
-│   │   ├── ops.py                      # the 3 hot ops as torch.library.custom_op: channelwise_tp_conv, symmetric_contraction, segment_reduce
-│   │   ├── fake.py                     # register_fake (shape-only meta impls) → torch.compile with no graph-break
-│   │   └── autograd_ref.py             # reference autograd.Function (double-backward) for the 3 hot ops
+│   │   ├── ops.py                      # the hot ops as torch.library.custom_op (segment_sum, symmetric_contraction, channelwise_tp_conv, equivariant_linear), each with register_fake and a double-backward register_autograd
+│   │   └── initialization.py           # initialize_model_weights: the per-op seeded draw over a built module tree
 │   │
 │   ├── backends/
-│   │   ├── reference/
-│   │   │   ├── backend.py              # ReferenceBackend: implements KernelBackend in plain torch — NO e3nn (native TP/linear/contraction; the correctness oracle, CPU-ok)
-│   │   │   └── spherical_harmonics.py             # spherical harmonics + reference radial basis (non-hot)
+│   │   ├── reference.py                # ReferenceBackend: implements KernelBackend in plain torch, NO e3nn (native TP/linear/contraction/radial MLP; the correctness oracle, CPU-ok)
+│   │   ├── harmonics.py                # spherical harmonics in the e3nn convention (reference-only, non-hot)
+│   │   ├── radial.py                   # BesselBasis, ChebyshevBasis, GaussianBasis, PolynomialCutoff (reference-only, non-hot)
 │   │   ├── cueq/
 │   │   │   ├── backend.py              # CuEqBackend: wraps cuequivariance behind the Protocol (kills the types.MethodType monkeypatch)
 │   │   │   └── canonical.py            # to_canonical/load_canonical ONLY at the boundary (mul_ir↔ir_mul reshape; the canonical→fused-basis map is a scaled permutation applied once at build time, rfc-01 §2.4.1)
@@ -125,7 +124,7 @@ packages/mace-torch/
 │   │
 │   ├── nn/                             # blocks WITHOUT @compile_mode('script') from day 1
 │   │   ├── embedding.py                # LinearNodeEmbeddingBlock, RadialEmbeddingBlock
-│   │   ├── radial.py                   # BesselBasis, ChebychevBasis, GaussianBasis, PolynomialCutoff, ZBLBasis, AgnesiTransform, SoftTransform, RadialMLP
+│   │   ├── radial.py                   # ZBLBasis, AgnesiTransform, SoftTransform (the radial MLP is the radial_mlp kernel op)
 │   │   ├── interaction.py              # the 6 RealAgnostic*InteractionBlock (fusion-agnostic forward: calls channelwise_tp_conv)
 │   │   ├── product_basis.py            # EquivariantProductBasisBlock (uses the symmetric_contraction op; no layout torch.transpose)
 │   │   ├── symmetric_contraction.py    # SymmetricContraction as a native op (no fx.symbolic_trace, no CodeGenMixin)
@@ -305,7 +304,7 @@ tests/
 
 An **independent track** (EDU-1/EDU-2, no phase gate), a top-level sibling of `packages/` and the
 frozen `mace/` — **not** a package and **not** the "reference backend" (that is the plain-torch/jax
-kernel oracle inside the packages, `mace_torch/backends/reference/` and `mace_jax/kernels/reference.py`).
+kernel oracle inside the packages, `mace_torch/backends/reference.py` and `mace_jax/kernels/reference.py`).
 Pure-function JAX, readable over fast, **evaluation-only**: it exists so chemists/physicists can read
 and inspect the model blocks, not as a training path nor a mirror of the latest architecture. There is
 **no JAX training anywhere** — the `mace_jax` package is inference-only (plan D1) and the tutorials are

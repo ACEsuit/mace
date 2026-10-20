@@ -21,6 +21,12 @@ from mace_core.config import (
     PolynomialCutoffConfig,
     SoftTransformConfig,
 )
+from mace_torch.backends.radial import (
+    BesselBasis,
+    ChebyshevBasis,
+    GaussianBasis,
+    PolynomialCutoff,
+)
 from mace_torch.nn.embedding import (
     LinearNodeEmbeddingBlock,
     RadialEmbeddingBlock,
@@ -30,10 +36,6 @@ from mace_torch.nn.embedding import (
 )
 from mace_torch.nn.radial import (
     AgnesiTransform,
-    BesselBasis,
-    ChebyshevBasis,
-    GaussianBasis,
-    PolynomialCutoff,
     SoftTransform,
 )
 
