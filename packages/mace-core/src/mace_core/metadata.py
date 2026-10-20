@@ -10,6 +10,7 @@ from typing import Annotated, Any, Final, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from mace_core.config import BaseConfig
+from mace_core.kernels.descriptors import ClebschGordanBasis
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -172,10 +173,6 @@ class Citation(_Record):
     year: int | None = None
     doi: str | None = None
     url: str | None = None
-
-
-#: The two Clebsch-Gordan bases a set of weights can be laid out in.
-ClebschGordanBasis = Literal["full", "reduced"]
 
 
 class ClebschGordanConversion(_Record):
