@@ -14,7 +14,7 @@ import math
 import pytest
 import torch
 from conftest import assert_close, fp64_only
-from mace_torch.backends.reference.spherical_harmonics import (
+from mace_torch.backends.harmonics import (
     SphericalHarmonics,
     spherical_harmonics,
 )

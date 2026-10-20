@@ -23,12 +23,14 @@ from mace_core.config import (
     SoftTransformConfig,
 )
 
-from mace_torch.nn.radial import (
-    AgnesiTransform,
+from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
     GaussianBasis,
     PolynomialCutoff,
+)
+from mace_torch.nn.radial import (
+    AgnesiTransform,
     SoftTransform,
 )
 
