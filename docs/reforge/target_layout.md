@@ -59,6 +59,7 @@ packages/mace-core/
 │   │   ├── precision.py                # Precision = Literal["float64","float32",…] — dtype NAMES, never torch.dtype
 │   │   ├── descriptors.py              # IrrepsDescriptor, TPDescriptor, ContractionDescriptor (irreps+instructions, no weights)
 │   │   ├── registry.py                 # get_backend(name, framework) via entry_points('mace.kernel_backends.{torch,jax}')
+│   │   ├── spans.py                    # typed span shapes (EdgeConvolutionSpan): the member descriptors a backend may replace as one unit
 │   │   └── canonical.py               # canonical weight layout + to_canonical/load_canonical spec (kills the 5 convert_* modules)
 │   │
 │   ├── clebsch_gordan/
@@ -68,6 +69,8 @@ packages/mace-core/
 │   │
 │   ├── neighbors/
 │   │   └── neighborhood.py             # matscipy neighbor construction (mirror of data/neighborhood.py; numpy, no torch)
+│   │
+│   ├── edges.py                        # edge-order vocabulary, neighbour-list capabilities, adapters and plan_edges (DATA-4)
 │   │
 │   ├── data_spec/
 │   │   ├── configuration.py            # Configuration (raw parsed structure; mirror of data/utils.py without torch)
@@ -111,6 +114,8 @@ packages/mace-torch/
 │   │
 │   ├── backends/
 │   │   ├── reference.py                # ReferenceBackend: implements KernelBackend in plain torch, NO e3nn (native TP/linear/contraction/radial MLP; the correctness oracle, CPU-ok)
+│   │   ├── spans.py                    # InteractionSpan, SpanCapabilities: public, a span in its own wheel imports them
+│   │   ├── span_conformance.py         # run_span_conformance, oracle = the reference ops composed op by op
 │   │   ├── harmonics.py                # spherical harmonics in the e3nn convention (reference-only, non-hot)
 │   │   ├── radial.py                   # BesselBasis, ChebyshevBasis, GaussianBasis, PolynomialCutoff (reference-only, non-hot)
 │   │   ├── cueq/
@@ -421,8 +426,9 @@ model, change by change), see [`extending_mace.md`](extending_mace.md).
       def make_segment_reduce(self, d: SegmentReduceDescriptor) -> SegmentReduceOp: ...
       def make_spherical_harmonics(self, d: SphericalHarmonicsDescriptor) -> SphericalHarmonicsOp: ...  # reference-only, may decline
       def make_radial_basis(self, d: RadialBasisDescriptor) -> RadialBasisOp: ...                        # reference-only, may decline
-      # optional span factory: a backend MAY fuse a whole interaction layer instead of composing it op-by-op
-      def make_interaction_layer(self, descriptors: "InteractionLayerDescriptors") -> "InteractionLayerOp | NotImplemented": ...
+      # optional span factory: a backend MAY replace a span of the interaction layer as one stateless module
+      # (the edge convolution, BKD-5); None builds the layer op by op
+      def make_interaction_layer(self, descriptors: tuple[Descriptor, ...]) -> "InteractionSpan | None": ...
   ```
 
   Internal-weight ops (`linear`, `symmetric_contraction`, `fully_connected_tp`) additionally implement `to_canonical()` / `load_canonical()`, applied only at the checkpoint save/load boundary, never on the forward path.
