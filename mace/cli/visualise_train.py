@@ -314,7 +314,16 @@ def plot_epoch_dependence(
     # ---- Plot selected keys ----
     ax = axes[1]
     twin_axes = []
-    for i, label in enumerate(labels):
+    # Some heads (e.g. multi-head fine-tuning heads) do not report every
+    # metric in the training history.  Keep the configured plots for metrics
+    # that are present, but do not make plotting fail for missing/all-null
+    # columns.
+    available_labels = [
+        label
+        for label in labels
+        if label[0] in valid_data.columns and valid_data[label[0]]["mean"].notna().any()
+    ]
+    for i, label in enumerate(available_labels):
         color = colors[(i + 3)]
         key, axis_label = label
         if i == 0:
