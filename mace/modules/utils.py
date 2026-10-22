@@ -104,7 +104,7 @@ def compute_forces_virials(
         create_graph=training,  # Create graph for second derivative
         allow_unused=True,
     )
-    stress = torch.zeros_like(displacement)
+    stress = None
     if compute_stress and virials is not None:
         stress = stress_from_virials(virials, cell, pbc)
     if forces is None:
