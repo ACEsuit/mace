@@ -20,11 +20,7 @@ caller that only wants a unit constant should not pay for a file parser:
 ``mace_core.units``
     unit constants, and the single statement of each physics sign convention.
 
-Importing the package also loads ``mace_core.kernels`` and
-``mace_core.clebsch_gordan``, and numpy with them, because the model metadata
-names the Clebsch-Gordan basis with the type the kernel descriptors declare.
-No backend is loaded: the registry discovers its entry points only when asked.
-Neighbours follow the rule above.
+Heavier ones still (the Clebsch-Gordan basis, neighbours) follow the same rule.
 """
 
 from importlib.metadata import PackageNotFoundError, version

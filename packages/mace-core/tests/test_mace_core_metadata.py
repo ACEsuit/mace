@@ -1,5 +1,5 @@
-"""`ModelMetadata`: JSON round trip, schema versioning, the conversion and
-training groups, citation rendering."""
+"""`ModelMetadata`: JSON round trip, schema versioning, the training group,
+citation rendering."""
 
 import itertools
 import json
@@ -15,16 +15,13 @@ from mace_core.config import BaseConfig, ConfigSection
 from mace_core.metadata import (
     SCHEMA_VERSION,
     Citation,
-    ClebschGordanConversion,
     ConfigRecord,
-    ConversionRecord,
     DataSourceSummary,
     DataSummary,
     HeadSummary,
     MetadataSchemaError,
     ModelMetadata,
     ObservableErrors,
-    ParityGate,
     Provenance,
     StageSummary,
     TrainingSummary,
@@ -72,25 +69,7 @@ def full_record() -> ModelMetadata:
         doi="10.5281/zenodo.0000000",
         citations=[MACE_PAPER, Citation(title="A dataset paper", doi="10.1000/xyz")],
         notes="Trained for the round-trip test.",
-        conversion=conversion_record(),
         training=training_summary(),
-    )
-
-
-def conversion_record() -> ConversionRecord:
-    return ConversionRecord(
-        source_format="mace-torch-pickle",
-        source_sha256="0123456789abcdef" * 4,
-        source_versions={"mace-torch": "0.3.16", "torch": "2.5.1"},
-        converter_versions={"mace-core": "1.0.0", "mace-torch-v1": "1.0.0"},
-        headless=True,
-        clebsch_gordan_conversion=ClebschGordanConversion(
-            read="full", written="reduced"
-        ),
-        parity_gate=ParityGate(
-            tolerance_row="fp64_cpu_reference",
-            max_absolute_deviation={"energy": 2.5e-13, "forces": 0.0},
-        ),
     )
 
 
@@ -254,7 +233,7 @@ def test_an_older_minor_loads_with_defaults_for_what_it_lacks(next_minor_reader,
     # Read into the newer schema, so it is written back as the newer version.
     assert record.schema_version == "1.1"
     assert json.loads(record.to_json())["schema_version"] == "1.1"
-    assert record.conversion == full_record().conversion
+    assert record.training == full_record().training
 
 
 def test_the_newer_reader_still_refuses_a_newer_minor(next_minor_reader):
@@ -278,7 +257,6 @@ def test_a_record_lacking_the_optional_fields_takes_their_defaults():
         "provenance": {"versions": {"mace-core": "0"}},
     }
     record = ModelMetadata.model_validate(document)
-    assert record.conversion is None
     assert record.training is None
     assert record.notes == ""
 
@@ -309,19 +287,6 @@ def test_building_a_record_takes_the_current_schema_version(build):
 EMPTY_NAMES = {
     "provenance version": ("provenance", "versions", "mace-core", ""),
     "provenance distribution": ("provenance", "versions", "", "1.0.0"),
-    "source version": ("conversion", "source_versions", "mace-torch", ""),
-    "source distribution": ("conversion", "source_versions", "", "0.3.16"),
-    "converter version": ("conversion", "converter_versions", "mace-core", ""),
-    "converter distribution": ("conversion", "converter_versions", "", "1.0.0"),
-    "compared quantity": (
-        "conversion",
-        "parity_gate",
-        "max_absolute_deviation",
-        "",
-        0.0,
-    ),
-    "tolerance row": ("conversion", "parity_gate", "tolerance_row", ""),
-    "source format": ("conversion", "source_format", ""),
     "data source": ("data", "sources", 0, "name", ""),
     "stage": ("training", "stages", 0, "name", ""),
     "head with errors": ("training", "validation_errors", "", {}),
@@ -364,8 +329,8 @@ def test_infinity_survives_and_nan_is_refused():
 
 @pytest.mark.parametrize(
     "where",
-    [[], ["conversion"], ["conversion", "parity_gate"], ["training"]],
-    ids=["top", "conversion", "parity_gate", "training"],
+    [[], ["training"], ["training", "stages", 0]],
+    ids=["top", "training", "stage"],
 )
 def test_unknown_fields_are_rejected(where):
     document = as_document(full_record())
@@ -401,17 +366,7 @@ def test_config_record_is_built_from_a_config():
 SCHEMA_FIELDS = {
     "1.0": {
         "Citation": {"authors", "doi", "title", "url", "venue", "year"},
-        "ClebschGordanConversion": {"read", "written"},
         "ConfigRecord": {"resolved", "user"},
-        "ConversionRecord": {
-            "clebsch_gordan_conversion",
-            "converter_versions",
-            "headless",
-            "parity_gate",
-            "source_format",
-            "source_sha256",
-            "source_versions",
-        },
         "DataSourceSummary": {
             "elements",
             "name",
@@ -424,7 +379,6 @@ SCHEMA_FIELDS = {
         "ModelMetadata": {
             "citations",
             "config",
-            "conversion",
             "data",
             "doi",
             "heads",
@@ -434,7 +388,6 @@ SCHEMA_FIELDS = {
             "training",
         },
         "ObservableErrors": {"mae", "rmse"},
-        "ParityGate": {"max_absolute_deviation", "tolerance_row"},
         "Provenance": {"git_commit", "versions"},
         "StageSummary": {"epochs", "name", "stop_reason"},
         "TrainingSummary": {"stages", "validation_errors"},
@@ -534,68 +487,17 @@ def test_the_default_check_catches_a_required_addition(record, expected):
 
 
 # ---------------------------------------------------------------------------
-# The conversion and training groups
+# The training group
 
 
-@pytest.mark.parametrize(
-    "groups",
-    [
-        {},
-        {"conversion": True},
-        {"training": True},
-        {"conversion": True, "training": True},
-    ],
-    ids=["neither", "conversion", "training", "both"],
-)
-def test_the_groups_round_trip_set_or_unset(groups):
+@pytest.mark.parametrize("set_", [True, False], ids=["set", "unset"])
+def test_the_training_group_round_trips_set_or_unset(set_):
     record = full_record().model_copy(
-        update={
-            "conversion": conversion_record() if "conversion" in groups else None,
-            "training": training_summary() if "training" in groups else None,
-        }
+        update={"training": training_summary() if set_ else None}
     )
     back = ModelMetadata.from_json(record.to_json())
     assert back == record
-    assert (back.conversion is None) == ("conversion" not in groups)
-    assert (back.training is None) == ("training" not in groups)
-
-
-def test_nothing_was_converted_means_no_clebsch_gordan_entry():
-    record = conversion_record().model_copy(update={"clebsch_gordan_conversion": None})
-    assert ConversionRecord.model_validate(record.model_dump()) == record
-    with pytest.raises(ValidationError, match="converts nothing"):
-        ClebschGordanConversion(read="reduced", written="reduced")
-    with pytest.raises(ValidationError, match="literal_error"):
-        ClebschGordanConversion.model_validate(
-            {"read": "full", "written": "compressed"}
-        )
-
-
-@pytest.mark.parametrize(
-    ("change", "match"),
-    [
-        ({"source_sha256": "0123"}, "string_pattern_mismatch"),
-        ({"source_sha256": "0123456789ABCDEF" * 4}, "string_pattern_mismatch"),
-        ({"source_versions": {"torch": "2.5.1"}}, "no 'mace-torch' entry"),
-        ({"converter_versions": {}}, "too_short"),
-    ],
-)
-def test_a_conversion_record_refuses_what_a_converter_cannot_have_seen(change, match):
-    document = {**conversion_record().model_dump(), **change}
-    with pytest.raises(ValidationError, match=match):
-        ConversionRecord.model_validate(document)
-
-
-@pytest.mark.parametrize(
-    "deviations",
-    [{}, {"energy": -1e-12}, {"energy": float("inf")}, {"energy": float("nan")}],
-    ids=["none", "negative", "infinite", "nan"],
-)
-def test_a_parity_gate_holds_finite_magnitudes(deviations):
-    with pytest.raises(ValidationError):
-        ParityGate(
-            tolerance_row="fp64_cpu_reference", max_absolute_deviation=deviations
-        )
+    assert (back.training is None) == (not set_)
 
 
 def test_a_training_summary_names_each_stage_once_and_in_order():

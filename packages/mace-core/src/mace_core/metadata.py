@@ -10,21 +10,17 @@ from typing import Annotated, Any, Final, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from mace_core.config import BaseConfig
-from mace_core.kernels.descriptors import ClebschGordanBasis
 
 __all__ = [
     "SCHEMA_VERSION",
     "Citation",
-    "ClebschGordanConversion",
     "ConfigRecord",
-    "ConversionRecord",
     "DataSourceSummary",
     "DataSummary",
     "HeadSummary",
     "MetadataSchemaError",
     "ModelMetadata",
     "ObservableErrors",
-    "ParityGate",
     "Provenance",
     "StageSummary",
     "TrainingSummary",
@@ -112,8 +108,8 @@ _Name = Annotated[str, Field(min_length=1)]
 #: Version per distribution, `{"mace-core": "1.0.2", "mace-torch": "1.1.0"}`.
 _DistributionVersions = dict[_Name, _Name]
 
-#: A deviation or an error: a magnitude, so never negative, and finite, since an
-#: infinite one is a failure that should not have been recorded as a result.
+#: An error: a magnitude, so never negative, and finite, since an infinite one
+#: is a failure that should not have been recorded as a result.
 _Magnitude = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 
 
@@ -175,62 +171,6 @@ class Citation(_Record):
     url: str | None = None
 
 
-class ClebschGordanConversion(_Record):
-    """The Clebsch-Gordan basis a conversion read its weights in and the one it
-    wrote them in."""
-
-    read: ClebschGordanBasis
-    written: ClebschGordanBasis
-
-    @model_validator(mode="after")
-    def _converts_something(self) -> ClebschGordanConversion:
-        if self.read == self.written:
-            raise ValueError(
-                f"the Clebsch-Gordan basis was read and written as {self.read!r}, "
-                "which converts nothing; record clebsch_gordan_conversion as None"
-            )
-        return self
-
-
-class ParityGate(_Record):
-    """The parity check a converter ran between the source and the converted
-    model."""
-
-    #: Name of the tolerance row the deviations were held to.
-    tolerance_row: _Name
-    #: Largest absolute difference between the two models, per quantity
-    #: compared, in that quantity's units.
-    max_absolute_deviation: dict[_Name, _Magnitude] = Field(min_length=1)
-
-
-class ConversionRecord(_Record):
-    """How a model converted from a legacy checkpoint was converted."""
-
-    #: What the file read was, such as `"mace-torch-pickle"`.
-    source_format: _Name
-    #: Hex SHA-256 of the file read.
-    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    #: Distribution versions found in the source, `mace-torch` among them.
-    source_versions: _DistributionVersions
-    #: Distribution versions that ran the conversion. They stay with the model
-    #: when later work replaces `provenance`, such as a fine-tuning run.
-    converter_versions: _DistributionVersions = Field(min_length=1)
-    #: True when the source had no head names and the converter assigned one.
-    headless: bool
-    #: None when the weights kept the basis they were read in.
-    clebsch_gordan_conversion: ClebschGordanConversion | None = None
-    parity_gate: ParityGate
-
-    @model_validator(mode="after")
-    def _source_names_mace_torch(self) -> ConversionRecord:
-        if "mace-torch" not in self.source_versions:
-            raise ValueError(
-                "conversion.source_versions has no 'mace-torch' entry; a legacy "
-                "checkpoint was written by mace-torch, so record its version"
-            )
-        return self
-
-
 class StageSummary(_Record):
     """How one training stage ended."""
 
@@ -286,8 +226,6 @@ class ModelMetadata(_Record):
     doi: str | None = None
     citations: list[Citation] = Field(default_factory=list)
     notes: str = ""
-    #: Set only on a model converted from a legacy checkpoint.
-    conversion: ConversionRecord | None = None
     #: Set only on a model produced by a training run.
     training: TrainingSummary | None = None
 
