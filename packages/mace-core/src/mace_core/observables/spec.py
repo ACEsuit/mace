@@ -29,6 +29,10 @@ Three objects, and they do different jobs:
 row, and validation between rows lives on the catalogue: a derivative asked
 against an input nobody declared, a per-atom quantity differentiated against a
 per-atom input, or two names that collide.
+
+The declared classes are config sections, so a catalogue is a field of a
+config like any other. ``DerivativeSpec`` is not one: it is derived, and a
+config never holds it.
 """
 
 from __future__ import annotations
@@ -42,6 +46,7 @@ from pydantic import (
     model_validator,
 )
 
+from mace_core.config.base import ConfigSection
 from mace_core.observables.derivatives import (
     DEFAULT_SIGN,
     default_derivative_name,
@@ -93,7 +98,7 @@ def _check_output_name(value: str, kind: str) -> str:
     return value
 
 
-class InputSpec(BaseModel):
+class InputSpec(ConfigSection):
     """Something a derivative can be taken against.
 
     ``pos`` and ``strain`` are the two every model has. Anything else is
@@ -106,8 +111,6 @@ class InputSpec(BaseModel):
     applies it to the positions and the cell, so nothing reads a strain from a
     dataset and none is stored.
     """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str
     irreps: str
@@ -125,7 +128,7 @@ class InputSpec(BaseModel):
         return self
 
 
-class DerivativeRequest(BaseModel):
+class DerivativeRequest(ConfigSection):
     """A derivative an observable asks for.
 
     Both the name and the sign belong to the declaration, so a derivative with
@@ -138,8 +141,6 @@ class DerivativeRequest(BaseModel):
     forces that runs perfectly well, which is a failure nothing downstream can
     see.
     """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     #: The name of the declared input to differentiate against.
     wrt: str
@@ -225,15 +226,13 @@ class DerivativeSpec(BaseModel):
     units: str | None
 
 
-class ObservableSpec(BaseModel):
+class ObservableSpec(ConfigSection):
     """One declared property: what it is and what shape it has.
 
     Any atomic or total spherical-tensor property declared here becomes
     trainable with no new code: the spec drives the head, the loss term and the
     padding classification.
     """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str
     #: The spherical-tensor shape, in the grammar of
@@ -312,10 +311,8 @@ class ObservableSpec(BaseModel):
         return tuple(request.wrt for request in self.derivatives)
 
 
-class ObservableCatalogue(BaseModel):
+class ObservableCatalogue(ConfigSection):
     """A set of declared inputs and observables, validated against each other."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     inputs: tuple[InputSpec, ...] = ()
     observables: tuple[ObservableSpec, ...] = ()
