@@ -35,9 +35,15 @@ def dtype_name(dtype: torch.dtype) -> str:
     return str(dtype).removeprefix("torch.")
 
 
+#: Where a batch is assembled and validated, named on every tensor created
+#: here so that a process default device set with ``torch.set_default_device``
+#: cannot move part of it.
+_HOST = torch.device("cpu")
+
+
 def _as_tensor(value: Any, dtype: torch.dtype) -> torch.Tensor:
     """A host tensor; floating values in ``dtype``."""
-    tensor = torch.as_tensor(value).cpu()
+    tensor = torch.as_tensor(value, device=_HOST)
     if tensor.is_floating_point():
         tensor = tensor.to(dtype)
     return tensor
@@ -92,10 +98,11 @@ def collate(
         else:
             batched[key] = torch.stack(tensors)
 
-    counts = torch.tensor(node_counts, dtype=torch.int64)
-    batched["batch"] = torch.repeat_interleave(torch.arange(len(samples)), counts)
+    counts = torch.tensor(node_counts, dtype=torch.int64, device=_HOST)
+    graph_ids = torch.arange(len(samples), device=_HOST)
+    batched["batch"] = torch.repeat_interleave(graph_ids, counts)
     batched["ptr"] = torch.tensor(
-        [0, *np.cumsum(node_counts).tolist()], dtype=torch.int64
+        [0, *np.cumsum(node_counts).tolist()], dtype=torch.int64, device=_HOST
     )
     batched["rcell"], batched["volume"] = derived_cell_quantities(batched["cell"])
     batched["structure_sizes"] = tuple(node_counts)
