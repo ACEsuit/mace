@@ -306,3 +306,21 @@ def test_samples_given_as_tensors_collate_like_numpy_ones(dtype):
             assert from_tensors[key] == value, key
         else:
             assert torch.equal(from_tensors[key], value), key
+
+
+def test_a_process_default_device_does_not_move_the_batch(dtype):
+    """The batch is assembled on the host whatever ``torch.set_default_device``
+    says, and goes to a device only when ``device`` names one."""
+    previous = torch.get_default_device()
+    torch.set_default_device("meta")
+    try:
+        batch = build_batch(
+            STRUCTURES, atomic_number_table=TABLE, cutoff=CUTOFF, dtype=dtype
+        )
+    finally:
+        torch.set_default_device(previous)
+    devices = {
+        value.device.type for value in batch.values() if isinstance(value, torch.Tensor)
+    }
+    assert devices == {"cpu"}
+    assert torch.equal(batch["ptr"], torch.tensor(PTR))
