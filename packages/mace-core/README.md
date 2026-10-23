@@ -27,3 +27,6 @@ What is here so far:
   `brute_force`), selected by the `NeighborListConfig` section. The search box
   and the effective cell the graph carries are decided once, by
   `search_geometry`, whichever backend runs.
+- `mace_core.graph` — the flat graph dict a model is handed: `GRAPH_SCHEMA`
+  as data, `validate_graph` for the boundaries, the numpy reference `collate`,
+  and `graph_sample` from a `Configuration`.
