@@ -34,4 +34,4 @@ What is here so far:
   decided once, by `search_geometry`, whichever backend runs.
 - `mace_core.graph` — the flat graph dict a model is handed: `GRAPH_SCHEMA`
   as data, `validate_graph` for the boundaries, the numpy reference `collate`,
-  and `graph_sample` from a `Configuration`.
+  `graph_sample` from a `Configuration`, and the padding policies and budgets.
