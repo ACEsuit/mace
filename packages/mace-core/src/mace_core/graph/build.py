@@ -81,10 +81,10 @@ def graph_sample(
 
     Raises:
         ValueError: if ``heads`` repeats a name, the head is not in ``heads``,
-            an element is not in the table, a declared feature has no value or
-            the wrong number of rows, a property has the wrong shape for its
-            schema key or is named like a key the builder writes, or a feature
-            is declared wrongly (see
+            an element is not in the table, a declared feature is missing
+            from the structure, has no value or has the wrong number of rows,
+            a property has the wrong shape for its schema key or is named like
+            a key the builder writes, or a feature is declared wrongly (see
             :func:`~mace_core.graph.collate.feature_levels`).
     """
     feature_level = feature_levels(features)
@@ -145,6 +145,14 @@ def graph_sample(
             sample[name] = _feature_value(name, value, feature_level[name], n_atoms)
         else:
             sample[name] = value
+    undeclared = sorted(set(feature_level) - set(config.properties))
+    if undeclared:
+        raise ValueError(
+            f"embedding features {undeclared} are declared for the model but the "
+            f"structure has no property of that name, so its key specification "
+            f"never read them. Add them to the key specification's embedding "
+            f"features."
+        )
     return sample
 
 

@@ -509,6 +509,18 @@ def test_a_declared_feature_without_a_value_is_an_error():
         )
 
 
+def test_a_declared_feature_missing_from_the_structure_is_an_error():
+    """A feature the key specification never read is absent from the
+    properties altogether, and a batch without it would validate."""
+    with pytest.raises(ValueError, match="spin_state"):
+        graph_sample(
+            _water(),
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            features={"spin_state": "atom"},
+        )
+
+
 def test_a_property_named_like_a_built_key_is_refused():
     with pytest.raises(ValueError, match="edge_index"):
         graph_sample(
