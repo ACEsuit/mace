@@ -35,7 +35,15 @@ dependencies = [
     # the release whose reserved-key behaviour the parser is written against.
     "numpy>=1.23",
     "ase>=3.23",
+    # The default neighbour-list backend. It brings numpy and scipy and no
+    # framework.
+    "matscipy>=1.0",
 ]
+
+[project.entry-points."mace.neighbor_backends"]
+# Discovered the same way a third-party backend is, through its entry point.
+matscipy = "mace_core.neighbors.matscipy_backend:MatscipyBackend"
+brute_force = "mace_core.neighbors.brute_force:BruteForceBackend"
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

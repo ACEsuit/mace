@@ -21,3 +21,9 @@ What is here so far:
   trip, `ConfigRecord.from_config()` to embed a config in its fixed-point
   form, and `format_citations()`. The schema is versioned `major.minor`;
   which records a release reads is stated at `SCHEMA_VERSION`.
+- `mace_core.neighbors` — `get_neighborhood`, the pure-function neighbour list
+  every graph builder calls, over swappable backends registered in the
+  `mace.neighbor_backends` entry point group (`matscipy` by default, and
+  `brute_force`), selected by the `NeighborListConfig` section. The search box
+  and the effective cell the graph carries are decided once, by
+  `search_geometry`, whichever backend runs.
