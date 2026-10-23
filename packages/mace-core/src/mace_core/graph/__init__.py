@@ -3,9 +3,9 @@
 ``mace_core.graph`` owns the specification every framework binds: the
 structural core :data:`GRAPH_CORE`, the per-run :class:`GraphLayout`, the
 :class:`GraphInfo` kept beside a batch, the checks split by cost, the numpy
-reference :func:`collate`, and :func:`graph_sample`, from a parsed
-:class:`~mace_core.data.configuration.Configuration` to a sample. Framework
-packages tensorize; none redefines the core or the layout.
+reference :func:`collate`, the padding structure, and :func:`graph_sample`,
+from a parsed :class:`~mace_core.data.configuration.Configuration` to a
+sample. Framework packages tensorize; none redefines the core or the layout.
 
 No framework is imported here.
 """
@@ -14,6 +14,18 @@ from mace_core.graph.build import SampleError, graph_sample
 from mace_core.graph.collate import COLLATED_KEYS, collate, collate_targets
 from mace_core.graph.info import GraphInfo, PaddingInfo
 from mace_core.graph.layout import FloatDtype, GraphLayout, graph_layout
+from mace_core.graph.padding import (
+    AutoPadding,
+    FixedPadding,
+    NoPadding,
+    PaddingBudget,
+    PaddingOverflowError,
+    PaddingPolicy,
+    padding_budget,
+    padding_length,
+    padding_sample,
+    padding_samples,
+)
 from mace_core.graph.schema import (
     EDGE_KEYS,
     FLOAT,
@@ -33,12 +45,18 @@ __all__ = [
     "EDGE_KEYS",
     "FLOAT",
     "GRAPH_CORE",
+    "AutoPadding",
     "FieldSpec",
+    "FixedPadding",
     "FloatDtype",
     "GraphInfo",
     "GraphLayout",
     "GraphValidationError",
+    "NoPadding",
+    "PaddingBudget",
     "PaddingInfo",
+    "PaddingOverflowError",
+    "PaddingPolicy",
     "SampleError",
     "check_batch_invariants",
     "check_layout",
@@ -46,6 +64,10 @@ __all__ = [
     "collate_targets",
     "graph_layout",
     "graph_sample",
+    "padding_budget",
+    "padding_length",
+    "padding_sample",
+    "padding_samples",
     "presence_key",
     "weight_key",
 ]
