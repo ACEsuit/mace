@@ -6,7 +6,8 @@ The public surface arrives with the tickets that build it. Present so far:
   radial bases, the cutoff envelope and the native spherical harmonics;
 * ``mace_torch.nn.radial`` and ``mace_torch.nn.embedding``: pair repulsion,
   distance transforms and the two embedding blocks.
-* ``mace_torch.graph``: collation of graph samples into the flat graph dict.
+* ``mace_torch.graph``: collation of graph samples into the flat graph dict,
+  and the static-shape padding of a batch.
 
 Nothing is re-exported here: this module stays light, so importing the package
 never pulls in a submodule a caller did not ask for.
