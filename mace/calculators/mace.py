@@ -11,7 +11,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -22,6 +22,7 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from e3nn import o3
 
 from mace import data as mace_data
+from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import (
@@ -86,6 +87,9 @@ class MACECalculator(Calculator):
         energy_units_to_eV: float, conversion factor from model energy units to eV
         length_units_to_A: float, conversion factor from model length units to Angstroms
         default_dtype: str, default dtype of model
+        energy_accumulation_dtype: None preserves the legacy reductions;
+            "float64" accumulates ScaleShiftMACE total energies in float64
+            and returns the original output dtype. Requires float64 support.
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
                     Options: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE,
@@ -127,9 +131,13 @@ class MACECalculator(Calculator):
         keep_neutral: bool = True,
         pbc_handling: str = "auto",
         compute_stress: bool = True,
+        energy_accumulation_dtype: Optional[str] = None,
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
+        if energy_accumulation_dtype not in (None, "float64"):
+            raise ValueError("energy_accumulation_dtype must be None or 'float64'")
+        self.energy_accumulation_dtype = energy_accumulation_dtype
         self.compute_bec = compute_bec
         self.compute_stress = compute_stress
         if not compute_stress and kwargs.get("compute_atomic_stresses", False):
@@ -322,6 +330,15 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        if self.energy_accumulation_dtype is not None:
+            for model in self.models:
+                # Overridden forwards can define additional energy terms.
+                if type(model).forward is not ScaleShiftMACE.forward:
+                    raise ValueError(
+                        "energy_accumulation_dtype requires the "
+                        "ScaleShiftMACE.forward implementation"
+                    )
+
         if self.model_type == "PolarMACE":
             self.density_dim = (
                 getattr(self.models[0], "atomic_multipoles_max_l", 0) + 1
@@ -771,6 +788,10 @@ class MACECalculator(Calculator):
             }
             if getattr(self, "compute_bec", False):
                 model_kwargs["compute_bec"] = True
+            if self.energy_accumulation_dtype is not None:
+                model_kwargs["energy_accumulation_dtype"] = (
+                    self.energy_accumulation_dtype
+                )
 
             # Scoped here too, not only around batch construction: extensions
             # create tensors mid-forward without a dtype (les does, for its
