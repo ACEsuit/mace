@@ -25,7 +25,7 @@ from mace_core.elements.default_keys import Storage
 from mace_core.graph import graph_sample, validate_graph
 from mace_core.graph.collate import batching_levels, sample_keys
 from mace_core.graph.schema import EDGE_LEVEL, NODE_LEVEL
-from mace_core.neighbors import NeighborListConfig, get_neighbor_backend
+from mace_core.neighbors import NeighborListBackend
 
 __all__ = ["build_batch", "collate", "derived_cell_quantities", "dtype_name"]
 
@@ -132,24 +132,22 @@ def build_batch(
     *,
     atomic_number_table: AtomicNumberTable,
     cutoff: float,
+    neighbor_backend: NeighborListBackend,
     heads: Sequence[str] = (DEFAULT_HEAD,),
-    neighbor_list: NeighborListConfig | None = None,
     features: Mapping[str, Storage] | None = None,
     dtype: torch.dtype = torch.float64,
     device: torch.device | str | None = None,
 ) -> dict[str, Any]:
     """Parsed structures to one batched graph dict.
 
-    The neighbour-list backend named by ``neighbor_list`` is resolved once,
-    here, and used for every structure.
+    ``neighbor_backend`` searches every structure. The caller resolves it once,
+    with :func:`~mace_torch.neighbors.resolve_neighbor_backend` from its
+    ``neighbor_list`` section, and passes the same object to every batch.
 
     Raises:
         ValueError: as :func:`~mace_core.graph.graph_sample` and
             :func:`collate` do.
-        NeighborBackendNotAvailableError: if the configured backend cannot be
-            built.
     """
-    backend = get_neighbor_backend((neighbor_list or NeighborListConfig()).kind)
     samples = [
         graph_sample(
             configuration,
@@ -157,7 +155,7 @@ def build_batch(
             cutoff=cutoff,
             heads=heads,
             features=features,
-            neighbor_backend=backend,
+            neighbor_backend=neighbor_backend,
         )
         for configuration in configurations
     ]

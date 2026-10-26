@@ -11,6 +11,7 @@ import json
 import pytest
 import torch
 from mace_core.data import AtomicNumberTable, KeySpecification, configuration_from_atoms
+from mace_core.neighbors import get_neighbor_backend
 from mace_torch.graph import build_batch
 
 from mace import data as legacy_data
@@ -61,6 +62,7 @@ def fixture_batches(default_dtype):
         structures,
         atomic_number_table=AtomicNumberTable(zs),
         cutoff=R_MAX,
+        neighbor_backend=get_neighbor_backend("matscipy"),
         dtype=default_dtype,
     )
     return legacy, batch
