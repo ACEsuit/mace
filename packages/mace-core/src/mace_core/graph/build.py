@@ -61,7 +61,7 @@ def graph_sample(
     cutoff: float,
     heads: Sequence[str] = (DEFAULT_HEAD,),
     features: Mapping[str, Storage] | None = None,
-    neighbor_backend: NeighborListBackend | None = None,
+    neighbor_backend: NeighborListBackend,
 ) -> dict[str, Any]:
     """One structure as a graph sample.
 
@@ -72,8 +72,8 @@ def graph_sample(
         cutoff: The neighbour cutoff, Angstrom.
         heads: The model's head names, in order.
         features: The declared embedding features, ``atom`` or ``graph``.
-        neighbor_backend: The resolved neighbour-list backend; ``None`` uses
-            matscipy.
+        neighbor_backend: The resolved neighbour-list backend, from
+            :func:`~mace_core.neighbors.get_neighbor_backend`.
 
     Returns:
         A dict of numpy arrays: floats as float64, indices as int64, flags as
