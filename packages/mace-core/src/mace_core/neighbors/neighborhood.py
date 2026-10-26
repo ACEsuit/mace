@@ -60,9 +60,8 @@ def get_neighborhood(
     cutoff: float,
     pbc: Any = None,
     cell: Any = None,
-    true_self_interaction: bool = False,
     *,
-    backend: NeighborListBackend | None = None,
+    backend: NeighborListBackend,
 ) -> NeighborList:
     """Every directed edge shorter than ``cutoff``, and the effective cell.
 
@@ -71,33 +70,17 @@ def get_neighborhood(
         cutoff: Strict distance bound in Angstrom.
         pbc: Three flags, one per lattice vector; ``None`` is fully aperiodic.
         cell: ``[3, 3]`` lattice vectors as rows, in Angstrom, or ``None``.
-        true_self_interaction: Must be ``False``. Asking for the zero-shift
-            self edge is refused: the frozen implementation accepts the flag
-            and never emits that edge, so honouring it would change the edge
-            count of every caller that passes it, and no model does.
         backend: The resolved backend, from
-            :func:`~mace_core.neighbors.backends.get_neighbor_backend`. ``None``
-            uses matscipy directly, without reading the entry point registry.
+            :func:`~mace_core.neighbors.backends.get_neighbor_backend`.
 
     Raises:
-        ValueError: if ``true_self_interaction`` is true, if an input has the
-            wrong shape (see
+        ValueError: if an input has the wrong shape (see
             :func:`~mace_core.neighbors.geometry.search_geometry`), or if the
             backend returns arrays of the wrong shape or non-integer shifts.
     """
-    if true_self_interaction:
-        raise ValueError(
-            "true_self_interaction=True is not supported: no model uses the "
-            "zero-shift self edge, and the frozen implementation never emitted "
-            "it whatever the flag said. Leave the flag False."
-        )
     positions = np.array(positions, dtype=np.float64, copy=True)
     positions.setflags(write=False)
     geometry = search_geometry(positions, cutoff, pbc, cell)
-    if backend is None:
-        from mace_core.neighbors.matscipy_backend import MatscipyBackend
-
-        backend = MatscipyBackend()
     edge_index, unit_shifts = backend.search(positions, float(cutoff), geometry)
     edge_index, unit_shifts = _checked_edges(edge_index, unit_shifts, len(positions))
 

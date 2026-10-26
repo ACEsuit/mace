@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
+from typing import Any
 
 import numpy as np
 import pytest
@@ -27,6 +28,9 @@ from mace_core.neighbors import (
     search_geometry,
 )
 from mace_core.neighbors import geometry as geometry_module
+from mace_core.neighbors.matscipy_backend import MatscipyBackend
+
+MATSCIPY = MatscipyBackend()
 
 
 def _edges(neighbors):
@@ -114,7 +118,9 @@ def test_brute_force_reaches_images_of_a_strongly_skewed_cell():
     brute = get_neighborhood(
         positions, 2.5, (True, True, True), cell, backend=BruteForceBackend()
     )
-    matscipy = get_neighborhood(positions, 2.5, (True, True, True), cell)
+    matscipy = get_neighborhood(
+        positions, 2.5, (True, True, True), cell, backend=MATSCIPY
+    )
     assert _edges(brute) == _edges(matscipy)
     assert brute.edge_index.shape[1] > 0
 
@@ -147,14 +153,14 @@ def test_the_returned_cell_does_not_depend_on_the_backend(case):
 
 def test_the_list_is_full_and_directed(case):
     positions, cutoff, pbc, cell = case
-    edges = _edges(get_neighborhood(positions, cutoff, pbc, cell))
+    edges = _edges(get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY))
     reversed_edges = sorted((j, i, -a, -b, -c) for i, j, a, b, c in edges)
     assert edges == reversed_edges
 
 
 def test_every_edge_is_strictly_shorter_than_the_cutoff(case):
     positions, cutoff, pbc, cell = case
-    neighbors = get_neighborhood(positions, cutoff, pbc, cell)
+    neighbors = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
     sender, receiver = neighbors.edge_index
     lengths = np.linalg.norm(
         positions[receiver] - positions[sender] + neighbors.shifts, axis=1
@@ -164,7 +170,7 @@ def test_every_edge_is_strictly_shorter_than_the_cutoff(case):
 
 def test_shifts_are_unit_shifts_times_the_returned_cell(case):
     positions, cutoff, pbc, cell = case
-    neighbors = get_neighborhood(positions, cutoff, pbc, cell)
+    neighbors = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
     assert np.array_equal(
         neighbors.shifts, np.dot(neighbors.unit_shifts, neighbors.cell)
     )
@@ -174,29 +180,22 @@ def test_shifts_are_unit_shifts_times_the_returned_cell(case):
 
 def test_periodic_self_images_survive_and_the_zero_shift_self_pair_does_not():
     positions, cutoff, pbc, cell = CASES["cell_smaller_than_cutoff"]
-    neighbors = get_neighborhood(positions, cutoff, pbc, cell)
+    neighbors = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
     assert neighbors.edge_index.shape[1] > 0
     assert np.all(neighbors.edge_index == 0)
     assert not np.any(np.all(neighbors.unit_shifts == 0, axis=1))
 
 
-def test_asking_for_the_zero_shift_self_edge_is_refused():
-    """The frozen implementation accepts the flag and never emits the edge, so
-    honouring it would change every edge count that passes it."""
-    with pytest.raises(ValueError, match="true_self_interaction"):
-        get_neighborhood(_cluster(4), 2.0, true_self_interaction=True)
-
-
 def test_a_structure_with_no_edges_is_legal():
     positions, cutoff, pbc, cell = CASES["zero_edges"]
-    neighbors = get_neighborhood(positions, cutoff, pbc, cell)
+    neighbors = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
     assert neighbors.edge_index.shape == (2, 0)
     assert neighbors.unit_shifts.shape == (0, 3)
     assert neighbors.shifts.shape == (0, 3)
 
 
 def test_a_single_aperiodic_atom_has_no_edges():
-    neighbors = get_neighborhood(np.zeros((1, 3)), 5.0)
+    neighbors = get_neighborhood(np.zeros((1, 3)), 5.0, backend=MATSCIPY)
     assert neighbors.edge_index.shape == (2, 0)
 
 
@@ -204,7 +203,7 @@ def test_nothing_passed_in_is_modified(case):
     positions, cutoff, pbc, cell = case
     positions_before = positions.copy()
     cell_before = None if cell is None else cell.copy()
-    get_neighborhood(positions, cutoff, pbc, cell)
+    get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
     assert np.array_equal(positions, positions_before)
     if cell is not None:
         assert np.array_equal(cell, _physical(cell_before))
@@ -213,7 +212,7 @@ def test_nothing_passed_in_is_modified(case):
 def test_the_returned_arrays_share_no_memory_with_the_inputs_and_are_read_only():
     positions, cutoff, pbc, cell = CASES["mixed_pbc_with_vacuum"]
     cell = _physical(cell)
-    neighbors = get_neighborhood(positions, cutoff, pbc, cell)
+    neighbors = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
     assert not np.shares_memory(neighbors.cell, cell)
     for array in (
         neighbors.edge_index,
@@ -229,7 +228,7 @@ def test_the_returned_arrays_share_no_memory_with_the_inputs_and_are_read_only()
 
 def test_a_fully_aperiodic_cluster_returns_the_extended_search_cell():
     positions = _cluster()
-    neighbors = get_neighborhood(positions, 2.0)
+    neighbors = get_neighborhood(positions, 2.0, backend=MATSCIPY)
     extent = positions.max(axis=0) - positions.min(axis=0)
     assert np.array_equal(neighbors.cell, np.diag(extent + 2 * 2.0 + 1))
     assert np.linalg.det(neighbors.cell) > 0
@@ -237,27 +236,31 @@ def test_a_fully_aperiodic_cluster_returns_the_extended_search_cell():
 
 def test_the_extended_cell_depends_on_the_extent_not_the_origin():
     positions = _cluster()
-    near = get_neighborhood(positions, 2.0).cell
-    far = get_neighborhood(positions + 100.0, 2.0).cell
+    near = get_neighborhood(positions, 2.0, backend=MATSCIPY).cell
+    far = get_neighborhood(positions + 100.0, 2.0, backend=MATSCIPY).cell
     np.testing.assert_allclose(near, far, rtol=0, atol=1e-12)
 
 
 def test_a_periodic_structure_returns_its_physical_cell():
     positions, cutoff, pbc, cell = CASES["triclinic"]
     cell = _physical(cell)
-    assert np.array_equal(get_neighborhood(positions, cutoff, pbc, cell).cell, cell)
+    assert np.array_equal(
+        get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY).cell, cell
+    )
 
 
 def test_a_slab_with_vacuum_returns_its_physical_cell():
     positions, cutoff, pbc, cell = CASES["mixed_pbc_with_vacuum"]
     cell = _physical(cell)
-    assert np.array_equal(get_neighborhood(positions, cutoff, pbc, cell).cell, cell)
+    assert np.array_equal(
+        get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY).cell, cell
+    )
 
 
 def test_a_zero_vacuum_row_is_patched_from_the_search_cell():
     positions, cutoff, pbc, cell = CASES["mixed_pbc_zero_vacuum_row"]
     cell = _physical(cell)
-    returned = get_neighborhood(positions, cutoff, pbc, cell).cell
+    returned = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY).cell
     extent = positions[:, 2].max() - positions[:, 2].min()
     assert np.array_equal(returned[:2], cell[:2])
     assert np.array_equal(returned[2], [0.0, 0.0, extent + 2 * cutoff + 1])
@@ -271,7 +274,7 @@ def test_a_slab_stress_from_the_returned_cell_uses_the_physical_volume():
     cell = _physical(cell)
     virials = np.diag([0.3, -0.1, 0.2])
     geometry = search_geometry(positions, cutoff, pbc, cell)
-    returned = get_neighborhood(positions, cutoff, pbc, cell).cell
+    returned = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY).cell
     stress = -virials / np.linalg.det(returned)
     assert np.array_equal(stress, -virials / np.linalg.det(cell))
     assert np.linalg.det(geometry.search_cell) != np.linalg.det(cell)
@@ -281,9 +284,13 @@ def test_the_three_regimes_are_three_different_matrices():
     positions = _cluster(6, 2.0, 3)
     physical = HEXAGONAL_SLAB.copy()
     physical[2] = [0.0, 0.0, 12.0]
-    aperiodic = get_neighborhood(positions, 3.5, None, physical).cell
-    periodic = get_neighborhood(positions, 3.5, (True, True, False), physical).cell
-    patched = get_neighborhood(positions, 3.5, (True, True, False), HEXAGONAL_SLAB).cell
+    aperiodic = get_neighborhood(positions, 3.5, None, physical, backend=MATSCIPY).cell
+    periodic = get_neighborhood(
+        positions, 3.5, (True, True, False), physical, backend=MATSCIPY
+    ).cell
+    patched = get_neighborhood(
+        positions, 3.5, (True, True, False), HEXAGONAL_SLAB, backend=MATSCIPY
+    ).cell
     assert not np.array_equal(aperiodic, periodic)
     assert not np.array_equal(periodic, patched)
     assert not np.array_equal(aperiodic, patched)
@@ -336,6 +343,7 @@ def test_matscipy_and_brute_force_are_registered():
 
 def test_the_config_section_defaults_to_matscipy():
     assert NeighborListConfig().kind == "matscipy"
+    assert NeighborListConfig().settings == {}
     assert issubclass(NeighborListConfig, ConfigSection)
     with pytest.raises(ValueError, match="kind"):
         NeighborListConfig(kind=" ")
@@ -412,7 +420,9 @@ def test_a_backend_registered_through_an_entry_point_is_discovered(
     neighbors = get_neighborhood(_cluster(), 2.0, backend=backend)
     assert neighbors.edge_index.shape == (2, 0)
     # The effective cell is the graph builder's, whatever the backend did.
-    assert np.array_equal(neighbors.cell, get_neighborhood(_cluster(), 2.0).cell)
+    assert np.array_equal(
+        neighbors.cell, get_neighborhood(_cluster(), 2.0, backend=MATSCIPY).cell
+    )
 
 
 def test_a_backend_returning_malformed_edges_is_refused():
@@ -422,3 +432,63 @@ def test_a_backend_returning_malformed_edges_is_refused():
 
     with pytest.raises(ValueError, match="edge_index of shape"):
         get_neighborhood(_cluster(), 2.0, backend=Broken())
+
+
+def _register_module(path, monkeypatch, name, source):
+    """A module and a distribution registering ``name`` as its ``Backend``."""
+    (path / f"{name}_neighbors.py").write_text(textwrap.dedent(source))
+    _install(path, f"{name}_neighbors", f"{name} = {name}_neighbors:Backend")
+    monkeypatch.syspath_prepend(str(path))
+    monkeypatch.delitem(sys.modules, f"{name}_neighbors", raising=False)
+
+
+def test_resolving_a_name_imports_only_that_backend(tmp_path, monkeypatch):
+    """A backend that sets up a device when imported costs nothing to a run
+    that resolves another one."""
+    _register_module(
+        tmp_path,
+        monkeypatch,
+        "heavy",
+        """
+        raise RuntimeError("importing this backend sets up a device")
+        """,
+    )
+    assert isinstance(get_neighbor_backend("brute_force"), BruteForceBackend)
+    assert "heavy_neighbors" not in sys.modules
+    listed = {backend.name: backend for backend in available_neighbor_backends()}
+    assert not listed["heavy"].loaded
+    assert "sets up a device" in listed["heavy"].reason
+
+
+def test_the_settings_reach_the_backend_factory(tmp_path, monkeypatch):
+    _register_module(
+        tmp_path,
+        monkeypatch,
+        "skinned",
+        """
+        import numpy as np
+
+        class Backend:
+            def __init__(self, skin=0.0):
+                if skin < 0:
+                    raise ValueError("skin must not be negative")
+                self.skin = skin
+
+            def search(self, positions, cutoff, geometry):
+                return np.zeros((2, 0), np.int64), np.zeros((0, 3), np.int64)
+        """,
+    )
+    config = NeighborListConfig(kind="skinned", settings={"skin": 0.5})
+    configured: Any = get_neighbor_backend(config.kind, config.settings)
+    default: Any = get_neighbor_backend("skinned")
+    assert configured.skin == 0.5
+    assert default.skin == 0.0
+    with pytest.raises(NeighborBackendNotAvailableError, match=r"skinned.*rebuild"):
+        get_neighbor_backend("skinned", {"rebuild": 10})
+    with pytest.raises(NeighborBackendNotAvailableError, match="not be negative"):
+        get_neighbor_backend("skinned", {"skin": -1.0})
+
+
+def test_a_backend_without_settings_refuses_any():
+    with pytest.raises(NeighborBackendNotAvailableError, match="matscipy"):
+        get_neighbor_backend("matscipy", {"skin": 0.5})

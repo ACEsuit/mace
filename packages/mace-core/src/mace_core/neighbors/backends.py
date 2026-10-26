@@ -21,19 +21,25 @@ because substituting another one would hide that the request was not met.
 install order. Two that name the same object are one registration; two that
 name different objects raise wherever discovery runs.
 
-**Resolve once.** Discovery reads installed metadata, which costs milliseconds.
-A graph builder resolves its backend when it is set up and hands the object to
-every :func:`~mace_core.neighbors.neighborhood.get_neighborhood` call.
+**Resolving a name imports one backend.** Listing imports every registered
+backend, because that is how it learns which ones fail; a backend that sets up
+a device at import pays for it there. :func:`get_neighbor_backend` reads the
+metadata of all of them and imports only the one it names.
+
+**Resolve once.** A graph builder resolves its backend when it is set up,
+with the settings its config section carries, and hands the object to every
+:func:`~mace_core.neighbors.neighborhood.get_neighborhood` call.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from mace_core.config.base import ConfigSection
 from mace_core.neighbors.geometry import SearchGeometry
@@ -61,8 +67,9 @@ DEFAULT_NEIGHBOR_BACKEND = "matscipy"
 class NeighborListBackend(Protocol):
     """Finds every directed pair of atoms closer than the cutoff.
 
-    An entry point names a class; the registry instantiates it with no
-    arguments.
+    An entry point names a class or a factory; the registry calls it with the
+    config section's ``settings`` as keyword arguments, and with none when
+    there are none.
     """
 
     def search(
@@ -99,9 +106,13 @@ class NeighborListConfig(ConfigSection):
     Attributes:
         kind: A name registered in the ``mace.neighbor_backends`` entry point
             group. ``matscipy`` and ``brute_force`` ship with ``mace-core``.
+        settings: Keyword arguments for the backend's factory. Validated by
+            the backend when it is built, since a backend in its own
+            distribution declares settings this schema cannot know.
     """
 
     kind: str = DEFAULT_NEIGHBOR_BACKEND
+    settings: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("kind")
     @classmethod
@@ -144,7 +155,13 @@ def _describe(entry: Any) -> str:
     return f"{entry.name} = {getattr(entry, 'value', '?')} (from {origin})"
 
 
-def _discover() -> list[DiscoveredNeighborBackend]:
+def _registered() -> dict[str, Any]:
+    """Every entry point in the group by name, read from metadata only.
+
+    Raises:
+        DuplicateNeighborBackendError: if two entry points register different
+            objects under one name.
+    """
     by_name: dict[str, Any] = {}
     for entry in entry_points(group=NEIGHBOR_BACKEND_GROUP):
         seen = by_name.get(entry.name)
@@ -158,52 +175,72 @@ def _discover() -> list[DiscoveredNeighborBackend]:
                 f"follow install order. Uninstall one of the two distributions, "
                 f"or register one under another name."
             )
-    found = []
-    for name, entry in sorted(by_name.items()):
-        try:
-            factory = entry.load()
-        except Exception as failure:
-            found.append(DiscoveredNeighborBackend(name, False, repr(failure)))
-        else:
-            found.append(DiscoveredNeighborBackend(name, True, "", factory))
-    return found
+    return by_name
+
+
+def _load(name: str, entry: Any) -> DiscoveredNeighborBackend:
+    try:
+        factory = entry.load()
+    except Exception as failure:
+        return DiscoveredNeighborBackend(name, False, repr(failure))
+    return DiscoveredNeighborBackend(name, True, "", factory)
 
 
 def available_neighbor_backends() -> list[DiscoveredNeighborBackend]:
     """Every registered neighbour-list backend, loaded or not, sorted by name.
 
+    Imports every registered backend to find the ones that fail. Use
+    :func:`get_neighbor_backend` to resolve one; it imports only that one.
+
     Raises:
         DuplicateNeighborBackendError: if two entry points register different
             objects under one name.
     """
-    return _discover()
+    return [_load(name, entry) for name, entry in sorted(_registered().items())]
 
 
-def get_neighbor_backend(name: str = DEFAULT_NEIGHBOR_BACKEND) -> NeighborListBackend:
-    """The backend registered under ``name``, instantiated.
+def get_neighbor_backend(
+    name: str = DEFAULT_NEIGHBOR_BACKEND, settings: Mapping[str, Any] | None = None
+) -> NeighborListBackend:
+    """The backend registered under ``name``, built with ``settings``.
+
+    Only that backend is imported.
+
+    Args:
+        name: A registered backend name, usually ``NeighborListConfig.kind``.
+        settings: Keyword arguments for its factory, usually
+            ``NeighborListConfig.settings``. ``None`` passes none.
 
     Raises:
         NeighborBackendNotAvailableError: if no backend of that name is
-            registered, if it failed to import, or if what it names does not
-            implement :class:`NeighborListBackend`. The message says which.
+            registered, if it failed to import, if its factory refused the
+            settings, or if what it built does not implement
+            :class:`NeighborListBackend`. The message says which.
         DuplicateNeighborBackendError: if two entry points register different
             objects under one name.
     """
-    by_name = {backend.name: backend for backend in _discover()}
-    if name not in by_name:
+    registered = _registered()
+    if name not in registered:
         raise NeighborBackendNotAvailableError(
             f"no neighbour-list backend is registered as {name!r}. The "
-            f"registered names are {sorted(by_name)}, from the entry point "
+            f"registered names are {sorted(registered)}, from the entry point "
             f"group {NEIGHBOR_BACKEND_GROUP!r}."
         )
-    discovered = by_name[name]
+    discovered = _load(name, registered[name])
     if not discovered.loaded:
         raise NeighborBackendNotAvailableError(
             f"the neighbour-list backend {name!r} is registered but did not "
             f"import on this machine: {discovered.reason}. No other backend is "
             f"substituted."
         )
-    backend = discovered.factory()
+    settings = dict(settings or {})
+    try:
+        backend = discovered.factory(**settings)
+    except (TypeError, ValueError) as failure:
+        raise NeighborBackendNotAvailableError(
+            f"the neighbour-list backend {name!r} could not be built with the "
+            f"settings {settings!r}: {failure}"
+        ) from failure
     if not isinstance(backend, NeighborListBackend):
         raise NeighborBackendNotAvailableError(
             f"the entry point {name!r} built a {type(backend).__name__}, which "

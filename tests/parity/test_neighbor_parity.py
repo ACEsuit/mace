@@ -43,12 +43,16 @@ def _geometry(atoms):
 
 
 @pytest.mark.parametrize("name", sorted(FIXTURES))
-def test_neighbor_list_is_the_legacy_one_exactly(name):
+def test_the_matscipy_neighbor_list_is_the_legacy_one_exactly(name):
+    """Order included: legacy searches with matscipy too. Other backends are
+    held to the edge set only, below."""
     positions, pbc, cell = _geometry(FIXTURES[name])
     edge_index, shifts, unit_shifts, returned = legacy_get_neighborhood(
         positions, cutoff=R_MAX, pbc=pbc, cell=cell
     )
-    neighbors = get_neighborhood(positions, R_MAX, pbc, cell)
+    neighbors = get_neighborhood(
+        positions, R_MAX, pbc, cell, backend=get_neighbor_backend("matscipy")
+    )
     assert np.array_equal(neighbors.edge_index, edge_index)
     assert np.array_equal(neighbors.unit_shifts, unit_shifts)
     assert np.array_equal(neighbors.shifts, shifts)
