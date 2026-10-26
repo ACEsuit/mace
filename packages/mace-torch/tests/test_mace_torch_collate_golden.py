@@ -26,10 +26,12 @@ from mace_core.graph import (
 from mace_core.graph import (
     collate as reference_collate,
 )
+from mace_core.neighbors import get_neighbor_backend
 from mace_torch.graph import build_batch, collate, dtype_name
 
 CUTOFF = 2.9
 TABLE = AtomicNumberTable([1, 6, 8, 14])
+MATSCIPY = get_neighbor_backend("matscipy")
 
 STRUCTURES = [
     Configuration(
@@ -129,7 +131,11 @@ LEGACY_CELL = [
 @pytest.fixture(name="batch")
 def fixture_batch(dtype):
     return build_batch(
-        STRUCTURES, atomic_number_table=TABLE, cutoff=CUTOFF, dtype=dtype
+        STRUCTURES,
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        dtype=dtype,
+        neighbor_backend=MATSCIPY,
     )
 
 
@@ -164,7 +170,12 @@ def test_rcell_and_volume_follow_from_the_returned_cell(batch, dtype):
 
 
 def test_rcell_is_exactly_zero_for_a_cell_of_zero_volume(dtype):
-    sample = graph_sample(STRUCTURES[1], atomic_number_table=TABLE, cutoff=CUTOFF)
+    sample = graph_sample(
+        STRUCTURES[1],
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        neighbor_backend=MATSCIPY,
+    )
     sample["cell"] = np.zeros((3, 3))
     batch = collate([sample], dtype=dtype)
     assert torch.equal(batch["volume"], torch.zeros(1, dtype=dtype))
@@ -174,7 +185,12 @@ def test_rcell_is_exactly_zero_for_a_cell_of_zero_volume(dtype):
 @fp64_only
 def test_the_torch_collation_is_the_numpy_reference(dtype):
     samples = [
-        graph_sample(structure, atomic_number_table=TABLE, cutoff=CUTOFF)
+        graph_sample(
+            structure,
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            neighbor_backend=MATSCIPY,
+        )
         for structure in STRUCTURES
     ]
     batch = collate(samples, dtype=dtype)
@@ -206,7 +222,12 @@ def test_the_host_tuples_agree_with_ptr_and_pbc(batch):
 
 def test_collation_does_not_modify_its_samples():
     samples = [
-        graph_sample(structure, atomic_number_table=TABLE, cutoff=CUTOFF)
+        graph_sample(
+            structure,
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            neighbor_backend=MATSCIPY,
+        )
         for structure in STRUCTURES
     ]
     before = [{k: np.array(v, copy=True) for k, v in s.items()} for s in samples]
@@ -217,8 +238,18 @@ def test_collation_does_not_modify_its_samples():
 
 
 def test_collation_refuses_samples_with_different_keys():
-    first = graph_sample(STRUCTURES[0], atomic_number_table=TABLE, cutoff=CUTOFF)
-    second = graph_sample(STRUCTURES[1], atomic_number_table=TABLE, cutoff=CUTOFF)
+    first = graph_sample(
+        STRUCTURES[0],
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        neighbor_backend=MATSCIPY,
+    )
+    second = graph_sample(
+        STRUCTURES[1],
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        neighbor_backend=MATSCIPY,
+    )
     second["density_coefficients"] = np.zeros((2, 4))
     with pytest.raises(ValueError, match="carry different keys"):
         collate([first, second])
@@ -235,7 +266,9 @@ def test_an_undeclared_property_is_carried_and_never_promoted():
         )
         for s in STRUCTURES
     ]
-    batch = build_batch(structures, atomic_number_table=TABLE, cutoff=CUTOFF)
+    batch = build_batch(
+        structures, atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
     assert isinstance(batch["tags"], tuple)
     assert len(batch["tags"]) == 3
     for value, structure in zip(batch["tags"], STRUCTURES, strict=True):
@@ -259,40 +292,48 @@ def test_a_declared_atom_feature_is_concatenated_as_given(dtype):
         cutoff=CUTOFF,
         features={"tags": "atom"},
         dtype=dtype,
+        neighbor_backend=MATSCIPY,
     )
     assert batch["tags"].shape == (7,)
     assert batch["tags"].dtype == dtype
     assert batch["tags"].tolist() == [0.0, 1.0, 2.0, 0.0, 1.0, 0.0, 1.0]
 
 
-def test_the_backend_named_by_the_config_section_builds_the_same_edges():
-    from mace_core.neighbors import NeighborListConfig
-
+def test_the_all_pairs_backend_builds_the_same_edges():
     def edge_set(batch):
         rows = torch.cat((batch["edge_index"].T, batch["unit_shifts"].long()), dim=1)
         return sorted(map(tuple, rows.tolist()))
 
-    matscipy = build_batch(STRUCTURES, atomic_number_table=TABLE, cutoff=CUTOFF)
-    brute_force = build_batch(
+    matscipy = build_batch(
+        STRUCTURES, atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
+    all_pairs = build_batch(
         STRUCTURES,
         atomic_number_table=TABLE,
         cutoff=CUTOFF,
-        neighbor_list=NeighborListConfig(kind="brute_force"),
+        neighbor_backend=get_neighbor_backend("all_pairs"),
     )
-    assert edge_set(matscipy) == edge_set(brute_force)
-    assert torch.equal(matscipy["cell"], brute_force["cell"])
+    assert edge_set(matscipy) == edge_set(all_pairs)
+    assert torch.equal(matscipy["cell"], all_pairs["cell"])
 
 
 def test_the_float_dtype_is_the_callers_and_not_the_process_default(dtype):
     """The suite runs under both default dtypes; the batch follows the argument."""
-    batch = build_batch(STRUCTURES, atomic_number_table=TABLE, cutoff=CUTOFF)
+    batch = build_batch(
+        STRUCTURES, atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
     assert batch["positions"].dtype == torch.float64
     validate_graph(batch)
 
 
 def test_samples_given_as_tensors_collate_like_numpy_ones(dtype):
     samples = [
-        graph_sample(structure, atomic_number_table=TABLE, cutoff=CUTOFF)
+        graph_sample(
+            structure,
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            neighbor_backend=MATSCIPY,
+        )
         for structure in STRUCTURES
     ]
     as_tensors = [
@@ -315,7 +356,11 @@ def test_a_process_default_device_does_not_move_the_batch(dtype):
     torch.set_default_device("meta")
     try:
         batch = build_batch(
-            STRUCTURES, atomic_number_table=TABLE, cutoff=CUTOFF, dtype=dtype
+            STRUCTURES,
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            dtype=dtype,
+            neighbor_backend=MATSCIPY,
         )
     finally:
         torch.set_default_device(previous)
