@@ -1,7 +1,9 @@
 """The all-pairs backend: every pair of atoms, every image that can reach.
 
 It bins nothing, so it needs no artificial box, and it is short enough to be
-read as a definition of the edge set. It is the oracle the conformance harness
+read as a definition of the edge set. It compares squared lengths, as matscipy
+does: a length rounded by a square root can land on the cutoff when the exact
+one is below it. It is the oracle the conformance harness
 measures other backends against and a reasonable choice for small structures.
 Cost is ``O(n_atoms^2 x n_images)``.
 
@@ -44,7 +46,8 @@ class BruteForceBackend:
         for shift in itertools.product(*ranges):
             unit_shift = np.array(shift, dtype=np.int64)
             vectors = difference + unit_shift @ geometry.search_cell
-            senders, receivers = np.nonzero(np.linalg.norm(vectors, axis=-1) < cutoff)
+            squared = np.sum(vectors * vectors, axis=-1)
+            senders, receivers = np.nonzero(squared < cutoff * cutoff)
             sender_blocks.append(senders)
             receiver_blocks.append(receivers)
             shift_blocks.append(np.broadcast_to(unit_shift, (len(senders), 3)))

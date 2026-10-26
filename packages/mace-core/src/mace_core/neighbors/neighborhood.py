@@ -8,7 +8,8 @@ The pinned semantics, each one a property the brute-force backend states
 directly:
 
 * the list is **full and directed**: an edge ``i -> j`` with distance
-  ``< cutoff`` (strict) appears once per direction;
+  ``< cutoff`` (strict) appears once per direction. The comparison is on
+  float64 squared lengths, ``|r|^2 < cutoff^2``, as matscipy makes it;
 * the only pair removed is the **zero-shift self pair**, ``i == j`` with
   ``unit_shifts == 0``. A periodic image of an atom is a real neighbour, so a
   single atom in a cell smaller than the cutoff has edges, all to itself;

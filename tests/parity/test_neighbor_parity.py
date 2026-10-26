@@ -76,3 +76,23 @@ def test_neighbor_backend_reproduces_the_oracle(name, backend):
         canonical_edges(reference_index, reference_unit_shifts),
         context=f"{name}, {backend}",
     )
+
+
+def test_a_length_that_rounds_onto_the_cutoff_is_the_legacy_decision():
+    """Legacy compares squared lengths through matscipy; so do the oracle and
+    every backend. A square-rooted length would drop the 12 face diagonals."""
+    positions, pbc, cell, cutoff = np.zeros((1, 3)), (True,) * 3, np.eye(3), np.sqrt(2)
+    legacy_index, _, legacy_unit_shifts, _ = legacy_get_neighborhood(
+        positions, cutoff=cutoff, pbc=pbc, cell=cell
+    )
+    reference_index, _, reference_unit_shifts = brute_force_neighborhood(
+        positions, cutoff, pbc, cell
+    )
+    expected = canonical_edges(legacy_index, legacy_unit_shifts)
+    assert len(expected) == 18
+    assert canonical_edges(reference_index, reference_unit_shifts) == expected
+    for backend in sorted(b.name for b in available_neighbor_backends()):
+        neighbors = get_neighborhood(
+            positions, cutoff, pbc, cell, backend=get_neighbor_backend(backend)
+        )
+        assert canonical_edges(neighbors.edge_index, neighbors.unit_shifts) == expected

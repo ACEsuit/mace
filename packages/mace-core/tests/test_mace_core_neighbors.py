@@ -162,10 +162,25 @@ def test_every_edge_is_strictly_shorter_than_the_cutoff(case):
     positions, cutoff, pbc, cell = case
     neighbors = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
     sender, receiver = neighbors.edge_index
-    lengths = np.linalg.norm(
-        positions[receiver] - positions[sender] + neighbors.shifts, axis=1
-    )
-    assert np.all(lengths < cutoff)
+    vectors = positions[receiver] - positions[sender] + neighbors.shifts
+    assert np.all(np.sum(vectors * vectors, axis=1) < cutoff * cutoff)
+
+
+def test_a_length_that_rounds_onto_the_cutoff_is_inside_for_every_backend():
+    """The face diagonals of a unit cube are shorter than ``np.sqrt(2)``, whose
+    float64 value is above the exact root, but their norm rounds onto it."""
+    positions, cell, cutoff = np.zeros((1, 3)), np.eye(3), np.sqrt(2)
+    diagonal = np.array([1.0, 1.0, 0.0])
+    assert not np.linalg.norm(diagonal) < cutoff
+    for discovered in available_neighbor_backends():
+        neighbors = get_neighborhood(
+            positions,
+            cutoff,
+            (True, True, True),
+            cell,
+            backend=get_neighbor_backend(discovered.name),
+        )
+        assert neighbors.edge_index.shape[1] == 6 + 12, discovered.name
 
 
 def test_shifts_are_unit_shifts_times_the_returned_cell(case):

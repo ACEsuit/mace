@@ -80,8 +80,11 @@ class NeighborListBackend(Protocol):
         Args:
             positions: ``[n_atoms, 3]`` float64 Cartesian positions, Angstrom.
                 Read-only to the backend.
-            cutoff: Strict bound: a pair is an edge when its distance is
-                ``< cutoff``.
+            cutoff: Strict bound: a pair is an edge when its float64 squared
+                length is ``< cutoff * cutoff``. Comparing a square-rooted
+                length instead drops a pair whose length rounds onto the
+                cutoff, such as the face diagonals of a unit cube against
+                ``cutoff = np.sqrt(2)``.
             geometry: The periodicity and the search box to bin into. A
                 backend that does not bin may ignore ``search_cell``, but
                 images exist only along axes where ``geometry.pbc`` is true.
