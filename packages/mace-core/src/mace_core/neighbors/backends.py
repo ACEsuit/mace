@@ -31,10 +31,11 @@ section that names no backend gets the default of the framework building the
 graphs, which it passes to :func:`resolve_neighbor_backend`; ``brute_force``
 when no framework is involved. A named backend is used as named. Either is
 built or refused, never replaced by another. Only ``brute_force`` is
-guaranteed by ``mace-core``; ``vesin`` and ``matscipy`` are its extras, and
-each framework package requires the one it defaults to. The choice never
-changes a number, since every backend returns the same edge set, so it is not
-part of a model's state.
+guaranteed by ``mace-core``. ``matscipy`` is its extra of the same name;
+``vesin`` is registered by mace-torch, because importing vesin also imports
+torch whenever torch is installed. Each framework package requires the
+library of its default. The choice never changes a number, since every
+backend returns the same edge set, so it is not part of a model's state.
 
 **Resolve once.** A graph builder resolves its backend when it is set up and
 hands the object to every
@@ -122,8 +123,8 @@ class NeighborListConfig(ConfigSection):
         kind: A name registered in the ``mace.neighbor_backends`` entry point
             group, or ``None`` for the default of the framework building the
             graphs (see :func:`resolve_neighbor_backend`). ``brute_force`` ships with
-            ``mace-core``; ``vesin`` and ``matscipy`` with its extras of the
-            same names. ``vesin`` takes ``n_threads``.
+            ``mace-core``, ``matscipy`` with its extra of the same name, and
+            ``vesin`` with mace-torch, where it takes ``n_threads``.
         settings: Keyword arguments for the backend's factory. Validated by
             the backend when it is built, since a backend in its own
             distribution declares settings this schema cannot know. Only with

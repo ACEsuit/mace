@@ -1,10 +1,10 @@
 """The neighbour-list backend this framework builds graphs with by default.
 
 A ``neighbor_list`` config section that names no backend gets vesin, the
-fastest backend on the CPU; importing it in a torch process costs nothing
-because torch is already loaded. The package requires the
-``mace-core[vesin]`` extra, so the default is installed wherever this package
-is. Any other backend is used only when the section names it.
+fastest backend on the CPU. This package requires vesin and registers its
+backend (:mod:`mace_torch.neighbors.vesin_backend`), so the default is
+installed wherever this package is. Any other backend is used only when the
+section names it.
 """
 
 from __future__ import annotations
