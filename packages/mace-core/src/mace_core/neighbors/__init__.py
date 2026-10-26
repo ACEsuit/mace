@@ -19,6 +19,7 @@ from mace_core.neighbors.backends import (
     NeighborListConfig,
     available_neighbor_backends,
     get_neighbor_backend,
+    resolve_neighbor_backend,
 )
 from mace_core.neighbors.brute_force import BruteForceBackend
 from mace_core.neighbors.geometry import SearchGeometry, search_geometry
@@ -38,5 +39,6 @@ __all__ = [
     "available_neighbor_backends",
     "get_neighbor_backend",
     "get_neighborhood",
+    "resolve_neighbor_backend",
     "search_geometry",
 ]

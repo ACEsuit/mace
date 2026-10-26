@@ -28,7 +28,8 @@ classifiers = [
 # arrived there, and earlier releases have only the `autograd.Function` route,
 # which `torch.compile(fullgraph=True)` cannot see through without a graph break.
 dependencies = [
-    "mace-core",
+    # The vesin extra brings this package's default neighbour-list backend.
+    "mace-core[vesin]",
     "torch>=2.5",
     # Covalent radii for the ZBL repulsion and the distance transforms.
     "ase",

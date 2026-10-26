@@ -35,13 +35,21 @@ dependencies = [
     # the release whose reserved-key behaviour the parser is written against.
     "numpy>=1.23",
     "ase>=3.23",
-    # The default neighbour-list backend. It brings numpy and scipy and no
-    # framework.
-    "matscipy>=1.0",
 ]
+
+# Neighbour-list libraries are extras: the brute-force backend needs nothing
+# beyond numpy, and each framework package requires the one it defaults to.
+[project.optional-dependencies]
+# mace-torch's default. The floor is the release whose per-axis periodicity and
+# squared-length cutoff the conformance cases were run against.
+vesin = ["vesin>=0.6.2"]
+# mace-jax's default, and the backend the legacy list searches with, so the
+# order-exact parity tests need it. It brings scipy and no framework.
+matscipy = ["matscipy>=1.0"]
 
 [project.entry-points."mace.neighbor_backends"]
 # Discovered the same way a third-party backend is, through its entry point.
+vesin = "mace_core.neighbors.vesin_backend:VesinBackend"
 matscipy = "mace_core.neighbors.matscipy_backend:MatscipyBackend"
 brute_force = "mace_core.neighbors.brute_force:BruteForceBackend"
 

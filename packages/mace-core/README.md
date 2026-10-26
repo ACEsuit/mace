@@ -23,7 +23,11 @@ What is here so far:
   which records a release reads is stated at `SCHEMA_VERSION`.
 - `mace_core.neighbors` — `get_neighborhood`, the pure-function neighbour list
   every graph builder calls, over swappable backends registered in the
-  `mace.neighbor_backends` entry point group (`matscipy` by default, and
-  `brute_force`), selected by the `NeighborListConfig` section. The search box
+  `mace.neighbor_backends` entry point group, selected by the
+  `NeighborListConfig` section. `brute_force` needs only numpy; `vesin` and
+  `matscipy` come with the extras of the same names. A section that names no
+  backend gets the framework's default through `resolve_neighbor_backend`:
+  vesin for mace-torch, matscipy for mace-jax, brute_force without a
+  framework. A named backend is used as named, or refused. The search box
   and the effective cell the graph carries are decided once, by
   `search_geometry`, whichever backend runs.

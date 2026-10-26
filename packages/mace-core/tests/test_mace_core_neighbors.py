@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 from mace_core.config import ConfigSection
 from mace_core.neighbors import (
+    DEFAULT_NEIGHBOR_BACKEND,
     BruteForceBackend,
     DuplicateNeighborBackendError,
     NeighborBackendNotAvailableError,
@@ -25,10 +26,12 @@ from mace_core.neighbors import (
     available_neighbor_backends,
     get_neighbor_backend,
     get_neighborhood,
+    resolve_neighbor_backend,
     search_geometry,
 )
 from mace_core.neighbors import geometry as geometry_module
 from mace_core.neighbors.matscipy_backend import MatscipyBackend
+from mace_core.neighbors.vesin_backend import VesinBackend
 
 MATSCIPY = MatscipyBackend()
 
@@ -338,10 +341,15 @@ def test_only_search_geometry_decides_a_regime():
     other function in the package computes one."""
     import inspect
 
-    from mace_core.neighbors import brute_force, matscipy_backend, neighborhood
+    from mace_core.neighbors import (
+        brute_force,
+        matscipy_backend,
+        neighborhood,
+        vesin_backend,
+    )
 
     assert "search_geometry(" in inspect.getsource(neighborhood.get_neighborhood)
-    for module in (brute_force, matscipy_backend, neighborhood):
+    for module in (brute_force, matscipy_backend, neighborhood, vesin_backend):
         source = inspect.getsource(module)
         assert "2 * cutoff" not in source, module.__name__
         assert "search_cell" not in source or module is not neighborhood
@@ -351,14 +359,16 @@ def test_only_search_geometry_decides_a_regime():
 # --- the registry and the config section ------------------------------------------
 
 
-def test_matscipy_and_brute_force_are_registered():
+def test_vesin_matscipy_and_brute_force_are_registered():
     names = {backend.name for backend in available_neighbor_backends()}
-    assert {"matscipy", "brute_force"} <= names
+    assert {"vesin", "matscipy", "brute_force"} <= names
 
 
-def test_the_config_section_defaults_to_matscipy():
-    assert NeighborListConfig().kind == "matscipy"
+def test_the_config_section_leaves_the_choice_to_the_framework_by_default():
+    assert NeighborListConfig().kind is None
     assert NeighborListConfig().settings == {}
+    with pytest.raises(ValueError, match=r"without neighbor_list\.kind"):
+        NeighborListConfig(settings={"n_threads": 2})
     assert issubclass(NeighborListConfig, ConfigSection)
     with pytest.raises(ValueError, match="kind"):
         NeighborListConfig(kind=" ")
@@ -494,7 +504,7 @@ def test_the_settings_reach_the_backend_factory(tmp_path, monkeypatch):
         """,
     )
     config = NeighborListConfig(kind="skinned", settings={"skin": 0.5})
-    configured: Any = get_neighbor_backend(config.kind, config.settings)
+    configured: Any = resolve_neighbor_backend(config)
     default: Any = get_neighbor_backend("skinned")
     assert configured.skin == 0.5
     assert default.skin == 0.0
@@ -507,3 +517,101 @@ def test_the_settings_reach_the_backend_factory(tmp_path, monkeypatch):
 def test_a_backend_without_settings_refuses_any():
     with pytest.raises(NeighborBackendNotAvailableError, match="matscipy"):
         get_neighbor_backend("matscipy", {"skin": 0.5})
+
+
+def test_vesin_takes_its_thread_count_from_the_settings():
+    """The thread count changes the speed and never the edges or their order."""
+    positions, cutoff, pbc, cell = CASES["triclinic"]
+    config = NeighborListConfig(kind="vesin", settings={"n_threads": 4})
+    threaded: Any = resolve_neighbor_backend(config)
+    single: Any = get_neighbor_backend("vesin")
+    assert (threaded.n_threads, single.n_threads) == (4, 1)
+    many = get_neighborhood(positions, cutoff, pbc, cell, backend=threaded)
+    one = get_neighborhood(positions, cutoff, pbc, cell, backend=single)
+    assert np.array_equal(many.edge_index, one.edge_index)
+    assert np.array_equal(many.unit_shifts, one.unit_shifts)
+
+
+@pytest.mark.parametrize("n_threads", [-1, 1.5, True, "4"])
+def test_vesin_refuses_a_thread_count_that_is_not_a_count(n_threads):
+    with pytest.raises(NeighborBackendNotAvailableError, match="n_threads"):
+        get_neighbor_backend("vesin", {"n_threads": n_threads})
+
+
+# --- choosing a backend when the config names none ---------------------------
+
+
+def test_with_no_backend_named_and_no_framework_brute_force_is_used():
+    assert DEFAULT_NEIGHBOR_BACKEND == "brute_force"
+    assert isinstance(resolve_neighbor_backend(), BruteForceBackend)
+
+
+def test_with_no_backend_named_the_framework_default_is_used():
+    assert isinstance(resolve_neighbor_backend(None, "vesin"), VesinBackend)
+    assert isinstance(
+        resolve_neighbor_backend(NeighborListConfig(), "matscipy"), MatscipyBackend
+    )
+
+
+def test_a_named_backend_wins_over_the_default():
+    config = NeighborListConfig(kind="matscipy")
+    assert isinstance(resolve_neighbor_backend(config, "vesin"), MatscipyBackend)
+    config = NeighborListConfig(kind="vesin", settings={"n_threads": 3})
+    named: Any = resolve_neighbor_backend(config, "matscipy")
+    assert named.n_threads == 3
+
+
+def test_a_named_backend_that_cannot_be_built_is_not_replaced():
+    config = NeighborListConfig(kind="cell_list_on_the_moon")
+    with pytest.raises(NeighborBackendNotAvailableError, match="cell_list_on_the_moon"):
+        resolve_neighbor_backend(config, "vesin")
+
+
+def test_a_default_that_did_not_import_is_an_error_not_a_fallback(
+    tmp_path, monkeypatch
+):
+    _register_module(
+        tmp_path,
+        monkeypatch,
+        "heavy",
+        """
+        raise RuntimeError("importing this backend sets up a device")
+        """,
+    )
+    with pytest.raises(NeighborBackendNotAvailableError, match="sets up a device"):
+        resolve_neighbor_backend(None, "heavy")
+
+
+def test_importing_the_vesin_backend_module_does_not_import_vesin():
+    """vesin imports torch whenever torch is installed, so it is imported when
+    the backend is built and not when the registry lists it."""
+    import subprocess
+
+    probe = (
+        "import sys; import mace_core.neighbors.vesin_backend; "
+        "print('vesin' in sys.modules, 'torch' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.split() == ["False", "False"]
+
+
+@pytest.mark.parametrize(
+    ("module", "library"),
+    [("vesin_backend", "vesin"), ("matscipy_backend", "matscipy")],
+)
+def test_a_missing_library_names_the_extra_to_install(monkeypatch, module, library):
+    import importlib
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+
+    def find_spec(name, *args, **kwargs):
+        return None if name == library else real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    monkeypatch.setitem(sys.modules, f"{library}.neighbours", None)
+    monkeypatch.delitem(sys.modules, f"mace_core.neighbors.{module}", raising=False)
+    with pytest.raises(ImportError, match=rf"mace-core\[{library}\]"):
+        importlib.import_module(f"mace_core.neighbors.{module}")

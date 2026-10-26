@@ -26,8 +26,18 @@ backend, because that is how it learns which ones fail; a backend that sets up
 a device at import pays for it there. :func:`get_neighbor_backend` reads the
 metadata of all of them and imports only the one it names.
 
-**Resolve once.** A graph builder resolves its backend when it is set up,
-with the settings its config section carries, and hands the object to every
+**One default per framework; anything else is asked for by name.** A config
+section that names no backend gets the default of the framework building the
+graphs, which it passes to :func:`resolve_neighbor_backend`; ``brute_force``
+when no framework is involved. A named backend is used as named. Either is
+built or refused, never replaced by another. Only ``brute_force`` is
+guaranteed by ``mace-core``; ``vesin`` and ``matscipy`` are its extras, and
+each framework package requires the one it defaults to. The choice never
+changes a number, since every backend returns the same edge set, so it is not
+part of a model's state.
+
+**Resolve once.** A graph builder resolves its backend when it is set up and
+hands the object to every
 :func:`~mace_core.neighbors.neighborhood.get_neighborhood` call.
 """
 
@@ -39,7 +49,7 @@ from importlib.metadata import entry_points
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from mace_core.config.base import ConfigSection
 from mace_core.neighbors.geometry import SearchGeometry
@@ -54,13 +64,15 @@ __all__ = [
     "NeighborListConfig",
     "available_neighbor_backends",
     "get_neighbor_backend",
+    "resolve_neighbor_backend",
 ]
 
 #: The entry point group framework-free neighbour-list providers register in.
 NEIGHBOR_BACKEND_GROUP = "mace.neighbor_backends"
 
-#: The backend a graph builder uses when the config names none.
-DEFAULT_NEIGHBOR_BACKEND = "matscipy"
+#: The backend used when the config names none and no framework passes its
+#: own default. It ships with ``mace-core`` and needs nothing beyond numpy.
+DEFAULT_NEIGHBOR_BACKEND = "brute_force"
 
 
 @runtime_checkable
@@ -108,24 +120,39 @@ class NeighborListConfig(ConfigSection):
 
     Attributes:
         kind: A name registered in the ``mace.neighbor_backends`` entry point
-            group. ``matscipy`` and ``brute_force`` ship with ``mace-core``.
+            group, or ``None`` for the default of the framework building the
+            graphs (see :func:`resolve_neighbor_backend`). ``brute_force`` ships with
+            ``mace-core``; ``vesin`` and ``matscipy`` with its extras of the
+            same names. ``vesin`` takes ``n_threads``.
         settings: Keyword arguments for the backend's factory. Validated by
             the backend when it is built, since a backend in its own
-            distribution declares settings this schema cannot know.
+            distribution declares settings this schema cannot know. Only with
+            a ``kind``, because settings belong to one backend.
     """
 
-    kind: str = DEFAULT_NEIGHBOR_BACKEND
+    kind: str | None = None
     settings: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("kind")
     @classmethod
-    def _named(cls, kind: str) -> str:
-        if not kind.strip():
+    def _named(cls, kind: str | None) -> str | None:
+        if kind is not None and not kind.strip():
             raise ValueError(
                 "neighbor_list.kind is empty. Name a registered backend, such "
-                f"as {DEFAULT_NEIGHBOR_BACKEND!r}."
+                f"as {DEFAULT_NEIGHBOR_BACKEND!r}, or leave it out for the "
+                f"framework's default."
             )
         return kind
+
+    @model_validator(mode="after")
+    def _settings_need_a_kind(self) -> NeighborListConfig:
+        if self.settings and self.kind is None:
+            raise ValueError(
+                f"neighbor_list.settings {sorted(self.settings)} are given "
+                f"without neighbor_list.kind. Settings belong to one backend; "
+                f"name it."
+            )
+        return self
 
 
 class NeighborBackendNotAvailableError(RuntimeError):
@@ -203,7 +230,7 @@ def available_neighbor_backends() -> list[DiscoveredNeighborBackend]:
 
 
 def get_neighbor_backend(
-    name: str = DEFAULT_NEIGHBOR_BACKEND, settings: Mapping[str, Any] | None = None
+    name: str, settings: Mapping[str, Any] | None = None
 ) -> NeighborListBackend:
     """The backend registered under ``name``, built with ``settings``.
 
@@ -250,3 +277,25 @@ def get_neighbor_backend(
             f"has no search(positions, cutoff, geometry) method."
         )
     return backend
+
+
+def resolve_neighbor_backend(
+    config: NeighborListConfig | None = None, default: str = DEFAULT_NEIGHBOR_BACKEND
+) -> NeighborListBackend:
+    """The backend a graph builder uses: the one the config names, or ``default``.
+
+    Args:
+        config: The ``neighbor_list`` section. ``None`` names no backend.
+        default: The framework's default, used when the config names none.
+
+    Raises:
+        NeighborBackendNotAvailableError: if the backend is not registered,
+            did not import or refused its settings, as
+            :func:`get_neighbor_backend` does. No other backend is tried.
+        DuplicateNeighborBackendError: if two entry points register different
+            objects under one name.
+    """
+    config = config or NeighborListConfig()
+    if config.kind is None:
+        return get_neighbor_backend(default)
+    return get_neighbor_backend(config.kind, config.settings)
