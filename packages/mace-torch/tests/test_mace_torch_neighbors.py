@@ -76,7 +76,7 @@ def test_vesin_takes_its_thread_count_from_the_settings():
     config = NeighborListConfig(kind="vesin", settings={"n_threads": 4})
     threaded: Any = resolve_neighbor_backend(config)
     single: Any = get_neighbor_backend("vesin")
-    assert (threaded.n_threads, single.n_threads) == (4, 1)
+    assert (threaded.settings.n_threads, single.settings.n_threads) == (4, 1)
     many = get_neighborhood(positions, cutoff, pbc, cell, backend=threaded)
     one = get_neighborhood(positions, cutoff, pbc, cell, backend=single)
     assert np.array_equal(many.edge_index, one.edge_index)
@@ -87,6 +87,11 @@ def test_vesin_takes_its_thread_count_from_the_settings():
 def test_vesin_refuses_a_thread_count_that_is_not_a_count(n_threads):
     with pytest.raises(NeighborBackendNotAvailableError, match="n_threads"):
         get_neighbor_backend("vesin", {"n_threads": n_threads})
+
+
+def test_vesin_refuses_an_unknown_setting():
+    with pytest.raises(NeighborBackendNotAvailableError, match="threads"):
+        get_neighbor_backend("vesin", {"threads": 2})
 
 
 def test_resolving_another_backend_does_not_import_vesin():

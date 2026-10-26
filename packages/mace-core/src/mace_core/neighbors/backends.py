@@ -50,7 +50,7 @@ from importlib.metadata import entry_points
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
 from mace_core.config.base import ConfigSection
 from mace_core.neighbors.geometry import SearchGeometry
@@ -80,9 +80,12 @@ DEFAULT_NEIGHBOR_BACKEND = "brute_force"
 class NeighborListBackend(Protocol):
     """Finds every directed pair of atoms closer than the cutoff.
 
-    An entry point names a class or a factory; the registry calls it with the
-    config section's ``settings`` as keyword arguments, and with none when
-    there are none.
+    An entry point names a class or a factory. One that takes settings
+    declares them as ``settings_section``, a
+    :class:`~mace_core.config.ConfigSection` subclass: the registry validates
+    the config section's ``settings`` against it and calls the factory with
+    the validated section. A factory without one is called with no arguments
+    and accepts no settings.
     """
 
     def search(
@@ -122,13 +125,15 @@ class NeighborListConfig(ConfigSection):
     Attributes:
         kind: A name registered in the ``mace.neighbor_backends`` entry point
             group, or ``None`` for the default of the framework building the
-            graphs (see :func:`resolve_neighbor_backend`). ``brute_force`` ships with
-            ``mace-core``, ``matscipy`` with its extra of the same name, and
-            ``vesin`` with mace-torch, where it takes ``n_threads``.
-        settings: Keyword arguments for the backend's factory. Validated by
-            the backend when it is built, since a backend in its own
-            distribution declares settings this schema cannot know. Only with
-            a ``kind``, because settings belong to one backend.
+            graphs (see :func:`resolve_neighbor_backend`). ``brute_force``
+            ships with ``mace-core``, ``matscipy`` with its extra of the same
+            name, and ``vesin`` with mace-torch, where it takes ``n_threads``.
+        settings: The backend's settings, validated against the section the
+            backend declares (``settings_section``) when it is resolved. They
+            stay a mapping here because a backend in its own distribution
+            declares fields this schema cannot know. A backend without a
+            section accepts none, and settings are only accepted with a
+            ``kind``, because they belong to one backend.
     """
 
     kind: str | None = None
@@ -239,13 +244,14 @@ def get_neighbor_backend(
 
     Args:
         name: A registered backend name, usually ``NeighborListConfig.kind``.
-        settings: Keyword arguments for its factory, usually
-            ``NeighborListConfig.settings``. ``None`` passes none.
+        settings: Its settings, usually ``NeighborListConfig.settings``,
+            validated against the section the backend declares. ``None`` and
+            an empty mapping give the section's defaults.
 
     Raises:
         NeighborBackendNotAvailableError: if no backend of that name is
-            registered, if it failed to import, if its factory refused the
-            settings, or if what it built does not implement
+            registered, if it failed to import, if the settings are not valid
+            for it, or if what it built does not implement
             :class:`NeighborListBackend`. The message says which.
         DuplicateNeighborBackendError: if two entry points register different
             objects under one name.
@@ -264,20 +270,38 @@ def get_neighbor_backend(
             f"import on this machine: {discovered.reason}. No other backend is "
             f"substituted."
         )
-    settings = dict(settings or {})
-    try:
-        backend = discovered.factory(**settings)
-    except (TypeError, ValueError) as failure:
-        raise NeighborBackendNotAvailableError(
-            f"the neighbour-list backend {name!r} could not be built with the "
-            f"settings {settings!r}: {failure}"
-        ) from failure
+    backend = _build(name, discovered.factory, dict(settings or {}))
     if not isinstance(backend, NeighborListBackend):
         raise NeighborBackendNotAvailableError(
             f"the entry point {name!r} built a {type(backend).__name__}, which "
             f"has no search(positions, cutoff, geometry) method."
         )
     return backend
+
+
+def _build(name: str, factory: Any, settings: dict[str, Any]) -> Any:
+    """Call ``factory`` with its settings validated against its own section."""
+    section = getattr(factory, "settings_section", None)
+    if section is None:
+        if settings:
+            raise NeighborBackendNotAvailableError(
+                f"the neighbour-list backend {name!r} takes no settings, and "
+                f"{sorted(settings)} were given."
+            )
+        return factory()
+    if not (isinstance(section, type) and issubclass(section, ConfigSection)):
+        raise NeighborBackendNotAvailableError(
+            f"the neighbour-list backend {name!r} declares a settings_section "
+            f"that is not a ConfigSection subclass: {section!r}."
+        )
+    try:
+        validated = section.model_validate(settings)
+    except ValidationError as failure:
+        raise NeighborBackendNotAvailableError(
+            f"the settings of the neighbour-list backend {name!r} are not "
+            f"valid: {failure}"
+        ) from failure
+    return factory(validated)
 
 
 def resolve_neighbor_backend(

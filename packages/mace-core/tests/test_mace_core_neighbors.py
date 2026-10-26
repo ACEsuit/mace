@@ -486,12 +486,17 @@ def test_the_settings_reach_the_backend_factory(tmp_path, monkeypatch):
         "skinned",
         """
         import numpy as np
+        from mace_core.config import ConfigSection
+        from pydantic import Field
+
+        class Settings(ConfigSection):
+            skin: float = Field(default=0.0, ge=0)
 
         class Backend:
-            def __init__(self, skin=0.0):
-                if skin < 0:
-                    raise ValueError("skin must not be negative")
-                self.skin = skin
+            settings_section = Settings
+
+            def __init__(self, settings=None):
+                self.settings = settings or Settings()
 
             def search(self, positions, cutoff, geometry):
                 return np.zeros((2, 0), np.int64), np.zeros((0, 3), np.int64)
@@ -500,12 +505,36 @@ def test_the_settings_reach_the_backend_factory(tmp_path, monkeypatch):
     config = NeighborListConfig(kind="skinned", settings={"skin": 0.5})
     configured: Any = resolve_neighbor_backend(config)
     default: Any = get_neighbor_backend("skinned")
-    assert configured.skin == 0.5
-    assert default.skin == 0.0
-    with pytest.raises(NeighborBackendNotAvailableError, match=r"skinned.*rebuild"):
+    assert configured.settings.skin == 0.5
+    assert default.settings.skin == 0.0
+    with pytest.raises(
+        NeighborBackendNotAvailableError, match=r"skinned(.|\n)*rebuild"
+    ):
         get_neighbor_backend("skinned", {"rebuild": 10})
-    with pytest.raises(NeighborBackendNotAvailableError, match="not be negative"):
+    with pytest.raises(NeighborBackendNotAvailableError, match="greater than or equal"):
         get_neighbor_backend("skinned", {"skin": -1.0})
+
+
+def test_a_settings_section_that_is_not_a_config_section_is_refused(
+    tmp_path, monkeypatch
+):
+    _register_module(
+        tmp_path,
+        monkeypatch,
+        "loose",
+        """
+        class Backend:
+            settings_section = dict
+
+            def __init__(self, settings=None):
+                pass
+
+            def search(self, positions, cutoff, geometry):
+                raise AssertionError("never reached")
+        """,
+    )
+    with pytest.raises(NeighborBackendNotAvailableError, match="not a ConfigSection"):
+        get_neighbor_backend("loose")
 
 
 def test_a_backend_without_settings_refuses_any():
