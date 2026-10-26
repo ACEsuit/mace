@@ -20,6 +20,7 @@ from mace_core.graph import (
     PaddingOverflowError,
     validate_graph,
 )
+from mace_core.neighbors import get_neighbor_backend
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
     DerivativeRequest,
@@ -34,6 +35,7 @@ from mace_torch.graph.collate import derived_cell_quantities
 
 R_MAX = 3.5
 TABLE = AtomicNumberTable([1, 8])
+MATSCIPY = get_neighbor_backend("matscipy")
 
 
 def _water(offset=0.0, periodic=False):
@@ -55,6 +57,7 @@ def fixture_batch(dtype):
         atomic_number_table=TABLE,
         cutoff=R_MAX,
         dtype=dtype,
+        neighbor_backend=MATSCIPY,
     )
 
 
@@ -245,7 +248,13 @@ def test_padding_does_not_modify_the_batch(batch):
 
 
 def test_a_padded_cell_scale_has_a_floor_of_one(dtype):
-    batch = build_batch([_water()], atomic_number_table=TABLE, cutoff=0.3, dtype=dtype)
+    batch = build_batch(
+        [_water()],
+        atomic_number_table=TABLE,
+        cutoff=0.3,
+        dtype=dtype,
+        neighbor_backend=MATSCIPY,
+    )
     data, _ = pad_batch(
         batch,
         FixedPadding(nodes_budget=4, edges_budget=2, graphs_budget=2),
