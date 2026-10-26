@@ -22,9 +22,11 @@ from mace_core.graph import (
     presence_key,
     validate_graph,
 )
+from mace_core.neighbors.matscipy_backend import MatscipyBackend
 
 TABLE = AtomicNumberTable([1, 8, 14])
 CUTOFF = 2.5
+MATSCIPY = MatscipyBackend()
 
 
 def _water(**properties):
@@ -47,7 +49,13 @@ def _crystal(**properties):
 
 def _graph(*structures, **kwargs):
     samples = [
-        graph_sample(s, atomic_number_table=TABLE, cutoff=CUTOFF, **kwargs)
+        graph_sample(
+            s,
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            **kwargs,
+            neighbor_backend=MATSCIPY,
+        )
         for s in structures
     ]
     return collate(samples, features=kwargs.get("features"))
@@ -289,7 +297,12 @@ def test_the_view_reads_the_dict_without_copying(graph):
 
 
 def test_edge_index_is_offset_and_ptr_batch_cover_the_nodes(graph):
-    water = graph_sample(_water(energy=-1.0), atomic_number_table=TABLE, cutoff=CUTOFF)
+    water = graph_sample(
+        _water(energy=-1.0),
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        neighbor_backend=MATSCIPY,
+    )
     n_water_edges = water["edge_index"].shape[1]
     assert graph["ptr"].tolist() == [0, 3, 5]
     assert graph["batch"].tolist() == [0, 0, 0, 1, 1]
@@ -313,7 +326,9 @@ def test_rcell_is_two_pi_times_the_inverse_transpose(graph):
 
 
 def test_a_sample_carrying_a_collated_key_is_refused():
-    sample = graph_sample(_water(), atomic_number_table=TABLE, cutoff=CUTOFF)
+    sample = graph_sample(
+        _water(), atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
     sample["batch"] = np.zeros(3, dtype=np.int64)
     with pytest.raises(ValueError, match="collation computes"):
         collate([sample])
@@ -332,7 +347,11 @@ def test_the_head_is_its_index_in_the_models_head_list():
         atomic_numbers=np.array([1]), positions=np.zeros((1, 3)), head="pbe"
     )
     sample = graph_sample(
-        structure, atomic_number_table=TABLE, cutoff=CUTOFF, heads=("Default", "pbe")
+        structure,
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        heads=("Default", "pbe"),
+        neighbor_backend=MATSCIPY,
     )
     assert sample["head"] == 1
 
@@ -347,25 +366,37 @@ def test_an_unknown_head_is_an_error_rather_than_a_fallback():
             atomic_number_table=TABLE,
             cutoff=CUTOFF,
             heads=("Default", "pbe"),
+            neighbor_backend=MATSCIPY,
         )
 
 
 def test_heads_that_repeat_a_name_are_refused():
     with pytest.raises(ValueError, match="repeat"):
         graph_sample(
-            _water(), atomic_number_table=TABLE, cutoff=CUTOFF, heads=("a", "a")
+            _water(),
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            heads=("a", "a"),
+            neighbor_backend=MATSCIPY,
         )
 
 
 def test_pbc_given_as_a_numpy_array_is_read():
     structure = _crystal()
     structure.pbc = np.array([True, True, True])
-    sample = graph_sample(structure, atomic_number_table=TABLE, cutoff=CUTOFF)
+    sample = graph_sample(
+        structure, atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
     assert sample["pbc"].tolist() == [True, True, True]
 
 
 def test_an_undeclared_label_is_written_absent_with_zero_weight():
-    sample = graph_sample(_water(energy=-1.0), atomic_number_table=TABLE, cutoff=CUTOFF)
+    sample = graph_sample(
+        _water(energy=-1.0),
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        neighbor_backend=MATSCIPY,
+    )
     assert set(LABEL_KEYS) <= set(sample)
     assert not sample["dipole_present"]
     assert sample["dipole_weight"].tolist() == [0.0, 0.0, 0.0]
@@ -391,7 +422,9 @@ def test_a_present_label_with_zero_weight_is_still_present():
         properties={"energy": -1.0, "forces": np.ones((3, 3))},
         property_weights={"energy": 0.0, "forces": 0.0},
     )
-    sample = graph_sample(structure, atomic_number_table=TABLE, cutoff=CUTOFF)
+    sample = graph_sample(
+        structure, atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
     assert sample["energy_present"]
     assert sample["forces_present"].tolist() == [True, True, True]
     assert sample["energy_weight"] == 0.0
@@ -399,7 +432,10 @@ def test_a_present_label_with_zero_weight_is_still_present():
 
 def test_an_absent_label_is_zero_and_flagged_absent():
     sample = graph_sample(
-        _water(energy=None, stress=None), atomic_number_table=TABLE, cutoff=CUTOFF
+        _water(energy=None, stress=None),
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        neighbor_backend=MATSCIPY,
     )
     assert not sample["energy_present"]
     assert sample["energy"] == 0.0
@@ -412,6 +448,7 @@ def test_an_absent_total_spin_is_one_and_other_inputs_are_zero():
         _water(total_spin=None, total_charge=None, magmom=None),
         atomic_number_table=TABLE,
         cutoff=CUTOFF,
+        neighbor_backend=MATSCIPY,
     )
     assert sample["total_spin"] == 1.0
     assert sample["total_charge"] == 0.0
@@ -419,7 +456,9 @@ def test_an_absent_total_spin_is_one_and_other_inputs_are_zero():
 
 
 def test_the_one_hot_is_over_the_element_table():
-    sample = graph_sample(_water(), atomic_number_table=TABLE, cutoff=CUTOFF)
+    sample = graph_sample(
+        _water(), atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
     assert sample["node_attrs"].tolist() == [[0, 1, 0], [1, 0, 0], [1, 0, 0]]
     assert sample["node_atomic_numbers"].tolist() == [8, 1, 1]
 
@@ -427,14 +466,24 @@ def test_the_one_hot_is_over_the_element_table():
 def test_an_element_outside_the_table_is_refused():
     structure = Configuration(atomic_numbers=np.array([26]), positions=np.zeros((1, 3)))
     with pytest.raises(ValueError, match="26"):
-        graph_sample(structure, atomic_number_table=TABLE, cutoff=CUTOFF)
+        graph_sample(
+            structure,
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            neighbor_backend=MATSCIPY,
+        )
 
 
 def test_an_undeclared_property_is_transported_untouched():
     """The legacy builder promoted an unknown one-dimensional property to
     ``(n, 1)``. Nothing here guesses: the value is carried as it came."""
     tags = np.array([1.0, 2.0, 3.0])
-    sample = graph_sample(_water(tags=tags), atomic_number_table=TABLE, cutoff=CUTOFF)
+    sample = graph_sample(
+        _water(tags=tags),
+        atomic_number_table=TABLE,
+        cutoff=CUTOFF,
+        neighbor_backend=MATSCIPY,
+    )
     assert sample["tags"] is tags
     graph = collate([sample])
     assert isinstance(graph["tags"], tuple)
@@ -461,6 +510,7 @@ def test_a_declared_atom_feature_with_the_wrong_rows_is_not_reshaped():
             atomic_number_table=TABLE,
             cutoff=CUTOFF,
             features={"spin_state": "atom"},
+            neighbor_backend=MATSCIPY,
         )
 
 
@@ -472,6 +522,7 @@ def test_a_misspelled_feature_storage_is_refused(storage):
             atomic_number_table=TABLE,
             cutoff=CUTOFF,
             features={"spin_state": storage},
+            neighbor_backend=MATSCIPY,
         )
 
 
@@ -490,11 +541,22 @@ def test_a_misspelled_feature_storage_is_refused(storage):
 def test_a_feature_named_like_a_schema_key_is_refused(name, storage):
     with pytest.raises(ValueError, match="named like a key of the graph schema"):
         graph_sample(
-            _water(), atomic_number_table=TABLE, cutoff=CUTOFF, features={name: storage}
+            _water(),
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            features={name: storage},
+            neighbor_backend=MATSCIPY,
         )
     with pytest.raises(ValueError, match="named like a key of the graph schema"):
         collate(
-            [graph_sample(_water(), atomic_number_table=TABLE, cutoff=CUTOFF)],
+            [
+                graph_sample(
+                    _water(),
+                    atomic_number_table=TABLE,
+                    cutoff=CUTOFF,
+                    neighbor_backend=MATSCIPY,
+                )
+            ],
             features={name: storage},
         )
 
@@ -506,6 +568,7 @@ def test_a_declared_feature_without_a_value_is_an_error():
             atomic_number_table=TABLE,
             cutoff=CUTOFF,
             features={"spin_state": "atom"},
+            neighbor_backend=MATSCIPY,
         )
 
 
@@ -518,20 +581,26 @@ def test_a_declared_feature_missing_from_the_structure_is_an_error():
             atomic_number_table=TABLE,
             cutoff=CUTOFF,
             features={"spin_state": "atom"},
+            neighbor_backend=MATSCIPY,
         )
 
 
 def test_a_property_named_like_a_built_key_is_refused():
     with pytest.raises(ValueError, match="edge_index"):
         graph_sample(
-            _water(edge_index=np.zeros(2)), atomic_number_table=TABLE, cutoff=CUTOFF
+            _water(edge_index=np.zeros(2)),
+            atomic_number_table=TABLE,
+            cutoff=CUTOFF,
+            neighbor_backend=MATSCIPY,
         )
 
 
 def test_building_a_sample_does_not_modify_the_configuration():
     structure = _crystal(energy=-2.0)
     positions, cell = structure.positions.copy(), structure.cell.copy()
-    graph_sample(structure, atomic_number_table=TABLE, cutoff=CUTOFF)
+    graph_sample(
+        structure, atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
     assert np.array_equal(structure.positions, positions)
     assert np.array_equal(structure.cell, cell)
 
@@ -539,6 +608,8 @@ def test_building_a_sample_does_not_modify_the_configuration():
 def test_the_configuration_keeps_its_physical_cell():
     """The effective cell lives on the graph only."""
     structure = _water()
-    sample = graph_sample(structure, atomic_number_table=TABLE, cutoff=CUTOFF)
+    sample = graph_sample(
+        structure, atomic_number_table=TABLE, cutoff=CUTOFF, neighbor_backend=MATSCIPY
+    )
     assert structure.cell is None
     assert np.linalg.det(sample["cell"]) > 0
