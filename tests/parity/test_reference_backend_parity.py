@@ -24,10 +24,8 @@ tensor product with the instructions ``mace.modules.irreps_tools`` computes,
 ``FullyConnectedNet`` and ``mace.modules.radial.RadialMLP``.
 """
 
-import itertools
 import math
 
-import numpy as np
 import pytest
 import torch
 from e3nn import nn as e3nn_nn
@@ -49,6 +47,12 @@ from mace.modules.wrapper_ops import FullyConnectedTensorProduct, TensorProduct
 from mace.modules.wrapper_ops import Linear as LegacyLinear
 from mace.tools.scatter import scatter_sum
 from tests.golden.harness import tolerance
+from tests.parity.legacy_weights import (
+    legacy_contraction_blocks,
+    legacy_to_reference_map,
+    linear_permutation,
+    skip_permutation,
+)
 
 #: Two implementations of the same algebra in one process at fp64. They differ
 #: in the order of the arithmetic only, as the closed forms in the other files
@@ -72,43 +76,9 @@ def _generator(seed: int) -> torch.Generator:
     return torch.Generator().manual_seed(seed)
 
 
-def _canonical_linear_index(irreps_in: o3.Irreps, irreps_out: o3.Irreps) -> dict:
-    """``(i_out, copy_out, i_in, copy_in) -> canonical position``.
-
-    The canonical order as the layout states it: output copies outermost, and
-    within one output copy the matching input copies in declaration order.
-    """
-    index, position = {}, 0
-    for i_out, (multiplicity_out, irrep_out) in enumerate(irreps_out):
-        for copy_out in range(multiplicity_out):
-            for i_in, (multiplicity_in, irrep_in) in enumerate(irreps_in):
-                if irrep_in != irrep_out:
-                    continue
-                for copy_in in range(multiplicity_in):
-                    index[(i_out, copy_out, i_in, copy_in)] = position
-                    position += 1
-    return index
-
-
 # ---------------------------------------------------------------------------
 # The linear map
 # ---------------------------------------------------------------------------
-
-
-def _linear_permutation(legacy: o3.Linear) -> torch.Tensor:
-    """For each flat legacy weight, the canonical weight it is."""
-    canonical = _canonical_linear_index(legacy.irreps_in, legacy.irreps_out)
-    order = []
-    for instruction in legacy.instructions:
-        if instruction.i_in == -1:
-            continue
-        multiplicity_in, multiplicity_out = instruction.path_shape
-        for copy_in in range(multiplicity_in):
-            for copy_out in range(multiplicity_out):
-                order.append(
-                    canonical[(instruction.i_out, copy_out, instruction.i_in, copy_in)]
-                )
-    return torch.tensor(order)
 
 
 LINEAR_CASES = [
@@ -133,7 +103,7 @@ def test_the_linear_map_matches_legacy_in_value_and_weight_gradient(
         LinearDescriptor(irreps_in=irreps_in, irreps_out=irreps_out, has_bias=has_bias)
     )
     reference.initialize_weights(3)
-    permutation = _linear_permutation(legacy)
+    permutation = linear_permutation(legacy)
     with torch.no_grad():
         legacy.weight.copy_(reference.weight[permutation])
         if has_bias:
@@ -159,25 +129,6 @@ def test_the_linear_map_matches_legacy_in_value_and_weight_gradient(
 # ---------------------------------------------------------------------------
 
 
-def _skip_permutation(legacy: o3.FullyConnectedTensorProduct) -> torch.Tensor:
-    """For each flat legacy weight, its flat position in ``[scalar, weight]``."""
-    canonical = _canonical_linear_index(legacy.irreps_in1, legacy.irreps_out)
-    per_scalar = len(canonical)
-    scalar_offsets = np.cumsum([0] + [mul for mul, _ in legacy.irreps_in2])
-    order = []
-    for instruction in legacy.instructions:
-        multiplicity_1, multiplicity_2, multiplicity_out = instruction.path_shape
-        for copy_1 in range(multiplicity_1):
-            for copy_2 in range(multiplicity_2):
-                scalar = int(scalar_offsets[instruction.i_in2]) + copy_2
-                for copy_out in range(multiplicity_out):
-                    weight = canonical[
-                        (instruction.i_out, copy_out, instruction.i_in1, copy_1)
-                    ]
-                    order.append(scalar * per_scalar + weight)
-    return torch.tensor(order)
-
-
 SKIP_CASES = [
     ("8x0e+4x1o", "3x0e", "6x0e+3x1o"),
     ("4x0e+2x0e+3x1o", "3x0e", "5x0e+2x1o"),
@@ -201,7 +152,7 @@ def test_the_skip_connection_matches_legacy_in_value_and_weight_gradient(
         )
     )
     reference.initialize_weights(7)
-    permutation = _skip_permutation(legacy)
+    permutation = skip_permutation(legacy)
     with torch.no_grad():
         legacy.weight.copy_(reference.weight.reshape(-1)[permutation])
 
@@ -370,53 +321,6 @@ def test_a_scalar_node_passes_the_edge_harmonics_through(fp64):
 # ---------------------------------------------------------------------------
 
 
-def _legacy_blocks(contraction) -> list[tuple[torch.Tensor, torch.nn.Parameter, int]]:
-    """``(coupling matrix, weight, body order)`` for every legacy block."""
-    blocks = [
-        (
-            contraction.U_tensors(contraction.correlation),
-            contraction.weights_max,
-            contraction.correlation,
-        )
-    ]
-    for position, weight in enumerate(contraction.weights):
-        order = contraction.correlation - 1 - position
-        blocks.append((contraction.U_tensors(order), weight, order))
-    return blocks
-
-
-def _symmetric_part(tensor: np.ndarray, order: int) -> np.ndarray:
-    """Average over permutations of the ``order`` input axes after axis 0."""
-    total = np.zeros_like(tensor)
-    permutations = list(itertools.permutations(range(1, order + 1)))
-    for permutation in permutations:
-        total += np.transpose(tensor, (0, *permutation))
-    return total / len(permutations)
-
-
-def _legacy_to_reference_map(
-    coupling: torch.Tensor, basis: torch.Tensor, order: int
-) -> np.ndarray:
-    """``M[p, q]`` with ``sum_q M[p, q] basis_q = sym(coupling_p)``.
-
-    Legacy contracts its coupling matrices with a symmetric power of the
-    features, so only their symmetric part acts. The reference basis is
-    symmetric already, so a legacy weight ``w_p`` is the reference weight
-    ``sum_p M[p, q] w_p``.
-    """
-    legacy = coupling.detach().numpy()
-    if legacy.ndim == order + 1:  # a scalar output carries no output axis
-        legacy = legacy[None]
-    legacy = np.moveaxis(legacy, -1, 0)
-    targets = np.stack([_symmetric_part(path, order).reshape(-1) for path in legacy])
-    flat_basis = basis.detach().numpy().reshape(basis.shape[0], -1)
-    solution, *_ = np.linalg.lstsq(flat_basis.T, targets.T, rcond=None)
-    np.testing.assert_allclose(
-        flat_basis.T @ solution, targets.T, atol=CLOSED_FORM.atol
-    )
-    return solution.T
-
-
 CONTRACTION_CASES = [
     ("0e+1o", "0e", 2),
     ("0e+1o", "0e+1o", 3),
@@ -458,12 +362,12 @@ def test_the_contraction_matches_legacy_in_value_and_weight_gradient(
     with torch.no_grad():
         for position, contraction in enumerate(legacy.contractions):
             tables = list(reference.bases[position])
-            for coupling, weight, order in _legacy_blocks(contraction):
+            for coupling, weight, order in legacy_contraction_blocks(contraction):
                 if weight.numel() == 0:
                     continue
                 target = reference.weights[position * correlation + order - 1]
                 mapping = torch.from_numpy(
-                    _legacy_to_reference_map(coupling, tables[order - 1], order)
+                    legacy_to_reference_map(coupling, tables[order - 1], order)
                 )
                 target.copy_(torch.einsum("pq,zpc->zqc", mapping, weight))
                 maps.append((mapping, weight, target))
@@ -525,7 +429,8 @@ def test_the_contraction_draw_has_the_legacy_spread_per_block(fp64):
     reference.initialize_weights(19)
 
     legacy_by_order = {
-        order: weight for _, weight, order in _legacy_blocks(legacy.contractions[0])
+        order: weight
+        for _, weight, order in legacy_contraction_blocks(legacy.contractions[0])
     }
     for order in range(1, 4):
         reference_weight = reference.weights[order - 1].detach()
