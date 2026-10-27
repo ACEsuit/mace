@@ -107,3 +107,99 @@ def test_plot_stage_filename_at_boundary(
     assert [p.name for p in tmp_path.glob("*.png")] == [
         f"run_train_Default_{stage}.png"
     ]
+
+
+@pytest.mark.parametrize("head", ["H2", "H2O", "H2_liquid"])
+def test_scatter_points_stay_with_their_head(head):
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from mace.cli.visualise_train import plot_inference_from_results
+
+    heads = ["H2", "H2O", "H2_liquid"]
+    train_valid = {}
+    tests = {}
+    for i, name in enumerate(heads):
+        result = {
+            "head": name,
+            "energy": {
+                "reference_per_atom": np.array([i + 1.0]),
+                "predicted_per_atom": np.array([i + 1.5]),
+            },
+        }
+        train_valid[f"train_{name}"] = result
+        train_valid[f"valid_{name}"] = result
+        tests[f"{name}_test"] = result
+    fig, ax = plt.subplots()
+    try:
+        plot_inference_from_results(
+            [ax], train_valid, tests, head, [("energy", "Energy")]
+        )
+        assert len(ax.collections) == 3
+        for points in ax.collections:
+            np.testing.assert_allclose(
+                points.get_offsets(),
+                [[heads.index(head) + 1.0, heads.index(head) + 1.5]],
+            )
+    finally:
+        plt.close(fig)
+
+
+def test_inference_preserves_head_identity_for_ambiguous_loader_names():
+    from types import SimpleNamespace
+
+    import torch
+
+    from mace.cli.visualise_train import model_inference
+
+    class Batch(SimpleNamespace):
+        def to(self, device):
+            return self
+
+        def to_dict(self):
+            return vars(self)
+
+    class Model(torch.nn.Module):
+        heads = ["H2", "H2_liquid"]
+
+        def forward(self, batch, **kwargs):
+            return {"energy": batch["energy"] + 0.1}
+
+    batch = Batch(
+        ptr=torch.tensor([0, 2]),
+        head=torch.tensor([0]),
+        energy=torch.tensor([1.0]),
+        weight=torch.ones(1),
+        energy_weight=torch.ones(1),
+        forces=None,
+        stress=None,
+        virials=None,
+        dipole=None,
+    )
+    result = model_inference({"H2_liquid_test": [batch]}, Model(), {}, "cpu")
+    assert result["H2_liquid_test"]["head"] == "H2"
+
+
+@pytest.mark.parametrize("head", ["H2", "H2O"])
+def test_epoch_curves_stay_with_their_head(head):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+
+    from mace.cli.visualise_train import plot_epoch_dependence
+
+    rows = [dict(mode="opt", epoch=i, loss=1.0) for i in range(2)]
+    for name, error in [("H2", 0.1), ("H2O", 0.9)]:
+        rows.extend(
+            dict(mode="eval", epoch=i, head=name, loss=error, rmse_e_per_atom=error)
+            for i in range(2)
+        )
+    fig, axes = plt.subplots(1, 2)
+    try:
+        plot_epoch_dependence(
+            axes, pd.DataFrame(rows), head, 1, [("rmse_e_per_atom", "Energy")]
+        )
+        expected = 100.0 if head == "H2" else 900.0
+        np.testing.assert_allclose(axes[1].lines[0].get_ydata(), [expected, expected])
+    finally:
+        plt.close(fig)

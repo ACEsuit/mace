@@ -308,7 +308,7 @@ def plot_epoch_dependence(
 # INFERENCE=========
 
 
-def belongs_to_head(name: str, head: str) -> bool:
+def belongs_to_head(name: str, head: str, dataset_head: Optional[str] = None) -> bool:
     """Whether a data-loader key belongs to `head`.
 
     The two dicts are keyed differently: train and valid are `train_<head>`
@@ -316,6 +316,8 @@ def belongs_to_head(name: str, head: str) -> bool:
     name` substring test mis-assigns overlapping head names, giving every
     H2O point to the H2 head as well.
     """
+    if dataset_head is not None:
+        return dataset_head == head
     return name in (f"train_{head}", f"valid_{head}") or name.startswith(f"{head}_")
 
 
@@ -342,7 +344,7 @@ def plot_inference_from_results(
             else:
                 fixed_color_train_valid = colors[0]
                 marker = "+"
-            if not belongs_to_head(name, head):
+            if not belongs_to_head(name, head, result.get("head")):
                 continue
 
             # Initialize scatter to None
@@ -402,7 +404,7 @@ def plot_inference_from_results(
 
         # Plot test data (single legend entry per head)
         for name, result in test_dict.items():
-            if not belongs_to_head(name, head):
+            if not belongs_to_head(name, head, result.get("head")):
                 continue
             # Initialize scatter to None to avoid possibly used before assignment
             scatter = None
@@ -494,8 +496,10 @@ def model_inference(
         data_loader = all_data_loaders[name]
         logging.debug(f"Running inference on {name} dataset")
         scatter_metric = InferenceMetric().to(device)
+        head_indices = set()
 
         for batch in data_loader:
+            head_indices.update(batch.head.detach().cpu().reshape(-1).tolist())
             batch = batch.to(device)
             batch_dict = batch.to_dict()
             output = model(
@@ -512,6 +516,9 @@ def model_inference(
             torch.distributed.barrier()
 
         results = scatter_metric.compute()
+        model_heads = getattr(getattr(model, "module", model), "heads", None)
+        if model_heads is not None and len(head_indices) == 1:
+            results["head"] = model_heads[int(next(iter(head_indices)))]
         results_dict[name] = results
         scatter_metric.reset()
 
