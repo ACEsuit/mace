@@ -261,3 +261,66 @@ def test_dipole_curve_keys_and_percentage_units(table, absolute, relative):
         np.testing.assert_allclose(fig.axes[-1].lines[0].get_ydata(), [25, 25])
     finally:
         plt.close(fig)
+
+
+def _distributed_inference_head_worker(rank, rendezvous, directory, mixed):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import numpy as np
+    import torch
+
+    from mace.cli.visualise_train import model_inference
+
+    class Batch(SimpleNamespace):
+        def to(self, device):
+            return self
+
+        def to_dict(self):
+            return vars(self)
+
+    class Model(torch.nn.Module):
+        heads = ["H2", "H2_liquid"]
+
+        def forward(self, batch, **kwargs):
+            return {"energy": batch["energy"] + 0.1}
+
+    torch.distributed.init_process_group(
+        "gloo", init_method=rendezvous, rank=rank, world_size=2
+    )
+    try:
+        batch = Batch(
+            ptr=torch.tensor([0, 2]),
+            head=torch.tensor([rank if mixed else 1]),
+            energy=torch.tensor([1.0 + rank]),
+            weight=torch.ones(1),
+            energy_weight=torch.ones(1),
+            forces=None,
+            stress=None,
+            virials=None,
+            dipole=None,
+        )
+        result = model_inference(
+            {"H2_liquid_test": [batch]}, Model(), {}, "cpu", distributed=True
+        )["H2_liquid_test"]
+        np.testing.assert_allclose(result["energy"]["reference"], [1.0, 2.0])
+        if mixed:
+            assert "head" not in result
+        else:
+            assert result["head"] == "H2_liquid"
+        (Path(directory) / str(rank)).write_text("passed")
+    finally:
+        torch.distributed.destroy_process_group()
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_distributed_inference_uses_global_head_identity(tmp_path, mixed):
+    import torch.multiprocessing as mp
+
+    mp.spawn(
+        _distributed_inference_head_worker,
+        args=((tmp_path / "rendezvous").as_uri(), str(tmp_path), mixed),
+        nprocs=2,
+        join=True,
+    )
+    assert all((tmp_path / str(rank)).read_text() == "passed" for rank in range(2))

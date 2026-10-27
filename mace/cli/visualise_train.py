@@ -491,6 +491,7 @@ def model_inference(
         param.requires_grad = False
 
     results_dict = {}
+    model_heads = getattr(getattr(model, "module", model), "heads", None)
 
     for name in all_data_loaders:
         data_loader = all_data_loaders[name]
@@ -499,7 +500,8 @@ def model_inference(
         head_indices = set()
 
         for batch in data_loader:
-            head_indices.update(batch.head.detach().cpu().reshape(-1).tolist())
+            if model_heads is not None and batch.head is not None:
+                head_indices.update(batch.head.detach().cpu().reshape(-1).tolist())
             batch = batch.to(device)
             batch_dict = batch.to_dict()
             output = model(
@@ -514,9 +516,11 @@ def model_inference(
 
         if distributed:
             torch.distributed.barrier()
+            gathered_heads = [None] * torch.distributed.get_world_size()
+            torch.distributed.all_gather_object(gathered_heads, head_indices)
+            head_indices = set().union(*gathered_heads)
 
         results = scatter_metric.compute()
-        model_heads = getattr(getattr(model, "module", model), "heads", None)
         if model_heads is not None and len(head_indices) == 1:
             results["head"] = model_heads[int(next(iter(head_indices)))]
         results_dict[name] = results
