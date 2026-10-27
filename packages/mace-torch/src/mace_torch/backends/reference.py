@@ -66,13 +66,15 @@ from mace_torch.kernels.ops import (
 )
 
 __all__ = [
+    "TORCH_DTYPES",
     "ReferenceBackend",
     "ReferenceCapabilities",
     "ReferenceLayerNormSiluMLP",
     "ReferenceNormalizedSiluMLP",
 ]
 
-_TORCH_DTYPE = {"float64": torch.float64, "float32": torch.float32}
+#: The torch dtype of each precision name this backend computes in.
+TORCH_DTYPES = {"float64": torch.float64, "float32": torch.float32}
 
 #: The two bases, by the name a kernel specification records. A lookup rather than a
 #: conditional, so a name outside the set raises instead of selecting the
@@ -192,7 +194,7 @@ class ReferenceLinear(nn.Module):
         super().__init__()
         self.kernel_spec = kernel_spec
         rows, columns, sources, count, bias_rows = _linear_plan(kernel_spec)
-        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        dtype = TORCH_DTYPES[kernel_spec.precision]
         self.dim_out = Irreps.parse(kernel_spec.irreps_out).dimension
         self.register_buffer("row", torch.tensor(rows, dtype=torch.long))
         self.register_buffer("column", torch.tensor(columns, dtype=torch.long))
@@ -280,7 +282,7 @@ class ReferenceSymmetricContraction(nn.Module):
     def __init__(self, kernel_spec: SymmetricContractionSpec) -> None:
         super().__init__()
         self.kernel_spec = kernel_spec
-        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        dtype = TORCH_DTYPES[kernel_spec.precision]
         if kernel_spec.basis not in _BASIS_BUILDERS:
             raise ValueError(
                 f"basis={kernel_spec.basis!r} is not a Clebsch-Gordan basis this "
@@ -471,7 +473,7 @@ class ReferenceChannelwiseTPConv(nn.Module):
     def __init__(self, kernel_spec: ChannelwiseTPConvSpec) -> None:
         super().__init__()
         self.kernel_spec = kernel_spec
-        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        dtype = TORCH_DTYPES[kernel_spec.precision]
         coefficients = _coupling_coefficients(kernel_spec)
         self.register_buffer(
             "coefficients", torch.tensor(coefficients, dtype=dtype), persistent=False
@@ -544,7 +546,7 @@ class ReferenceFullyConnectedTP(nn.Module):
                 f"declares it."
             )
         self.kernel_spec = kernel_spec
-        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        dtype = TORCH_DTYPES[kernel_spec.precision]
         rows, columns, sources, count, _ = _linear_plan(
             LinearSpec(
                 irreps_in=kernel_spec.irreps_in1,
@@ -626,7 +628,7 @@ class ReferenceSphericalHarmonics(nn.Module):
     def __init__(self, kernel_spec: SphericalHarmonicsSpec) -> None:
         super().__init__()
         self.kernel_spec = kernel_spec
-        self.dtype = _TORCH_DTYPE[kernel_spec.precision]
+        self.dtype = TORCH_DTYPES[kernel_spec.precision]
 
     def forward(self, directions: Tensor) -> Tensor:
         return spherical_harmonics(
@@ -645,7 +647,7 @@ class ReferenceRadialBasis(nn.Module):
     def __init__(self, kernel_spec: RadialBasisSpec) -> None:
         super().__init__()
         self.kernel_spec = kernel_spec
-        self.dtype = _TORCH_DTYPE[kernel_spec.precision]
+        self.dtype = TORCH_DTYPES[kernel_spec.precision]
         if kernel_spec.kind == "bessel":
             self.basis = BesselBasis(
                 kernel_spec.cutoff, kernel_spec.num_basis, dtype=self.dtype
@@ -690,7 +692,7 @@ class ReferenceNormalizedSiluMLP(nn.Module):
     def __init__(self, kernel_spec: RadialMLPSpec) -> None:
         super().__init__()
         self.kernel_spec = kernel_spec
-        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        dtype = TORCH_DTYPES[kernel_spec.precision]
         widths = _layer_widths(kernel_spec)
         self.weights = nn.ParameterList(
             [
@@ -754,7 +756,7 @@ class ReferenceLayerNormSiluMLP(nn.Module):
     def __init__(self, kernel_spec: RadialMLPSpec) -> None:
         super().__init__()
         self.kernel_spec = kernel_spec
-        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        dtype = TORCH_DTYPES[kernel_spec.precision]
         widths = _layer_widths(kernel_spec)
         hidden = [fan_out for _, fan_out in widths[:-1]]
         self.weights = nn.ParameterList(
