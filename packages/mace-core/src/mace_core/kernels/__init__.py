@@ -60,6 +60,7 @@ from mace_core.kernels.registry import (
 from mace_core.kernels.specs import (
     CLEBSCH_GORDAN_BASES,
     ChannelwiseTPConvSpec,
+    DistanceTransformSpec,
     FullyConnectedTPSpec,
     KernelSpec,
     LinearSpec,
@@ -86,6 +87,7 @@ __all__ = [
     "ChannelwiseTPConvSpec",
     "ConvolutionPath",
     "DiscoveredBackend",
+    "DistanceTransformSpec",
     "DuplicateBackendError",
     "FullyConnectedTPSpec",
     "InternalWeights",
