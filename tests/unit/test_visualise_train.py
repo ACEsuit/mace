@@ -203,3 +203,61 @@ def test_epoch_curves_stay_with_their_head(head):
         np.testing.assert_allclose(axes[1].lines[0].get_ydata(), [expected, expected])
     finally:
         plt.close(fig)
+
+
+def test_single_quantity_scatter_accepts_a_single_axis():
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from mace.cli.visualise_train import plot_inference_from_results
+
+    fig, ax = plt.subplots()
+    result = {
+        "dipole": {
+            "reference_per_atom": np.array([1.0, 2.0, 3.0]),
+            "predicted_per_atom": np.array([1.1, 2.1, 3.1]),
+        }
+    }
+    try:
+        plot_inference_from_results(
+            ax, {"valid_Default": result}, {}, "Default", [("dipole", "Dipole")]
+        )
+        assert len(ax.collections) == 1
+    finally:
+        plt.close(fig)
+
+
+@pytest.mark.parametrize(
+    "table,absolute,relative",
+    [
+        ("DipoleRMSE", "rmse_mu_per_atom", "rel_rmse_mu"),
+        ("DipoleMAE", "mae_mu", "rel_mae_mu"),
+    ],
+)
+def test_dipole_curve_keys_and_percentage_units(table, absolute, relative):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+
+    from mace.cli.visualise_train import error_type, plot_epoch_dependence
+
+    rows = [dict(mode="opt", epoch=i, loss=1.0) for i in range(2)]
+    rows += [
+        dict(
+            mode="eval",
+            epoch=i,
+            head="Default",
+            loss=0.1,
+            **{absolute: 0.2, relative: 25.0},
+        )
+        for i in range(2)
+    ]
+    fig, axes = plt.subplots(1, 2)
+    try:
+        plot_epoch_dependence(
+            axes, pd.DataFrame(rows), "Default", 1, error_type[table][0]
+        )
+        np.testing.assert_allclose(axes[1].lines[0].get_ydata(), [200, 200])
+        np.testing.assert_allclose(fig.axes[-1].lines[0].get_ydata(), [25, 25])
+    finally:
+        plt.close(fig)

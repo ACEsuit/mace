@@ -72,12 +72,12 @@ error_type = {
     "DipoleRMSE": (
         [
             ("rmse_mu_per_atom", "RMSE MU/atom [mDebye]"),
-            ("rel_rmse_f", "Relative MU RMSE [%]"),
+            ("rel_rmse_mu", "Relative MU RMSE [%]"),
         ],
         [("dipole", "Dipole per atom [Debye]")],
     ),
     "DipoleMAE": (
-        [("mae_mu", "MAE MU [mDebye]"), ("rel_mae_f", "Relative MU MAE [%]")],
+        [("mae_mu", "MAE MU [mDebye]"), ("rel_mae_mu", "Relative MU MAE [%]")],
         [("dipole", "Dipole per atom [Debye]")],
     ),
     "DipolePolarRMSE": (
@@ -280,7 +280,7 @@ def plot_epoch_dependence(
 
         main_ax.plot(
             valid_data["epoch"],
-            valid_data[key]["mean"] * 1e3,
+            valid_data[key]["mean"] * (1.0 if key.startswith("rel_") else 1e3),
             color=color,
             # `label` is the (key, axis label) pair this loop unpacks two lines
             # above; passing the pair itself gave matplotlib two labels for one
@@ -330,7 +330,7 @@ def plot_inference_from_results(
     plot_interaction_e: bool = False,
 ) -> None:
 
-    for ax, quantity in zip(axes, quantities):
+    for ax, quantity in zip(np.atleast_1d(axes), quantities):
         key, label = quantity
 
         # Store legend handles to avoid duplicates

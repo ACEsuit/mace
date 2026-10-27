@@ -158,3 +158,23 @@ def test_multihead_plots_with_shared_test_basenames(tmp_path, model, stage_two):
         assert (
             any(name.endswith(f"_{head}_stage_two.png") for name in drawn) == stage_two
         )
+
+
+def test_dipole_only_training_draws_a_plot(tmp_path):
+    configs = make_fitting_configs()
+    for atoms in configs:
+        atoms.info["REF_dipole"] = [0.1, 0.2, 0.3]
+    ase.io.write(tmp_path / "dipoles.xyz", configs)
+    drawn, output = train(
+        tmp_path,
+        "dipoles",
+        model="AtomicDipolesMACE",
+        hidden_irreps="8x0e + 8x1o",
+        loss="dipole",
+        error_table="DipoleRMSE",
+        dipole_key="REF_dipole",
+        train_file=str(tmp_path / "dipoles.xyz"),
+        max_num_epochs=2,
+    )
+    assert len(drawn) == 1
+    assert "Plotting failed" not in output
