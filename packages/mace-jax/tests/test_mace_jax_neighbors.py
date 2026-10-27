@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 from mace_core.neighbors import NeighborListConfig
-from mace_core.neighbors.brute_force import BruteForceBackend
+from mace_core.neighbors.all_pairs import AllPairsBackend
 from mace_core.neighbors.matscipy_backend import MatscipyBackend
 from mace_jax.neighbors import DEFAULT_NEIGHBOR_BACKEND, resolve_neighbor_backend
 
@@ -28,5 +28,5 @@ def test_resolving_the_default_imports_neither_vesin_nor_torch():
 
 
 def test_a_backend_named_in_the_config_wins():
-    config = NeighborListConfig(kind="brute_force")
-    assert isinstance(resolve_neighbor_backend(config), BruteForceBackend)
+    config = NeighborListConfig(kind="all_pairs")
+    assert isinstance(resolve_neighbor_backend(config), AllPairsBackend)

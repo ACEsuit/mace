@@ -37,7 +37,7 @@ dependencies = [
     "ase>=3.23",
 ]
 
-# The brute-force backend needs nothing beyond numpy, so neighbour-list
+# The all-pairs backend needs nothing beyond numpy, so neighbour-list
 # libraries are extras.
 [project.optional-dependencies]
 # mace-jax's default, and the backend the legacy list searches with, so the
@@ -47,7 +47,7 @@ matscipy = ["matscipy>=1.0"]
 [project.entry-points."mace.neighbor_backends"]
 # Discovered the same way a third-party backend is, through its entry point.
 matscipy = "mace_core.neighbors.matscipy_backend:MatscipyBackend"
-brute_force = "mace_core.neighbors.brute_force:BruteForceBackend"
+all_pairs = "mace_core.neighbors.all_pairs:AllPairsBackend"
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

@@ -1,9 +1,9 @@
 """The neighbour list: the pinned edge set and the three-regime effective cell.
 
-Every registered backend is held to the brute-force backend's edge set on the
+Every registered backend is held to the all-pairs backend's edge set on the
 characterization cases below (triclinic, a cell smaller than the cutoff, an
 aperiodic cluster, mixed periodicity with and without a zero vacuum row, and a
-structure with no edges). The brute-force backend itself is checked against
+structure with no edges). The all-pairs backend itself is checked against
 counts known from crystallography and against an independent oracle on the
 committed fixtures in ``tests/parity/test_graph_parity.py``.
 """
@@ -19,7 +19,7 @@ import pytest
 from mace_core.config import ConfigSection
 from mace_core.neighbors import (
     DEFAULT_NEIGHBOR_BACKEND,
-    BruteForceBackend,
+    AllPairsBackend,
     DuplicateNeighborBackendError,
     NeighborBackendNotAvailableError,
     NeighborListConfig,
@@ -90,7 +90,7 @@ def fixture_case(request):
     return CASES[request.param]
 
 
-# --- the brute-force backend is falsifiable ---------------------------------
+# --- the all-pairs backend is falsifiable ---------------------------------
 
 
 @pytest.mark.parametrize(
@@ -105,35 +105,35 @@ def fixture_case(request):
         ),
     ],
 )
-def test_brute_force_reproduces_known_coordination_numbers(cell, neighbours):
+def test_all_pairs_reproduces_known_coordination_numbers(cell, neighbours):
     neighbors = get_neighborhood(
-        np.zeros((1, 3)), 1.2, (True, True, True), cell, backend=BruteForceBackend()
+        np.zeros((1, 3)), 1.2, (True, True, True), cell, backend=AllPairsBackend()
     )
     assert neighbors.edge_index.shape[1] == neighbours
 
 
-def test_brute_force_reaches_images_of_a_strongly_skewed_cell():
+def test_all_pairs_reaches_images_of_a_strongly_skewed_cell():
     """The image bound comes from the reciprocal vectors, so a cell whose
     second vector nearly lies along the first still finds every image."""
     cell = np.array([[1.0, 0.0, 0.0], [3.9, 0.3, 0.0], [0.0, 0.0, 1.0]])
     positions = np.array([[0.0, 0.0, 0.0], [0.5, 0.1, 0.5]])
-    brute = get_neighborhood(
-        positions, 2.5, (True, True, True), cell, backend=BruteForceBackend()
+    pairs = get_neighborhood(
+        positions, 2.5, (True, True, True), cell, backend=AllPairsBackend()
     )
     matscipy = get_neighborhood(
         positions, 2.5, (True, True, True), cell, backend=MATSCIPY
     )
-    assert _edges(brute) == _edges(matscipy)
-    assert brute.edge_index.shape[1] > 0
+    assert _edges(pairs) == _edges(matscipy)
+    assert pairs.edge_index.shape[1] > 0
 
 
 # --- the pinned edge set ------------------------------------------------------
 
 
-def test_every_registered_backend_reproduces_the_brute_force_edge_set(case):
+def test_every_registered_backend_reproduces_the_all_pairs_edge_set(case):
     positions, cutoff, pbc, cell = case
     expected = _edges(
-        get_neighborhood(positions, cutoff, pbc, cell, backend=BruteForceBackend())
+        get_neighborhood(positions, cutoff, pbc, cell, backend=AllPairsBackend())
     )
     for discovered in available_neighbor_backends():
         backend = get_neighbor_backend(discovered.name)
@@ -336,14 +336,14 @@ def test_a_cutoff_that_is_not_a_positive_distance_is_refused(cutoff):
 
 
 def test_only_search_geometry_decides_a_regime():
-    """The graph builder and the brute-force backend read the box from it; no
+    """The graph builder and the all-pairs backend read the box from it; no
     other function in the package computes one."""
     import inspect
 
-    from mace_core.neighbors import brute_force, matscipy_backend, neighborhood
+    from mace_core.neighbors import all_pairs, matscipy_backend, neighborhood
 
     assert "search_geometry(" in inspect.getsource(neighborhood.get_neighborhood)
-    for module in (brute_force, matscipy_backend, neighborhood):
+    for module in (all_pairs, matscipy_backend, neighborhood):
         source = inspect.getsource(module)
         assert "2 * cutoff" not in source, module.__name__
         assert "search_cell" not in source or module is not neighborhood
@@ -353,9 +353,9 @@ def test_only_search_geometry_decides_a_regime():
 # --- the registry and the config section ------------------------------------------
 
 
-def test_matscipy_and_brute_force_are_registered():
+def test_matscipy_and_all_pairs_are_registered():
     names = {backend.name for backend in available_neighbor_backends()}
-    assert {"matscipy", "brute_force"} <= names
+    assert {"matscipy", "all_pairs"} <= names
 
 
 def test_the_config_section_leaves_the_choice_to_the_framework_by_default():
@@ -371,7 +371,7 @@ def test_the_config_section_leaves_the_choice_to_the_framework_by_default():
 
 
 def test_an_unregistered_name_is_refused_with_the_registered_ones():
-    with pytest.raises(NeighborBackendNotAvailableError, match="brute_force"):
+    with pytest.raises(NeighborBackendNotAvailableError, match="all_pairs"):
         get_neighbor_backend("cell_list_on_the_moon")
 
 
@@ -398,13 +398,13 @@ def test_two_distributions_registering_different_backends_under_one_name_raise(
 
 
 def test_two_identical_registrations_are_one(tmp_path, monkeypatch):
-    target = "brute = mace_core.neighbors.brute_force:BruteForceBackend"
+    target = "pairs = mace_core.neighbors.all_pairs:AllPairsBackend"
     _install(tmp_path, "first_neighbors", target)
     _install(tmp_path, "second_neighbors", target)
     monkeypatch.syspath_prepend(str(tmp_path))
     names = [backend.name for backend in available_neighbor_backends()]
-    assert names.count("brute") == 1
-    assert isinstance(get_neighbor_backend("brute"), BruteForceBackend)
+    assert names.count("pairs") == 1
+    assert isinstance(get_neighbor_backend("pairs"), AllPairsBackend)
 
 
 def test_a_backend_registered_through_an_entry_point_is_discovered(
@@ -472,7 +472,7 @@ def test_resolving_a_name_imports_only_that_backend(tmp_path, monkeypatch):
         raise RuntimeError("importing this backend sets up a device")
         """,
     )
-    assert isinstance(get_neighbor_backend("brute_force"), BruteForceBackend)
+    assert isinstance(get_neighbor_backend("all_pairs"), AllPairsBackend)
     assert "heavy_neighbors" not in sys.modules
     listed = {backend.name: backend for backend in available_neighbor_backends()}
     assert not listed["heavy"].loaded
@@ -545,22 +545,22 @@ def test_a_backend_without_settings_refuses_any():
 # --- choosing a backend when the config names none ---------------------------
 
 
-def test_with_no_backend_named_and_no_framework_brute_force_is_used():
-    assert DEFAULT_NEIGHBOR_BACKEND == "brute_force"
-    assert isinstance(resolve_neighbor_backend(), BruteForceBackend)
+def test_with_no_backend_named_and_no_framework_all_pairs_is_used():
+    assert DEFAULT_NEIGHBOR_BACKEND == "all_pairs"
+    assert isinstance(resolve_neighbor_backend(), AllPairsBackend)
 
 
 def test_with_no_backend_named_the_framework_default_is_used():
     assert isinstance(resolve_neighbor_backend(None, "matscipy"), MatscipyBackend)
     assert isinstance(
-        resolve_neighbor_backend(NeighborListConfig(), "brute_force"),
-        BruteForceBackend,
+        resolve_neighbor_backend(NeighborListConfig(), "all_pairs"),
+        AllPairsBackend,
     )
 
 
 def test_a_named_backend_wins_over_the_default():
     config = NeighborListConfig(kind="matscipy")
-    assert isinstance(resolve_neighbor_backend(config, "brute_force"), MatscipyBackend)
+    assert isinstance(resolve_neighbor_backend(config, "all_pairs"), MatscipyBackend)
 
 
 def test_a_named_backend_that_cannot_be_built_is_not_replaced():

@@ -7,7 +7,7 @@ shifts are filled in afterwards by
 :func:`~mace_core.neighbors.neighborhood.get_neighborhood`, the same way
 whichever backend ran. Swapping backends is therefore a choice about speed and
 robustness and never about the numbers: every registered backend has to
-reproduce the brute-force edge set.
+reproduce the all-pairs edge set.
 
 Backends register through the entry point group ``mace.neighbor_backends``,
 the same way kernel backends do, so one can live in its own distribution. The
@@ -28,9 +28,9 @@ metadata of all of them and imports only the one it names.
 
 **One default per framework; anything else is asked for by name.** A config
 section that names no backend gets the default of the framework building the
-graphs, which it passes to :func:`resolve_neighbor_backend`; ``brute_force``
+graphs, which it passes to :func:`resolve_neighbor_backend`; ``all_pairs``
 when no framework is involved. A named backend is used as named. Either is
-built or refused, never replaced by another. Only ``brute_force`` is
+built or refused, never replaced by another. Only ``all_pairs`` is
 guaranteed by ``mace-core``. ``matscipy`` is its extra of the same name;
 ``vesin`` is registered by mace-torch, because importing vesin also imports
 torch whenever torch is installed. Each framework package requires the
@@ -73,7 +73,7 @@ NEIGHBOR_BACKEND_GROUP = "mace.neighbor_backends"
 
 #: The backend used when the config names none and no framework passes its
 #: own default. It ships with ``mace-core`` and needs nothing beyond numpy.
-DEFAULT_NEIGHBOR_BACKEND = "brute_force"
+DEFAULT_NEIGHBOR_BACKEND = "all_pairs"
 
 
 @runtime_checkable
@@ -125,7 +125,7 @@ class NeighborListConfig(ConfigSection):
     Attributes:
         kind: A name registered in the ``mace.neighbor_backends`` entry point
             group, or ``None`` for the default of the framework building the
-            graphs (see :func:`resolve_neighbor_backend`). ``brute_force``
+            graphs (see :func:`resolve_neighbor_backend`). ``all_pairs``
             ships with ``mace-core``, ``matscipy`` with its extra of the same
             name, and ``vesin`` with mace-torch, where it takes ``n_threads``.
         settings: The backend's settings, validated against the section the

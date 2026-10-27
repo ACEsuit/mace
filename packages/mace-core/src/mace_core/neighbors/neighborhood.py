@@ -4,7 +4,7 @@
 writes into its arguments, so a caller has nothing to protect with a copy of
 its own.
 
-The pinned semantics, each one a property the brute-force backend states
+The pinned semantics, each one a property the all-pairs backend states
 directly:
 
 * the list is **full and directed**: an edge ``i -> j`` with distance

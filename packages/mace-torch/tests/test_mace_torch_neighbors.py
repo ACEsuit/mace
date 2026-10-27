@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pytest
 from mace_core.neighbors import (
-    BruteForceBackend,
+    AllPairsBackend,
     NeighborBackendNotAvailableError,
     NeighborListConfig,
     available_neighbor_backends,
@@ -62,12 +62,12 @@ def test_vesin_is_registered_from_mace_torch():
 
 
 @pytest.mark.parametrize("name", sorted(CASES))
-def test_vesin_reproduces_the_brute_force_edge_set(name):
+def test_vesin_reproduces_the_all_pairs_edge_set(name):
     positions, cutoff, pbc, cell = CASES[name]
     vesin = get_neighborhood(positions, cutoff, pbc, cell, backend=VesinBackend())
-    brute = get_neighborhood(positions, cutoff, pbc, cell, backend=BruteForceBackend())
-    assert _edges(vesin) == _edges(brute)
-    assert np.array_equal(vesin.cell, brute.cell)
+    pairs = get_neighborhood(positions, cutoff, pbc, cell, backend=AllPairsBackend())
+    assert _edges(vesin) == _edges(pairs)
+    assert np.array_equal(vesin.cell, pairs.cell)
 
 
 def test_vesin_takes_its_thread_count_from_the_settings():

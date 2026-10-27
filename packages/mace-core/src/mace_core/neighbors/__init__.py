@@ -9,6 +9,7 @@ cell are decided once, by :func:`search_geometry`, whichever backend runs.
 Everything here is numpy. No framework is imported.
 """
 
+from mace_core.neighbors.all_pairs import AllPairsBackend
 from mace_core.neighbors.backends import (
     DEFAULT_NEIGHBOR_BACKEND,
     NEIGHBOR_BACKEND_GROUP,
@@ -21,14 +22,13 @@ from mace_core.neighbors.backends import (
     get_neighbor_backend,
     resolve_neighbor_backend,
 )
-from mace_core.neighbors.brute_force import BruteForceBackend
 from mace_core.neighbors.geometry import SearchGeometry, search_geometry
 from mace_core.neighbors.neighborhood import NeighborList, get_neighborhood
 
 __all__ = [
     "DEFAULT_NEIGHBOR_BACKEND",
     "NEIGHBOR_BACKEND_GROUP",
-    "BruteForceBackend",
+    "AllPairsBackend",
     "DiscoveredNeighborBackend",
     "DuplicateNeighborBackendError",
     "NeighborBackendNotAvailableError",

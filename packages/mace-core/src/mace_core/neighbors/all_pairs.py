@@ -26,10 +26,10 @@ import numpy as np
 
 from mace_core.neighbors.geometry import SearchGeometry
 
-__all__ = ["BruteForceBackend"]
+__all__ = ["AllPairsBackend"]
 
 
-class BruteForceBackend:
+class AllPairsBackend:
     """Neighbour search by enumerating every pair and every reachable image."""
 
     def search(
