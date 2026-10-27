@@ -134,7 +134,7 @@ class TrainingPlotter:
         self.swa_start = swa_start
         self.plot_interaction_e = plot_interaction_e
 
-    def plot(self, model_epoch: str, model: torch.nn.Module, rank: int) -> None:
+    def plot(self, model_epoch: int, model: torch.nn.Module, rank: int) -> None:
 
         # All ranks process data through model_inference
         train_valid_dict = model_inference(
@@ -190,7 +190,7 @@ class TrainingPlotter:
                         alpha=0.6,
                         label="Stage Two Starts",
                     )
-                stage = "stage_two" if self.swa_start < model_epoch else "stage_one"
+                stage = "stage_two" if model_epoch >= self.swa_start else "stage_one"
             else:
                 stage = "stage_one"
             axsTop[0].legend(loc="best")
