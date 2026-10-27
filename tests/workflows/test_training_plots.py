@@ -105,3 +105,76 @@ def test_plotting_does_not_fail_the_run(tmp_path):
 
     assert "Done" in output
     assert "Plotting failed" not in output
+
+
+@pytest.mark.polar
+@pytest.mark.parametrize("stage_two", [False, True])
+def test_polar_energy_force_training_plots_without_dipole_labels(tmp_path, stage_two):
+    extra = dict(model="PolarMACE", loss="weighted", max_num_epochs=2, plot_frequency=1)
+    if stage_two:
+        extra.update(swa=None, start_swa=1)
+    drawn, output = train(tmp_path, "polar", **extra)
+    assert "Plotting failed" not in output
+    assert "Creating Plotter failed" not in output
+    assert any("stage_one" in name for name in drawn), drawn
+    assert any("stage_two" in name for name in drawn) == stage_two, drawn
+
+
+@pytest.mark.parametrize(
+    "model", ["MACE", pytest.param("PolarMACE", marks=pytest.mark.polar)]
+)
+@pytest.mark.parametrize("stage_two", [False, True])
+def test_multihead_plots_with_shared_test_basenames(tmp_path, model, stage_two):
+    heads = {}
+    for i, head in enumerate(["DFT", "DFT_extra"]):
+        directory = tmp_path / head
+        directory.mkdir()
+        configs = make_fitting_configs()
+        for atoms in configs:
+            atoms.info["head"] = head
+            atoms.info["REF_energy"] += i * len(atoms)
+        ase.io.write(directory / "train.xyz", configs)
+        ase.io.write(directory / "test.xyz", configs[-2:])
+        heads[head] = {
+            "train_file": str(directory / "train.xyz"),
+            "test_file": str(directory / "test.xyz"),
+            "valid_fraction": 0.1,
+        }
+    extra = dict(
+        model=model,
+        heads=str(heads),
+        loss="weighted",
+        max_num_epochs=2,
+        plot_frequency=1,
+    )
+    if stage_two:
+        extra.update(swa=None, start_swa=1)
+    drawn, output = train(tmp_path, "multihead", **extra)
+    assert "Plotting failed" not in output
+    assert "Creating Plotter failed" not in output
+    assert len(drawn) == (4 if stage_two else 2)
+    for head in heads:
+        assert any(name.endswith(f"_{head}_stage_one.png") for name in drawn)
+        assert (
+            any(name.endswith(f"_{head}_stage_two.png") for name in drawn) == stage_two
+        )
+
+
+def test_dipole_only_training_draws_a_plot(tmp_path):
+    configs = make_fitting_configs()
+    for atoms in configs:
+        atoms.info["REF_dipole"] = [0.1, 0.2, 0.3]
+    ase.io.write(tmp_path / "dipoles.xyz", configs)
+    drawn, output = train(
+        tmp_path,
+        "dipoles",
+        model="AtomicDipolesMACE",
+        hidden_irreps="8x0e + 8x1o",
+        loss="dipole",
+        error_table="DipoleRMSE",
+        dipole_key="REF_dipole",
+        train_file=str(tmp_path / "dipoles.xyz"),
+        max_num_epochs=2,
+    )
+    assert len(drawn) == 1
+    assert "Plotting failed" not in output
