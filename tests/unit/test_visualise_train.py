@@ -30,3 +30,39 @@ from mace.cli.visualise_train import belongs_to_head
 )
 def test_belongs_to_head(name, head, expected):
     assert belongs_to_head(name, head) is expected
+
+
+@pytest.mark.parametrize("labelled", [False, True])
+def test_dipole_scatter_filters_components_and_configurations(labelled):
+    from types import SimpleNamespace
+
+    import numpy as np
+    import torch
+
+    from mace.cli.visualise_train import InferenceMetric
+
+    batch = SimpleNamespace(
+        ptr=torch.tensor([0, 2, 5, 6]),
+        weight=torch.tensor([1.0, 1.0, 0.0]),
+        energy=None,
+        forces=None,
+        stress=None,
+        virials=None,
+        dipole=torch.tensor([[2.0, 4.0, 6.0], [9.0, 12.0, 15.0], [1.0, 2.0, 3.0]]),
+        dipole_weight=(
+            torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0]])
+            if labelled
+            else torch.zeros((3, 3))
+        ),
+    )
+    metric = InferenceMetric()
+    metric.update(batch, {"dipole": batch.dipole + 3.0})
+    results = metric.compute()
+    if not labelled:
+        assert "dipole" not in results
+        return
+    dipole = results["dipole"]
+    np.testing.assert_allclose(dipole["reference"], [2, 6, 12])
+    np.testing.assert_allclose(dipole["predicted"], [5, 9, 15])
+    np.testing.assert_allclose(dipole["reference_per_atom"], [1, 3, 4])
+    np.testing.assert_allclose(dipole["predicted_per_atom"], [2.5, 4.5, 5])

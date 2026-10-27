@@ -105,3 +105,16 @@ def test_plotting_does_not_fail_the_run(tmp_path):
 
     assert "Done" in output
     assert "Plotting failed" not in output
+
+
+@pytest.mark.polar
+@pytest.mark.parametrize("stage_two", [False, True])
+def test_polar_energy_force_training_plots_without_dipole_labels(tmp_path, stage_two):
+    extra = dict(model="PolarMACE", loss="weighted", max_num_epochs=2, plot_frequency=1)
+    if stage_two:
+        extra.update(swa=None, start_swa=1)
+    drawn, output = train(tmp_path, "polar", **extra)
+    assert "Plotting failed" not in output
+    assert "Creating Plotter failed" not in output
+    assert any("stage_one" in name for name in drawn), drawn
+    assert any("stage_two" in name for name in drawn) == stage_two, drawn
