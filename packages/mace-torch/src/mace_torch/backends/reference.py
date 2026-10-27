@@ -66,13 +66,15 @@ from mace_torch.kernels.ops import (
 )
 
 __all__ = [
+    "TORCH_DTYPES",
     "ReferenceBackend",
     "ReferenceCapabilities",
     "ReferenceLayerNormSiluMLP",
     "ReferenceNormalizedSiluMLP",
 ]
 
-_TORCH_DTYPE = {"float64": torch.float64, "float32": torch.float32}
+#: The torch dtype of each precision name this backend computes in.
+TORCH_DTYPES = {"float64": torch.float64, "float32": torch.float32}
 
 #: The two bases, by the name a descriptor records. A lookup rather than a
 #: conditional, so a name outside the set raises instead of selecting the
@@ -192,7 +194,7 @@ class ReferenceLinear(nn.Module):
         super().__init__()
         self.descriptor = descriptor
         rows, columns, sources, count, bias_rows = _linear_plan(descriptor)
-        dtype = _TORCH_DTYPE[descriptor.precision]
+        dtype = TORCH_DTYPES[descriptor.precision]
         self.dim_out = Irreps.parse(descriptor.irreps_out).dimension
         self.register_buffer("row", torch.tensor(rows, dtype=torch.long))
         self.register_buffer("column", torch.tensor(columns, dtype=torch.long))
@@ -280,7 +282,7 @@ class ReferenceSymmetricContraction(nn.Module):
     def __init__(self, descriptor: SymmetricContractionDescriptor) -> None:
         super().__init__()
         self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
+        dtype = TORCH_DTYPES[descriptor.precision]
         if descriptor.basis not in _BASIS_BUILDERS:
             raise ValueError(
                 f"basis={descriptor.basis!r} is not a Clebsch-Gordan basis this "
@@ -471,7 +473,7 @@ class ReferenceChannelwiseTPConv(nn.Module):
     def __init__(self, descriptor: ChannelwiseTPConvDescriptor) -> None:
         super().__init__()
         self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
+        dtype = TORCH_DTYPES[descriptor.precision]
         coefficients = _coupling_coefficients(descriptor)
         self.register_buffer(
             "coefficients", torch.tensor(coefficients, dtype=dtype), persistent=False
@@ -544,7 +546,7 @@ class ReferenceFullyConnectedTP(nn.Module):
                 f"declares it."
             )
         self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
+        dtype = TORCH_DTYPES[descriptor.precision]
         rows, columns, sources, count, _ = _linear_plan(
             LinearDescriptor(
                 irreps_in=descriptor.irreps_in1,
@@ -626,7 +628,7 @@ class ReferenceSphericalHarmonics(nn.Module):
     def __init__(self, descriptor: SphericalHarmonicsDescriptor) -> None:
         super().__init__()
         self.descriptor = descriptor
-        self.dtype = _TORCH_DTYPE[descriptor.precision]
+        self.dtype = TORCH_DTYPES[descriptor.precision]
 
     def forward(self, directions: Tensor) -> Tensor:
         return spherical_harmonics(
@@ -645,7 +647,7 @@ class ReferenceRadialBasis(nn.Module):
     def __init__(self, descriptor: RadialBasisDescriptor) -> None:
         super().__init__()
         self.descriptor = descriptor
-        self.dtype = _TORCH_DTYPE[descriptor.precision]
+        self.dtype = TORCH_DTYPES[descriptor.precision]
         if descriptor.kind == "bessel":
             self.basis = BesselBasis(
                 descriptor.cutoff, descriptor.num_basis, dtype=self.dtype
@@ -690,7 +692,7 @@ class ReferenceNormalizedSiluMLP(nn.Module):
     def __init__(self, descriptor: RadialMLPDescriptor) -> None:
         super().__init__()
         self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
+        dtype = TORCH_DTYPES[descriptor.precision]
         widths = _layer_widths(descriptor)
         self.weights = nn.ParameterList(
             [
@@ -754,7 +756,7 @@ class ReferenceLayerNormSiluMLP(nn.Module):
     def __init__(self, descriptor: RadialMLPDescriptor) -> None:
         super().__init__()
         self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
+        dtype = TORCH_DTYPES[descriptor.precision]
         widths = _layer_widths(descriptor)
         hidden = [fan_out for _, fan_out in widths[:-1]]
         self.weights = nn.ParameterList(
