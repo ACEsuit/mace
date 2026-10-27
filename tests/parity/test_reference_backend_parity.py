@@ -226,7 +226,8 @@ def test_the_skip_connection_matches_legacy_in_value_and_weight_gradient(
 
 
 def _per_channel_to_legacy(values: torch.Tensor, irreps: str) -> torch.Tensor:
-    """``[n, channels, dim]`` per channel to legacy's flat ``mul_ir``."""
+    """``[n, channels, dim]`` per channel to the grouped ``mul_ir`` legacy's
+    linears read, which is also the reference's layout."""
     blocks = []
     for piece, _ in _slices(irreps):
         blocks.append(values[:, :, piece].reshape(values.shape[0], -1))
@@ -253,10 +254,9 @@ CONVOLUTION_CASES = [
 def test_the_convolution_matches_legacy_in_value_and_radial_gradient(
     fp64, irreps_node, irreps_edge, irreps_out
 ):
-    """Legacy writes each path to its own output term and lets the next linear
-    mix them; the reference sums the paths reaching one irrep. So the legacy
-    terms are summed per irrep before comparing, which is exact because every
-    legacy path carries its own ``sqrt(2 l_out + 1)`` and no shared fan-in."""
+    """Every legacy instruction is one reference path, in the same order, with
+    its own output term. So the radial weights line up as they are and the
+    node-level messages are compared directly, term for term."""
     channels, num_nodes, num_edges = 3, 5, 12
     legacy_node = o3.Irreps(
         "+".join(f"{channels}x{ir}" for _, ir in o3.Irreps(irreps_node))
@@ -275,31 +275,20 @@ def test_the_convolution_matches_legacy_in_value_and_radial_gradient(
         shared_weights=False,
         internal_weights=False,
     )
-    reference = BACKEND.make_channelwise_tp_conv(
-        ChannelwiseTPConvDescriptor(
-            irreps_node=irreps_node, irreps_edge=irreps_edge, irreps_out=irreps_out
-        )
+    descriptor = ChannelwiseTPConvDescriptor(
+        irreps_node=irreps_node,
+        irreps_edge=irreps_edge,
+        irreps_out=irreps_out,
+        num_features=channels,
     )
-
-    # Which reference path each legacy instruction is: the reference walks
-    # output irrep, then node term, then edge term.
-    out_terms = [ir for _, ir in o3.Irreps(irreps_out)]
-    reference_paths = [
-        (out_ir, i_node, i_edge)
-        for out_ir in out_terms
-        for i_node, (_, node_ir) in enumerate(o3.Irreps(irreps_node))
-        for i_edge, (_, edge_ir) in enumerate(o3.Irreps(irreps_edge))
-        if out_ir in node_ir * edge_ir
-    ]
-    assert reference.num_paths == len(reference_paths)
-    path_of_instruction = [
-        reference_paths.index((irreps_mid[ins.i_out].ir, ins.i_in1, ins.i_in2))
-        for ins in legacy.instructions
+    reference = BACKEND.make_channelwise_tp_conv(descriptor)
+    assert [str(ir) for _, ir in irreps_mid] == [
+        str(path.irrep) for path in descriptor.paths
     ]
 
     generator = _generator(11)
     node_features = torch.randn(
-        num_nodes, channels, o3.Irreps(irreps_node).dim, generator=generator
+        num_nodes, channels * o3.Irreps(irreps_node).dim, generator=generator
     )
     vectors = torch.randn(num_edges, 3, generator=generator)
     edge_attributes = o3.spherical_harmonics(
@@ -313,26 +302,10 @@ def test_the_convolution_matches_legacy_in_value_and_radial_gradient(
     reference_out = reference(
         node_features, edge_attributes, radial, sender, receiver, num_nodes
     )
-
-    legacy_radial = torch.cat(
-        [radial[:, path, :] for path in path_of_instruction], dim=-1
-    )
     messages = legacy(
-        _per_channel_to_legacy(node_features, irreps_node)[sender],
-        edge_attributes,
-        legacy_radial,
+        node_features[sender], edge_attributes, radial.reshape(num_edges, -1)
     )
-    legacy_nodes = scatter_sum(messages, receiver, dim=0, dim_size=num_nodes)
-
-    # Sum legacy's output terms into the reference's one slot per irrep.
-    legacy_out = torch.zeros_like(reference_out)
-    start = 0
-    for multiplicity, irrep in irreps_mid:
-        block = legacy_nodes[:, start : start + multiplicity * irrep.dim]
-        start += multiplicity * irrep.dim
-        slot = out_terms.index(irrep)
-        piece = list(_slices(irreps_out))[slot][0]
-        legacy_out[:, :, piece] += block.reshape(num_nodes, multiplicity, irrep.dim)
+    legacy_out = scatter_sum(messages, receiver, dim=0, dim_size=num_nodes)
     assert_parity(reference_out, legacy_out, "convolution forward")
 
     cotangent = torch.randn(reference_out.shape, generator=_generator(12))
@@ -343,18 +316,40 @@ def test_the_convolution_matches_legacy_in_value_and_radial_gradient(
     assert_parity(reference_gradient, legacy_gradient, "convolution d radial")
 
 
+def test_the_paths_follow_legacy_order_where_both_parities_meet(fp64):
+    """At one degree the odd output comes first, which is ``e3nn``'s sort and
+    not :class:`~mace_core.clebsch_gordan.irreps.Irrep`'s.
+
+    Values are not compared here. Where ``l_out + l_node + l_edge`` is odd the
+    Wigner 3j symbol's sign is a convention, and two of these paths
+    (``1e x 1o -> 1o`` and ``1o x 1o -> 1e``) carry the opposite sign to
+    ``e3nn``'s. No published model reaches such a path, since every one has
+    natural parity, and a radial weight absorbs the sign in training; a
+    converter carrying weights across has to flip those paths.
+    """
+    node, edge, out = "0e+1o+1e", "0e+1o+2e", "0e+0o+1o+1e+2e"
+    irreps_mid, _ = tp_out_irreps_with_instructions(
+        o3.Irreps(node), o3.Irreps(edge), o3.Irreps(out)
+    )
+    descriptor = ChannelwiseTPConvDescriptor(
+        irreps_node=node, irreps_edge=edge, irreps_out=out
+    )
+    assert [str(ir) for _, ir in irreps_mid] == [
+        str(path.irrep) for path in descriptor.paths
+    ]
+
+
 def test_a_scalar_node_passes_the_edge_harmonics_through(fp64):
     """The audited case, written out: a scalar node of one against edge
     harmonics with radial weights of one gives back the harmonics themselves,
-    ``[1, sqrt(3) x, sqrt(3) y, sqrt(3) z]`` on a unit edge. Without the
-    ``sqrt(2 l_out + 1)`` path weight the ``1o`` block came out ``sqrt(3)``
-    too small."""
-    reference = BACKEND.make_channelwise_tp_conv(
-        ChannelwiseTPConvDescriptor(
-            irreps_node="0e+1o", irreps_edge="0e+1o", irreps_out="0e+1o"
-        )
+    ``[1, sqrt(3) x, sqrt(3) y, sqrt(3) z]`` on a unit edge, in the two paths
+    that read the scalar. Without the ``sqrt(2 l_out + 1)`` path weight the
+    ``1o`` block came out ``sqrt(3)`` too small."""
+    descriptor = ChannelwiseTPConvDescriptor(
+        irreps_node="0e+1o", irreps_edge="0e+1o", irreps_out="0e+1o"
     )
-    node_features = torch.tensor([[[1.0, 0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0, 0.0]]])
+    reference = BACKEND.make_channelwise_tp_conv(descriptor)
+    node_features = torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
     direction = torch.tensor([[0.3, -0.5, 0.8]])
     direction = direction / direction.norm()
     harmonics = torch.cat([torch.ones(1, 1), math.sqrt(3.0) * direction], dim=-1)
@@ -362,7 +357,12 @@ def test_a_scalar_node_passes_the_edge_harmonics_through(fp64):
     out = reference(
         node_features, harmonics, radial, torch.tensor([0]), torch.tensor([1]), 2
     )
-    assert_parity(out[1, 0], harmonics[0], "scalar node through the convolution")
+    # Paths 0e x 0e -> 0e, 1o x 1o -> 0e, 0e x 1o -> 1o and 1o x 0e -> 1o.
+    assert descriptor.irreps_paths == "1x0e+1x0e+1x1o+1x1o"
+    assert_parity(
+        out[1, [0, 2, 3, 4]], harmonics[0], "scalar node through the convolution"
+    )
+    assert_parity(out[1, [1, 5, 6, 7]], torch.zeros(4), "paths reading the vector")
 
 
 # ---------------------------------------------------------------------------
@@ -475,17 +475,15 @@ def test_the_contraction_matches_legacy_in_value_and_weight_gradient(
     element = torch.randint(0, num_elements, (num_nodes,), generator=generator)
     one_hot = torch.nn.functional.one_hot(element, num_elements).to(features.dtype)
 
-    reference_out = reference(features, element)
+    # The reference reads and writes the grouped layout legacy's linears use;
+    # legacy's contraction reads the per-channel view of the same values.
+    reference_out = reference(_per_channel_to_legacy(features, irreps_in), element)
     legacy_out = legacy(features, one_hot)
-    assert_parity(
-        _per_channel_to_legacy(reference_out, irreps_out),
-        legacy_out,
-        "contraction forward",
-    )
+    assert_parity(reference_out, legacy_out, "contraction forward")
 
     cotangent = torch.randn(reference_out.shape, generator=_generator(15))
     (reference_out * cotangent).sum().backward()
-    (legacy_out * _per_channel_to_legacy(cotangent, irreps_out)).sum().backward()
+    (legacy_out * cotangent).sum().backward()
     for mapping, legacy_weight, reference_weight in maps:
         assert_parity(
             torch.einsum("pq,zqc->zpc", mapping, reference_weight.grad),

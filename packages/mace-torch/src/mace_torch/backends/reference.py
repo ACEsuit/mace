@@ -51,6 +51,7 @@ from mace_core.kernels.protocol import DISPATCHED_OPS, REFERENCE_ONLY_OPS
 from torch import Tensor, nn
 
 from mace_torch.backends.harmonics import spherical_harmonics
+from mace_torch.backends.layout import grouped, per_channel, term_widths
 from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
@@ -288,6 +289,9 @@ class ReferenceSymmetricContraction(nn.Module):
         build = _BASIS_BUILDERS[descriptor.basis]
         self.orders = descriptor.correlation
         self.targets = [str(ir) for _, ir in Irreps.parse(descriptor.irreps_out)]
+        self.num_features = descriptor.num_features
+        self.in_widths = term_widths(descriptor.irreps_in)
+        self.out_widths = term_widths(descriptor.irreps_out)
         weights, bases = [], []
         for target in self.targets:
             group, tables = [], []
@@ -342,17 +346,27 @@ class ReferenceSymmetricContraction(nn.Module):
         return [self.weights[base + order] for order in range(self.orders)]
 
     def forward(self, features: Tensor, element: Tensor) -> Tensor:
+        """Grouped features in and out.
+
+        Args:
+            features: ``[n_nodes, num_features * dim_in]``, grouped.
+            element: ``[n_nodes]``, int64, which element each node is.
+
+        Returns:
+            ``[n_nodes, num_features * dim_out]``, grouped.
+        """
+        channels = per_channel(features, self.in_widths, self.num_features)
         # `nn.ModuleList` erases what it holds, so the element type has to be
         # said here. It is the one thing put into `self.bases`, two lines of
         # the constructor away.
         bases = cast("list[_ConstantTensors]", list(self.bases))
         pieces = [
             symmetric_contraction(
-                features, self._group(position), list(tables), element
+                channels, self._group(position), list(tables), element
             )
             for position, tables in enumerate(bases)
         ]
-        return torch.cat(pieces, dim=-1)
+        return grouped(torch.cat(pieces, dim=-1), self.out_widths)
 
     def to_canonical(self) -> dict[str, Tensor]:
         """The flat ``[Z, A, mul]`` array, in the pinned path order.
@@ -391,44 +405,64 @@ class ReferenceSymmetricContraction(nn.Module):
         ]
 
 
+def _term_offsets(irreps: Irreps) -> list[int]:
+    """Where each term of a declaration starts in its flat vector."""
+    offsets, start = [], 0
+    for multiplicity, irrep in irreps.terms:
+        offsets.append(start)
+        start += multiplicity * irrep.dimension
+    return offsets
+
+
 def _coupling_coefficients(descriptor: ChannelwiseTPConvDescriptor) -> np.ndarray:
     """The Clebsch-Gordan coefficients of the message-passing product.
 
-    One path per ``(node irrep, edge irrep, output irrep)`` the selection rules
-    allow, in the pinned irrep order, written into a dense
-    ``[paths, dim_out, dim_in, dim_edge]`` array. Dense because this is the
-    reference; a backend with a real kernel keeps them sparse.
+    One ``[dim_paths, dim_node, dim_edge]`` block per path, over one channel,
+    stacked into ``[n_paths, dim_paths, dim_node, dim_edge]``. Each path is
+    nonzero only in its own output term, so the kernel's sum over paths weights
+    every coupling separately and writes it where the linear after it expects
+    it. Dense because this is the reference; a backend with a real kernel
+    keeps them sparse.
 
     Each path carries the factor ``sqrt(2 l_out + 1)`` on its unit-norm
     Wigner 3j symbol. That is the per-path weight of the frozen tree's
     ``e3nn`` tensor product, built with ``"component"`` irrep normalization,
-    ``"element"`` path normalization and one ``uvu`` instruction per output
-    term: the fan-in of each instruction is the edge multiplicity, one, so the
-    path weight is ``sqrt(2 l_out + 1)`` exactly. Several paths written to one
-    output irrep here are separate output terms there, so they are summed with
-    that factor each and no further fan-in.
+    ``"element"`` path normalization and one ``uvu`` instruction per path:
+    the fan-in of each instruction is the edge multiplicity, one, so the path
+    weight is ``sqrt(2 l_out + 1)`` exactly.
     """
     node = Irreps.parse(descriptor.irreps_node)
     edge = Irreps.parse(descriptor.irreps_edge)
-    target = Irreps.parse(descriptor.irreps_out)
-    paths = []
-    for out_slice, out_ir in target.slices():
-        for in_slice, in_ir in node.slices():
-            for edge_slice, edge_ir in edge.slices():
-                if out_ir not in set(in_ir.couple(edge_ir)):
-                    continue
-                block = np.zeros((target.dimension, node.dimension, edge.dimension))
-                block[out_slice, in_slice, edge_slice] = math.sqrt(
-                    out_ir.dimension
-                ) * wigner_3j_real(out_ir.degree, in_ir.degree, edge_ir.degree)
-                paths.append(block)
-    if not paths:
-        return np.zeros((0, target.dimension, node.dimension, edge.dimension))
-    return np.stack(paths)
+    paths = descriptor.paths
+    dim_paths = sum(path.irrep.dimension for path in paths)
+    node_offsets = _term_offsets(node)
+    edge_offsets = _term_offsets(edge)
+    coefficients = np.zeros((len(paths), dim_paths, node.dimension, edge.dimension))
+    out_start = 0
+    for index, path in enumerate(paths):
+        node_irrep = node.terms[path.node_term][1]
+        edge_irrep = edge.terms[path.edge_term][1]
+        node_start = node_offsets[path.node_term]
+        edge_start = edge_offsets[path.edge_term]
+        coefficients[
+            index,
+            out_start : out_start + path.irrep.dimension,
+            node_start : node_start + node_irrep.dimension,
+            edge_start : edge_start + edge_irrep.dimension,
+        ] = math.sqrt(path.irrep.dimension) * wigner_3j_real(
+            path.irrep.degree, node_irrep.degree, edge_irrep.degree
+        )
+        out_start += path.irrep.dimension
+    return coefficients
 
 
 class ReferenceChannelwiseTPConv(nn.Module):
-    """The message-passing tensor product. Node-level, always."""
+    """The message-passing tensor product. Node-level, always.
+
+    Grouped features in and out, as every op of the chain reads them. The
+    kernel computes channel by channel, so the features move to that
+    arrangement and back here, at the backend boundary.
+    """
 
     #: Annotated because `register_buffer` alone leaves it typed as a `Module`,
     #: and then reading its shape reads as subscripting a module.
@@ -442,11 +476,10 @@ class ReferenceChannelwiseTPConv(nn.Module):
         self.register_buffer(
             "coefficients", torch.tensor(coefficients, dtype=dtype), persistent=False
         )
-
-    @property
-    def num_paths(self) -> int:
-        """How many weights the external radial MLP has to produce."""
-        return int(self.coefficients.shape[0])
+        self.num_paths = len(descriptor.paths)
+        self.num_features = descriptor.num_features
+        self.node_widths = term_widths(descriptor.irreps_node)
+        self.path_widths = term_widths(descriptor.irreps_paths)
 
     def forward(
         self,
@@ -457,8 +490,19 @@ class ReferenceChannelwiseTPConv(nn.Module):
         receiver: Tensor,
         num_nodes: int,
     ) -> Tensor:
-        return channelwise_tp_conv(
-            node_features,
+        """Grouped node features in, one grouped block per path out.
+
+        Args:
+            node_features: ``[n_nodes, num_features * dim_node]``, grouped.
+            edge_attributes: ``[n_edges, dim_edge]``.
+            radial_weights: ``[n_edges, n_paths, num_features]``.
+            sender: ``[n_edges]``, int64.
+            receiver: ``[n_edges]``, int64.
+            num_nodes: The node count, as a plain int.
+        """
+        channels = per_channel(node_features, self.node_widths, self.num_features)
+        message = channelwise_tp_conv(
+            channels,
             edge_attributes,
             radial_weights,
             self.coefficients,
@@ -466,6 +510,7 @@ class ReferenceChannelwiseTPConv(nn.Module):
             receiver,
             num_nodes,
         )
+        return grouped(message, self.path_widths)
 
 
 class ReferenceFullyConnectedTP(nn.Module):

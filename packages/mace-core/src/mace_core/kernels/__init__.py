@@ -52,6 +52,7 @@ from mace_core.kernels.descriptors import (
     SphericalHarmonicsDescriptor,
     SymmetricContractionDescriptor,
 )
+from mace_core.kernels.paths import ConvolutionPath, channelwise_paths, path_irreps
 from mace_core.kernels.precision import PRECISIONS, Precision
 from mace_core.kernels.protocol import (
     DISPATCHED_OPS,
@@ -83,6 +84,7 @@ __all__ = [
     "BackendCapabilities",
     "BackendNotAvailableError",
     "ChannelwiseTPConvDescriptor",
+    "ConvolutionPath",
     "Descriptor",
     "DiscoveredBackend",
     "DuplicateBackendError",
@@ -99,10 +101,12 @@ __all__ = [
     "UnsupportedDescriptorError",
     "available_backends",
     "canonical_weight_shape",
+    "channelwise_paths",
     "exact_silu_second_moment_scale",
     "fully_connected_tp_path_normalization",
     "get_backend",
     "linear_path_normalization",
+    "path_irreps",
     "radial_mlp_initial_bound",
     "radial_mlp_layer_normalization",
     "symmetric_contraction_initial_scale",
