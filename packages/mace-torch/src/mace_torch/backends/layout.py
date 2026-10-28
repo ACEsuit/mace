@@ -20,7 +20,7 @@ import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from torch import Tensor
 
-__all__ = ["grouped", "per_channel", "term_widths"]
+__all__ = ["expanded_irreps", "grouped", "per_channel", "term_widths"]
 
 
 def term_widths(irreps: str) -> tuple[int, ...]:
@@ -55,3 +55,14 @@ def _join(blocks: list[Tensor]) -> Tensor:
     if len(blocks) == 1:
         return blocks[0]
     return torch.cat(blocks, dim=-1)
+
+
+def expanded_irreps(irreps: str, num_features: int) -> str:
+    """The grouped declaration of ``num_features`` channels of ``irreps``.
+
+    One term per term of ``irreps``, its multiplicity times the channel count,
+    in the same order. ``"0e+1o"`` at 8 channels is ``"8x0e+8x1o"``.
+    """
+    return "+".join(
+        f"{num_features * mul}x{ir}" for mul, ir in Irreps.parse(irreps).terms
+    )

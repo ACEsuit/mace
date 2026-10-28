@@ -23,6 +23,7 @@ __all__ = [
     "CLEBSCH_GORDAN_BASES",
     "ChannelwiseTPConvDescriptor",
     "Descriptor",
+    "DistanceTransformDescriptor",
     "FullyConnectedTPDescriptor",
     "LinearDescriptor",
     "RadialBasisDescriptor",
@@ -432,6 +433,35 @@ class RadialBasisDescriptor(Descriptor):
     def __post_init__(self) -> None:
         super().__post_init__()
         _require_member("kind", self.kind, get_args(RadialBasisKind))
+
+
+DistanceTransformKind = Literal["agnesi", "soft"]
+
+
+@dataclass(frozen=True)
+class DistanceTransformDescriptor(Descriptor):
+    """The transform of the edge lengths the radial basis is evaluated on.
+
+    Not an op a backend builds: the transform is a few closed forms of the
+    pair's covalent radii, and the model holds it. It is named so that an
+    interaction can hand it to the span factory with the rest of its edge
+    convolution, since a span that computes the radial basis has to apply the
+    transform first. Its parameters stay in the model, in canonical form, and
+    a span is handed them on every call.
+
+    Attributes:
+        kind: Which transform. ``"agnesi"`` is ACEpotentials.jl's, ``"soft"``
+            the tanh clamp; both read the pair's covalent radii by atomic
+            number. The cutoff envelope is never transformed.
+    """
+
+    op: ClassVar[str] = "distance_transform"
+
+    kind: DistanceTransformKind = "agnesi"
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _require_member("kind", self.kind, get_args(DistanceTransformKind))
 
 
 RadialMLPKind = Literal["normalized_silu", "layer_norm_silu"]
