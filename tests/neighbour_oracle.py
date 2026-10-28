@@ -26,9 +26,10 @@ reimplementation can silently get wrong:
   An oracle that reproduced the policy could not falsify it, so this one
   returns the three edge quantities and nothing else.
 
-* **The cutoff is strict** (``d < cutoff``, not ``<=``) and self-pairs are
-  dropped only at zero shift, which is precisely
-  ``true_self_interaction=False``. Periodic self-images survive: one atom in a
+* **The cutoff is strict** (``d < cutoff``, not ``<=``), compared on float64
+  squared lengths as matscipy compares it, so a length whose square root
+  rounds onto the cutoff stays inside. Self-pairs are dropped only at zero
+  shift, which is precisely ``true_self_interaction=False``. Periodic self-images survive: one atom in a
   cell smaller than the cutoff has neighbours, all of them itself.
 """
 
@@ -126,7 +127,7 @@ def _pairs_within(
                             continue  # the only self-pair that is dropped
                         shift = n_0 * cell[0] + n_1 * cell[1] + n_2 * cell[2]
                         delta = positions[j] + shift - positions[i]
-                        if float(np.linalg.norm(delta)) < cutoff:
+                        if float(delta @ delta) < cutoff * cutoff:
                             found.append((i, j, n_0, n_1, n_2))
     return sorted(found)
 

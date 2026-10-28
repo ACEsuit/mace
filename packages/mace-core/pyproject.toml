@@ -37,6 +37,18 @@ dependencies = [
     "ase>=3.23",
 ]
 
+# The all-pairs backend needs nothing beyond numpy, so neighbour-list
+# libraries are extras.
+[project.optional-dependencies]
+# mace-jax's default, and the backend the legacy list searches with, so the
+# order-exact parity tests need it. It brings scipy and no framework.
+matscipy = ["matscipy>=1.0"]
+
+[project.entry-points."mace.neighbor_backends"]
+# Discovered the same way a third-party backend is, through its entry point.
+matscipy = "mace_core.neighbors.matscipy_backend:MatscipyBackend"
+all_pairs = "mace_core.neighbors.all_pairs:AllPairsBackend"
+
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
 
