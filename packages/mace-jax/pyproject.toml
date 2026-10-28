@@ -17,7 +17,11 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
-dependencies = ["mace-core"]
+dependencies = [
+    # The matscipy extra brings this package's default neighbour-list
+    # backend, which, unlike vesin, imports no torch.
+    "mace-core[matscipy]",
+]
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

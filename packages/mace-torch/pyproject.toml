@@ -30,9 +30,18 @@ classifiers = [
 dependencies = [
     "mace-core",
     "torch>=2.5",
+    # This package's default neighbour-list backend, registered below. The
+    # floor is the release whose per-axis periodicity and squared-length cutoff
+    # the conformance cases were run against.
+    "vesin>=0.6.2",
     # Covalent radii for the ZBL repulsion and the distance transforms.
     "ase",
 ]
+
+[project.entry-points."mace.neighbor_backends"]
+# A framework-free provider: it returns numpy, but importing vesin also imports
+# torch whenever torch is installed, so it is registered from here.
+vesin = "mace_torch.neighbors.vesin_backend:VesinBackend"
 
 [project.entry-points."mace.kernel_backends.torch"]
 # The mandatory reference backend, discovered the same way any third-party one
