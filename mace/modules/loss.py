@@ -345,36 +345,42 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
     def forward(
         self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
     ) -> torch.Tensor:
+        # The per-config weights are 0 for a property a config has no label for
+        # (its target is zero-filled), so they scale the element-wise loss, as
+        # in the weighted MSE losses.
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
-        if ddp:
-            loss_energy = torch.nn.functional.huber_loss(
+        configs_weight = torch.repeat_interleave(ref.weight, num_atoms).unsqueeze(-1)
+        configs_forces_weight = torch.repeat_interleave(
+            ref.forces_weight, num_atoms
+        ).unsqueeze(-1)
+        loss_energy = (
+            ref.weight
+            * ref.energy_weight
+            * torch.nn.functional.huber_loss(
                 ref["energy"] / num_atoms,
                 pred["energy"] / num_atoms,
                 reduction="none",
                 delta=self.huber_delta,
             )
-            loss_energy = reduce_loss(loss_energy, ddp)
-            loss_forces = torch.nn.functional.huber_loss(
+        )
+        loss_forces = (
+            configs_weight
+            * configs_forces_weight
+            * torch.nn.functional.huber_loss(
                 ref["forces"], pred["forces"], reduction="none", delta=self.huber_delta
             )
-            loss_forces = reduce_loss(loss_forces, ddp)
-            loss_stress = torch.nn.functional.huber_loss(
+        )
+        loss_stress = (
+            ref.weight.view(-1, 1, 1)
+            * ref.stress_weight.view(-1, 1, 1)
+            * torch.nn.functional.huber_loss(
                 ref["stress"], pred["stress"], reduction="none", delta=self.huber_delta
             )
-            loss_stress = reduce_loss(loss_stress, ddp)
-        else:
-            loss_energy = torch.nn.functional.huber_loss(
-                ref["energy"] / num_atoms,
-                pred["energy"] / num_atoms,
-                reduction="mean",
-                delta=self.huber_delta,
-            )
-            loss_forces = torch.nn.functional.huber_loss(
-                ref["forces"], pred["forces"], reduction="mean", delta=self.huber_delta
-            )
-            loss_stress = torch.nn.functional.huber_loss(
-                ref["stress"], pred["stress"], reduction="mean", delta=self.huber_delta
-            )
+        )
+        # reduce_loss with ddp=False is the plain mean
+        loss_energy = reduce_loss(loss_energy, bool(ddp))
+        loss_forces = reduce_loss(loss_forces, bool(ddp))
+        loss_stress = reduce_loss(loss_stress, bool(ddp))
         return (
             self.energy_weight * loss_energy
             + self.forces_weight * loss_forces
