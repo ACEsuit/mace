@@ -468,7 +468,17 @@ class ScaleShiftMACE(MACE):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
+        energy_accumulation_dtype: Optional[str] = None,
     ) -> Dict[str, Optional[torch.Tensor]]:
+        # Widen only the reported graph-energy reductions. Keep the original
+        # interaction-energy path for force and stress differentiation.
+        use_float64_accumulation = False
+        if energy_accumulation_dtype is not None:
+            if energy_accumulation_dtype != "float64":
+                raise ValueError("energy_accumulation_dtype must be None or 'float64'")
+            use_float64_accumulation = True
+        if use_float64_accumulation and data["positions"].device.type == "mps":
+            raise ValueError("float64 energy accumulation is not supported on MPS")
         # Setup
         ctx = prepare_graph(
             data,
@@ -501,6 +511,14 @@ class ScaleShiftMACE(MACE):
         ).to(
             vectors.dtype
         )  # [n_graphs, num_heads]
+        e0_accumulated = e0
+        if use_float64_accumulation:
+            e0_accumulated = scatter_sum(
+                src=node_e0.to(torch.float64),
+                index=data["batch"],
+                dim=0,
+                dim_size=num_graphs,
+            )
 
         # Embeddings
         node_feats = self.node_embedding(data["node_attrs"])
@@ -540,6 +558,13 @@ class ScaleShiftMACE(MACE):
                     dim_size=num_graphs,
                 )
                 e0 += embedding_energy
+                if use_float64_accumulation:
+                    e0_accumulated = e0_accumulated + scatter_sum(
+                        src=embedding_node_energy.to(torch.float64),
+                        index=data["batch"],
+                        dim=0,
+                        dim_size=num_graphs,
+                    )
 
         # Interactions
         node_es_list = [pair_node_energy]
@@ -583,6 +608,16 @@ class ScaleShiftMACE(MACE):
         inter_e = scatter_sum(node_inter_es, data["batch"], dim=-1, dim_size=num_graphs)
 
         total_energy = e0 + inter_e
+        if use_float64_accumulation:
+            total_energy = (
+                e0_accumulated
+                + scatter_sum(
+                    src=node_inter_es.to(torch.float64),
+                    index=data["batch"],
+                    dim=-1,
+                    dim_size=num_graphs,
+                )
+            ).to(total_energy.dtype)
         node_energy = safe_double(node_e0.clone()) + safe_double(node_inter_es.clone())
 
         forces, virials, stress, hessian, edge_forces, _ = get_outputs(
