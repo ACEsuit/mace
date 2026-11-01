@@ -1,27 +1,8 @@
-"""What a dataset looks like to the pipeline, whatever format it is in.
+"""Framework-independent random-access datasets of ``Configuration`` objects.
 
-One Protocol, and it is the only thing anything above it sees. A backend yields
-:class:`~mace_core.data.configuration.Configuration`, never graph dictionaries:
-neighbours, one-hot encodings and collation happen once, above every backend,
-which is what lets the same backend feed the torch and the jax stacks and lets
-statistics be computed with no framework installed.
-
-Three properties are required and each replaces something the frozen tree does
-the other way.
-
-**Random access and an exact length.** That is what a map-style torch dataset,
-a deterministic train/valid split and a distributed sampler all need. Purely
-iterable sources are out of v1 rather than half-supported.
-
-**Sharding is the sampler's business, never the backend's.** A backend has no
-idea what a rank is. ``iter_range`` exists so a format that stores contiguous
-runs can serve them efficiently when a sampler asks for one.
-
-**Reading a bad item raises.** The frozen tree prints and returns ``None`` into
-the batch (``mace/data/lmdb_dataset.py:30-36``), and a second swallowed
-``except`` around graph construction leaves a name unbound so the real failure
-resurfaces later as an unrelated ``UnboundLocalError``. Both are pinned-away
-defects, not behaviour to keep.
+Backends provide an exact length and raise on unreadable items. Graph building
+and collation happen downstream. Samplers own sharding; ``iter_range`` lets
+backends serve contiguous reads efficiently. Iterable-only sources are unsupported.
 """
 
 from __future__ import annotations
@@ -177,7 +158,8 @@ class DataBackend(Protocol):
     @classmethod
     def sniff(cls, source: str) -> bool:
         """Whether this backend claims ``source``. Cheap: an extension or magic
-        bytes, never a full parse."""
+        bytes, never a full parse.
+        """
         ...
 
     @classmethod

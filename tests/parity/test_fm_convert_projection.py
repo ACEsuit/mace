@@ -17,8 +17,8 @@ from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
 
+from tests.parity.anchors import load_anchor
 from tests.parity.fm00_projection import as_path_first, project_weights
-from tests.parity.test_fm00_training_step import load_anchor
 
 IRREPS_IN = "0e+1o+2e"
 CORRELATION = 3

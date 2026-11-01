@@ -18,8 +18,6 @@ and a slab in reciprocal space, the slab with its dipole correction.
 
 from __future__ import annotations
 
-from tests.parity.fm00_convert import model_arguments
-
 import numpy as np
 import pytest
 import torch
@@ -34,7 +32,11 @@ from mace_torch.models.electrostatics import PolarModel
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.physics import DerivativeEngine
 
-from tests.parity.fm00_convert import build_config, energy_constants_to_canonical
+from tests.parity.fm00_convert import (
+    build_config,
+    energy_constants_to_canonical,
+    model_arguments,
+)
 from tests.parity.polar_convert import (
     polar_backbone_config,
     polar_settings,

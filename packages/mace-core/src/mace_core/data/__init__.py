@@ -39,6 +39,7 @@ from mace_core.data.keys import (
 from mace_core.data.registry import (
     ENTRY_POINT_GROUP,
     AmbiguousFormatError,
+    DuplicateDataBackendError,
     UnknownBackendError,
     available_backends,
     open_dataset,
@@ -76,6 +77,7 @@ __all__ = [
     "DatasetManifest",
     "DatasetStatistics",
     "DefaultKeys",
+    "DuplicateDataBackendError",
     "E0Provenance",
     "E0ResolutionError",
     "EmbeddingFeatureSpec",

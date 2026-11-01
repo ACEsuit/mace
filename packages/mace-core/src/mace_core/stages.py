@@ -1,36 +1,9 @@
-"""What passes between the three stages of a training run.
+"""Typed boundaries for ``DataStage -> ModelStage -> TrainStage``.
 
-A run is ``ResolvedConfig -> DataStage -> DataBundle -> ModelStage ->
-BuiltModel -> TrainStage -> TrainedModel``, and these are the three objects in
-the middle. They are here rather than in :mod:`mace_torch` because the seam is
-the contract, not the implementation: a jax training entry point produces the
-same bundle, and a tool that inspects a finished run reads the same record.
-
-**The statistics are computed once and carried, never recomputed.** The mean
-and spread the model's scale and shift are set from have to be the ones taken
-against the isolated-atom energies that become the model's own buffer, and a
-second pass can differ from the first for reasons nothing reports: a different
-split, a rounded cutoff, a head filtered out. Recomputing also costs a second
-pass over the whole dataset for a number already in hand. So
-:class:`DataBundle` owns the one :class:`~mace_core.data.backend.DatasetStatistics`
-and :class:`BuiltModel` reads it through the bundle it carries.
-
-**Each stage takes the previous object, so the chain is linear.**
-:class:`BuiltModel` holds its :class:`DataBundle` rather than the training
-stage receiving two arguments. A stage that needed both would let a caller pass
-a bundle the model was not built from, and nothing downstream could notice.
-
-The framework objects are type parameters. A dataloader and a model are the two
-things this package cannot name, and leaving them as ``Any`` would give every
-consumer an untyped attribute at the exact point the stage contract exists to
-type. There are two loader parameters rather than one because the two are not
-the same thing: what a run steps on joins the heads and decides how often each
-is seen, while what it evaluates on is one plain pass over one head.
-
-**The evaluation loaders are per head, and that is not a convenience.** A
-multi-head run whose heads are reported as one averaged row cannot say which
-head got worse, and the frozen tree keeps per-head loaders for exactly this and
-then selects its checkpoint on the last head alone.
+Each stage carries its predecessor: ``BuiltModel`` holds the ``DataBundle``
+whose E0s and statistics it used. Statistics are computed once. Evaluation
+loaders are per head; the training loader combines heads with configured
+sampling. Framework-specific loaders and models are type parameters.
 """
 
 from __future__ import annotations
@@ -66,29 +39,18 @@ Model = TypeVar("Model")
 
 @dataclass(frozen=True)
 class DataBundle(Generic[TrainLoader, Loader]):
-    """Everything the data stage resolved, and nothing the model stage decides.
+    """Resolved data shared by model construction and training.
 
     Attributes:
-        z_table: The element table, ascending. Every element a head's E0s were
-            resolved for is in it, and the model's one-hot width is its length.
-        heads: The head names, in the order their rows appear in ``e0s``.
-        e0s: Isolated-atom energies per head, already resolved. The one place
-            they are settled for the run.
-        e0_provenance: How each head's energies were obtained, keyed by head.
-            Recorded because ``average`` and a table read from a file produce
-            the same numbers and mean different things.
-        statistics: Average neighbour count, and the mean and spread of the
-            interaction energy, taken against ``e0s``.
-        train_loader: The batches the loop steps on, with the heads already
-            joined.
-        valid_loaders: One pass per head, for the per-epoch evaluation and for
-            the error table.
-        train_eval_loaders: One pass per head over the *training* structures,
-            for the error table only. The loop never steps on these: they are
-            the same structures in a plain order, which is what an error table
-            row needs and what an optimizer step does not.
-        test_loaders: Structures evaluated once after training, keyed by the
-            name the configuration gave each set.
+        z_table: Ascending element table; its length is the one-hot width.
+        heads: Head names in the order of the rows in ``e0s``.
+        e0s: Resolved isolated-atom energies in eV, by head and element.
+        e0_provenance: How each head's E0s were obtained.
+        statistics: Neighbour count and interaction-energy statistics against ``e0s``.
+        train_loader: Training batches with heads combined for sampling.
+        valid_loaders: Per-head validation passes for evaluation and error tables.
+        train_eval_loaders: Per-head training-set passes used only for error tables.
+        test_loaders: Post-training evaluation sets, keyed by configured name.
     """
 
     z_table: AtomicNumberTable
@@ -117,19 +79,14 @@ class DataBundle(Generic[TrainLoader, Loader]):
 
 @dataclass(frozen=True)
 class BuiltModel(Generic[Model, TrainLoader, Loader]):
-    """A model, its data, and the record of how both were arrived at.
+    """Built model with its data and checkpoint metadata.
 
     Attributes:
-        model: The model itself, on its device and in its precision.
-        outputs: What it produces, as resolved: the observables it reads out
-            and the derivatives it was asked to compute. The loss terms and the
-            error tables come from here rather than from a model class name,
-            and the derivatives are carried rather than re-derived because an
-            observable declares more of them than any one run asks for.
-        data: The bundle it was built from. Carried so the training stage takes
-            one argument and cannot be handed a bundle from another run.
-        metadata: The record that is written beside the weights. Complete at
-            build time except for what only training can know.
+        model: Model on the configured device and precision.
+        outputs: Resolved observables and requested derivatives, used by losses
+            and error tables.
+        data: The data bundle used to build this model.
+        metadata: Checkpoint record, complete except for training results.
     """
 
     model: Model
@@ -145,18 +102,15 @@ class BuiltModel(Generic[Model, TrainLoader, Loader]):
 
 @dataclass(frozen=True)
 class EpochRecord:
-    """One epoch as the loop saw it.
+    """Metrics for one epoch.
 
     Attributes:
-        epoch: Counted from zero.
-        train_loss: Mean over the epoch's batches.
-        valid_loss: ``None`` on an epoch the loop did not evaluate, which is
-            every epoch that is not a multiple of the evaluation interval.
-        learning_rate: What the optimizer used, after any schedule step.
-        stage: ``"one"`` before the stage-two switch and ``"two"`` after it.
-        evaluated_with_ema: Whether the validation loss above was measured
-            through the averaged weights. It is not a detail: with EMA on, the
-            reported number comes from parameters the optimizer never saw.
+        epoch: Zero-based epoch index.
+        train_loss: Mean over training batches.
+        valid_loss: Validation loss, or ``None`` when evaluation was not scheduled.
+        learning_rate: Optimizer rate after the schedule step.
+        stage: ``"one"`` before the stage-two switch, ``"two"`` after it.
+        evaluated_with_ema: Whether validation used averaged weights.
     """
 
     epoch: int

@@ -16,10 +16,7 @@ gradients are comparable and they are what is checked here.
 
 from __future__ import annotations
 
-from tests.parity.fm00_convert import model_arguments
-
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -31,9 +28,11 @@ from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 
+from tests.parity.anchors import load_anchor
 from tests.parity.fm00_convert import (
     build_config,
     energy_constants_to_canonical,
+    model_arguments,
     recorded_basis,
     transfer_weights,
 )
@@ -50,20 +49,6 @@ ENERGY = ObservableSpec(
 CHANNEL_IN = "0e+1o+2e"
 
 
-def load_anchor(name: str):
-    previous = os.environ.get("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD")
-    os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-    try:
-        return torch.load(
-            GOLDEN / "models" / name, map_location="cpu", weights_only=False
-        )
-    finally:
-        if previous is None:
-            os.environ.pop("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", None)
-        else:
-            os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = previous
-
-
 def converted(legacy):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     config = build_config(legacy)
@@ -76,7 +61,10 @@ def converted(legacy):
         PrecisionConfig(),
     )
     model = MACEModel(
-        ReferenceBackend(), observables=[ENERGY], energy_head=head, **model_arguments(config)
+        ReferenceBackend(),
+        observables=[ENERGY],
+        energy_head=head,
+        **model_arguments(config),
     )
     transfer_weights(legacy, model, config["correlation"])
     return model, numbers

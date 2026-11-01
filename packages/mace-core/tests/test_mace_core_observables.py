@@ -93,6 +93,19 @@ def test_a_malformed_declaration_is_rejected(text):
 
 
 @pytest.mark.parametrize(
+    "text, normalized",
+    [("01e", "1x1e"), ("01x0e", "1x0e"), ("2x01o", "2x1o"), ("00e", "1x0e")],
+)
+def test_algebra_keeps_its_leading_zero_compatibility(text, normalized):
+    from mace_core.clebsch_gordan.irreps import Irreps
+
+    assert str(Irreps.parse(text)) == normalized
+    with pytest.raises(IrrepsGrammarError, match="observable 'q'"):
+        parse_irreps(text, observable="q")
+    assert irreps_dimension(normalized) == Irreps.parse(text).dimension
+
+
+@pytest.mark.parametrize(
     ("multiplicity", "degree", "parity"),
     [
         (0, 1, "o"),

@@ -1,15 +1,7 @@
-"""Irreducible representations of O(3), and the algebra over them.
+"""O(3) irreps: parsing, dimensions, ordering and tensor-product selection rules.
 
-No e3nn. The parsing grammar is the project's ``<mul>x<l><parity>`` one; what
-this module adds on top is the part that is algebra rather than syntax: a total
-order, dimensions, and the selection rules for a tensor product.
-
-**The total order is a decision, not an inheritance.** It is the order the
-coupling paths are enumerated in, which is to say it is the order the weights
-sit in on disk. It is defined here as ascending degree, and even parity before
-odd at equal degree, because that is the textbook reading order and because a
-convention the project can state in one line is worth more than one it has to
-measure out of a library.
+Irreps sort by ascending degree, even before odd at equal degree. Coupling
+paths use this order, so it determines the weight layout on disk.
 """
 
 from __future__ import annotations
@@ -18,6 +10,8 @@ import numbers
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+
+from mace_core._irreps import parse_terms
 
 __all__ = ["IRREPS_GRAMMAR", "Irrep", "Irreps", "IrrepsError"]
 
@@ -28,7 +22,6 @@ IRREPS_GRAMMAR = (
     "'128x0e+128x1o'."
 )
 
-_TERM = re.compile(r"(?:(\d+)x)?(\d+)([eo])", re.ASCII)
 _SINGLE = re.compile(r"(\d+)([eo])", re.ASCII)
 
 
@@ -169,30 +162,16 @@ class Irreps:
             IrrepsError: If the declaration is empty, a term is malformed, or a
                 term has multiplicity 0. The message quotes the offending term.
         """
-        if not text or not text.strip():
-            raise IrrepsError(f"the declaration is empty. Expected {IRREPS_GRAMMAR}")
-        terms = []
-        for piece in text.split("+"):
-            match = _TERM.fullmatch(piece.strip())
-            if match is None:
-                raise IrrepsError(
-                    f"{piece.strip()!r} is not a valid term in {text!r}. "
-                    f"Expected {IRREPS_GRAMMAR}"
-                )
-            multiplicity, degree, parity = match.groups()
-            if multiplicity is not None and int(multiplicity) == 0:
-                raise IrrepsError(
-                    f"{piece.strip()!r} in {text!r} declares no copies of its "
-                    f"irrep. Leave the term out, or give it a multiplicity of at "
-                    f"least 1."
-                )
-            terms.append(
-                (
-                    1 if multiplicity is None else int(multiplicity),
-                    Irrep(int(degree), 1 if parity == "e" else -1),
-                )
+        try:
+            terms = parse_terms(text)
+        except ValueError as failure:
+            raise IrrepsError(f"{failure} Expected {IRREPS_GRAMMAR}") from failure
+        return cls(
+            tuple(
+                (copies, Irrep(degree, 1 if parity == "e" else -1))
+                for copies, degree, parity in terms
             )
-        return cls(tuple(terms))
+        )
 
     @property
     def dimension(self) -> int:

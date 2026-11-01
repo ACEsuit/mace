@@ -11,9 +11,6 @@ same way".
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import torch
 from mace_torch.nn.radial_mlp import (
@@ -22,20 +19,7 @@ from mace_torch.nn.radial_mlp import (
     exact_second_moment_scale,
 )
 
-ANCHORS = Path(__file__).resolve().parents[1] / "golden/models"
-
-
-def load_anchor(name: str):
-    """The frozen tree's own pickle, with its environment flag restored after."""
-    previous = os.environ.get("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD")
-    os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-    try:
-        return torch.load(ANCHORS / name, map_location="cpu", weights_only=False)
-    finally:
-        if previous is None:
-            os.environ.pop("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", None)
-        else:
-            os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = previous
+from tests.parity.anchors import load_anchor
 
 
 @pytest.mark.parametrize("anchor", ["tiny_scaleshift.model", "tiny_mace.model"])

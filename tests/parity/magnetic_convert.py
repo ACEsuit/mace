@@ -25,11 +25,11 @@ from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.models.magnetic import MagneticModel
 
 from tests.parity.fm00_convert import (
-    model_arguments,
     contraction_weights_to_canonical,
     copy_linear,
     energy_constants_to_canonical,
     fully_connected_tp_weights_to_canonical,
+    model_arguments,
 )
 
 __all__ = [

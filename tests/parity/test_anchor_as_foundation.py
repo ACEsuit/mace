@@ -38,12 +38,12 @@ from mace_torch.train import (
 from mace_torch.train.loss import build_loss
 from mace_torch.train.model_stage import build_model
 
+from tests.parity.anchors import load_anchor
 from tests.parity.fm00_convert import (
     build_config,
     energy_constants_to_canonical,
     transfer_weights,
 )
-from tests.parity.test_fm00_training_step import load_anchor
 
 CATALOGUE = DEFAULT_CATALOGUE
 TRAIN_SET = (

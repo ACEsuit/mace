@@ -1,22 +1,8 @@
-"""Which file key each convention name is read from.
+"""Map file keys to convention names at the parsing boundary.
 
-Two dictionaries, because a structure file stores two kinds of thing and they
-are looked up in different places: one value per structure (an energy, a
-stress, a total charge) and one per atom (forces, charges, magnetic moments).
-The split is not cosmetic. Asking for ``forces`` among the per-structure values
-finds nothing and reports it as a missing label, which is indistinguishable
-from a file that genuinely has no forces.
-
-**The two halves are called ``graph`` and ``atom`` throughout**, which is the
-same pair of words a user writes in an embedding feature's ``per:``, so a
-declared feature and a default key name the same distinction the same way and
-nothing translates between them. ``info`` and ``arrays`` are ase's words for
-ase's two stores, and they appear only in :mod:`mace_core.data.xyz`, where ase
-is actually touched.
-
-This object is the only place a file key appears. Everything downstream of
-parsing is keyed by convention name -- see
-:mod:`mace_core.data.configuration`.
+``graph`` keys hold one value per structure; ``atom`` keys hold one per atom.
+The names match embedding feature declarations. ASE's ``info`` and ``arrays``
+stores are handled by ``data.xyz``. Downstream code uses convention names.
 """
 
 from __future__ import annotations

@@ -11,9 +11,6 @@ left to differ except in how the blocks are wired together.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
@@ -22,13 +19,12 @@ from mace_torch.backends.layout import grouped, term_widths
 from mace_torch.backends.reference import ReferenceBackend, ReferenceFullyConnectedTP
 from mace_torch.nn.product_basis import EquivariantProductBasisBlock
 
+from tests.parity.anchors import load_anchor
 from tests.parity.fm00_convert import (
     contraction_weights_to_canonical,
     fully_connected_tp_weights_to_canonical,
     linear_weights_to_canonical,
 )
-
-ANCHORS = Path(__file__).resolve().parents[1] / "golden/models"
 
 #: One channel of the anchors' contraction input, and what each product reads
 #: out. Taken from the anchors, not from their training recipes.
@@ -37,18 +33,6 @@ PRODUCT_OUT = ["0e+1o", "0e"]
 CHANNELS = 16
 ELEMENTS = 3
 CORRELATION = 3
-
-
-def load_anchor(name: str):
-    previous = os.environ.get("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD")
-    os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-    try:
-        return torch.load(ANCHORS / name, map_location="cpu", weights_only=False)
-    finally:
-        if previous is None:
-            os.environ.pop("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", None)
-        else:
-            os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = previous
 
 
 @pytest.mark.parametrize("anchor", ["tiny_scaleshift.model", "tiny_mace.model"])

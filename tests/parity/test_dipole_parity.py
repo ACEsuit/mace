@@ -16,8 +16,6 @@ would return.
 
 from __future__ import annotations
 
-from tests.parity.fm00_convert import model_arguments
-
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +30,7 @@ from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.physics import DerivativeEngine
 
 from tests.parity.dipole_convert import dipole_config, transfer_dipole_weights
+from tests.parity.fm00_convert import model_arguments
 
 #: The fp64 row of the golden tolerance table, as in the other parity tests.
 TOLERANCE = 1e-6
@@ -112,7 +111,9 @@ def convert(legacy, family: str):
         if family == "dipole"
         else DipoleSettings(charges="predicted", polarizability=True)
     )
-    model = DipoleModel(ReferenceBackend(), settings=settings, **model_arguments(config))
+    model = DipoleModel(
+        ReferenceBackend(), settings=settings, **model_arguments(config)
+    )
     transfer_dipole_weights(legacy, model, family)
     return model, config
 

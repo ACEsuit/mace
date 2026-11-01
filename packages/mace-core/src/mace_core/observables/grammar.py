@@ -1,22 +1,16 @@
-"""The irreps string grammar, and nothing beyond it.
+"""Validate observable irreps strings and compute their dimensions.
 
-An observable declares the spherical-tensor shape of its values as a string:
-``"0e"`` for a scalar, ``"1o"`` for a polar vector, ``"1e"`` for an axial one,
-``"0e+2e"`` for a symmetric rank-2 tensor, ``"128x0e+128x1o+128x2e"`` for a
-block of hidden features. This module parses and validates that string.
-
-It is grammar only. No tensor products, no Clebsch-Gordan coefficients, no
-simplification or sorting of terms: the algebra lands in its own module with
-the reduced basis, and a half-implementation here would be the version every
-later caller had to work around. What a caller gets from this module is the
-guarantee that a declaration is well formed, the terms it names, and the
-dimension they add up to.
+Examples: ``0e`` scalar, ``1o`` polar vector, ``1e`` axial vector, ``0e+2e``
+symmetric rank-2 tensor, ``128x0e+128x1o`` hidden features. Terms retain their
+written order. Observable declarations require canonical spelling without
+leading zeros; the algebra parser retains its more permissive spelling.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+
+from mace_core._irreps import parse_terms
 
 __all__ = [
     "IRREPS_GRAMMAR",
@@ -38,11 +32,6 @@ IRREPS_GRAMMAR = (
     "tensor), '128x0e+128x1o+128x2e'."
 )
 
-#: ``[0-9]`` rather than ``\d``, which also matches non-ASCII digits that
-#: ``int`` would then accept. A multiplicity of zero spans no components, and a
-#: leading zero makes ``007e`` read as ``l = 7``; both are refused.
-_TERM = re.compile(r"^(?:([1-9][0-9]*)x)?(0|[1-9][0-9]*)([eo])$")
-
 _PARITIES = ("e", "o")
 
 
@@ -52,22 +41,17 @@ class IrrepsGrammarError(ValueError):
 
 @dataclass(frozen=True)
 class IrrepTerm:
-    """One ``<multiplicity>x<l><parity>`` term of a declaration.
+    """One ``<multiplicity>x<l><parity>`` term.
 
     Attributes:
-        multiplicity: How many copies of the irrep the term declares.
-        degree: The rotation order ``l``. A value of ``l`` spans ``2l + 1``
-            components.
-        parity: ``"e"`` or ``"o"``, the behaviour under inversion. The
-            distinction is load-bearing rather than decorative: a force is
-            ``1o`` and an angular momentum is ``1e``, and a model that confuses
-            them is wrong under inversion while looking right under rotation.
+        multiplicity: Positive integer number of copies; bools are rejected.
+        degree: Non-negative integer rotation order ``l``, spanning
+            ``2l + 1`` components.
+        parity: ``"e"`` (even) or ``"o"`` (odd) under inversion.
 
     Raises:
-        IrrepsGrammarError: If ``multiplicity`` is not a positive integer,
-            ``degree`` is not a non-negative integer, or ``parity`` is not
-            ``"e"`` or ``"o"``. Checked on construction, so a term built
-            directly is held to the same rules as one parsed from a string.
+        IrrepsGrammarError: A field violates these rules, including direct
+            construction.
     """
 
     multiplicity: int
@@ -103,45 +87,23 @@ class IrrepTerm:
 
 
 def parse_irreps(text: str, *, observable: str | None = None) -> tuple[IrrepTerm, ...]:
-    """Parse an irreps declaration into its terms.
+    """Parse a declaration, preserving its term order.
 
     Args:
-        text: The declaration, for example ``"128x0e+128x1o"``.
-        observable: The observable the declaration belongs to. Named in the
-            error message, because a validation failure reported without it
-            tells the reader which grammar was violated and not which of their
-            declarations violated it.
-
-    Returns:
-        The terms, in the order they were written. The order is preserved
-        rather than sorted: it is the layout of the values themselves.
+        text: Declaration such as ``"128x0e+128x1o"``.
+        observable: Optional observable name included in errors.
 
     Raises:
-        IrrepsGrammarError: If the declaration is empty or any term is
-            malformed.
+        IrrepsGrammarError: The declaration is empty or a term is malformed.
     """
     where = f"observable {observable!r}: " if observable else ""
-    if not text or not text.strip():
+    try:
+        terms = parse_terms(text, canonical=True)
+    except ValueError as failure:
         raise IrrepsGrammarError(
-            f"{where}the irreps declaration is empty. Expected {IRREPS_GRAMMAR}"
-        )
-    terms = []
-    for piece in text.split("+"):
-        match = _TERM.match(piece.strip())
-        if match is None:
-            raise IrrepsGrammarError(
-                f"{where}{piece.strip()!r} is not a valid irreps term in "
-                f"{text!r}. Expected {IRREPS_GRAMMAR}"
-            )
-        multiplicity, degree, parity = match.groups()
-        terms.append(
-            IrrepTerm(
-                multiplicity=1 if multiplicity is None else int(multiplicity),
-                degree=int(degree),
-                parity=parity,
-            )
-        )
-    return tuple(terms)
+            f"{where}{failure} Expected {IRREPS_GRAMMAR}"
+        ) from failure
+    return tuple(IrrepTerm(*term) for term in terms)
 
 
 def irreps_dimension(text: str, *, observable: str | None = None) -> int:

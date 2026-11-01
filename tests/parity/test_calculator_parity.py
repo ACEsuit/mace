@@ -16,12 +16,12 @@ import pytest
 from ase import Atoms
 from ase.io import read
 
+from tests.parity.anchors import load_anchor
 from tests.parity.test_anchor_as_foundation import (
     ANCHOR,
     TRAIN_SET,
     write_anchor_checkpoint,
 )
-from tests.parity.test_fm00_training_step import load_anchor
 
 #: fp64 agreement between two implementations of the same arithmetic, summed in
 #: different orders.

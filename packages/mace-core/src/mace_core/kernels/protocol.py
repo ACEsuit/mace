@@ -1,33 +1,13 @@
-"""The contract a kernel backend implements.
+"""Framework-independent kernel factories, resolved once at model build time.
 
-Generic over the tensor type, so the same contract serves torch and jax and
-this module imports neither. The pattern is the one
-:class:`~mace_core.outputs.MACEOutput` uses, and it has to work with no
-framework installed at all.
+Each factory takes a descriptor and returns an op bound into the model tree;
+forward calls perform no backend lookup. The op set is closed. Spherical
+harmonics, radial bases and radial MLPs may use reference implementations;
+fused convolution is negotiated through the span factory.
 
-**Factories, not calls.** Every method takes a descriptor and returns an op.
-The resolution happens once, at model build time, and the op is frozen into the
-module tree. Nothing in this file is reachable from ``forward``: no dtype
-check, no device check, no ``isinstance``, no lookup. That is the difference
-between this and the frozen tree's dispatch, which branches inside the
-interaction blocks on whether an attribute happens to be set.
-
-**The op set is closed.** It is exactly the operations that differ between
-backends, and it does not grow to accommodate one. Three of them are
-reference-only: a backend *may* override them and is not required to, and
-declining is a normal answer rather than a failure. Spherical harmonics and the
-radial basis are cheap closed forms. The radial MLP is a few dense matrix
-products that the framework already runs well on its own; what a backend gains
-from it is fusing it into the convolution, which is a span and is negotiated
-through the span factory, handed both descriptors.
-
-**Four of the ops hold their own weights**, and those four have a contract of
-their own: they read and write the canonical layout, and they can draw a fresh
-set. The last of the three is not an optimization. An op that allocates zeros
-and waits to be loaded is correct for every use that loads a checkpoint, and it
-builds a model that cannot be trained from scratch: the product of zero-valued
-tensors is zero, so is its gradient, and the run finishes and reports a model
-that never moved.
+Weight-owning ops implement ``InternalWeights``: canonical checkpoint I/O and
+a fresh draw for training from scratch. Zero-only initialization can prevent
+learning and does not satisfy that contract.
 """
 
 from __future__ import annotations

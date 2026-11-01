@@ -1,17 +1,7 @@
-"""One statistics implementation, over any backend, with no framework.
+"""Framework-independent statistics shared by preprocessing and in-memory loading.
 
-The frozen tree has two that must agree and are written differently: an
-in-memory pass over a torch dataloader (``mace/modules/utils.py:476-654``) and
-``pool_compute_stats`` inside preprocessing
-(``mace/cli/preprocess_data.py:60-85``). Reconciling two implementations is a
-standing cost; there is one here, and both the preparation command and the
-in-memory path call it.
-
-The isolated-atom energies are **passed in already resolved**. That is the
-point of the signature: the interaction-energy mean and spread are then always
-taken against the same values that become the model's buffer, whether they came
-from isolated-atom structures, a file, a foundation model or the least-squares
-fit below.
+Isolated-atom energies arrive already resolved. Interaction-energy statistics
+use the same E0 values stored in the model.
 """
 
 from __future__ import annotations

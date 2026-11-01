@@ -1,19 +1,9 @@
-"""Finding a data backend, with no fall-through anywhere.
+"""Discover and resolve data backends through entry points.
 
-The frozen tree selects a format by sniffing the path name through four
-successive guesses and then a final "attempting to load as LMDB"
-(``mace/tools/run_train_utils.py:32-162``). A typo in a path is therefore not
-an error: it is an attempt to read a file that does not exist as a database,
-and the failure arrives far from the cause.
-
-Here resolution is explicit or it fails. ``format="auto"`` asks every
-registered backend whether it claims the source, in a declared priority order,
-and **zero matches or more than one match are both hard errors naming the
-candidates**. There is no last resort.
-
-Discovery and resolution differ in the same way as for kernel backends: a
-backend whose import fails is recorded so that listing works on a machine
-missing an optional dependency, and asking for it by name raises.
+``format="auto"`` asks in ``SNIFF_PRIORITY`` order and requires exactly one
+backend to claim the source. Listings retain import failures; named resolution
+raises for unavailable providers. Conflicting registrations raise
+``DuplicateDataBackendError``; identical registrations coalesce.
 """
 
 from __future__ import annotations
@@ -23,6 +13,7 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
 
+from mace_core._entry_points import load_entry_point, unique_entries
 from mace_core.data.backend import DataBackend, DataBackendError
 from mace_core.data.keys import KeySpecification
 
@@ -31,6 +22,7 @@ __all__ = [
     "SNIFF_PRIORITY",
     "AmbiguousFormatError",
     "DiscoveredDataBackend",
+    "DuplicateDataBackendError",
     "UnknownBackendError",
     "available_backends",
     "open_dataset",
@@ -55,6 +47,10 @@ class AmbiguousFormatError(DataBackendError):
     """``format="auto"`` matched zero backends, or more than one."""
 
 
+class DuplicateDataBackendError(RuntimeError):
+    """Different data backends registered under one name."""
+
+
 @dataclass(frozen=True)
 class DiscoveredDataBackend:
     name: str
@@ -65,13 +61,15 @@ class DiscoveredDataBackend:
 
 def _discover() -> dict[str, DiscoveredDataBackend]:
     found: dict[str, DiscoveredDataBackend] = {}
-    for entry in entry_points(group=ENTRY_POINT_GROUP):
-        try:
-            factory = entry.load()
-        except Exception as failure:
-            found[entry.name] = DiscoveredDataBackend(entry.name, False, repr(failure))
-        else:
-            found[entry.name] = DiscoveredDataBackend(entry.name, True, "", factory)
+    for entry in unique_entries(
+        entry_points(group=ENTRY_POINT_GROUP),
+        ENTRY_POINT_GROUP,
+        DuplicateDataBackendError,
+    ).values():
+        factory, reason = load_entry_point(entry)
+        found[entry.name] = DiscoveredDataBackend(
+            entry.name, not reason, reason, factory
+        )
     return found
 
 

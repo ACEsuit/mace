@@ -364,12 +364,8 @@ class GTOElectrostaticFeatures(torch.nn.Module):
     def _select_precompute_geometry_impl(self) -> Callable:
         if self.pbc_handling == "realspace":
             return self._precompute_geometry_realspace
-        if self.pbc_handling == "pbc":
-            return self._precompute_geometry_pbc
-        if self.pbc_handling == "slab":
-            return self._precompute_geometry_slab
-        if self.pbc_handling == "molecule_in_box":
-            return self._precompute_geometry_molecule_in_box
+        if self.pbc_handling in ("pbc", "slab", "molecule_in_box"):
+            return self._precompute_geometry_periodic_common
         if self.pbc_handling == "mixed_periodic":
             return self._precompute_geometry_mixed_periodic
         if self.pbc_handling == "auto":
@@ -522,72 +518,6 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             "density_basis_fs": density_basis_fs,
             "feature_basis_fs": feature_basis_fs,
         }
-
-    def _precompute_geometry_pbc(
-        self,
-        k_vectors: torch.Tensor,
-        k_norm2: torch.Tensor,
-        k_vector_batch: torch.Tensor,
-        k0_mask: torch.Tensor,
-        node_positions: torch.Tensor,
-        batch: torch.Tensor,
-        volume: torch.Tensor,
-        pbc: torch.Tensor,
-    ) -> dict:
-        return self._precompute_geometry_periodic_common(
-            k_vectors=k_vectors,
-            k_norm2=k_norm2,
-            k_vector_batch=k_vector_batch,
-            k0_mask=k0_mask,
-            node_positions=node_positions,
-            batch=batch,
-            volume=volume,
-            pbc=pbc,
-        )
-
-    def _precompute_geometry_slab(
-        self,
-        k_vectors: torch.Tensor,
-        k_norm2: torch.Tensor,
-        k_vector_batch: torch.Tensor,
-        k0_mask: torch.Tensor,
-        node_positions: torch.Tensor,
-        batch: torch.Tensor,
-        volume: torch.Tensor,
-        pbc: torch.Tensor,
-    ) -> dict:
-        return self._precompute_geometry_periodic_common(
-            k_vectors=k_vectors,
-            k_norm2=k_norm2,
-            k_vector_batch=k_vector_batch,
-            k0_mask=k0_mask,
-            node_positions=node_positions,
-            batch=batch,
-            volume=volume,
-            pbc=pbc,
-        )
-
-    def _precompute_geometry_molecule_in_box(
-        self,
-        k_vectors: torch.Tensor,
-        k_norm2: torch.Tensor,
-        k_vector_batch: torch.Tensor,
-        k0_mask: torch.Tensor,
-        node_positions: torch.Tensor,
-        batch: torch.Tensor,
-        volume: torch.Tensor,
-        pbc: torch.Tensor,
-    ) -> dict:
-        return self._precompute_geometry_periodic_common(
-            k_vectors=k_vectors,
-            k_norm2=k_norm2,
-            k_vector_batch=k_vector_batch,
-            k0_mask=k0_mask,
-            node_positions=node_positions,
-            batch=batch,
-            volume=volume,
-            pbc=pbc,
-        )
 
     def _precompute_geometry_mixed_periodic(
         self,

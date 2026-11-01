@@ -1,29 +1,8 @@
-"""Turning an E0 declaration into one energy per element.
+"""Resolve isolated-atom energies for every element before model construction.
 
-Called once, before the model is built, because an isolated-atom energy is a
-per-species constant that every energy the head trains on is shifted by. Get it
-wrong and the model absorbs the difference into its readout, the fit looks
-merely poor, and nothing anywhere says a number was missing.
-
-**Every element of the table is resolved or this raises.** That is the whole
-contract, and it replaces four separate places where the frozen tree keeps
-going instead:
-
-* an ``IsolatedAtom`` structure whose energy key is absent warns and
-  contributes ``0.0`` (``mace/data/utils.py:333-337``);
-* a singular least-squares system logs an error and zeroes **every** element
-  (``:381-387``);
-* an element the foundation model does not cover is padded with
-  ``head_energies.get(z, 0.0)`` (``mace/cli/run_train.py:578-586``);
-* and the assertion that a foundation model is configured is made for one of
-  the two kinds that need one and not the other (``:527``).
-
-A zero is not a neutral default here. It is a claim that an isolated atom of
-that species has exactly zero energy, which is indistinguishable in the fit
-from a real reference and wrong by however much the real one is.
-
-No torch, no jax. ``estimated`` is the one kind that needs a model, and it
-takes it as an injected callable rather than importing one.
+Missing references and singular fits raise instead of supplying zero energies.
+The ``estimated`` mode receives its foundation predictor as a callable so
+resolution remains independent of torch and jax.
 """
 
 from __future__ import annotations

@@ -1,13 +1,8 @@
-"""Finding electrostatics solvers, apart from the kernel backends.
+"""Discover electrostatics solvers in separate groups from kernel backends.
 
-A registry of its own, one entry point group per framework, beside the kernel
-backends' rather than inside it: the message-passing op contract stays closed,
-and a solver is not a kernel backend with one more op.
-
-**Discovery records failures; resolution raises.** A solver whose import fails
-on this machine, because its optional dependency is not installed, is listed
-with the reason. Asking for it by name raises with that reason, and nothing
-else is handed back in its place.
+Listings retain import failures; named resolution raises instead of substituting
+a solver. Conflicting registrations raise ``DuplicateSolverError``; identical
+registrations coalesce. Checkpoint substitution follows ``solver_to_load``.
 """
 
 from __future__ import annotations
@@ -16,9 +11,12 @@ from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from typing import Any
 
+from mace_core._entry_points import load_entry_point, unique_entries
+
 __all__ = [
     "ENTRY_POINT_GROUPS",
     "DiscoveredSolver",
+    "DuplicateSolverError",
     "SolverNotAvailableError",
     "SolverSubstitutionError",
     "available_solvers",
@@ -39,7 +37,12 @@ class SolverNotAvailableError(RuntimeError):
 
 class SolverSubstitutionError(RuntimeError):
     """A model was asked to load with a solver other than its own, and the
-    swap would change its numbers."""
+    swap would change its numbers.
+    """
+
+
+class DuplicateSolverError(RuntimeError):
+    """Different electrostatics solvers registered under one name."""
 
 
 @dataclass(frozen=True)
@@ -68,13 +71,13 @@ def _discover(framework: str) -> list[DiscoveredSolver]:
             f"frameworks are {sorted(ENTRY_POINT_GROUPS)}."
         )
     found = []
-    for entry in entry_points(group=group):
-        try:
-            factory = entry.load()
-        except Exception as failure:
-            found.append(DiscoveredSolver(entry.name, framework, False, repr(failure)))
-        else:
-            found.append(DiscoveredSolver(entry.name, framework, True, "", factory))
+    for entry in unique_entries(
+        entry_points(group=group), group, DuplicateSolverError
+    ).values():
+        factory, reason = load_entry_point(entry)
+        found.append(
+            DiscoveredSolver(entry.name, framework, not reason, reason, factory)
+        )
     return sorted(found, key=lambda solver: solver.name)
 
 

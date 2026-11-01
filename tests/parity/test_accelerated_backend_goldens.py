@@ -24,8 +24,8 @@ from pathlib import Path
 import pytest
 
 from tests.golden import harness
+from tests.parity.anchors import load_anchor
 from tests.parity.test_anchor_as_foundation import ANCHOR, write_anchor_checkpoint
-from tests.parity.test_fm00_training_step import load_anchor
 
 REFERENCE = harness.REFERENCES_DIR / "tiny_scaleshift_e3nn_cpu_fp64.json"
 

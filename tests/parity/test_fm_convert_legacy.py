@@ -39,8 +39,8 @@ from mace_torch.finetune.foundation import read_foundation
 from mace_torch.train import write_model
 
 from tests.golden.harness import tolerance
+from tests.parity.anchors import load_anchor
 from tests.parity.test_anchor_as_foundation import energies
-from tests.parity.test_fm00_training_step import load_anchor
 
 GOLDEN = Path(__file__).resolve().parents[1] / "golden"
 FIXTURES = GOLDEN / "fixtures"

@@ -12,9 +12,6 @@ evaluated on the same inputs with nothing in between.
 
 from __future__ import annotations
 
-from tests.parity.fm00_convert import model_arguments
-
-import os
 from pathlib import Path
 
 import ase.io
@@ -29,9 +26,11 @@ from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import load_checkpoint, save_checkpoint
 
+from tests.parity.anchors import load_anchor
 from tests.parity.fm00_convert import (
     build_config,
     energy_constants_to_canonical,
+    model_arguments,
     transfer_weights,
 )
 
@@ -50,20 +49,6 @@ ENERGY_TOLERANCE = 1e-6
 FORCE_TOLERANCE = 1e-6
 
 
-def load_anchor(name: str):
-    previous = os.environ.get("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD")
-    os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-    try:
-        return torch.load(
-            GOLDEN / "models" / name, map_location="cpu", weights_only=False
-        )
-    finally:
-        if previous is None:
-            os.environ.pop("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", None)
-        else:
-            os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = previous
-
-
 def convert(legacy):
     """The whole conversion, config and weights."""
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
@@ -79,7 +64,10 @@ def convert(legacy):
         widen_node_energy=getattr(legacy, "scale_shift", None) is not None,
     )
     model = MACEModel(
-        ReferenceBackend(), observables=[ENERGY], energy_head=head, **model_arguments(config)
+        ReferenceBackend(),
+        observables=[ENERGY],
+        energy_head=head,
+        **model_arguments(config),
     )
     transfer_weights(legacy, model, config["correlation"])
     return model, config
@@ -186,7 +174,10 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
             PrecisionConfig(),
         )
         return MACEModel(
-            ReferenceBackend(), observables=[ENERGY], energy_head=head, **model_arguments(stored)
+            ReferenceBackend(),
+            observables=[ENERGY],
+            energy_head=head,
+            **model_arguments(stored),
         )
 
     restored = load_checkpoint(tmp_path / "converted", rebuild)

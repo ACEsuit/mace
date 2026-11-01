@@ -1,20 +1,7 @@
-"""Turning what a run asked for into what its model records.
+"""Record resolved isolated-atom energies and the method that produced them.
 
-The configuration says where a head's isolated-atom energies should come from;
-the metadata says where they came from. They are different statements, and the
-gap between them is the whole reason the record exists: `average` is a request
-that can fail, and a table read out of a file is a fact.
-
-So this module does the half that is a pure function of the request, and takes
-the other half from whoever resolved it. Nothing here fits an E0 or reads a
-file. The value of doing it here rather than in the stage that resolves them is
-that the mapping from a kind to a recorded method is one line per kind, in one
-place, next to the kinds.
-
-The record is keyed by chemical symbol, because a JSON key is a string and an
-integer one does not survive the round trip the record exists to make. The
-caller converts: a periodic table is not something this module should carry to
-rename five keys, and the side that resolved the energies already has one.
+Callers supply resolved values keyed by chemical symbol for JSON round trips.
+This module maps the requested E0 kind to provenance without fitting or I/O.
 """
 
 from __future__ import annotations
@@ -43,28 +30,19 @@ def e0_details(
     *,
     from_foundation: Sequence[str] = (),
 ) -> E0Details:
-    """Record how one head's E0s were obtained, given the resolved values.
+    """Record one head's resolved E0s and provenance.
 
     Args:
-        spec: What the configuration asked for.
-        values: Chemical symbol to energy, as resolved. Even for a table kind,
-            whose spec already carries values: those are keyed by atomic
-            number and are the request, and recording a request as a result is
-            the confusion this whole object exists to remove.
-        from_foundation: Symbols whose energies no structure determined and
-            which were taken from the foundation model instead, recorded as
-            the ``from_foundation`` parameter when there are any.
+        spec: Requested E0 source and method settings.
+        values: Resolved energies in eV, keyed by chemical symbol.
+        from_foundation: Symbols whose references came from the foundation model.
 
     Returns:
-        The metadata record. ``"explicit"`` for a table, which is already an
-        answer, and ``"estimated"`` with a named method for the four that are
-        requests. The kind's own settings are carried as ``parameters``, so
-        two runs of the same method against different foundation heads read as
-        two different things.
+        ``"explicit"`` provenance for a table; ``"estimated"`` with a method name
+        otherwise. Method settings are retained as parameters.
 
     Raises:
-        KeyError: If the kind has no recorded method, which means a kind was
-            added to the union and not to the table here.
+        KeyError: The E0 kind has no entry in ``E0_METHODS``.
     """
     if spec.kind not in E0_METHODS:
         raise KeyError(

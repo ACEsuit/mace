@@ -1,45 +1,17 @@
-"""Neighbour-list backends: the protocol, the registry and the config section.
+"""Neighbour-list providers, config and entry-point resolution.
 
-A backend finds the edges and nothing else. It receives the
-:class:`~mace_core.neighbors.geometry.SearchGeometry` the graph builder already
-computed and returns ``(edge_index, unit_shifts)``; the effective cell and the
-shifts are filled in afterwards by
-:func:`~mace_core.neighbors.neighborhood.get_neighborhood`, the same way
-whichever backend ran. Swapping backends is therefore a choice about speed and
-robustness and never about the numbers: every registered backend has to
-reproduce the all-pairs edge set.
+Providers receive ``SearchGeometry`` and return numpy ``(edge_index,
+unit_shifts)`` arrays matching the all-pairs edge set. ``get_neighborhood``
+computes the effective cell and Cartesian shifts uniformly across providers.
 
-Backends register through the entry point group ``mace.neighbor_backends``,
-the same way kernel backends do, so one can live in its own distribution. The
-providers registered there return numpy arrays and import no framework.
+Listing imports all providers and records failures; named resolution imports
+only the requested provider and raises on failure. Identical registrations
+coalesce; conflicting names raise before imports.
 
-**Discovery records failures; resolution raises.** A backend whose import fails
-is listed with the reason. Asking for it by name raises with that reason,
-because substituting another one would hide that the request was not met.
-
-**A name is registered once.** Two entry points under one name would resolve by
-install order. Two that name the same object are one registration; two that
-name different objects raise wherever discovery runs.
-
-**Resolving a name imports one backend.** Listing imports every registered
-backend, because that is how it learns which ones fail; a backend that sets up
-a device at import pays for it there. :func:`get_neighbor_backend` reads the
-metadata of all of them and imports only the one it names.
-
-**One default per framework; anything else is asked for by name.** A config
-section that names no backend gets the default of the framework building the
-graphs, which it passes to :func:`resolve_neighbor_backend`; ``all_pairs``
-when no framework is involved. A named backend is used as named. Either is
-built or refused, never replaced by another. Only ``all_pairs`` is
-guaranteed by ``mace-core``. ``matscipy`` is its extra of the same name;
-``vesin`` is registered by mace-torch, because importing vesin also imports
-torch whenever torch is installed. Each framework package requires the
-library of its default. The choice never changes a number, since every
-backend returns the same edge set, so it is not part of a model's state.
-
-**Resolve once.** A graph builder resolves its backend when it is set up and
-hands the object to every
-:func:`~mace_core.neighbors.neighborhood.get_neighborhood` call.
+Graph builders resolve a provider once and reuse it. Each framework supplies
+its default; standalone core defaults to ``all_pairs``. Core optionally provides
+``matscipy``; mace-torch provides ``vesin`` because importing it may import torch.
+Provider choice changes performance, not the edge set or model state.
 """
 
 from __future__ import annotations
@@ -52,6 +24,7 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 from pydantic import Field, ValidationError, field_validator, model_validator
 
+from mace_core._entry_points import load_entry_point, unique_entries
 from mace_core.config.base import ConfigSection
 from mace_core.neighbors.geometry import SearchGeometry
 
@@ -185,41 +158,17 @@ class DiscoveredNeighborBackend:
     factory: Any = field(default=None, repr=False, compare=False)
 
 
-def _describe(entry: Any) -> str:
-    distribution = getattr(entry, "dist", None)
-    origin = getattr(distribution, "name", None) or "an unknown distribution"
-    return f"{entry.name} = {getattr(entry, 'value', '?')} (from {origin})"
-
-
 def _registered() -> dict[str, Any]:
-    """Every entry point in the group by name, read from metadata only.
-
-    Raises:
-        DuplicateNeighborBackendError: if two entry points register different
-            objects under one name.
-    """
-    by_name: dict[str, Any] = {}
-    for entry in entry_points(group=NEIGHBOR_BACKEND_GROUP):
-        seen = by_name.get(entry.name)
-        if seen is None:
-            by_name[entry.name] = entry
-        elif getattr(seen, "value", None) != getattr(entry, "value", None):
-            raise DuplicateNeighborBackendError(
-                f"two entry points in {NEIGHBOR_BACKEND_GROUP!r} register the "
-                f"backend name {entry.name!r}: {_describe(seen)} and "
-                f"{_describe(entry)}. Neither is chosen, because the choice would "
-                f"follow install order. Uninstall one of the two distributions, "
-                f"or register one under another name."
-            )
-    return by_name
+    return unique_entries(
+        entry_points(group=NEIGHBOR_BACKEND_GROUP),
+        NEIGHBOR_BACKEND_GROUP,
+        DuplicateNeighborBackendError,
+    )
 
 
 def _load(name: str, entry: Any) -> DiscoveredNeighborBackend:
-    try:
-        factory = entry.load()
-    except Exception as failure:
-        return DiscoveredNeighborBackend(name, False, repr(failure))
-    return DiscoveredNeighborBackend(name, True, "", factory)
+    factory, reason = load_entry_point(entry)
+    return DiscoveredNeighborBackend(name, not reason, reason, factory)
 
 
 def available_neighbor_backends() -> list[DiscoveredNeighborBackend]:

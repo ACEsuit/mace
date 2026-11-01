@@ -1,21 +1,8 @@
-"""Finding backends, and the difference between discovery and resolution.
+"""Discover kernel backends in one entry-point group per framework.
 
-Backends register through entry points, one group per framework, so a backend
-can live in its own distribution and be found without anything in this package
-naming it.
-
-**Discovery records failures; resolution raises.** A backend whose import fails
-because a CUDA library is missing is an ordinary fact about this machine, not a
-reason to stop: it is recorded and listed. Asking for that backend by name is a
-different matter and raises, with the recorded reason, because the caller named
-something that cannot be delivered and a fallback would silently change the
-numbers.
-
-**A name is registered once.** Two entry points under one name would otherwise
-resolve by install order, so a third-party distribution could shadow
-``reference`` and change the numbers with nothing said. Two declarations that
-name the same object are the same registration and are accepted; two that name
-different objects raise wherever discovery runs.
+Listings retain import failures; resolving an unavailable backend raises.
+Identical registrations coalesce, while conflicting names raise before imports.
+No backend is substituted.
 """
 
 from __future__ import annotations
@@ -23,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from typing import Any, Literal
+
+from mace_core._entry_points import load_entry_point, unique_entries
 
 __all__ = [
     "ENTRY_POINT_GROUPS",
@@ -49,33 +38,6 @@ class BackendNotAvailableError(RuntimeError):
 
 class DuplicateBackendError(RuntimeError):
     """Two entry points registered different backends under one name."""
-
-
-def _describe(entry: Any) -> str:
-    """An entry point as ``name = value`` plus the distribution declaring it."""
-    distribution = getattr(entry, "dist", None)
-    origin = getattr(distribution, "name", None) or "an unknown distribution"
-    return f"{entry.name} = {getattr(entry, 'value', '?')} (from {origin})"
-
-
-def _refuse_duplicates(entries: list[Any], group: str) -> list[Any]:
-    """The entries with identical repeats dropped, or a raise on a conflict."""
-    by_name: dict[str, Any] = {}
-    for entry in entries:
-        seen = by_name.get(entry.name)
-        if seen is None:
-            by_name[entry.name] = entry
-            continue
-        if getattr(seen, "value", None) == getattr(entry, "value", None):
-            continue
-        raise DuplicateBackendError(
-            f"two entry points in {group!r} register the backend name "
-            f"{entry.name!r}: {_describe(seen)} and {_describe(entry)}. "
-            f"Neither is chosen, because the choice would follow install order "
-            f"and a different backend is a different set of numbers. Uninstall "
-            f"one of the two distributions, or register one under another name."
-        )
-    return list(by_name.values())
 
 
 @dataclass(frozen=True)
@@ -105,28 +67,21 @@ def _discover(framework: str) -> list[DiscoveredBackend]:
             f"frameworks are {sorted(ENTRY_POINT_GROUPS)}."
         )
     found = []
-    for entry in _refuse_duplicates(list(entry_points(group=group)), group):
-        try:
-            factory = entry.load()
-        except Exception as failure:
-            found.append(DiscoveredBackend(entry.name, framework, False, repr(failure)))
-        else:
-            found.append(DiscoveredBackend(entry.name, framework, True, "", factory))
+    for entry in unique_entries(
+        entry_points(group=group), group, DuplicateBackendError
+    ).values():
+        factory, reason = load_entry_point(entry)
+        found.append(
+            DiscoveredBackend(entry.name, framework, not reason, reason, factory)
+        )
     return sorted(found, key=lambda backend: backend.name)
 
 
 def available_backends(framework: str = "torch") -> list[DiscoveredBackend]:
-    """Every registered backend for a framework, loaded or not.
-
-    Nothing here raises for a backend that failed to import. A machine without
-    a CUDA runtime is expected to carry entry points it cannot load, and a
-    listing that refused to run on such a machine would be useless exactly
-    where it is most wanted.
+    """List every registered backend, including import failures.
 
     Raises:
-        DuplicateBackendError: If two entry points register different objects
-            under one name. That is not a fact about this machine but an
-            ambiguity no listing can resolve.
+        DuplicateBackendError: Different objects register under the same name.
     """
     return _discover(framework)
 

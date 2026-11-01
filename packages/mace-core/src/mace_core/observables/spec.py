@@ -1,38 +1,12 @@
-"""Declaring an observable, an input, and the derivatives between them.
+"""Declare inputs, observables and requested derivatives in config sections.
 
-Which quantities a legacy model computes is decided by a ladder of string
-comparisons on the model class name that sets six boolean flags, plus ten more
-``compute_*`` arguments on the forward signatures. Adding one property means
-editing several files. Here a property is a row: name it, say what shape it
-has, say whether there is one per atom or one per structure, and it is declared.
+``InputSpec`` declares a differentiable leaf; ``ObservableSpec`` declares a model
+output. ``DerivativeSpec`` is derived from requests, using their name and sign
+or the defaults in ``observables.derivatives``; it is never configured directly.
 
-Three objects, and they do different jobs:
-
-``InputSpec``
-    a leaf a derivative can be taken against: positions, the strain, a magnetic
-    moment, an electronic temperature. Declaring one is what makes its
-    derivative reachable without new code.
-
-``ObservableSpec``
-    something the model produces and a loss can be written against.
-
-``DerivativeSpec``
-    derived, never declared: the result of asking an observable for its
-    derivative with respect to an input. Its name and sign are the ones the
-    observable's :class:`DerivativeRequest` declares, and otherwise the
-    ``d_<q>_d_<x>`` rule of :mod:`mace_core.observables.derivatives` with the
-    gradient's own sign.
-
-``ObservableCatalogue`` holds a set of inputs and observables;
-:data:`~mace_core.observables.DEFAULT_CATALOGUE` is one, declared in
-:mod:`mace_core.observables.defaults`. Validation of a single row lives on the
-row, and validation between rows lives on the catalogue: a derivative asked
-against an input nobody declared, a per-atom quantity differentiated against a
-per-atom input, or two names that collide.
-
-The declared classes are config sections, so a catalogue is a field of a
-config like any other. ``DerivativeSpec`` is not one: it is derived, and a
-config never holds it.
+``ObservableCatalogue`` validates relationships between declarations, including
+missing derivative inputs, unsupported per-atom derivatives and name collisions.
+Individual rows validate their own fields. Built-ins live in ``DEFAULT_CATALOGUE``.
 """
 
 from __future__ import annotations

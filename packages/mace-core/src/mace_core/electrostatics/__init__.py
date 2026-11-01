@@ -22,6 +22,7 @@ from mace_core.electrostatics.descriptor import (
 from mace_core.electrostatics.registry import (
     ENTRY_POINT_GROUPS,
     DiscoveredSolver,
+    DuplicateSolverError,
     SolverNotAvailableError,
     SolverSubstitutionError,
     available_solvers,
@@ -34,6 +35,7 @@ __all__ = [
     "PERIODICITY_PROFILES",
     "REALSPACE_METHODS",
     "DiscoveredSolver",
+    "DuplicateSolverError",
     "ElectrostaticsSolverDescriptor",
     "FeatureProjection",
     "PeriodicityProfile",

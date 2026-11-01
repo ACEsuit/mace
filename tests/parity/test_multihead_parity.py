@@ -16,8 +16,6 @@ head's copy for the other, cannot agree by accident.
 
 from __future__ import annotations
 
-from tests.parity.fm00_convert import model_arguments
-
 import copy
 
 import ase.io
@@ -29,12 +27,14 @@ from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 
+from tests.parity.anchors import load_anchor
 from tests.parity.fm00_convert import (
     build_config,
     energy_constants_to_canonical,
+    model_arguments,
     transfer_weights,
 )
-from tests.parity.test_fm00_keystone import ENERGY, GOLDEN, load_anchor, v1_graph
+from tests.parity.test_fm00_keystone import ENERGY, GOLDEN, v1_graph
 
 HEADS = ("replay", "target")
 
@@ -90,7 +90,10 @@ def convert(legacy):
         zbl_in_scale_shift=True,
     )
     model = MACEModel(
-        ReferenceBackend(), observables=[ENERGY], energy_head=head, **model_arguments(config)
+        ReferenceBackend(),
+        observables=[ENERGY],
+        energy_head=head,
+        **model_arguments(config),
     )
     transfer_weights(legacy, model, config["correlation"])
     return model, config

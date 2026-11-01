@@ -1,27 +1,8 @@
-"""The whole training configuration, and the rules that span its sections.
+"""Immutable training configuration with validation across sections.
 
-One immutable validated object at the head of the pipeline. What makes it worth
-having is not the sections, which are only fields grouped by subject, but the
-**validators between them**: every one of them replaces a place where legacy
-notices an incoherent configuration and keeps training anyway.
-
-Legacy's answer to each is a log line, and a log line is what a run that takes
-two days does not have a reader for:
-
-* E0s from a foundation model with no foundation model configured. Legacy
-  asserts this for one of the two kinds and not the other
-  (``mace/cli/run_train.py:527``).
-* A dipole or dielectric model with E0s set. Under
-  ``--finetune_dipoles_polarizabilities`` legacy warns and rewrites the
-  request to ``average`` (``:153-159``), because the model it is about to
-  build has no atomic-energy term at all.
-* L-BFGS beside an EMA or a plateau schedule, which legacy builds and then
-  leaves attached to an optimizer that steps once an epoch (``:971-976``).
-* Pseudolabels asked for and also read from a file, which is two sources for
-  one set of labels.
-
-Each is a validation error here, raised before anything is built, naming the
-fields that disagree.
+Reject inconsistent E0/foundation settings, E0s for non-energy models,
+unsupported optimizer/EMA/scheduler combinations and conflicting pseudolabel
+sources before building the pipeline. Errors name the disagreeing fields.
 """
 
 from __future__ import annotations

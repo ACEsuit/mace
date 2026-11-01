@@ -226,6 +226,8 @@ reference in `mace_torch/backends/reference.py` is the one to copy.
 | `mace_core/clebsch_gordan/__init__.py` | The public surface of the basis: path order and normalization conventions. |
 | `mace_core/clebsch_gordan/coefficients.py` | Complex Clebsch-Gordan and Wigner 3j coefficients from the Racah formula. |
 | `mace_core/clebsch_gordan/conversion.py` | Converting weights between the full and reduced bases, and between layouts. |
+| `mace_core/_entry_points.py` | Shared entry-point collision checks and import diagnostics. |
+| `mace_core/_irreps.py` | Shared irreps syntax; callers retain their spelling and error contracts. |
 | `mace_core/clebsch_gordan/irreps.py` | O(3) irreps: parsing, ordering, dimensions, selection rules. |
 | `mace_core/clebsch_gordan/real_basis.py` | The Wigner 3j table in the real spherical-harmonic basis the models use. |
 | `mace_core/clebsch_gordan/reduced_basis.py` | The reduced symmetric tensor-product basis and its path order. |

@@ -7,30 +7,14 @@ it wrong is a constant factor rather than a visible break.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_torch.backends.reference import ReferenceLinear
 
+from tests.parity.anchors import load_anchor
 from tests.parity.fm00_convert import linear_weights_to_canonical
-
-ANCHORS = Path(__file__).resolve().parents[1] / "golden/models"
-
-
-def load_anchor(name: str):
-    previous = os.environ.get("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD")
-    os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-    try:
-        return torch.load(ANCHORS / name, map_location="cpu", weights_only=False)
-    finally:
-        if previous is None:
-            os.environ.pop("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", None)
-        else:
-            os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = previous
 
 
 @pytest.mark.parametrize("anchor", ["tiny_scaleshift.model", "tiny_mace.model"])

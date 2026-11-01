@@ -1,16 +1,9 @@
-"""Finding the commands the installed packages declare.
+"""Discover commands declared in the ``mace.commands`` entry-point group.
 
-A package declares a command as an entry point in the ``mace.commands`` group,
-named by its path with dots between the words (``train``,
-``model.export-config``) and pointing at a
-:class:`~mace_core.cli.command.Command`. Nothing here names a package, so an
-implementation is installed or it is not, and a third party adds a command the
-same way.
-
-Two packages declaring one command is refused rather than resolved by
-installation order, since the same command line would then run different code
-on two machines. A command whose import fails is still listed, so ``--help``
-works on a machine missing a dependency, and running it says why it cannot.
+Names are dotted command paths (``train``, ``model.export-config``), pointing
+at a :class:`~mace_core.cli.command.Command`. Duplicate paths and command/group
+collisions raise. Failed imports remain listed so help works without optional
+dependencies and command execution can report the cause.
 """
 
 from __future__ import annotations
@@ -18,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 
+from mace_core._entry_points import load_entry_point
 from mace_core.cli.command import Command
 
 __all__ = ["ENTRY_POINT_GROUP", "CommandConflictError", "DiscoveredCommand", "discover"]
@@ -63,10 +57,9 @@ def discover() -> dict[tuple[str, ...], DiscoveredCommand]:
                 f"'mace {' '.join(path)}' is declared by both "
                 f"{found[path].distribution} and {distribution}. Uninstall one."
             )
-        try:
-            command = entry.load()
-        except Exception as failure:
-            found[path] = DiscoveredCommand(path, distribution, None, repr(failure))
+        command, reason = load_entry_point(entry)
+        if reason:
+            found[path] = DiscoveredCommand(path, distribution, None, reason)
             continue
         if not isinstance(command, Command):
             found[path] = DiscoveredCommand(

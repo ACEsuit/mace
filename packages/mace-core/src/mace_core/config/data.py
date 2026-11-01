@@ -1,18 +1,7 @@
-"""Which structures a run trains on, and per head where its E0s come from.
+"""Training datasets and E0 sources, grouped by head in ``HeadDataConfig``.
 
-A head is a level of theory, so everything that differs between two of them is
-a field of :class:`HeadDataConfig` rather than a parallel list somewhere:
-legacy keeps the heads in one dict and their E0s, files and weights in flags
-that apply to all of them at once, which is why a multi-head run has to be
-written as a YAML document the flags cannot express.
-
-**The ten label keys are not fields here.** They are the data contract every
-labelled dataset on disk was written against, so they belong to the key
-convention rather than to a run. The three that *are* fields are the
-graph-level inputs: an electronic temperature or a total charge is something a
-particular dataset carries under a particular name, and declaring it is what
-makes it readable at all. That split is the disposition table's, not this
-module's.
+Label keys follow the data key convention. Graph-level inputs such as electronic
+temperature and total charge have configurable file keys.
 """
 
 from __future__ import annotations

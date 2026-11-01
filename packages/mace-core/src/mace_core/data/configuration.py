@@ -1,25 +1,11 @@
-"""The raw parsed structure: one labelled atomic configuration.
+"""Framework-independent parsed atomic configurations with numpy arrays.
 
-This is the boundary object of the whole data layer. A format backend produces
-these and graph construction consumes them, so it is the one place both sides
-have to agree, and it is deliberately dumb: numpy arrays and plain Python, no
-tensors, no neighbour list, no framework.
+Property keys use convention names (including level-of-theory names such as
+``pbe_energy``); ``KeySpecification`` resolves file keys during parsing.
 
-**Property keys are convention names, never file keys.** ``properties`` is
-keyed by ``energy``, ``forces``, ``magmom`` and so on, including multi-level-of
--theory names such as ``pbe_energy`` or ``r2scan_forces``. The mapping from a
-convention name to the string the value was stored under in the file is
-resolved during parsing and lives only in
-:class:`~mace_core.data.keys.KeySpecification`. Nothing downstream of the
-parser ever sees a ``REF_energy``-style file key, so nothing downstream has to
-be told which key spec produced it.
-
-**The cell is the physical cell as parsed, and nothing else.** A neighbour list
-over an aperiodic system needs an artificial box to bin into, and that box is
-the neighbour builder's business: it is constructed there, used there, and
-never written back. A configuration that carried a synthetic cell would report
-a stress divided by an invented volume, with nothing in the object to say the
-volume was invented.
+The cell is the physical cell from the source. Neighbour builders may construct
+a binning box for aperiodic systems, but must never write it back: stress must
+not use an invented volume.
 """
 
 from __future__ import annotations
