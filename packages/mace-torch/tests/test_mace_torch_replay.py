@@ -1,25 +1,28 @@
 """The published replay datasets: the table, the cache, and a failed download.
 
-No test here touches the network. The download is a function the fetch takes,
-and every test hands in one that writes a file, so what is checked is what the
-fetch does around it: where the file goes, that it is fetched once, and what
-happens when the answer is not a dataset.
+No test here touches the network. The fetch takes what opens the URL, and every
+test hands in one that answers with a replay file, so the real download runs:
+where the file goes, that it is fetched once, and what happens when the answer
+is not a dataset.
 """
 
 from __future__ import annotations
+
+import io
 
 import numpy as np
 import pytest
 from ase import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
 from ase.io import write
+from mace_core.artifacts import cache_name
 from mace_core.config.data import CURATED_DATASETS
 from mace_torch.finetune.replay import (
     CURATED_URLS,
     ReplayDownloadError,
     cache_directory,
-    cached_path,
     fetch,
+    legacy_cached_path,
     read_curated,
 )
 
@@ -42,17 +45,49 @@ def replay_file(path, count=3):
     write(path, frames, format="extxyz")
 
 
+def replay_bytes(tmp_path) -> bytes:
+    path = tmp_path / "replay.xyz"
+    replay_file(path)
+    return path.read_bytes()
+
+
+class Answer:
+    """What ``urlopen`` returns, reduced to what a download reads."""
+
+    def __init__(self, body: bytes, content_type: str, fail: Exception | None):
+        self.headers = {"Content-Type": content_type}
+        self._body = io.BytesIO(body)
+        self._fail = fail
+
+    def read(self, size):
+        if self._fail is not None:
+            raise self._fail
+        return self._body.read(size)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
 class Downloads:
-    """A download that writes a replay file and counts how often it ran."""
+    """Answers with a replay file, and counts how often it was asked."""
 
-    def __init__(self, headers="Content-Type: application/octet-stream"):
+    def __init__(self, body=b"", content_type="application/octet-stream", fail=None):
         self.calls: list[str] = []
-        self.headers = headers
+        self.body = body
+        self.content_type = content_type
+        self.fail = fail
 
-    def __call__(self, url: str, path: str) -> str:
+    def __call__(self, url, timeout):
         self.calls.append(url)
-        replay_file(path)
-        return self.headers
+        return Answer(self.body, self.content_type, self.fail)
+
+
+@pytest.fixture(name="downloads")
+def fixture_downloads(tmp_path):
+    return Downloads(replay_bytes(tmp_path))
 
 
 # ---------------------------------------------------------------------------
@@ -90,27 +125,25 @@ def test_the_cache_falls_back_to_the_home_directory(monkeypatch, tmp_path):
     assert cache_directory() == tmp_path / ".cache" / "mace"
 
 
-def test_the_file_keeps_the_frozen_trees_name():
+def test_the_frozen_trees_name_is_known():
     """So a user who ran a legacy fine-tune does not download it again."""
-    assert cached_path("mp").name == "mp_traj_combinedxyz"
-    assert cached_path("matpes_r2scan").name == "matpesr2scanreplaydataextxyz"
+    assert legacy_cached_path("mp").name == "mp_traj_combinedxyz"
+    assert legacy_cached_path("matpes_r2scan").name == "matpesr2scanreplaydataextxyz"
 
 
-def test_a_dataset_is_downloaded_once():
-    downloads = Downloads()
+def test_a_dataset_is_downloaded_once(downloads):
     first = fetch("mp", downloads)
     second = fetch("mp", downloads)
-    assert first == second == cached_path("mp")
+    assert first == second == cache_directory() / cache_name(CURATED_URLS["mp"])
     assert downloads.calls == [CURATED_URLS["mp"]]
 
 
-def test_a_file_already_in_the_cache_is_not_downloaded():
+def test_a_file_already_in_the_cache_is_not_downloaded(downloads):
     """What a legacy run leaves behind, or a login node prepared by hand."""
-    path = cached_path("omat")
+    path = legacy_cached_path("omat")
     path.parent.mkdir(parents=True)
     replay_file(path)
-    downloads = Downloads()
-    fetch("omat", downloads)
+    assert fetch("omat", downloads) == path
     assert downloads.calls == []
 
 
@@ -120,30 +153,27 @@ def test_a_file_already_in_the_cache_is_not_downloaded():
 
 
 def test_a_web_page_is_refused_and_leaves_nothing_behind():
-    with pytest.raises(ReplayDownloadError, match="web page"):
-        fetch("mp", Downloads(headers="Content-Type: text/html; charset=utf-8"))
-    assert not cached_path("mp").exists()
-    assert not list(cache_directory().glob("*.part"))
+    page = Downloads(b"<html></html>", content_type="text/html; charset=utf-8")
+    with pytest.raises(ReplayDownloadError, match="HTML page"):
+        fetch("mp", page)
+    assert not list(cache_directory().glob("*"))
 
 
-def test_an_interrupted_download_leaves_no_cache_to_trust():
-    def interrupted(url, path):
-        with open(path, "w") as handle:
-            handle.write("1\n\nO 0 0")
-        raise ConnectionResetError("the connection dropped")
-
+def test_an_interrupted_download_leaves_no_cache_to_trust(downloads):
+    downloads.fail = ConnectionResetError("the connection dropped")
     with pytest.raises(ReplayDownloadError, match="could not be downloaded"):
-        fetch("mp", interrupted)
-    assert not cached_path("mp").exists()
+        fetch("mp", downloads)
+    assert not list(cache_directory().glob("*"))
 
 
 def test_the_failure_says_where_to_put_the_file():
     """Compute nodes on the clusters this runs on have no network."""
 
-    def offline(url, path):
+    def offline(url, timeout):
         raise OSError("no route to host")
 
-    with pytest.raises(ReplayDownloadError, match=str(cached_path("mp"))):
+    where = cache_directory() / cache_name(CURATED_URLS["mp"])
+    with pytest.raises(ReplayDownloadError, match=str(where)):
         fetch("mp", offline)
 
 
@@ -152,10 +182,10 @@ def test_the_failure_says_where_to_put_the_file():
 # ---------------------------------------------------------------------------
 
 
-def test_the_structures_are_read_with_their_labels():
+def test_the_structures_are_read_with_their_labels(downloads):
     """The published files label with ase's reserved names; the energies and
     forces come back out of the calculator ase moved them into."""
-    configurations = read_curated("mp", head="replay", download=Downloads())
+    configurations = read_curated("mp", head="replay", opener=downloads)
     assert len(configurations) == 3
     assert configurations[2].properties["energy"] == pytest.approx(-12.0)
     assert np.allclose(configurations[2].properties["forces"], 0.2)

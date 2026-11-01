@@ -26,6 +26,7 @@ from mace_core.neighbors import get_neighborhood
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models.dipoles import DipoleModel, DipoleSettings
+from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.physics import DerivativeEngine
 
 from tests.parity.dipole_convert import dipole_config, transfer_dipole_weights
@@ -138,14 +139,21 @@ def legacy_batch(legacy, atoms, charges, total_charge):
 
 def v1_graph(atoms, numbers, cutoff, charges, total_charge):
     positions = atoms.get_positions()
-    neighborhood = get_neighborhood(positions, cutoff, (False, False, False), None)
+    neighborhood = get_neighborhood(
+        positions,
+        cutoff,
+        (False, False, False),
+        None,
+        backend=resolve_neighbor_backend(),
+    )
     index = {z: i for i, z in enumerate(numbers)}
     return {
         "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor(atoms.get_atomic_numbers()),
-        "element_index": torch.tensor(
-            [index[int(z)] for z in atoms.get_atomic_numbers()]
-        ),
+        "node_atomic_numbers": torch.tensor(atoms.get_atomic_numbers()),
+        "node_attrs": torch.nn.functional.one_hot(
+            torch.tensor([index[int(z)] for z in atoms.get_atomic_numbers()]),
+            num_classes=len(numbers),
+        ).to(torch.get_default_dtype()),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts),
         "unit_shifts": torch.tensor(neighborhood.unit_shifts),
@@ -154,7 +162,12 @@ def v1_graph(atoms, numbers, cutoff, charges, total_charge):
         ),
         "pbc": torch.tensor([[False, False, False]]),
         "batch": torch.zeros(len(atoms), dtype=torch.long),
-        "num_graphs": 1,
+        "ptr": torch.cat(
+            (
+                torch.zeros(1, dtype=torch.long),
+                torch.bincount(torch.zeros(len(atoms), dtype=torch.long)).cumsum(0),
+            )
+        ),
         "head": torch.zeros(1, dtype=torch.long),
         "charges": torch.tensor(charges, dtype=torch.float64),
         "total_charge": torch.tensor([float(total_charge)]),

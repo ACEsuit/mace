@@ -43,10 +43,10 @@ def fixture_checkpoints(tmp_path_factory):
                     "model": config.model.model_copy(update={"r_max": r_max}),
                 }
             )
-            from mace_core.observables import load_default_catalogue
+            from mace_core.observables import DEFAULT_CATALOGUE
             from mace_torch.train import run_data_stage, run_model_stage
 
-            catalogue = load_default_catalogue()
+            catalogue = DEFAULT_CATALOGUE
             data = run_data_stage(config, catalogue)
             built = run_model_stage(config, data, catalogue)
             run_train_stage(config, built, checkpoint_path=directory / f"mace_{name}")

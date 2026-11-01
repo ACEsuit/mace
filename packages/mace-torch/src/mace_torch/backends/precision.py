@@ -27,6 +27,7 @@ __all__ = [
     "PrecisionBackend",
     "boundary_precision",
     "cast_at_boundary",
+    "degradation_report",
     "interface_dtype",
 ]
 
@@ -46,6 +47,8 @@ _FACTORIES = (
     "make_segment_reduce",
     "make_spherical_harmonics",
     "make_radial_basis",
+    "make_radial_mlp",
+    "make_distance_transform",
 )
 
 
@@ -64,6 +67,8 @@ class PrecisionBackend:
         self, backend: Any, config: PrecisionConfig, supports_float64: bool = True
     ) -> None:
         self.backend = backend
+        self.config_requested = config
+        self.supports_float64 = supports_float64
         self.config, self.degraded = config.for_device(supports_float64)
         self.name: str = backend.name
         self._interface = config.interface_dtype
@@ -81,12 +86,7 @@ class PrecisionBackend:
 
     def build_report(self) -> str | None:
         """What was lowered at build time, if anything."""
-        if not self.degraded:
-            return None
-        return (
-            f"this device has no float64, so these run in {self._interface} "
-            f"rather than float64: {', '.join(self.degraded)}."
-        )
+        return degradation_report(self.config_requested, self.supports_float64)
 
     def _stamping(self, factory: str) -> Any:
         make = getattr(self.backend, factory)
@@ -141,6 +141,17 @@ class PrecisionBackend:
         return dataclasses.replace(
             descriptor, precision=policy.accumulate_dtype, accumulate=None
         )
+
+
+def degradation_report(config: PrecisionConfig, supports_float64: bool) -> str | None:
+    """What a device without float64 lowers in ``config``, if anything."""
+    _, degraded = config.for_device(supports_float64)
+    if not degraded:
+        return None
+    return (
+        f"this device has no float64, so these run in {config.interface_dtype} "
+        f"rather than float64: {', '.join(degraded)}."
+    )
 
 
 def cast_at_boundary(op: nn.Module, compute: Precision, interface: Precision) -> None:

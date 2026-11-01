@@ -300,7 +300,11 @@ def test_an_lmdb_row_s_calculator_labels_become_its_properties(tmp_path, key_spe
         results = atoms.calc.results
         assert item.properties["energy"] == pytest.approx(results["energy"], abs=0)
         np.testing.assert_array_equal(item.properties["forces"], results["forces"])
-        np.testing.assert_array_equal(item.properties["stress"], results["stress"])
+        from ase.stress import voigt_6_to_full_3x3_stress
+
+        np.testing.assert_array_equal(
+            item.properties["stress"], voigt_6_to_full_3x3_stress(results["stress"])
+        )
         assert item.property_weights["energy"] == 1.0
         np.testing.assert_array_equal(item.positions, atoms.positions)
         assert item.pbc == (True, True, True)

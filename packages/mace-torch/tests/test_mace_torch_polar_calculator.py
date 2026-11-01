@@ -41,7 +41,7 @@ def fixture_checkpoints(tmp_path_factory):
                 update={
                     "runtime": config.runtime.model_copy(update={"seed": seed}),
                     "model": config.model.model_copy(
-                        update={"interaction_first": "RealAgnosticInteractionBlock"}
+                        update={"interaction_first": "plain"}
                     ),
                 }
             )

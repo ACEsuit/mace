@@ -40,7 +40,8 @@ from typing import Any, Literal
 
 import torch
 from mace_core.clebsch_gordan import symmetric_matrix_basis
-from mace_core.kernels.descriptors import RadialKind
+from mace_core.config.model import ModelConfig
+from mace_core.kernels.descriptors import RadialBasisKind
 from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import MACEOutput
@@ -185,7 +186,9 @@ class DipoleModel(MACEModel):
         cutoff: float = 5.0,
         correlation: int = 3,
         avg_num_neighbors: float = 1.0,
-        radial_kind: RadialKind = "bessel",
+        radial_kind: RadialBasisKind = "bessel",
+        architecture: ModelConfig | None = None,
+        radial_precision: Precision | None = None,
         precision: Precision = "float64",
         cutoff_order: int = 6,
         readout_hidden: int | str = 16,
@@ -206,6 +209,8 @@ class DipoleModel(MACEModel):
             correlation=correlation,
             avg_num_neighbors=avg_num_neighbors,
             radial_kind=radial_kind,
+            architecture=architecture,
+            radial_precision=radial_precision,
             precision=precision,
             cutoff_order=cutoff_order,
             readout_hidden=readout_hidden,
@@ -228,7 +233,7 @@ class DipoleModel(MACEModel):
         output = super().forward(graph)
         positions = graph["positions"]
         batch = graph["batch"]
-        num_graphs = int(graph["num_graphs"])
+        num_graphs = int(graph["ptr"].shape[0] - 1)
 
         if self.settings.charges == "predicted":
             # The head reads one scalar per atom; a charge is that scalar.

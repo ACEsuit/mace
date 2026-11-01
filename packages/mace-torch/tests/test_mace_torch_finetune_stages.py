@@ -54,13 +54,13 @@ def fine_tune(directory, foundation):
                 "heads": {
                     "replay": {
                         "train_file": str(directory / "replay.xyz"),
-                        "e0s": {"foundation": {}},
+                        "e0s": {"kind": "foundation"},
                         "subselect": {"num_samples": 6, "method": "random"},
                         "weight": 0.5,
                     },
                     "new": {
                         "train_file": str(relabelled(directory / "new.xyz")),
-                        "e0s": {"isolated_atoms": {}},
+                        "e0s": {"kind": "isolated_atoms"},
                     },
                 },
                 "valid_fraction": 0.25,

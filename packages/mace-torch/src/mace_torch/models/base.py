@@ -23,7 +23,9 @@ from contextlib import contextmanager
 from typing import Any, Literal
 
 import torch
-from mace_core.kernels.descriptors import RadialKind
+from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.config.model import InteractionKind, ModelConfig
+from mace_core.kernels.descriptors import RadialBasisKind
 from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
@@ -119,7 +121,7 @@ class MACEModel(nn.Module):
         cutoff: float = 5.0,
         correlation: int = 3,
         avg_num_neighbors: float = 1.0,
-        radial_kind: RadialKind = "bessel",
+        radial_kind: RadialBasisKind = "bessel",
         precision: Precision = "float64",
         pair_repulsion: bool = False,
         cutoff_order: int = 6,
@@ -143,43 +145,67 @@ class MACEModel(nn.Module):
         narrow_first_convolution: bool = False,
         element_agnostic_product: bool = False,
         edge_axes: tuple[int, int, int] = (0, 1, 2),
+        architecture: ModelConfig | None = None,
+        radial_precision: Precision | None = None,
     ) -> None:
         super().__init__()
         with _constructed_in(precision):
+
+            def interaction_kind(
+                residual: bool, density: bool, nonlinear: bool
+            ) -> InteractionKind:
+                if nonlinear:
+                    return "nonlinear"
+                if density:
+                    return "density_residual" if residual else "density"
+                return "residual" if residual else "plain"
+
+            architecture = architecture or ModelConfig(
+                num_interactions=num_layers,
+                num_channels=num_features,
+                max_ell=lmax,
+                hidden_irreps=hidden_irreps,
+                radial_basis={"kind": radial_kind, "num_basis": num_radial},
+                r_max=cutoff,
+                correlation=correlation,
+                cutoff={"polynomial_order": cutoff_order},
+                distance_transform={"kind": distance_transform},
+                apply_cutoff=apply_cutoff,
+                radial_mlp=tuple(radial_hidden),
+                interaction_first=interaction_kind(
+                    residual_first_layer,
+                    learned_density_first_layer,
+                    nonlinear_first_layer,
+                ),
+                interaction=interaction_kind(True, learned_density, nonlinear),
+                edge_irreps=convolution_irreps,
+                use_edge_irreps_first=narrow_first_convolution,
+                use_agnostic_product=element_agnostic_product,
+            )
+            num_features = architecture.num_channels
+            cutoff_order = architecture.cutoff.polynomial_order
             self.backbone = MACEBackbone(
                 backend,
-                atomic_numbers=atomic_numbers,
-                num_layers=num_layers,
-                num_features=num_features,
-                lmax=lmax,
-                hidden_irreps=hidden_irreps,
-                num_radial=num_radial,
-                cutoff=cutoff,
-                correlation=correlation,
+                architecture,
+                atomic_numbers,
                 avg_num_neighbors=avg_num_neighbors,
-                radial_kind=radial_kind,
-                cutoff_order=cutoff_order,
-                distance_transform=distance_transform,
-                apply_cutoff=apply_cutoff,
-                radial_hidden=radial_hidden,
-                graph_features=graph_features,
                 precision=precision,
                 node_inputs=node_inputs,
                 last_layer_irreps=last_layer_irreps,
-                residual_first_layer=residual_first_layer,
-                learned_density_first_layer=learned_density_first_layer,
-                learned_density=learned_density,
-                nonlinear_first_layer=nonlinear_first_layer,
-                nonlinear=nonlinear,
-                convolution_irreps=convolution_irreps,
-                narrow_first_convolution=narrow_first_convolution,
-                element_agnostic_product=element_agnostic_product,
+                graph_features=graph_features,
                 edge_axes=edge_axes,
+                radial_precision=radial_precision,
             )
             self.outputs = MACEOutputs(
                 backend,
                 list(observables),
-                layer_irreps=self.backbone.layer_irreps,
+                layer_irreps=tuple(
+                    "+".join(
+                        f"{mul // num_features}x{ir}"
+                        for mul, ir in Irreps.parse(layer).terms
+                    )
+                    for layer in self.backbone.layer_irreps
+                ),
                 num_features=num_features,
                 energy_head=energy_head,
                 precision=precision,
@@ -206,19 +232,15 @@ class MACEModel(nn.Module):
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The declared observables. The graph is read and never written to."""
-        features = self.backbone(graph)
+        features = list(self.backbone(graph).layers)
         repulsion: Tensor | None = None
         if self.repulsion is not None:
             positions = graph["positions"]
             sender, receiver = graph["edge_index"][0], graph["edge_index"][1]
-            vectors = (
-                graph["vectors"]
-                if "vectors" in graph
-                else positions[receiver] - positions[sender] + graph["shifts"]
-            )
+            vectors = positions[receiver] - positions[sender] + graph["shifts"]
             repulsion = self.repulsion(
                 vectors.norm(dim=-1, keepdim=True),
-                graph["atomic_numbers"],
+                graph["node_atomic_numbers"],
                 graph["edge_index"],
             )
         embedding = (

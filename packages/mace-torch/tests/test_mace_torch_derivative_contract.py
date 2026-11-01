@@ -15,7 +15,13 @@ import pytest
 import torch
 from conftest import fp64_only
 from mace_torch.physics import cell_volume_and_mask, prepare_inputs
-from mace_torch_engine_fixtures import build_engine, build_graph, crystal, molecule
+from mace_torch_engine_fixtures import (
+    ENERGY,
+    build_engine,
+    build_graph,
+    crystal,
+    molecule,
+)
 
 PERIODIC = (True, True, True)
 
@@ -72,6 +78,12 @@ def test_a_stress_computation_leaves_the_input_untouched():
     engine = build_engine()
     positions, numbers, cell = crystal()
     graph = build_graph(positions, numbers, cell, PERIODIC)
+    keys_before = set(graph)
+    host_before = {
+        key: value
+        for key, value in graph.items()
+        if not isinstance(value, torch.Tensor)
+    }
     before = {
         key: value.clone()
         for key, value in graph.items()
@@ -80,9 +92,11 @@ def test_a_stress_computation_leaves_the_input_untouched():
 
     engine(graph, compute=("forces", "stress"))
 
-    assert set(graph) == set(before) | {"num_graphs"}, (
+    assert set(graph) == keys_before, (
         f"the engine added keys to the input: {set(graph) - set(before)}"
     )
+    for key, value in host_before.items():
+        assert graph[key] == value
     for key, value in before.items():
         assert torch.equal(graph[key], value), f"the engine overwrote {key!r}"
 
@@ -99,7 +113,7 @@ def test_the_prepared_graph_is_a_new_dict_with_new_tensors():
     assert prepared is not graph
     assert leaf.requires_grad
     assert displacement is not None and displacement.requires_grad
-    assert "vectors" in prepared
+    assert "vectors" not in prepared
 
     # The shifts are recomputed, not reused. Their *values* are unchanged here
     # because the strain starts at zero, so the claim is about the tensor: the
@@ -225,12 +239,11 @@ def test_a_derivative_without_an_energy_says_what_is_missing():
     from mace_torch.physics import DerivativeEngine
 
     engine = build_engine()
-    dipole = ObservableSpec(
-        name="dipole", irreps="1o", per_atom=False, units="eV/A", normalization="none"
-    )
+    dipole = ObservableSpec(name="dipole", irreps="1o", per_atom=False, units="eV/A")
     without_energy = DerivativeEngine(
         engine.backbone,
-        MACEOutputs(ReferenceBackend(), [dipole], engine.backbone.layer_irreps, 4),
+        ENERGY,
+        MACEOutputs(ReferenceBackend(), [dipole], ["0e+1o", "0e"], 4),
     )
     positions, numbers = molecule()
     with pytest.raises(ValueError, match="total_energy"):

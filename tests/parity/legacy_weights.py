@@ -118,3 +118,31 @@ def legacy_to_reference_map(
         flat_basis.T @ solution, targets.T, atol=CLOSED_FORM_ATOL
     )
     return solution.T
+
+
+def canonical_contraction_bases(descriptor, position):
+    """The declared basis, independent of a backend's compressed storage."""
+    from mace_core.clebsch_gordan.irreps import Irreps
+    from mace_core.clebsch_gordan.reduced_basis import (
+        full_symmetric_tensor_product_basis,
+        reduced_symmetric_tensor_product_basis,
+    )
+
+    build = (
+        reduced_symmetric_tensor_product_basis
+        if descriptor.basis == "reduced"
+        else full_symmetric_tensor_product_basis
+    )
+    target = str(Irreps.parse(descriptor.irreps_out).terms[position][1])
+    tables = []
+    for order in range(1, descriptor.correlation + 1):
+        array = build(descriptor.irreps_in, order, target)[target]
+        tables.append(
+            torch.tensor(
+                array.reshape(
+                    array.shape[0], array.shape[1], int(np.prod(array.shape[2:]))
+                ),
+                dtype=torch.float64,
+            )
+        )
+    return tables

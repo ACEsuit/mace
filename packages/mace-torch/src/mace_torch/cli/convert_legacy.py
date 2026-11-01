@@ -18,7 +18,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 
 from mace_torch.deploy.legacy import (
     PINNED_LEGACY,
@@ -95,7 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         conversion = convert_legacy(
             arguments.source,
             arguments.output,
-            load_default_catalogue(),
+            DEFAULT_CATALOGUE,
             python=python,
             reference=arguments.reference,
             fixtures=arguments.fixtures,

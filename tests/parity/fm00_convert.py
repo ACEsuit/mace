@@ -24,8 +24,9 @@ scale is an op whose stored weights do not mean what they say.
 from __future__ import annotations
 
 import numpy as np
-from fm00_projection import ProjectionError, project_weights
 from mace_core.clebsch_gordan.irreps import Irreps
+
+from tests.parity.fm00_projection import ProjectionError, project_weights
 
 __all__ = [
     "contraction_weights_to_canonical",
@@ -60,10 +61,9 @@ def linear_weights_to_canonical(legacy_linear, irreps_in: str, irreps_out: str):
     for instruction in legacy_linear.instructions:
         rows, columns = instruction.path_shape
         span = rows * columns
-        blocks[(instruction.i_in, instruction.i_out)] = (
-            flat[offset : offset + span].reshape(rows, columns)
-            * instruction.path_weight
-        )
+        blocks[(instruction.i_in, instruction.i_out)] = flat[
+            offset : offset + span
+        ].reshape(rows, columns)
         offset += span
     if offset != flat.size:
         raise ValueError(
@@ -122,12 +122,9 @@ def fully_connected_tp_weights_to_canonical(
     for instruction in legacy_tp.instructions:
         first, second, out = instruction.path_shape
         span = first * second * out
-        scale = instruction.path_weight / np.sqrt(
-            target.terms[instruction.i_out][1].dimension
-        )
-        blocks[(instruction.i_in1, instruction.i_out)] = (
-            flat[offset : offset + span].reshape(first, second, out) * scale
-        )
+        blocks[(instruction.i_in1, instruction.i_out)] = flat[
+            offset : offset + span
+        ].reshape(first, second, out)
         offset += span
     if offset != flat.size:
         raise ValueError(
@@ -302,64 +299,10 @@ def copy_linear(source, destination) -> None:
 
 
 def transfer_backbone_weights(legacy_model, model, correlation: int) -> None:
-    """Copy the embedding, the interactions and the products.
+    """Carry backbone weights with the reviewed canonical conversion."""
+    from tests.parity.test_backbone_parity import carry_weights
 
-    Walks the two module trees side by side. It is written out rather than
-    driven by a name map because the two trees are not the same shape: what
-    corresponds is an operator, not a path.
-    """
-    import torch
-
-    linear = copy_linear
-    with torch.no_grad():
-        linear(legacy_model.node_embedding.linear, model.backbone.node_embedding)
-
-        for index, source in enumerate(legacy_model.interactions):
-            block = model.backbone.interactions[index]
-            linear(source.linear_up, block.body.linear_up)
-            linear(source.linear, block.body.linear)
-            for layer, weight in enumerate(block.body.radial.weights):
-                weight.copy_(getattr(source.conv_tp_weights, f"layer{layer}").weight)
-            block.skip.weight.copy_(
-                torch.tensor(
-                    fully_connected_tp_weights_to_canonical(
-                        source.skip_tp,
-                        str(source.skip_tp.irreps_in1),
-                        str(source.skip_tp.irreps_out),
-                        Irreps.parse(str(source.skip_tp.irreps_in2)).dimension,
-                    ),
-                    dtype=block.skip.weight.dtype,
-                )
-            )
-
-        channel_in = "+".join(
-            sorted(
-                {
-                    str(irrep)
-                    for _, irrep in Irreps.parse(
-                        str(legacy_model.products[0].symmetric_contractions.irreps_in)
-                    ).terms
-                },
-                key=lambda name: (int(name[:-1]), name[-1] != "e"),
-            )
-        )
-        for index, source in enumerate(legacy_model.products):
-            product = model.backbone.products[index]
-            targets = [
-                str(irrep)
-                for _, irrep in Irreps.parse(str(source.linear.irreps_out)).terms
-            ]
-            for position, contraction in enumerate(
-                source.symmetric_contractions.contractions
-            ):
-                carried = contraction_weights_to_canonical(
-                    contraction, channel_in, targets[position], correlation
-                )
-                for order, weights in enumerate(carried):
-                    product.contraction.weights[position * correlation + order].copy_(
-                        torch.tensor(weights, dtype=torch.float64)
-                    )
-            linear(source.linear, product.linear)
+    carry_weights(legacy_model, model.backbone)
 
 
 def transfer_weights(legacy_model, model, correlation: int) -> None:

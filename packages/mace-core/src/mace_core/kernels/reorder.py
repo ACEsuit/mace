@@ -34,7 +34,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-__all__ = ["ReorderBlock", "ReorderError", "WeightReorder", "derive_reorder"]
+__all__ = [
+    "ReorderBlock",
+    "ReorderError",
+    "WeightReorder",
+    "decompose",
+    "derive_reorder",
+]
 
 #: Entries below this fraction of the map's largest entry are structural zeros.
 #: The gap either side of it is many orders of magnitude on every grid point
@@ -183,6 +189,30 @@ def _components(pattern: np.ndarray) -> list[tuple[tuple[int, ...], tuple[int, .
     ]
 
 
+def decompose(matrix: np.ndarray) -> tuple[ReorderBlock, ...]:
+    """A map's independent blocks, read off its sparsity pattern.
+
+    Args:
+        matrix: ``[canonical paths, backend paths]``, row ``k`` expanding
+            canonical path ``k`` over the backend's.
+
+    Returns:
+        One block per connected set of rows and columns, ordered by first
+        canonical path. A row or column that nothing connects forms no block,
+        which is how a caller finds it.
+    """
+    matrix = np.asarray(matrix, dtype=np.float64)
+    if matrix.size == 0:
+        return ()
+    largest = float(np.abs(matrix).max())
+    pattern = np.abs(matrix) > _STRUCTURAL_ZERO * max(largest, 1.0)
+    return tuple(
+        ReorderBlock(rows, columns, matrix[np.ix_(list(rows), list(columns))])
+        for rows, columns in _components(pattern)
+        if rows and columns
+    )
+
+
 def derive_reorder(
     canonical_basis: np.ndarray,
     backend_basis: np.ndarray,
@@ -240,13 +270,7 @@ def derive_reorder(
             f"checkpoint into this backend would change what the model computes."
         )
 
-    largest = float(np.abs(matrix).max())
-    pattern = np.abs(matrix) > _STRUCTURAL_ZERO * max(largest, 1.0)
-    blocks = tuple(
-        ReorderBlock(rows, columns, matrix[np.ix_(list(rows), list(columns))])
-        for rows, columns in _components(pattern)
-        if rows and columns
-    )
+    blocks = decompose(matrix)
     covered = sum(block.size for block in blocks)
     if covered != canonical.shape[0]:
         raise ReorderError(

@@ -33,6 +33,7 @@ from mace_torch.finetune.stages import build
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.models.magnetic import MagneticModel
+from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn.magnetic import OneBodyMomentEnergy
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train import ModelStageError, run_data_stage
@@ -47,7 +48,7 @@ CLUSTER = np.array(
 )
 
 
-def engine(one_body: int = 6, seed: int = 3) -> DerivativeEngine:
+def engine(one_body: int = 6, seed: int = 3, backend=None) -> DerivativeEngine:
     head = EnergyOutputHead(
         ResolvedE0s({"default": {8: -4.25, 26: -6.75}}),
         ["default"],
@@ -57,7 +58,7 @@ def engine(one_body: int = 6, seed: int = 3) -> DerivativeEngine:
         widen_node_energy=False,
     )
     model = MagneticModel(
-        ReferenceBackend(),
+        backend or ReferenceBackend(),
         atomic_numbers=NUMBERS,
         observables=[ENERGY],
         energy_head=head,
@@ -79,12 +80,18 @@ def engine(one_body: int = 6, seed: int = 3) -> DerivativeEngine:
 
 def graph(positions, moments, numbers=(8, 26, 26, 26)):
     neighborhood = get_neighborhood(
-        np.asarray(positions), 4.0, (False, False, False), None
+        np.asarray(positions),
+        4.0,
+        (False, False, False),
+        None,
+        backend=resolve_neighbor_backend(),
     )
     return {
         "positions": torch.tensor(np.asarray(positions, dtype=float)),
-        "atomic_numbers": torch.tensor(list(numbers)),
-        "element_index": torch.tensor([NUMBERS.index(z) for z in numbers]),
+        "node_atomic_numbers": torch.tensor(list(numbers)),
+        "node_attrs": torch.nn.functional.one_hot(
+            torch.tensor([NUMBERS.index(z) for z in numbers]), num_classes=len(NUMBERS)
+        ).to(torch.get_default_dtype()),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts),
         "unit_shifts": torch.tensor(neighborhood.unit_shifts),
@@ -92,7 +99,12 @@ def graph(positions, moments, numbers=(8, 26, 26, 26)):
             1, 3, 3
         ),
         "batch": torch.zeros(len(numbers), dtype=torch.long),
-        "num_graphs": 1,
+        "ptr": torch.cat(
+            (
+                torch.zeros(1, dtype=torch.long),
+                torch.bincount(torch.zeros(len(numbers), dtype=torch.long)).cumsum(0),
+            )
+        ),
         "head": torch.zeros(1, dtype=torch.long),
         "magmom": torch.tensor(np.asarray(moments, dtype=float)),
     }
@@ -465,11 +477,15 @@ def fine_tune(directory, foundation, train_file, element_table="foundation"):
 
 def iron_graph(numbers_table):
     positions = CLUSTER[1:]
-    neighborhood = get_neighborhood(positions, 4.0, (False, False, False), None)
+    neighborhood = get_neighborhood(
+        positions, 4.0, (False, False, False), None, backend=resolve_neighbor_backend()
+    )
     return {
         "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor([26, 26, 26]),
-        "element_index": torch.tensor([numbers_table.index(26)] * 3),
+        "node_atomic_numbers": torch.tensor([26, 26, 26]),
+        "node_attrs": torch.nn.functional.one_hot(
+            torch.tensor([numbers_table.index(26)] * 3), num_classes=len(numbers_table)
+        ).to(torch.get_default_dtype()),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts),
         "unit_shifts": torch.tensor(neighborhood.unit_shifts),
@@ -477,7 +493,12 @@ def iron_graph(numbers_table):
             1, 3, 3
         ),
         "batch": torch.zeros(3, dtype=torch.long),
-        "num_graphs": 1,
+        "ptr": torch.cat(
+            (
+                torch.zeros(1, dtype=torch.long),
+                torch.bincount(torch.zeros(3, dtype=torch.long)).cumsum(0),
+            )
+        ),
         "head": torch.zeros(1, dtype=torch.long),
         "magmom": torch.tensor(moments(9)[:3]),
     }

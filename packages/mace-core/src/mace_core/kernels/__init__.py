@@ -29,15 +29,14 @@ from mace_core.kernels.canonical import (
     LAYER_NORM_EPSILON,
     SILU_SECOND_MOMENT_SCALE,
     canonical_weight_shape,
+    contraction_path_labels,
+    contraction_path_order,
     exact_silu_second_moment_scale,
     fully_connected_tp_path_normalization,
     linear_path_normalization,
     radial_mlp_initial_bound,
     radial_mlp_layer_normalization,
     symmetric_contraction_initial_scale,
-
-    contraction_path_labels,
-    contraction_path_order,
 )
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
@@ -106,7 +105,6 @@ __all__ = [
     "Precision",
     "RadialBasisDescriptor",
     "RadialMLPDescriptor",
-
     "ReorderBlock",
     "ReorderError",
     "SegmentReduceDescriptor",
@@ -117,12 +115,11 @@ __all__ = [
     "available_backends",
     "canonical_weight_shape",
     "channelwise_paths",
-    "exact_silu_second_moment_scale",
-    "fully_connected_tp_path_normalization",
-
     "contraction_path_labels",
     "contraction_path_order",
     "derive_reorder",
+    "exact_silu_second_moment_scale",
+    "fully_connected_tp_path_normalization",
     "get_backend",
     "linear_path_normalization",
     "path_irreps",

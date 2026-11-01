@@ -234,4 +234,11 @@ def symmetric_matrix_basis() -> np.ndarray:
     basis.setflags(write=False)
     return basis
 
-__all__ += ['textbook_harmonics', 'induced_rotation', 'wigner_d_real', 'symmetric_matrix_basis', 'AXIS_PERMUTATION']
+
+__all__ += [
+    "AXIS_PERMUTATION",
+    "induced_rotation",
+    "symmetric_matrix_basis",
+    "textbook_harmonics",
+    "wigner_d_real",
+]

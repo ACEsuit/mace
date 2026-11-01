@@ -54,7 +54,7 @@ def deployed(
         config=config,
         metadata=ModelMetadata(
             config=ConfigRecord(),
-            provenance=Provenance(code_version="0", git_commit=None),
+            provenance=Provenance(versions={"mace-torch-v1": "0"}, git_commit=None),
         ),
         z_table=AtomicNumberTable(NUMBERS),
         heads=("default",),

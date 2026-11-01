@@ -40,8 +40,9 @@ from mace_core.clebsch_gordan.reduced_basis import (
 from mace_core.kernels.canonical import (
     KERNEL_SPEC_VERSION,
     contraction_path_labels,
-    fully_connected_tp_weight_scale,
-    linear_weight_scale,
+    fully_connected_tp_path_normalization,
+    linear_path_normalization,
+    symmetric_contraction_initial_scale,
 )
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
@@ -130,7 +131,7 @@ def _linear_entries(irreps_in: str, irreps_out: str):
                 rows.append(out_slice.start + component)
                 columns.append(in_slice.start + component)
                 weights.append(weight)
-            scales.append(linear_weight_scale(irreps_in, out_ir))
+            scales.append(linear_path_normalization(irreps_in, out_ir))
             weight += 1
     return rows, columns, weights, scales
 
@@ -170,6 +171,8 @@ class _DenseMap(nn.Module):
 class ExampleLinear(nn.Module):
     """An equivariant linear map, with a bias on the even scalar outputs."""
 
+    path_normalization: Tensor
+
     bias_row: Tensor
 
     def __init__(self, descriptor: LinearDescriptor) -> None:
@@ -186,15 +189,19 @@ class ExampleLinear(nn.Module):
         )
         self.weight = nn.Parameter(torch.zeros(self.map.count, dtype=dtype))
         self.bias = nn.Parameter(torch.zeros(len(bias_rows), dtype=dtype))
+        self.register_buffer(
+            "path_normalization",
+            torch.tensor(self.map.scales, dtype=dtype),
+            persistent=False,
+        )
 
     def forward(self, features: Tensor) -> Tensor:
-        mapped = features @ self.map.matrix(self.weight).T
+        mapped = features @ self.map.matrix(self.weight * self.path_normalization).T
         return mapped.index_add(1, self.bias_row, self.bias.expand(mapped.shape[0], -1))
 
     def initialize_weights(self, seed: int) -> None:
-        scale = torch.tensor(self.map.scales, dtype=self.weight.dtype)
         with torch.no_grad():
-            self.weight.copy_(_draw(self.weight, seed) * scale.to(self.weight.device))
+            self.weight.copy_(_draw(self.weight, seed))
             self.bias.zero_()
 
     def to_canonical(self) -> dict[str, Tensor]:
@@ -210,6 +217,8 @@ class ExampleFullyConnectedTP(nn.Module):
     """The skip connection against scalar attributes: one linear map per
     attribute, weighted by it."""
 
+    path_normalization: Tensor
+
     def __init__(self, descriptor: FullyConnectedTPDescriptor) -> None:
         super().__init__()
         dtype = _DTYPES[descriptor.precision]
@@ -218,7 +227,9 @@ class ExampleFullyConnectedTP(nn.Module):
         source = Irreps.parse(descriptor.irreps_in1)
         target = Irreps.parse(descriptor.irreps_out)
         self.scales = [
-            fully_connected_tp_weight_scale(in_mul, self.num_scalars)
+            fully_connected_tp_path_normalization(
+                descriptor.irreps_in1, descriptor.irreps_in2, out_ir
+            )
             for _, out_ir in target.slices()
             for in_mul, in_ir in source.terms
             if in_ir == out_ir
@@ -227,21 +238,28 @@ class ExampleFullyConnectedTP(nn.Module):
         self.weight = nn.Parameter(
             torch.zeros(self.num_scalars, self.map.count, dtype=dtype)
         )
+        self.register_buffer(
+            "path_normalization",
+            torch.tensor(self.scales, dtype=dtype),
+            persistent=False,
+        )
 
     def forward(self, features: Tensor, attributes: Tensor) -> Tensor:
         # One matrix per attribute, stacked, and each node mixes the mapped
         # features by its own attributes. Two products of two rather than one
         # of three: see `ops._edge_coupling` for why.
         matrices = torch.stack(
-            [self.map.matrix(self.weight[s]) for s in range(self.num_scalars)]
+            [
+                self.map.matrix(self.weight[s] * self.path_normalization)
+                for s in range(self.num_scalars)
+            ]
         )
         mapped = torch.einsum("ni,soi->nso", features, matrices)
         return torch.einsum("ns,nso->no", attributes, mapped)
 
     def initialize_weights(self, seed: int) -> None:
-        scale = torch.tensor(self.scales, dtype=self.weight.dtype)
         with torch.no_grad():
-            self.weight.copy_(_draw(self.weight, seed) * scale.to(self.weight.device))
+            self.weight.copy_(_draw(self.weight, seed))
 
     def to_canonical(self) -> dict[str, Tensor]:
         return {"weight": self.weight.detach()}
@@ -423,11 +441,13 @@ class ExampleSymmetricContraction(nn.Module):
         return _grouped(joined, self.out_terms)
 
     def initialize_weights(self, seed: int) -> None:
-        """A standard normal per element, path and channel, unscaled, which is
-        the canonical draw of the contraction."""
+        """The canonical normal draw, scaled by each block's path count."""
         with torch.no_grad():
             for position, parameter in enumerate(self._weights()):
-                parameter.copy_(_draw(parameter, seed + position))
+                parameter.copy_(
+                    _draw(parameter, seed + position)
+                    * symmetric_contraction_initial_scale(parameter.shape[1])
+                )
 
     def canonical_metadata(self) -> dict[str, object]:
         """What each weight on the path axis multiplies, by name."""
@@ -508,11 +528,8 @@ class ExampleBackend:
             devices=frozenset({"cpu", "cuda"}),
             dtypes=frozenset({"float64", "float32"}),
             layouts=frozenset({"mul_ir"}),
-            activation_layouts=frozenset({"mul_ir"}),
-            native_layout="mul_ir",
             bases=frozenset({"reduced", "full"}),
             supports_double_backward=True,
-            spec_version=KERNEL_SPEC_VERSION,
         )
 
     def _check(self, descriptor: Descriptor) -> None:

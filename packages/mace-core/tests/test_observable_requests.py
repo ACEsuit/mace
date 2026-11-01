@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import pytest
 from mace_core.observables import (
+    DEFAULT_CATALOGUE,
     UnknownObservableError,
-    load_default_catalogue,
     resolve_requested,
 )
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 
 
 def test_an_observable_alone_asks_for_no_derivative():

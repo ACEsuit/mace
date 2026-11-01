@@ -89,7 +89,7 @@ def water_foundation(directory):
                     "heads": {
                         "pbe": {
                             "train_file": str(directory / "train.xyz"),
-                            "e0s": {"isolated_atoms": {}},
+                            "e0s": {"kind": "isolated_atoms"},
                         }
                     },
                     "valid_fraction": 0.2,
@@ -138,7 +138,7 @@ def evaluate(path, atoms):
 
 @fp64_only
 @pytest.mark.parametrize("kind", ["fresh", "copy"])
-def test_a_structure_of_old_elements_computes_exactly_what_it_did(
+def test_a_structure_of_old_elements_preserves_its_function_to_roundoff(
     foundation, tmp_path, kind
 ):
     init = NewSpeciesInit(kind=kind, seed=5, donors={6: 8} if kind == "copy" else {})
@@ -147,11 +147,17 @@ def test_a_structure_of_old_elements_computes_exactly_what_it_did(
         before_energy, before_forces = evaluate(foundation, frame)
         after_energy, after_forces = evaluate(path, frame)
         assert after_energy == before_energy
-        assert np.array_equal(after_forces, before_forces)
+        # Changing fan-in changes the raw normalization; only roundoff may move.
+        bound = (
+            8 * np.finfo(before_forces.dtype).eps * np.maximum(1, np.abs(before_forces))
+        )
+        assert np.all(np.abs(after_forces - before_forces) <= bound)
 
 
 @fp64_only
-def test_every_row_an_old_element_had_is_carried_byte_for_byte(foundation, tmp_path):
+def test_every_old_row_is_carried_with_the_new_raw_weight_normalization(
+    foundation, tmp_path
+):
     parent = load_deployed(foundation)
     child = load_deployed(extended(foundation, tmp_path))
     assert list(parent.z_table.zs) == [1, 8]
@@ -166,10 +172,15 @@ def test_every_row_an_old_element_had_is_carried_byte_for_byte(foundation, tmp_p
                 assert torch.equal(carried, value), f"{path}:{name}"
             elif path.endswith("node_embedding"):
                 assert torch.equal(
-                    carried.reshape(-1, 3)[:, rows], value.reshape(-1, 2)
+                    carried.reshape(-1, 3)[:, rows],
+                    value.reshape(-1, 2) * (3 / 2) ** 0.5,
                 )
             elif path.endswith("energy_head"):
                 assert torch.equal(carried[:, rows], value), f"{path}:{name}"
+            elif path.endswith(".skip"):
+                assert torch.equal(carried[rows], value * (3 / 2) ** 0.5), (
+                    f"{path}:{name}"
+                )
             else:
                 assert torch.equal(carried[rows], value), f"{path}:{name}"
 
@@ -238,7 +249,11 @@ def test_the_record_says_what_was_added_and_keeps_the_parent_s(foundation, tmp_p
     assert child.parents[0].role == "initial_weights"
     assert child.parents[0].metadata == parent
     assert parent.element_extension is None
+    assert child.heads["pbe"].e0 is not None
+    assert parent.heads["pbe"].e0 is not None
     assert child.heads["pbe"].e0.values["C"] == CARBON
+    assert child.heads["pbe"].e0 is not None
+    assert parent.heads["pbe"].e0 is not None
     assert child.heads["pbe"].e0.values["H"] == parent.heads["pbe"].e0.values["H"]
 
 
@@ -297,7 +312,7 @@ def test_a_fine_tune_on_the_new_element_starts_from_the_extension(foundation, tm
                 "heads": {
                     "pbe": {
                         "train_file": str(tmp_path / "methanol.xyz"),
-                        "e0s": {"foundation": {}},
+                        "e0s": {"kind": "foundation"},
                     }
                 },
                 "valid_fraction": 0.34,

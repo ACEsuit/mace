@@ -40,7 +40,6 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import torch
-from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
     FullyConnectedTPDescriptor,
@@ -53,14 +52,11 @@ from mace_core.kernels.paths import channelwise_paths
 from mace_core.kernels.precision import Precision
 from torch import Tensor, nn
 
+from mace_torch.backends.radial import ChebyshevBasis
 from mace_torch.kernels import segment_sum
 from mace_torch.nn.layout import (
-    channel_layout_index,
     expanded_irreps,
-    inverse_layout_index,
-    path_layout_index,
 )
-from mace_torch.nn.radial import ChebyshevBasis
 from mace_torch.nn.radial_mlp import RadialMLP
 
 __all__ = [
@@ -182,6 +178,7 @@ class _PairCoupling(nn.Module):
                 irreps_node=irreps_node,
                 irreps_edge=irreps_attribute,
                 irreps_out=irreps_target,
+                num_features=num_features,
                 precision=precision,
             )
         )
@@ -195,7 +192,7 @@ class _PairCoupling(nn.Module):
         receiver: Tensor,
         num_receivers: int,
     ) -> Tensor:
-        """``[rows, channel, width]`` in, ``[receivers, channel, paths]`` out."""
+        """Grouped features in, one grouped block per path out."""
         return self.convolution(
             features,
             attributes,
@@ -224,9 +221,6 @@ class MagneticInteractionBlock(nn.Module):
         precision: The dtype every op is built at.
     """
 
-    to_channels: Tensor
-    from_paths: Tensor
-
     def __init__(
         self,
         backend,
@@ -244,7 +238,6 @@ class MagneticInteractionBlock(nn.Module):
         node_flat = expanded_irreps(irreps_node, num_features)
         target_flat = expanded_irreps(irreps_edge, num_features)
         self.num_features = num_features
-        self.node_width = Irreps.parse(irreps_node).dimension
         self.irreps_out = target_flat
 
         self.linear_up = backend.make_linear(
@@ -292,16 +285,6 @@ class MagneticInteractionBlock(nn.Module):
                 precision=precision,
             )
         )
-        self.register_buffer(
-            "to_channels",
-            torch.tensor(inverse_layout_index(irreps_node, num_features)),
-            persistent=False,
-        )
-        self.register_buffer(
-            "from_paths",
-            torch.tensor(path_layout_index(self.moment_coupling.paths, num_features)),
-            persistent=False,
-        )
 
     def forward(
         self,
@@ -319,9 +302,7 @@ class MagneticInteractionBlock(nn.Module):
         carried = (
             self.skip(node_features, element_attributes) if self.residual else None
         )
-        mapped = self.linear_up(node_features)[..., self.to_channels].reshape(
-            -1, self.num_features, self.node_width
-        )
+        mapped = self.linear_up(node_features)
         joint = torch.cat([edge_radial, moment_basis[sender]], dim=-1)
         num_edges = int(sender.shape[0])
         edges = torch.arange(num_edges, device=sender.device)
@@ -340,7 +321,7 @@ class MagneticInteractionBlock(nn.Module):
         density = segment_sum(
             torch.tanh(self.density(edge_radial) ** 2), receiver, num_nodes
         )
-        message = self.linear(message.reshape(num_nodes, -1)[..., self.from_paths])
+        message = self.linear(message)
         message = message / (density + 1)
         if not self.residual:
             message = self.skip(message, element_attributes)
@@ -366,10 +347,6 @@ class MagneticProductBlock(nn.Module):
         precision: The dtype every op is built at.
     """
 
-    to_channels: Tensor
-    from_channels: Tensor
-    from_paths: Tensor
-
     def __init__(
         self,
         backend,
@@ -384,7 +361,6 @@ class MagneticProductBlock(nn.Module):
     ) -> None:
         super().__init__()
         self.num_features = num_features
-        self.width_in = Irreps.parse(irreps_in).dimension
         out_flat = expanded_irreps(irreps_out, num_features)
         self.contraction = backend.make_symmetric_contraction(
             SymmetricContractionDescriptor(
@@ -418,21 +394,6 @@ class MagneticProductBlock(nn.Module):
                 irreps_in=out_flat, irreps_out=out_flat, precision=precision
             )
         )
-        self.register_buffer(
-            "to_channels",
-            torch.tensor(inverse_layout_index(irreps_in, num_features)),
-            persistent=False,
-        )
-        self.register_buffer(
-            "from_channels",
-            torch.tensor(channel_layout_index(irreps_out, num_features)),
-            persistent=False,
-        )
-        self.register_buffer(
-            "from_paths",
-            torch.tensor(path_layout_index(self.moment_coupling.paths, num_features)),
-            persistent=False,
-        )
 
     def forward(
         self,
@@ -444,10 +405,7 @@ class MagneticProductBlock(nn.Module):
     ) -> Tensor:
         """Flat grouped features in, flat grouped features out."""
         nodes = message.shape[0]
-        features = message[..., self.to_channels].reshape(
-            nodes, self.num_features, self.width_in
-        )
-        contracted = self.contraction(features, element)
+        contracted = self.contraction(message, element)
         atoms = torch.arange(nodes, device=message.device)
         coupled = self.moment_coupling(
             contracted,
@@ -457,9 +415,7 @@ class MagneticProductBlock(nn.Module):
             atoms,
             nodes,
         )
-        grouped = contracted.reshape(nodes, -1)[..., self.from_channels]
-        mapped = self.linear(coupled.reshape(nodes, -1)[..., self.from_paths])
-        mapped = mapped + self.linear_ori(grouped)
+        mapped = self.linear(coupled) + self.linear_ori(contracted)
         if skip is not None:
             mapped = mapped + skip
         return mapped
@@ -670,7 +626,7 @@ class MagneticBackbone(nn.Module):
         edge_attributes = self.edge_attributes(vectors)
         radial = self.radial(vectors.norm(dim=-1, keepdim=True))
 
-        element = self.element_index(graph["atomic_numbers"])
+        element = self.element_index(graph["node_atomic_numbers"])
         one_hot = torch.zeros(
             num_nodes,
             len(self.atomic_numbers),

@@ -26,7 +26,7 @@ from mace_core.electrostatics import (
     SolverSubstitutionError,
 )
 from mace_core.electrostatics import registry as registry_module
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.electrostatics import ReferenceSolver
 from mace_torch.models.electrostatics import PolarModel
@@ -71,7 +71,7 @@ def polar_configuration(tmp_path, profile="molecular", **model) -> ResolvedConfi
 
 
 def built(config):
-    catalogue = load_default_catalogue()
+    catalogue = DEFAULT_CATALOGUE
     data = run_data_stage(config, catalogue)
     return data, run_model_stage(config, data, catalogue)
 

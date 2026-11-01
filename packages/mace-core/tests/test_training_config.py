@@ -324,14 +324,13 @@ def test_a_model_with_no_atomic_energies_is_fine_with_no_e0s_at_all():
 def test_a_model_with_no_atomic_energies_reads_back_its_written_configuration():
     """Written out in full, as a checkpoint writes it, the default is there for
     every head and reads back as set. It asks for nothing."""
-    config = ResolvedConfig.load(
-        cli_overrides=[
-            "--model.model=an-architecture",
-            "--model.observables",
-            '["dipole"]',
-            "--data.heads",
-            json.dumps({"pbe": {"train_file": "train.xyz"}}),
-        ]
+    config = loaded(
+        ResolvedConfig,
+        settings={
+            "model.model": "an-architecture",
+            "model.observables": ["dipole"],
+            "data.heads": json.loads(json.dumps({"pbe": {"train_file": "train.xyz"}})),
+        },
     )
     read_back = ResolvedConfig.model_validate(config.model_dump(mode="json"))
     assert read_back.data.heads["pbe"].e0s == E0sIsolatedAtoms()

@@ -9,10 +9,13 @@ here, once, at build time, from the backend's own answer to
 convert, fail and reconvert (``mace/calculators/mace_torchsim.py:123-137``) has
 no counterpart.
 
-Every op takes and returns the same layout, grouped by irrep with the channels
-inside, whichever backend built it. A backend arranges its values however its
-kernel wants inside the op. So a fallback puts no permute between two ops, and
-there is no layout seam to count.
+The whole chain of ops runs in one feature layout, decided here once: the
+chosen backend's native layout when the reference can follow it, which it
+always can, and the canonical one otherwise. Every descriptor built through the
+pair is stamped with it, so an op the chosen backend declines is built by the
+reference in the same layout, a fallback puts no permute between two ops, and
+there is no seam to count. The model is handed the layout as :attr:`layout`
+and never branches on it.
 
 What was built where is recorded in :attr:`CompositeBackend.decisions` and
 summarised by :meth:`CompositeBackend.report`, which the model stage logs. An
@@ -28,10 +31,13 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from mace_core.config.precision import PrecisionConfig
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.protocol import REFERENCE_ONLY_OPS
 from mace_core.kernels.registry import get_backend
 
+from mace_torch.backends.layout import CANONICAL
+from mace_torch.backends.precision import PrecisionBackend
 from mace_torch.backends.reference import ReferenceBackend
 
 __all__ = [
@@ -75,6 +81,7 @@ class CompositeBackend:
         self.name = primary.name
         self._primary_capabilities: BackendCapabilities = primary.capabilities()
         self.decisions: list[BuildDecision] = []
+        self.layout = CANONICAL
 
     def capabilities(self) -> BackendCapabilities:
         """What the pair can build: everything the reference can.
@@ -111,6 +118,12 @@ class CompositeBackend:
         if op not in REFERENCE_ONLY_OPS and op in capabilities.ops:
             logger.warning("%s is built by the reference: %s", descriptor, reason)
         return getattr(self.fallback, f"make_{op}")(descriptor)
+
+    def make_radial_mlp(self, descriptor: Any) -> Any:
+        return self._build("radial_mlp", descriptor)
+
+    def make_distance_transform(self, descriptor: Any) -> Any:
+        return self._build("distance_transform", descriptor)
 
     def make_linear(self, descriptor: Any) -> Any:
         return self._build("linear", descriptor)
@@ -149,7 +162,7 @@ class CompositeBackend:
                 reasons.setdefault(decision.op, set()).add(decision.reason)
         lines = [
             f"backend {self.primary.name}, with {self.fallback.name} for the ops "
-            f"it does not build; one layout throughout, so no seams"
+            f"it does not build; every op in {self.layout.name}, so no seams"
         ]
         for op in sorted({d.op for d in self.decisions}):
             built = ", ".join(
@@ -162,20 +175,34 @@ class CompositeBackend:
         return "\n".join(lines)
 
 
-def resolve_backend(name: str) -> Any:
+def resolve_backend(
+    name: str,
+    precision: PrecisionConfig | None = None,
+    supports_float64: bool = True,
+) -> Any:
     """The backend a model named ``name`` is built with.
 
     The reference on its own, or the named backend with the reference behind
     it for every op it does not build. Resolved once, at build time.
+
+    With a precision, each of the two builds its ops at the precision it is
+    given, and meets a wider accumulation floor its own way, so an op the
+    reference builds for the chosen backend meets the floor as well.
 
     Raises:
         BackendNotAvailableError: The name is not registered, or it is and did
             not import on this machine. Nothing is substituted for it.
     """
     backend = get_backend(name)
+
+    def at_precision(member: Any) -> Any:
+        if precision is None:
+            return member
+        return PrecisionBackend(member, precision, supports_float64)
+
     if isinstance(backend, ReferenceBackend):
-        return backend
-    return CompositeBackend(backend, ReferenceBackend())
+        return at_precision(backend)
+    return CompositeBackend(at_precision(backend), at_precision(ReferenceBackend()))
 
 
 def require_double_backward(name: str, why: str) -> None:

@@ -26,7 +26,5 @@ def test_every_energy_family_has_a_frozen_counterpart():
 
 
 def test_the_model_stage_widens_exactly_where_the_frozen_tree_does():
-    frozen = {
-        family: WIDENS_NODE_ENERGY[name] for family, name in LEGACY_CLASS.items()
-    }
+    frozen = {family: WIDENS_NODE_ENERGY[name] for family, name in LEGACY_CLASS.items()}
     assert frozen == model_stage._WIDENS_NODE_ENERGY

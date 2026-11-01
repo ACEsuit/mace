@@ -31,7 +31,7 @@ __all__ = [
 #: adds fields, each with a default; renaming or removing a field, or changing
 #: what one means, is a major bump. A record is read when it has this major and
 #: this minor or an older one.
-SCHEMA_VERSION: Final = "1.0"
+SCHEMA_VERSION: Final = "1.1"
 
 _SCHEMA_VERSION_PATTERN: Final = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
@@ -153,8 +153,65 @@ class DataSummary(_Record):
     sources: list[DataSourceSummary] = Field(default_factory=list)
 
 
+class E0Details(_Record):
+    """How one head's per-element reference energies (the E0s) were obtained.
+
+    `values` maps chemical symbol to E0 in the model's energy unit. Symbols
+    rather than atomic numbers, because JSON keys are strings and an integer
+    key would not survive the round trip.
+    """
+
+    #: "explicit" when the E0s were given; "estimated" when fitted from the data.
+    source: Literal["explicit", "estimated"]
+    #: The estimation method (e.g. "average", "least_squares"); None when explicit.
+    method: str | None = None
+    #: Parameters of the method or reference, e.g. which data the fit used.
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    values: dict[str, float] = Field(default_factory=dict)
+
+
+class ElectrostaticsRecord(_Record):
+    """The long-range solver a model computes with, as model state.
+
+    A solver that does not reproduce the reference bit for bit gives other
+    numbers, so which one a model was trained with is part of the model. It
+    is recorded apart from the configuration because loading reads it before
+    any model is built, and because a converted artifact has no training run
+    whose configuration would say.
+    """
+
+    #: The name it is registered under.
+    solver: str
+    #: Whether it declared bit parity with the reference, which decides whether
+    #: another solver may stand in for it at load time.
+    bit_parity: bool
+    #: The solve, as :func:`mace_core.electrostatics.descriptor_record` writes
+    #: it. A rebuilt model's solve is compared against it.
+    descriptor: dict[str, Any] = Field(default_factory=dict)
+
+
+class ElementExtensionRecord(_Record):
+    """The elements a model was given beyond its parent's, and how.
+
+    The rows those elements have in every per-element tensor were never
+    trained, so what they hold is the initialization that made them, and that
+    is recorded rather than left to be guessed from the weights.
+    """
+
+    #: The added elements, as chemical symbols.
+    added: list[str]
+    #: The initialization spec the new rows were made with, by name.
+    initialization: str
+    #: The seed it drew them with, for an initialization that draws.
+    seed: int | None = None
+    #: For an initialization that copies, the element each added one copied.
+    donors: dict[str, str] = Field(default_factory=dict)
+
+
 class HeadSummary(_Record):
     """What one head was fitted on."""
+
+    e0: E0Details | None = None
 
     #: Names from `DataSummary.sources`.
     sources: list[str] = Field(default_factory=list)
@@ -226,6 +283,10 @@ class ModelMetadata(_Record):
     doi: str | None = None
     citations: list[Citation] = Field(default_factory=list)
     notes: str = ""
+    parents: list[ParentModel] = Field(default_factory=list)
+    electrostatics: ElectrostaticsRecord | None = None
+    element_extension: ElementExtensionRecord | None = None
+    elements: list[int] = Field(default_factory=list)
     #: Set only on a model produced by a training run.
     training: TrainingSummary | None = None
 
@@ -287,6 +348,21 @@ class ModelMetadata(_Record):
         return cls.model_validate_json(text, context={_READING: True})
 
 
+class ParentModel(_Record):
+    """A model this one was built from."""
+
+    #: What the parent contributed: its weights as the starting point (fine-tuning
+    #: or continued training), or its predictions as distillation targets.
+    role: Literal["initial_weights", "teacher"]
+    #: How the config named it: a path or a registry name such as "mace-mp-0b3".
+    name: str
+    #: The parent's own record; None for a legacy checkpoint that carries none.
+    metadata: ModelMetadata | None = None
+
+
+ModelMetadata.model_rebuild()
+
+
 def format_citations(citations: Iterable[Citation]) -> str:
     """Render citations as a numbered block, one line each; unset fields are
     left out."""
@@ -308,3 +384,11 @@ def format_citations(citations: Iterable[Citation]) -> str:
             parts.append(citation.url)
         lines.append(f"[{number}] " + ". ".join(parts))
     return "\n".join(lines)
+
+
+__all__ += [
+    "E0Details",
+    "ElectrostaticsRecord",
+    "ElementExtensionRecord",
+    "ParentModel",
+]

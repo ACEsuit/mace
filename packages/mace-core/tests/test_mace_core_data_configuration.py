@@ -881,18 +881,6 @@ def test_a_reserved_key_with_nothing_to_recover_yields_none(tmp_path):
     assert config.property_weights["energy"] == 1.0
 
 
-def test_a_reserved_key_is_rewritten_onto_its_default_spelling():
-    """The rewrite has to land where the parser then looks.
-
-    Spelled once, on the key table. A second copy here would keep saying
-    `REF_energy` while the table moved.
-    """
-    from mace_core.data.xyz import _RESERVED_KEYS
-
-    for name, reserved in _RESERVED_KEYS.items():
-        assert reserved.rewritten == DefaultKeys[name.upper()].value
-
-
 # ---------------------------------------------------------------------------
 # The presence check
 # ---------------------------------------------------------------------------
@@ -1256,7 +1244,7 @@ def test_two_tables_with_the_same_order_are_equal():
     assert AtomicNumberTable([1, 8]) != AtomicNumberTable([8, 1])
 
 
-def test_a_zero_weight_and_an_absent_label_are_told_apart():
+def test_xyz_keeps_label_presence_when_weight_zero():
     """The weight cannot say which is which, so it must not be asked.
 
     A file is free to write `config_forces_weight=0.0` for a structure whose
@@ -1287,7 +1275,8 @@ def test_an_undeclared_property_is_not_labelled_either():
         Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
         KeySpecification.from_defaults(),
     )
-    assert not configuration.is_labelled("a_property_nobody_declared")
+    with pytest.raises(ValueError, match="not a declared property"):
+        configuration.is_labelled("a_property_nobody_declared")
 
 
 def test_a_reserved_key_is_rewritten_onto_its_default_spelling():

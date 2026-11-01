@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 import torch
 from conftest import assert_close, fp64_only
+from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.canonical import linear_bias_table, linear_weight_table
@@ -30,6 +31,7 @@ from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, MACEOutputs, ScaleShiftSpec
 from mace_torch.models.heads import copy_heads, head_columns, per_head_irreps
+from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn import MACEBackbone
 
 ATOMIC_NUMBERS = [1, 8]
@@ -72,12 +74,14 @@ def backbone(seed=0):
         MACEBackbone(
             ReferenceBackend(),
             atomic_numbers=ATOMIC_NUMBERS,
-            num_layers=2,
-            num_features=4,
-            lmax=1,
-            hidden_irreps=HIDDEN,
-            correlation=2,
-            cutoff=CUTOFF,
+            config=ModelConfig(
+                num_interactions=2,
+                num_channels=4,
+                max_ell=1,
+                hidden_irreps=HIDDEN,
+                correlation=2,
+                r_max=CUTOFF,
+            ),
             avg_num_neighbors=4.0,
             precision=precision_name(),
         ),
@@ -90,9 +94,8 @@ def outputs(heads=HEADS, observables=(ENERGY,), seed=1):
         MACEOutputs(
             ReferenceBackend(),
             list(observables),
-            hidden_irreps=HIDDEN,
+            layer_irreps=[HIDDEN, "0e"],
             num_features=4,
-            num_layers=2,
             energy_head=energy_head(heads) if ENERGY in observables else None,
             precision=precision_name(),
             num_heads=len(heads),
@@ -109,18 +112,31 @@ def graph(heads_of_structures=(0,), positions=WATER):
     count = len(heads_of_structures)
     blocks = [np.asarray(positions) + 20.0 * index for index in range(count)]
     everything = np.concatenate(blocks)
-    neighborhood = get_neighborhood(everything, CUTOFF, (False, False, False), None)
+    neighborhood = get_neighborhood(
+        everything,
+        CUTOFF,
+        (False, False, False),
+        None,
+        backend=resolve_neighbor_backend(),
+    )
     numbers = [8, 1, 1] * count
     index = {z: i for i, z in enumerate(ATOMIC_NUMBERS)}
     dtype = torch.get_default_dtype()
     return {
         "positions": torch.tensor(everything, dtype=dtype),
-        "atomic_numbers": torch.tensor(numbers),
-        "element_index": torch.tensor([index[z] for z in numbers]),
+        "node_atomic_numbers": torch.tensor(numbers),
+        "node_attrs": torch.nn.functional.one_hot(
+            torch.tensor([index[z] for z in numbers]), num_classes=len(ATOMIC_NUMBERS)
+        ).to(torch.get_default_dtype()),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts, dtype=dtype),
         "batch": torch.arange(count).repeat_interleave(3),
-        "num_graphs": count,
+        "ptr": torch.cat(
+            (
+                torch.zeros(1, dtype=torch.long),
+                torch.bincount(torch.arange(count).repeat_interleave(3)).cumsum(0),
+            )
+        ),
         "head": torch.tensor(list(heads_of_structures)),
     }
 
@@ -161,7 +177,7 @@ def test_a_term_with_several_copies_keeps_them_together_per_head():
 def test_the_weight_table_is_the_reference_backends_plan():
     """The table in `mace_core` states the layout; the reference holds it.
     They are two descriptions of one ordering and have to agree."""
-    from mace_torch.backends.reference.backend import _linear_plan
+    from mace_torch.backends.reference import _linear_plan
 
     descriptor = LinearDescriptor(irreps_in="3x0e+2x1o", irreps_out="2x0e+1x1o")
     *_, count, _ = _linear_plan(descriptor)
@@ -214,7 +230,7 @@ def gradient_support(head_index: int) -> set[str]:
     model_backbone = backbone()
     model_outputs = outputs()
     g = graph((head_index,))
-    energy = model_outputs(g, model_backbone(g)).total_energy.sum()
+    energy = model_outputs(g, list(model_backbone(g).layers)).total_energy.sum()
     energy.backward()
     touched = set()
     for name, parameter in model_outputs.named_parameters():
@@ -278,10 +294,10 @@ def test_copying_a_head_makes_the_two_heads_agree():
     model_outputs = outputs()
     head = model_outputs.heads["energy"]
     g = graph((0, 1))
-    before = model_outputs(g, model_backbone(g)).total_energy
+    before = model_outputs(g, list(model_backbone(g).layers)).total_energy
     assert abs(float((before[0] - before[1]).detach())) > 1e-3
     head.load_head_state(1, head.head_state(0))
-    after = model_outputs(g, model_backbone(g)).total_energy
+    after = model_outputs(g, list(model_backbone(g).layers)).total_energy
     assert_close(after[1], after[0].detach().numpy(), "a copied readout")
 
 
@@ -296,8 +312,8 @@ def test_a_single_head_readout_loaded_into_head_one_reproduces_that_model():
     double.heads["energy"].load_head_state(1, single.heads["energy"].head_state(0))
     g_single = graph((0, 0))
     g_double = graph((1, 1))
-    expected = single(g_single, model_backbone(g_single)).total_energy
-    got = double(g_double, model_backbone(g_double)).total_energy
+    expected = single(g_single, list(model_backbone(g_single).layers)).total_energy
+    got = double(g_double, list(model_backbone(g_double).layers)).total_energy
     assert_close(got, expected.detach().numpy(), "one head of a two-head model")
 
 
@@ -325,9 +341,9 @@ def test_a_multi_head_dipole_takes_its_own_heads_copy():
     model_backbone = backbone()
     model_outputs = outputs(observables=(DIPOLE,))
     g = graph((0, 1))
-    dipoles = model_outputs(g, model_backbone(g)).dipole
+    dipoles = model_outputs(g, list(model_backbone(g).layers)).dipole
     assert dipoles.shape == (2, 3)
-    assert float((dipoles[0] - dipoles[1]).abs().max()) > 1e-3
+    assert float((dipoles[0] - dipoles[1]).detach().abs().max()) > 1e-3
 
 
 def test_an_energy_head_for_a_different_number_of_heads_is_refused():
@@ -335,9 +351,8 @@ def test_an_energy_head_for_a_different_number_of_heads_is_refused():
         MACEOutputs(
             ReferenceBackend(),
             [ENERGY],
-            hidden_irreps=HIDDEN,
+            layer_irreps=[HIDDEN, "0e"],
             num_features=4,
-            num_layers=2,
             energy_head=energy_head(HEADS),
             num_heads=3,
         )

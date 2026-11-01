@@ -8,19 +8,35 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
+from mace_core.data import Configuration
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.neighbors import get_neighborhood
+from mace_core.neighbors import NeighborListConfig
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
+from mace_torch.graph import build_batch
 from mace_torch.models import EnergyOutputHead, MACEOutputs, ScaleShiftSpec
+from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn import MACEBackbone
 from mace_torch.physics import DerivativeEngine
 
 CUTOFF = 5.0
 ATOMIC_NUMBERS = [1, 8]
+#: The energy, declaring the two derivatives that have names of their own. They
+#: are declared rather than derived because a name and a sign are a property of
+#: the quantity, not of a rule: `forces` and `magforces` are both the negative
+#: gradient, and anything else takes `d_energy_d_<input>` with the gradient's
+#: own sign.
 ENERGY = ObservableSpec(
-    name="energy", irreps="0e", per_atom=False, units="eV", normalization="none"
+    name="energy",
+    irreps="0e",
+    per_atom=False,
+    units="eV",
+    derivatives=[
+        {"wrt": "pos", "name": "forces", "sign": -1, "units": "eV/A"},
+        {"wrt": "magmom", "name": "magforces", "sign": -1},
+    ],
 )
 
 
@@ -45,12 +61,14 @@ def build_engine(seed: int = 0, inputs=()) -> DerivativeEngine:
     backbone = MACEBackbone(
         backend,
         atomic_numbers=ATOMIC_NUMBERS,
-        num_layers=2,
-        num_features=4,
-        lmax=2,
-        hidden_irreps="0e+1o",
-        correlation=2,
-        cutoff=CUTOFF,
+        config=ModelConfig(
+            num_interactions=2,
+            num_channels=4,
+            max_ell=2,
+            hidden_irreps="0e+1o",
+            correlation=2,
+            r_max=CUTOFF,
+        ),
         avg_num_neighbors=6.0,
         node_inputs=[spec for spec in inputs if spec.per_atom],
     )
@@ -61,7 +79,7 @@ def build_engine(seed: int = 0, inputs=()) -> DerivativeEngine:
         ScaleShiftSpec("std", (1.0,), (0.0,)),
         PrecisionConfig(),
     )
-    outputs = MACEOutputs(backend, [ENERGY], backbone.layer_irreps, 4, energy_head=head)
+    outputs = MACEOutputs(backend, [ENERGY], ["0e+1o", "0e"], 4, energy_head=head)
     generator = torch.Generator().manual_seed(seed + 1)
     with torch.no_grad():
         for module in (backbone, outputs):
@@ -71,27 +89,23 @@ def build_engine(seed: int = 0, inputs=()) -> DerivativeEngine:
                         parameter.shape, generator=generator, dtype=parameter.dtype
                     )
                 )
-    return DerivativeEngine(backbone, outputs, inputs=inputs)
+    return DerivativeEngine(backbone, ENERGY, outputs, inputs=inputs)
 
 
 def build_graph(positions, numbers, cell=None, pbc=(False, False, False)) -> dict:
-    positions = np.asarray(positions, dtype=float)
-    neighborhood = get_neighborhood(positions, CUTOFF, pbc, cell)
-    index = {z: i for i, z in enumerate(ATOMIC_NUMBERS)}
-    effective = neighborhood.cell if cell is None else np.asarray(cell, dtype=float)
-    return {
-        "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor(list(numbers)),
-        "element_index": torch.tensor([index[z] for z in numbers]),
-        "edge_index": torch.tensor(neighborhood.edge_index),
-        "shifts": torch.tensor(neighborhood.shifts),
-        "unit_shifts": torch.tensor(neighborhood.unit_shifts),
-        "batch": torch.zeros(len(numbers), dtype=torch.long),
-        "num_graphs": 1,
-        "head": torch.zeros(1, dtype=torch.long),
-        "cell": torch.tensor(np.asarray(effective, dtype=float)).reshape(1, 3, 3),
-        "pbc": torch.tensor([list(pbc)]),
-    }
+    configuration = Configuration(
+        atomic_numbers=np.asarray(numbers),
+        positions=np.asarray(positions, dtype=float),
+        cell=np.zeros((3, 3)) if cell is None else np.asarray(cell, dtype=float),
+        pbc=tuple(pbc),
+    )
+    return build_batch(
+        [configuration],
+        atomic_number_table=AtomicNumberTable(ATOMIC_NUMBERS),
+        cutoff=CUTOFF,
+        neighbor_backend=resolve_neighbor_backend(NeighborListConfig()),
+        dtype=torch.float64,
+    )
 
 
 def node_input_values(count: int, seed: int = 7):

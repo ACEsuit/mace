@@ -24,6 +24,7 @@ from mace_core.config import FixedPointSpec
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.calculators import MACECalculator
+from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.physics import DerivativeEngine
 from mace_torch.physics.fixed_point import FixedPointDriver
 
@@ -49,13 +50,16 @@ def v1_graph(atoms, numbers, cutoff, moments):
     positions = atoms.get_positions()
     pbc = tuple(bool(p) for p in atoms.pbc)
     cell = np.asarray(atoms.cell) if any(pbc) else None
-    neighborhood = get_neighborhood(positions, cutoff, pbc, cell)
+    neighborhood = get_neighborhood(
+        positions, cutoff, pbc, cell, backend=resolve_neighbor_backend()
+    )
     return {
         "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor(atoms.get_atomic_numbers()),
-        "element_index": torch.tensor(
-            [numbers.index(int(z)) for z in atoms.get_atomic_numbers()]
-        ),
+        "node_atomic_numbers": torch.tensor(atoms.get_atomic_numbers()),
+        "node_attrs": torch.nn.functional.one_hot(
+            torch.tensor([numbers.index(int(z)) for z in atoms.get_atomic_numbers()]),
+            num_classes=len(numbers),
+        ).to(torch.get_default_dtype()),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts),
         "unit_shifts": torch.tensor(neighborhood.unit_shifts),
@@ -64,7 +68,12 @@ def v1_graph(atoms, numbers, cutoff, moments):
         ),
         "pbc": torch.tensor([pbc]),
         "batch": torch.zeros(len(atoms), dtype=torch.long),
-        "num_graphs": 1,
+        "ptr": torch.cat(
+            (
+                torch.zeros(1, dtype=torch.long),
+                torch.bincount(torch.zeros(len(atoms), dtype=torch.long)).cumsum(0),
+            )
+        ),
         "head": torch.zeros(1, dtype=torch.long),
         "magmom": torch.tensor(np.asarray(moments, dtype=float)),
     }

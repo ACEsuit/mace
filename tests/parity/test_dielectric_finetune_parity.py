@@ -23,7 +23,6 @@ import numpy as np
 import pytest
 import torch
 from ase import Atoms
-from ase.data import chemical_symbols
 from ase.io import write
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
@@ -60,6 +59,7 @@ def architecture(legacy) -> dict:
     config = dipole_config(legacy)
     return {
         "model": "dielectric",
+        "interaction_first": "plain",
         "observables": OBSERVABLES,
         "r_max": config["cutoff"],
         "num_interactions": config["num_layers"],
@@ -67,8 +67,8 @@ def architecture(legacy) -> dict:
         "hidden_irreps": config["hidden_irreps"],
         "max_ell": config["lmax"],
         "correlation": config["correlation"],
-        "num_radial_basis": config["num_radial"],
-        "num_cutoff_basis": config["cutoff_order"],
+        "radial_basis": {"kind": "bessel", "num_basis": config["num_radial"]},
+        "cutoff": {"polynomial_order": config["cutoff_order"]},
         "readout": {"mlp_irreps": config["readout_hidden"]},
     }
 
@@ -98,9 +98,9 @@ def write_foundation(legacy, directory):
     transfer_dipole_weights(legacy, engine_.get_submodule("backbone"), "dielectric")
     metadata = ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(code_version="anchor"),
+        provenance=Provenance(versions={"mace-torch-v1": "anchor"}),
         heads={"default": HeadSummary(e0=E0Details(source="explicit"))},
-        elements=[chemical_symbols[z] for z in numbers],
+        elements=numbers,
     )
     return write_model(directory / "foundation", engine_, metadata)
 
@@ -113,7 +113,7 @@ def waters(path, count=8):
             "OH2", positions=WATER + generator.normal(scale=0.05, size=(3, 3))
         )
         atoms.info["dipole"] = generator.normal(size=3)
-        atoms.info["polarizability"] = generator.normal(size=9)
+        atoms.info["polarizability"] = generator.normal(size=(3, 3))
         frames.append(atoms)
     write(path, frames)
     return path

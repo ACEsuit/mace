@@ -98,11 +98,13 @@ def _target_text(target: str | Irrep) -> str:
     """The canonical spelling of one output irrep, refusing a declaration."""
     return str(target if isinstance(target, Irrep) else Irrep.parse(target))
 
+
 def _output_dtype(weights: np.ndarray) -> np.dtype:
     """The dtype a conversion hands back: the input's, if it is floating."""
     if np.issubdtype(weights.dtype, np.floating):
         return weights.dtype
     return np.dtype(np.float64)
+
 
 def _projection(
     irreps_in: str | Irreps,

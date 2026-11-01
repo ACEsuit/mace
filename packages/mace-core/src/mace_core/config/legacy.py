@@ -173,11 +173,11 @@ _RUNTIME: dict[str, Disposition] = {
 _MODEL: dict[str, Disposition] = {
     **_kept(
         r_max="model.r_max",
-        radial_type="model.radial_type",
-        num_radial_basis="model.num_radial_basis",
-        num_cutoff_basis="model.num_cutoff_basis",
+        radial_type="model.radial_basis.kind",
+        num_radial_basis="model.radial_basis.num_basis",
+        num_cutoff_basis="model.cutoff.polynomial_order",
         pair_repulsion="model.pair_repulsion",
-        distance_transform="model.distance_transform",
+        distance_transform="model.distance_transform.kind",
         apply_cutoff="model.apply_cutoff",
         interaction="model.interaction",
         interaction_first="model.interaction_first",
@@ -245,11 +245,16 @@ _MODEL: dict[str, Disposition] = {
 
 #: Data, files and property keys.
 _DATA: dict[str, Disposition] = {
+    **_merged(
+        "data.heads.default.e0s",
+        "one string that names five kinds of E0s becomes the kind it names",
+        "E0s",
+        applied=True,
+    ),
     **_kept(
         train_file="data.heads.default.train_file",
         valid_file="data.heads.default.valid_file",
         test_file="data.heads.default.test_file",
-        E0s="data.heads.default.e0s",
         keep_isolated_atoms="data.heads.default.keep_isolated_atoms",
         config_type_weights="data.heads.default.config_type_weights",
         test_dir="data.test_dir",
@@ -579,6 +584,18 @@ def _unreachable(dest: str, disposition: Dropped | Reserved | Merged) -> str:
     return f"--{dest} merged into {disposition.into}: {disposition.note}"
 
 
+def interaction_kind(name: str) -> str:
+    """Translate the frozen class spelling at the legacy import boundary."""
+    return {
+        "RealAgnosticInteractionBlock": "plain",
+        "RealAgnosticResidualInteractionBlock": "residual",
+        "RealAgnosticDensityInteractionBlock": "density",
+        "RealAgnosticDensityResidualInteractionBlock": "density_residual",
+        "RealAgnosticAttResidualInteractionBlock": "nonlinear",
+        "RealAgnosticResidualNonLinearInteractionBlock": "nonlinear",
+    }.get(name, name)
+
+
 def from_namespace(
     namespace: Any,
     defaults: Mapping[str, Any] | None = None,
@@ -611,6 +628,10 @@ def from_namespace(
         value = getattr(namespace, dest)
         if isinstance(disposition, Kept):
             if defaults is None or value != defaults.get(dest):
+                if dest in {"interaction", "interaction_first"}:
+                    value = interaction_kind(value)
+                elif dest == "distance_transform":
+                    value = str(value).lower()
                 _set(values, disposition.path, value)
             continue
         if isinstance(disposition, Merged) and disposition.applied:
@@ -804,7 +825,7 @@ def _collapse_loss(namespace: Any, values: dict[str, Any]) -> None:
             and (delta := _read(namespace, "huber_delta")) is not None
         ):
             settings["delta"] = delta
-        _set(values, "loss.kind", {loss: settings})
+        _set(values, "loss.kind", {"kind": loss, **settings})
     for stage, prefix in (("weights", ""), ("stage_two_weights", "swa_")):
         written = {
             observable: weight
@@ -826,7 +847,7 @@ def _collapse_optimizer(namespace: Any, values: dict[str, Any]) -> None:
         for dest, field in _OPTIMIZER_SETTINGS.get(kind, {}).items()
         if (value := _read(namespace, dest)) is not None
     }
-    _set(values, "training.optimizer", {kind: settings})
+    _set(values, "training.optimizer", {"kind": kind, **settings})
 
 
 def _collapse_schedule(namespace: Any, values: dict[str, Any]) -> None:
@@ -839,7 +860,7 @@ def _collapse_schedule(namespace: Any, values: dict[str, Any]) -> None:
         for dest, field in _SCHEDULE_SETTINGS.get(kind, {}).items()
         if (value := _read(namespace, dest)) is not None
     }
-    _set(values, "training.scheduler.kind", {kind: settings})
+    _set(values, "training.scheduler.kind", {"kind": kind, **settings})
     factors = _group_factors(_read(namespace, "lr_params_factors"))
     if factors:
         _set(values, "training.scheduler.group_factors", factors)

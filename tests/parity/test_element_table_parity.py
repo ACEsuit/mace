@@ -63,7 +63,7 @@ def fine_tune(tmp_path, foundation_path, element_table):
             },
             "data": {
                 "heads": {
-                    "default": {"train_file": str(path), "e0s": {"foundation": {}}}
+                    "default": {"train_file": str(path), "e0s": {"kind": "foundation"}}
                 },
                 "valid_fraction": 0.25,
                 "pin_memory": False,
@@ -114,16 +114,18 @@ def forces_and_energies(engine, legacy, structures):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     graph = {
         "positions": batch.positions,
-        "atomic_numbers": torch.tensor(
+        "node_atomic_numbers": torch.tensor(
             [numbers[index] for index in batch.node_attrs.argmax(1).tolist()]
         ),
-        "element_index": batch.node_attrs.argmax(1),
+        "node_attrs": batch.node_attrs,
         "edge_index": batch.edge_index,
         "shifts": batch.shifts,
         "unit_shifts": batch.unit_shifts,
         "cell": batch.cell.reshape(-1, 3, 3),
         "batch": batch.batch,
-        "num_graphs": int(batch.num_graphs),
+        "ptr": torch.cat(
+            (torch.zeros(1, dtype=torch.long), torch.bincount(batch.batch).cumsum(0))
+        ),
         "head": torch.zeros(int(batch.num_graphs), dtype=torch.long),
     }
     output = engine(graph, compute=("forces",))

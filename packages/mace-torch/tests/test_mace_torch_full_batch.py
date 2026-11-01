@@ -18,7 +18,7 @@ from ase import Atoms
 from ase.io import write
 from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.serialization import CheckpointError
 from mace_torch.train import run_data_stage, run_model_stage, run_train_stage
 from mace_torch.train.checkpoint import (
@@ -32,7 +32,7 @@ from mace_torch.train.full_batch import accumulate, full_batch_step, set_totals
 from mace_torch.train.loss import TermwiseLoss, build_loss
 from mace_torch.train.optimizers import build_optimizer
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 
 HYDROGEN, OXYGEN = -13.6, -2040.0
 
@@ -145,7 +145,8 @@ def test_the_parts_add_up_to_the_loss_of_the_whole_set(tmp_path):
     loader = built.data.train_loader
     parts = list(loader.batches(0, drop_last=False))
     sizes = {
-        int(batch.graph["ptr"][-1]) // int(batch.graph["num_graphs"]) for batch in parts
+        int(batch.graph["ptr"][-1]) // int(batch.graph["ptr"].shape[0] - 1)
+        for batch in parts
     }
     assert len(parts) > 1 and len(sizes) > 1, "meant to be batches of mixed sizes"
 
@@ -154,7 +155,7 @@ def test_the_parts_add_up_to_the_loss_of_the_whole_set(tmp_path):
     assembled = accumulate(model, parts, loss, totals)
     assembled_gradient = gradient(model).clone()
 
-    loader.batch_size = sum(int(batch.graph["num_graphs"]) for batch in parts)
+    loader.batch_size = sum(int(batch.graph["ptr"].shape[0] - 1) for batch in parts)
     (whole,) = list(loader.batches(0, drop_last=False))
     model.zero_grad(set_to_none=True)
     output = model(whole.graph, compute=("forces",), training=True)
@@ -176,12 +177,14 @@ def test_weighing_by_share_of_structures_is_not_the_loss_of_the_whole_set(tmp_pa
     config, built = built_task(tmp_path)
     model, loss = built.model, termwise(build_loss(built.outputs, config.loss))
     parts = list(built.data.train_loader.batches(0, drop_last=False))
-    structures = sum(int(batch.graph["num_graphs"]) for batch in parts)
+    structures = sum(int(batch.graph["ptr"].shape[0] - 1) for batch in parts)
     shared = 0.0
     for batch in parts:
         output = model(batch.graph, compute=("forces",), training=True)
         shared += (
-            float(loss(output, batch)) * int(batch.graph["num_graphs"]) / structures
+            float(loss(output, batch))
+            * int(batch.graph["ptr"].shape[0] - 1)
+            / structures
         )
     whole = float(
         accumulate(model, parts, loss, set_totals(loss, parts, DistributedContext()))
@@ -272,7 +275,7 @@ def structures_seen(built, monkeypatch) -> dict[int, int]:
 
     def counting(epoch, *, drop_last):
         for batch in batches(epoch, drop_last=drop_last):
-            seen[epoch] = seen.get(epoch, 0) + int(batch.graph["num_graphs"])
+            seen[epoch] = seen.get(epoch, 0) + int(batch.graph["ptr"].shape[0] - 1)
             yield batch
 
     monkeypatch.setattr(loader, "batches", counting)

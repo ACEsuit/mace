@@ -129,6 +129,13 @@ def _walk(model, names: list[str]) -> str | None:
         if name in fields:
             model = fields[name].annotation
             continue
+        arms = getattr(model, "__args__", ())
+        if (
+            arms
+            and any(name in getattr(arm, "model_fields", {}) for arm in arms)
+            and any(_walk(arm, names[position:]) is None for arm in arms)
+        ):
+            return None
         kind = _kind_named(model, name)
         if kind is not None:
             model = kind

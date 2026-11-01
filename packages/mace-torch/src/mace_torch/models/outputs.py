@@ -202,14 +202,15 @@ class MACEOutputs(nn.Module):
 
         Args:
             graph: The flat dict. Read and never written to.
-            features: One ``[n_atoms, channels, width]`` tensor per layer.
+            features: One ``[n_atoms, channels * width]`` tensor per layer,
+                grouped by irrep in the backend's layout.
             zbl_node_energy: The short-range pair repulsion per atom, if the
                 model has one.
             embedding: The node features before the first interaction, when
                 the energy has a readout of them.
         """
         batch = graph["batch"]
-        num_graphs = int(graph["num_graphs"])
+        num_graphs = int(graph["ptr"].shape[0] - 1)
         # Gathered once, since every observable's readout reads it.
         node_head = graph["head"][batch] if self.num_heads > 1 else None
         fields: dict[str, Tensor] = {}
@@ -225,7 +226,7 @@ class MACEOutputs(nn.Module):
                         for value in head.per_layer(features, node_head)
                     ],
                     zbl_node_energy,
-                    graph["element_index"],
+                    graph["node_attrs"].argmax(dim=-1),
                     graph["head"],
                     batch,
                     num_graphs,

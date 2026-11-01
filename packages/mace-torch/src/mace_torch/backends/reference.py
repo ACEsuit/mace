@@ -1,10 +1,10 @@
 """The reference backend: plain torch, no e3nn, and the correctness oracle.
 
-Mandatory and CPU-capable. Every other backend is checked against this one, so
-it is written for clarity over speed: the symmetric contraction expands the
-outer power rather than fusing anything, and the linear map builds a dense
-matrix from its flat weights on every call. Both are wasteful and both are
-obviously right, which is the trade a reference is for.
+Mandatory and CPU-capable. Every other backend is checked against this one, and
+uses the canonical weights directly. The symmetric contraction shares monomials
+between output irreps; the independent outer-power primitive and frozen legacy
+parity tests verify that optimization. Linear maps build a dense matrix from
+their flat weights.
 
 It holds the canonical weight layout directly, so ``to_canonical`` and
 ``load_canonical`` are views rather than conversions. That is the property that
@@ -27,8 +27,10 @@ from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
 from mace_core.kernels.canonical import (
+    KERNEL_SPEC_VERSION,
     LAYER_NORM_EPSILON,
     SILU_SECOND_MOMENT_SCALE,
+    contraction_path_labels,
     fully_connected_tp_path_normalization,
     linear_path_normalization,
     radial_mlp_initial_bound,
@@ -58,11 +60,11 @@ from mace_torch.backends.radial import (
     GaussianBasis,
     PolynomialCutoff,
 )
+from mace_torch.kernels.contraction import monomial_basis, symmetric_contraction_grouped
 from mace_torch.kernels.ops import (
     channelwise_tp_conv,
     equivariant_linear,
     segment_sum,
-    symmetric_contraction,
 )
 
 __all__ = [
@@ -272,11 +274,10 @@ class _ConstantTensors(nn.Module):
 class ReferenceSymmetricContraction(nn.Module):
     """The many-body contraction, over the basis the descriptor records.
 
-    One contraction per output irrep, concatenated on the component axis. They
-    cannot share a stacked basis: each output irrep has its own component count,
-    so stacking them would be joining arrays whose second axis differs. The
-    frozen tree reaches the same shape by holding one `Contraction` per output
-    irrep, and this is that, with the loop kept explicit.
+    Weights remain grouped by output irrep and body order. The kernel shares
+    monomials across those groups and concatenates their outputs, while the
+    canonical serializer writes body order first. Build-time basis compression
+    changes neither the path order nor the parameters the optimizer sees.
     """
 
     def __init__(self, descriptor: SymmetricContractionDescriptor) -> None:
@@ -305,7 +306,11 @@ class ReferenceSymmetricContraction(nn.Module):
                 # array. A `2e` output is exactly that at body order one.
                 trailing = int(np.prod(array.shape[2:])) if array.ndim > 2 else 1
                 flat = array.reshape(array.shape[0], array.shape[1], trailing)
-                tables.append(torch.tensor(flat, dtype=dtype))
+                tables.append(
+                    monomial_basis(torch.tensor(flat, dtype=torch.float64), order).to(
+                        dtype
+                    )
+                )
                 group.append(
                     nn.Parameter(
                         torch.zeros(
@@ -336,17 +341,6 @@ class ReferenceSymmetricContraction(nn.Module):
                 scale = symmetric_contraction_initial_scale(int(parameter.shape[1]))
                 parameter.copy_(_draw(parameter, seed + position) * scale)
 
-    def _group(self, position: int) -> list[Tensor]:
-        """One output irrep's weights, by integer index.
-
-        Flat storage with integer indexing rather than a slice of the
-        `ParameterList`: slicing one goes through `slice.indices`, a C builtin
-        that `torch.compile` cannot trace, and the break lands in the middle of
-        the backbone rather than here.
-        """
-        base = position * self.orders
-        return [self.weights[base + order] for order in range(self.orders)]
-
     def forward(self, features: Tensor, element: Tensor) -> Tensor:
         """Grouped features in and out.
 
@@ -362,13 +356,14 @@ class ReferenceSymmetricContraction(nn.Module):
         # said here. It is the one thing put into `self.bases`, two lines of
         # the constructor away.
         bases = cast("list[_ConstantTensors]", list(self.bases))
-        pieces = [
-            symmetric_contraction(
-                channels, self._group(position), list(tables), element
-            )
-            for position, tables in enumerate(bases)
-        ]
-        return grouped(torch.cat(pieces, dim=-1), self.out_widths)
+        result = symmetric_contraction_grouped(
+            channels,
+            list(self.weights),
+            [table for group in bases for table in group],
+            element,
+            self.orders,
+        )
+        return grouped(result, self.out_widths)
 
     def to_canonical(self) -> dict[str, Tensor]:
         """The flat ``[Z, A, mul]`` array, in the pinned path order.
@@ -405,6 +400,27 @@ class ReferenceSymmetricContraction(nn.Module):
             for order in range(self.orders)
             for position in range(len(self.targets))
         ]
+
+    def canonical_metadata(self) -> dict[str, object]:
+        """What each weight on the path axis multiplies, by name.
+
+        The path count alone does not pin the layout: two implementations can
+        agree on how many paths there are and keep a different subset of the
+        linearly dependent coupling trees. Writing the trees is what turns that
+        into a refused load rather than a model that runs on the wrong basis.
+        """
+        return {
+            "spec_version": KERNEL_SPEC_VERSION,
+            "basis": self.descriptor.basis,
+            "paths": list(
+                contraction_path_labels(
+                    self.descriptor.irreps_in,
+                    self.descriptor.irreps_out,
+                    self.descriptor.correlation,
+                    basis=self.descriptor.basis,
+                )
+            ),
+        }
 
 
 def _term_offsets(irreps: Irreps) -> list[int]:
@@ -666,26 +682,6 @@ class ReferenceRadialBasis(nn.Module):
         self.cutoff = PolynomialCutoff(
             descriptor.cutoff, descriptor.cutoff_order, dtype=self.dtype
         )
-
-    def to_canonical(self) -> dict[str, Tensor]:
-        """The Bessel basis's frequencies and prefactor, which a checkpoint
-        has to carry: a model built in float32 holds them rounded to float32
-        after it is carried to float64, as the published multi-head models
-        do, and a trainable basis holds frequencies of its own. The other
-        bases carry nothing."""
-        if not isinstance(self.basis, BesselBasis):
-            return {}
-        return {
-            "frequencies": self.basis.frequencies.detach(),
-            "prefactor": self.basis.prefactor.detach(),
-        }
-
-    def load_canonical(self, state: dict[str, Tensor]) -> None:
-        if not isinstance(self.basis, BesselBasis):
-            return
-        with torch.no_grad():
-            self.basis.frequencies.copy_(state["frequencies"])
-            self.basis.prefactor.copy_(state["prefactor"])
 
     def forward(self, lengths: Tensor) -> Tensor:
         """``[n_edges, 1]`` lengths in Angstrom -> ``[n_edges, num_basis]``."""

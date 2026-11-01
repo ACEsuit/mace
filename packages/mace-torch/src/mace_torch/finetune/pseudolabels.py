@@ -532,7 +532,7 @@ def relabelling(
     from mace_torch.train.data_stage import graph_inputs_of
 
     fingerprint = foundation_fingerprint(foundation.name)
-    inputs = graph_inputs_of(foundation.config.model.model)
+    inputs = graph_inputs_of(foundation.config.model)
     backend = foundation.config.model.backend
 
     def relabel(name: str, structures: list[Configuration]) -> list[Configuration]:

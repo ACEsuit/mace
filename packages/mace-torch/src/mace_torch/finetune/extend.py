@@ -270,20 +270,25 @@ def _per_element(
             if origin is not None:
                 result[:, column] = parent[:, origin]
         return result
-    if path.endswith("node_embedding") and name == "weight":
+    if (
+        path.endswith(("node_embedding", "sender_embedding", "receiver_embedding"))
+        and name == "weight"
+    ):
         # Output copies outermost, so each channel's weights over the elements
         # are one contiguous run, as the transfer into a smaller table reads.
         grid = parent.reshape(-1, old_count)
         result = fresh.reshape(-1, new_count).clone()
         for column, origin in enumerate(sources):
             if origin is not None:
-                result[:, column] = grid[:, origin]
+                result[:, column] = grid[:, origin] * (new_count / old_count) ** 0.5
         return result.reshape(-1)
     if (path.endswith(".skip") or path.endswith(".contraction")) and name == "weight":
         result = fresh.clone()
         for row, origin in enumerate(sources):
             if origin is not None:
-                result[row] = parent[origin]
+                result[row] = parent[origin] * (
+                    (new_count / old_count) ** 0.5 if path.endswith(".skip") else 1.0
+                )
         return result
     raise ElementExtensionError(
         f"{path}:{name} changes shape with the element table, "
@@ -321,11 +326,9 @@ def _metadata(
         )
     return parent.metadata.model_copy(
         update={
-            "provenance": Provenance(code_version=__version__),
+            "provenance": Provenance(versions={"mace-torch-v1": __version__}),
             "heads": heads,
-            "elements": [
-                chemical_symbols[z] for z in sorted({*parent.z_table.zs, *added})
-            ],
+            "elements": [int(z) for z in sorted({*parent.z_table.zs, *added})],
             "parents": [
                 ParentModel(
                     role="initial_weights", name=str(path), metadata=parent.metadata

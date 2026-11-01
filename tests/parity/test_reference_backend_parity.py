@@ -48,6 +48,7 @@ from mace.modules.wrapper_ops import Linear as LegacyLinear
 from mace.tools.scatter import scatter_sum
 from tests.golden.harness import tolerance
 from tests.parity.legacy_weights import (
+    canonical_contraction_bases,
     legacy_contraction_blocks,
     legacy_to_reference_map,
     linear_permutation,
@@ -361,7 +362,7 @@ def test_the_contraction_matches_legacy_in_value_and_weight_gradient(
     maps = []
     with torch.no_grad():
         for position, contraction in enumerate(legacy.contractions):
-            tables = list(reference.bases[position])
+            tables = canonical_contraction_bases(reference.descriptor, position)
             for coupling, weight, order in legacy_contraction_blocks(contraction):
                 if weight.numel() == 0:
                     continue

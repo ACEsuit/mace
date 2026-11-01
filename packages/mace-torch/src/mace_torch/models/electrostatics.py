@@ -35,13 +35,14 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import torch
+from mace_core.config.model import ModelConfig
 from mace_core.electrostatics import (
     ElectrostaticsSolverDescriptor,
     FeatureProjection,
     PeriodicityProfile,
     RealspaceMethod,
 )
-from mace_core.kernels.descriptors import LinearDescriptor, RadialKind
+from mace_core.kernels.descriptors import LinearDescriptor, RadialBasisKind
 from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import MACEOutput
@@ -227,7 +228,9 @@ class PolarModel(MACEModel):
         cutoff: float = 5.0,
         correlation: int = 3,
         avg_num_neighbors: float = 1.0,
-        radial_kind: RadialKind = "bessel",
+        radial_kind: RadialBasisKind = "bessel",
+        architecture: ModelConfig | None = None,
+        radial_precision: Precision | None = None,
         precision: Precision = "float64",
         cutoff_order: int = 6,
         distance_transform: Literal["none", "agnesi", "soft"] = "none",
@@ -268,6 +271,8 @@ class PolarModel(MACEModel):
             correlation=correlation,
             avg_num_neighbors=avg_num_neighbors,
             radial_kind=radial_kind,
+            architecture=architecture,
+            radial_precision=radial_precision,
             precision=precision,
             cutoff_order=cutoff_order,
             distance_transform=distance_transform,
@@ -427,16 +432,16 @@ class PolarModel(MACEModel):
                     f"reads. The data stage writes it for every structure, "
                     f"from the file or from its default."
                 )
-        features = self.backbone(graph)
+        features = list(self.backbone(graph).layers)
         output = self.outputs(graph, features, None)
         assert output.total_energy is not None
 
         positions = graph["positions"]
         batch = graph["batch"]
-        num_graphs = int(graph["num_graphs"])
+        num_graphs = int(graph["ptr"].shape[0] - 1)
         nodes = positions.shape[0]
         dtype = positions.dtype
-        element = self.backbone.element_index(graph["atomic_numbers"])
+        element = graph["node_attrs"].argmax(-1)
         one_hot = torch.nn.functional.one_hot(
             element, len(self.backbone.atomic_numbers)
         ).to(dtype)

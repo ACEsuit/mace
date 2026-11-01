@@ -174,13 +174,17 @@ def transfer_foundation(
                 ),
             }
             continue
-        if path.endswith("node_embedding"):
+        if path.endswith(("node_embedding", "sender_embedding", "receiver_embedding")):
             state[path] = {
-                "weight": _embedding(found["weight"], rows, len(foundation_elements)),
+                "weight": _embedding(found["weight"], rows, len(foundation_elements))
+                * (len(rows) / len(foundation_elements)) ** 0.5,
                 "bias": found["bias"],
             }
-        elif path.endswith(".skip"):
-            state[path] = {"weight": found["weight"][rows].clone()}
+        elif path.endswith(".skip") and found["weight"].ndim == 2:
+            state[path] = {
+                "weight": found["weight"][rows].clone()
+                * (len(rows) / len(foundation_elements)) ** 0.5
+            }
         elif path.rpartition(".")[2] == "moments":
             state[path] = {"saturation": found["saturation"][rows].clone()}
         elif path.rpartition(".")[2] == "one_body":

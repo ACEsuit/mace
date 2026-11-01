@@ -94,6 +94,18 @@ class BesselBasis(torch.nn.Module):
             torch.sin(self.frequencies * edge_lengths) / safe_lengths,
         )
 
+    def to_canonical(self) -> dict[str, torch.Tensor]:
+        """Carry trained frequencies and source-precision constants in checkpoints."""
+        return {
+            "frequencies": self.frequencies.detach(),
+            "prefactor": self.prefactor.detach(),
+        }
+
+    def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
+        with torch.no_grad():
+            self.frequencies.copy_(state["frequencies"])
+            self.prefactor.copy_(state["prefactor"])
+
     def extra_repr(self) -> str:
         return (
             f"r_max={self.r_max.item()}, num_basis={self.num_basis}, "

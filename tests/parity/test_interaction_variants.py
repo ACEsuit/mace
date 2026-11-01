@@ -17,8 +17,7 @@ import numpy as np
 import pytest
 import torch
 from e3nn import o3
-from mace import modules
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.deploy.neutral_io import import_neutral
 from mace_torch.nn.interaction import (
     InteractionBlock,
@@ -26,6 +25,7 @@ from mace_torch.nn.interaction import (
     ResidualInteractionBlock,
 )
 
+from mace import modules
 from tests.golden.build_mace_anchor import (
     ANCHOR_CONFIG,
     ATOMIC_ENERGIES,
@@ -36,7 +36,7 @@ from tests.golden.build_mace_anchor import (
 from tests.parity.test_anchor_as_foundation import energies
 from tests.parity.test_fm_convert_legacy import extract_here
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 
 
 PLAIN = "RealAgnosticInteractionBlock"
@@ -237,11 +237,13 @@ def test_each_backbone_setting_changes_the_model(setting, fp64, isolated):
         (DENSITY_RESIDUAL, ResidualInteractionBlock, True),
     ],
 )
-def test_each_first_block_is_built_as_named(first, block, density, fp64, isolated, tmp_path):
+def test_each_first_block_is_built_as_named(
+    first, block, density, fp64, isolated, tmp_path
+):
     imported = converted(legacy_model(first), tmp_path)
     built = imported.engine.backbone.backbone.interactions[0]
     assert isinstance(built, block)
-    assert (built.body.density is not None) is density
+    assert (built.body.density_mlp is not None) is density
 
 
 def test_the_nonlinear_first_block_is_built_as_named(fp64, isolated, tmp_path):
@@ -256,7 +258,9 @@ def test_the_pairings_are_different_models(fp64, isolated):
     from tests.golden.anchors import load_training_structures
 
     structures = load_training_structures()
-    seen = [legacy_energies(legacy_model(*pair), structures) for pair in PAIRINGS.values()]
+    seen = [
+        legacy_energies(legacy_model(*pair), structures) for pair in PAIRINGS.values()
+    ]
     for index, first in enumerate(seen):
         for second in seen[index + 1 :]:
             assert not torch.allclose(first, second, atol=1e-6)

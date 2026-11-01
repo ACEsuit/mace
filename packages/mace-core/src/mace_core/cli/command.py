@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from mace_core.config.base import ConfigError, ReforgeBaseConfig, read_config_file
+from mace_core.config.base import BaseConfig, ConfigError, read_config_file
 
 __all__ = ["Command", "ConfigFlag", "set_value"]
 
@@ -100,7 +100,7 @@ class Command:
 
     help: str
     run: Callable[[argparse.Namespace], int]
-    schema: type[ReforgeBaseConfig] | None = None
+    schema: type[BaseConfig] | None = None
     flags: tuple[ConfigFlag, ...] = ()
     arguments: Callable[[argparse.ArgumentParser], object] | None = field(default=None)
 
@@ -127,7 +127,7 @@ class Command:
         if self.arguments is not None:
             self.arguments(parser)
 
-    def configuration(self, arguments: argparse.Namespace) -> ReforgeBaseConfig:
+    def configuration(self, arguments: argparse.Namespace) -> BaseConfig:
         """The configuration the parsed arguments ask for: the file, with the
         flags given written into it, validated once."""
         if self.schema is None:

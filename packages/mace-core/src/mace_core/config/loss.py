@@ -91,9 +91,9 @@ class RegisteredLoss(FrozenSection):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
-#: The loss and, with it, its own hyperparameters. Written kind-as-key, so a
-#: file says `[loss.kind.huber]` and `delta` underneath it, and a delta cannot
-#: be set on a loss that has none.
+#: The loss and, with it, its own hyperparameters. Written as pydantic's tagged
+#: form, so a file says `kind = "huber"` with `delta` beside it, and a delta
+#: cannot be set on a loss that has none.
 LossKind = Annotated[
     WeightedLoss | HuberLoss | UniversalLoss | L1L2Loss | RegisteredLoss,
     Field(discriminator="kind"),

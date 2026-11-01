@@ -62,9 +62,6 @@ class RuntimeConfig(FrozenSection):
         error_table: Which error table the evaluation prints. Validated here
             rather than where it is rendered, because the render happens after
             the training it reports on.
-        skip_evaluate_heads: Heads left out of the error table. Matched against
-            the head and not against the row's name, so a head whose name is
-            part of another's does not take it with it.
         plot: Whether to write training curves.
         plot_frequency: Epochs between plots. ``0`` means only at the end,
             which is what makes a separate "plot at all" flag worth keeping:
@@ -86,7 +83,6 @@ class RuntimeConfig(FrozenSection):
     launcher: str | None = None
     log_level: LogLevel = "INFO"
     error_table: str = "PerAtomRMSE"
-    skip_evaluate_heads: tuple[str, ...] = ()
     plot: bool = False
     plot_frequency: int = 0
     wandb: WandbConfig = WandbConfig()

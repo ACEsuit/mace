@@ -294,7 +294,7 @@ def prepare_inputs(
             cell,
             graph["edge_index"][0],
             graph["batch"],
-            int(graph["num_graphs"]),
+            int(graph["ptr"].shape[0] - 1),
             supplied,
         )
         prepared["cell"] = cell
@@ -309,13 +309,6 @@ def prepare_inputs(
             value if value.requires_grad else value.clone().requires_grad_(True)
         )
 
-    sender, receiver = graph["edge_index"][0], graph["edge_index"][1]
-    # A gather by index_select, not by indexing: the backward of an indexing
-    # accumulates by sorting its indices on CUDA, and of the whole step that
-    # was the most expensive op.
-    prepared["vectors"] = (
-        positions.index_select(0, receiver) - positions.index_select(0, sender) + shifts
-    )
     return prepared, positions, displacement
 
 
@@ -380,7 +373,7 @@ class DerivativeEngine(nn.Module):
         """
         if self.output_layer is None:
             return self.backbone(prepared)
-        return self.output_layer(prepared, self.backbone(prepared))
+        return self.output_layer(prepared, list(self.backbone(prepared).layers))
 
     def compile_model(
         self, mode: str | None = None, backend: str | Callable = "inductor"
@@ -504,6 +497,8 @@ class DerivativeEngine(nn.Module):
             need_stress=need_strain,
             leaves=[spec.name for spec in leaves],
         )
+        if need_edges and not prepared["shifts"].requires_grad:
+            prepared["shifts"] = prepared["shifts"].clone().requires_grad_(True)
         run = self._compiled_model or self.model_forward
         output = run(prepared)
         if wanted_responses:
@@ -528,7 +523,7 @@ class DerivativeEngine(nn.Module):
             targets.append(displacement)
             order.append("displacement")
         if need_edges:
-            targets.append(prepared["vectors"])
+            targets.append(prepared["shifts"])
             order.append("vectors")
         for spec in leaves:
             targets.append(prepared[spec.name])
@@ -589,7 +584,7 @@ class DerivativeEngine(nn.Module):
             # The sign is flipped once, here, so the deployment adapters do not
             # each flip it again on their own.
             edge_forces = (
-                torch.zeros_like(prepared["vectors"]) if gradient is None else -gradient
+                torch.zeros_like(prepared["shifts"]) if gradient is None else -gradient
             )
             if "edge_forces" in wanted:
                 output.extras["edge_forces"] = edge_forces
@@ -597,7 +592,9 @@ class DerivativeEngine(nn.Module):
                 virials, stresses = atomic_virials_and_stresses(
                     edge_forces,
                     prepared["edge_index"],
-                    prepared["vectors"],
+                    prepared["positions"][prepared["edge_index"][1]]
+                    - prepared["positions"][prepared["edge_index"][0]]
+                    + prepared["shifts"],
                     prepared["batch"],
                     prepared["cell"],
                     graph["pbc"] if "pbc" in graph else None,  # noqa: SIM401

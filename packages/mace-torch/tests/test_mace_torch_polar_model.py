@@ -42,6 +42,7 @@ WITH_STRESS = ENERGY.model_copy(
 def build_model(
     profile="molecular",
     steps=2,
+    backend=None,
     head_precision: PrecisionConfig | None = None,
     supports_float64=True,
     **overrides,
@@ -55,7 +56,7 @@ def build_model(
         supports_float64=supports_float64,
     )
     model = PolarModel(
-        ReferenceBackend(),
+        backend or ReferenceBackend(),
         atomic_numbers=[1, 8],
         observables=[WITH_STRESS],
         energy_head=head,

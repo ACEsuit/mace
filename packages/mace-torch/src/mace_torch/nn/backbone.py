@@ -60,6 +60,7 @@ from mace_torch.nn.embedding import (
     build_distance_transform,
     build_radial_basis,
 )
+from mace_torch.nn.graph_features import FeatureSpec, GraphFeatureEmbedding
 from mace_torch.nn.interaction import (
     InteractionBlock,
     NonLinearInteractionBlock,
@@ -235,6 +236,11 @@ class MACEBackbone(nn.Module):
         precision: Precision = "float64",
         node_inputs: Sequence[InputSpec] = (),
         between_layers: BetweenLayers | None = None,
+        *,
+        radial_precision: Precision | None = None,
+        last_layer_irreps: str = "0e",
+        graph_features: Sequence[FeatureSpec] = (),
+        edge_axes: tuple[int, int, int] = (0, 1, 2),
     ) -> None:
         super().__init__()
         names = [spec.name for spec in node_inputs]
@@ -252,6 +258,7 @@ class MACEBackbone(nn.Module):
             if names.count(spec.name) > 1:
                 raise ValueError(f"node input {spec.name!r} is declared twice.")
         self.config = config
+        self.edge_axes = edge_axes
         self.atomic_numbers = tuple(atomic_numbers)
         self.precision = precision
         self.between_layers = between_layers
@@ -269,13 +276,18 @@ class MACEBackbone(nn.Module):
             if built is not None
             else ReferenceBackend().make_spherical_harmonics(harmonics)
         )
-        with _default_dtype(TORCH_DTYPES[precision]):
+        radial_precision = radial_precision or precision
+        with _default_dtype(TORCH_DTYPES[radial_precision]):
             self.radial_embedding = RadialEmbeddingBlock(
                 build_radial_basis(config.radial_basis, config.r_max),
                 build_distance_transform(config.distance_transform),
                 build_cutoff(config.cutoff, config.r_max),
                 apply_cutoff=config.apply_cutoff,
             )
+        if radial_precision != precision:
+            from mace_torch.backends.precision import cast_at_boundary
+
+            cast_at_boundary(self.radial_embedding, radial_precision, precision)
         num_radial = self.radial_embedding.num_basis
         edge_members = _edge_members(config, precision)
 
@@ -307,7 +319,15 @@ class MACEBackbone(nn.Module):
             for spec in node_inputs
         )
 
-        hidden = _natural_irreps(config.max_L)
+        self.embedding_irreps = embedding_irreps
+        self.graph_embedding = (
+            GraphFeatureEmbedding(
+                graph_features, num_features, num_scalars=1, precision=precision
+            )
+            if graph_features
+            else None
+        )
+        hidden = config.hidden_irreps or _natural_irreps(config.max_L)
         target = _natural_irreps(config.max_ell)
         product_elements = 1 if config.use_agnostic_product else num_elements
         self.use_agnostic_product = config.use_agnostic_product
@@ -315,7 +335,9 @@ class MACEBackbone(nn.Module):
         for layer in range(config.num_interactions):
             first = layer == 0
             irreps_node = embedding_irreps if first else hidden
-            irreps_out = "0e" if layer == config.num_interactions - 1 else hidden
+            irreps_out = (
+                last_layer_irreps if layer == config.num_interactions - 1 else hidden
+            )
             kind = config.interaction_first if first else config.interaction
             interactions.append(
                 self._interaction(
@@ -453,7 +475,7 @@ class MACEBackbone(nn.Module):
             + graph["shifts"]
         )
         edges = EdgeInputs(
-            vectors,
+            vectors[:, self.edge_axes],
             graph["node_atomic_numbers"],
             edge_index,
             self.spherical_harmonics,
@@ -465,11 +487,7 @@ class MACEBackbone(nn.Module):
             else node_attrs.argmax(dim=-1)
         )
 
-        features = self.node_embedding(node_attrs)
-        for name, mapping in zip(
-            self.node_input_names, self.node_input_maps, strict=True
-        ):
-            features = features + mapping(graph[name])
+        features = self.embedding(graph)
 
         layers = []
         for layer, (interaction, product) in enumerate(
@@ -491,6 +509,18 @@ class MACEBackbone(nn.Module):
             features = product(message, layer_element, carried)
             layers.append(features)
         return NodeFeatures(layers=tuple(layers))
+
+    def embedding(self, graph: Mapping[str, Tensor]) -> Tensor:
+        """Node features before the first interaction, in canonical layout."""
+        features = self.node_embedding(graph["node_attrs"])
+        for name, mapping in zip(
+            self.node_input_names, self.node_input_maps, strict=True
+        ):
+            features = features + mapping(graph[name])
+
+        if self.graph_embedding is not None:
+            features = self.graph_embedding(graph, features)
+        return features
 
     # ------------------------------------------------------------------
     # Descriptors

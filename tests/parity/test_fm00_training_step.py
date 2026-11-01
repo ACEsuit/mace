@@ -22,23 +22,28 @@ from pathlib import Path
 
 import pytest
 import torch
-from fm00_convert import (
-    build_config,
-    energy_constants_to_canonical,
-    recorded_basis,
-    transfer_weights,
-)
-from fm00_projection import ProjectionError
-from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.config.precision import PrecisionConfig
+from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 
+from tests.parity.fm00_convert import (
+    build_config,
+    energy_constants_to_canonical,
+    recorded_basis,
+    transfer_weights,
+)
+from tests.parity.fm00_projection import ProjectionError
+
 GOLDEN = Path(__file__).resolve().parents[1] / "golden"
 ENERGY = ObservableSpec(
-    name="energy", irreps="0e", per_atom=False, units="eV", normalization="none"
+    name="energy",
+    irreps="0e",
+    per_atom=False,
+    units="eV",
+    derivatives=[{"wrt": "pos", "name": "forces", "sign": -1, "units": "eV/A"}],
 )
 CHANNEL_IN = "0e+1o+2e"
 
@@ -95,10 +100,11 @@ def test_the_converted_model_takes_the_same_training_step(fp64, anchor, referenc
 
     graph = {
         "positions": batch.positions,
-        "atomic_numbers": torch.tensor(
+        "node_atomic_numbers": torch.tensor(
             [numbers[index] for index in batch.node_attrs.argmax(1).tolist()]
         ),
-        "element_index": batch.node_attrs.argmax(1),
+        "node_attrs": batch.node_attrs,
+        "ptr": batch.ptr,
         "edge_index": batch.edge_index,
         "shifts": batch.shifts,
         "unit_shifts": batch.unit_shifts,
@@ -107,7 +113,7 @@ def test_the_converted_model_takes_the_same_training_step(fp64, anchor, referenc
         "num_graphs": int(batch.num_graphs),
         "head": torch.zeros(int(batch.num_graphs), dtype=torch.long),
     }
-    output = DerivativeEngine(model)(graph, compute=("forces",), training=True)
+    output = DerivativeEngine(model, ENERGY)(graph, compute=("forces",), training=True)
     loss = WeightedEnergyForcesLoss(**LOSS_WEIGHTS).to(torch.float64)(
         batch, {"energy": output.total_energy, "forces": output.forces}
     )
@@ -125,7 +131,9 @@ def test_the_converted_model_takes_the_same_training_step(fp64, anchor, referenc
             continue
         layer = int(name.split(".")[1])
         index = int(name.split("layer")[1][0])
-        gradient = model.backbone.interactions[layer].body.radial.weights[index].grad
+        gradient = (
+            model.backbone.interactions[layer].body.radial_mlp.weights[index].grad
+        )
         assert gradient is not None, f"{name} received no gradient"
         flat = gradient.reshape(-1)
         position = torch.arange(flat.numel(), dtype=torch.float64)

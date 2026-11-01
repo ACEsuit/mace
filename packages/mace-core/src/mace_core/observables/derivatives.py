@@ -52,3 +52,8 @@ def is_default_shaped_name(name: str) -> bool:
     mean different things.
     """
     return bool(_DEFAULT_SHAPE.match(name))
+
+
+def derivation_mode(wrt: str) -> str:
+    """Execution route for a derivative against a declared input."""
+    return {"pos": "autograd", "strain": "grad_strain"}.get(wrt, "grad_input")

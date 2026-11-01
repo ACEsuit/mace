@@ -17,7 +17,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from process_state import (
+
+from tests.parity.process_state import (
     WATCHED_ENVIRONMENT,
     capture_state,
     restore_state,

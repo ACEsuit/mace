@@ -18,7 +18,7 @@ from ase import Atoms
 from ase.io import write
 from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.finetune.foundation import read_foundation
 from mace_torch.train import (
     ModelStageError,
@@ -32,7 +32,7 @@ from mace_torch.train import (
 from mace_torch.train.loss import build_loss
 from test_mace_torch_foundation_transfer import dataset
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
 
 ARCHITECTURE = {
@@ -56,7 +56,7 @@ def foundation_path(tmp_path_factory):
                 "heads": {
                     "pbe": {
                         "train_file": str(dataset(directory / "train.xyz")),
-                        "e0s": {"isolated_atoms": {}},
+                        "e0s": {"kind": "isolated_atoms"},
                     }
                 },
                 "valid_fraction": 0.2,
@@ -109,7 +109,7 @@ def fine_tune_config(directory, foundation, **model):
                 "heads": {
                     "replay": {
                         "train_file": str(directory / "train.xyz"),
-                        "e0s": {"foundation": {}},
+                        "e0s": {"kind": "foundation"},
                         "weight": 0.5,
                     },
                     # Its own references for the elements it has, and one for
@@ -121,7 +121,8 @@ def fine_tune_config(directory, foundation, **model):
                             new_level_of_theory(directory / "target.xyz")
                         ),
                         "e0s": {
-                            "table": {"values": {1: -13.1, 6: -1030.0, 8: -2039.2}}
+                            "kind": "table",
+                            "values": {1: -13.1, 6: -1030.0, 8: -2039.2},
                         },
                     },
                 },
@@ -182,6 +183,7 @@ def test_the_fine_tune_records_its_parent(foundation_path):
     assert parent.role == "initial_weights"
     assert parent.name == str(path)
     assert parent.metadata is not None
+    assert parent.metadata.heads["pbe"].e0 is not None
     assert parent.metadata.heads["pbe"].e0.values["C"] == pytest.approx(-1030.0)
 
 

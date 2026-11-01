@@ -325,7 +325,7 @@ def test_the_artifact_reads_back_exactly(loaded, tmp_path):
     labelled[1] = Configuration(
         atomic_numbers=labelled[1].atomic_numbers,
         positions=labelled[1].positions,
-        properties={**labelled[1].properties, "head": "replay"},
+        properties={**labelled[1].properties, "source": "replay"},
         property_weights=labelled[1].property_weights,
         cell=None,
         pbc=None,

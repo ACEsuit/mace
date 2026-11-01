@@ -32,7 +32,8 @@ STATISTICS = DatasetStatistics(
 
 def metadata() -> ModelMetadata:
     return ModelMetadata(
-        config=ConfigRecord(), provenance=Provenance(code_version="0.0.0")
+        config=ConfigRecord(),
+        provenance=Provenance(versions={"mace-torch-v1": "0.0.0"}),
     )
 
 

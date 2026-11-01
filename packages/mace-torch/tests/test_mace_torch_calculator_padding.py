@@ -14,7 +14,6 @@ import pytest
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
 from mace_torch.calculators.padding import (
-    EDGES_PER_PADDING_ATOM,
     PaddingOverflowError,
     PaddingPolicy,
     pad_batch,
@@ -123,7 +122,7 @@ def test_an_overflow_is_refused_when_the_policy_does_not_grow():
 def test_the_fake_structure_s_edges_are_beyond_the_cutoff():
     graph = structure(40)
     policy, _ = resolve_budget(PaddingPolicy(mode="auto"), 40, edges_of(graph))
-    (_, fake), info = pad_batch(graph, policy, R_MAX)
+    (_, fake), info = pad_batch(graph, policy, R_MAX, z_table=AtomicNumberTable([1]))
     assert (info.nodes, info.edges) == (40, edges_of(graph))
     lengths = np.linalg.norm(fake["shifts"], axis=1)
     assert np.all(lengths >= R_MAX)
@@ -133,8 +132,7 @@ def test_the_fake_structure_s_edges_are_beyond_the_cutoff():
     assert np.allclose(fake["unit_shifts"] @ fake["cell"], fake["shifts"])
 
 
-def test_the_padding_edges_are_spread_over_the_fake_atoms():
-    """Stacked on one atom, they hand the scatter one enormous segment."""
+def test_the_padding_edges_use_the_agreed_last_fake_atom():
     graph = structure(40)
     policy, _ = resolve_budget(
         PaddingPolicy(
@@ -143,11 +141,8 @@ def test_the_padding_edges_are_spread_over_the_fake_atoms():
         40,
         edges_of(graph),
     )
-    (_, fake), _ = pad_batch(graph, policy, R_MAX)
-    loads = np.bincount(fake["edge_index"][0], minlength=len(fake["atomic_numbers"]))
-    assert len(loads) > 1
-    assert loads.max() - loads.min() <= 1
-    assert loads.max() <= EDGES_PER_PADDING_ATOM
+    (_, fake), _ = pad_batch(graph, policy, R_MAX, z_table=AtomicNumberTable([1]))
+    assert np.all(fake["edge_index"] == len(fake["node_atomic_numbers"]) - 1)
 
 
 def test_the_batch_keeps_its_shape_from_one_step_to_the_next():
@@ -159,8 +154,8 @@ def test_the_batch_keeps_its_shape_from_one_step_to_the_next():
     for seed in range(6):
         graph = structure(40, seed=seed)
         policy, _ = resolve_budget(policy, 40, edges_of(graph))
-        structures, _ = pad_batch(graph, policy, R_MAX)
-        nodes = sum(len(item["atomic_numbers"]) for item in structures)
+        structures, _ = pad_batch(graph, policy, R_MAX, z_table=AtomicNumberTable([1]))
+        nodes = sum(len(item["node_atomic_numbers"]) for item in structures)
         edges = sum(edges_of(item) for item in structures)
         shapes.add((nodes, edges))
     assert len({edges_of(structure(40, seed=seed)) for seed in range(6)}) > 1
@@ -173,10 +168,10 @@ def test_the_shape_changes_only_when_the_budget_grows():
     for count in (40, 40, 80, 80, 40):
         graph = structure(count)
         policy, _ = resolve_budget(policy, count, edges_of(graph))
-        structures, _ = pad_batch(graph, policy, R_MAX)
+        structures, _ = pad_batch(graph, policy, R_MAX, z_table=AtomicNumberTable([1]))
         shapes.append(
             (
-                sum(len(item["atomic_numbers"]) for item in structures),
+                sum(len(item["node_atomic_numbers"]) for item in structures),
                 sum(edges_of(item) for item in structures),
             )
         )

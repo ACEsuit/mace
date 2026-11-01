@@ -31,8 +31,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from mace_core.config.precision import PrecisionConfig
 from mace_core.data.configuration import Configuration
-from mace_core.kernels.precision import PrecisionConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
@@ -61,15 +61,33 @@ OMOL_URL = (
 #: ``name -> (family, key)``: the frozen tree's URL tables, read rather than
 #: copied, so a re-pointed alias is the artifact the test converts.
 ROSTER = {
-    **{f"mp-{key}": ("mace_mp_urls", key) for key in (
-        "small", "medium", "large", "small-0b", "medium-0b", "small-0b2",
-        "medium-0b2", "large-0b2", "medium-0b3", "medium-mpa-0",
-        "small-omat-0", "medium-omat-0", "mace-matpes-pbe-0",
-        "mace-matpes-r2scan-0", "mh-0", "mh-1",
-    )},
+    **{
+        f"mp-{key}": ("mace_mp_urls", key)
+        for key in (
+            "small",
+            "medium",
+            "large",
+            "small-0b",
+            "medium-0b",
+            "small-0b2",
+            "medium-0b2",
+            "large-0b2",
+            "medium-0b3",
+            "medium-mpa-0",
+            "small-omat-0",
+            "medium-omat-0",
+            "mace-matpes-pbe-0",
+            "mace-matpes-r2scan-0",
+            "mh-0",
+            "mh-1",
+        )
+    },
     **{f"off-{key}": ("mace_off_urls", key) for key in ("small", "medium", "large")},
     "omol": ("omol", "extra_large"),
-    **{key: ("polar_model_urls", key) for key in ("polar-1-s", "polar-1-m", "polar-1-l")},
+    **{
+        key: ("polar_model_urls", key)
+        for key in ("polar-1-s", "polar-1-m", "polar-1-l")
+    },
 }
 
 #: Roster artifacts the converter does not carry yet, and what it stops at.
@@ -104,8 +122,10 @@ def artifact_path(name: str) -> Path:
         return Path(foundations_models.download_mace_mp_checkpoint(key))
     if table == "polar_model_urls":
         return Path(foundations_models.download_mace_polar_checkpoint(key))
-    loader = foundations_models.mace_off if table == "mace_off_urls" else (
-        foundations_models.mace_omol
+    loader = (
+        foundations_models.mace_off
+        if table == "mace_off_urls"
+        else (foundations_models.mace_omol)
     )
     loader(model=key, return_raw_model=True, device="cpu")
     return path
@@ -199,7 +219,9 @@ def exact_rebuild(path: Path) -> torch.nn.Module:
     return fresh
 
 
-def v1_outputs(imported, atoms, head: int, device: str = "cpu") -> dict[str, np.ndarray]:
+def v1_outputs(
+    imported, atoms, head: int, device: str = "cpu"
+) -> dict[str, np.ndarray]:
     """The model's outputs on one structure, batched at the dtype it computes
     in and evaluated on ``device``, where the model has to be."""
     inputs = graph_inputs_of(imported.config.model)
@@ -253,7 +275,11 @@ def legacy_calculator(path: Path, head: str, model=None):
             model_type=kind,
         )
     return MACECalculator(
-        models=[model], device="cpu", default_dtype="float64", head=head, model_type=kind
+        models=[model],
+        device="cpu",
+        default_dtype="float64",
+        head=head,
+        model_type=kind,
     )
 
 
@@ -278,9 +304,7 @@ def deviations(path: Path, calculator_for) -> list[tuple[str, str, str, float, f
     for index, head in enumerate(heads):
         calculator = calculator_for(head)
         for fixture, atoms in load_fixtures().items():
-            if not set(atoms.get_atomic_numbers().tolist()) <= set(
-                imported.z_table.zs
-            ):
+            if not set(atoms.get_atomic_numbers().tolist()) <= set(imported.z_table.zs):
                 continue
             got = v1_outputs(imported, atoms, index)
             for quantity, value in legacy_outputs(calculator, atoms).items():
@@ -408,10 +432,13 @@ def test_mace_mp_0b_medium_computes_its_pair_radii_in_float32(fp64):
     legacy = legacy_model(path)
     assert {str(p.dtype) for p in legacy.parameters()} == {"torch.float64"}
     assert sorted(
-        key for key, value in legacy.state_dict().items() if value.dtype == torch.float32
-    ) == [f"radial_embedding.distance_transform.{name}" for name in (
-        "a", "covalent_radii", "p", "q"
-    )]
+        key
+        for key, value in legacy.state_dict().items()
+        if value.dtype == torch.float32
+    ) == [
+        f"radial_embedding.distance_transform.{name}"
+        for name in ("a", "covalent_radii", "p", "q")
+    ]
     atoms = load_fixtures()["triclinic_bulk"]
     published = legacy_outputs(
         MACECalculator(model_paths=str(path), device="cpu", default_dtype="float64"),

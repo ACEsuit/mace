@@ -33,6 +33,7 @@ from mace.tools import utils
 from tests.golden import anchors, harness
 from tests.golden.harness import tolerance
 from tests.parity.legacy_weights import (
+    canonical_contraction_bases,
     legacy_contraction_blocks,
     legacy_to_reference_map,
     linear_permutation,
@@ -109,7 +110,7 @@ def _carry_contraction(legacy, op) -> None:
     correlation = op.descriptor.correlation
     with torch.no_grad():
         for position, contraction in enumerate(legacy.contractions):
-            tables = list(op.bases[position])
+            tables = canonical_contraction_bases(op.descriptor, position)
             for coupling, weight, order in legacy_contraction_blocks(contraction):
                 if weight.numel() == 0:
                     continue

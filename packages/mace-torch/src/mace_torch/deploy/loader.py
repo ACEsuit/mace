@@ -129,19 +129,19 @@ def load_deployed(
             f"{missing or list(heads)}, so the model cannot be rebuilt: its "
             f"element table and its energies both come from that record."
         )
-    e0s = {
-        head: {
+    e0s = {}
+    for head in heads:
+        details = metadata.heads[head].e0
+        e0s[head] = {
             int(numbers_of[symbol]): float(energy)
-            for symbol, energy in metadata.heads[head].e0.values.items()
+            for symbol, energy in (
+                details.values if details is not None else {}
+            ).items()
         }
-        for head in heads
-    }
     if metadata.elements:
         # The table as the record states it, which a model with no energies
         # has no other place for.
-        z_table = AtomicNumberTable(
-            sorted(int(numbers_of[symbol]) for symbol in metadata.elements)
-        )
+        z_table = AtomicNumberTable(metadata.elements)
     else:
         tables = {tuple(sorted(values)) for values in e0s.values()}
         if len(tables) != 1:

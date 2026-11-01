@@ -12,7 +12,7 @@ import pytest
 import torch
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
-from mace_core.observables import load_default_catalogue, resolve_requested
+from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
 from mace_torch.data import (
     GraphDataset,
     collate_training,
@@ -30,7 +30,7 @@ def field(batch, name) -> torch.Tensor:
     return value
 
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 REQUESTED = resolve_requested(["energy", "forces"], CATALOGUE)
 SPECS = target_specs(REQUESTED)
 Z_TABLE = AtomicNumberTable([1, 8])
@@ -54,9 +54,9 @@ def water(seed: int = 0, head: str = "default") -> Configuration:
 
 def test_a_structure_becomes_the_fields_the_schema_declares():
     graph = graph_from_configuration(water(), cutoff=CUTOFF, z_table=Z_TABLE)
-    assert set(graph) == {
+    assert {
         "positions",
-        "atomic_numbers",
+        "node_atomic_numbers",
         "edge_index",
         "shifts",
         "unit_shifts",
@@ -64,7 +64,11 @@ def test_a_structure_becomes_the_fields_the_schema_declares():
         "pbc",
         "weight",
         "head",
-    }
+        "node_attrs",
+    } <= set(graph)
+    assert "element_index" not in graph
+    assert graph["energy_present"]
+    assert np.all(graph["forces_present"])
 
 
 def test_the_per_graph_fields_carry_no_leading_axis_before_collation():
@@ -84,7 +88,7 @@ def test_an_element_the_model_was_not_built_for_is_refused_at_the_graph():
         positions=np.zeros((1, 3)),
         properties={"energy": 0.0, "forces": np.zeros((1, 3))},
     )
-    with pytest.raises(ValueError, match=r"\[6\]"):
+    with pytest.raises(ValueError, match="element 6"):
         graph_from_configuration(carbon, cutoff=CUTOFF, z_table=Z_TABLE)
 
 
@@ -125,7 +129,7 @@ def test_a_batch_joins_the_labels_the_way_it_joins_the_nodes():
     assert batch.property_weights["energy"].tolist() == [1.0, 1.0]
     assert batch.targets["energy"].shape == (2,)
     assert batch.targets["forces"].shape == (6, 3)
-    assert batch.graph["num_graphs"] == 2
+    assert (batch.graph["ptr"].shape[0] - 1) == 2
 
 
 def test_the_labels_stay_with_their_own_structure():
@@ -148,7 +152,7 @@ def test_the_labels_stay_with_their_own_structure():
 def test_the_element_index_is_the_position_in_the_model_s_table():
     dataset = GraphDataset([water()], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS)
     batch = collate_training([dataset[0]], z_table=Z_TABLE)
-    assert field(batch, "element_index").tolist() == [1, 0, 0]
+    assert field(batch, "node_attrs").argmax(-1).tolist() == [1, 0, 0]
 
 
 def test_a_head_name_becomes_its_position_in_the_model_s_head_list():
@@ -169,8 +173,8 @@ def test_the_graph_count_comes_from_ptr_and_is_a_plain_int():
         [water(0), water(1), water(2)], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
     )
     batch = collate_training([dataset[i] for i in range(3)], z_table=Z_TABLE)
-    assert isinstance(batch.graph["num_graphs"], int)
-    assert batch.graph["num_graphs"] == 3
+    assert isinstance((batch.graph["ptr"].shape[0] - 1), int)
+    assert (batch.graph["ptr"].shape[0] - 1) == 3
 
 
 def test_a_loader_yields_batches_of_the_asked_for_size():
@@ -178,7 +182,7 @@ def test_a_loader_yields_batches_of_the_asked_for_size():
         [water(i) for i in range(5)], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
     )
     loader = make_loader(dataset, batch_size=2, shuffle=False)
-    sizes = [batch.graph["num_graphs"] for batch in loader]
+    sizes = [(batch.graph["ptr"].shape[0] - 1) for batch in loader]
     assert sizes == [2, 2, 1]
 
 

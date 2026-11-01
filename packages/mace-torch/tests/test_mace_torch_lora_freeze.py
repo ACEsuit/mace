@@ -15,15 +15,14 @@ from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.neighbors import get_neighborhood
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.finetune.freeze import FREEZE_LEVELS, freeze, frozen_groups
 from mace_torch.finetune.lora import inject_lora, merge_lora
 from mace_torch.serialization import canonical_state
 from mace_torch.train.model_stage import build_model
 from mace_torch.train.optimizers import parameter_groups
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
 
 
@@ -55,17 +54,9 @@ def model(seed=0):
 
 def graph(rotation=None):
     positions = WATER if rotation is None else WATER @ rotation.T
-    neighborhood = get_neighborhood(positions, 3.0, (False, False, False), None)
-    return {
-        "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor([8, 1, 1]),
-        "element_index": torch.tensor([1, 0, 0]),
-        "edge_index": torch.tensor(neighborhood.edge_index),
-        "shifts": torch.tensor(neighborhood.shifts),
-        "batch": torch.zeros(3, dtype=torch.long),
-        "num_graphs": 1,
-        "head": torch.zeros(1, dtype=torch.long),
-    }
+    from mace_torch_engine_fixtures import build_graph
+
+    return build_graph(positions, [8, 1, 1])
 
 
 def energy(engine, rotation=None):
@@ -130,7 +121,7 @@ def test_every_linear_map_and_radial_network_is_adapted():
     engine, _ = model()
     adapted = inject_lora(engine)
     assert any(path.endswith("node_embedding.weight") for path in adapted)
-    assert any(".radial.weights." in path for path in adapted)
+    assert any(".radial_mlp.weights." in path for path in adapted)
     assert any(".readouts." in path for path in adapted)
 
 

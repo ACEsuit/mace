@@ -154,6 +154,12 @@ class ZBLBasis(torch.nn.Module):
         )
         return node_energies.index_add(0, edge_index[1], edge_energies.squeeze(-1))
 
+    def extra_repr(self) -> str:
+        return (
+            f"polynomial_order={self.polynomial_order}, "
+            f"trainable={self.screening_length_exponent.requires_grad}"
+        )
+
     def to_canonical(self) -> dict[str, Tensor]:
         """The screening constants and the covalent radii, which a checkpoint
         has to carry for the reason :meth:`AgnesiTransform.to_canonical`
@@ -176,12 +182,6 @@ class ZBLBasis(torch.nn.Module):
                 "screening_length_prefactor",
             ):
                 getattr(self, name).copy_(state[name])
-
-    def extra_repr(self) -> str:
-        return (
-            f"polynomial_order={self.polynomial_order}, "
-            f"trainable={self.screening_length_exponent.requires_grad}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +249,13 @@ class AgnesiTransform(torch.nn.Module):
             / (1.0 + torch.pow(scaled, self.exponent_q - self.exponent_p))
         )
 
+    def extra_repr(self) -> str:
+        return (
+            f"amplitude={self.amplitude.item():.4f}, "
+            f"exponent_q={self.exponent_q.item():.4f}, "
+            f"exponent_p={self.exponent_p.item():.4f}"
+        )
+
     def to_canonical(self) -> dict[str, Tensor]:
         """The three parameters and the covalent radii, which a checkpoint
         has to carry.
@@ -269,13 +276,6 @@ class AgnesiTransform(torch.nn.Module):
         with torch.no_grad():
             for name in ("amplitude", "exponent_q", "exponent_p", "covalent_radii"):
                 getattr(self, name).copy_(state[name])
-
-    def extra_repr(self) -> str:
-        return (
-            f"amplitude={self.amplitude.item():.4f}, "
-            f"exponent_q={self.exponent_q.item():.4f}, "
-            f"exponent_p={self.exponent_p.item():.4f}"
-        )
 
 
 class SoftTransform(torch.nn.Module):
@@ -324,6 +324,9 @@ class SoftTransform(torch.nn.Module):
         switch = 0.5 * (1.0 + torch.tanh(steepness * (edge_lengths - midpoint)))
         return lower_clamp + (edge_lengths - lower_clamp) * switch
 
+    def extra_repr(self) -> str:
+        return f"steepness={self.steepness.item():.4f}"
+
     def to_canonical(self) -> dict[str, Tensor]:
         """The steepness and the covalent radii, constants of the trained
         model for the reason :meth:`AgnesiTransform.to_canonical` gives."""
@@ -336,6 +339,3 @@ class SoftTransform(torch.nn.Module):
         with torch.no_grad():
             self.steepness.copy_(state["steepness"])
             self.covalent_radii.copy_(state["covalent_radii"])
-
-    def extra_repr(self) -> str:
-        return f"steepness={self.steepness.item():.4f}"

@@ -81,6 +81,18 @@ registered only through its entry point, and it exists to be checked: CI runs
 the whole conformance suite over it on every change, and nothing in the other
 four packages may name it. Its README is the template for writing a backend.
 
+## Checkpoints across the agreed backbone integration
+
+The integrated V1 tree writes checkpoint format **3**, with raw linear and skip
+weights and the reviewed backbone module paths. Pre-integration V1 checkpoints
+in format 2 are refused explicitly; their folded normalizations cannot be read
+as raw weights. Keep the old V1 environment for those checkpoints. Legacy pickle
+models can be extracted and converted again with the current converter.
+
+Model settings now use `radial_basis.num_basis` and `cutoff.polynomial_order`;
+interactions are named `plain`, `residual`, `density`, `density_residual` or
+`nonlinear`. Legacy CLI flags still pass through the configuration translator.
+
 ## Installing alongside the legacy package
 
 Both stacks in one environment, from a fresh venv at the repository root:
@@ -146,7 +158,7 @@ packages/
     observables/                 declared observables and their derivatives
     weights/                     the neutral weights format
   mace-torch/src/mace_torch/     the PyTorch implementation
-    backends/reference/          the plain-torch kernel backend
+    backends/                    kernel backends, harmonics and radial functions
     calculators/                 the ASE calculator and static-shape padding
     cli/                         console entry points
     data/                        graphs, batches, loaders, transforms
@@ -175,7 +187,7 @@ the model; `mace_torch/train/loop.py` trains it and
 `mace_torch/train/checkpoint.py` writes it down.
 
 **A forward pass**, from graph to forces: `mace_torch/data/graphs.py` builds
-the graph `mace_core/graph.py` declares; `mace_torch/physics/outputs.py` wraps
+the graph `mace_core/graph/` declares; `mace_torch/physics/outputs.py` wraps
 the model, applies the strain and takes the derivatives;
 `mace_torch/models/base.py` runs `mace_torch/nn/backbone.py` and then
 `mace_torch/models/outputs.py`, which returns `mace_core/outputs.py`'s typed
@@ -183,7 +195,7 @@ output.
 
 **A new kernel backend** implements `mace_core/kernels/protocol.py`, reads its
 ops from `mace_core/kernels/descriptors.py` and registers an entry point; the
-reference in `mace_torch/backends/reference/backend.py` is the one to copy.
+reference in `mace_torch/backends/reference.py` is the one to copy.
 **A new long-range solver** does the same against
 `mace_core/electrostatics/capabilities.py` and `mace_torch/electrostatics/solver.py`.
 
@@ -245,7 +257,6 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/elements/e0s.py` | Resolved isolated-atom energies, per head and element. |
 | `mace_core/elements/number_table.py` | The ordered element table a model was fitted for. |
 | `mace_core/foundation_roster.py` | The published foundation models, what each converts onto, and the one dropped. |
-| `mace_core/graph.py` | The graph schema: every field, its shape, dtype and padding, and collation. |
 | `mace_core/kernels/__init__.py` | The kernel contract, re-exported. |
 | `mace_core/kernels/canonical.py` | The canonical weight layout that makes checkpoints backend independent. |
 | `mace_core/kernels/capabilities.py` | What a kernel backend declares it can build. |
@@ -256,7 +267,6 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/kernels/reorder.py` | The map from canonical contraction weights to a backend's own path order, derived from two bases and split into its independent blocks. |
 | `mace_core/kernels/registry.py` | Finding kernel backends by entry point. |
 | `mace_core/metadata.py` | `ModelMetadata`: the versioned record every checkpoint carries. |
-| `mace_core/neighbors.py` | The neighbour list as a pure function, with the cell regimes stated. |
 | `mace_core/observables/__init__.py` | Declared observables, re-exported. |
 | `mace_core/observables/defaults.py` | The default observable catalogue: energy with forces and stress. |
 | `mace_core/observables/derivatives.py` | How a derivative of a declared quantity is named. |
@@ -270,6 +280,21 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_core/weights/__init__.py` | The neutral weights format, re-exported. |
 | `mace_core/weights/neutral_format.py` | safetensors for the numbers and JSON for their meaning. |
 
+| `mace_core/artifacts.py` | Artifact directories, sidecars and versioned filenames. |
+| `mace_core/config/cli.py` | Typed command-line overrides for the nested configuration. |
+| `mace_core/graph/__init__.py` | Public graph schema, construction, collation and padding API. |
+| `mace_core/graph/build.py` | Build graph samples from configurations and a resolved neighbour backend. |
+| `mace_core/graph/collate.py` | Batch numpy graph samples and preserve host metadata. |
+| `mace_core/graph/padding.py` | Padding policies, budgets and padding metadata. |
+| `mace_core/graph/schema.py` | Graph field shapes, storage levels, dtypes and padding values. |
+| `mace_core/graph/validation.py` | Validate graph samples and batches at their boundaries. |
+| `mace_core/neighbors/__init__.py` | Public neighbour-list protocol and registry. |
+| `mace_core/neighbors/all_pairs.py` | The reference all-pairs neighbour-list implementation. |
+| `mace_core/neighbors/backends.py` | Neighbour backend discovery, capabilities and resolution. |
+| `mace_core/neighbors/geometry.py` | Periodic-cell geometry shared by neighbour backends. |
+| `mace_core/neighbors/matscipy_backend.py` | The optional matscipy neighbour-list adapter. |
+| `mace_core/neighbors/neighborhood.py` | Neighbourhood records and construction helpers. |
+
 ### `mace-torch`
 
 | File | What is in it |
@@ -282,9 +307,6 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/backends/cueq.py` | The cuEquivariance backend: linear, convolution, contraction and skip on NVIDIA's kernels. |
 | `mace_torch/backends/oeq.py` | The OpenEquivariance backend: the fused convolution. |
 | `mace_torch/backends/precision.py` | A backend whose ops are built at the precision configured for each, with casts at the boundary of those that differ. |
-| `mace_torch/backends/reference/__init__.py` | The reference backend, re-exported. |
-| `mace_torch/backends/reference/backend.py` | Plain-torch linear, convolution, contraction, radial basis and reductions. |
-| `mace_torch/backends/reference/spherical_harmonics.py` | Real spherical harmonics in the legacy convention. |
 | `mace_torch/calculators/__init__.py` | The calculators, re-exported. |
 | `mace_torch/calculators/ase_calculator.py` | `MACECalculator` for ASE: results, committees, Hessian, units. |
 | `mace_torch/calculators/padding.py` | Padding a batch to a fixed size for compiled GPU runs, and cutting it back. |
@@ -327,7 +349,6 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/finetune/subselect.py` | Keeping a representative subset of a dataset. |
 | `mace_torch/finetune/stages.py` | A fine-tune as separate steps: select, relabel, extend, build, train. |
 | `mace_torch/finetune/transfer.py` | Copying a foundation model's weights into a fine-tune. |
-| `mace_torch/graph.py` | Tensorizing a collated graph. |
 | `mace_torch/kernels/__init__.py` | The torch side of the kernel contract, re-exported. |
 | `mace_torch/kernels/initialization.py` | Seeded per-op weight initialization. |
 | `mace_torch/kernels/ops.py` | The dispatched ops as torch custom operators. |
@@ -373,6 +394,18 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_torch/train/slurm.py` | Reading a process's place in a SLURM job. |
 | `mace_torch/train/tracking.py` | Reporting to an experiment tracker. |
 
+| `mace_torch/backends/harmonics.py` | Real spherical harmonics in the legacy convention. |
+| `mace_torch/backends/radial.py` | Radial bases and the polynomial cutoff envelope. |
+| `mace_torch/backends/reference.py` | Plain-torch kernels with raw canonical weights and forward normalization. |
+| `mace_torch/graph/__init__.py` | Public torch graph collation and padding API. |
+| `mace_torch/graph/collate.py` | Tensorize and batch graph samples at an explicit dtype. |
+| `mace_torch/graph/padding.py` | Pad batches using the shared schema and isolated dummy graph. |
+| `mace_torch/kernels/contraction.py` | Fused monomial contraction with differentiable backward and canonical paths. |
+| `mace_torch/neighbors/__init__.py` | Resolve neighbour backends for PyTorch data construction. |
+| `mace_torch/neighbors/vesin_backend.py` | The vesin neighbour-list adapter. |
+| `mace_torch/nn/edges.py` | Edge geometry and envelope preparation. |
+| `mace_torch/nn/gate.py` | Scalar gates for grouped equivariant features. |
+
 ### `mace-jax` and `mace-launcher`
 
 | File | What is in it |
@@ -380,6 +413,8 @@ reference in `mace_torch/backends/reference/backend.py` is the one to copy.
 | `mace_jax/__init__.py` | The package version; inference code arrives with its tickets. |
 | `mace_launcher/__init__.py` | The `mace_*` console scripts, dispatching on `--engine` or `MACE_ENGINE`. |
 | `mace_launcher/audit.py` | The runtime guard that fails when a v1 module imports the legacy package. |
+
+| `mace_jax/neighbors.py` | Resolve framework-neutral neighbour backends for JAX. |
 
 ### `mace-backend-example`
 

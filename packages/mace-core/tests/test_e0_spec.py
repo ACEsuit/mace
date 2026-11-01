@@ -9,7 +9,7 @@ keep a run going on silently wrong energies are gone.
 import pytest
 from mace_core.cli import set_value
 from mace_core.config import read_config_file
-from mace_core.config.base import ReforgeBaseConfig
+from mace_core.config.base import BaseConfig
 from mace_core.config.e0s import (
     FOUNDATION_E0_KINDS,
     E0sAverage,
@@ -36,7 +36,7 @@ class Head(FrozenSection):
     e0s: E0Spec = E0sIsolatedAtoms()
 
 
-class Root(ReforgeBaseConfig):
+class Root(BaseConfig):
     head: Head = Head()
 
 

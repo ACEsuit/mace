@@ -549,8 +549,8 @@ class MACECalculator(Calculator):
                 backbone = model.model.get_submodule("backbone")
                 assert isinstance(backbone, MACEBackbone)
                 value = backbone.descriptors(
-                    graph,
-                    num_layers=None if num_layers == -1 else num_layers,
+                    backbone(graph),
+                    num_layers=num_layers,
                     invariants_only=invariants_only,
                 )
                 descriptors.append(value.detach().cpu().numpy())
@@ -626,7 +626,9 @@ class MACECalculator(Calculator):
                     policy.edges_budget,
                 )
             self.padding = policy
-            structures, info = pad_batch(structure, policy, self.r_max)
+            structures, info = pad_batch(
+                structure, policy, self.r_max, z_table=self.z_table
+            )
         else:
             structures = [structure]
             info = PaddingInfo(
@@ -655,7 +657,7 @@ class MACECalculator(Calculator):
         """The ``atoms.info`` and ``atoms.arrays`` entries the model reads,
         with zero rows for the padding."""
         nodes = int(graph["positions"].shape[0])
-        graphs = int(graph["num_graphs"])
+        graphs = int(graph["ptr"].shape[0] - 1)
         values: dict[str, Tensor] = {}
         for field, key in self.info_keys.items():
             # A model's own per-structure inputs are in the graph already, from

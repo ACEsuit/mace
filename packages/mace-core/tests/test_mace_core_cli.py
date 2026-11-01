@@ -16,7 +16,7 @@ import pytest
 from mace_core import cli
 from mace_core.cli import Command, ConfigFlag, discover, main, set_value
 from mace_core.cli import registry as registry_module
-from mace_core.config import ConfigError, ConfigSection, ReforgeBaseConfig
+from mace_core.config import BaseConfig, ConfigError, ConfigSection
 
 
 class Runtime(ConfigSection):
@@ -29,7 +29,7 @@ class Training(ConfigSection):
     batch_size: int = 16
 
 
-class Schema(ReforgeBaseConfig):
+class Schema(BaseConfig):
     runtime: Runtime = Runtime()
     training: Training = Training()
 

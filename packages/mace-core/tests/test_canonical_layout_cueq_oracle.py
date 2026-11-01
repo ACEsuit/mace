@@ -34,7 +34,7 @@ from mace_core.kernels import derive_reorder
 if importlib.util.find_spec("cuequivariance") is None:  # pragma: no cover
     pytest.skip("needs cuequivariance as a second basis", allow_module_level=True)
 
-import cuequivariance as cue
+import cuequivariance as cue  # ty: ignore[unresolved-import]
 
 pytestmark = pytest.mark.cueq
 

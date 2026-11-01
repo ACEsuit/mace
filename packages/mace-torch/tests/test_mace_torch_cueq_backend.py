@@ -27,9 +27,11 @@ from mace_torch_backend_models import engine, graph
 
 pytest.importorskip("cuequivariance_torch")
 
+from mace_core.config.precision import PrecisionConfig, PrecisionPolicy
 from mace_torch.backends import CompositeBackend, resolve_backend
 from mace_torch.backends.conformance import run_backend_conformance
 from mace_torch.backends.cueq import CuEqBackend, _contraction_map
+from mace_torch.backends.precision import boundary_precision
 from mace_torch.serialization import (
     canonical_state,
     load_canonical_state,
@@ -42,10 +44,15 @@ if DEVICES == ["cuda"] and not torch.cuda.is_available():
     pytest.skip("the compiled operations need a GPU", allow_module_level=True)
 
 
+@pytest.mark.parametrize("layout", ["mul_ir"])
 @pytest.mark.parametrize("device", DEVICES)
-def test_cueq_passes_the_conformance_harness(dtype, device):
+def test_cueq_passes_the_conformance_harness(dtype, device, layout):
+    """In its native layout, which is what a model on cueq is built in, and in
+    the canonical one it also declares."""
     precision = "float64" if dtype == torch.float64 else "float32"
-    results = run_backend_conformance(CuEqBackend(), precision=precision, device=device)
+    results = run_backend_conformance(
+        CuEqBackend(), precision=precision, device=device, layout=layout
+    )
     built = {result.op for result in results if result.built}
     assert built == {
         "linear",
@@ -68,11 +75,12 @@ def test_the_contraction_map_is_block_diagonal_with_small_blocks(
     """What the ticket measured across the production grid: mostly one to
     one, a few small blocks where the two bases kept different members of a
     linearly dependent set, and well conditioned."""
-    projection = _contraction_map(irreps_in, irreps_out, correlation)
-    support = np.abs(projection) > 1e-9
-    assert support.sum(axis=0).max() <= 3
-    assert support.sum(axis=1).max() <= 3
-    assert np.linalg.cond(projection) < 10
+    reorder = _contraction_map(irreps_in, irreps_out, correlation)
+    assert reorder.max_block_size <= 3
+    assert all(np.linalg.cond(block.matrix) < 10 for block in reorder.blocks)
+    weights = np.random.default_rng(0).normal(size=(2, reorder.path_count, 3))
+    back = reorder.inverse().apply(reorder.apply(weights, axis=1), axis=1)
+    np.testing.assert_allclose(back, weights, rtol=0, atol=1e-12)
 
 
 def test_it_declines_what_its_kernels_cannot_compute():
@@ -80,9 +88,8 @@ def test_it_declines_what_its_kernels_cannot_compute():
     assert not capabilities.supports(
         LinearDescriptor(irreps_in="2x0e", irreps_out="2x0e", has_bias=True)
     )
-    assert not capabilities.supports(
+    with pytest.raises(ValueError, match="multiplicity"):
         ChannelwiseTPConvDescriptor(irreps_node="2x0e+1o", irreps_edge="0e+1o")
-    )
     assert not capabilities.supports(
         SymmetricContractionDescriptor(irreps_in="0e+1o", basis="full")
     )
@@ -121,6 +128,7 @@ def test_the_model_on_cueq_is_the_reference_model(caplog, device):
     caplog.set_level("INFO", logger="mace_torch.train.model_stage")
     accelerated = engine("cueq", device=device)
     assert "channelwise_tp_conv: 2 by cueq" in caplog.text
+    assert "every op in mul_ir" in caplog.text
     load_canonical_state(accelerated, canonical_state(reference))
 
     expected = reference(graph(device), compute=("forces", "stress"), training=False)
@@ -202,7 +210,38 @@ def test_cueq_ops_compile_whole_and_replay_from_a_cuda_graph(dtype):
         device="cuda",
         compile_ops=True,
         cuda_graphs=True,
+        layout="mul_ir",
     )
     for result in results:
         if result.built:
             assert {"compiles", "cuda graph"} <= set(result.checks), result.op
+
+
+@fp64_only
+@pytest.mark.parametrize("device", DEVICES)
+def test_a_wider_floor_is_cueqs_math_dtype_and_needs_no_cast(device):
+    """cuEquivariance has an accumulator of its own, so an op held to a
+    float64 floor keeps float32 data and float64 math, and the model around it
+    stays float32 with no cast at any op's boundary."""
+    floor = PrecisionConfig(
+        model="float32",
+        ops=(
+            (
+                "symmetric_contraction",
+                PrecisionPolicy("float32", "float64", "float32"),
+            ),
+        ),
+    )
+    model = engine("cueq", device=device, precision=floor)
+    math = {
+        path: module.math_dtype
+        for path, module in model.named_modules()
+        if isinstance(getattr(module, "math_dtype", None), torch.dtype)
+    }
+    contractions = {path for path in math if ".contraction." in path}
+    assert contractions
+    for path, dtype in math.items():
+        wanted = torch.float64 if path in contractions else torch.float32
+        assert dtype is wanted, path
+    assert all(boundary_precision(module) is None for module in model.modules())
+    assert {p.dtype for p in model.parameters()} == {torch.float32}

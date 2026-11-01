@@ -214,6 +214,7 @@ def radial_mlp_initial_bound(fan_in: int) -> float:
     """
     return float(fan_in) ** -0.5
 
+
 def contraction_path_order(
     irreps_out: str, correlation: int
 ) -> tuple[tuple[str, int], ...]:
@@ -235,8 +236,8 @@ def contraction_path_order(
 
     return tuple(
         (str(ir), order)
-        for _, ir in Irreps.parse(irreps_out)
         for order in range(1, correlation + 1)
+        for _, ir in Irreps.parse(irreps_out)
     )
 
 

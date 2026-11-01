@@ -7,13 +7,11 @@ The five carry different fields, and a string cannot hold them, so the extra
 settings ended up as separate flags and as behaviour keyed on which word was
 written.
 
-Here they are five kinds of one field. A file writes the kind as the key::
+Here they are five kinds of one field, written as pydantic's tagged form: the
+kind beside its settings::
 
-    [data.heads.default.e0s.average]
-
-and a kind that takes settings writes them under it::
-
-    [data.heads.default.e0s.foundation]
+    [data.heads.default.e0s]
+    kind = "foundation"
     head = "mp"
     missing = "average"
 

@@ -69,13 +69,18 @@ def assert_same(ours, theirs, where):
     assert tuple(ours.pbc) == tuple(bool(flag) for flag in theirs.pbc), where
     assert ours.weight == theirs.weight, where
     assert ours.config_type == theirs.config_type, where
-    shared = set(theirs.properties)
+    assert ours.head == theirs.head, where
+    shared = set(theirs.properties) - {"head"}
     assert shared <= set(ours.properties), where
     for name in shared:
         mine, frozen = ours.properties[name], theirs.properties[name]
         if frozen is None:
             assert mine is None, (where, name)
         else:
+            if name in {"stress", "virials"} and np.asarray(frozen).shape == (6,):
+                from ase.stress import voigt_6_to_full_3x3_stress
+
+                frozen = voigt_6_to_full_3x3_stress(frozen)
             np.testing.assert_array_equal(np.asarray(mine), np.asarray(frozen))
         assert ours.property_weights[name] == theirs.property_weights[name], (
             where,

@@ -33,7 +33,7 @@ import math
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import linear_weight_table
-from mace_core.kernels.descriptors import LinearDescriptor
+from mace_core.kernels.descriptors import LinearDescriptor, RadialMLPDescriptor
 from torch import Tensor, nn
 from torch.nn.utils import parametrize
 
@@ -159,7 +159,9 @@ def inject_lora(model: nn.Module, rank: int = 4, alpha: float = 1.0) -> list[str
                 ),
             )
             adapted.append(f"{path}.weight")
-        elif isinstance(module, RadialMLP):
+        elif isinstance(module, RadialMLP) or isinstance(
+            descriptor, RadialMLPDescriptor
+        ):
             for index, matrix in enumerate(module.weights):
                 parametrize.register_parametrization(
                     module.weights, str(index), DenseLowRank(matrix, rank, alpha)

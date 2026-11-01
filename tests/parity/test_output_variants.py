@@ -15,10 +15,10 @@ import numpy as np
 import pytest
 import torch
 from e3nn import o3
-from mace import modules
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.deploy.neutral_io import import_neutral
 
+from mace import modules
 from tests.golden.build_mace_anchor import (
     ANCHOR_CONFIG,
     ATOMIC_ENERGIES,
@@ -28,7 +28,7 @@ from tests.golden.build_mace_anchor import (
 )
 from tests.parity.test_fm_convert_legacy import extract_here
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 
 CHARGE = {
     "type": "categorical",
@@ -113,7 +113,9 @@ def legacy_model(scale_shift: bool, **settings) -> torch.nn.Module:
         for name, parameter in model.named_parameters():
             if name.endswith(".bias") and parameter.numel():
                 parameter.copy_(
-                    torch.randn(parameter.shape, generator=generator, dtype=torch.float64)
+                    torch.randn(
+                        parameter.shape, generator=generator, dtype=torch.float64
+                    )
                 )
     return model
 
@@ -145,16 +147,18 @@ def v1_energies(engine, legacy, found):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     graph = {
         "positions": batch.positions,
-        "atomic_numbers": torch.tensor(
+        "node_atomic_numbers": torch.tensor(
             [numbers[index] for index in batch.node_attrs.argmax(1).tolist()]
         ),
-        "element_index": batch.node_attrs.argmax(1),
+        "node_attrs": batch.node_attrs,
         "edge_index": batch.edge_index,
         "shifts": batch.shifts,
         "unit_shifts": batch.unit_shifts,
         "cell": batch.cell.reshape(-1, 3, 3),
         "batch": batch.batch,
-        "num_graphs": int(batch.num_graphs),
+        "ptr": torch.cat(
+            (torch.zeros(1, dtype=torch.long), torch.bincount(batch.batch).cumsum(0))
+        ),
         "head": torch.zeros(int(batch.num_graphs), dtype=torch.long),
         "total_charge": batch.total_charge,
         "total_spin": batch.total_spin,

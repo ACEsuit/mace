@@ -67,7 +67,8 @@ FORMAT = "mace-v1-checkpoint"
 #: loads and computes something else. Version 2 added ``layout``, and a version
 #: 1 file carries no record of which basis path each weight multiplies, so it
 #: cannot be validated rather than merely lacking a field.
-VERSION = 2
+# Version 3 stores raw linear/skip weights and the agreed backbone module paths.
+VERSION = 3
 
 #: Separates a module's path from the name its own canonical form gives a
 #: tensor. A dot would be ambiguous against the module path itself.

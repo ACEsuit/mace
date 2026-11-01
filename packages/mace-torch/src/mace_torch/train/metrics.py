@@ -140,7 +140,7 @@ class RunningMetrics:
     def update(self, output: MACEOutput[Tensor], batch: TrainingBatch) -> None:
         """Score one batch and keep what it contributed."""
         self._total_loss += float(self.loss(output, batch).detach())
-        self._structures += int(batch.graph["num_graphs"])
+        self._structures += int(batch.graph["ptr"].shape[0] - 1)
         counts = atom_counts(batch)
         for spec in self.specs:
             value = predicted(output, spec.name).detach()

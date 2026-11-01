@@ -14,6 +14,7 @@ undone to save.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Literal, NamedTuple
 
 from ase.data import chemical_symbols
@@ -23,7 +24,8 @@ from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.graph import GRAPH_INPUT_DEFAULTS
+from mace_core.graph import GRAPH_SCHEMA, INPUT_KEYS
+from mace_core.kernels.descriptors import RadialBasisDescriptor
 from mace_core.metadata import (
     ConfigRecord,
     E0Details,
@@ -129,32 +131,34 @@ _MAGNETIC_INTERACTIONS = {
 #: models, not names for one: a residual first layer takes its skip from the
 #: element embedding.
 _FIRST_INTERACTIONS: dict[str, tuple[bool, bool, bool]] = {
-    "RealAgnosticInteractionBlock": (False, False, False),
-    "RealAgnosticResidualInteractionBlock": (True, False, False),
-    "RealAgnosticDensityInteractionBlock": (False, True, False),
-    "RealAgnosticDensityResidualInteractionBlock": (True, True, False),
-    "RealAgnosticResidualNonLinearInteractionBlock": (True, False, True),
+    "plain": (False, False, False),
+    "residual": (True, False, False),
+    "density": (False, True, False),
+    "density_residual": (True, True, False),
+    "nonlinear": (True, False, True),
 }
 
 #: The same for every later layer, which always carries its skip.
 _INTERACTIONS: dict[str, tuple[bool, bool]] = {
-    "RealAgnosticResidualInteractionBlock": (False, False),
-    "RealAgnosticDensityResidualInteractionBlock": (True, False),
-    "RealAgnosticResidualNonLinearInteractionBlock": (False, True),
+    "plain": (False, False),
+    "density": (True, False),
+    "residual": (False, False),
+    "density_residual": (True, False),
+    "nonlinear": (False, True),
 }
 
 #: The configuration's spelling of a distance transform, and the backbone's.
 _DISTANCE_TRANSFORMS: dict[str, Literal["none", "agnesi", "soft"]] = {
-    "None": "none",
-    "Agnesi": "agnesi",
-    "Soft": "soft",
+    "none": "none",
+    "agnesi": "agnesi",
+    "soft": "soft",
 }
 
 _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
     "interaction": tuple(_INTERACTIONS),
     "interaction_first": tuple(_FIRST_INTERACTIONS),
-    "distance_transform": tuple(_DISTANCE_TRANSFORMS),
-    "clebsch_gordan_basis": ("reduced",),
+    "distance_transform.kind": tuple(_DISTANCE_TRANSFORMS),
+    "clebsch_gordan_basis": ("reduced", "full"),
     "readout.gate": ("silu",),
 }
 
@@ -454,15 +458,19 @@ def build_model(
         num_features=config.model.num_channels,
         lmax=config.model.max_ell,
         hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
-        num_radial=config.model.num_radial_basis,
+        num_radial=config.model.radial_basis.num_basis,
         cutoff=config.model.r_max,
         correlation=config.model.correlation,
         avg_num_neighbors=statistics.avg_num_neighbors,
-        radial_kind=config.model.radial_type,
+        radial_kind=config.model.radial_basis.kind,
+        architecture=config.model,
+        radial_precision=precision.for_device(supports_float64)[0]
+        .policy_for(RadialBasisDescriptor())
+        .accumulate_dtype,
         precision=precision.model,
         pair_repulsion=config.model.pair_repulsion,
-        cutoff_order=config.model.num_cutoff_basis,
-        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
+        cutoff_order=config.model.cutoff.polynomial_order,
+        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform.kind],
         apply_cutoff=config.model.apply_cutoff,
         radial_hidden=config.model.radial_mlp,
         readout_hidden=config.model.readout.mlp_irreps,
@@ -548,14 +556,18 @@ def _polar_model(
         num_features=config.model.num_channels,
         lmax=config.model.max_ell,
         hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
-        num_radial=config.model.num_radial_basis,
+        num_radial=config.model.radial_basis.num_basis,
         cutoff=config.model.r_max,
         correlation=config.model.correlation,
         avg_num_neighbors=statistics.avg_num_neighbors,
-        radial_kind=config.model.radial_type,
+        radial_kind=config.model.radial_basis.kind,
+        architecture=config.model,
+        radial_precision=precision.for_device(supports_float64)[0]
+        .policy_for(RadialBasisDescriptor())
+        .accumulate_dtype,
         precision=precision.model,
-        cutoff_order=config.model.num_cutoff_basis,
-        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform],
+        cutoff_order=config.model.cutoff.polynomial_order,
+        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform.kind],
         apply_cutoff=config.model.apply_cutoff,
         radial_hidden=config.model.radial_mlp,
         readout_hidden=config.model.readout.mlp_irreps,
@@ -601,13 +613,17 @@ def _response_model(
         num_features=config.model.num_channels,
         lmax=config.model.max_ell,
         hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
-        num_radial=config.model.num_radial_basis,
+        num_radial=config.model.radial_basis.num_basis,
         cutoff=config.model.r_max,
         correlation=config.model.correlation,
         avg_num_neighbors=statistics.avg_num_neighbors,
-        radial_kind=config.model.radial_type,
+        radial_kind=config.model.radial_basis.kind,
+        architecture=config.model,
+        radial_precision=precision.for_device(supports_float64)[0]
+        .policy_for(RadialBasisDescriptor())
+        .accumulate_dtype,
         precision=precision.model,
-        cutoff_order=config.model.num_cutoff_basis,
+        cutoff_order=config.model.cutoff.polynomial_order,
         readout_hidden=config.model.readout.mlp_irreps,
     )
 
@@ -643,11 +659,11 @@ def _magnetic_model(
         lmax=config.model.max_ell,
         moment_lmax=settings.lmax,
         hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
-        num_radial=config.model.num_radial_basis,
+        num_radial=config.model.radial_basis.num_basis,
         num_moment_basis=settings.num_basis,
         one_body_basis=settings.one_body_basis if settings.one_body else 0,
         cutoff=config.model.r_max,
-        cutoff_order=config.model.num_cutoff_basis,
+        cutoff_order=config.model.cutoff.polynomial_order,
         correlation=config.model.correlation,
         pair_repulsion=config.model.pair_repulsion,
         readout_hidden=config.model.readout.mlp_irreps,
@@ -713,22 +729,22 @@ def _unbuilt_graph_features(config: ResolvedConfig) -> list[str]:
     refused = []
     for feature in model.graph_features:
         name = feature.name
-        if name not in GRAPH_INPUT_DEFAULTS:
+        if name not in INPUT_KEYS:
             refused.append(
                 f"model.graph_features.{name} is not a per-structure input the "
-                f"graphs carry; they carry {sorted(GRAPH_INPUT_DEFAULTS)}"
+                f"graphs carry; they carry {sorted(INPUT_KEYS)}"
             )
         elif feature.per != "graph":
             refused.append(
                 f"model.graph_features.{name} is per {feature.per}, and "
                 f"{name} is one value per structure"
             )
-        elif feature.kind == "continuous" and feature.input_dim != len(
-            GRAPH_INPUT_DEFAULTS[name]
+        elif feature.kind == "continuous" and feature.input_dim != math.prod(
+            GRAPH_SCHEMA[name].shape[1:]
         ):
             refused.append(
                 f"model.graph_features.{name} has input_dim {feature.input_dim}, "
-                f"and {name} has {len(GRAPH_INPUT_DEFAULTS[name])} component(s)"
+                f"and {name} has {math.prod(GRAPH_SCHEMA[name].shape[1:])} component(s)"
             )
     if model.readout.from_embedding and not model.graph_features:
         refused.append(
@@ -795,7 +811,7 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
             built[field] = (*built[field], name)
         # Its radial networks read the Bessel basis of the edge length beside
         # the moment's own basis, and it has no other.
-        built["radial_type"] = ("bessel",)
+        built["radial_basis.kind"] = ("bessel",)
     for path, choices in built.items():
         value: object = config.model
         for name in path.split("."):
@@ -893,8 +909,8 @@ def _metadata(config: ResolvedConfig, data: TorchDataBundle) -> ModelMetadata:
     reads_energy = "energy" in config.model.observables
     return ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(code_version=__version__),
-        elements=[chemical_symbols[int(z)] for z in data.z_table.zs],
+        provenance=Provenance(versions={"mace-torch-v1": __version__}),
+        elements=[int(z) for z in data.z_table.zs],
         heads={
             head: HeadSummary(
                 e0=E0Details(source="explicit")

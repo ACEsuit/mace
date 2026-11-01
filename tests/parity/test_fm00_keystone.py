@@ -19,19 +19,27 @@ import ase.io
 import numpy as np
 import pytest
 import torch
-from fm00_convert import build_config, energy_constants_to_canonical, transfer_weights
-from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.config.precision import PrecisionConfig
-from mace_core.neighbors import get_neighborhood
+from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import load_checkpoint, save_checkpoint
 
+from tests.parity.fm00_convert import (
+    build_config,
+    energy_constants_to_canonical,
+    transfer_weights,
+)
+
 GOLDEN = Path(__file__).resolve().parents[1] / "golden"
 ENERGY = ObservableSpec(
-    name="energy", irreps="0e", per_atom=False, units="eV", normalization="none"
+    name="energy",
+    irreps="0e",
+    per_atom=False,
+    units="eV",
+    derivatives=[{"wrt": "pos", "name": "forces", "sign": -1, "units": "eV/A"}],
 )
 
 #: The fp64 row of the golden tolerance table. Stated here because this package
@@ -91,28 +99,17 @@ def legacy_batch(legacy, atoms):
 
 
 def v1_graph(atoms, numbers, cutoff):
-    positions = atoms.get_positions()
-    periodic = tuple(bool(flag) for flag in atoms.pbc)
-    cell = np.array(atoms.cell) if any(periodic) else None
-    neighborhood = get_neighborhood(positions, cutoff, periodic, cell)
-    index = {z: i for i, z in enumerate(numbers)}
-    return {
-        "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor(atoms.get_atomic_numbers()),
-        "element_index": torch.tensor(
-            [index[int(z)] for z in atoms.get_atomic_numbers()]
-        ),
-        "edge_index": torch.tensor(neighborhood.edge_index),
-        "shifts": torch.tensor(neighborhood.shifts),
-        "unit_shifts": torch.tensor(neighborhood.unit_shifts),
-        "cell": torch.tensor(np.asarray(neighborhood.cell, dtype=float)).reshape(
-            1, 3, 3
-        ),
-        "pbc": torch.tensor([list(periodic)]),
-        "batch": torch.zeros(len(atoms), dtype=torch.long),
-        "num_graphs": 1,
-        "head": torch.zeros(1, dtype=torch.long),
-    }
+    from mace_core.data import KeySpecification, configuration_from_atoms
+    from mace_torch.graph import build_batch
+    from mace_torch.neighbors import resolve_neighbor_backend
+
+    return build_batch(
+        [configuration_from_atoms(atoms, KeySpecification.from_defaults())],
+        atomic_number_table=AtomicNumberTable(numbers),
+        cutoff=cutoff,
+        neighbor_backend=resolve_neighbor_backend(),
+        dtype=torch.get_default_dtype(),
+    )
 
 
 @pytest.mark.parametrize("anchor", ["tiny_scaleshift.model", "tiny_mace.model"])
@@ -125,7 +122,7 @@ def test_a_converted_anchor_matches_the_live_legacy_model(fp64, anchor):
     """
     legacy = load_anchor(anchor)
     model, config = convert(legacy)
-    engine = DerivativeEngine(model)
+    engine = DerivativeEngine(model, ENERGY)
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
 
     structures = ase.io.read(GOLDEN / "fixtures/tiny_train.xyz", index=":")
@@ -197,7 +194,7 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
         legacy_batch(legacy, atoms).to_dict(), training=False, compute_force=True
     )
     graph = v1_graph(atoms, numbers, config["cutoff"])
-    result = DerivativeEngine(restored)(graph, compute=("forces",))
+    result = DerivativeEngine(restored, ENERGY)(graph, compute=("forces",))
 
     assert (
         abs(float(reference["energy"].detach()) - float(result.total_energy.detach()))
@@ -240,7 +237,7 @@ def test_energy_forces_and_stress_match_on_every_tiny_fixture(
         compute_force=True,
         compute_stress=True,
     )
-    result = DerivativeEngine(model)(
+    result = DerivativeEngine(model, ENERGY)(
         v1_graph(atoms, numbers, config["cutoff"]), compute=("forces", "stress")
     )
 
@@ -297,10 +294,11 @@ def test_both_stacks_take_the_same_training_step(fp64, isolated, anchor):
 
     graph = {
         "positions": batch.positions,
-        "atomic_numbers": torch.tensor(
+        "node_atomic_numbers": torch.tensor(
             [numbers[index] for index in batch.node_attrs.argmax(1).tolist()]
         ),
-        "element_index": batch.node_attrs.argmax(1),
+        "node_attrs": batch.node_attrs,
+        "ptr": batch.ptr,
         "edge_index": batch.edge_index,
         "shifts": batch.shifts,
         "unit_shifts": batch.unit_shifts,
@@ -309,7 +307,7 @@ def test_both_stacks_take_the_same_training_step(fp64, isolated, anchor):
         "num_graphs": int(batch.num_graphs),
         "head": torch.zeros(int(batch.num_graphs), dtype=torch.long),
     }
-    output = DerivativeEngine(model)(graph, compute=("forces",), training=True)
+    output = DerivativeEngine(model, ENERGY)(graph, compute=("forces",), training=True)
     our_loss = loss_of(batch, {"energy": output.total_energy, "forces": output.forces})
     our_loss.backward()
 
@@ -323,7 +321,9 @@ def test_both_stacks_take_the_same_training_step(fp64, isolated, anchor):
     for layer, source in enumerate(legacy.interactions):
         for index in range(4):
             theirs = getattr(source.conv_tp_weights, f"layer{index}").weight.grad
-            ours = model.backbone.interactions[layer].body.radial.weights[index].grad
+            ours = (
+                model.backbone.interactions[layer].body.radial_mlp.weights[index].grad
+            )
             assert theirs is not None and ours is not None
             assert float(theirs.abs().max()) > 0.0, "the legacy gradient is flat"
             assert float((theirs - ours).abs().max()) < 1e-12, (
@@ -350,7 +350,7 @@ def test_the_converted_energy_differentiates_twice(fp64, isolated):
     def energy(positions):
         moving = dict(graph)
         moving["positions"] = positions
-        return DerivativeEngine(model)(moving, compute=()).total_energy
+        return DerivativeEngine(model, ENERGY)(moving, compute=()).total_energy
 
     start = graph["positions"].clone().requires_grad_(True)
     assert torch.autograd.gradcheck(energy, (start,), eps=1e-6, atol=1e-7)

@@ -7,7 +7,7 @@ import scipy.special
 import torch
 from scipy.constants import pi
 
-from mace_torch.backends.reference.spherical_harmonics import spherical_harmonics
+from mace_torch.backends.harmonics import spherical_harmonics
 
 from .utils import FIELD_CONSTANT
 

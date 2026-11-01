@@ -17,8 +17,8 @@ from pathlib import Path
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.config.precision import PrecisionConfig
+from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
@@ -218,8 +218,8 @@ def write_magnetic_checkpoint(legacy, directory, train_file) -> Path:
                 "hidden_irreps": settings["hidden_irreps"],
                 "max_ell": settings["lmax"],
                 "correlation": settings["correlation"],
-                "num_radial_basis": settings["num_radial"],
-                "num_cutoff_basis": settings["cutoff_order"],
+                "radial_basis": {"kind": "bessel", "num_basis": settings["num_radial"]},
+                "cutoff": {"polynomial_order": settings["cutoff_order"]},
                 "pair_repulsion": settings["pair_repulsion"],
                 "readout": {"mlp_irreps": settings["readout_hidden"]},
                 "magnetic": {
@@ -246,7 +246,7 @@ def write_magnetic_checkpoint(legacy, directory, train_file) -> Path:
     transfer_magnetic_weights(legacy, engine.get_submodule("backbone"))
     metadata = ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(code_version="anchor"),
+        provenance=Provenance(versions={"mace-torch-v1": "anchor"}),
         heads={
             "default": HeadSummary(
                 e0=E0Details(
@@ -258,6 +258,6 @@ def write_magnetic_checkpoint(legacy, directory, train_file) -> Path:
                 )
             )
         },
-        elements=[chemical_symbols[z] for z in numbers],
+        elements=list(numbers),
     )
     return write_model(Path(directory) / "magnetic", engine, metadata)

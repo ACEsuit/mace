@@ -19,17 +19,18 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from fm00_projection import (
+from mace_core.clebsch_gordan.reduced_basis import (
+    full_symmetric_tensor_product_basis,
+    reduced_symmetric_tensor_product_basis,
+)
+
+from tests.parity.fm00_projection import (
     ProjectionError,
     as_path_first,
     project_weights,
     projection_matrix,
 )
-from independent_basis import symmetric_multiplicity
-from mace_core.clebsch_gordan.reduced_basis import (
-    full_symmetric_tensor_product_basis,
-    reduced_symmetric_tensor_product_basis,
-)
+from tests.parity.independent_basis import symmetric_multiplicity
 
 #: One channel of the tiny anchors' contraction input, and the two irreps they
 #: read out. Taken from the anchor itself, not from its training recipe: the
@@ -199,7 +200,7 @@ def test_there_is_no_way_back():
     gauge representatives. Exporting for an external reimplementation is a
     separate problem with its own convention to agree on.
     """
-    import fm00_projection
+    from tests.parity import fm00_projection
 
     assert not [name for name in dir(fm00_projection) if "reduced_to_full" in name]
     assert set(fm00_projection.__all__) == {

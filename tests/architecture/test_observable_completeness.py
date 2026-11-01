@@ -272,10 +272,9 @@ def test_the_named_derivatives_keep_their_legacy_names():
     """Every row with a name of its own agrees with the default catalogue.
 
     The two are separate sources: this table is read off the frozen tree, and
-    that catalogue is authored. `magforces` is the one named row the default
-    catalogue does not declare, so it is compared with nothing here; its sign is
-    measured against a central difference of the energy in
-    `tests/golden/test_tiny_magnetic.py`.
+    that catalogue is authored. The agreed catalogue also explicitly names the
+    magnetic forces and the two response derivatives; each must retain the
+    frozen tree's quantity and sign.
     """
     named = {
         key: row
@@ -284,9 +283,10 @@ def test_the_named_derivatives_keep_their_legacy_names():
     }
     assert sorted(named) == ["forces", "magforces", "stress"]
     declared = {spec.name: spec for spec in DEFAULT_CATALOGUE.requested_derivatives()}
-    assert sorted(declared) == ["forces", "stress"]
+    assert sorted(declared) == ["dalpha_dr", "dmu_dr", "forces", "magforces", "stress"]
     for name, spec in declared.items():
-        row = named[name]
+        row = DISPOSITIONS[name]
+        assert isinstance(row, Derivative)
         assert (spec.of, spec.wrt, spec.sign) == (row.of, row.wrt, row.sign), name
 
 

@@ -20,7 +20,7 @@ from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data import GraphDataset, collate_training
 from mace_torch.finetune.foundation import FoundationError, read_foundation
 from mace_torch.finetune.transfer import (
@@ -36,7 +36,7 @@ from mace_torch.train import (
 )
 from mace_torch.train.model_stage import build_model
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 HYDROGEN, CARBON, OXYGEN = -13.6, -1030.0, -2040.0
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
 METHANE = np.array(
@@ -90,7 +90,7 @@ def checkpoint(tmp_path_factory):
                 "heads": {
                     "pbe": {
                         "train_file": str(dataset(directory / "train.xyz")),
-                        "e0s": {"isolated_atoms": {}},
+                        "e0s": {"kind": "isolated_atoms"},
                     }
                 },
                 "valid_fraction": 0.2,
@@ -301,6 +301,7 @@ def test_a_checkpoint_recording_no_heads_is_refused(tmp_path):
     import json
 
     from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
+    from mace_torch.serialization import VERSION
 
     config = ResolvedConfig.model_validate(
         {
@@ -310,13 +311,13 @@ def test_a_checkpoint_recording_no_heads_is_refused(tmp_path):
     )
     record = ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(code_version="0"),
+        provenance=Provenance(versions={"mace-torch-v1": "0"}),
     )
     (tmp_path / "old.json").write_text(
         json.dumps(
             {
                 "format": "mace-v1-checkpoint",
-                "version": 1,
+                "version": VERSION,
                 "config": record.model_dump(mode="json"),
                 "tensors": [],
             }
@@ -344,11 +345,11 @@ def two_head_checkpoint(tmp_path_factory):
                 "heads": {
                     "pbe": {
                         "train_file": str(dataset(directory / "pbe.xyz")),
-                        "e0s": {"isolated_atoms": {}},
+                        "e0s": {"kind": "isolated_atoms"},
                     },
                     "r2scan": {
                         "train_file": str(dataset(directory / "r2scan.xyz", seed=1)),
-                        "e0s": {"isolated_atoms": {}},
+                        "e0s": {"kind": "isolated_atoms"},
                     },
                 },
                 "valid_fraction": 0.2,

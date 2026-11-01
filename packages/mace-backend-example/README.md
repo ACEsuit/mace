@@ -20,9 +20,9 @@ it computes what the reference computes.
 `mace_core.kernels.protocol.KernelBackend` lists what the object provides:
 
 - `name`, and `capabilities()`: a `BackendCapabilities` saying which ops it
-  builds, on which devices, in which dtypes and feature layouts, whether its
-  ops can be differentiated twice, and which version of the kernel contract it
-  was written against (`spec_version`). Subclass it and override `supports`
+  builds, on which devices and in which dtypes, and whether its ops can be
+  differentiated twice. Features use the canonical `mul_ir` layout.
+  Subclass it and override `supports`
   when what the backend can build depends on the shape;
   `ExampleCapabilities` declines a convolution over more than one copy of an
   irrep, and a skip against anything but scalars.
@@ -35,7 +35,8 @@ it computes what the reference computes.
   layout is what a checkpoint holds, so a checkpoint written with any backend
   loads into this one and back. A backend that holds its weights in another
   order converts at these three methods and nowhere else; this one holds the
-  canonical order and they are views.
+  canonical order and they are views. Linear and skip weights are raw: their
+  fan-in normalization is applied during the forward, not stored in the weights.
 
 Import only the contract. `backend.py` imports `mace_core` and `torch`; the
 model calls the backend, never the other way round.

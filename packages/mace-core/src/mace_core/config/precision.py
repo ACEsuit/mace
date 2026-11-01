@@ -38,6 +38,8 @@ _KIND_OF = {
     "SegmentReduceDescriptor": "segment_reduce",
     "SphericalHarmonicsDescriptor": "spherical_harmonics",
     "RadialBasisDescriptor": "radial_basis",
+    "RadialMLPDescriptor": "radial_mlp",
+    "DistanceTransformDescriptor": "distance_transform",
 }
 
 #: The op kinds a policy can be given for.

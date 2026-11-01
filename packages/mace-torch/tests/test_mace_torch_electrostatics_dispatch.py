@@ -247,7 +247,7 @@ def test_the_solver_imports_neither_e3nn_nor_the_frozen_tree():
 
 
 def _run_with(tmp_path, **electrostatics):
-    from mace_core.observables import load_default_catalogue
+    from mace_core.observables import DEFAULT_CATALOGUE
     from mace_torch.train import run_data_stage, run_model_stage
     from test_mace_torch_full_batch import configuration
 
@@ -257,7 +257,7 @@ def _run_with(tmp_path, **electrostatics):
             "electrostatics": config.electrostatics.model_copy(update=electrostatics)
         }
     )
-    catalogue = load_default_catalogue()
+    catalogue = DEFAULT_CATALOGUE
     return run_model_stage(config, run_data_stage(config, catalogue), catalogue)
 
 

@@ -17,11 +17,13 @@ from typing import Any
 import pytest
 import torch
 from conftest import fp64_only
+from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import Precision
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn import MACEBackbone
 from mace_torch.serialization import (
     FORMAT,
@@ -45,7 +47,15 @@ SETTINGS: dict[str, Any] = dict(
 
 
 def build(config: dict[str, Any]) -> MACEBackbone:
-    return MACEBackbone(ReferenceBackend(), **config)
+    settings = dict(config)
+    architecture = ModelConfig(
+        num_interactions=settings.pop("num_layers"),
+        num_channels=settings.pop("num_features"),
+        max_ell=settings.pop("lmax"),
+        hidden_irreps=settings.pop("hidden_irreps"),
+        correlation=settings.pop("correlation"),
+    )
+    return MACEBackbone(ReferenceBackend(), config=architecture, **settings)
 
 
 def trained(seed: int = 0):
@@ -72,15 +82,18 @@ def test_a_model_survives_the_round_trip(tmp_path):
     restored = load_checkpoint(tmp_path / "anchor", build)
 
     positions = np.array([[0.0, 0.0, 0.0], [0.95, 0.0, 0.0], [-0.24, 0.93, 0.0]])
-    neighborhood = get_neighborhood(positions, 5.0, (False, False, False), None)
+    neighborhood = get_neighborhood(
+        positions, 5.0, (False, False, False), None, backend=resolve_neighbor_backend()
+    )
     graph = {
         "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor([8, 1, 1]),
+        "node_atomic_numbers": torch.tensor([8, 1, 1]),
+        "node_attrs": torch.tensor([[0.0, 1.0], [1.0, 0.0], [1.0, 0.0]]),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts),
     }
-    before = model(graph)
-    after = restored(graph)
+    before = model(graph).layers
+    after = restored(graph).layers
     for index, (first, second) in enumerate(zip(before, after, strict=True)):
         assert torch.equal(first, second), f"layer {index} changed"
     assert float(before[0].abs().max()) > 1e-6, "the model computes nothing"
@@ -104,15 +117,18 @@ def test_the_neighbour_normalization_travels_with_the_weights(tmp_path):
         tmp_path / "anchor", lambda config: build({**config, "avg_num_neighbors": 1.0})
     )
     positions = np.array([[0.0, 0.0, 0.0], [0.95, 0.0, 0.0], [-0.24, 0.93, 0.0]])
-    neighborhood = get_neighborhood(positions, 5.0, (False, False, False), None)
+    neighborhood = get_neighborhood(
+        positions, 5.0, (False, False, False), None, backend=resolve_neighbor_backend()
+    )
     graph = {
         "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor([8, 1, 1]),
+        "node_atomic_numbers": torch.tensor([8, 1, 1]),
+        "node_attrs": torch.tensor([[0.0, 1.0], [1.0, 0.0], [1.0, 0.0]]),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts),
     }
     for index, (first, second) in enumerate(
-        zip(model(graph), restored(graph), strict=True)
+        zip(model(graph).layers, restored(graph).layers, strict=True)
     ):
         assert torch.equal(first, second), f"layer {index} changed"
 
@@ -202,7 +218,7 @@ def test_a_model_of_a_different_shape_is_refused(tmp_path):
 
     def build_deeper(config: dict[str, Any]) -> MACEBackbone:
         deeper: dict[str, Any] = {**config, "num_layers": 3}
-        return MACEBackbone(ReferenceBackend(), **deeper)
+        return build(deeper)
 
     with pytest.raises(CheckpointError, match=r"products\.1\.contraction"):
         load_checkpoint(tmp_path / "anchor", build_deeper)

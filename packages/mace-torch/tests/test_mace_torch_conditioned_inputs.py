@@ -15,8 +15,8 @@ import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
-from mace_core.observables import InputSpec
-from mace_core.observables.derivatives import derivation_mode, derivative_name
+from mace_core.observables import InputSpec, ObservableSpec
+from mace_core.observables.derivatives import derivation_mode
 from mace_torch_engine_fixtures import (
     NODE_INPUT,
     build_engine,
@@ -50,16 +50,31 @@ def test_the_derivation_mode_follows_from_the_target():
     decides how the derivative can be taken.
     """
     assert derivation_mode("pos") == "autograd"
-    assert derivation_mode("cell") == "grad_strain"
+    assert derivation_mode("strain") == "grad_strain"
     assert derivation_mode("magmom") == "grad_input"
     assert derivation_mode("external_field") == "grad_input"
 
 
 @fp64_only
-def test_a_declared_input_gets_its_name_from_the_same_rule_as_forces():
-    assert derivative_name("energy", "pos") == "forces"
-    assert derivative_name("energy", "magmom") == "magforces"
-    assert derivative_name("energy", "charge") == "d_energy_d_charge"
+def test_a_declared_input_gets_its_name_from_the_energy_declaration():
+    """A pair with a name of its own says so in the file, beside its sign.
+
+    Which is what makes `magforces` reachable with no code here: the rule
+    generates the third name, and the first two are declared.
+    """
+    energy = ObservableSpec(
+        name="energy",
+        irreps="0e",
+        per_atom=False,
+        units="eV",
+        derivatives=[
+            {"wrt": "pos", "name": "forces", "sign": -1},
+            {"wrt": "magmom", "name": "magforces", "sign": -1},
+        ],
+    )
+    assert energy.derivative_name("pos") == "forces"
+    assert energy.derivative_name("magmom") == "magforces"
+    assert energy.derivative_name("charge") == "d_energy_d_charge"
 
 
 @fp64_only
@@ -127,9 +142,18 @@ def test_every_derivative_comes_from_one_grad_call(monkeypatch):
     calls = []
     original = torch.autograd.grad
 
+    inside = False
+
     def counting(*args, **kwargs):
+        nonlocal inside
+        if inside:
+            return original(*args, **kwargs)
         calls.append(len(kwargs.get("inputs", args[1] if len(args) > 1 else [])))
-        return original(*args, **kwargs)
+        inside = True
+        try:
+            return original(*args, **kwargs)
+        finally:
+            inside = False
 
     monkeypatch.setattr(torch.autograd, "grad", counting)
     engine(graph, compute=("forces", "virials", "stress", "magforces"))
@@ -181,8 +205,10 @@ def test_a_declared_but_non_differentiable_input_says_which_flag_is_missing():
 def test_an_input_missing_from_the_graph_is_refused_at_call_time():
     engine = build_engine(inputs=[NODE_INPUT])
     positions, numbers = molecule()
+    graph = build_graph(positions, numbers)
+    del graph["magmom"]
     with pytest.raises(KeyError, match="magmom"):
-        engine(build_graph(positions, numbers), compute=("magforces",))
+        engine(graph, compute=("magforces",))
 
 
 @fp64_only

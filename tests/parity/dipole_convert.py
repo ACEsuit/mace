@@ -97,7 +97,7 @@ def _load(destination, entries, v1_in, v1_out, in_map, out_map) -> None:
         source = (out_map[out_copy], in_map[in_copy])
         if None not in source:
             weights[index] = entries.get(source, 0.0)
-    destination.weight.copy_(weights)
+    destination.weight.copy_(weights / destination.path_normalization)
 
 
 def _by_role(copies, roles):

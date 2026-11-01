@@ -33,16 +33,47 @@ GRID = [
 ]
 
 
-def test_the_flat_order_is_irrep_major_and_body_order_ascending():
-    """The order of the joined pieces is the file format, so it is written out."""
+def test_the_flat_order_is_body_order_major_and_irreps_in_declaration_order():
+    """The order of the joined pieces is the file format, so it is written out.
+
+    Body order outermost is the enumeration's order, the one ``path_count``
+    counts in, and it is what checkpoints already on disk were written in."""
     assert contraction_path_order("0e+1o", 3) == (
         ("0e", 1),
-        ("0e", 2),
-        ("0e", 3),
         ("1o", 1),
+        ("0e", 2),
         ("1o", 2),
+        ("0e", 3),
         ("1o", 3),
     )
+
+
+@pytest.mark.parametrize(("irreps_in", "irreps_out", "correlation"), GRID)
+def test_the_pieces_follow_the_enumeration_path_count_walks(
+    irreps_in, irreps_out, correlation
+):
+    """Piece by piece, the path counts of the joined order are those of the
+    enumeration, so the labels and the weights line up slice for slice."""
+    from mace_core.clebsch_gordan.reduced_basis import (
+        reduced_symmetric_tensor_product_basis,
+    )
+
+    walked = [
+        int(array.shape[0])
+        for order in range(1, correlation + 1)
+        for array in reduced_symmetric_tensor_product_basis(
+            irreps_in, order, irreps_out
+        ).values()
+    ]
+    joined = [
+        int(
+            reduced_symmetric_tensor_product_basis(irreps_in, order, target)[
+                target
+            ].shape[0]
+        )
+        for target, order in contraction_path_order(irreps_out, correlation)
+    ]
+    assert joined == walked
 
 
 @pytest.mark.parametrize(("irreps_in", "irreps_out", "correlation"), GRID)

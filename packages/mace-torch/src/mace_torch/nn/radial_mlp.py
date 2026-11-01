@@ -63,6 +63,10 @@ class RadialMLP(nn.Module):
         precision: The dtype the weights are held at.
     """
 
+    #: Annotated because `register_buffer` alone leaves it typed as a
+    #: `Module`, and then indexing it reads as subscripting one.
+    scales: Tensor
+
     def __init__(
         self,
         num_radial: int,

@@ -34,11 +34,16 @@ from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,
 )
+from mace_core.config.legacy import interaction_kind
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.canonical import linear_weight_table
+from mace_core.kernels.canonical import (
+    fully_connected_tp_path_normalization,
+    linear_path_normalization,
+    linear_weight_table,
+)
 from mace_core.metadata import (
     ConfigRecord,
     HeadSummary,
@@ -227,13 +232,17 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         "hidden_irreps": "+".join(str(irrep) for _, irrep in hidden.terms),
         "max_ell": int(take("max_ell")),
         "correlation": int(take("correlation")),
-        "interaction": take("interaction_cls"),
-        "interaction_first": take("interaction_cls_first"),
+        "interaction": interaction_kind(take("interaction_cls")),
+        "interaction_first": interaction_kind(take("interaction_cls_first")),
         "use_agnostic_product": bool(take("use_agnostic_product")),
-        "radial_type": take("radial_type"),
-        "num_radial_basis": int(take("num_bessel")),
-        "num_cutoff_basis": int(take("num_polynomial_cutoff")),
-        "distance_transform": "None" if transform is None else str(transform),
+        "radial_basis": {
+            "kind": take("radial_type"),
+            "num_basis": int(take("num_bessel")),
+        },
+        "cutoff": {"polynomial_order": int(take("num_polynomial_cutoff"))},
+        "distance_transform": {
+            "kind": "none" if transform is None else str(transform).lower()
+        },
         "apply_cutoff": bool(take("apply_cutoff")),
         "radial_mlp": [int(width) for width in take("radial_MLP")],
         "pair_repulsion": bool(take("pair_repulsion")),
@@ -254,7 +263,7 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         # reader fills both from the one layer there is: its interaction is
         # the first layer's and its gate that of a linear readout, None.
         # Neither builds anything, so the defaults stand in for them.
-        model["interaction"] = "RealAgnosticResidualInteractionBlock"
+        model["interaction"] = "residual"
         model["readout"]["gate"] = "silu"
     if family == "plain":
         model["scaling"] = "none"
@@ -504,9 +513,15 @@ _REPULSION_TENSORS = {
 }
 
 #: The nonlinear interaction's linears, each an op of the same name.
-_NONLINEAR_LINEARS = frozenset(
-    {"linear_up", "linear_res", "source", "target", "linear_mid", "linear_out"}
-)
+_NONLINEAR_LINEARS = {
+    "linear_up": "linear_up",
+    "linear_residual": "linear_res",
+    "sender_embedding": "source",
+    "receiver_embedding": "target",
+    "linear_mix": "linear_mid",
+    "linear_out": "linear_out",
+    "skip": "skip",
+}
 
 
 def _state(
@@ -544,14 +559,37 @@ def _state(
                 state[path] = _linear(
                     artifact, f"{source}.{rest.removeprefix('body.')}", tensors
                 )
-            elif rest in _NONLINEAR_LINEARS or (rest == "skip" and "bias" in tensors):
-                state[path] = _linear(artifact, f"{source}.{rest}", tensors)
-            elif rest in {"body.radial", "body.density", "radial", "density"}:
-                op = f"{source}.{rest.removeprefix('body.')}"
-                state[path] = {
-                    name: _as(artifact.tensor(op, name), value)
-                    for name, value in tensors.items()
-                }
+            elif rest in _NONLINEAR_LINEARS and "bias" in tensors:
+                state[path] = _linear(
+                    artifact, f"{source}.{_NONLINEAR_LINEARS[rest]}", tensors
+                )
+            elif rest in {
+                "body.radial_mlp",
+                "body.density_mlp",
+                "radial_mlp",
+                "density_mlp",
+            }:
+                op = f"{source}.{rest.removeprefix('body.').removesuffix('_mlp')}"
+                if ops[op].op_kind == "layer_norm_mlp":
+                    converted = {}
+                    for name, value in tensors.items():
+                        prefix, index = name.rsplit("_", 1)
+                        layer = int(index) * 3
+                        if prefix.startswith("norm_"):
+                            layer += 1
+                        field = (
+                            "weight" if prefix in {"layer", "norm_weight"} else "bias"
+                        )
+                        tensor = artifact.tensor(op, f"{layer}.{field}")
+                        if prefix == "layer":
+                            tensor = tensor.T
+                        converted[name] = _as(tensor, value)
+                    state[path] = converted
+                else:
+                    state[path] = {
+                        name: _as(artifact.tensor(op, name), value)
+                        for name, value in tensors.items()
+                    }
             elif rest == "skip":
                 state[path] = {
                     "weight": _as(
@@ -560,7 +598,7 @@ def _state(
                 }
             else:
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
-        elif path == f"{backbone}radial":
+        elif path == f"{backbone}radial_embedding.basis":
             state[path] = {
                 "frequencies": _as(
                     artifact.tensor("radial_basis", "weights"), tensors["frequencies"]
@@ -577,7 +615,7 @@ def _state(
                 if tensors[name].dim() == 0:
                     value = value.reshape(())
                 state[path][name] = _as(value, tensors[name])
-        elif path == f"{backbone}distance_transform":
+        elif path == f"{backbone}radial_embedding.distance_transform":
             names = _TRANSFORM_TENSORS[ops["distance_transform"].op_kind]
             state[path] = {}
             for name, source in names.items():
@@ -595,7 +633,7 @@ def _state(
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
         elif path == f"{outputs}energy_head":
             state[path] = _energy_constants(artifact, tensors)
-        elif path == f"{backbone}graph_features":
+        elif path == f"{backbone}graph_embedding":
             state[path] = {
                 name: _as(artifact.tensor("graph_features", name), value)
                 for name, value in tensors.items()
@@ -618,6 +656,36 @@ def _state(
             )
         else:
             raise NeutralImportError(f"the model holds {path}, which no op fills.")
+    # Neutral artifacts store effective linear maps. The agreed kernel
+    # contract stores raw parameters and applies these factors in forward.
+    # Unfold after splitting shared readouts, using each destination's fan-in.
+    from mace_core.kernels.descriptors import (
+        FullyConnectedTPDescriptor,
+        LinearDescriptor,
+    )
+
+    for path, tensors in state.items():
+        descriptor = getattr(engine.get_submodule(path), "descriptor", None)
+        if isinstance(descriptor, LinearDescriptor):
+            source = descriptor.irreps_in
+            target = descriptor.irreps_out
+            output = list(Irreps.parse(target).slices())
+            factors = [
+                linear_path_normalization(source, output[out][1])
+                for out, _ in linear_weight_table(source, target)
+            ]
+        elif isinstance(descriptor, FullyConnectedTPDescriptor):
+            source, target = descriptor.irreps_in1, descriptor.irreps_out
+            output = list(Irreps.parse(target).slices())
+            factors = [
+                fully_connected_tp_path_normalization(
+                    source, descriptor.irreps_in2, output[out][1]
+                )
+                for out, _ in linear_weight_table(source, target)
+            ]
+        else:
+            continue
+        tensors["weight"] = tensors["weight"] / tensors["weight"].new_tensor(factors)
     return state
 
 
@@ -839,10 +907,10 @@ def _check_constants(artifact: NeutralArtifact, config: ResolvedConfig) -> None:
     refusals: list[str] = []
 
     order = int(ops["cutoff"].descriptor["p"])
-    if order != config.model.num_cutoff_basis:
+    if order != config.model.cutoff.polynomial_order:
         refusals.append(
             f"the cutoff envelope has order {order} and the configuration "
-            f"{config.model.num_cutoff_basis}"
+            f"{config.model.cutoff.polynomial_order}"
         )
     if "pair_repulsion" in ops and int(ops["pair_repulsion"].descriptor["p"]) != order:
         refusals.append(
@@ -953,7 +1021,7 @@ def _metadata(
     origin = "recorded no heads" if provenance.headless else "recorded its heads"
     return ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(code_version=__version__),
+        provenance=Provenance(versions={"mace-torch-v1": __version__}),
         heads={
             head: HeadSummary(
                 e0=e0_details(
@@ -963,10 +1031,7 @@ def _metadata(
             )
             for head, values in e0s.items()
         },
-        elements=[
-            chemical_symbols[int(z)]
-            for z in sorted(artifact.sidecar.config["atomic_numbers"])
-        ],
+        elements=[int(z) for z in sorted(artifact.sidecar.config["atomic_numbers"])],
         notes=(
             f"Converted from a {provenance.source_class} checkpoint written by "
             f"version {provenance.source_version}, by converter version "

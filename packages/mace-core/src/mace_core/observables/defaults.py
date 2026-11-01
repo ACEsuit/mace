@@ -54,6 +54,7 @@ _ENERGY = ObservableSpec(
     irreps="0e",
     per_atom=False,
     units="eV",
+    extensive=True,
     derivatives=(
         DerivativeRequest(wrt="pos", name="forces", sign=-1, units="eV/Å"),
         # The volume division that turns the strain derivative into a stress is

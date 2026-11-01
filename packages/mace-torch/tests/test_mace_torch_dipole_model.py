@@ -85,8 +85,8 @@ def test_a_charge_source_that_is_neither_is_refused():
 
 
 def test_the_fixed_charge_model_keeps_only_vectors_in_its_last_layer():
-    assert build_model(FIXED).backbone.layer_irreps[-1] == "1o"
-    assert build_model(PREDICTED).backbone.layer_irreps[-1] == "0e+1o+2e"
+    assert build_model(FIXED).backbone.layer_irreps[-1] == "3x1o"
+    assert build_model(PREDICTED).backbone.layer_irreps[-1] == "3x0e+3x1o+3x2e"
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ def test_a_scalar_middle_gives_the_last_layer_no_vector_to_read(dtype):
     model = build_model(FIXED, readout_hidden="4x0e")
     head = cast(ObservableHead, model.outputs.heads["atomic_dipoles"])
     graph = graph_of(positions, numbers)
-    layers = model.backbone(graph)
+    layers = list(model.backbone(graph).layers)
     last = head.per_layer(layers)[-1]
     assert torch.count_nonzero(last) == 0
     assert torch.count_nonzero(head.per_layer(layers)[0]) > 0

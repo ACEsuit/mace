@@ -25,7 +25,7 @@ from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.metadata import ConfigRecord, HeadSummary, ModelMetadata, Provenance
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.finetune.foundation import read_foundation
 from mace_torch.train import (
     evaluate,
@@ -45,7 +45,7 @@ from tests.parity.fm00_convert import (
 )
 from tests.parity.test_fm00_training_step import load_anchor
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 TRAIN_SET = (
     Path(__file__).resolve().parents[1] / "golden" / "fixtures" / "tiny_train.xyz"
 )
@@ -62,7 +62,7 @@ def anchor_config(legacy, work_dir: Path) -> ResolvedConfig:
                 "heads": {
                     "default": {
                         "train_file": str(TRAIN_SET),
-                        "e0s": {"isolated_atoms": {}},
+                        "e0s": {"kind": "isolated_atoms"},
                     }
                 },
                 "valid_fraction": 0.25,
@@ -70,15 +70,15 @@ def anchor_config(legacy, work_dir: Path) -> ResolvedConfig:
             "model": {
                 "model": "scale_shift",
                 "observables": ["energy", "forces"],
-                "interaction_first": type(legacy.interactions[0]).__name__,
+                "interaction_first": "plain",
                 "r_max": built["cutoff"],
                 "num_interactions": built["num_layers"],
                 "num_channels": built["num_features"],
                 "hidden_irreps": built["hidden_irreps"],
                 "max_ell": built["lmax"],
                 "correlation": built["correlation"],
-                "num_radial_basis": built["num_radial"],
-                "num_cutoff_basis": built["cutoff_order"],
+                "radial_basis": {"kind": "bessel", "num_basis": built["num_radial"]},
+                "cutoff": {"polynomial_order": built["cutoff_order"]},
                 "pair_repulsion": built["pair_repulsion"],
                 "readout": {"mlp_irreps": f"{built['readout_hidden']}x0e"},
             },
@@ -107,7 +107,7 @@ def write_anchor_checkpoint(legacy, directory: Path) -> Path:
     transfer_weights(legacy, engine.get_submodule("backbone"), built["correlation"])
     metadata = ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(code_version="anchor"),
+        provenance=Provenance(versions={"mace-torch-v1": "anchor"}),
         heads={
             "default": HeadSummary(
                 e0=e0_details(
@@ -145,12 +145,12 @@ def fine_tune_config(directory: Path, foundation: Path) -> ResolvedConfig:
                 "heads": {
                     "pt_head": {
                         "train_file": str(TRAIN_SET),
-                        "e0s": {"foundation": {}},
+                        "e0s": {"kind": "foundation"},
                         "weight": 0.5,
                     },
                     "DFT": {
                         "train_file": str(a_new_level_of_theory(directory / "dft.xyz")),
-                        "e0s": {"isolated_atoms": {}},
+                        "e0s": {"kind": "isolated_atoms"},
                     },
                 },
                 "valid_fraction": 0.25,
@@ -183,16 +183,18 @@ def energies(engine, legacy, structures):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     graph = {
         "positions": batch.positions,
-        "atomic_numbers": torch.tensor(
+        "node_atomic_numbers": torch.tensor(
             [numbers[index] for index in batch.node_attrs.argmax(1).tolist()]
         ),
-        "element_index": batch.node_attrs.argmax(1),
+        "node_attrs": batch.node_attrs,
         "edge_index": batch.edge_index,
         "shifts": batch.shifts,
         "unit_shifts": batch.unit_shifts,
         "cell": batch.cell.reshape(-1, 3, 3),
         "batch": batch.batch,
-        "num_graphs": int(batch.num_graphs),
+        "ptr": torch.cat(
+            (torch.zeros(1, dtype=torch.long), torch.bincount(batch.batch).cumsum(0))
+        ),
         "head": torch.zeros(int(batch.num_graphs), dtype=torch.long),
     }
     return engine(graph, compute=("forces",)).total_energy.detach()
@@ -273,4 +275,45 @@ def test_the_replay_head_starts_as_the_anchor(anchor_foundation, tmp_path):
     got = energies(built.model, legacy, structures)
     assert torch.allclose(got, expected, atol=1e-12, rtol=0), (
         f"largest difference {float((got - expected).abs().max()):.3g} eV"
+    )
+
+
+def test_foundation_selection_descriptors_match_legacy_element_means(anchor_foundation):
+    """Selection consumes the reviewed descriptor API, including absent elements."""
+    import numpy as np
+    from ase import Atoms
+    from mace_core.data.configuration import Configuration
+    from mace_torch.finetune.subselect import ABSENT
+
+    from mace.calculators import MACECalculator
+
+    legacy, path = anchor_foundation
+    foundation = read_foundation(path, CATALOGUE)
+    calculator = MACECalculator(models=[legacy], device="cpu", default_dtype="float64")
+    structures = [
+        Atoms("OH2", positions=[[0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]]),
+        Atoms("H2", positions=[[0, 0, 0], [0.74, 0, 0]]),
+    ]
+    configurations = [
+        Configuration(
+            atomic_numbers=atoms.numbers,
+            positions=atoms.positions,
+            head=foundation.heads[0],
+        )
+        for atoms in structures
+    ]
+    expected = []
+    for atoms in structures:
+        node_features = calculator.get_descriptors(atoms, invariants_only=True)
+        rows = []
+        for number in foundation.z_table.zs:
+            selected = node_features[atoms.numbers == number]
+            rows.append(
+                selected.mean(axis=0)
+                if len(selected)
+                else np.full(node_features.shape[1], ABSENT)
+            )
+        expected.append(np.concatenate(rows))
+    np.testing.assert_allclose(
+        foundation.describe(configurations), expected, atol=1e-12, rtol=0
     )

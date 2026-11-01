@@ -51,7 +51,7 @@ def backend_params() -> list:
 def _v1_anchor(directory: Path, backend: str, dtype: str, device: str):
     """The committed anchor as a v1 checkpoint that records ``backend``, read
     back the way a user's model is."""
-    from mace_core.kernels.precision import PrecisionConfig
+    from mace_core.config.precision import PrecisionConfig
     from mace_torch.deploy.loader import load_deployed
 
     from tests.parity.test_anchor_as_foundation import write_anchor_checkpoint

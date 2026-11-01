@@ -95,7 +95,9 @@ def exceeded(got, expected, row) -> list[str]:
     """Each quantity outside ``row``, with its largest difference."""
     found = []
     for (fixture, quantity), value in expected.items():
-        if not np.allclose(got[(fixture, quantity)], value, atol=row.atol, rtol=row.rtol):
+        if not np.allclose(
+            got[(fixture, quantity)], value, atol=row.atol, rtol=row.rtol
+        ):
             difference = float(np.abs(got[(fixture, quantity)] - value).max())
             found.append(f"{fixture} {quantity}: {difference:.3g}")
     return found

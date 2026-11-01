@@ -260,4 +260,5 @@ def structures_fingerprint(
             )
     return digest.hexdigest()
 
+
 __all__.append("structures_fingerprint")

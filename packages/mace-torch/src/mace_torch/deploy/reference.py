@@ -26,9 +26,9 @@ from ase.io import read
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
 
+from mace_torch.backends.reference import TORCH_DTYPES as DTYPES
 from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
-from mace_torch.graph import DTYPES
 from mace_torch.physics import DerivativeEngine
 
 __all__ = [

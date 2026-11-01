@@ -67,9 +67,11 @@ A ``layer_norm_mlp`` is linear, layer norm and SiLU, repeated, with a plain
 linear last. Its tensors are named ``<layer>.weight`` and ``<layer>.bias`` by
 the layer's position in that sequence, each linear's weight ``[out, in]``.
 
-**Weights are in the canonical layout** of :mod:`mace_core.kernels.canonical`:
-``mul_ir``, output copies outermost, every normalization folded into the
-number. The exception is the symmetric contraction, which an artifact may carry
+**Neutral artifacts retain their extraction layout:** ``mul_ir``, output
+copies outermost, with linear and skip normalizations folded into the number.
+The importer removes those factors before writing the current raw canonical
+weights specified by :mod:`mace_core.kernels.canonical`. The exception is the
+symmetric contraction, which an artifact may carry
 in the basis it was trained in. That op says which with
 ``clebsch_gordan_basis`` and carries the basis itself as tensors, path axis
 first, because weights are only meaningful against the basis they were trained

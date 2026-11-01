@@ -8,6 +8,8 @@ only where the point is that the driver and the real engine fit together.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 import torch
 from conftest import fp64_only
@@ -59,7 +61,9 @@ def quadratic_setup(count: int = 4, **spec_kwargs):
     torch.manual_seed(0)
     target = torch.randn(count, 3, dtype=torch.float64)
     engine = QuadraticEngine(target)
-    spec = dict(variable=VARIABLE, max_iter=60, tolerance=1e-10)
+    # Annotated: a dict of mixed value types splatted into a typed model
+    # cannot be checked against it.
+    spec: dict[str, Any] = dict(variable=VARIABLE, max_iter=60, tolerance=1e-10)
     spec.update(spec_kwargs)
     driver = FixedPointDriver(engine, FixedPointSpec(**spec))
     graph = {VARIABLE: torch.zeros(count, 3, dtype=torch.float64)}

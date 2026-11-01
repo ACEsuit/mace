@@ -17,8 +17,9 @@ import torch
 from ase import Atoms
 from ase.io import write
 from conftest import fp64_only
+from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data import GraphDataset
 from mace_torch.models import MACEOutputs, ObservableHead
 from mace_torch.nn.interaction import (
@@ -34,7 +35,7 @@ from mace_torch.train import (
     run_train_stage,
 )
 
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 
 #: The two references the isolated-atom structures carry.
 HYDROGEN, OXYGEN = -13.6, -2040.0
@@ -558,6 +559,7 @@ def test_the_record_carries_each_heads_energies_and_how_they_were_obtained(tmp_p
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
     record = built.metadata.heads["default"].e0
+    assert record is not None
     assert record.values == {"H": HYDROGEN, "O": OXYGEN}
     assert record.source == "estimated"
     assert record.method == "isolated_atoms"
@@ -623,7 +625,7 @@ def test_the_isolated_atoms_stay_out_of_the_split(tmp_path, seed):
                 "heads": {
                     "a": {
                         "train_file": str(write_dataset(tmp_path / "t.xyz", count=8)),
-                        "e0s": {"isolated_atoms": {}},
+                        "e0s": {"kind": "isolated_atoms"},
                     }
                 },
                 "valid_fraction": 0.25,
@@ -654,9 +656,7 @@ def build_with(tmp_path, **model):
 @pytest.mark.parametrize(
     "setting,value",
     [
-        ("interaction", "RealAgnosticInteractionBlock"),
         ("edge_irreps", "4x0e"),
-        ("clebsch_gordan_basis", "full"),
         ("readout", {"gate": "tanh"}),
         ("readout", {"from_embedding": True}),
     ],
@@ -664,7 +664,7 @@ def build_with(tmp_path, **model):
 def test_a_setting_the_model_cannot_build_is_refused(tmp_path, setting, value):
     """Each of these used to build the default model and train it under the
     name of the one asked for, with the same parameter count."""
-    with pytest.raises(ModelStageError, match=f"model.{setting}"):
+    with pytest.raises((ValueError, ModelStageError), match=setting):
         build_with(tmp_path, **{setting: value})
 
 
@@ -672,10 +672,8 @@ def test_each_spelling_of_the_first_layer_builds_its_own_block(tmp_path):
     """Two models, as in the frozen tree: the residual first layer takes its
     skip from the element embedding and carries it to the product basis, the
     plain one applies its skip to the message."""
-    plain = build_with(tmp_path, interaction_first="RealAgnosticInteractionBlock")
-    residual = build_with(
-        tmp_path, interaction_first="RealAgnosticResidualInteractionBlock"
-    )
+    plain = build_with(tmp_path, interaction_first="plain")
+    residual = build_with(tmp_path, interaction_first="residual")
     assert isinstance(plain.backbone.backbone.interactions[0], InteractionBlock)
     assert isinstance(
         residual.backbone.backbone.interactions[0], ResidualInteractionBlock
@@ -685,7 +683,7 @@ def test_each_spelling_of_the_first_layer_builds_its_own_block(tmp_path):
     )
 
 
-NONLINEAR = "RealAgnosticResidualNonLinearInteractionBlock"
+NONLINEAR = "nonlinear"
 
 
 def test_edge_irreps_set_the_width_a_nonlinear_block_convolves_at(tmp_path):
@@ -699,8 +697,14 @@ def test_edge_irreps_set_the_width_a_nonlinear_block_convolves_at(tmp_path):
     first, later = model.backbone.backbone.interactions
     assert isinstance(first, NonLinearInteractionBlock)
     assert isinstance(later, NonLinearInteractionBlock)
-    assert (first.num_up_features, first.up_width) == (4, 1)
-    assert (later.num_up_features, later.up_width) == (4, 4)
+    assert (
+        first.num_up_features,
+        Irreps.parse(first.convolution.descriptor.irreps_node).dimension,
+    ) == (4, 1)
+    assert (
+        later.num_up_features,
+        Irreps.parse(later.convolution.descriptor.irreps_node).dimension,
+    ) == (4, 4)
 
 
 @pytest.mark.parametrize(
@@ -718,12 +722,17 @@ def test_edge_irreps_set_the_width_a_nonlinear_block_convolves_at(tmp_path):
 def test_edge_irreps_a_standard_block_would_read_are_refused(tmp_path, setting):
     """The frozen tree hands them to every block, so a standard one that
     ignored them would build another model."""
-    with pytest.raises(ModelStageError, match="edge_irreps"):
+    with pytest.raises(ValueError, match="edge_irreps"):
         build_with(tmp_path, **setting)
 
 
-def test_every_refusal_is_reported_together(tmp_path):
+def test_an_unbuilt_readout_gate_is_refused(tmp_path):
     with pytest.raises(ModelStageError) as caught:
         build_with(tmp_path, clebsch_gordan_basis="full", readout={"gate": "tanh"})
-    assert "model.clebsch_gordan_basis" in str(caught.value)
     assert "model.readout.gate" in str(caught.value)
+
+
+def test_reviewed_plain_layers_and_full_basis_reach_the_built_model(tmp_path):
+    engine = build_with(tmp_path, interaction="plain", clebsch_gordan_basis="full")
+    assert isinstance(engine.backbone.backbone.interactions[1], InteractionBlock)
+    assert engine.backbone.backbone.products[0].contraction.descriptor.basis == "full"

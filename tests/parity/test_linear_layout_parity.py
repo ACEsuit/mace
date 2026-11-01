@@ -12,10 +12,11 @@ from pathlib import Path
 
 import pytest
 import torch
-from fm00_convert import linear_weights_to_canonical
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.descriptors import LinearDescriptor
-from mace_torch.backends.reference.backend import ReferenceLinear
+from mace_torch.backends.reference import ReferenceLinear
+
+from tests.parity.fm00_convert import linear_weights_to_canonical
 
 ANCHORS = Path(__file__).resolve().parents[1] / "golden/models"
 

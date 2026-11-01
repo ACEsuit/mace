@@ -22,13 +22,14 @@ import numpy as np
 import pytest
 import torch
 from ase import Atoms
-from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.config.precision import PrecisionConfig
+from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.models.electrostatics import PolarModel
+from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.physics import DerivativeEngine
 
 from tests.parity.fm00_convert import build_config, energy_constants_to_canonical
@@ -217,14 +218,17 @@ def v1_graph(atoms, numbers, cutoff):
     positions = atoms.get_positions()
     periodic = tuple(bool(flag) for flag in atoms.pbc)
     cell = np.array(atoms.cell) if any(periodic) else None
-    neighborhood = get_neighborhood(positions, cutoff, periodic, cell)
+    neighborhood = get_neighborhood(
+        positions, cutoff, periodic, cell, backend=resolve_neighbor_backend()
+    )
     index = {z: i for i, z in enumerate(numbers)}
     return {
         "positions": torch.tensor(positions),
-        "atomic_numbers": torch.tensor(atoms.get_atomic_numbers()),
-        "element_index": torch.tensor(
-            [index[int(z)] for z in atoms.get_atomic_numbers()]
-        ),
+        "node_atomic_numbers": torch.tensor(atoms.get_atomic_numbers()),
+        "node_attrs": torch.nn.functional.one_hot(
+            torch.tensor([index[int(z)] for z in atoms.get_atomic_numbers()]),
+            num_classes=len(numbers),
+        ).to(torch.get_default_dtype()),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts),
         "unit_shifts": torch.tensor(neighborhood.unit_shifts),
@@ -233,7 +237,12 @@ def v1_graph(atoms, numbers, cutoff):
         ),
         "pbc": torch.tensor([list(periodic)]),
         "batch": torch.zeros(len(atoms), dtype=torch.long),
-        "num_graphs": 1,
+        "ptr": torch.cat(
+            (
+                torch.zeros(1, dtype=torch.long),
+                torch.bincount(torch.zeros(len(atoms), dtype=torch.long)).cumsum(0),
+            )
+        ),
         "head": torch.zeros(1, dtype=torch.long),
         "total_charge": torch.tensor([float(atoms.info["charge"])]),
         "total_spin": torch.tensor([float(atoms.info["spin"])]),
@@ -248,8 +257,8 @@ def v1_batch(*graphs):
         key: torch.cat([graph[key] for graph in graphs])
         for key in (
             "positions",
-            "atomic_numbers",
-            "element_index",
+            "node_atomic_numbers",
+            "node_attrs",
             "shifts",
             "unit_shifts",
             "cell",
@@ -261,13 +270,18 @@ def v1_batch(*graphs):
         )
     }
     joined["edge_index"] = torch.cat(
-        [graph["edge_index"] + int(offset) for graph, offset in zip(graphs, offsets)],
+        [
+            graph["edge_index"] + int(offset)
+            for graph, offset in zip(graphs, offsets, strict=True)
+        ],
         dim=1,
     )
     joined["batch"] = torch.cat(
         [torch.full_like(graph["batch"], index) for index, graph in enumerate(graphs)]
     )
-    joined["num_graphs"] = len(graphs)
+    joined["ptr"] = torch.tensor(
+        np.cumsum([0] + [len(graph["positions"]) for graph in graphs])
+    )
     return joined
 
 
@@ -318,7 +332,9 @@ def test_a_molecule_is_the_same_whatever_its_batch_holds(fp64, isolated):
     """The frozen tree decides per batch: a molecule batched with a crystal is
     put in its box and corrected, and its energy moves. Per structure, it is
     summed in real space either way."""
-    molecule = with_inputs(*CASES["neutral molecule"][0:1], *CASES["neutral molecule"][2])
+    molecule = with_inputs(
+        *CASES["neutral molecule"][0:1], *CASES["neutral molecule"][2]
+    )
     crystal = with_inputs(*CASES["crystal"][0:1], *CASES["crystal"][2])
     legacy = legacy_polar()
     model, config = convert(legacy, "per_structure", None)
@@ -334,9 +350,7 @@ def test_a_molecule_is_the_same_whatever_its_batch_holds(fp64, isolated):
     )
     assert gap(batched.total_energy[0], alone.total_energy[0]) < 1e-12
     reference_alone = legacy(legacy_batch(legacy, molecule), training=False)
-    reference_batched = legacy(
-        legacy_batch(legacy, molecule, crystal), training=False
-    )
+    reference_batched = legacy(legacy_batch(legacy, molecule, crystal), training=False)
     assert gap(alone.total_energy[0], reference_alone["energy"][0]) < 1e-10
     assert gap(batched.total_energy[1], reference_batched["energy"][1]) < 1e-10
     assert gap(reference_batched["energy"][0], reference_alone["energy"][0]) > 1e-6

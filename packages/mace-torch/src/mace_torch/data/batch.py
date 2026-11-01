@@ -1,27 +1,20 @@
-"""One batch: the model's input, and what its outputs are compared against.
+"""Training batches bind graph samples with the agreed torch collater.
 
-The joining itself is :func:`mace_core.graph.collate`, in numpy, so the torch
-batch and the jax one are the same arrangement of the same numbers. What is
-added here is the binding to tensors and the two fields the model reads that
-are derived rather than stored: the element index and the graph count.
-
-They are derived at the last moment on purpose. ``element_index`` depends on
-the element table the model was built with, so storing it in the dataset would
-tie a cached dataset to one model; ``num_graphs`` is ``len(ptr) - 1`` and
-reading it from ``batch.max()`` is both a host synchronisation and wrong for a
-batch whose last graph has no nodes.
+The graph follows ``mace_core.graph``: tensors carry numerical fields and host
+metadata records structure sizes, periodicity and padding. Element columns
+come from ``node_attrs`` and the graph count from ``ptr.shape[0] - 1``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 import torch
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
-from mace_core.graph import collate as collate_numpy
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 
@@ -30,7 +23,8 @@ from mace_torch.data.graphs import (
     graph_from_configuration,
     targets_from_configuration,
 )
-from mace_torch.graph import DTYPES, to_tensors
+from mace_torch.graph import collate
+from mace_torch.neighbors import resolve_neighbor_backend
 
 __all__ = [
     "GraphDataset",
@@ -47,9 +41,8 @@ class TrainingBatch:
     """What one optimizer step reads.
 
     Attributes:
-        graph: The model's input, schema fields plus the derived two. The
-            graph count is a plain ``int``, which is what makes it stay
-            symbolic under tracing rather than becoming a host read.
+        graph: The model's input, with schema fields and host metadata. The
+            graph count is derived from the pointer shape without a host read.
         targets: Reference values by name, joined along the first axis.
         property_weights: How much each structure's value of each property
             counts, ``[n_graphs]`` per name. Zero where a structure carries no
@@ -57,7 +50,7 @@ class TrainingBatch:
             without a mask anyone has to remember.
     """
 
-    graph: dict[str, Tensor | int]
+    graph: dict[str, Any]
     targets: dict[str, Tensor]
     property_weights: dict[str, Tensor] = field(default_factory=dict)
 
@@ -95,29 +88,19 @@ def collate_training(
         z_table: The model's element table, used for the element index.
         float_dtype: What the floating fields are bound at.
     """
-    tensors = to_tensors(
-        collate_numpy([item[0] for item in items]), float_dtype=float_dtype
-    )
-    lookup = torch.full((max(z_table.zs) + 1,), -1, dtype=torch.long)
-    for position, number in enumerate(z_table.zs):
-        lookup[number] = position
-    graph: dict[str, Tensor | int] = dict(tensors)
-    graph["element_index"] = lookup[tensors["atomic_numbers"]]
-    # A plain int rather than a tensor: it indexes the reductions, and as a
-    # tensor it would be a host read in every one of them.
-    graph["num_graphs"] = int(tensors["ptr"].numel() - 1)
+    graph = collate([item[0] for item in items], dtype=getattr(torch, float_dtype))
 
     names = list(items[0][1]) if items else []
     targets = {
         name: torch.as_tensor(
             np.concatenate([np.asarray(item[1][name]) for item in items], axis=0),
-            dtype=DTYPES[float_dtype],
+            dtype=getattr(torch, float_dtype),
         )
         for name in names
     }
     weights = {
         name: torch.as_tensor(
-            [float(item[2][name]) for item in items], dtype=DTYPES[float_dtype]
+            [float(item[2][name]) for item in items], dtype=getattr(torch, float_dtype)
         )
         for name in names
     }
@@ -149,6 +132,7 @@ class GraphDataset(Dataset):
         # without them.
         self.augmentations = tuple(augmentations)
         self.graph_inputs = tuple(graph_inputs)
+        self.neighbor_backend = resolve_neighbor_backend()
         self.cutoff = cutoff
         self.z_table = z_table
         self.targets = tuple(targets)
@@ -169,6 +153,7 @@ class GraphDataset(Dataset):
             head=head,
             weight=float(configuration.weight),
             graph_inputs=self.graph_inputs,
+            neighbor_backend=self.neighbor_backend,
         )
         targets, weights = targets_from_configuration(
             configuration, self.targets, len(configuration.atomic_numbers)

@@ -76,6 +76,22 @@ def test_the_reference_passes_its_own_conformance(dtype):
 
 
 @fp64_only
+@pytest.mark.parametrize("layout", ["mul_ir"])
+def test_backend_reorder_is_block_diagonal(layout):
+    """Every op with weights maps canonical weights onto its own through
+    independent, invertible blocks within the bound, and back exactly. The
+    harness derives the map from the op; here it runs over the reference, and
+    each accelerated backend's own suite runs it over that backend."""
+    results = run_backend_conformance(ReferenceBackend(), layout=layout)
+    weighted = {"linear", "symmetric_contraction", "fully_connected_tp"}
+    assert all(
+        "reorder" in result.checks
+        for result in results
+        if result.built and result.op in weighted
+    )
+
+
+@fp64_only
 def test_a_partial_backend_passes_and_its_declines_are_recorded():
     results = run_backend_conformance(PartialBackend())
     built = {(result.op, result.built) for result in results}
@@ -169,11 +185,12 @@ def test_the_conv_descriptor_carries_the_channel_count():
 
 
 def test_no_model_code_permutes_the_layout():
-    """Every op reads and writes one layout, so nothing between the ops
-    regroups features. The reference regroups inside its own kernels, which is
-    where the permutations are allowed to live."""
+    """Every op reads and writes the chain's layout, so nothing between the ops
+    regroups features, and model code never picks a layout: it asks the backend
+    for one with `layout_of`. Building a `Layout` by name, or permuting axes,
+    is what the backends do inside their ops."""
     root = Path(__file__).resolve().parents[1] / "src" / "mace_torch"
-    permutations = {"channel_major", "grouped"}
+    permutations = {"Layout", "CANONICAL"}
     offenders = []
     for folder in ("nn", "models"):
         for path in (root / folder).rglob("*.py"):
@@ -184,7 +201,7 @@ def test_no_model_code_permutes_the_layout():
                 if isinstance(node, ast.ImportFrom) and any(
                     alias.name in permutations for alias in node.names
                 ):
-                    offenders.append(f"{path.name} imports a layout permutation")
+                    offenders.append(f"{path.name} builds its own layout")
                 if isinstance(node, ast.Attribute) and node.attr in (
                     "permute",
                     "movedim",

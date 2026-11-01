@@ -17,6 +17,7 @@ import pytest
 import torch
 from conftest import assert_close, fp64_only
 from mace_core.clebsch_gordan.real_basis import wigner_d_real
+from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.neighbors import get_neighborhood
@@ -24,6 +25,7 @@ from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.kernels import segment_sum
 from mace_torch.models import EnergyOutputHead, MACEOutputs, ScaleShiftSpec
+from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn import MACEBackbone
 
 ATOMIC_NUMBERS = [1, 8]
@@ -98,12 +100,14 @@ def make_stack(observables=(ENERGY, DIPOLE, POLARIZABILITY), seed=0, **head_kwar
     backbone = MACEBackbone(
         backend,
         atomic_numbers=ATOMIC_NUMBERS,
-        num_layers=2,
-        num_features=4,
-        lmax=2,
-        hidden_irreps=HIDDEN,
-        correlation=2,
-        cutoff=CUTOFF,
+        config=ModelConfig(
+            num_interactions=2,
+            num_channels=4,
+            max_ell=2,
+            hidden_irreps=HIDDEN,
+            correlation=2,
+            r_max=CUTOFF,
+        ),
         avg_num_neighbors=6.0,
         precision=precision_name(),
     )
@@ -115,7 +119,7 @@ def make_stack(observables=(ENERGY, DIPOLE, POLARIZABILITY), seed=0, **head_kwar
     outputs = MACEOutputs(
         backend,
         list(observables),
-        layer_irreps=backbone.layer_irreps,
+        layer_irreps=[HIDDEN, "0e"],
         num_features=4,
         energy_head=head,
         precision=precision_name(),
@@ -132,17 +136,30 @@ def water():
 
 def make_graph(positions, numbers):
     positions = np.asarray(positions, dtype=float)
-    neighborhood = get_neighborhood(positions, CUTOFF, (False, False, False), None)
+    neighborhood = get_neighborhood(
+        positions,
+        CUTOFF,
+        (False, False, False),
+        None,
+        backend=resolve_neighbor_backend(),
+    )
     dtype = torch.get_default_dtype()
     index = {z: i for i, z in enumerate(ATOMIC_NUMBERS)}
     return {
         "positions": torch.tensor(positions, dtype=dtype),
-        "atomic_numbers": torch.tensor(list(numbers)),
-        "element_index": torch.tensor([index[z] for z in numbers]),
+        "node_atomic_numbers": torch.tensor(list(numbers)),
+        "node_attrs": torch.nn.functional.one_hot(
+            torch.tensor([index[z] for z in numbers]), num_classes=len(ATOMIC_NUMBERS)
+        ).to(torch.get_default_dtype()),
         "edge_index": torch.tensor(neighborhood.edge_index),
         "shifts": torch.tensor(neighborhood.shifts, dtype=dtype),
         "batch": torch.zeros(len(numbers), dtype=torch.long),
-        "num_graphs": 1,
+        "ptr": torch.cat(
+            (
+                torch.zeros(1, dtype=torch.long),
+                torch.bincount(torch.zeros(len(numbers), dtype=torch.long)).cumsum(0),
+            )
+        ),
         "head": torch.zeros(1, dtype=torch.long),
     }
 
@@ -152,7 +169,7 @@ def run(positions=None, numbers=None, **kwargs):
         positions, numbers = water()
     backbone, outputs = make_stack(**kwargs)
     graph = make_graph(positions, numbers)
-    return outputs(graph, backbone(graph))
+    return outputs(graph, list(backbone(graph).layers))
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +412,7 @@ def test_the_two_energies_have_the_same_derivative_against_positions():
     backbone, outputs = make_stack(observables=(ENERGY,))
     graph = make_graph(positions, numbers)
     graph["positions"] = graph["positions"].requires_grad_(True)
-    result = outputs(graph, backbone(graph))
+    result = outputs(graph, list(backbone(graph).layers))
 
     from_total = torch.autograd.grad(
         result.total_energy.sum(), graph["positions"], retain_graph=True

@@ -35,7 +35,7 @@ CONFIG = """
 runtime: {{work_dir: {work_dir}, name: tiny, seed: 1}}
 data:
   heads:
-    default: {{train_file: {train_file}, e0s: {{isolated_atoms: {{}}}}}}
+    default: {{train_file: {train_file}, e0s: {{kind: isolated_atoms}}}}
   valid_fraction: 0.2
   pin_memory: false
 model:
@@ -52,7 +52,7 @@ training:
   batch_size: 4
   valid_batch_size: 4
   lr: 0.02
-  scheduler: {{kind: {{constant: {{}}}}}}
+  scheduler: {{kind: {{kind: constant}}}}
 loss: {{weights: {{energy: 1.0, forces: 10.0}}}}
 """
 

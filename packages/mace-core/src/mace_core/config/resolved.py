@@ -30,7 +30,7 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
-from mace_core.config.base import ReforgeBaseConfig
+from mace_core.config.base import BaseConfig
 from mace_core.config.data import DataConfig
 from mace_core.config.e0s import FOUNDATION_E0_KINDS, E0sIsolatedAtoms
 from mace_core.config.electrostatics import ElectrostaticsConfig
@@ -142,7 +142,7 @@ def _write(data: dict[str, Any], path: str, value: Any) -> dict[str, Any]:
     return {**data, head: value}
 
 
-class ResolvedConfig(ReforgeBaseConfig):
+class ResolvedConfig(BaseConfig):
     """A validated run configuration, immutable once built.
 
     Args:
@@ -155,7 +155,7 @@ class ResolvedConfig(ReforgeBaseConfig):
         electrostatics: The long-range solver, for the models that carry one.
     """
 
-    model_config = ReforgeBaseConfig.model_config | {"frozen": True}
+    model_config = BaseConfig.model_config | {"frozen": True}
 
     runtime: RuntimeConfig = RuntimeConfig()
     data: DataConfig = DataConfig()

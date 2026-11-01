@@ -133,11 +133,11 @@ class MagneticModel(nn.Module):
             )
             site = self.repulsion(
                 vectors.norm(dim=-1, keepdim=True),
-                graph["atomic_numbers"],
+                graph["node_atomic_numbers"],
                 graph["edge_index"],
             )
         if self.one_body is not None:
-            element = self.backbone.element_index(graph["atomic_numbers"])
+            element = self.backbone.element_index(graph["node_atomic_numbers"])
             squashed = self.backbone.moments.squashed_length(
                 graph["magmom"].to(features[0].dtype), element
             )

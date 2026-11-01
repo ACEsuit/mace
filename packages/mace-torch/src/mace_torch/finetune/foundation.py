@@ -137,6 +137,7 @@ class Foundation:
         from mace_torch.data import GraphDataset, collate_training
         from mace_torch.finetune.subselect import ABSENT
         from mace_torch.nn import MACEBackbone
+        from mace_torch.nn.backbone import aggregate_descriptors
 
         backbone = self.model.get_submodule("backbone")
         assert isinstance(backbone, MACEBackbone)
@@ -151,13 +152,22 @@ class Foundation:
         with torch.no_grad():
             for index in range(len(dataset)):
                 batch = collate_training([dataset[index]], z_table=self.z_table)
-                block = backbone.descriptors(
-                    batch.graph, aggregation="per_element_mean"
-                ).clone()
-                present = {int(z) for z in configurations[index].atomic_numbers}
+                descriptors = backbone.descriptors(backbone(batch.graph))
+                means = aggregate_descriptors(
+                    descriptors,
+                    batch.graph["batch"],
+                    batch.graph["ptr"].shape[0] - 1,
+                    "per_element_mean",
+                    element=batch.graph["node_attrs"].argmax(-1),
+                    atomic_numbers=self.z_table.zs,
+                )
+                assert isinstance(means, list)
+                block = descriptors.new_full(
+                    (len(self.z_table.zs), descriptors.shape[1]), ABSENT
+                )
                 for position, number in enumerate(self.z_table.zs):
-                    if int(number) not in present:
-                        block[position] = ABSENT
+                    if int(number) in means[0]:
+                        block[position] = means[0][int(number)]
                 rows.append(block.reshape(-1).to(torch.float64).numpy())
         return np.stack(rows)
 

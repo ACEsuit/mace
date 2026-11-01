@@ -21,9 +21,11 @@ from dataclasses import dataclass
 import numpy as np
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
-from mace_core.graph import GRAPH_INPUT_DEFAULTS, NODE_INPUT_DEFAULTS
-from mace_core.neighbors import get_neighborhood
+from mace_core.graph import graph_sample
+from mace_core.neighbors import NeighborListBackend
 from mace_core.observables import RequestedOutputs
+
+from mace_torch.neighbors import resolve_neighbor_backend
 
 __all__ = [
     "MissingTargetError",
@@ -84,6 +86,7 @@ def graph_from_configuration(
     head: int = 0,
     weight: float = 1.0,
     graph_inputs: Sequence[str] = (),
+    neighbor_backend: NeighborListBackend | None = None,
 ) -> dict[str, np.ndarray]:
     """One structure's contribution to a batch, as the schema declares it.
 
@@ -104,92 +107,17 @@ def graph_from_configuration(
     Raises:
         ValueError: If the structure holds an element the table does not.
     """
-    numbers = np.asarray(configuration.atomic_numbers, dtype=np.int64)
-    unknown = sorted({int(z) for z in numbers} - set(z_table.zs))
-    if unknown:
-        raise ValueError(
-            f"the structure holds element(s) {unknown} and the element table "
-            f"is {list(z_table.zs)}. A model cannot embed an element it was "
-            f"not built for."
-        )
-    positions = np.asarray(configuration.positions, dtype=float)
-    pbc = (
-        (False, False, False) if configuration.pbc is None else tuple(configuration.pbc)
+    from dataclasses import replace
+
+    sample = graph_sample(
+        replace(configuration, weight=weight),
+        atomic_number_table=z_table,
+        cutoff=cutoff,
+        heads=(configuration.head,),
+        neighbor_backend=neighbor_backend or resolve_neighbor_backend(),
     )
-    neighborhood = get_neighborhood(positions, cutoff, pbc, configuration.cell)
-    # The cell the neighbour search returns, never the one the structure came
-    # with. It is the physical cell in every regime but two, and both are
-    # deliberate: a padding box for an aperiodic structure, whose stress the
-    # model masks, and an inflated row for a non-periodic axis whose physical
-    # row is all zeros, which would otherwise make the volume zero and the
-    # stress of a slab with no vacuum a division by zero.
-    cell = neighborhood.cell
-    # The per-graph fields carry no leading axis: the collation stacks them,
-    # and `batch` and `ptr` are built there rather than here. So this is a
-    # structure's contribution to a batch and not a batch of one, which is why
-    # it does not satisfy `validate_graph` on its own.
-    return {
-        "positions": positions,
-        "atomic_numbers": numbers,
-        "edge_index": np.asarray(neighborhood.edge_index, dtype=np.int64),
-        "shifts": np.asarray(neighborhood.shifts, dtype=float),
-        "unit_shifts": np.asarray(neighborhood.unit_shifts, dtype=float),
-        "cell": np.asarray(cell, dtype=float).reshape(3, 3),
-        "pbc": np.asarray(pbc, dtype=bool).reshape(3),
-        "weight": np.asarray(weight, dtype=float),
-        "head": np.asarray(head, dtype=np.int64),
-        **{
-            name: (
-                _node_input(configuration, name, len(numbers))
-                if name in NODE_INPUT_DEFAULTS
-                else _graph_input(configuration, name, GRAPH_INPUT_DEFAULTS[name])
-            )
-            for name in graph_inputs
-        },
-    }
-
-
-def _node_input(configuration: Configuration, name: str, num_atoms: int) -> np.ndarray:
-    """One per-atom input: ``[n_atoms]`` for a scalar, ``[n_atoms, k]`` otherwise.
-
-    Raises:
-        ValueError: If the structure gives a number of values other than one
-            per atom and component.
-    """
-    default = NODE_INPUT_DEFAULTS[name]
-    shape = (num_atoms,) if len(default) == 1 else (num_atoms, len(default))
-    value = configuration.properties.get(name)
-    if value is None:
-        return (
-            np.broadcast_to(np.asarray(default, dtype=float), shape)
-            .reshape(shape)
-            .copy()
-        )
-    array = np.asarray(value, dtype=float)
-    if array.size != int(np.prod(shape)):
-        raise ValueError(
-            f"{name!r} has {array.size} value(s) and is {len(default)} per atom "
-            f"of {num_atoms}: {array.tolist()}."
-        )
-    return array.reshape(shape)
-
-
-def _graph_input(
-    configuration: Configuration, name: str, default: tuple[float, ...]
-) -> np.ndarray:
-    """One per-structure input, shaped as the schema declares it.
-
-    A structure that gives one with the wrong number of components is refused
-    by name, rather than broadcast or truncated into another value.
-    """
-    value = configuration.properties.get(name)
-    array = np.asarray(default if value is None else value, dtype=float).reshape(-1)
-    if array.size != len(default):
-        raise ValueError(
-            f"{name!r} has {array.size} component(s) and is one per structure "
-            f"of {len(default)}: {array.tolist()}."
-        )
-    return array if len(default) > 1 else array.reshape(())
+    sample["head"] = np.int64(head)
+    return sample
 
 
 def targets_from_configuration(

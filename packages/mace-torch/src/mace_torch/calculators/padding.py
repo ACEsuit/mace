@@ -18,19 +18,11 @@ message is zero, and its atoms have no edge to a real atom. The real
 structure's energy, forces and stress are therefore the same with and without
 it.
 
-**Its edges are spread over its atoms.** Stacked on one fake atom, as the frozen
-tree places them, they hand the message scatter one segment thousands of times
-larger than any real atom's, and on an MI300A with a quarter of the edges
-padded that alone cost a factor of 2.7 to 3.2. One fake atom per
-:data:`EDGES_PER_PADDING_ATOM` padding edges removes the imbalance, and more
-atoms than that buy nothing.
-
-**How many fake atoms there are is fixed with the budget.** Counted from each
-call's shortfall, as the frozen tree counts it, the number of nodes moves
-whenever the edge count crosses a multiple of the spread, and under static
-shapes every new node count is a recompile. Here the budget fixes the shape of
-the whole batch, nodes included, so the shape changes only when the budget
-grows.
+**Budgets retain V1's fixed atom reserve.** The reserve grows with the edge
+budget and stays fixed between calls, so the node count changes only when the
+budget grows. The agreed graph padding contract places every padding edge on
+the final fake atom; additional reserved atoms remain isolated. The reserve
+therefore controls shapes, not the distribution of scatter work.
 """
 
 from __future__ import annotations
@@ -42,7 +34,15 @@ from dataclasses import dataclass, replace
 from typing import Literal, cast
 
 import numpy as np
-from mace_core.graph import GRAPH_INPUT_DEFAULTS, NODE_INPUT_DEFAULTS
+import torch
+from mace_core.elements import AtomicNumberTable
+from mace_core.graph import GRAPH_SCHEMA, FixedPadding, NoPadding
+from mace_core.graph.schema import (
+    EDGE_LEVEL,
+    GRAPH_LEVEL,
+    NODE_LEVEL,
+    level_of,
+)
 from mace_core.observables import RequestedOutputs
 from mace_core.outputs import (
     CORE_FIELD_NAMES,
@@ -52,6 +52,8 @@ from mace_core.outputs import (
 )
 from torch import Tensor
 
+from mace_torch.graph import collate
+from mace_torch.graph import pad_batch as pad_graph
 from mace_torch.physics.outputs import ENGINE_EXTRA_ROWS
 
 __all__ = [
@@ -66,8 +68,8 @@ __all__ = [
     "unpad_outputs",
 ]
 
-#: Padding edges per fake atom. Above roughly this the message scatter pays for
-#: the imbalance; below it the cost is flat, so a smaller value only adds nodes.
+#: Edge-budget units per reserved fake atom in V1's budget policy. Graph padding
+#: itself places the edges on the last fake atom, as its schema requires.
 EDGES_PER_PADDING_ATOM = 1024
 
 #: The two variables a fixed budget can come from, atoms then edges.
@@ -215,58 +217,51 @@ def resolve_budget(
 
 
 def pad_batch(
-    structure: Mapping[str, np.ndarray], policy: PaddingPolicy, r_max: float
+    structure: Mapping[str, np.ndarray],
+    policy: PaddingPolicy,
+    r_max: float,
+    *,
+    z_table: AtomicNumberTable,
 ) -> tuple[list[dict[str, np.ndarray]], PaddingInfo]:
-    """The structure, and the fake one that pads it to the budget.
-
-    Args:
-        structure: One structure's graph, as the graph builder returns it.
-        policy: A policy whose budgets were resolved for this structure.
-        r_max: The cutoff, in Angstrom.
-
-    Returns:
-        The structures to collate, real first, and where the real one ends.
-    """
-    real_nodes = int(np.asarray(structure["atomic_numbers"]).shape[0])
-    real_edges = int(np.asarray(structure["edge_index"]).shape[1])
-    info = PaddingInfo(nodes=real_nodes, edges=real_edges)
-    if policy.mode == "none":
-        return [dict(structure)], info
-    nodes = policy.nodes_budget + policy.padding_atoms - real_nodes
-    edges = max(policy.edges_budget - real_edges, 0)
-    length = max(2.0 * float(r_max), 1.0)
-    loops = np.arange(edges, dtype=np.int64) % nodes
-    unit = np.zeros((edges, 3))
-    unit[:, 0] = 1.0
-    number = int(np.asarray(structure["atomic_numbers"])[0])
-    fake = {
-        "positions": np.zeros((nodes, 3)),
-        "atomic_numbers": np.full(nodes, number, dtype=np.int64),
-        "edge_index": np.stack([loops, loops]),
-        "shifts": unit * length,
-        "unit_shifts": unit,
-        "cell": np.eye(3) * length,
-        "pbc": np.zeros(3, dtype=bool),
-        "weight": np.asarray(0.0),
-        "head": np.asarray(structure["head"]),
-        # Whatever inputs the real one carries, per structure and per atom, at
-        # their defaults, since a batch holds a field for every graph or for
-        # none.
-        **{
-            name: np.asarray(default if len(default) > 1 else default[0])
-            for name, default in GRAPH_INPUT_DEFAULTS.items()
-            if name in structure
-        },
-        **{
-            name: np.broadcast_to(
-                np.asarray(default if len(default) > 1 else default[0]),
-                (nodes, len(default)) if len(default) > 1 else (nodes,),
-            ).copy()
-            for name, default in NODE_INPUT_DEFAULTS.items()
-            if name in structure
-        },
-    }
-    return [dict(structure), fake], info
+    """Adapt the calculator's cached budget to the common graph padding API."""
+    graph = collate([structure], dtype=torch.float64)
+    chosen = (
+        NoPadding()
+        if policy.mode == "none"
+        else FixedPadding(
+            nodes_budget=policy.nodes_budget + policy.padding_atoms,
+            edges_budget=policy.edges_budget,
+            graphs_budget=2,
+            on_overflow=policy.on_overflow,
+        )
+    )
+    padded, real = pad_graph(graph, chosen, r_max, atomic_number_table=z_table)
+    samples = []
+    for index in range(padded["ptr"].numel() - 1):
+        start, stop = int(padded["ptr"][index]), int(padded["ptr"][index + 1])
+        edge_mask = (padded["edge_index"][0] >= start) & (
+            padded["edge_index"][0] < stop
+        )
+        sample = {}
+        for name in structure:
+            value = padded[name]
+            level = level_of(GRAPH_SCHEMA[name])
+            if name == "edge_index":
+                sample[name] = (value[:, edge_mask] - start).numpy()
+            elif level == NODE_LEVEL:
+                sample[name] = value[start:stop].numpy()
+            elif level == EDGE_LEVEL:
+                sample[name] = value[edge_mask].numpy()
+            elif level == GRAPH_LEVEL:
+                sample[name] = (
+                    value[index].numpy() if isinstance(value, Tensor) else value[index]
+                )
+            else:
+                sample[name] = value[index]
+        samples.append(sample)
+    return samples, PaddingInfo(
+        real.n_real_nodes, real.n_real_edges, real.n_real_graphs
+    )
 
 
 def output_rows(

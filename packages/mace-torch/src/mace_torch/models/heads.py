@@ -120,6 +120,19 @@ def copy_heads(irreps: str, num_heads: int) -> list[int]:
     return owners
 
 
+def _effective_weight_factors(op, like: Tensor) -> Tensor:
+    """The raw-to-effective factors of the complete readout, before slicing a head."""
+    from mace_core.kernels.canonical import linear_path_normalization
+
+    descriptor = op.descriptor
+    output = list(Irreps.parse(descriptor.irreps_out).slices())
+    factors = [
+        linear_path_normalization(descriptor.irreps_in, output[out][1])
+        for out, _ in linear_weight_table(descriptor.irreps_in, descriptor.irreps_out)
+    ]
+    return like.new_tensor(factors)
+
+
 def _ranked(owners: list[int], head: int) -> dict[int, int]:
     """Each of ``head``'s copies, by its position among that head's copies."""
     mine = [copy for copy, owner in enumerate(owners) if owner == head]
@@ -441,18 +454,23 @@ class ObservableHead(nn.Module):
 
         Returns:
             One entry per layer, keyed by op (``"linear"``, or ``"first"`` and
-            ``"second"`` for the gated readout), each ``{"weight", "bias"}``.
+            ``"second"`` for the gated readout), holding raw ``weight`` and
+            ``bias`` plus ``weight_normalization``. The latter preserves the
+            effective map when a destination has a different number of heads.
         """
         self._check_head(head)
         state = []
         for layer in range(len(self.readouts)):
             ops = {}
             for name, op, indices in self._layer_ops(layer, head):
-                canonical = op.to_canonical()
+                canonical = dict(op.to_canonical())
                 ops[name] = {
                     key: canonical[key][index].clone()
                     for key, index in _entries(canonical, indices).items()
                 }
+                ops[name]["weight_normalization"] = _effective_weight_factors(
+                    op, canonical["weight"]
+                )[indices[0]].clone()
             state.append(ops)
         return state
 
@@ -489,6 +507,13 @@ class ObservableHead(nn.Module):
                             f"{values.shape[0]} entries and one head here "
                             f"holds {len(index)}."
                         )
+                    if key == "weight":
+                        factors = _effective_weight_factors(op, canonical[key])[index]
+                        ratio = (
+                            layer_state[name]["weight_normalization"].to(factors)
+                            / factors
+                        )
+                        values = values.to(canonical[key]) * ratio
                     canonical[key][index] = values.to(canonical[key])
                 op.load_canonical(canonical)
 

@@ -76,7 +76,7 @@ def test_a_uniform_preset_casts_nothing(preset):
 def test_mixed_casts_exactly_the_ops_it_holds_wider():
     ops = cast_ops(engine(PrecisionConfig.mixed()))
     assert ops == {
-        "backbone.backbone.radial": ("float64", "float32"),
+        "backbone.backbone.radial_embedding": ("float64", "float32"),
         "backbone.backbone.products.0.contraction": ("float64", "float32"),
         "backbone.backbone.products.1.contraction": ("float64", "float32"),
     }

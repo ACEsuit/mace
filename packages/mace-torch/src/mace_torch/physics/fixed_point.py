@@ -44,7 +44,6 @@ from typing import Any, Protocol, runtime_checkable
 
 import torch
 from mace_core.config import FixedPointSpec
-from mace_core.observables.derivatives import derivative_name
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
@@ -90,7 +89,9 @@ class FixedPointDriver(nn.Module):
                 f"does not carry as a differentiable input. The ones it does "
                 f"are {sorted(declared)}. Declare it, or relax one of those."
             )
-        self.derivative = derivative_name("energy", spec.variable)
+        # The engine holds the energy's declaration, which is where the name
+        # of a derivative with one of its own lives.
+        self.derivative = engine.derivative_names()[spec.variable]
         self._cache: Tensor | None = None
 
     @staticmethod

@@ -21,8 +21,8 @@ import copy
 import ase.io
 import pytest
 import torch
-from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.config.precision import PrecisionConfig
+from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine

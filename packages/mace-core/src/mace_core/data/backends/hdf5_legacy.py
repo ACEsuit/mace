@@ -211,11 +211,14 @@ class LegacyHDF5Backend:
             atomic_numbers=group["atomic_numbers"][()],
             positions=group["positions"][()],
             properties={
-                name: _unpack(value[()]) for name, value in group["properties"].items()
+                name: _unpack(value[()])
+                for name, value in group["properties"].items()
+                if name != "head"
             },
             property_weights={
                 name: float(_unpack(value[()]))
                 for name, value in group["property_weights"].items()
+                if name != "head"
             },
             cell=_unpack(group["cell"][()]),
             pbc=None if pbc is None else _flags(pbc),

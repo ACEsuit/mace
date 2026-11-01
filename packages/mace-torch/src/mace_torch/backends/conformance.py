@@ -39,7 +39,7 @@ them. A change to them is its own reviewed change.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -128,7 +128,6 @@ def conformance_cases(precision: Precision = "float64") -> list[Any]:
             irreps_node=node,
             irreps_edge=edge,
             irreps_out=target,
-            num_radial=8,
             num_features=features,
             precision=precision,
         ),
@@ -400,9 +399,11 @@ def run_backend_conformance(
     reference = ReferenceBackend()
     capabilities = backend.capabilities()
     _check_chain_layout(backend, capabilities)
+    if layout != "mul_ir":
+        raise ValueError("the backend contract uses canonical mul_ir features")
     results = []
     given = cases or conformance_cases(precision)
-    for number, descriptor in enumerate(replace(case, layout=layout) for case in given):
+    for number, descriptor in enumerate(given):
         op = _OPS[type(descriptor)]
         make = getattr(backend, f"make_{op}", None)
         if op not in capabilities.ops or not capabilities.supports(descriptor):
@@ -425,7 +426,7 @@ def run_backend_conformance(
         result = ConformanceResult(op, descriptor, True, ["layout"])
         where = f"{backend.name} {op} {descriptor}"
         candidate = make(descriptor).to(device)
-        canonical = replace(descriptor, layout="mul_ir")
+        canonical = descriptor
         expected_op = getattr(reference, f"make_{op}")(canonical).to(device)
         # What every forward check calls: the op itself, or the op seen
         # through the canonical layout when it was built in another.
@@ -533,8 +534,10 @@ def run_backend_conformance(
                     arguments[index] = leaf
                 return op(*arguments)
 
+            # Projected finite differences keep CPU backend conformance tractable.
+            # The kernel suite also checks the complete second-order Jacobians.
             if not torch.autograd.gradgradcheck(
-                function, tuple(differentiable), atol=1e-6
+                function, tuple(differentiable), atol=1e-6, fast_mode=True
             ):
                 raise AssertionError(f"{where}: gradgradcheck failed")
             result.checks.append("double backward")
@@ -725,29 +728,12 @@ def _check_weight_gradients(
 
 
 def _check_chain_layout(backend: Any, capabilities: Any) -> None:
-    """The chain of ops runs in one layout, and it is one the backend declares.
-
-    What a model is built in is decided once, when the backend is resolved
-    next to the reference: the backend's native layout if the reference can
-    follow it, the canonical one if not. Either way every op of the chain
-    reads and writes that one layout, so no op transposes its features at its
-    boundary, and that only holds if the backend really builds its ops in the
-    layout it calls native.
-    """
-    native = capabilities.native_layout
-    if native not in capabilities.activation_layouts:
+    """Every backend in a composite chain accepts the agreed grouped layout."""
+    if "mul_ir" not in capabilities.layouts:
         raise AssertionError(
-            f"{backend.name} calls {native!r} its native layout and declares "
-            f"only {sorted(capabilities.activation_layouts)}: the chain would "
-            f"be built in a layout its own ops decline."
+            f"{backend.name} does not accept the canonical mul_ir layout"
         )
-    chain = CompositeBackend(backend, ReferenceBackend()).layout.name
-    if chain not in capabilities.activation_layouts:
-        raise AssertionError(
-            f"{backend.name} next to the reference resolves the chain to "
-            f"{chain!r}, a layout its ops decline, so every op would transpose "
-            f"at its boundary."
-        )
+    assert CompositeBackend(backend, ReferenceBackend()).layout.name == "mul_ir"
 
 
 def _tiled(descriptor: Any, arguments: list[Any], copies: int) -> list[Any]:

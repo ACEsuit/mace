@@ -17,7 +17,7 @@ from typing import ClassVar, Literal, get_args
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import CANONICAL_LAYOUT
 from mace_core.kernels.paths import ConvolutionPath, channelwise_paths, path_irreps
-from mace_core.kernels.precision import PRECISIONS, Precision
+from mace_core.kernels.precision import PRECISIONS, WIDTH, Precision
 
 __all__ = [
     "CLEBSCH_GORDAN_BASES",
@@ -82,9 +82,18 @@ class Descriptor:
     layout: ClassVar[str | None] = None
 
     precision: Precision = "float64"
+    accumulate: Precision | None = None
 
     def __post_init__(self) -> None:
         _require_member("precision", self.precision, PRECISIONS)
+        if self.accumulate is not None:
+            _require_member("accumulate", self.accumulate, PRECISIONS)
+            if WIDTH[self.accumulate] < WIDTH[self.precision]:
+                raise ValueError("accumulate cannot be narrower than precision")
+
+    @property
+    def accumulate_floor(self) -> Precision:
+        return self.accumulate or self.precision
 
     @property
     def highest_degree(self) -> int:
@@ -427,12 +436,6 @@ class RadialBasisDescriptor(Descriptor):
 
     kind: RadialBasisKind = "bessel"
     num_basis: int = 8
-    #: The order of the polynomial envelope that takes the basis to zero at the
-    #: cutoff. It belongs to the model's cutoff setting rather than to the
-    #: basis, and defaulting it where a trained model set something else is a
-    #: silent change: measured on the tiny anchor, six where it wanted five
-    #: moves the energy by 6.3e-3 eV.
-    cutoff_order: int = 6
     cutoff: float = 5.0
     cutoff_order: int = 6
 

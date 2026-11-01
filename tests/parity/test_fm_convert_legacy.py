@@ -21,7 +21,7 @@ from mace_core.clebsch_gordan.conversion import full_to_reduced
 from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
-from mace_core.observables import load_default_catalogue
+from mace_core.observables import DEFAULT_CATALOGUE
 from mace_core.weights.neutral_format import read_neutral, write_neutral
 from mace_torch.deploy.legacy import (
     ExtractionFailed,
@@ -44,7 +44,7 @@ from tests.parity.test_fm00_training_step import load_anchor
 
 GOLDEN = Path(__file__).resolve().parents[1] / "golden"
 FIXTURES = GOLDEN / "fixtures"
-CATALOGUE = load_default_catalogue()
+CATALOGUE = DEFAULT_CATALOGUE
 ANCHORS = ("tiny_scaleshift", "tiny_mace")
 REFERENCE = tolerance("fp64_cpu_reference")
 
@@ -232,16 +232,18 @@ def energies_for_head(engine, legacy, structures, head):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     graph = {
         "positions": batch.positions,
-        "atomic_numbers": torch.tensor(
+        "node_atomic_numbers": torch.tensor(
             [numbers[index] for index in batch.node_attrs.argmax(1).tolist()]
         ),
-        "element_index": batch.node_attrs.argmax(1),
+        "node_attrs": batch.node_attrs,
         "edge_index": batch.edge_index,
         "shifts": batch.shifts,
         "unit_shifts": batch.unit_shifts,
         "cell": batch.cell.reshape(-1, 3, 3),
         "batch": batch.batch,
-        "num_graphs": int(batch.num_graphs),
+        "ptr": torch.cat(
+            (torch.zeros(1, dtype=torch.long), torch.bincount(batch.batch).cumsum(0))
+        ),
         "head": torch.full((int(batch.num_graphs),), head, dtype=torch.long),
     }
     return engine(graph, compute=()).total_energy.detach()
@@ -446,7 +448,7 @@ def test_the_radial_frequencies_are_carried(converted, tmp_path):
     )
     written = read_neutral(changed).tensor("radial_basis", "weights")
     radial = import_neutral(changed, CATALOGUE).engine.get_submodule(
-        "backbone.backbone.radial"
+        "backbone.backbone.radial_embedding"
     )
     assert np.array_equal(radial.basis.frequencies.detach().numpy(), written)
 
@@ -460,9 +462,7 @@ def test_the_repulsion_constants_are_carried(converted, tmp_path):
     repulsion = import_neutral(changed, CATALOGUE).engine.get_submodule(
         "backbone.repulsion"
     )
-    assert np.array_equal(
-        repulsion.screening_coefficients.detach().numpy(), written
-    )
+    assert np.array_equal(repulsion.screening_coefficients.detach().numpy(), written)
 
 
 # ---------------------------------------------------------------------------
@@ -597,9 +597,9 @@ def test_a_dielectric_model_converts_and_reads_back_from_disk(fp64, isolated, tm
     """Its one readout of all three quantities becomes three heads, and the
     checkpoint of a model with no energy rebuilds with its element table."""
     from ase.io import read
+    from mace_torch.calculators.ase_calculator import MACECalculator
 
     from mace.calculators import MACECalculator as LegacyCalculator
-    from mace_torch.calculators.ase_calculator import MACECalculator
 
     source = dielectric(tmp_path / "d.model", hidden_irreps="8x0e+8x1o+8x2e")
     imported = import_neutral(extract_here(source, tmp_path / "d"), CATALOGUE)
