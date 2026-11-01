@@ -59,12 +59,11 @@ from mace_core.kernels.precision import Precision
 from mace_core.kernels.protocol import InternalWeights
 from mace_core.kernels.registry import get_backend
 from mace_core.kernels.reorder import decompose
-from torch import Tensor, nn
+from torch import Tensor
 
 from mace_torch.backends.composite import CompositeBackend
-from mace_torch.backends.layout import Layout, Terms
+from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.nn.layout import expanded_irreps
 
 __all__ = [
     "TOLERANCES",
@@ -276,60 +275,6 @@ def _inputs(descriptor: Any, dtype: torch.dtype, device: str, seed: int) -> _Inp
     raise TypeError(f"no conformance inputs for {type(descriptor).__name__}")
 
 
-def _layout_terms(descriptor: Any) -> tuple[dict[int, Terms], Terms]:
-    """Which arguments of an op carry features, and the terms of each and of
-    the output, so that a value can be moved between layouts."""
-    terms = Layout.terms
-    if isinstance(descriptor, LinearDescriptor):
-        return {0: terms(descriptor.irreps_in)}, terms(descriptor.irreps_out)
-    if isinstance(descriptor, ChannelwiseTPConvDescriptor):
-        features = descriptor.num_features
-        paths = channelwise_paths(
-            descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
-        )
-        node = terms(expanded_irreps(descriptor.irreps_node, features))
-        edge = terms(descriptor.irreps_edge)
-        return {0: node, 1: edge}, tuple(
-            (features, path.irrep.dimension) for path in paths
-        )
-    if isinstance(descriptor, SymmetricContractionDescriptor):
-        features = descriptor.num_features
-        return (
-            {0: terms(expanded_irreps(descriptor.irreps_in, features))},
-            terms(expanded_irreps(descriptor.irreps_out, features)),
-        )
-    if isinstance(descriptor, FullyConnectedTPDescriptor):
-        return (
-            {0: terms(descriptor.irreps_in1), 1: terms(descriptor.irreps_in2)},
-            terms(descriptor.irreps_out),
-        )
-    return {}, ()
-
-
-class _InLayout(nn.Module):
-    """An op built in another layout, fed and read in the canonical one.
-
-    What lets every check compare it with the reference in ``mul_ir``: the
-    inputs are moved into the op's layout and its output back, so a value, a
-    gradient or a rotation that disagrees is the op's and not the layout's.
-    """
-
-    def __init__(self, op: Any, descriptor: Any) -> None:
-        super().__init__()
-        self.op = op
-        self.layout = Layout(descriptor.layout)
-        self.inputs, self.output = _layout_terms(descriptor)
-
-    def forward(self, *arguments: Any) -> Tensor:
-        moved = [
-            self.layout.from_canonical(value, self.inputs[index])
-            if index in self.inputs
-            else value
-            for index, value in enumerate(arguments)
-        ]
-        return self.layout.to_canonical(self.op(*moved), self.output)
-
-
 def _canonical_to(state: Any, like: Tensor) -> Any:
     if isinstance(state, Tensor):
         return (
@@ -381,9 +326,7 @@ def run_backend_conformance(
         compile_ops: Also compile each op with ``fullgraph=True``, and check
             that one compilation serves inputs of three sizes.
         cuda_graphs: Also capture each op in a CUDA graph and replay it.
-        layout: The feature layout every case is built in. The op is fed and
-            read through the canonical layout, so it is held to the same
-            reference whatever its own.
+        layout: Must be ``mul_ir``, the agreed activation contract.
         max_block: The largest block an op's canonical to internal weight map
             may have. Three is the largest measured on the production grid.
 
@@ -428,9 +371,8 @@ def run_backend_conformance(
         candidate = make(descriptor).to(device)
         canonical = descriptor
         expected_op = getattr(reference, f"make_{op}")(canonical).to(device)
-        # What every forward check calls: the op itself, or the op seen
-        # through the canonical layout when it was built in another.
-        runner = candidate if layout == "mul_ir" else _InLayout(candidate, descriptor)
+        # Every operator reads and writes the canonical activation layout.
+        runner = candidate
 
         if isinstance(expected_op, InternalWeights):
             if not isinstance(candidate, InternalWeights):
@@ -733,7 +675,9 @@ def _check_chain_layout(backend: Any, capabilities: Any) -> None:
         raise AssertionError(
             f"{backend.name} does not accept the canonical mul_ir layout"
         )
-    assert CompositeBackend(backend, ReferenceBackend()).layout.name == "mul_ir"
+    assert (
+        "mul_ir" in CompositeBackend(backend, ReferenceBackend()).capabilities().layouts
+    )
 
 
 def _tiled(descriptor: Any, arguments: list[Any], copies: int) -> list[Any]:

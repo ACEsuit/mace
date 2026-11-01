@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -56,7 +56,9 @@ from mace_core.weights.neutral_format import NeutralArtifact, read_neutral
 from torch import Tensor
 
 from mace_torch import __version__
+from mace_torch.canonical import canonical_modules
 from mace_torch.electrostatics.reference.gto_utils import gto_basis_kspace_cutoff
+from mace_torch.models.heads import ObservableHead
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import canonical_state, load_canonical_state
 
@@ -529,6 +531,7 @@ def _state(
 ) -> dict[str, dict[str, Tensor]]:
     """Every canonical tensor the model holds, filled from the artifact."""
     expected = canonical_state(engine)
+    operators = canonical_modules(engine)
     backbone = "backbone.backbone."
     outputs = "backbone.outputs."
     ops = artifact.sidecar.ops
@@ -641,7 +644,7 @@ def _state(
         elif path == f"{outputs}embedding_readout":
             state[path] = _linear(artifact, "embedding_readout", tensors)
         elif path.removeprefix("backbone.") in ops and path.startswith("backbone."):
-            state[path] = _polar_op(artifact, engine, path, tensors)
+            state[path] = _polar_op(artifact, operators[path], path, tensors)
         elif path.startswith(f"{outputs}heads.") and artifact.sidecar.family == (
             "dielectric"
         ):
@@ -665,7 +668,7 @@ def _state(
     )
 
     for path, tensors in state.items():
-        descriptor = getattr(engine.get_submodule(path), "descriptor", None)
+        descriptor = getattr(operators[path], "descriptor", None)
         if isinstance(descriptor, LinearDescriptor):
             source = descriptor.irreps_in
             target = descriptor.irreps_out
@@ -690,7 +693,7 @@ def _state(
 
 
 def _polar_op(
-    artifact: NeutralArtifact, engine, path: str, expected: dict[str, Tensor]
+    artifact: NeutralArtifact, module, path: str, expected: dict[str, Tensor]
 ) -> dict[str, Tensor]:
     """One op of the charge-aware half, by the kind the artifact records."""
     op = path.removeprefix("backbone.")
@@ -703,7 +706,7 @@ def _polar_op(
             for name, value in expected.items()
         }
     if kind == "sparse_product":
-        return {"weight": _sparse(artifact, op, engine.get_submodule(path), expected)}
+        return {"weight": _sparse(artifact, op, module, expected)}
     raise NeutralImportError(f"the model holds {path}, which a {kind} op cannot fill.")
 
 
@@ -842,9 +845,10 @@ def _dielectric_readouts(
     copies independently, so each head takes the rows of the copies it reads.
     """
     state: dict[str, dict[str, Tensor]] = {}
+    operators = canonical_modules(engine)
     for name, sources in _DIELECTRIC_COPIES.items():
         path = f"backbone.outputs.heads.{name}"
-        head = engine.get_submodule(path)
+        head = cast(ObservableHead, operators[path])
         for position, layer in enumerate(head.reachable):
             grouped = head._grouped[position]
             identity: list[int | None] = list(range(len(_copies(grouped))))
@@ -859,7 +863,7 @@ def _dielectric_readouts(
                     expected[key],
                 )
                 continue
-            readout = head.readouts[position]
+            readout = cast(Any, head.readouts[position])
             first_in, second_in = _gate_roles(artifact, layer, readout.gate)
             key = f"{path}.readouts.{position}"
             state[f"{key}.first"] = _copied(

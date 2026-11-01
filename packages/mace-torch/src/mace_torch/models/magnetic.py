@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from mace_core.config.model import ModelConfig
 from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import MACEOutput
@@ -56,56 +57,51 @@ class MagneticModel(nn.Module):
     def __init__(
         self,
         backend,
+        config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
         energy_head: EnergyOutputHead,
         saturation: Sequence[float],
-        num_layers: int = 2,
-        num_features: int = 16,
-        lmax: int = 2,
-        moment_lmax: int = 2,
-        hidden_irreps: str = "0e+1o",
-        num_radial: int = 8,
-        num_moment_basis: int = 6,
-        one_body_basis: int = 0,
-        cutoff: float = 5.0,
-        cutoff_order: int = 6,
-        correlation: int = 3,
-        pair_repulsion: bool = False,
-        readout_hidden: int | str = 16,
+        *,
         num_heads: int = 1,
         precision: Precision = "float64",
     ) -> None:
         super().__init__()
+        self.config = config
+        one_body_basis = (
+            config.magnetic.one_body_basis if config.magnetic.one_body else 0
+        )
         with _constructed_in(precision):
             self.backbone = MagneticBackbone(
                 backend,
                 atomic_numbers=atomic_numbers,
                 saturation=saturation,
-                num_layers=num_layers,
-                num_features=num_features,
-                lmax=lmax,
-                moment_lmax=moment_lmax,
-                hidden_irreps=hidden_irreps,
-                num_radial=num_radial,
-                num_moment_basis=num_moment_basis,
-                cutoff=cutoff,
-                cutoff_order=cutoff_order,
-                correlation=correlation,
+                num_layers=config.num_interactions,
+                num_features=config.num_channels,
+                lmax=config.max_ell,
+                moment_lmax=config.magnetic.lmax,
+                hidden_irreps=config.node_irreps,
+                num_radial=config.radial_basis.num_basis,
+                num_moment_basis=config.magnetic.num_basis,
+                cutoff=config.r_max,
+                cutoff_order=config.cutoff.polynomial_order,
+                correlation=config.correlation,
                 precision=precision,
             )
             self.outputs = MACEOutputs(
                 backend,
                 list(observables),
                 layer_irreps=self.backbone.layer_irreps,
-                num_features=num_features,
+                num_features=config.num_channels,
                 energy_head=energy_head,
                 precision=precision,
-                readout_irreps=readout_hidden,
+                readout_irreps=config.readout.mlp_irreps,
                 num_heads=num_heads,
             )
             self.repulsion = (
-                ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None
+                ZBLBasis(polynomial_order=config.cutoff.polynomial_order)
+                if config.pair_repulsion
+                else None
             )
             self.one_body = (
                 OneBodyMomentEnergy(
@@ -147,3 +143,12 @@ class MagneticModel(nn.Module):
         # The energy head adds a per-atom energy inside the scaled sum, which is
         # where both of these go.
         return self.outputs(graph, features, site)
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "backbone": self.backbone,
+            "outputs": self.outputs,
+            "repulsion": self.repulsion,
+            "one_body": self.one_body,
+        }

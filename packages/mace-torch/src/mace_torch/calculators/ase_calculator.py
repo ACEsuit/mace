@@ -80,13 +80,12 @@ from mace_torch.calculators.padding import (
     PaddingInfo,
     PaddingPolicy,
     output_rows,
-    pad_batch,
     resolve_budget,
     unpad_outputs,
 )
-from mace_torch.data import collate_training
 from mace_torch.data.graphs import graph_from_configuration
 from mace_torch.deploy.loader import DeployedModel, load_deployed
+from mace_torch.graph import collate, pad_batch
 from mace_torch.models.outputs import ENERGY_OBSERVABLE
 from mace_torch.nn import MACEBackbone
 from mace_torch.physics import DerivativeEngine
@@ -626,23 +625,24 @@ class MACECalculator(Calculator):
                     policy.edges_budget,
                 )
             self.padding = policy
-            structures, info = pad_batch(
-                structure, policy, self.r_max, z_table=self.z_table
+        dtype = interface_dtype(self.models[0].engine)
+        graph = collate([structure], dtype=dtype)
+        if padded:
+            graph, info = pad_batch(
+                graph,
+                self.padding.graph_policy(),
+                self.r_max,
+                atomic_number_table=self.z_table,
             )
         else:
-            structures = [structure]
             info = PaddingInfo(
-                nodes=len(atoms), edges=int(structure["edge_index"].shape[1])
+                n_real_nodes=len(atoms),
+                n_real_edges=int(structure["edge_index"].shape[1]),
+                n_real_graphs=1,
             )
-        dtype = interface_dtype(self.models[0].engine)
-        batch = collate_training(
-            [(item, {}, {}) for item in structures],
-            z_table=self.z_table,
-            float_dtype="float64" if dtype == torch.float64 else "float32",
-        )
-        graph: dict[str, Any] = {
+        graph = {
             name: value.to(self.device) if isinstance(value, Tensor) else value
-            for name, value in batch.graph.items()
+            for name, value in graph.items()
         }
         graph.update(self._passed_through(atoms, graph, info, dtype))
         return graph, info
@@ -673,7 +673,7 @@ class MACECalculator(Calculator):
             if key in atoms.arrays:
                 rows = torch.as_tensor(np.asarray(atoms.arrays[key]), dtype=dtype)
                 padded = torch.zeros((nodes, *rows.shape[1:]), dtype=dtype)
-                padded[: info.nodes] = rows
+                padded[: info.n_real_nodes] = rows
                 values[field] = padded.to(self.device)
         return values
 

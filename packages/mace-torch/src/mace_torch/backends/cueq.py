@@ -74,8 +74,8 @@ from mace_core.kernels.paths import channelwise_paths
 from mace_core.kernels.reorder import ReorderError, WeightReorder, derive_reorder
 from torch import Tensor, nn
 
+from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.nn.layout import expanded_irreps
 
 __all__ = ["CuEqBackend", "compiled_operations_available"]
 

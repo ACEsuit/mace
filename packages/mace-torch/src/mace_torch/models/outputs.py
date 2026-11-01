@@ -24,10 +24,10 @@ from mace_core.observables import ObservableSpec
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
 
+from mace_torch.backends.layout import expanded_irreps
 from mace_torch.kernels import segment_sum
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.heads import ObservableHead, per_head_irreps
-from mace_torch.nn.layout import expanded_irreps
 
 __all__ = ["ENERGY_EXTRA_ROWS", "ENERGY_OBSERVABLE", "MACEOutputs"]
 
@@ -203,7 +203,7 @@ class MACEOutputs(nn.Module):
         Args:
             graph: The flat dict. Read and never written to.
             features: One ``[n_atoms, channels * width]`` tensor per layer,
-                grouped by irrep in the backend's layout.
+                grouped by irrep in canonical mul_ir layout.
             zbl_node_energy: The short-range pair repulsion per atom, if the
                 model has one.
             embedding: The node features before the first interaction, when
@@ -248,3 +248,11 @@ class MACEOutputs(nn.Module):
                 extras[spec.name] = value
 
         return MACEOutput(**fields, extras=extras)
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "energy_head": self.energy_head,
+            "heads": self.heads,
+            "embedding_readout": self.embedding_readout,
+        }

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
+from mace_core.elements.default_keys import DefaultKeys
 from mace_core.graph import graph_sample
 from mace_core.neighbors import NeighborListBackend
 from mace_core.observables import RequestedOutputs
@@ -50,10 +51,14 @@ class TargetSpec:
             value is joined into a batch, and getting it wrong is silent: a
             per-graph quantity concatenated per node gives an array of the
             right dtype and the wrong length.
+        value_shape: Shape of one atom's or structure's value. Missing labels
+            use the same shape with zero weight. ``None`` retains the legacy
+            scalar-per-graph or vector-per-atom fallback for derivative labels.
     """
 
     name: str
     per_atom: bool
+    value_shape: tuple[int, ...] | None = None
 
 
 def target_specs(requested: RequestedOutputs) -> tuple[TargetSpec, ...]:
@@ -64,8 +69,16 @@ def target_specs(requested: RequestedOutputs) -> tuple[TargetSpec, ...]:
     asked for one, and reading the declaration instead would demand a stress
     from every dataset.
     """
+    conventions = {key.convention_name: key.value_shape for key in DefaultKeys}
     specs = [
-        TargetSpec(observable.name, observable.per_atom)
+        TargetSpec(
+            observable.name,
+            observable.per_atom,
+            conventions.get(
+                observable.name,
+                () if observable.is_scalar else (observable.dimension,),
+            ),
+        )
         for observable in requested.observables
     ]
     for observable in requested.observables:
@@ -73,7 +86,11 @@ def target_specs(requested: RequestedOutputs) -> tuple[TargetSpec, ...]:
             name = observable.derivative_name(request.wrt)
             if name in requested.derivatives:
                 specs.append(
-                    TargetSpec(name, requested.per_atom_derivative(request.wrt))
+                    TargetSpec(
+                        name,
+                        requested.per_atom_derivative(request.wrt),
+                        conventions.get(name),
+                    )
                 )
     return tuple(specs)
 
@@ -149,8 +166,11 @@ def targets_from_configuration(
     for spec in specs:
         value = properties.get(spec.name)
         if value is None:
+            shape = spec.value_shape
+            if shape is None:
+                shape = (3,) if spec.per_atom else ()
             values[spec.name] = np.zeros(
-                (num_atoms, 3) if spec.per_atom else (1,), dtype=float
+                (num_atoms if spec.per_atom else 1, *shape), dtype=float
             )
             weights[spec.name] = 0.0
             continue

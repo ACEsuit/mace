@@ -133,9 +133,21 @@ class KeySpecification:
 
     graph_keys: dict[str, str] = field(default_factory=dict)
     atom_keys: dict[str, str] = field(default_factory=dict)
+    #: Explicit label names for a declarative training task. None retains the
+    #: energy/forces/dipole presence gate of the default data contract.
+    label_names: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         _check_halves(self.graph_keys, self.atom_keys)
+        if self.label_names is not None:
+            missing = set(self.label_names) - (
+                set(self.graph_keys) | set(self.atom_keys)
+            )
+            if missing or not self.label_names:
+                raise ValueError(
+                    "label_names must name declared property keys; "
+                    f"missing: {sorted(missing)}"
+                )
 
     @classmethod
     def from_defaults(cls) -> KeySpecification:

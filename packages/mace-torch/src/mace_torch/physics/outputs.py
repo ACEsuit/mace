@@ -622,6 +622,8 @@ class DerivativeEngine(nn.Module):
     ) -> Tensor:
         """One response derivative, ``[components, n_atoms, 3]``.
 
+        A scalar observable omits the leading component axis, as forces do.
+
         Each component of the per-structure value is differentiated in turn,
         summed over the structures: an atom belongs to one structure, so the
         sum takes each atom's derivative of its own structure's value. A matrix
@@ -646,4 +648,12 @@ class DerivativeEngine(nn.Module):
                 allow_unused=True,
             )
             rows.append(torch.zeros_like(positions) if gradient is None else gradient)
-        return spec.derivative_sign("pos") * torch.stack(rows)
+        derivative = rows[0] if spec.is_scalar else torch.stack(rows)
+        return spec.derivative_sign("pos") * derivative
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "backbone": self.backbone,
+            "output_layer": self.output_layer,
+        }

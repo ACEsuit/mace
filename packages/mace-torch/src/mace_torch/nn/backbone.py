@@ -327,7 +327,7 @@ class MACEBackbone(nn.Module):
             if graph_features
             else None
         )
-        hidden = config.hidden_irreps or _natural_irreps(config.max_L)
+        hidden = config.node_irreps
         target = _natural_irreps(config.max_ell)
         product_elements = 1 if config.use_agnostic_product else num_elements
         self.use_agnostic_product = config.use_agnostic_product
@@ -562,6 +562,17 @@ class MACEBackbone(nn.Module):
             assert irrep.degree == 0 and irrep.parity == 1, irreps
             pieces.append(layer[:, :multiplicity])
         return torch.cat(pieces, dim=-1)
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "node_embedding": self.node_embedding,
+            "node_input_maps": self.node_input_maps,
+            "graph_embedding": self.graph_embedding,
+            "radial_embedding": self.radial_embedding,
+            "interactions": self.interactions,
+            "products": self.products,
+        }
 
 
 def aggregate_descriptors(

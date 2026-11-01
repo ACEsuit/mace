@@ -61,7 +61,7 @@ OUTPUT_TYPES = ("MACEOutput", "MACEOutputs")
 #: composed model is the one class these detectors most need to see. A bare
 #: `Model` suffix would be wrong in the other direction: base names count too,
 #: so it would catch every pydantic `BaseModel` in the stack.
-MODEL_NAME_SUFFIXES = ("MACE", "MACEModel")
+MODEL_NAME_SUFFIXES = ("MACE", "MACEModel", "MagneticModel")
 
 
 def python_files(roots: Sequence[Path]) -> Iterator[Path]:
@@ -173,20 +173,27 @@ def config_construction_violations(source: str, path: str) -> list[str]:
         ]
         keyword_only = list(arguments.kwonlyargs)
         parameters = positional + keyword_only
-        if len(parameters) != 1:
+        configs = [
+            argument for argument in parameters
+            if any(name.endswith("Config") for name in _annotation_names(argument.annotation))
+        ]
+        runtime = {
+            "backend", "atomic_numbers", "observables", "energy_head",
+            "avg_num_neighbors", "precision", "radial_precision", "node_inputs",
+            "num_heads", "last_layer_irreps", "edge_axes", "settings", "solver",
+            "trains_derivatives", "saturation",
+        }
+        extra = [
+            argument.arg for argument in parameters
+            if argument not in configs and argument.arg not in runtime
+        ]
+        if (
+            len(configs) != 1 or extra
+            or arguments.kwarg is not None or arguments.vararg is not None
+        ):
             problems.append(
-                f"{path}:{init.lineno}: {node.name}.__init__ takes "
-                f"{len(parameters)} parameters "
-                f"({', '.join(argument.arg for argument in parameters) or 'none'}); "
-                f"a model is constructed from one config object"
-            )
-            continue
-        names = _annotation_names(parameters[0].annotation)
-        if not any(name.endswith("Config") for name in names):
-            problems.append(
-                f"{path}:{init.lineno}: {node.name}.__init__ takes "
-                f"{parameters[0].arg!r} annotated {'/'.join(names) or 'nothing'}; "
-                f"the one parameter has to be a *Config"
+                f"{path}:{init.lineno}: {node.name}.__init__ needs one *Config "
+                f"and explicit runtime dependencies; architecture kwargs: {extra}"
             )
     return problems
 

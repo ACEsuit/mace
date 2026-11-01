@@ -116,10 +116,10 @@ def load_deployed(
     from mace_torch.serialization import load_checkpoint, read_sidecar
     from mace_torch.train.model_stage import DEFAULT_PRECISION, build_model
 
-    catalogue = catalogue or DEFAULT_CATALOGUE
     document = read_sidecar(path)
     metadata = ModelMetadata.model_validate(document["config"])
     config = ResolvedConfig.model_validate(metadata.config.resolved)
+    catalogue = catalogue or config.catalogue or DEFAULT_CATALOGUE
     config = _with_solver(config, metadata, solver, path)
     heads = tuple(config.data.heads)
     missing = [head for head in heads if head not in metadata.heads]

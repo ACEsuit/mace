@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Literal, NamedTuple
+from typing import Any
 
 from ase.data import chemical_symbols
 from mace_core.config.model import ModelConfig
@@ -36,6 +36,7 @@ from mace_core.metadata import (
     Provenance,
 )
 from mace_core.observables import (
+    DEFAULT_CATALOGUE,
     ObservableCatalogue,
     RequestedOutputs,
     resolve_requested,
@@ -56,7 +57,6 @@ from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.models.dipoles import DipoleModel, DipoleSettings
 from mace_torch.models.electrostatics import PolarModel, PolarSettings
 from mace_torch.models.magnetic import MagneticModel
-from mace_torch.nn.graph_features import FeatureSpec
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
@@ -117,47 +117,16 @@ _MAGNETIC_INTERACTIONS = {
     "interaction_first": "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
 }
 
-#: The model settings this stage builds one way only, and what that way is.
-#: The configuration can name others, since the schema covers every setting a
-#: legacy model has, and a value the model cannot build is refused rather than
-#: replaced: building the default instead trains another architecture under
-#: the name of the one asked for.
-#:
-#: What each spelling of an interaction builds: whether the layer carries its
-#: skip onward for the product basis to add, rather than applying it to the
-#: message; whether it normalizes by a density learned per atom rather than by
-#: the average neighbour count; and whether it is the nonlinear block, which
-#: conditions its convolution on both elements and gates its output. Distinct
-#: models, not names for one: a residual first layer takes its skip from the
-#: element embedding.
-_FIRST_INTERACTIONS: dict[str, tuple[bool, bool, bool]] = {
-    "plain": (False, False, False),
-    "residual": (True, False, False),
-    "density": (False, True, False),
-    "density_residual": (True, True, False),
-    "nonlinear": (True, False, True),
-}
-
-#: The same for every later layer, which always carries its skip.
-_INTERACTIONS: dict[str, tuple[bool, bool]] = {
-    "plain": (False, False),
-    "density": (True, False),
-    "residual": (False, False),
-    "density_residual": (True, False),
-    "nonlinear": (False, True),
-}
-
-#: The configuration's spelling of a distance transform, and the backbone's.
-_DISTANCE_TRANSFORMS: dict[str, Literal["none", "agnesi", "soft"]] = {
-    "none": "none",
-    "agnesi": "agnesi",
-    "soft": "soft",
-}
-
 _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
-    "interaction": tuple(_INTERACTIONS),
-    "interaction_first": tuple(_FIRST_INTERACTIONS),
-    "distance_transform.kind": tuple(_DISTANCE_TRANSFORMS),
+    "interaction": ("plain", "residual", "density", "density_residual", "nonlinear"),
+    "interaction_first": (
+        "plain",
+        "residual",
+        "density",
+        "density_residual",
+        "nonlinear",
+    ),
+    "distance_transform.kind": ("none", "agnesi", "soft"),
     "clebsch_gordan_basis": ("reduced", "full"),
     "readout.gate": ("silu",),
 }
@@ -218,6 +187,8 @@ def run_model_stage(
             config.model.backend,
             "training on " + ", ".join(sorted(requested.derivatives)),
         )
+    if catalogue != DEFAULT_CATALOGUE:
+        config = config.model_copy(update={"catalogue": catalogue})
     metadata = _metadata(config, data)
     model = engine.get_submodule("backbone")
     if isinstance(model, PolarModel):
@@ -350,6 +321,8 @@ def build_model(
     Returns:
         The model wrapped in its derivative engine, and what it reads out.
     """
+    if config.catalogue is not None and catalogue != config.catalogue:
+        raise ModelStageError("catalogue disagrees with config.catalogue")
     requested = resolve_requested(config.model.observables, catalogue)
     if not requested.observables:
         raise ModelStageError(
@@ -399,25 +372,28 @@ def build_model(
     energy = next(
         (spec for spec in requested.observables if spec.name == "energy"), None
     )
-    if energy is None:
+    energy_head = None
+    if energy is None and (
+        config.model.model in {"polar", "magnetic"} or config.model.pair_repulsion
+    ):
         raise ModelStageError(
-            "no `energy` observable is declared, and the derivative engine "
-            "differentiates an energy. A model without one is an inference "
-            "path this stage does not build yet."
+            "this model's physical energy terms require an `energy` observable"
         )
-    energy_head = EnergyOutputHead(
-        e0s,
-        heads,
-        z_table,
-        _scale_shift(config, statistics, len(heads)),
-        precision,
-        zbl_in_scale_shift=_ZBL_INSIDE.get(config.model.model, True),
-        supports_float64=supports_float64,
-        widen_node_energy=_WIDENS_NODE_ENERGY[config.model.model],
-    )
-    if (report := energy_head.build_report()) is not None:
-        logger.warning(report)
+    if energy is not None:
+        energy_head = EnergyOutputHead(
+            e0s,
+            heads,
+            z_table,
+            _scale_shift(config, statistics, len(heads)),
+            precision,
+            zbl_in_scale_shift=_ZBL_INSIDE.get(config.model.model, True),
+            supports_float64=supports_float64,
+            widen_node_energy=_WIDENS_NODE_ENERGY[config.model.model],
+        )
+        if (report := energy_head.build_report()) is not None:
+            logger.warning(report)
     if config.model.model == "magnetic":
+        assert energy_head is not None
         model = _magnetic_model(
             config,
             requested,
@@ -433,6 +409,7 @@ def build_model(
             initialize_model_weights(model, config.runtime.seed)
         return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
     if config.model.model == "polar":
+        assert energy_head is not None
         model = _polar_model(
             config,
             requested,
@@ -451,38 +428,16 @@ def build_model(
         return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
     model = MACEModel(
         backend,
+        config=config.model,
         atomic_numbers=list(z_table.zs),
         observables=requested.observables,
         energy_head=energy_head,
-        num_layers=config.model.num_interactions,
-        num_features=config.model.num_channels,
-        lmax=config.model.max_ell,
-        hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
-        num_radial=config.model.radial_basis.num_basis,
-        cutoff=config.model.r_max,
-        correlation=config.model.correlation,
         avg_num_neighbors=statistics.avg_num_neighbors,
-        radial_kind=config.model.radial_basis.kind,
-        architecture=config.model,
         radial_precision=precision.for_device(supports_float64)[0]
         .policy_for(RadialBasisDescriptor())
         .accumulate_dtype,
         precision=precision.model,
-        pair_repulsion=config.model.pair_repulsion,
-        cutoff_order=config.model.cutoff.polynomial_order,
-        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform.kind],
-        apply_cutoff=config.model.apply_cutoff,
-        radial_hidden=config.model.radial_mlp,
-        readout_hidden=config.model.readout.mlp_irreps,
-        graph_features=_graph_features(config),
-        readout_last_only=config.model.readout.last_only,
-        readout_biased=config.model.readout.bias,
-        readout_from_embedding=config.model.readout.from_embedding,
-        # One readout per head, so a head that is a different level of theory
-        # has weights of its own to fit it with.
         num_heads=len(heads),
-        **_interaction_settings(config)._asdict(),
-        element_agnostic_product=config.model.use_agnostic_product,
     )
     _report_backend(backend)
     if initialize:
@@ -491,7 +446,12 @@ def build_model(
         # engine, so wrapping it in one more layer later cannot change a
         # weight.
         initialize_model_weights(model, config.runtime.seed)
-    return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
+    return DerivativeEngine(
+        model,
+        energy,
+        inputs=catalogue.inputs,
+        responses=[spec for spec in requested.observables if spec.name != "energy"],
+    ), requested
 
 
 def _report_backend(backend: Any) -> None:
@@ -542,6 +502,7 @@ def _polar_model(
     )
     return PolarModel(
         backend,
+        config=config.model,
         atomic_numbers=list(z_table.zs),
         observables=[
             spec
@@ -552,30 +513,12 @@ def _polar_model(
         settings=settings,
         solver=electrostatics.solver,
         trains_derivatives=trains_derivatives,
-        num_layers=config.model.num_interactions,
-        num_features=config.model.num_channels,
-        lmax=config.model.max_ell,
-        hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
-        num_radial=config.model.radial_basis.num_basis,
-        cutoff=config.model.r_max,
-        correlation=config.model.correlation,
         avg_num_neighbors=statistics.avg_num_neighbors,
-        radial_kind=config.model.radial_basis.kind,
-        architecture=config.model,
         radial_precision=precision.for_device(supports_float64)[0]
         .policy_for(RadialBasisDescriptor())
         .accumulate_dtype,
         precision=precision.model,
-        cutoff_order=config.model.cutoff.polynomial_order,
-        distance_transform=_DISTANCE_TRANSFORMS[config.model.distance_transform.kind],
-        apply_cutoff=config.model.apply_cutoff,
-        radial_hidden=config.model.radial_mlp,
-        readout_hidden=config.model.readout.mlp_irreps,
-        readout_biased=config.model.readout.bias,
-        readout_last_only=config.model.readout.last_only,
         num_heads=len(heads),
-        **_interaction_settings(config)._asdict(),
-        element_agnostic_product=config.model.use_agnostic_product,
     )
 
 
@@ -607,24 +550,14 @@ def _response_model(
         )
     return DipoleModel(
         backend,
+        config=config.model,
         atomic_numbers=list(z_table.zs),
         settings=settings,
-        num_layers=config.model.num_interactions,
-        num_features=config.model.num_channels,
-        lmax=config.model.max_ell,
-        hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
-        num_radial=config.model.radial_basis.num_basis,
-        cutoff=config.model.r_max,
-        correlation=config.model.correlation,
         avg_num_neighbors=statistics.avg_num_neighbors,
-        radial_kind=config.model.radial_basis.kind,
-        architecture=config.model,
         radial_precision=precision.for_device(supports_float64)[0]
         .policy_for(RadialBasisDescriptor())
         .accumulate_dtype,
         precision=precision.model,
-        cutoff_order=config.model.cutoff.polynomial_order,
-        readout_hidden=config.model.readout.mlp_irreps,
     )
 
 
@@ -650,23 +583,11 @@ def _magnetic_model(
     settings = config.model.magnetic
     model = MagneticModel(
         backend,
+        config.model,
         atomic_numbers=list(z_table.zs),
         observables=requested.observables,
         energy_head=energy_head,
         saturation=settings.saturation_for(z_table.zs),
-        num_layers=config.model.num_interactions,
-        num_features=config.model.num_channels,
-        lmax=config.model.max_ell,
-        moment_lmax=settings.lmax,
-        hidden_irreps=config.model.hidden_irreps or DEFAULT_HIDDEN_IRREPS,
-        num_radial=config.model.radial_basis.num_basis,
-        num_moment_basis=settings.num_basis,
-        one_body_basis=settings.one_body_basis if settings.one_body else 0,
-        cutoff=config.model.r_max,
-        cutoff_order=config.model.cutoff.polynomial_order,
-        correlation=config.model.correlation,
-        pair_repulsion=config.model.pair_repulsion,
-        readout_hidden=config.model.readout.mlp_irreps,
         num_heads=len(heads),
         precision=precision.model,
     )
@@ -682,44 +603,6 @@ def _backend(
     if (report := degradation_report(precision, supports_float64)) is not None:
         logger.warning(report)
     return resolve_backend(config.model.backend, precision, supports_float64)
-
-
-class _InteractionSettings(NamedTuple):
-    """What the configured interactions build, as the backbone's settings."""
-
-    residual_first_layer: bool
-    learned_density_first_layer: bool
-    nonlinear_first_layer: bool
-    learned_density: bool
-    nonlinear: bool
-    convolution_irreps: str | None
-    narrow_first_convolution: bool
-
-
-def _interaction_settings(config: ResolvedConfig) -> _InteractionSettings:
-    model = config.model
-    return _InteractionSettings(
-        *_FIRST_INTERACTIONS[model.interaction_first],
-        *_INTERACTIONS[model.interaction],
-        convolution_irreps=model.edge_irreps,
-        narrow_first_convolution=model.use_edge_irreps_first,
-    )
-
-
-def _graph_features(config: ResolvedConfig) -> tuple[FeatureSpec, ...]:
-    return tuple(
-        FeatureSpec(
-            name=feature.name,
-            kind=feature.kind,
-            embedding_dim=feature.embedding_dim,
-            num_classes=feature.num_classes,
-            input_dim=feature.input_dim,
-            level="graph" if feature.per == "graph" else "node",
-            offset=feature.offset,
-            use_bias=feature.use_bias,
-        )
-        for feature in config.model.graph_features
-    )
 
 
 def _unbuilt_graph_features(config: ResolvedConfig) -> list[str]:
@@ -772,16 +655,13 @@ def _unbuilt_convolution_irreps(config: ResolvedConfig) -> list[str]:
     if model.edge_irreps is None:
         return []
     refused = []
-    if model.num_interactions > 1 and not _INTERACTIONS[model.interaction][1]:
+    if model.num_interactions > 1 and model.interaction != "nonlinear":
         refused.append(
             f"model.edge_irreps is {model.edge_irreps!r} with model.interaction "
             f"{model.interaction!r}; it is built for "
             f"'RealAgnosticResidualNonLinearInteractionBlock' only"
         )
-    if (
-        model.use_edge_irreps_first
-        and not _FIRST_INTERACTIONS[model.interaction_first][2]
-    ):
+    if model.use_edge_irreps_first and model.interaction_first != "nonlinear":
         refused.append(
             f"model.use_edge_irreps_first is True with model.interaction_first "
             f"{model.interaction_first!r}; it is built for "

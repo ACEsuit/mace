@@ -18,31 +18,19 @@ message is zero, and its atoms have no edge to a real atom. The real
 structure's energy, forces and stress are therefore the same with and without
 it.
 
-**Budgets retain V1's fixed atom reserve.** The reserve grows with the edge
-budget and stays fixed between calls, so the node count changes only when the
-budget grows. The agreed graph padding contract places every padding edge on
-the final fake atom; additional reserved atoms remain isolated. The reserve
-therefore controls shapes, not the distribution of scatter work.
+The calculator caches its real-node and edge budgets. The common graph
+padding implementation owns all tensor operations and reserves one final fake
+atom for its self-loops.
 """
 
 from __future__ import annotations
 
-import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Literal, cast
 
-import numpy as np
-import torch
-from mace_core.elements import AtomicNumberTable
-from mace_core.graph import GRAPH_SCHEMA, FixedPadding, NoPadding
-from mace_core.graph.schema import (
-    EDGE_LEVEL,
-    GRAPH_LEVEL,
-    NODE_LEVEL,
-    level_of,
-)
+from mace_core.graph import FixedPadding, NoPadding, PaddingInfo, PaddingOverflowError
 from mace_core.observables import RequestedOutputs
 from mace_core.outputs import (
     CORE_FIELD_NAMES,
@@ -52,34 +40,22 @@ from mace_core.outputs import (
 )
 from torch import Tensor
 
-from mace_torch.graph import collate
-from mace_torch.graph import pad_batch as pad_graph
 from mace_torch.physics.outputs import ENGINE_EXTRA_ROWS
 
 __all__ = [
-    "EDGES_PER_PADDING_ATOM",
     "PADDING_ENVIRONMENT",
     "PaddingInfo",
     "PaddingOverflowError",
     "PaddingPolicy",
     "output_rows",
-    "pad_batch",
     "resolve_budget",
     "unpad_outputs",
 ]
-
-#: Edge-budget units per reserved fake atom in V1's budget policy. Graph padding
-#: itself places the edges on the last fake atom, as its schema requires.
-EDGES_PER_PADDING_ATOM = 1024
 
 #: The two variables a fixed budget can come from, atoms then edges.
 PADDING_ENVIRONMENT = ("MACE_ASE_PAD_NUM_ATOMS", "MACE_ASE_PAD_NUM_EDGES")
 
 Row = Literal["atom", "graph", "edge"]
-
-
-class PaddingOverflowError(RuntimeError):
-    """A structure larger than the budget, under a policy that does not grow."""
 
 
 def _round_up(value: int, multiple: int) -> int:
@@ -100,8 +76,6 @@ class PaddingPolicy:
             estimated edge budget is.
         on_overflow: ``grow`` to raise the budget past a structure that
             exceeds it, which changes the shape once; ``error`` to refuse it.
-        padding_atoms: The fake atoms, fixed with the budget. Zero until a
-            structure has been seen.
     """
 
     mode: Literal["none", "fixed", "auto"] = "none"
@@ -110,7 +84,17 @@ class PaddingPolicy:
     edge_multiple: int = 64
     headroom: float = 1.25
     on_overflow: Literal["grow", "error"] = "grow"
-    padding_atoms: int = 0
+
+    def graph_policy(self) -> NoPadding | FixedPadding:
+        """The shared graph policy for the currently cached budgets."""
+        if self.mode == "none":
+            return NoPadding()
+        return FixedPadding(
+            nodes_budget=self.nodes_budget + 1,
+            edges_budget=self.edges_budget,
+            graphs_budget=2,
+            on_overflow=self.on_overflow,
+        )
 
     @classmethod
     def requested(
@@ -136,25 +120,6 @@ class PaddingPolicy:
         if nodes or edges:
             return cls(mode="fixed", nodes_budget=nodes, edges_budget=edges)
         return cls(mode="auto" if compiled else "none")
-
-
-@dataclass(frozen=True)
-class PaddingInfo:
-    """Where the real structure ends in a padded batch.
-
-    Attributes:
-        nodes: Its atoms, which come first.
-        edges: Its edges, which come first.
-        graphs: How many structures are real, which is the first ones.
-    """
-
-    nodes: int
-    edges: int
-    graphs: int = 1
-
-
-def _padding_atoms(edges_budget: int, real_edges: int) -> int:
-    return max(1, math.ceil(max(edges_budget - real_edges, 0) / EDGES_PER_PADDING_ATOM))
 
 
 def resolve_budget(
@@ -209,59 +174,7 @@ def resolve_budget(
         updated = replace(updated, nodes_budget=nodes)
     if not updated.edges_budget:
         updated = replace(updated, edges_budget=edges)
-    if updated.padding_atoms == 0 or updated.edges_budget != policy.edges_budget:
-        updated = replace(
-            updated, padding_atoms=_padding_atoms(updated.edges_budget, edges)
-        )
     return updated, updated != policy
-
-
-def pad_batch(
-    structure: Mapping[str, np.ndarray],
-    policy: PaddingPolicy,
-    r_max: float,
-    *,
-    z_table: AtomicNumberTable,
-) -> tuple[list[dict[str, np.ndarray]], PaddingInfo]:
-    """Adapt the calculator's cached budget to the common graph padding API."""
-    graph = collate([structure], dtype=torch.float64)
-    chosen = (
-        NoPadding()
-        if policy.mode == "none"
-        else FixedPadding(
-            nodes_budget=policy.nodes_budget + policy.padding_atoms,
-            edges_budget=policy.edges_budget,
-            graphs_budget=2,
-            on_overflow=policy.on_overflow,
-        )
-    )
-    padded, real = pad_graph(graph, chosen, r_max, atomic_number_table=z_table)
-    samples = []
-    for index in range(padded["ptr"].numel() - 1):
-        start, stop = int(padded["ptr"][index]), int(padded["ptr"][index + 1])
-        edge_mask = (padded["edge_index"][0] >= start) & (
-            padded["edge_index"][0] < stop
-        )
-        sample = {}
-        for name in structure:
-            value = padded[name]
-            level = level_of(GRAPH_SCHEMA[name])
-            if name == "edge_index":
-                sample[name] = (value[:, edge_mask] - start).numpy()
-            elif level == NODE_LEVEL:
-                sample[name] = value[start:stop].numpy()
-            elif level == EDGE_LEVEL:
-                sample[name] = value[edge_mask].numpy()
-            elif level == GRAPH_LEVEL:
-                sample[name] = (
-                    value[index].numpy() if isinstance(value, Tensor) else value[index]
-                )
-            else:
-                sample[name] = value[index]
-        samples.append(sample)
-    return samples, PaddingInfo(
-        real.n_real_nodes, real.n_real_edges, real.n_real_graphs
-    )
 
 
 def output_rows(
@@ -311,7 +224,11 @@ def unpad_outputs(
                 f"cannot be cut off. Declare it where it is produced."
             )
         return value[
-            : {"atom": info.nodes, "graph": info.graphs, "edge": info.edges}[rows[name]]
+            : {
+                "atom": info.n_real_nodes,
+                "graph": info.n_real_graphs,
+                "edge": info.n_real_edges,
+            }[rows[name]]
         ]
 
     fields = {

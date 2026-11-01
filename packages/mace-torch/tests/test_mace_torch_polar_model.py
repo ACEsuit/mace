@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
+from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.electrostatics import (
     ENTRY_POINT_GROUPS,
@@ -57,6 +58,18 @@ def build_model(
     )
     model = PolarModel(
         backend or ReferenceBackend(),
+        config=ModelConfig(
+            interaction_first="plain",
+            num_interactions=2,
+            num_channels=2,
+            max_ell=1,
+            hidden_irreps="0e+1o",
+            radial_basis={"kind": "bessel", "num_basis": 4},
+            r_max=5.0,
+            correlation=2,
+            readout={"mlp_irreps": "4x0e"},
+            use_agnostic_product=True,
+        ),
         atomic_numbers=[1, 8],
         observables=[WITH_STRESS],
         energy_head=head,
@@ -70,15 +83,6 @@ def build_model(
             periodicity_profile=profile,
             fukui_hidden=4,
         ),
-        num_layers=2,
-        num_features=2,
-        lmax=1,
-        hidden_irreps="0e+1o",
-        num_radial=4,
-        cutoff=5.0,
-        correlation=2,
-        readout_hidden=4,
-        element_agnostic_product=True,
         **overrides,
     )
     initialize_model_weights(model, seed=3)

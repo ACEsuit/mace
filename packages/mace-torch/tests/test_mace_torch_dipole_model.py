@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
+from mace_core.config.model import ModelConfig
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.kernels.initialization import initialize_model_weights
@@ -37,16 +38,19 @@ RESPONSES = [DEFAULT_CATALOGUE.observable(n) for n in ("dipole", "polarizability
 def build_model(settings, readout_hidden="4x0e+4x1o+4x2e") -> DipoleModel:
     model = DipoleModel(
         ReferenceBackend(),
+        config=ModelConfig(
+            interaction_first="plain",
+            num_interactions=2,
+            num_channels=3,
+            max_ell=2,
+            hidden_irreps="0e+1o+2e",
+            radial_basis={"kind": "bessel", "num_basis": 4},
+            r_max=5.0,
+            correlation=2,
+            readout={"mlp_irreps": readout_hidden},
+        ),
         atomic_numbers=[1, 8],
         settings=settings,
-        num_layers=2,
-        num_features=3,
-        lmax=2,
-        hidden_irreps="0e+1o+2e",
-        num_radial=4,
-        cutoff=5.0,
-        correlation=2,
-        readout_hidden=readout_hidden,
     )
     initialize_model_weights(model, seed=4)
     return model

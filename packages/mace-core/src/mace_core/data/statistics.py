@@ -31,7 +31,7 @@ __all__ = [
     "least_squares_atomic_energies",
 ]
 
-Scaling = Literal["std", "rms_forces", "rms_dipoles"]
+Scaling = Literal["none", "std", "rms_forces", "rms_dipoles"]
 
 
 def _shift_counts(
@@ -159,9 +159,11 @@ def compute_statistics(
         atomic_numbers: The element table.
         r_max: The cutoff, in Angstrom.
         atomic_energies: Isolated-atom references, already resolved.
-        scaling: Which spread to report as ``std``. ``"rms_forces"`` is the
-            frozen tree's default model behaviour, ``"std"`` the spread of the
-            per-atom interaction energy itself, ``"rms_dipoles"`` for a dipole
+        scaling: Which spread to report as ``std``. ``"none"`` measures only
+            neighbour counts and uses a unit scale for models without energy.
+            ``"rms_forces"`` is the frozen tree's default model behaviour,
+            ``"std"`` the spread of the per-atom interaction energy itself,
+            ``"rms_dipoles"`` for a dipole
             model. Named rather than inferred, because on the frozen tree the
             choice is spread across a command-line flag and a model default
             that disagree.
@@ -176,10 +178,10 @@ def compute_statistics(
             to compute from. A spread of 1.0 returned quietly would divide the
             model's outputs by a number that means nothing.
     """
-    if scaling not in ("std", "rms_forces", "rms_dipoles"):
+    if scaling not in ("none", "std", "rms_forces", "rms_dipoles"):
         raise ValueError(
             f"{scaling!r} is not a scaling this computes. The choices are "
-            f"'std', 'rms_forces' and 'rms_dipoles'."
+            f"'none', 'std', 'rms_forces' and 'rms_dipoles'."
         )
 
     per_atom_energies: list[float] = []
@@ -206,7 +208,9 @@ def compute_statistics(
             dipole_squares.append(np.asarray(dipole, dtype=float).reshape(-1) ** 2)
 
     mean = float(np.mean(per_atom_energies)) if per_atom_energies else 0.0
-    if scaling == "std":
+    if scaling == "none":
+        spread = 1.0
+    elif scaling == "std":
         if not per_atom_energies:
             raise ValueError(
                 f"no configuration carries a {energy_key!r}, so the energy "

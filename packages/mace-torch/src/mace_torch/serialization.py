@@ -41,9 +41,12 @@ import torch
 from safetensors.torch import load_file, save_file
 from torch import Tensor, nn
 
+from mace_torch.canonical import canonical_modules
+
 #: What the caller's builder returns, so a load is typed as precisely as the
 #: builder is rather than as a bare module.
 Model = TypeVar("Model", bound=nn.Module)
+
 
 __all__ = [
     "FORMAT",
@@ -86,12 +89,12 @@ def canonical_state(model: nn.Module) -> dict[str, dict[str, Tensor]]:
         model: Anything holding operators that define ``to_canonical``.
 
     Returns:
-        ``module path -> name -> tensor``. Modules without a canonical form
-        contribute nothing, which is how a module that holds only derived
+        ``logical operator identity -> name -> tensor``. Modules without a
+        canonical form contribute nothing, which is how a module with only derived
         buffers stays out of the file.
     """
     state: dict[str, dict[str, Tensor]] = {}
-    for path, module in model.named_modules():
+    for path, module in canonical_modules(model).items():
         writer = getattr(module, "to_canonical", None)
         if writer is None:
             continue
@@ -120,7 +123,7 @@ def load_canonical_state(
             f"and not in the model: {extra or 'none'}. A partial load leaves "
             f"weights at their initial values and still runs."
         )
-    for path, module in model.named_modules():
+    for path, module in canonical_modules(model).items():
         reader = getattr(module, "load_canonical", None)
         if reader is None:
             continue
@@ -138,10 +141,10 @@ def canonical_metadata(model: nn.Module) -> dict[str, dict[str, Any]]:
         model: Anything holding operators.
 
     Returns:
-        ``module path -> a JSON-serializable description``.
+        ``logical operator identity -> a JSON-serializable description``.
     """
     described: dict[str, dict[str, Any]] = {}
-    for path, module in model.named_modules():
+    for path, module in canonical_modules(model).items():
         writer = getattr(module, "canonical_metadata", None)
         if writer is None:
             continue

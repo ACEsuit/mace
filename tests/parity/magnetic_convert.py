@@ -25,6 +25,7 @@ from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.models.magnetic import MagneticModel
 
 from tests.parity.fm00_convert import (
+    model_arguments,
     contraction_weights_to_canonical,
     copy_linear,
     energy_constants_to_canonical,
@@ -94,7 +95,7 @@ def convert_magnetic(legacy, observables=None) -> MagneticModel:
         ReferenceBackend(),
         observables=observables or [DEFAULT_CATALOGUE.observable("energy")],
         energy_head=head,
-        **config,
+        **model_arguments(config),
     )
     transfer_magnetic_weights(legacy, model)
     return model

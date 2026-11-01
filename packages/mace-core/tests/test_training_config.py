@@ -39,6 +39,7 @@ SECTIONS = (
     "runtime",
     "data",
     "model",
+    "catalogue",
     "loss",
     "training",
     "finetune",
@@ -60,7 +61,7 @@ def write(tmp_path: Path, suffix: str, document: dict) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_the_seven_sections_are_the_declared_ones():
+def test_the_declared_sections_and_optional_catalogue():
     assert tuple(ResolvedConfig.model_fields) == SECTIONS
 
 

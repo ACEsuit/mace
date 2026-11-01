@@ -16,6 +16,8 @@ would return.
 
 from __future__ import annotations
 
+from tests.parity.fm00_convert import model_arguments
+
 from pathlib import Path
 
 import numpy as np
@@ -110,7 +112,7 @@ def convert(legacy, family: str):
         if family == "dipole"
         else DipoleSettings(charges="predicted", polarizability=True)
     )
-    model = DipoleModel(ReferenceBackend(), settings=settings, **config)
+    model = DipoleModel(ReferenceBackend(), settings=settings, **model_arguments(config))
     transfer_dipole_weights(legacy, model, family)
     return model, config
 

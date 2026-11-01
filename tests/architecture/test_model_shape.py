@@ -66,14 +66,6 @@ def test_forward_returns_maceoutputs():
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "no ModelConfig exists yet, so the composed model still takes its "
-        "eighteen parameters one by one. Strict, so the day a config object "
-        "lands this marker has to go with it."
-    ),
-)
 def test_construction_via_modelconfig():
     """Models are built from one config object, not from ad-hoc kwargs.
 
@@ -82,9 +74,8 @@ def test_construction_via_modelconfig():
     One typed parameter is what lets the fully resolved configuration be
     validated once and stored in the model's own metadata.
 
-    The detector keys on a class whose name ends in `MACE`, so the composed
-    model was invisible to it while it was called `MACEModel`; the gap is
-    older than the marker.
+    Backend implementations and measured dataset constants are runtime
+    dependencies. Architectural knobs must come from the config alone.
     """
     problems, _ = v1_surface.scan(
         v1_surface.config_construction_violations, v1_surface.package_roots()
@@ -217,17 +208,17 @@ def test_the_config_detector_accepts_the_target_shape():
         (
             "    def __init__(self, r_max: float, num_interactions: int) -> None:\n"
             "        pass\n",
-            "takes 2 parameters",
+            "needs one *Config",
         ),
-        ("    def __init__(self) -> None:\n        pass\n", "takes 0 parameters"),
+        ("    def __init__(self) -> None:\n        pass\n", "needs one *Config"),
         (
             "    def __init__(self, config: dict) -> None:\n        pass\n",
-            "has to be a *Config",
+            "needs one *Config",
         ),
         (
-            "    def __init__(self, config: ModelConfig, *, backend: str) -> None:\n"
+            "    def __init__(self, config: ModelConfig, *, num_channels: int) -> None:\n"
             "        pass\n",
-            "takes 2 parameters",
+            "needs one *Config",
         ),
     ],
     ids=["kwargs", "no-config", "untyped-config", "keyword-only-extra"],
@@ -357,3 +348,21 @@ def test_the_precision_detector_finds_safe_double():
     roots = [v1_surface.REPO_ROOT / "mace" / "modules"]
     problems, _ = v1_surface.scan(v1_surface.precision_violations, roots)
     assert any(problem.startswith("mace/modules/utils.py") for problem in problems)
+
+
+def test_config_construction_accepts_explicit_runtime_dependencies():
+    source = (
+        "class ExampleMACE(Module):\n"
+        "    def __init__(self, config: ModelConfig, *, backend, "
+        "atomic_numbers, avg_num_neighbors=1.0): pass\n"
+    )
+    assert not v1_surface.config_construction_violations(source, "clean.py")
+
+
+@pytest.mark.parametrize("catch_all", ["*args", "**kwargs"])
+def test_config_construction_refuses_catch_all_arguments(catch_all):
+    source = (
+        "class ExampleMACE(Module):\n"
+        f"    def __init__(self, config: ModelConfig, {catch_all}): pass\n"
+    )
+    assert v1_surface.config_construction_violations(source, "offender.py")

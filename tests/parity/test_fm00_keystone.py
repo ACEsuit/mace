@@ -12,6 +12,8 @@ evaluated on the same inputs with nothing in between.
 
 from __future__ import annotations
 
+from tests.parity.fm00_convert import model_arguments
+
 import os
 from pathlib import Path
 
@@ -77,7 +79,7 @@ def convert(legacy):
         widen_node_energy=getattr(legacy, "scale_shift", None) is not None,
     )
     model = MACEModel(
-        ReferenceBackend(), observables=[ENERGY], energy_head=head, **config
+        ReferenceBackend(), observables=[ENERGY], energy_head=head, **model_arguments(config)
     )
     transfer_weights(legacy, model, config["correlation"])
     return model, config
@@ -184,7 +186,7 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
             PrecisionConfig(),
         )
         return MACEModel(
-            ReferenceBackend(), observables=[ENERGY], energy_head=head, **stored
+            ReferenceBackend(), observables=[ENERGY], energy_head=head, **model_arguments(stored)
         )
 
     restored = load_checkpoint(tmp_path / "converted", rebuild)

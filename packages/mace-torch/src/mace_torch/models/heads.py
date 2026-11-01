@@ -45,8 +45,8 @@ from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from torch import Tensor, nn
 
-from mace_torch.backends.layout import layout_of
-from mace_torch.nn.layout import expanded_irreps
+from mace_torch.backends import layout
+from mace_torch.backends.layout import expanded_irreps
 from mace_torch.nn.radial_mlp import SECOND_MOMENT_SCALE
 
 __all__ = [
@@ -237,9 +237,8 @@ class _Gate(nn.Module):
     frozen tree's readout, whose gates take the model's one activation.
     """
 
-    def __init__(self, irreps_scalars: str, irreps_gated: str, layout) -> None:
+    def __init__(self, irreps_scalars: str, irreps_gated: str) -> None:
         super().__init__()
-        self.layout = layout
         self.scalars = Irreps.parse(irreps_scalars)
         # An empty string, not an empty `Irreps`: a scalar output has nothing
         # to gate, and the declaration grammar has no spelling for "nothing".
@@ -279,13 +278,13 @@ class _Gate(nn.Module):
             features[..., self.scalar_dim : self.scalar_dim + self.num_gates]
         )
         pieces, offset = [], 0
-        blocks = self.layout.blocks(
+        blocks = layout.blocks(
             features[..., self.scalar_dim + self.num_gates :], self.gated_terms
         )
         for block, copies in zip(blocks, self.copies, strict=True):
             pieces.append(block * gates[:, offset : offset + copies, None])
             offset += copies
-        return torch.cat([scalars, self.layout.join(pieces)], dim=-1)
+        return torch.cat([scalars, layout.join(pieces)], dim=-1)
 
 
 class ObservableHead(nn.Module):
@@ -341,14 +340,10 @@ class ObservableHead(nn.Module):
         self.per_atom = spec.per_atom
         self.dimension = spec.dimension
         self.num_heads = num_heads
-        # The readouts write in the backend's layout, and what a head hands on
-        # is canonical: each head's columns, read off the chain's positions.
-        self.layout = layout_of(backend)
-        self.spec_terms = self.layout.terms(spec.irreps)
-        positions = self.layout.positions(per_head_irreps(spec.irreps, num_heads))
+        # Select each head directly from the canonical mul_ir columns.
         self.register_buffer(
             "columns",
-            torch.tensor(positions[head_columns(spec.irreps, num_heads)]),
+            torch.tensor(head_columns(spec.irreps, num_heads)),
             persistent=False,
         )
         self.layer_irreps = list(layer_irreps)
@@ -439,8 +434,6 @@ class ObservableHead(nn.Module):
             if self.num_heads > 1:
                 assert node_head is not None
                 value = value.gather(1, self.columns[node_head])
-            else:
-                value = self.layout.to_canonical(value, self.spec_terms)
             values.append(value)
         return values
 
@@ -577,7 +570,7 @@ class ObservableHead(nn.Module):
 
         Args:
             layers: One ``[n_atoms, channels * width]`` tensor per layer, grouped
-                by irrep in the backend's layout.
+                by irrep in canonical mul_ir layout.
             node_head: ``[n_atoms]``, required with more than one head.
 
         Returns:
@@ -589,6 +582,12 @@ class ObservableHead(nn.Module):
         for value in terms[1:]:
             total = total + value
         return total
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "readouts": self.readouts,
+        }
 
 
 class _GatedReadout(nn.Module):
@@ -663,11 +662,9 @@ class _GatedReadout(nn.Module):
             + (copy_heads(gated, num_heads) if gated else [])
         )
         self.middle_out_owners = copy_heads(middle, num_heads)
-        layout = layout_of(backend)
         self.gate = _Gate(
             f"{num_heads * hidden_scalars}x0e",
             per_head_irreps(gated, num_heads) if gated else "",
-            layout,
         )
         self.first = backend.make_linear(
             LinearDescriptor(
@@ -696,13 +693,12 @@ class _GatedReadout(nn.Module):
                 precision=precision,
             )
         )
-        # Which head owns each channel of the gate's output. The gate's output
-        # is the per-head copies of `middle`, in the backend's layout, and the
-        # canonical owner table is moved to that layout's positions.
-        owners = component_heads(middle, num_heads)
-        in_layout = np.empty_like(owners)
-        in_layout[layout.positions(per_head_irreps(middle, num_heads))] = owners
-        self.register_buffer("hidden_heads", torch.tensor(in_layout), persistent=False)
+        # Canonical mul_ir already orders the gate's copies by head.
+        self.register_buffer(
+            "hidden_heads",
+            torch.tensor(component_heads(middle, num_heads)),
+            persistent=False,
+        )
 
     def forward(self, features: Tensor, node_head: Tensor | None = None) -> Tensor:
         middle = self._own_head(self.gate(self.first(features)), node_head)
@@ -716,3 +712,11 @@ class _GatedReadout(nn.Module):
         assert node_head is not None
         keep = self.hidden_heads.unsqueeze(0) == node_head.unsqueeze(1)
         return middle * keep.to(middle.dtype)
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "first": self.first,
+            "middle": self.middle,
+            "second": self.second,
+        }

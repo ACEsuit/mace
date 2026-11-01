@@ -23,7 +23,7 @@ from pydantic import field_validator
 
 from mace_core.config.section import FrozenSection
 from mace_core.config.tracking import WandbConfig
-from mace_core.tables import TABLE_TYPES
+from mace_core.tables import OBSERVABLES_TABLE, TABLE_TYPES
 
 __all__ = ["LOG_LEVELS", "WORK_DIR_LAYOUT", "RuntimeConfig"]
 
@@ -93,7 +93,7 @@ class RuntimeConfig(FrozenSection):
     @field_validator("error_table")
     @classmethod
     def _known_error_table(cls, value: str) -> str:
-        if value not in TABLE_TYPES:
+        if value != OBSERVABLES_TABLE and value not in TABLE_TYPES:
             raise ValueError(
                 f"{value!r} is not an error table. They are {sorted(TABLE_TYPES)}."
             )

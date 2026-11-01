@@ -9,19 +9,8 @@ here, once, at build time, from the backend's own answer to
 convert, fail and reconvert (``mace/calculators/mace_torchsim.py:123-137``) has
 no counterpart.
 
-The whole chain of ops runs in one feature layout, decided here once: the
-chosen backend's native layout when the reference can follow it, which it
-always can, and the canonical one otherwise. Every descriptor built through the
-pair is stamped with it, so an op the chosen backend declines is built by the
-reference in the same layout, a fallback puts no permute between two ops, and
-there is no seam to count. The model is handed the layout as :attr:`layout`
-and never branches on it.
-
-What was built where is recorded in :attr:`CompositeBackend.decisions` and
-summarised by :meth:`CompositeBackend.report`, which the model stage logs. An
-op the chosen backend declined is logged as a warning when it is decided, so
-that a run on an accelerated backend that computes most of its layers on the
-reference says so.
+Every op reads and writes the agreed canonical ``mul_ir`` features, so an
+op-by-op fallback needs no activation conversion.
 """
 
 from __future__ import annotations
@@ -36,7 +25,6 @@ from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.protocol import REFERENCE_ONLY_OPS
 from mace_core.kernels.registry import get_backend
 
-from mace_torch.backends.layout import CANONICAL
 from mace_torch.backends.precision import PrecisionBackend
 from mace_torch.backends.reference import ReferenceBackend
 
@@ -81,7 +69,6 @@ class CompositeBackend:
         self.name = primary.name
         self._primary_capabilities: BackendCapabilities = primary.capabilities()
         self.decisions: list[BuildDecision] = []
-        self.layout = CANONICAL
 
     def capabilities(self) -> BackendCapabilities:
         """What the pair can build: everything the reference can.
@@ -162,7 +149,7 @@ class CompositeBackend:
                 reasons.setdefault(decision.op, set()).add(decision.reason)
         lines = [
             f"backend {self.primary.name}, with {self.fallback.name} for the ops "
-            f"it does not build; every op in {self.layout.name}, so no seams"
+            "it does not build; every op in mul_ir"
         ]
         for op in sorted({d.op for d in self.decisions}):
             built = ", ".join(

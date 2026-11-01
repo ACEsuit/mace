@@ -36,7 +36,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+OBSERVABLES_TABLE = "ObservablesRMSE"
+
 __all__ = [
+    "OBSERVABLES_TABLE",
     "TABLE_TYPES",
     "Column",
     "Row",
@@ -204,11 +207,27 @@ def error_table(
         UnknownTableTypeError: On a type nobody defines, and on one whose
             columns the run produced no metric for.
     """
-    if kind not in TABLE_TYPES:
+    if kind != OBSERVABLES_TABLE and kind not in TABLE_TYPES:
         raise UnknownTableTypeError(
             f"{kind!r} is not an error table. They are {sorted(TABLE_TYPES)}."
         )
-    columns = TABLE_TYPES[kind]
+    columns = (
+        tuple(
+            Column(
+                label=name.removeprefix("rmse_") + " RMSE",
+                metrics=(name,),
+                scale=1.0,
+                decimals=6,
+            )
+            for name in sorted(
+                {key for row in rows for key in row.metrics if key.startswith("rmse_")}
+            )
+        )
+        if kind == OBSERVABLES_TABLE
+        else TABLE_TYPES[kind]
+    )
+    if not columns:
+        raise UnknownTableTypeError("no observable RMSE metrics were produced")
     kept = [row for row in rows if row.head not in set(skip_heads)]
     if not kept:
         raise UnknownTableTypeError(

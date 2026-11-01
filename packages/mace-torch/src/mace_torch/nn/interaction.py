@@ -237,6 +237,15 @@ class _Convolution(nn.Module):
         with torch.no_grad():
             self.neighbours.copy_(state["neighbours"])
 
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "linear_up": self.linear_up,
+            "linear": self.linear,
+            "radial_mlp": self.radial_mlp,
+            "density_mlp": self.density_mlp,
+        }
+
 
 class InteractionBlock(nn.Module):
     """The plain block: the skip is applied to the message and replaces it.
@@ -313,6 +322,13 @@ class InteractionBlock(nn.Module):
         message = self.body(node_features, edges, sender, receiver, num_nodes)
         return self.skip(message, node_attrs), None
 
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "body": self.body,
+            "skip": self.skip,
+        }
+
 
 class ResidualInteractionBlock(nn.Module):
     """The residual block: the skip is taken from the input and carried onward.
@@ -380,6 +396,13 @@ class ResidualInteractionBlock(nn.Module):
         carried = self.skip(node_features, node_attrs)
         message = self.body(node_features, edges, sender, receiver, num_nodes)
         return message, carried
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "body": self.body,
+            "skip": self.skip,
+        }
 
 
 def _even_scalars(irreps: str) -> int:
@@ -586,3 +609,17 @@ class NonLinearInteractionBlock(nn.Module):
         with torch.no_grad():
             self.alpha.copy_(state["alpha"])
             self.beta.copy_(state["beta"])
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "skip": self.skip,
+            "linear_up": self.linear_up,
+            "linear_residual": self.linear_residual,
+            "sender_embedding": self.sender_embedding,
+            "receiver_embedding": self.receiver_embedding,
+            "radial_mlp": self.radial_mlp,
+            "density_mlp": self.density_mlp,
+            "linear_mix": self.linear_mix,
+            "linear_out": self.linear_out,
+        }

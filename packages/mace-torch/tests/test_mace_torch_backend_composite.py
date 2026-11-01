@@ -150,7 +150,7 @@ def test_the_composite_builds_each_op_where_it_is_supported(caplog):
     report = composite.report()
     assert "linear: 2 by partial, 1 by reference" in report
     assert "channelwise_tp_conv: 1 by reference" in report
-    assert "no seams" in report
+    assert "every op in mul_ir" in report
     assert composite.served_by_primary()
 
 

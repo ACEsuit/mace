@@ -370,6 +370,14 @@ class ModelConfig(ConfigSection):
     #: installed; `full` builds only on a backend that declares it.
     clebsch_gordan_basis: Literal["reduced", "full"] = "reduced"
 
+    @property
+    def node_irreps(self) -> str:
+        """One channel's node irreps, expanding ``max_L`` when unspecified."""
+        return self.hidden_irreps or "+".join(
+            f"{degree}{'e' if degree % 2 == 0 else 'o'}"
+            for degree in range(self.max_L + 1)
+        )
+
     @model_validator(mode="after")
     def _edge_irreps_need_a_nonlinear_layer(self) -> ModelConfig:
         """`edge_irreps` and `use_edge_irreps_first` are read by `nonlinear`

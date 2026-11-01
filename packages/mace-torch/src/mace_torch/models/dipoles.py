@@ -41,7 +41,6 @@ from typing import Any, Literal
 import torch
 from mace_core.clebsch_gordan import symmetric_matrix_basis
 from mace_core.config.model import ModelConfig
-from mace_core.kernels.descriptors import RadialBasisKind
 from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import MACEOutput
@@ -176,44 +175,31 @@ class DipoleModel(MACEModel):
     def __init__(
         self,
         backend,
+        config: ModelConfig,
         atomic_numbers: Sequence[int],
         settings: DipoleSettings,
-        num_layers: int = 2,
-        num_features: int = 16,
-        lmax: int = 2,
-        hidden_irreps: str = "0e+1o",
-        num_radial: int = 8,
-        cutoff: float = 5.0,
-        correlation: int = 3,
+        *,
         avg_num_neighbors: float = 1.0,
-        radial_kind: RadialBasisKind = "bessel",
-        architecture: ModelConfig | None = None,
         radial_precision: Precision | None = None,
         precision: Precision = "float64",
-        cutoff_order: int = 6,
-        readout_hidden: int | str = 16,
         last_layer_irreps: str | None = None,
     ) -> None:
+        if config.pair_repulsion:
+            raise ValueError(
+                "pair_repulsion requires an energy observable; a dipole model has none"
+            )
         if last_layer_irreps is None:
-            last_layer_irreps = "1o" if settings.charges == "fixed" else hidden_irreps
+            last_layer_irreps = (
+                "1o" if settings.charges == "fixed" else config.node_irreps
+            )
         super().__init__(
             backend,
+            config,
             atomic_numbers=atomic_numbers,
             observables=settings.heads,
-            num_layers=num_layers,
-            num_features=num_features,
-            lmax=lmax,
-            hidden_irreps=hidden_irreps,
-            num_radial=num_radial,
-            cutoff=cutoff,
-            correlation=correlation,
             avg_num_neighbors=avg_num_neighbors,
-            radial_kind=radial_kind,
-            architecture=architecture,
             radial_precision=radial_precision,
             precision=precision,
-            cutoff_order=cutoff_order,
-            readout_hidden=readout_hidden,
             last_layer_irreps=last_layer_irreps,
         )
         self.settings = settings

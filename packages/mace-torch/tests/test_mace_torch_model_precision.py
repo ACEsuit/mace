@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_torch.backends.reference import ReferenceBackend
@@ -31,14 +32,17 @@ def build(default: torch.dtype) -> MACEModel:
         )
         return MACEModel(
             ReferenceBackend(),
+            config=ModelConfig(
+                interaction_first="plain",
+                num_channels=4,
+                max_ell=1,
+                r_max=3.5,
+                pair_repulsion=True,
+                cutoff={"polynomial_order": 5},
+            ),
             atomic_numbers=ATOMIC_NUMBERS,
             observables=[ENERGY],
             energy_head=head,
-            num_features=4,
-            lmax=1,
-            cutoff=3.5,
-            pair_repulsion=True,
-            cutoff_order=5,
             precision="float64",
         )
     finally:

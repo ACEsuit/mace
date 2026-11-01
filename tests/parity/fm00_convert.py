@@ -374,3 +374,34 @@ def recorded_basis(legacy_contraction, irreps_in: str, target: str, correlation:
         f"basis it means cannot be read off it and converting it would be a "
         f"guess."
     )
+
+
+def model_arguments(settings: dict) -> dict:
+    """Translate the oracle's flat architecture record at the parity boundary."""
+    from mace_core.config.model import ModelConfig
+
+    values = dict(settings)
+    hidden = values.pop("readout_hidden", 16)
+    one_body = values.pop("one_body_basis", 0)
+    magnetic = {
+        "lmax": values.pop("moment_lmax", 2),
+        "num_basis": values.pop("num_moment_basis", 6),
+        "one_body": bool(one_body),
+        "one_body_basis": max(one_body, 1),
+    }
+    architecture = ModelConfig(
+        magnetic=magnetic,
+        num_interactions=values.pop("num_layers", 2),
+        num_channels=values.pop("num_features", 16),
+        max_ell=values.pop("lmax", 2),
+        hidden_irreps=values.pop("hidden_irreps", "0e+1o"),
+        radial_basis={"kind": "bessel", "num_basis": values.pop("num_radial", 8)},
+        r_max=values.pop("cutoff", 5.0),
+        correlation=values.pop("correlation", 3),
+        pair_repulsion=values.pop("pair_repulsion", False),
+        cutoff={"polynomial_order": values.pop("cutoff_order", 6)},
+        readout={"mlp_irreps": f"{hidden}x0e" if isinstance(hidden, int) else hidden},
+        use_agnostic_product=values.pop("element_agnostic_product", False),
+        interaction_first="plain",
+    )
+    return {"config": architecture, **values}

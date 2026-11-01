@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import torch
 from mace_core.config.model import ModelConfig
@@ -42,12 +42,13 @@ from mace_core.electrostatics import (
     PeriodicityProfile,
     RealspaceMethod,
 )
-from mace_core.kernels.descriptors import LinearDescriptor, RadialBasisKind
+from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
+from mace_torch.backends.layout import expanded_irreps
 from mace_torch.electrostatics import (
     build_long_range,
     build_long_range_features,
@@ -61,7 +62,6 @@ from mace_torch.kernels import segment_sum
 from mace_torch.models.base import MACEModel, _constructed_in
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
-from mace_torch.nn.layout import expanded_irreps
 
 __all__ = ["POLAR_EXTRA_ROWS", "POLAR_GRAPH_INPUTS", "PolarModel", "PolarSettings"]
 
@@ -214,40 +214,18 @@ class PolarModel(MACEModel):
     def __init__(
         self,
         backend,
+        config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
         energy_head: EnergyOutputHead,
         settings: PolarSettings,
         solver: str = "reference",
         trains_derivatives: bool = False,
-        num_layers: int = 2,
-        num_features: int = 16,
-        lmax: int = 2,
-        hidden_irreps: str = "0e+1o",
-        num_radial: int = 8,
-        cutoff: float = 5.0,
-        correlation: int = 3,
+        *,
         avg_num_neighbors: float = 1.0,
-        radial_kind: RadialBasisKind = "bessel",
-        architecture: ModelConfig | None = None,
         radial_precision: Precision | None = None,
         precision: Precision = "float64",
-        cutoff_order: int = 6,
-        distance_transform: Literal["none", "agnesi", "soft"] = "none",
-        apply_cutoff: bool = True,
-        radial_hidden: Sequence[int] = (64, 64, 64),
-        readout_hidden: int | str = 16,
-        readout_biased: bool = False,
-        readout_last_only: bool = False,
         num_heads: int = 1,
-        element_agnostic_product: bool = False,
-        residual_first_layer: bool = False,
-        learned_density_first_layer: bool = False,
-        learned_density: bool = False,
-        nonlinear_first_layer: bool = False,
-        nonlinear: bool = False,
-        convolution_irreps: str | None = None,
-        narrow_first_convolution: bool = False,
     ) -> None:
         produced = sorted(
             spec.name for spec in observables if spec.name in self.PRODUCED
@@ -259,42 +237,20 @@ class PolarModel(MACEModel):
             )
         super().__init__(
             backend,
+            config,
             atomic_numbers=atomic_numbers,
             observables=observables,
             energy_head=energy_head,
-            num_layers=num_layers,
-            num_features=num_features,
-            lmax=lmax,
-            hidden_irreps=hidden_irreps,
-            num_radial=num_radial,
-            cutoff=cutoff,
-            correlation=correlation,
             avg_num_neighbors=avg_num_neighbors,
-            radial_kind=radial_kind,
-            architecture=architecture,
             radial_precision=radial_precision,
             precision=precision,
-            cutoff_order=cutoff_order,
-            distance_transform=distance_transform,
-            apply_cutoff=apply_cutoff,
-            radial_hidden=radial_hidden,
-            readout_hidden=readout_hidden,
-            readout_biased=readout_biased,
-            readout_last_only=readout_last_only,
             num_heads=num_heads,
-            last_layer_irreps=hidden_irreps,
-            element_agnostic_product=element_agnostic_product,
-            residual_first_layer=residual_first_layer,
-            learned_density_first_layer=learned_density_first_layer,
-            learned_density=learned_density,
-            nonlinear_first_layer=nonlinear_first_layer,
-            nonlinear=nonlinear,
-            convolution_irreps=convolution_irreps,
-            narrow_first_convolution=narrow_first_convolution,
-            # The density's dipoles are read off the degree one features, and
-            # the solver holds a dipole as (y, z, x).
+            last_layer_irreps=config.node_irreps,
+            # The solver stores dipoles in (y, z, x) order.
             edge_axes=(1, 2, 0),
         )
+        num_layers, num_features = config.num_interactions, config.num_channels
+        hidden_irreps = config.node_irreps
         self.settings = settings
         # The charge totals are sums over a structure, accumulated in the
         # energy head's floor as the frozen tree accumulates them in float64.
@@ -536,3 +492,13 @@ class PolarModel(MACEModel):
             }
         )
         return output
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        return {
+            **super().canonical_components(),
+            "source_maps": self.source_maps,
+            "layer_mixer": self.layer_mixer,
+            "fukui_readout": self.fukui_readout,
+            "updates": self.updates,
+            "electron_energy": self.electron_energy,
+        }

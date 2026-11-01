@@ -37,7 +37,11 @@ from mace_core.data.backends.xyz import SUFFIXES as XYZ_SUFFIXES
 from mace_core.data.e0_resolution import E0Provenance, EnergyPredictor
 from mace_core.data.xyz import ISOLATED_ATOM_CONFIG_TYPE
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.observables import ObservableCatalogue, resolve_requested
+from mace_core.observables import (
+    ObservableCatalogue,
+    RequestedOutputs,
+    resolve_requested,
+)
 from mace_core.stages import DataBundle
 from torch.utils.data import DataLoader
 
@@ -111,8 +115,8 @@ def run_data_stage(
             less data than the configuration asked for.
     """
     heads = _heads(config.data)
-    key_spec = key_specification(config.data)
     requested = resolve_requested(config.model.observables, catalogue)
+    key_spec = key_specification(config.data, requested)
 
     train: list[Configuration] = []
     valid: list[Configuration] = []
@@ -211,7 +215,7 @@ def run_data_stage(
     measured = "std" if config.model.scaling == "none" else config.model.scaling
     if not reads_energy:
         # The one spread a model without an energy has data for.
-        measured = "rms_dipoles"
+        measured = "rms_dipoles" if "dipole" in config.model.observables else "none"
     statistics = compute_statistics(
         InMemoryBackend(train),
         list(z_table.zs),
@@ -318,9 +322,31 @@ def _heads(data: DataConfig) -> dict[str, HeadDataConfig]:
     return dict(data.heads)
 
 
-def key_specification(data: DataConfig) -> KeySpecification:
+def key_specification(
+    data: DataConfig, requested: RequestedOutputs | None = None
+) -> KeySpecification:
     """The default property keys, plus the graph inputs this run renamed."""
     spec = KeySpecification.from_defaults()
+    if requested is not None:
+        # Existing labels retain their agreed keys. New properties are read
+        # by their declared name, in the declared per-atom/per-graph storage.
+        known = set(spec.graph_keys) | set(spec.atom_keys)
+        custom = [
+            target for target in target_specs(requested) if target.name not in known
+        ]
+        spec.update(
+            graph_keys={
+                target.name: target.name for target in custom if not target.per_atom
+            },
+            atom_keys={
+                target.name: target.name for target in custom if target.per_atom
+            },
+        )
+        if custom:
+            spec = dataclasses.replace(
+                spec,
+                label_names=tuple(target.name for target in target_specs(requested)),
+            )
     keys = data.graph_input_keys
     return spec.update(
         graph_keys={

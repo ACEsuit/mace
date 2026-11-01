@@ -7,10 +7,9 @@ that hold weights: the maps that read a density off the node features, the
 update that reads a new one off the potential, and the readout that turns the
 converged density into a local energy.
 
-Every tensor here is flat and grouped by irrep, in the layout the backbone's
-node features come in, which is the backend's; the modules that look inside a
-term are handed that layout and ask it for views. A density is held **spin
-major**: the alpha channel's multipoles, then the beta channel's, which is the
+Every tensor here is flat and grouped by irrep in canonical ``mul_ir`` layout;
+modules use shared views to access its terms. A density is held **spin major**:
+the alpha channel's multipoles, then the beta channel's, which is the
 declaration ``0e+1o+0e+1o`` for dipoles and why it is written unsimplified.
 
 Two contractions recur and are written once each. :class:`InvariantProducts`
@@ -38,7 +37,7 @@ from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision
 from torch import Tensor, nn
 
-from mace_torch.backends.layout import layout_of
+from mace_torch.backends import layout
 from mace_torch.nn.radial_mlp import SECOND_MOMENT_SCALE
 
 __all__ = [
@@ -131,12 +130,10 @@ class InvariantProducts(nn.Module):
     Args:
         irreps: The declaration both inputs carry, grouped, every term with the
             same multiplicity: the channel count.
-        layout: The features' layout, the backend's.
     """
 
-    def __init__(self, irreps: str, layout) -> None:
+    def __init__(self, irreps: str) -> None:
         super().__init__()
-        self.layout = layout
         self.block_terms = layout.terms(irreps)
         terms = Irreps.parse(irreps).terms
         channels = {mul for mul, _ in terms}
@@ -171,8 +168,8 @@ class InvariantProducts(nn.Module):
     def forward(self, left: Tensor, right: Tensor) -> Tensor:
         """``[n, dim]`` twice in, ``[n, channels]`` out."""
         out = left.new_zeros((left.shape[0], self.channels))
-        left_blocks = self.layout.blocks(left, self.block_terms)
-        right_blocks = self.layout.blocks(right, self.block_terms)
+        left_blocks = layout.blocks(left, self.block_terms)
+        right_blocks = layout.blocks(right, self.block_terms)
         for index, (first, second, _, _, dimension) in enumerate(self.paths):
             pair = torch.einsum(
                 "nud,nvd->nuv", left_blocks[first], right_blocks[second]
@@ -207,12 +204,10 @@ class ScalarModulation(nn.Module):
         irreps: The features' declaration, grouped, every term with the channel
             count as its multiplicity.
         num_scalars: How many scalars mix into each channel.
-        layout: The features' layout, the backend's.
     """
 
-    def __init__(self, irreps: str, num_scalars: int, layout) -> None:
+    def __init__(self, irreps: str, num_scalars: int) -> None:
         super().__init__()
-        self.layout = layout
         self.block_terms = layout.terms(irreps)
         self.terms = Irreps.parse(irreps).terms
         self.num_scalars = num_scalars
@@ -224,7 +219,7 @@ class ScalarModulation(nn.Module):
     def forward(self, features: Tensor, scalars: Tensor) -> Tensor:
         """``[n, dim]`` and ``[n, num_scalars]`` in, ``[n, dim]`` out."""
         pieces, weight_offset = [], 0
-        blocks = self.layout.blocks(features, self.block_terms)
+        blocks = layout.blocks(features, self.block_terms)
         for block, (mul, dimension) in zip(blocks, self.spans, strict=True):
             weight = self.weight[
                 weight_offset : weight_offset + mul * self.num_scalars
@@ -232,7 +227,7 @@ class ScalarModulation(nn.Module):
             mixed = scalars @ weight.T
             pieces.append(block * mixed.unsqueeze(-1) / math.sqrt(dimension))
             weight_offset += mul * self.num_scalars
-        return self.layout.join(pieces)
+        return layout.join(pieces)
 
     def to_canonical(self) -> dict[str, Tensor]:
         """Term major, each ``[channel, scalar]``."""
@@ -256,11 +251,10 @@ class _GatedActivation(nn.Module):
     gated channel, then the gated channels; the gates are spent.
     """
 
-    def __init__(self, num_scalars: int, gated: str, layout) -> None:
+    def __init__(self, num_scalars: int, gated: str) -> None:
         super().__init__()
         self.num_scalars = num_scalars
         self.gated_terms = layout.terms(gated) if gated else ()
-        self.layout = layout
         self.copies = [mul for mul, _ in Irreps.parse(gated).terms] if gated else []
         self.num_gates = sum(self.copies)
 
@@ -275,11 +269,11 @@ class _GatedActivation(nn.Module):
             features[..., self.num_scalars : split]
         )
         pieces, offset = [], 0
-        blocks = self.layout.blocks(features[..., split:], self.gated_terms)
+        blocks = layout.blocks(features[..., split:], self.gated_terms)
         for block, copies in zip(blocks, self.copies, strict=True):
             pieces.append(block * gates[:, offset : offset + copies, None])
             offset += copies
-        return torch.cat([scalars, self.layout.join(pieces)], dim=-1)
+        return torch.cat([scalars, layout.join(pieces)], dim=-1)
 
 
 class BiasReadout(nn.Module):
@@ -320,7 +314,7 @@ class BiasReadout(nn.Module):
             if ir.degree > 0 and ir in out_irreps
         )
         num_gates = sum(mul for mul, _ in Irreps.parse(gated).terms) if gated else 0
-        self.activation = _GatedActivation(num_scalars, gated, layout_of(backend))
+        self.activation = _GatedActivation(num_scalars, gated)
         gate_in = f"{num_scalars + num_gates}x0e" + (f"+{gated}" if gated else "")
         middle = f"{num_scalars}x0e" + (f"+{gated}" if gated else "")
         self.first = backend.make_linear(
@@ -346,6 +340,14 @@ class BiasReadout(nn.Module):
         middle = self.activation(self.first(features))
         middle = self.activation(self.middle(middle))
         return self.last(middle)
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "first": self.first,
+            "middle": self.middle,
+            "last": self.last,
+        }
 
 
 class ChargeUpdate(nn.Module):
@@ -391,11 +393,9 @@ class ChargeUpdate(nn.Module):
         self.from_features = linear(node_irreps, node_irreps)
         self.from_density = linear(density_irreps, node_irreps)
         self.element_embedding = linear(f"{num_elements}x0e", invariants)
-        self.layout = layout_of(backend)
-        self.potential_terms = self.layout.terms(potential_irreps)
-        self.products = InvariantProducts(node_irreps, self.layout)
+        self.products = InvariantProducts(node_irreps)
         self.mlp = LayerNormMLP([2 * channels, 64, 64, 64, channels])
-        self.modulation = ScalarModulation(node_irreps, channels, self.layout)
+        self.modulation = ScalarModulation(node_irreps, channels)
         density_max_l = max(ir.degree for _, ir in Irreps.parse(density_irreps).terms)
         readout_hidden = "+".join(
             f"32x{degree}{'e' if degree % 2 == 0 else 'o'}"
@@ -426,7 +426,6 @@ class ChargeUpdate(nn.Module):
                 canonical, as the solver writes it.
             density: ``[n, density_dim]``, the current density, both spins.
         """
-        potential = self.layout.from_canonical(potential, self.potential_terms)
         mixed = (
             self.from_potential(potential)
             + self.from_features(node_features)
@@ -441,6 +440,19 @@ class ChargeUpdate(nn.Module):
         )
         scaled = self.modulation(node_features, self.mlp(invariants))
         return self.readout(scaled)
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "from_potential": self.from_potential,
+            "from_features": self.from_features,
+            "from_density": self.from_density,
+            "element_embedding": self.element_embedding,
+            "products": self.products,
+            "mlp": self.mlp,
+            "modulation": self.modulation,
+            "readout": self.readout,
+        }
 
 
 class ElectronEnergyReadout(nn.Module):
@@ -481,10 +493,8 @@ class ElectronEnergyReadout(nn.Module):
 
         self.from_density = biased(density_irreps)
         self.from_potential = biased(potential_irreps)
-        self.layout = layout_of(backend)
-        self.potential_terms = self.layout.terms(potential_irreps)
-        self.density_products = InvariantProducts(node_irreps, self.layout)
-        self.potential_products = InvariantProducts(node_irreps, self.layout)
+        self.density_products = InvariantProducts(node_irreps)
+        self.potential_products = InvariantProducts(node_irreps)
         self.mlp = LayerNormMLP([2 * channels, 128, 128, 128, 1])
 
     def forward(
@@ -499,7 +509,6 @@ class ElectronEnergyReadout(nn.Module):
             density: ``[n, density_dim]``, the converged density plus the
                 density it started from, both spins.
         """
-        potential = self.layout.from_canonical(potential, self.potential_terms)
         invariants = torch.cat(
             [
                 self.density_products(node_features, self.from_density(density)),
@@ -508,3 +517,13 @@ class ElectronEnergyReadout(nn.Module):
             dim=-1,
         )
         return self.mlp(invariants).squeeze(-1)
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "from_density": self.from_density,
+            "from_potential": self.from_potential,
+            "density_products": self.density_products,
+            "potential_products": self.potential_products,
+            "mlp": self.mlp,
+        }

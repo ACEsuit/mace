@@ -16,6 +16,8 @@ gradients are comparable and they are what is checked here.
 
 from __future__ import annotations
 
+from tests.parity.fm00_convert import model_arguments
+
 import json
 import os
 from pathlib import Path
@@ -74,7 +76,7 @@ def converted(legacy):
         PrecisionConfig(),
     )
     model = MACEModel(
-        ReferenceBackend(), observables=[ENERGY], energy_head=head, **config
+        ReferenceBackend(), observables=[ENERGY], energy_head=head, **model_arguments(config)
     )
     transfer_weights(legacy, model, config["correlation"])
     return model, numbers

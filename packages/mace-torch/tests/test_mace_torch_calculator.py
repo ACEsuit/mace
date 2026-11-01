@@ -348,9 +348,9 @@ def test_passed_through_entries_reach_the_graph(checkpoints):
     graph, info = calculator._graph(atoms, padded=True)
     np.testing.assert_array_equal(graph["total_charge"].numpy(), [1.0, 0.0])
     np.testing.assert_array_equal(
-        graph["charges"][: info.nodes].numpy(), [0.5, -0.25, -0.25]
+        graph["charges"][: info.n_real_nodes].numpy(), [0.5, -0.25, -0.25]
     )
-    assert not torch.any(graph["charges"][info.nodes :])
+    assert not torch.any(graph["charges"][info.n_real_nodes :])
 
 
 @fp64_only
@@ -407,3 +407,23 @@ def test_a_head_the_model_does_not_have_is_refused(checkpoints):
 def test_a_calculator_with_no_model_is_refused():
     with pytest.raises(ValueError, match="model_paths or models"):
         MACECalculator()
+
+
+@fp64_only
+@pytest.mark.parametrize("padded", [False, True])
+def test_the_calculator_collates_once_before_padding(checkpoints, monkeypatch, padded):
+    from mace_torch.calculators import ase_calculator
+
+    original = ase_calculator.collate
+    calls = []
+
+    def collate_once(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(ase_calculator, "collate", collate_once)
+    calc = MACECalculator(
+        checkpoints["a"], padding=PaddingPolicy(mode="auto" if padded else "none")
+    )
+    evaluate(calc, water())
+    assert len(calls) == 1

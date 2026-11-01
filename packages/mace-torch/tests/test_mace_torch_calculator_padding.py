@@ -11,15 +11,16 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
 from mace_torch.calculators.padding import (
     PaddingOverflowError,
     PaddingPolicy,
-    pad_batch,
     resolve_budget,
 )
 from mace_torch.data.graphs import graph_from_configuration
+from mace_torch.graph import collate, pad_batch
 
 R_MAX = 3.0
 
@@ -119,17 +120,27 @@ def test_an_overflow_is_refused_when_the_policy_does_not_grow():
 # ---------------------------------------------------------------------------
 
 
+def padded(structure, policy):
+    return pad_batch(
+        collate([structure], dtype=torch.float64),
+        policy.graph_policy(),
+        R_MAX,
+        atomic_number_table=AtomicNumberTable([1]),
+    )
+
+
 def test_the_fake_structure_s_edges_are_beyond_the_cutoff():
     graph = structure(40)
     policy, _ = resolve_budget(PaddingPolicy(mode="auto"), 40, edges_of(graph))
-    (_, fake), info = pad_batch(graph, policy, R_MAX, z_table=AtomicNumberTable([1]))
-    assert (info.nodes, info.edges) == (40, edges_of(graph))
-    lengths = np.linalg.norm(fake["shifts"], axis=1)
-    assert np.all(lengths >= R_MAX)
-    # Self-loops, so the length is the shift alone.
-    assert np.array_equal(fake["edge_index"][0], fake["edge_index"][1])
-    # A shift is its unit shift times the cell, so a strained cell strains it.
-    assert np.allclose(fake["unit_shifts"] @ fake["cell"], fake["shifts"])
+    batch, info = padded(graph, policy)
+    assert (info.n_real_nodes, info.n_real_edges) == (40, edges_of(graph))
+    shifts = batch["shifts"][info.n_real_edges :]
+    assert torch.all(torch.linalg.vector_norm(shifts, dim=1) >= R_MAX)
+    edges = batch["edge_index"][:, info.n_real_edges :]
+    assert torch.equal(edges[0], edges[1])
+    assert torch.allclose(
+        batch["unit_shifts"][info.n_real_edges :] @ batch["cell"][-1], shifts
+    )
 
 
 def test_the_padding_edges_use_the_agreed_last_fake_atom():
@@ -141,23 +152,19 @@ def test_the_padding_edges_use_the_agreed_last_fake_atom():
         40,
         edges_of(graph),
     )
-    (_, fake), _ = pad_batch(graph, policy, R_MAX, z_table=AtomicNumberTable([1]))
-    assert np.all(fake["edge_index"] == len(fake["node_atomic_numbers"]) - 1)
+    batch, info = padded(graph, policy)
+    assert len(batch["node_atomic_numbers"]) == 41
+    assert torch.all(batch["edge_index"][:, info.n_real_edges :] == 40)
 
 
 def test_the_batch_keeps_its_shape_from_one_step_to_the_next():
-    """The fake atoms are counted once, with the budget, so a structure whose
-    edge count moves does not move the node count, which under static shapes
-    would be a recompile at every step."""
     policy = PaddingPolicy(mode="auto")
     shapes = set()
     for seed in range(6):
         graph = structure(40, seed=seed)
         policy, _ = resolve_budget(policy, 40, edges_of(graph))
-        structures, _ = pad_batch(graph, policy, R_MAX, z_table=AtomicNumberTable([1]))
-        nodes = sum(len(item["node_atomic_numbers"]) for item in structures)
-        edges = sum(edges_of(item) for item in structures)
-        shapes.add((nodes, edges))
+        batch, _ = padded(graph, policy)
+        shapes.add((len(batch["node_atomic_numbers"]), edges_of(batch)))
     assert len({edges_of(structure(40, seed=seed)) for seed in range(6)}) > 1
     assert len(shapes) == 1
 
@@ -168,13 +175,8 @@ def test_the_shape_changes_only_when_the_budget_grows():
     for count in (40, 40, 80, 80, 40):
         graph = structure(count)
         policy, _ = resolve_budget(policy, count, edges_of(graph))
-        structures, _ = pad_batch(graph, policy, R_MAX, z_table=AtomicNumberTable([1]))
-        shapes.append(
-            (
-                sum(len(item["node_atomic_numbers"]) for item in structures),
-                sum(edges_of(item) for item in structures),
-            )
-        )
+        batch, _ = padded(graph, policy)
+        shapes.append((len(batch["node_atomic_numbers"]), edges_of(batch)))
     assert shapes[0] == shapes[1]
     assert shapes[2] != shapes[1]
     assert shapes[2] == shapes[3] == shapes[4]

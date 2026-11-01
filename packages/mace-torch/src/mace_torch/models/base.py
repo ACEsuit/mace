@@ -20,12 +20,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import Any, Literal
+from typing import Any
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.config.model import InteractionKind, ModelConfig
-from mace_core.kernels.descriptors import RadialBasisKind
+from mace_core.config.model import ModelConfig
 from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
@@ -60,133 +59,55 @@ def _constructed_in(precision: Precision) -> Iterator[None]:
 
 
 class MACEModel(nn.Module):
-    """Backbone, optional pair repulsion, and the output layer.
+    """Backbone, optional pair repulsion, and declared observable heads.
 
-    Args:
-        backend: The kernel backend. Consulted at construction only.
-        atomic_numbers: The element table, ascending.
-        observables: What the model reads out.
-        energy_head: The energy head, when ``energy`` is declared.
-        pair_repulsion: Whether to add the short-range repulsion.
-        cutoff_order: The polynomial order of both envelopes, the radial
-            basis's and the repulsion's. It comes from the model's cutoff
-            setting rather than from either of them, and defaulting it where a
-            trained model set something else moves the energy by 6.3e-3 eV and
-            the repulsion by 0.41 eV.
-        node_inputs: Declared per-node input streams.
-        readout_hidden: The last readout's middle, per head, as
-            ``MLP_irreps``; an integer is that many scalars.
-        num_heads: How many levels of theory the model reads out. They share
-            the backbone and nothing after it: each has its own readout, and
-            the energy head carries one row of constants per head.
-        last_layer_irreps: What the last layer keeps; see the backbone.
-        residual_first_layer: A residual first layer; see the backbone.
-        learned_density_first_layer: A learned density in the first layer;
-            see the backbone.
-        learned_density: A learned density in every later layer.
-        nonlinear_first_layer: A nonlinear first layer; see the backbone.
-        nonlinear: Nonlinear later layers.
-        convolution_irreps: What a nonlinear layer convolves; see the
-            backbone.
-        narrow_first_convolution: Convolve only its scalars in the first
-            layer.
-        distance_transform: The distance transform; see the backbone.
-        apply_cutoff: Whether the radial basis carries the cutoff envelope;
-            see the backbone.
-        radial_hidden: The radial networks' hidden widths.
-        graph_features: Inputs embedded beside the elements; see the
-            backbone.
-        readout_last_only: Read out only the last layer.
-        readout_biased: The frozen tree's biased readout on the last layer.
-        readout_from_embedding: Also read an energy out of the node embedding,
-            before the first interaction.
-        element_agnostic_product: One set of product weights for all
-            elements; see the backbone.
-        edge_axes: The axis order the spherical harmonics read; see the
-            backbone.
-        The rest are the backbone's.
+    ``config`` is the sole architecture description. Element/head tables and
+    measured neighbour statistics are supplied separately from that recipe.
+    ``last_layer_irreps`` and ``edge_axes`` are the physical conventions of a
+    model family; the standard energy model keeps scalars in Cartesian order.
     """
 
     def __init__(
         self,
         backend,
+        config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
         energy_head: EnergyOutputHead | None = None,
-        num_layers: int = 2,
-        num_features: int = 16,
-        lmax: int = 2,
-        hidden_irreps: str = "0e+1o",
-        num_radial: int = 8,
-        cutoff: float = 5.0,
-        correlation: int = 3,
+        *,
         avg_num_neighbors: float = 1.0,
-        radial_kind: RadialBasisKind = "bessel",
         precision: Precision = "float64",
-        pair_repulsion: bool = False,
-        cutoff_order: int = 6,
-        distance_transform: Literal["none", "agnesi", "soft"] = "none",
-        apply_cutoff: bool = True,
-        radial_hidden: Sequence[int] = (64, 64, 64),
-        graph_features: Sequence[FeatureSpec] = (),
-        readout_last_only: bool = False,
-        readout_biased: bool = False,
-        readout_from_embedding: bool = False,
         node_inputs: Sequence[InputSpec] = (),
-        readout_hidden: int | str = 16,
         num_heads: int = 1,
-        last_layer_irreps: str = "0e",
-        residual_first_layer: bool = False,
-        learned_density_first_layer: bool = False,
-        learned_density: bool = False,
-        nonlinear_first_layer: bool = False,
-        nonlinear: bool = False,
-        convolution_irreps: str | None = None,
-        narrow_first_convolution: bool = False,
-        element_agnostic_product: bool = False,
+        last_layer_irreps: str | None = None,
         edge_axes: tuple[int, int, int] = (0, 1, 2),
-        architecture: ModelConfig | None = None,
         radial_precision: Precision | None = None,
     ) -> None:
         super().__init__()
-        with _constructed_in(precision):
-
-            def interaction_kind(
-                residual: bool, density: bool, nonlinear: bool
-            ) -> InteractionKind:
-                if nonlinear:
-                    return "nonlinear"
-                if density:
-                    return "density_residual" if residual else "density"
-                return "residual" if residual else "plain"
-
-            architecture = architecture or ModelConfig(
-                num_interactions=num_layers,
-                num_channels=num_features,
-                max_ell=lmax,
-                hidden_irreps=hidden_irreps,
-                radial_basis={"kind": radial_kind, "num_basis": num_radial},
-                r_max=cutoff,
-                correlation=correlation,
-                cutoff={"polynomial_order": cutoff_order},
-                distance_transform={"kind": distance_transform},
-                apply_cutoff=apply_cutoff,
-                radial_mlp=tuple(radial_hidden),
-                interaction_first=interaction_kind(
-                    residual_first_layer,
-                    learned_density_first_layer,
-                    nonlinear_first_layer,
-                ),
-                interaction=interaction_kind(True, learned_density, nonlinear),
-                edge_irreps=convolution_irreps,
-                use_edge_irreps_first=narrow_first_convolution,
-                use_agnostic_product=element_agnostic_product,
+        if config.pair_repulsion and energy_head is None:
+            raise ValueError("pair repulsion requires an energy head")
+        if config.readout.gate != "silu":
+            raise ValueError("the readout currently supports only the silu gate")
+        if last_layer_irreps is None:
+            last_layer_irreps = "0e" if energy_head is not None else config.node_irreps
+        self.config = config
+        graph_features = tuple(
+            FeatureSpec(
+                name=feature.name,
+                kind=feature.kind,
+                embedding_dim=feature.embedding_dim,
+                num_classes=feature.num_classes,
+                input_dim=feature.input_dim,
+                level="graph" if feature.per == "graph" else "node",
+                offset=feature.offset,
+                use_bias=feature.use_bias,
             )
-            num_features = architecture.num_channels
-            cutoff_order = architecture.cutoff.polynomial_order
+            for feature in config.graph_features
+        )
+        with _constructed_in(precision):
             self.backbone = MACEBackbone(
                 backend,
-                architecture,
+                config,
                 atomic_numbers,
                 avg_num_neighbors=avg_num_neighbors,
                 precision=precision,
@@ -201,24 +122,28 @@ class MACEModel(nn.Module):
                 list(observables),
                 layer_irreps=tuple(
                     "+".join(
-                        f"{mul // num_features}x{ir}"
+                        f"{mul // config.num_channels}x{ir}"
                         for mul, ir in Irreps.parse(layer).terms
                     )
                     for layer in self.backbone.layer_irreps
                 ),
-                num_features=num_features,
+                num_features=config.num_channels,
                 energy_head=energy_head,
                 precision=precision,
-                readout_irreps=readout_hidden,
+                readout_irreps=config.readout.mlp_irreps,
                 num_heads=num_heads,
-                last_only=readout_last_only,
-                biased=readout_biased,
+                last_only=config.readout.last_only,
+                biased=config.readout.bias,
                 embedding_irreps=(
-                    self.backbone.embedding_irreps if readout_from_embedding else None
+                    self.backbone.embedding_irreps
+                    if config.readout.from_embedding
+                    else None
                 ),
             )
             self.repulsion = (
-                ZBLBasis(polynomial_order=cutoff_order) if pair_repulsion else None
+                ZBLBasis(polynomial_order=config.cutoff.polynomial_order)
+                if config.pair_repulsion
+                else None
             )
 
     @property
@@ -249,3 +174,11 @@ class MACEModel(nn.Module):
             else None
         )
         return self.outputs(graph, features, repulsion, embedding)
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "backbone": self.backbone,
+            "outputs": self.outputs,
+            "repulsion": self.repulsion,
+        }

@@ -398,6 +398,29 @@ def _check_something_is_labelled(
     path: str,
     no_data_ok: bool,
 ) -> None:
+    if key_spec.label_names is not None:
+        stores: list[tuple[str, Storage]] = []
+        for name in key_spec.label_names:
+            if name in key_spec.atom_keys:
+                stores.append((key_spec.atom_keys[name], "atom"))
+            elif name in key_spec.graph_keys:
+                stores.append((key_spec.graph_keys[name], "graph"))
+            else:
+                raise ValueError(f"declared label {name!r} has no property key")
+        if any(
+            _stored_value(atoms, key, per)[0]
+            for atoms in atoms_list
+            for key, per in stores
+        ):
+            return
+        message = (
+            f"none of the declared labels {list(key_spec.label_names)} "
+            f"is present in {path!r}"
+        )
+        if not no_data_ok:
+            raise ValueError(message)
+        logger.warning("%s. Continuing: no_data_ok was set.", message)
+        return
     if "energy" not in key_spec.graph_keys or "forces" not in key_spec.atom_keys:
         raise ValueError(
             "the key specification names no energy key, no forces key, or "

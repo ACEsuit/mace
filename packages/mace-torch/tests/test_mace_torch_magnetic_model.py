@@ -19,7 +19,7 @@ from ase import Atoms
 from ase.io import write
 from mace_core.config import FixedPointSpec
 from mace_core.config.data import AugmentationSpec
-from mace_core.config.model import MagneticConfig
+from mace_core.config.model import MagneticConfig, ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
@@ -63,16 +63,21 @@ def engine(one_body: int = 6, seed: int = 3, backend=None) -> DerivativeEngine:
         observables=[ENERGY],
         energy_head=head,
         saturation=[1.2, 4.5],
-        num_features=4,
-        lmax=2,
-        moment_lmax=2,
-        num_moment_basis=6,
-        one_body_basis=one_body,
-        cutoff=4.0,
-        cutoff_order=5,
-        correlation=2,
-        pair_repulsion=True,
-        readout_hidden="4x0e",
+        config=ModelConfig(
+            num_channels=4,
+            max_ell=2,
+            r_max=4.0,
+            cutoff={"polynomial_order": 5},
+            correlation=2,
+            pair_repulsion=True,
+            readout={"mlp_irreps": "4x0e"},
+            magnetic={
+                "lmax": 2,
+                "num_basis": 6,
+                "one_body": bool(one_body),
+                "one_body_basis": max(1, one_body),
+            },
+        ),
     )
     initialize_model_weights(model, seed)
     return DerivativeEngine(model, ENERGY, None, inputs=[MAGMOM])

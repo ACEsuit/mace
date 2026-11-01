@@ -18,6 +18,8 @@ and a slab in reciprocal space, the slab with its dipole correction.
 
 from __future__ import annotations
 
+from tests.parity.fm00_convert import model_arguments
+
 import numpy as np
 import pytest
 import torch
@@ -173,7 +175,7 @@ def convert(legacy, profile, normal):
         settings=polar_settings(
             legacy, periodicity_profile=profile, slab_normal=normal
         ),
-        **config,
+        **model_arguments(config),
     )
     transfer_polar_weights(legacy, model, config["correlation"])
     return model, config

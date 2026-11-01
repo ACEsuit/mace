@@ -52,11 +52,11 @@ from mace_core.kernels.paths import channelwise_paths
 from mace_core.kernels.precision import Precision
 from torch import Tensor, nn
 
-from mace_torch.backends.radial import ChebyshevBasis
-from mace_torch.kernels import segment_sum
-from mace_torch.nn.layout import (
+from mace_torch.backends.layout import (
     expanded_irreps,
 )
+from mace_torch.backends.radial import ChebyshevBasis
+from mace_torch.kernels import segment_sum
 from mace_torch.nn.radial_mlp import RadialMLP
 
 __all__ = [
@@ -327,6 +327,19 @@ class MagneticInteractionBlock(nn.Module):
             message = self.skip(message, element_attributes)
         return message, carried
 
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "linear_up": self.linear_up,
+            "edge_coupling": self.edge_coupling,
+            "moment_coupling": self.moment_coupling,
+            "linear": self.linear,
+            "skip": self.skip,
+            "edge_weights": self.edge_weights,
+            "moment_weights": self.moment_weights,
+            "density": self.density,
+        }
+
 
 class MagneticProductBlock(nn.Module):
     """The many-body contraction, then a coupling with the atom's own moment.
@@ -419,6 +432,16 @@ class MagneticProductBlock(nn.Module):
         if skip is not None:
             mapped = mapped + skip
         return mapped
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "contraction": self.contraction,
+            "linear": self.linear,
+            "linear_ori": self.linear_ori,
+            "moment_coupling": self.moment_coupling,
+            "moment_weights": self.moment_weights,
+        }
 
 
 class OneBodyMomentEnergy(nn.Module):
@@ -657,3 +680,13 @@ class MagneticBackbone(nn.Module):
             )
             outputs.append(features)
         return outputs
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "node_embedding": self.node_embedding,
+            "radial": self.radial,
+            "moments": self.moments,
+            "interactions": self.interactions,
+            "products": self.products,
+        }

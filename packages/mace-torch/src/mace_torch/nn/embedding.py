@@ -138,6 +138,14 @@ class RadialEmbeddingBlock(torch.nn.Module):
     def extra_repr(self) -> str:
         return f"apply_cutoff={self.apply_cutoff}"
 
+    def canonical_components(self) -> dict[str, torch.nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "basis": self.basis,
+            "distance_transform": self.distance_transform,
+            "cutoff": self.cutoff,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Config section -> module

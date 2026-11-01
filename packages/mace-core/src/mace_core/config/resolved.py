@@ -40,6 +40,7 @@ from mace_core.config.pseudolabels import PseudolabelConfig
 from mace_core.config.runtime import RuntimeConfig
 from mace_core.config.section import FrozenSection
 from mace_core.config.training import StageConfig, TrainingConfig
+from mace_core.observables import ObservableCatalogue
 
 __all__ = [
     "ENERGY_OBSERVABLE",
@@ -160,6 +161,8 @@ class ResolvedConfig(BaseConfig):
     runtime: RuntimeConfig = RuntimeConfig()
     data: DataConfig = DataConfig()
     model: ModelConfig = ModelConfig()
+    #: Optional complete observable/input declarations, recorded in the checkpoint.
+    catalogue: ObservableCatalogue | None = None
     loss: LossConfig = LossConfig()
     training: TrainingConfig = TrainingConfig()
     finetune: FinetuneConfig = FinetuneConfig()
@@ -274,7 +277,12 @@ class ResolvedConfig(BaseConfig):
             or "error_table" in runtime
         ):
             return data
-        table = "DipolePolarRMSE" if "polarizability" in observables else "DipoleRMSE"
+        if "dipole" in observables:
+            table = (
+                "DipolePolarRMSE" if "polarizability" in observables else "DipoleRMSE"
+            )
+        else:
+            table = "ObservablesRMSE"
         return {**data, "runtime": {**runtime, "error_table": table}}
 
     @model_validator(mode="after")

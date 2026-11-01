@@ -86,3 +86,10 @@ class EquivariantProductBasisBlock(nn.Module):
         if skip is None:
             return features
         return features + skip
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        """Stable checkpoint roles, independent of implementation attributes."""
+        return {
+            "contraction": self.contraction,
+            "linear": self.linear,
+        }

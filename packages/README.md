@@ -84,7 +84,7 @@ four packages may name it. Its README is the template for writing a backend.
 ## Checkpoints across the agreed backbone integration
 
 The integrated V1 tree writes checkpoint format **3**, with raw linear and skip
-weights and the reviewed backbone module paths. Pre-integration V1 checkpoints
+weights and the reviewed component identities. Pre-integration V1 checkpoints
 in format 2 are refused explicitly; their folded normalizations cannot be read
 as raw weights. Keep the old V1 environment for those checkpoints. Legacy pickle
 models can be extracted and converted again with the current converter.
@@ -92,6 +92,25 @@ models can be extracted and converted again with the current converter.
 Model settings now use `radial_basis.num_basis` and `cutoff.polynomial_order`;
 interactions are named `plain`, `residual`, `density`, `density_residual` or
 `nonlinear`. Legacy CLI flags still pass through the configuration translator.
+
+Models take `ModelConfig` as their architecture description; element tables,
+head counts and measured neighbour statistics are runtime inputs. Feature
+tensors use the agreed `mul_ir` layout throughout. The calculator collates a
+structure once and uses the same tensor padding as training.
+
+Custom properties are declared in the optional `catalogue` section of the
+training configuration, using `ObservableCatalogue` and `ObservableSpec`.
+List the desired names in `model.observables` and their weights in `loss.weights`.
+The data reader reads each custom label under its declared name, from the
+per-atom or per-graph store the spec selects. Energy is optional for standard
+models; repulsion, polar and magnetic energy models still require it. The
+catalogue travels with the checkpoint, so loading needs no separate declaration.
+
+Model and block classes bind stable checkpoint roles to their children through
+`canonical_components()`. Plain containers retain their registered child names;
+an empty role makes an implementation wrapper transparent. This preserves the
+format-3 tensor names and values while allowing Python attributes to be renamed.
+An undeclared component with canonical state is rejected when saving or loading.
 
 ## Installing alongside the legacy package
 
@@ -303,7 +322,7 @@ reference in `mace_torch/backends/reference.py` is the one to copy.
 | `mace_torch/backends/__init__.py` | The shipped kernel backends. |
 | `mace_torch/backends/composite.py` | A chosen backend with the reference behind it, op by op, and how a name resolves to one. |
 | `mace_torch/backends/conformance.py` | The checks every kernel backend passes against the reference. |
-| `mace_torch/backends/layout.py` | How features sit inside each irrep term, as the one object the model asks for views in the backend's layout. |
+| `mace_torch/backends/layout.py` | Views of feature tensors in the agreed canonical `mul_ir` layout. |
 | `mace_torch/backends/cueq.py` | The cuEquivariance backend: linear, convolution, contraction and skip on NVIDIA's kernels. |
 | `mace_torch/backends/oeq.py` | The OpenEquivariance backend: the fused convolution. |
 | `mace_torch/backends/precision.py` | A backend whose ops are built at the precision configured for each, with casts at the boundary of those that differ. |
@@ -367,7 +386,6 @@ reference in `mace_torch/backends/reference.py` is the one to copy.
 | `mace_torch/nn/field.py` | The charge-aware blocks: density update, electron-energy readout, channel-pair products. |
 | `mace_torch/nn/graph_features.py` | Graph-level inputs embedded into the node features. |
 | `mace_torch/nn/interaction.py` | The interaction blocks: convolution, linear, skip. |
-| `mace_torch/nn/layout.py` | Index maps between channel-major and irrep-grouped layouts. |
 | `mace_torch/nn/magnetic.py` | The moment-reading blocks: moment features, interaction and product couplings with the moment. |
 | `mace_torch/nn/node_inputs.py` | Declared per-node inputs mixed into the features. |
 | `mace_torch/nn/product_basis.py` | The many-body product on the backend's contraction. |
@@ -377,6 +395,7 @@ reference in `mace_torch/backends/reference.py` is the one to copy.
 | `mace_torch/physics/fixed_point.py` | Relaxing a declared input to a fixed point around the engine. |
 | `mace_torch/physics/outputs.py` | `DerivativeEngine`: strain, forces, stress, virials, Hessian. |
 | `mace_torch/serialization.py` | Checkpoints as canonical tensors and a JSON sidecar, no pickle. |
+| `mace_torch/canonical.py` | Stable logical component identities for canonical checkpoint state. |
 | `mace_torch/train/__init__.py` | The stages and the loop, re-exported. |
 | `mace_torch/train/checkpoint.py` | Run checkpoints for resuming, with optimizer and schedule state. |
 | `mace_torch/train/contracts.py` | The stage objects with their torch types bound. |
