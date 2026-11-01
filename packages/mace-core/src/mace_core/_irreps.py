@@ -1,5 +1,9 @@
 """Irreps syntax shared by the algebra and observable declarations."""
 
+# The declaration syntax follows e3nn.o3.Irreps; attribution and API differences
+# are documented in clebsch_gordan/irreps.py. The parser is shared by MACE's
+# algebra and observables, with their respective leading-zero policies.
+
 from __future__ import annotations
 
 import re

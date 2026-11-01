@@ -12,6 +12,10 @@ and the best checkpoint holds them. So this is not a smoothing detail, it is
 the model the run produces.
 """
 
+# API and update-count warmup inspired by torch-ema (Samuel G. Fadel):
+# https://github.com/fadel/pytorch_ema/blob/master/torch_ema/ema.py
+# MACE keeps its own update order and checkpoint state format.
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator

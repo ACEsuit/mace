@@ -31,6 +31,10 @@ The recurrences are written in homogeneous form (``r^2`` where the textbook has
 the regular solid harmonics, which is what keeps a zero vector finite.
 """
 
+# Basis and normalization follow e3nn.o3.SphericalHarmonics (e3nn authors, MIT):
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/o3/_spherical_harmonics.py
+# Evaluation here uses homogeneous Legendre recurrences, as described above.
+
 from __future__ import annotations
 
 import math

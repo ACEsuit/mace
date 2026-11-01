@@ -61,6 +61,12 @@ tree keeps it:
   ``torch.nn.Linear``'s draw, and a fresh layer norm is the identity.
 """
 
+# Path normalization and activation-scale conventions follow e3nn (MIT):
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/o3/_linear.py
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/o3/_tensor_product/_tensor_product.py
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/math/_normalize_activation.py
+# The canonical weight layout and path order are MACE's checkpoint contract.
+
 from __future__ import annotations
 
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps

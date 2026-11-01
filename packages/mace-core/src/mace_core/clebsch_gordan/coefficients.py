@@ -15,6 +15,11 @@ coefficient. Measured against an independent derivation over every triple with
 ``l <= 5``, the agreement is 1.1e-16, which is one unit in the last place.
 """
 
+# Mathematical reference: the Racah factorial formula. A related rational-sum
+# implementation is e3nn's _su2_clebsch_gordan_coeff, which credits QuTiP:
+# https://github.com/e3nn/e3nn/blob/0.5.8/e3nn/o3/_wigner.py
+# This integer-degree implementation is checked independently against SymPy.
+
 from __future__ import annotations
 
 import math

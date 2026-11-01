@@ -10,6 +10,10 @@ A call builds the basis of exactly one body order. A model of correlation
 ascending body order (:func:`~mace_core.clebsch_gordan.conversion.to_canonical`).
 """
 
+# Related algorithm/API: e3nn.o3.ReducedTensorProducts (e3nn authors, MIT):
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/o3/_reduce.py
+# MACE enumerates and orthogonalizes paths in its own canonical weight order.
+
 from __future__ import annotations
 
 import itertools

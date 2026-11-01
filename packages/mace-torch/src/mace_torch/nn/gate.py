@@ -5,6 +5,11 @@ irreps are only ever scaled, each copy by a gate: a scalar computed alongside
 it and passed through a sigmoid. The scalars themselves go through a SiLU.
 """
 
+# Gating and activation normalization inspired by e3nn.nn.Gate/Activation (MIT):
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/nn/_gate.py
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/nn/_activation.py
+# MACE specializes this to even scalars, SiLU and sigmoid gates.
+
 from __future__ import annotations
 
 import torch

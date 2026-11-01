@@ -1,3 +1,7 @@
+# Adapted from graph_longrange/utils.py by Will Baldwin (MIT).
+# https://github.com/WillBaldwin0/graph_electrostatics
+# See LICENSE.md and this package's __init__.py for provenance and local changes.
+
 import torch
 
 # internal units are (electon, Volt, Angstrom)
@@ -9,6 +13,9 @@ FIELD_CONSTANT = 1 / (5.526349406 * 1e-3)
 CUBIC_MADELUNG = 2.837297
 
 
+# Adapted from PyTorch Geometric's to_dense_batch (Matthias Fey et al., MIT):
+# https://github.com/pyg-team/pytorch_geometric/blob/2.0.4/torch_geometric/utils/to_dense_batch.py
+# Retained here through graph_longrange's utility implementation.
 def to_dense_batch(
     x: torch.Tensor,
     batch: torch.Tensor | None = None,
@@ -50,6 +57,10 @@ def to_dense_batch(
     return out, mask
 
 
+# _broadcast, scatter_sum and scatter_mean adapt pytorch_scatter (Matthias Fey,
+# MIT), retained through graph_longrange:
+# https://github.com/rusty1s/pytorch_scatter/blob/2.0.9/torch_scatter/utils.py
+# https://github.com/rusty1s/pytorch_scatter/blob/2.0.9/torch_scatter/scatter.py
 def _broadcast(src: torch.Tensor, other: torch.Tensor, dim: int):
     if dim < 0:
         dim = other.dim() + dim

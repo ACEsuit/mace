@@ -16,6 +16,11 @@ The activation carries a **fixed multiplier** so its output has unit second
 moment. See :data:`SECOND_MOMENT_SCALE` for why the value is the one it is.
 """
 
+# Layer scaling and activation normalization follow e3nn (e3nn authors, MIT):
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/nn/_fc.py
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/math/_normalize_activation.py
+# The raw weights and sampled SiLU scale preserve trained-model parity.
+
 from __future__ import annotations
 
 from collections.abc import Sequence

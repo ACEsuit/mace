@@ -12,6 +12,13 @@ makes one checkpoint loadable by any backend: the reference defines the format
 by holding it.
 """
 
+# Linear and tensor-product semantics follow e3nn.o3 (e3nn authors, MIT):
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/o3/_linear.py
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/o3/_tensor_product/_tensor_product.py
+# ReferenceNormalizedSiluMLP follows e3nn.nn.FullyConnectedNet:
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/nn/_fc.py
+# These ops use MACE's canonical layout and plain-torch execution.
+
 from __future__ import annotations
 
 import math

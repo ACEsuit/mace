@@ -112,6 +112,15 @@ an empty role makes an implementation wrapper transparent. This preserves the
 format-3 tensor names and values while allowing Python attributes to be renamed.
 An undeclared component with canonical state is rejected when saving or loading.
 
+## Source attribution
+
+When code adapts or is strongly inspired by another project, add a nearby
+comment naming the project and the relevant function or module, with a source
+link (prefer a tag or commit). State whether the relationship is an adaptation,
+API inspiration, or compatibility with a convention. Preserve upstream authorship
+and license notices. A shared mathematical formula alone does not establish that
+an implementation was copied.
+
 ## Installing alongside the legacy package
 
 Both stacks in one environment, from a fresh venv at the repository root:

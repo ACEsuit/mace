@@ -1,3 +1,7 @@
+# Adapted from graph_longrange/kspace.py by Will Baldwin (MIT).
+# https://github.com/WillBaldwin0/graph_electrostatics
+# See LICENSE.md and this package's __init__.py for provenance and local changes.
+
 import torch
 from scipy.constants import pi
 

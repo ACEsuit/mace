@@ -4,6 +4,10 @@ Irreps sort by ascending degree, even before odd at equal degree. Coupling
 paths use this order, so it determines the weight layout on disk.
 """
 
+# API and notation inspired by e3nn.o3.Irrep/Irreps (e3nn authors, MIT):
+# https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/o3/_irreps.py
+# MACE defines its own validation and ordering; see the module docstring.
+
 from __future__ import annotations
 
 import numbers

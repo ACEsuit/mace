@@ -1,8 +1,12 @@
+# Adapted from graph_longrange/features.py by Will Baldwin (MIT).
+# https://github.com/WillBaldwin0/graph_electrostatics
+# See LICENSE.md and this package's __init__.py for provenance and local changes.
+
 ###########################################################################################
 # Functions for computing global electrostatic features from atomic multipoles
 # and gaussian type orbitals
 # Authors: Will Baldwin
-# This program is distributed under the MIT License (see MIT.md)
+# This program is distributed under the MIT License (see LICENSE.md)
 ###########################################################################################
 
 from collections.abc import Callable

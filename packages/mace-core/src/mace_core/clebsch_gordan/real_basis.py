@@ -34,6 +34,11 @@ mixes ``m = 0`` with ``m = +2``. That is the change of frame acting on the
 harmonics, not a property of the tables.
 """
 
+# Related basis construction: e3nn's change_basis_real_to_complex and
+# _so3_clebsch_gordan (e3nn authors, MIT):
+# https://github.com/e3nn/e3nn/blob/0.5.8/e3nn/o3/_wigner.py
+# MACE uses the real-basis and phase conventions stated above.
+
 from __future__ import annotations
 
 import math
