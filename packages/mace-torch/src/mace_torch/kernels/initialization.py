@@ -47,14 +47,18 @@ def initialize_model_weights(model: nn.Module, seed: int = 0) -> tuple[str, ...]
             get the same weights, and that is the whole reason it is recorded.
 
     Returns:
-        The paths that were initialised, in tree order. A caller that gets an
+        The paths that were initialised, in tree order. They are drawn in the
+        reverse of it, every module after the ones inside it. A caller that gets an
         empty tuple back has a model with no weights of its own, which is worth
         knowing rather than discovering as a loss that will not move.
     """
-    initialized: list[str] = []
-    for path, module in model.named_modules():
-        if not isinstance(module, InternalWeights):
-            continue
+    # Deepest first, so that a block which sets its own start for one of its
+    # ops overrides what that op drew rather than being overwritten by it.
+    modules = [
+        (path, module)
+        for path, module in model.named_modules()
+        if isinstance(module, InternalWeights)
+    ]
+    for path, module in reversed(modules):
         module.initialize_weights(op_seed(seed, path))
-        initialized.append(path)
-    return tuple(initialized)
+    return tuple(path for path, _ in modules)

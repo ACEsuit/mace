@@ -16,12 +16,14 @@ from typing import ClassVar, Literal, get_args
 
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import CANONICAL_LAYOUT
+from mace_core.kernels.paths import ConvolutionPath, channelwise_paths, path_irreps
 from mace_core.kernels.precision import PRECISIONS, Precision
 
 __all__ = [
     "CLEBSCH_GORDAN_BASES",
     "ChannelwiseTPConvDescriptor",
     "Descriptor",
+    "DistanceTransformDescriptor",
     "FullyConnectedTPDescriptor",
     "LinearDescriptor",
     "RadialBasisDescriptor",
@@ -154,9 +156,25 @@ class ChannelwiseTPConvDescriptor(Descriptor):
     """The message-passing tensor product, channel by channel, over the edges.
 
     Attributes:
-        irreps_node: The sender node features.
+        irreps_node: One channel's sender node features.
         irreps_edge: The edge attributes, normally spherical harmonics.
-        irreps_out: The message irreps before the node-level reduction.
+        irreps_out: Which output irreps the layer keeps. A coupling landing
+            outside it is dropped.
+        num_features: The channel count.
+
+    **Every coupling is its own path, with its own output term**, in the order
+    :func:`~mace_core.kernels.paths.channelwise_paths` pins, and
+    :attr:`irreps_paths` is one channel's message declaration. Two couplings
+    landing on one irrep are not summed: the linear after the convolution mixes
+    them with independent weights, and summing first is a smaller model.
+
+    The features are grouped by irrep, the canonical ``mul_ir`` over the
+    expanded declaration: ``[n_nodes, num_features * dim_node]`` in, and
+    ``[n_nodes, num_features * dim_paths]`` out, one block of ``num_features``
+    channels per path. Copy ``k`` of a term with multiplicity ``m`` in channel
+    ``c`` is copy ``c * m + k`` of the expanded term. How a backend arranges
+    the values inside its kernel is its own business, and never a permute in
+    the model.
 
     The weights are per edge, ``[n_edges, n_paths, num_features]``: the output
     of a radial MLP (:class:`RadialMLPDescriptor`) read path by path, with the
@@ -176,10 +194,38 @@ class ChannelwiseTPConvDescriptor(Descriptor):
     irreps_node: str = "0e"
     irreps_edge: str = "0e"
     irreps_out: str = "0e"
+    num_features: int = 1
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.num_features < 1:
+            raise ValueError(
+                f"num_features={self.num_features} is not a channel count; it "
+                f"is at least one."
+            )
+        for multiplicity, irrep in Irreps.parse(self.irreps_node):
+            if multiplicity != 1:
+                raise ValueError(
+                    f"irreps_node={self.irreps_node!r} gives {irrep} a "
+                    f"multiplicity of {multiplicity}. The radial weights are "
+                    f"one per path and channel, and the channels are "
+                    f"num_features, so write each irrep once and set "
+                    f"num_features for the width."
+                )
 
     @property
     def highest_degree(self) -> int:
         return _highest_degree(self.irreps_node, self.irreps_edge, self.irreps_out)
+
+    @property
+    def paths(self) -> tuple[ConvolutionPath, ...]:
+        """Every coupling kept, in the order the radial weights are read."""
+        return channelwise_paths(self.irreps_node, self.irreps_edge, self.irreps_out)
+
+    @property
+    def irreps_paths(self) -> str:
+        """One channel's message: one term per path, repeated irreps apart."""
+        return path_irreps(self.paths)
 
     @property
     def weight_numel(self) -> int:
@@ -192,7 +238,7 @@ class SymmetricContractionDescriptor(Descriptor):
     """The many-body contraction over the reduced Clebsch-Gordan basis.
 
     Attributes:
-        irreps_in: The node features being contracted.
+        irreps_in: One channel's node features being contracted.
         irreps_out: The output irreps to keep, one copy of each per channel.
             A multiplicity other than one is refused: the channels are the
             ``num_features`` axis, not a multiplicity in the irreps.
@@ -203,6 +249,11 @@ class SymmetricContractionDescriptor(Descriptor):
             ``"reduced"`` is what v1 persists. It is a recorded field rather
             than something inferred from what happens to be installed, which is
             the defect this contract exists to remove.
+
+    The features are grouped by irrep, as the convolution's are:
+    ``[n_nodes, num_features * dim_in]`` in and
+    ``[n_nodes, num_features * dim_out]`` out, each the canonical ``mul_ir``
+    over the declaration expanded to ``num_features`` channels.
     """
 
     op: ClassVar[str] = "symmetric_contraction"
@@ -382,6 +433,35 @@ class RadialBasisDescriptor(Descriptor):
     def __post_init__(self) -> None:
         super().__post_init__()
         _require_member("kind", self.kind, get_args(RadialBasisKind))
+
+
+DistanceTransformKind = Literal["agnesi", "soft"]
+
+
+@dataclass(frozen=True)
+class DistanceTransformDescriptor(Descriptor):
+    """The transform of the edge lengths the radial basis is evaluated on.
+
+    Not an op a backend builds: the transform is a few closed forms of the
+    pair's covalent radii, and the model holds it. It is named so that an
+    interaction can hand it to the span factory with the rest of its edge
+    convolution, since a span that computes the radial basis has to apply the
+    transform first. Its parameters stay in the model, in canonical form, and
+    a span is handed them on every call.
+
+    Attributes:
+        kind: Which transform. ``"agnesi"`` is ACEpotentials.jl's, ``"soft"``
+            the tanh clamp; both read the pair's covalent radii by atomic
+            number. The cutoff envelope is never transformed.
+    """
+
+    op: ClassVar[str] = "distance_transform"
+
+    kind: DistanceTransformKind = "agnesi"
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _require_member("kind", self.kind, get_args(DistanceTransformKind))
 
 
 RadialMLPKind = Literal["normalized_silu", "layer_norm_silu"]

@@ -134,21 +134,24 @@ def chain(backend):
     radial = backend.make_radial_basis(
         RadialBasisDescriptor(kind="bessel", num_basis=8, cutoff=5.0)
     )
-    convolution = backend.make_channelwise_tp_conv(
-        ChannelwiseTPConvDescriptor(
-            irreps_node="0e+1o", irreps_edge="0e+1o", irreps_out="0e+1o"
-        )
-    )
     # One weight per coupling path and channel, read off the built
     # convolution, which is what exposing `num_paths` is for.
     channels = 2
+    convolution = backend.make_channelwise_tp_conv(
+        ChannelwiseTPConvDescriptor(
+            irreps_node="0e+1o",
+            irreps_edge="0e+1o",
+            irreps_out="0e+1o",
+            num_features=channels,
+        )
+    )
     mlp = backend.make_radial_mlp(
         RadialMLPDescriptor(channels=(8, 16, convolution.num_paths * channels))
     )
     mlp.initialize_weights(0)
     contraction = backend.make_symmetric_contraction(
         SymmetricContractionDescriptor(
-            irreps_in="0e+1o",
+            irreps_in=convolution.descriptor.irreps_paths,
             irreps_out="0e",
             correlation=2,
             num_elements=1,
@@ -165,14 +168,15 @@ def chain(backend):
         lengths = vectors.norm(dim=-1, keepdim=True)
         attributes = harmonics(vectors)
         weights = mlp(radial(lengths)).view(-1, convolution.num_paths, channels)
-        features = torch.zeros(positions.shape[0], channels, 4, dtype=positions.dtype)
-        features[:, :, 0] = 1.0
+        # Grouped: the scalar of every channel first, then the vectors.
+        features = torch.zeros(positions.shape[0], channels * 4, dtype=positions.dtype)
+        features[:, :channels] = 1.0
         messages = convolution(
             features, attributes, weights, sender, receiver, positions.shape[0]
         )
         nodes = torch.zeros(positions.shape[0], dtype=torch.long)
         site = contraction(messages, nodes)
-        return reduce(site.flatten(1), nodes, 1).sum()
+        return reduce(site, nodes, 1).sum()
 
     return energy
 
@@ -404,12 +408,11 @@ def test_the_contraction_builds_every_output_the_layers_ask_for(backend, irreps_
     )
     operation = backend.make_symmetric_contraction(descriptor)
     operation.initialize_weights(3)
-    features = torch.randn(5, 4, Irreps.parse("0e+1o").dimension)
+    features = torch.randn(5, 4 * Irreps.parse("0e+1o").dimension)
     elements = torch.randint(0, 2, (5,))
     assert operation(features, elements).shape == (
         5,
-        4,
-        Irreps.parse(irreps_out).dimension,
+        4 * Irreps.parse(irreps_out).dimension,
     )
 
 
@@ -545,7 +548,7 @@ def test_a_mixed_contraction_round_trips_through_a_fresh_instance(backend):
     restored = backend.make_symmetric_contraction(descriptor)
     restored.load_canonical(written.to_canonical())
 
-    features = torch.randn(6, 4, Irreps.parse("0e+1o").dimension)
+    features = torch.randn(6, 4 * Irreps.parse("0e+1o").dimension)
     elements = torch.randint(0, 2, (6,))
     assert torch.equal(written(features, elements), restored(features, elements))
 

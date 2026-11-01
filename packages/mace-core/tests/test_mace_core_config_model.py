@@ -1,5 +1,5 @@
-"""The radial embedding sections of the model schema: what a config writes,
-what it defaults to, and what it is refused.
+"""The sections of the model schema, the radial embedding's and the model's
+own: what a config writes, what it defaults to, and what it is refused.
 
 How a tagged union loads, exports and reports errors is the config base's and
 is tested there (`test_mace_core_config_kinds.py`); this file pins only what
@@ -13,6 +13,7 @@ from mace_core.config import (
     ChebyshevBasisConfig,
     DistanceTransformConfig,
     GaussianBasisConfig,
+    ModelConfig,
     NoDistanceTransformConfig,
     PolynomialCutoffConfig,
     RadialBasisConfig,
@@ -102,3 +103,58 @@ def test_sizes_the_module_cannot_build_are_errors(written, location):
     with pytest.raises(ValidationError) as excinfo:
         RadialRoot.from_dict(written)
     assert all(where.startswith(location) for where in error_locations(excinfo))
+
+
+# ---------------------------------------------------------------------------
+# The model section
+# ---------------------------------------------------------------------------
+
+
+def test_the_model_section_defaults_to_the_reduced_basis_and_round_trips():
+    config = ModelConfig()
+    assert config.clebsch_gordan_basis == "reduced"
+    assert (config.interaction_first, config.interaction) == ("residual", "residual")
+    dumped = config.model_dump(mode="json")
+    assert ModelConfig.model_validate(dumped) == config
+    full = ModelConfig(clebsch_gordan_basis="full")
+    assert ModelConfig.model_validate(full.model_dump(mode="json")) == full
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("clebsch_gordan_basis", "cueq"),
+        ("interaction", "attention_residual"),
+        ("num_interactions", 0),
+    ],
+)
+def test_the_model_section_refuses_what_it_does_not_build(field, value):
+    with pytest.raises(ValidationError):
+        ModelConfig(**{field: value})
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"edge_irreps": "8x0e+8x1o"},
+        {"edge_irreps": "8x0e+8x1o", "interaction_first": "nonlinear"},
+        {"interaction_first": "nonlinear", "use_edge_irreps_first": True},
+        {
+            "edge_irreps": "8x0e+8x1o",
+            "interaction": "nonlinear",
+            "use_edge_irreps_first": True,
+        },
+    ],
+)
+def test_an_edge_irreps_setting_no_layer_reads_is_refused(options):
+    with pytest.raises(ValidationError, match="edge_irreps"):
+        ModelConfig(**options)
+
+
+def test_edge_irreps_are_accepted_where_a_nonlinear_layer_reads_them():
+    ModelConfig(edge_irreps="8x0e+8x1o", interaction="nonlinear")
+    ModelConfig(
+        edge_irreps="8x0e+8x1o",
+        interaction_first="nonlinear",
+        use_edge_irreps_first=True,
+    )
