@@ -359,6 +359,77 @@ def test_ambiguous_legacy_model_name_is_refused():
         parse(["--model=MACE"])
 
 
+def test_radial_width_override_keeps_the_configured_basis(tmp_path):
+    path = tmp_path / "gaussian.yaml"
+    path.write_text("model: {radial_basis: {kind: gaussian, num_basis: 8}}")
+    config = parse(["--config", str(path), "--num_radial_basis", "6"])
+    assert config.model.radial_basis.kind == "gaussian"
+    assert config.model.radial_basis.num_basis == 6
+    assert parse(["--num_radial_basis", "6"]).model.radial_basis.kind == "bessel"
+
+
+@pytest.mark.parametrize(
+    "preset,model",
+    [("dipole", "dipole"), ("dipole_polar", "dielectric")],
+)
+def test_dipole_presets_train_from_flags_and_reload(tmp_path, preset, model):
+    frames = [water(False) for _ in range(6)]
+    for index, atoms in enumerate(frames):
+        atoms.positions[1, 0] += 0.03 * index
+        atoms.info["dipole"] = np.array([0.1 * index, 0.2, -0.1])
+        atoms.info["polarizability"] = np.eye(3) * (0.2 + 0.01 * index)
+        atoms.arrays["REF_charges"] = np.zeros(len(atoms))
+    source = tmp_path / "labels.xyz"
+    write(source, frames)
+    assert (
+        main(
+            [
+                "train",
+                "--model",
+                model,
+                "--loss",
+                preset,
+                "--train_file",
+                str(source),
+                "--work_dir",
+                str(tmp_path),
+                "--name",
+                "dipole",
+                "--E0s",
+                "isolated",
+                "--num_radial_basis",
+                "4",
+                "--num_channels",
+                "2",
+                "--max_ell",
+                "2",
+                "--max_L",
+                "2",
+                "--correlation",
+                "2",
+                "--MLP_irreps",
+                "4x0e+4x1o+4x2e",
+                "--max_num_epochs",
+                "1",
+                "--batch_size",
+                "2",
+                "--valid_batch_size",
+                "2",
+                "--plot",
+                "false",
+            ]
+        )
+        == 0
+    )
+    artifact = tmp_path / "dipole.json"
+    loaded = load_deployed(artifact)
+    assert loaded.config.loss.kind.kind == "weighted"
+    assert loaded.config.loss.weight("dipole") == (100.0 if preset == "dipole" else 1.0)
+    calculator = MACECalculator(model_paths=artifact, charges_key="REF_charges")
+    result = calculator.get_property("dipole", frames[0])
+    assert result.shape == (3,) and np.isfinite(result).all()
+
+
 def test_prepare_without_statistics_preserves_training_references(tmp_path):
     from mace_core.data import open_dataset
     from mace_core.data.keys import KeySpecification

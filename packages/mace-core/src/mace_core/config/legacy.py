@@ -41,6 +41,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from mace_core.config.model import ModelConfig
+
 __all__ = [
     "LEGACY_TRAIN_DESTS",
     "Disposition",
@@ -703,15 +705,20 @@ def _collapse_magnetic(namespace: Any, values: dict[str, Any]) -> None:
 def _collapse_e0s(namespace: Any, values: dict[str, Any]) -> None:
     """`--E0s` is a kind by name, a JSON file, or a dict literal.
 
-    Legacy reads the word ``average``, ``foundation`` or ``estimated`` as a
-    method, a path ending ``.json`` as a table in a file, and anything else as
-    a Python dict literal of atomic number to energy.
+    Named methods include isolated atoms. A path ending ``.json`` supplies
+    a table in a file; a dict literal supplies atomic numbers and energies.
     """
     raw = _read(namespace, "E0s")
     if raw is None:
         return
-    if isinstance(raw, str) and raw.lower() in {"average", "foundation", "estimated"}:
-        spec: dict[str, Any] = {"kind": raw.lower()}
+    methods = {
+        "isolated": "isolated_atoms",
+        "average": "average",
+        "foundation": "foundation",
+        "estimated": "estimated",
+    }
+    if isinstance(raw, str) and raw.lower() in methods:
+        spec: dict[str, Any] = {"kind": methods[raw.lower()]}
     elif isinstance(raw, str) and raw.endswith(".json"):
         import json
 
@@ -736,6 +743,9 @@ def _collapse_finetune(namespace: Any, values: dict[str, Any]) -> None:
 
 
 def _collapse_model(namespace: Any, values: dict[str, Any]) -> None:
+    radial = values.get("model", {}).get("radial_basis")
+    if radial is not None:
+        radial.setdefault("kind", ModelConfig().radial_basis.kind)
     if (model := _read(namespace, "model")) is not None:
         _set(values, "model.model", model)
     if (reduced := _read(namespace, "use_reduced_cg")) is not None:
@@ -825,13 +835,18 @@ def _collapse_loss(namespace: Any, values: dict[str, Any]) -> None:
             and (delta := _read(namespace, "huber_delta")) is not None
         ):
             settings["delta"] = delta
-        _set(values, "loss.kind", {"kind": loss, **settings})
+        kind = "weighted" if loss in {"dipole", "dipole_polar"} else loss
+        _set(values, "loss.kind", {"kind": kind, **settings})
     for stage, prefix in (("weights", ""), ("stage_two_weights", "swa_")):
         written = {
             observable: weight
             for dest, observable in _WEIGHT_FLAGS.items()
             if (weight := _read(namespace, f"{prefix}{dest}")) is not None
         }
+        if loss == "dipole" and (stage == "weights" or "dipole" in written):
+            # The legacy dipole-only preset scales its per-atom squared error
+            # by 100. The dipole+polarizability preset has no such factor.
+            written["dipole"] = 100.0 * written.get("dipole", 1.0)
         if written:
             _set(values, f"loss.{stage}", written)
 

@@ -36,6 +36,31 @@ def test_a_namespace_missing_a_dest_contributes_nothing():
     assert from_namespace(Namespace(seed=7)) == {"runtime": {"seed": 7}}
 
 
+def test_isolated_e0s_reaches_the_data_stage_contract():
+    config = ResolvedConfig.from_dict(from_namespace(Namespace(E0s="isolated")))
+    assert config.data.heads["default"].e0s.kind == "isolated_atoms"
+
+
+def test_dipole_preset_preserves_stage_weights_and_resolved_roundtrip():
+    values = from_namespace(
+        Namespace(loss="dipole", dipole_weight=2.0, swa_dipole_weight=3.0)
+    )
+    config = ResolvedConfig.from_dict(values)
+    assert config.loss.weights["dipole"] == 200.0
+    assert config.loss.stage_two_weights["dipole"] == 300.0
+    assert ResolvedConfig.from_dict(config.to_resolved_dict()) == config
+
+
+@pytest.mark.parametrize("kind", [None, "gaussian", "chebyshev"])
+def test_radial_width_is_a_complete_discriminated_config(kind):
+    flags = {"num_radial_basis": 6}
+    if kind is not None:
+        flags["radial_type"] = kind
+    config = ResolvedConfig.from_dict(from_namespace(Namespace(**flags)))
+    assert config.model.radial_basis.kind == (kind or "bessel")
+    assert config.model.radial_basis.num_basis == 6
+
+
 def test_a_flag_left_at_its_default_is_not_written_out():
     """So the user dict stays what the user wrote, which is what metadata wants."""
     assert from_namespace(Namespace(r_max=4.5), defaults={"r_max": 4.5}) == {}

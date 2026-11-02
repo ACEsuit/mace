@@ -98,7 +98,8 @@ type = layers
 ; meant to prevent.
 layers =
     (cli)
-    (train) | (data)
+    (train)
+    (data)
     (models)
     (nn)
     (kernels)

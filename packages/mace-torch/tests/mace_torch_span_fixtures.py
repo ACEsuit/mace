@@ -90,12 +90,10 @@ class ReferenceSpan(nn.Module):
                 canonical_metadata=None,
                 initialize_weights=_no_initialization,
             )
-        self.calls = 0
 
     def forward(
         self, nodes, edges, sender, receiver, num_nodes, member_weights, edge_runs
     ):
-        self.calls += 1
         state = {name: member_weights[index] for name, index in self.weight_names}
         state.update(
             {

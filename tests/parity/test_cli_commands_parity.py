@@ -23,7 +23,7 @@ from mace_torch.deploy.reference import verify_against_reference
 from mace_torch.serialization import canonical_state, load_canonical_state
 from mace_torch.train.checkpoint import write_model
 
-from tests.golden.harness import FP64_CPU_REFERENCE
+from tests.golden.harness import CLOSED_FORM_FP64, FP64_CPU_REFERENCE
 from tests.golden.surface_scan import scan_eval_surface
 from tests.parity.test_fm_convert_legacy import (
     CATALOGUE,
@@ -76,6 +76,76 @@ def test_all_thirteen_output_columns_are_accounted_for():
     for name, column in OUTPUT_COLUMNS.items():
         assert column.owner in {"CLI-1", "MAG-1", "ELEC-4"}
         assert ("arrays" if column.per_atom else "info") in stores[name]
+
+
+@pytest.mark.parametrize(
+    "preset,model",
+    [
+        ("dipole", "AtomicDipolesMACE"),
+        ("dipole_polar", "AtomicDielectricMACE"),
+    ],
+)
+@pytest.mark.parametrize("weight", [1.0, 3.25])
+def test_dipole_cli_presets_preserve_loss_and_gradient(fp64, preset, model, weight):
+    from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
+    from mace_core.outputs import MACEOutput
+    from mace_torch.cli.run_train import parse
+    from mace_torch.data import TrainingBatch
+    from mace_torch.train import build_loss
+
+    from mace.modules.loss import DipolePolarLoss, DipoleSingleLoss
+    from mace.tools.torch_geometric.data import Data
+
+    flags = ["--model", model, "--loss", preset]
+    if weight != 1.0:
+        flags += [
+            "--dipole_weight",
+            str(weight),
+            "--polarizability_weight",
+            str(weight),
+        ]
+    config = parse(flags)
+    requested = resolve_requested(config.model.observables, DEFAULT_CATALOGUE)
+    shapes = {"dipole": (2, 3)}
+    if preset == "dipole_polar":
+        shapes["polarizability"] = (2, 3, 3)
+    generator = torch.Generator().manual_seed(7)
+    targets = {
+        name: torch.randn(shape, generator=generator) for name, shape in shapes.items()
+    }
+    predictions = {
+        name: torch.randn(shape, generator=generator, requires_grad=True)
+        for name, shape in shapes.items()
+    }
+    pointers = torch.tensor([0, 2, 5])
+    batch = TrainingBatch(
+        graph={
+            "ptr": pointers,
+            "batch": torch.tensor([0, 0, 1, 1, 1]),
+            "weight": torch.ones(2),
+        },
+        targets=targets,
+    )
+    output = MACEOutput(
+        dipole=predictions["dipole"],
+        extras={name: value for name, value in predictions.items() if name != "dipole"},
+    )
+    native = build_loss(requested, config.loss)(output, batch)
+    legacy_loss = (
+        DipoleSingleLoss(dipole_weight=weight)
+        if preset == "dipole"
+        else DipolePolarLoss(dipole_weight=weight, polarizability_weight=weight)
+    )
+    legacy = legacy_loss(Data(ptr=pointers, **targets), predictions)
+    tensors = tuple(predictions.values())
+    native_gradients = torch.autograd.grad(native, tensors, retain_graph=True)
+    legacy_gradients = torch.autograd.grad(legacy, tensors)
+    for actual, expected in zip(
+        (native, *native_gradients), (legacy, *legacy_gradients), strict=True
+    ):
+        torch.testing.assert_close(
+            actual, expected, atol=CLOSED_FORM_FP64.atol, rtol=CLOSED_FORM_FP64.rtol
+        )
 
 
 @pytest.mark.parametrize("name", ["tiny_mace", "tiny_scaleshift"])

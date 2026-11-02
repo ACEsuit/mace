@@ -1,6 +1,7 @@
 """Accepted spans change execution, never member weights or checkpoints."""
 
 import itertools
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -35,6 +36,14 @@ from mace_torch_engine_fixtures import (
 from mace_torch_span_fixtures import SpanBackend
 
 
+def count_span_calls(backend):
+    """Instrument only the eager routing tests, outside the stateless span."""
+    hooks = [Mock(return_value=None) for _ in backend.spans]
+    for span, hook in zip(backend.spans, hooks, strict=True):
+        span.register_forward_hook(hook)
+    return hooks
+
+
 @pytest.mark.parametrize(
     "training, twice, double, weights",
     tuple(itertools.product((False, True), repeat=4)),
@@ -43,6 +52,7 @@ def test_declared_capabilities_choose_the_path(training, twice, double, weights)
     backend = SpanBackend()
     backend.span_capabilities = SpanCapabilities(double, weights)
     model = build_engine(seed=3, backend=backend)
+    calls = count_span_calls(backend)
     model.train(training)
     graph = {**build_graph(*molecule()), "differentiated_twice": twice}
     actual = model.model_forward(graph)
@@ -50,8 +60,8 @@ def test_declared_capabilities_choose_the_path(training, twice, double, weights)
     assert expected.total_energy is not None
     assert_close(actual.total_energy, expected.total_energy.detach())
     assert all(
-        span.calls == int((not twice or double) and (not training or weights))
-        for span in backend.spans
+        hook.call_count == int((not twice or double) and (not training or weights))
+        for hook in calls
     )
 
 
@@ -60,13 +70,28 @@ def test_the_engine_requests_second_derivatives_for_force_training_and_hessians(
     backend = SpanBackend()
     backend.span_capabilities = SpanCapabilities(False, True)
     model = build_engine(backend=backend).eval()
+    calls = count_span_calls(backend)
     graph = build_graph(*molecule())
     model(graph, compute=("forces",))
-    assert all(span.calls == 1 for span in backend.spans)
+    assert all(hook.call_count == 1 for hook in calls)
     model(graph, compute=("forces",), training=True)
     model(graph, compute=("hessian",))
-    assert all(span.calls == 1 for span in backend.spans)
+    assert all(hook.call_count == 1 for hook in calls)
     assert "differentiated_twice" not in graph
+
+
+def test_repeated_span_forwards_reuse_the_compiled_graph(dtype):
+    from torch._dynamo.testing import CompileCounter
+
+    model = build_engine(seed=3, backend=SpanBackend()).eval()
+    graph = build_graph(*molecule())
+    counter = CompileCounter()
+    compiled = torch.compile(model.model_forward, backend=counter, fullgraph=True)
+    with torch.no_grad():
+        expected = model.model_forward(graph).total_energy
+        for _ in range(3):
+            assert_close(compiled(graph).total_energy, expected)
+    assert counter.frame_count == 1
 
 
 @fp64_only

@@ -270,6 +270,10 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
         if key in values:
             flag.apply(document, values.pop(key))
     if values:
+        if "num_radial_basis" in values and "radial_type" not in values:
+            radial = document.get("model", {}).get("radial_basis", {})
+            if "kind" in radial:
+                values["radial_type"] = radial["kind"]
         if values.get("multiheads_finetuning"):
             values["foundation_model"] = document.get("finetune", {}).get(
                 "foundation_model"

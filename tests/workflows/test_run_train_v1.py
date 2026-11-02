@@ -164,6 +164,7 @@ def test_explicit_training_flags_write_a_readable_v1_artifact(tmp_path):
     finished = on_v1(
         "--name", "flags", "--work_dir", str(tmp_path),
         "--train_file", str(tmp_path / "train.xyz"),
+        "--E0s", "isolated", "--num_radial_basis", "6",
         "--r_max", "5.0", "--num_channels", "4", "--max_L", "1",
         "--max_ell", "1", "--correlation", "2", "--max_num_epochs", "1",
         "--batch_size", "4", "--valid_batch_size", "4", "--plot", "false",
@@ -174,6 +175,7 @@ def test_explicit_training_flags_write_a_readable_v1_artifact(tmp_path):
 
     model = load_deployed(tmp_path / "flags.json")
     assert model.config.model.num_channels == 4
+    assert model.config.model.radial_basis.num_basis == 6
     import torch
 
     assert model.config.precision.model == "float32"

@@ -347,12 +347,9 @@ def _check_span(
         # Each shape is an independent compilation; closures share one code
         # object and otherwise exhaust Dynamo's per-code specialization limit.
         torch._dynamo.reset()
-        compiled = torch.compile(
-            candidate,
-            fullgraph=True,
-            dynamic=False,
-            mode="reduce-overhead" if cuda_graphs else None,
-        )
+        # The explicit capture below owns the CUDA graph. reduce-overhead would
+        # replay its own graph inside that capture, which CUDA does not allow.
+        compiled = torch.compile(candidate, fullgraph=True, dynamic=False)
         with torch.no_grad():
             _close(compiled(*arguments), expected.detach(), precision, "compiled")
         result.checks.append("compiles")
