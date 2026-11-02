@@ -22,6 +22,8 @@ import math
 
 import torch
 
+from mace_torch.canonical import require_member_state
+
 __all__ = [
     "BesselBasis",
     "ChebyshevBasis",
@@ -102,9 +104,18 @@ class BesselBasis(torch.nn.Module):
         }
 
     def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
+        require_member_state(
+            state, ("frequencies", "prefactor"), "model.radial_basis.kind"
+        )
         with torch.no_grad():
             self.frequencies.copy_(state["frequencies"])
             self.prefactor.copy_(state["prefactor"])
+
+    def span_weights(self) -> tuple[torch.Tensor, ...]:
+        return self.frequencies, self.prefactor
+
+    def canonical_metadata(self) -> dict[str, str]:
+        return {"model.radial_basis.kind": "bessel"}
 
     def extra_repr(self) -> str:
         return (
@@ -156,6 +167,12 @@ class ChebyshevBasis(torch.nn.Module):
     def extra_repr(self) -> str:
         return f"num_basis={self.num_basis}, include_constant={self.include_constant}"
 
+    def span_weights(self) -> tuple[torch.Tensor, ...]:
+        return ()
+
+    def canonical_metadata(self) -> dict[str, str]:
+        return {"model.radial_basis.kind": "chebyshev"}
+
 
 class GaussianBasis(torch.nn.Module):
     """Gaussians on evenly spaced centres in ``[0, r_max]``, ``--radial_type gaussian``.
@@ -202,6 +219,20 @@ class GaussianBasis(torch.nn.Module):
 
     def extra_repr(self) -> str:
         return f"num_basis={self.num_basis}, trainable={self.centers.requires_grad}"
+
+    def span_weights(self) -> tuple[torch.Tensor, ...]:
+        return (self.centers,)
+
+    def to_canonical(self) -> dict[str, torch.Tensor]:
+        return {"centers": self.centers.detach()}
+
+    def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
+        require_member_state(state, ("centers",), "model.radial_basis.kind")
+        with torch.no_grad():
+            self.centers.copy_(state["centers"])
+
+    def canonical_metadata(self) -> dict[str, str]:
+        return {"model.radial_basis.kind": "gaussian"}
 
 
 # ---------------------------------------------------------------------------

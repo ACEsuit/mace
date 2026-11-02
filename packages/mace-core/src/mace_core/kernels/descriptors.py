@@ -11,7 +11,7 @@ op, and the descriptor is never consulted again: nothing resolves in ``forward``
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar, Literal, get_args
 
 from mace_core.clebsch_gordan.irreps import Irreps
@@ -73,18 +73,19 @@ class Descriptor:
             :attr:`~mace_core.kernels.capabilities.BackendCapabilities.ops`
             lists it. A class constant, not a field.
         layout: The layout of the features and weights the op reads and
-            writes, or ``None`` for an op with no irreps semantics. A class
-            constant, not a field: every op with irreps works in the canonical
-            ``mul_ir``, since that is what a checkpoint holds.
+            writes, or ``None`` for an op with no irreps semantics.
+            A span stamps every member with the chain's ``mul_ir``;
+            standalone scalar ops may leave it as ``None``.
     """
 
     op: ClassVar[str] = ""
-    layout: ClassVar[str | None] = None
+    layout: str | None = field(default=None, kw_only=True)
 
     precision: Precision = "float64"
     accumulate: Precision | None = None
 
     def __post_init__(self) -> None:
+        _require_member("layout", self.layout, (None, CANONICAL_LAYOUT))
         _require_member("precision", self.precision, PRECISIONS)
         if self.accumulate is not None:
             _require_member("accumulate", self.accumulate, PRECISIONS)
@@ -129,7 +130,7 @@ class LinearDescriptor(Descriptor):
     """
 
     op: ClassVar[str] = "linear"
-    layout: ClassVar[str | None] = CANONICAL_LAYOUT
+    layout: str | None = field(default=CANONICAL_LAYOUT, kw_only=True)
 
     irreps_in: str = "0e"
     irreps_out: str = "0e"
@@ -198,7 +199,7 @@ class ChannelwiseTPConvDescriptor(Descriptor):
     """
 
     op: ClassVar[str] = "channelwise_tp_conv"
-    layout: ClassVar[str | None] = CANONICAL_LAYOUT
+    layout: str | None = field(default=CANONICAL_LAYOUT, kw_only=True)
 
     irreps_node: str = "0e"
     irreps_edge: str = "0e"
@@ -266,7 +267,7 @@ class SymmetricContractionDescriptor(Descriptor):
     """
 
     op: ClassVar[str] = "symmetric_contraction"
-    layout: ClassVar[str | None] = CANONICAL_LAYOUT
+    layout: str | None = field(default=CANONICAL_LAYOUT, kw_only=True)
 
     irreps_in: str = "0e"
     irreps_out: str = "0e"
@@ -331,7 +332,7 @@ class FullyConnectedTPDescriptor(Descriptor):
     """
 
     op: ClassVar[str] = "fully_connected_tp"
-    layout: ClassVar[str | None] = CANONICAL_LAYOUT
+    layout: str | None = field(default=CANONICAL_LAYOUT, kw_only=True)
 
     irreps_in1: str = "0e"
     irreps_in2: str = "0e"

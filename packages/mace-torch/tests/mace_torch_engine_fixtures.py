@@ -49,7 +49,7 @@ NODE_INPUT = InputSpec(
 )
 
 
-def build_engine(seed: int = 0, inputs=()) -> DerivativeEngine:
+def build_engine(seed: int = 0, inputs=(), backend=None) -> DerivativeEngine:
     """A backbone and output layer with weights, wired to the engine.
 
     The reference backend starts its contraction weights at zero, so an engine
@@ -57,7 +57,7 @@ def build_engine(seed: int = 0, inputs=()) -> DerivativeEngine:
     below would hold of the constant function.
     """
     torch.manual_seed(seed)
-    backend = ReferenceBackend()
+    backend = backend or ReferenceBackend()
     backbone = MACEBackbone(
         backend,
         atomic_numbers=ATOMIC_NUMBERS,

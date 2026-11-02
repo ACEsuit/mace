@@ -32,8 +32,12 @@ declaration expanded to the channel count.
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Any, cast
+
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.kernels.canonical import CANONICAL_LAYOUT
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
     Descriptor,
@@ -44,10 +48,12 @@ from mace_core.kernels.descriptors import (
     SegmentReduceDescriptor,
 )
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.spans import EdgeConvolutionSpan, supports_span_contract
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.reference import TORCH_DTYPES, ReferenceBackend
+from mace_torch.backends.spans import InteractionSpan, validate_span
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.gate import Gate, gate_input_irreps
 
@@ -73,7 +79,7 @@ _INITIAL_ALPHA = 20.0
 _ELEMENT_EMBEDDING_BOUND = 1e-3
 
 
-def _radial_network(backend, descriptor: RadialMLPDescriptor) -> nn.Module:
+def _radial_network(backend, descriptor: RadialMLPDescriptor) -> Any:
     """The backend's radial MLP, or the reference's when it declines.
 
     A reference-only op: declining is a normal answer, and the weights are
@@ -85,24 +91,32 @@ def _radial_network(backend, descriptor: RadialMLPDescriptor) -> nn.Module:
     return built
 
 
-def _ask_for_span(backend, members: tuple[Descriptor, ...] | None) -> object | None:
+def _ask_for_span(
+    backend, members: tuple[Descriptor, ...] | None
+) -> InteractionSpan | None:
     """The backend's answer for a whole edge convolution, asked once at build.
 
     ``None``, the normal answer and the reference's, builds the block op by
-    op. An accepted span is held but not run here: when and how it runs is the
-    span contract's. It must hold no state, so that a block's checkpoint is the
+    op. An accepted span must hold no state, so that a block's checkpoint is the
     same whatever the backend answered.
     """
     if members is None:
+        report_decline = getattr(backend, "decline_interaction_layer", None)
+        if report_decline is not None:
+            report_decline("a member has no complete descriptor")
         return None
+    if not supports_span_contract(backend.capabilities().spec_version):
+        return None
+    members = tuple(replace(member, layout=CANONICAL_LAYOUT) for member in members)
     span = backend.make_interaction_layer(members)
-    if isinstance(span, nn.Module) and (held := list(span.state_dict())):
-        raise ValueError(
-            f"the span {type(span).__name__} holds {held}. A span is handed "
-            f"what it computes with on every call and holds nothing, so that a "
-            f"block's checkpoint does not depend on whether it was fused."
-        )
-    return span
+    if span is not None:
+        validate_span(span, backend.name)
+        if EdgeConvolutionSpan.from_descriptors(members) is None:
+            raise ValueError(
+                f"backend {backend.name!r} accepted an unrecognized span shape; "
+                "return None."
+            )
+    return cast(InteractionSpan | None, span)
 
 
 class _Convolution(nn.Module):
@@ -190,6 +204,10 @@ class _Convolution(nn.Module):
         )
         self.span_members = members
         self.span = _ask_for_span(backend, members)
+        self.span_uses_receivers = (
+            "receiver_runs" in backend.capabilities().edge_features
+        )
+        self.span_uses_senders = "sender_runs" in backend.capabilities().edge_features
 
     def forward(
         self,
@@ -201,17 +219,39 @@ class _Convolution(nn.Module):
     ) -> Tensor:
         """Grouped node features in, the grouped normalized message out."""
         mapped = self.linear_up(node_features)
-        weights = self.radial_mlp(edges.radial)
-        if self.envelope_outside:
-            weights = weights * edges.envelope
-        message = self.convolution(
-            mapped,
-            edges.attributes,
-            weights.reshape(-1, self.num_paths, self.num_features),
-            sender,
-            receiver,
-            num_nodes,
-        )
+        if (
+            self.span is not None
+            and (
+                not edges.differentiated_twice or self.span.capabilities.double_backward
+            )
+            and (not self.training or self.span.capabilities.weight_gradients)
+        ):
+            runs = (
+                edges.receiver_runs
+                if self.span_uses_receivers
+                else (edges.sender_runs if self.span_uses_senders else None)
+            )
+            message = self.span(
+                mapped,
+                edges,
+                sender,
+                receiver,
+                num_nodes,
+                edges.span_weights() + self.radial_mlp.span_weights(),
+                runs,
+            )
+        else:
+            weights = self.radial_mlp(edges.radial)
+            if self.envelope_outside:
+                weights = weights * edges.envelope
+            message = self.convolution(
+                mapped,
+                edges.attributes,
+                weights.reshape(-1, self.num_paths, self.num_features),
+                sender,
+                receiver,
+                num_nodes,
+            )
         if self.density_mlp is None:
             return self.linear(message) / self.neighbours
         edge_density = torch.tanh(self.density_mlp(edges.radial) ** 2)

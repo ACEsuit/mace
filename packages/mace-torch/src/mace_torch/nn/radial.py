@@ -23,6 +23,7 @@ import torch
 from torch import Tensor
 
 from mace_torch.backends.radial import polynomial_envelope
+from mace_torch.canonical import require_member_state
 
 __all__ = [
     "AgnesiTransform",
@@ -273,9 +274,18 @@ class AgnesiTransform(torch.nn.Module):
         }
 
     def load_canonical(self, state: dict[str, Tensor]) -> None:
+        require_member_state(
+            state, self.to_canonical(), "model.distance_transform.kind"
+        )
         with torch.no_grad():
             for name in ("amplitude", "exponent_q", "exponent_p", "covalent_radii"):
                 getattr(self, name).copy_(state[name])
+
+    def span_weights(self) -> tuple[Tensor, ...]:
+        return self.amplitude, self.exponent_q, self.exponent_p, self.covalent_radii
+
+    def canonical_metadata(self) -> dict[str, str]:
+        return {"model.distance_transform.kind": "agnesi"}
 
 
 class SoftTransform(torch.nn.Module):
@@ -336,6 +346,15 @@ class SoftTransform(torch.nn.Module):
         }
 
     def load_canonical(self, state: dict[str, Tensor]) -> None:
+        require_member_state(
+            state, self.to_canonical(), "model.distance_transform.kind"
+        )
         with torch.no_grad():
             self.steepness.copy_(state["steepness"])
             self.covalent_radii.copy_(state["covalent_radii"])
+
+    def span_weights(self) -> tuple[Tensor, ...]:
+        return self.steepness, self.covalent_radii
+
+    def canonical_metadata(self) -> dict[str, str]:
+        return {"model.distance_transform.kind": "soft"}

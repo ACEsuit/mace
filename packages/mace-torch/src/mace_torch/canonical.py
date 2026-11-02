@@ -8,9 +8,23 @@ transparent. Backend operators retain their existing tensor contract.
 
 from __future__ import annotations
 
-from torch import nn
+from collections.abc import Iterable, Mapping
 
-__all__ = ["canonical_modules"]
+from torch import Tensor, nn
+
+__all__ = ["canonical_modules", "require_member_state"]
+
+
+def require_member_state(
+    state: Mapping[str, Tensor], names: Iterable[str], config_key: str
+) -> None:
+    """A member accepts exactly its own canonical tensors, never a partial load."""
+    expected = set(names)
+    if set(state) != expected:
+        raise ValueError(
+            f"{config_key}: incompatible member state; expected {sorted(expected)}, "
+            f"received {sorted(state)}. Load weights written for this member kind."
+        )
 
 
 def canonical_modules(model: nn.Module) -> dict[str, nn.Module]:

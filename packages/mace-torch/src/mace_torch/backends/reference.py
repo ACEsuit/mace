@@ -67,6 +67,7 @@ from mace_torch.backends.radial import (
     GaussianBasis,
     PolynomialCutoff,
 )
+from mace_torch.canonical import require_member_state
 from mace_torch.kernels.contraction import monomial_basis, symmetric_contraction_grouped
 from mace_torch.kernels.ops import (
     channelwise_tp_conv,
@@ -762,9 +763,16 @@ class ReferenceNormalizedSiluMLP(nn.Module):
         }
 
     def load_canonical(self, state: dict[str, Tensor]) -> None:
+        require_member_state(state, self.to_canonical(), "model.radial_mlp")
         with torch.no_grad():
             for index, weight in enumerate(self.weights):
                 weight.copy_(state[f"layer_{index}"])
+
+    def span_weights(self) -> tuple[Tensor, ...]:
+        return tuple(self.weights)
+
+    def canonical_metadata(self) -> dict[str, str]:
+        return {"model.radial_mlp": self.descriptor.kind}
 
 
 class ReferenceLayerNormSiluMLP(nn.Module):
@@ -861,6 +869,7 @@ class ReferenceLayerNormSiluMLP(nn.Module):
         return state
 
     def load_canonical(self, state: dict[str, Tensor]) -> None:
+        require_member_state(state, self.to_canonical(), "model.radial_mlp")
         with torch.no_grad():
             for index, (weight, bias) in enumerate(
                 zip(self.weights, self.biases, strict=True)
@@ -872,6 +881,19 @@ class ReferenceLayerNormSiluMLP(nn.Module):
             ):
                 norm_weight.copy_(state[f"norm_weight_{index}"])
                 norm_bias.copy_(state[f"norm_bias_{index}"])
+
+    def span_weights(self) -> tuple[Tensor, ...]:
+        return tuple(
+            value
+            for pair in (
+                *zip(self.weights, self.biases, strict=True),
+                *zip(self.norm_weights, self.norm_biases, strict=True),
+            )
+            for value in pair
+        )
+
+    def canonical_metadata(self) -> dict[str, str]:
+        return {"model.radial_mlp": self.descriptor.kind}
 
 
 #: The radial MLP classes, by the kind a descriptor records.
@@ -928,6 +950,7 @@ class ReferenceBackend:
             layouts=frozenset({"mul_ir"}),
             bases=frozenset({"reduced", "full"}),
             supports_double_backward=True,
+            spec_version=KERNEL_SPEC_VERSION,
         )
 
     def _check(self, descriptor) -> None:

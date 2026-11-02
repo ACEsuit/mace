@@ -30,7 +30,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
@@ -53,6 +53,7 @@ from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.reference import TORCH_DTYPES, ReferenceBackend
+from mace_torch.graph.edges import EdgeRuns
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.embedding import (
     RadialEmbeddingBlock,
@@ -80,7 +81,14 @@ __all__ = [
 
 #: The graph keys every backbone reads, whatever it declares.
 GRAPH_KEYS = frozenset(
-    {"positions", "node_attrs", "node_atomic_numbers", "edge_index", "shifts"}
+    {
+        "positions",
+        "node_attrs",
+        "node_atomic_numbers",
+        "edge_index",
+        "shifts",
+        "differentiated_twice",
+    }
 )
 
 
@@ -266,6 +274,8 @@ class MACEBackbone(nn.Module):
         num_elements = len(self.atomic_numbers)
         num_features = config.num_channels
         self.num_features = num_features
+        self.receiver_runs = "receiver_runs" in backend.capabilities().edge_features
+        self.sender_runs = "sender_runs" in backend.capabilities().edge_features
 
         harmonics = SphericalHarmonicsDescriptor(
             lmax=config.max_ell, precision=precision
@@ -442,12 +452,15 @@ class MACEBackbone(nn.Module):
         )
 
     def forward(
-        self, graph: Mapping[str, Tensor], locality: LocalityInfo | None = None
+        self, graph: Mapping[str, Any], locality: LocalityInfo | None = None
     ) -> NodeFeatures:
         """Every layer's node features.
 
         Args:
-            graph: The flat dict. Read, never written.
+            graph: The flat dict. Read, never written. The derivative engine
+                adds the Python boolean ``differentiated_twice`` to its prepared
+                input when a backward will itself be differentiated; direct
+                callers default to False and can explicitly supply True.
             locality: Which trailing node slots are ghosts, for one domain of
                 a decomposed run. ``None`` for a whole system.
         """
@@ -480,6 +493,13 @@ class MACEBackbone(nn.Module):
             edge_index,
             self.spherical_harmonics,
             self.radial_embedding,
+            differentiated_twice=graph.get("differentiated_twice", False),
+            receiver_runs=EdgeRuns.from_graph(graph, "receiver")
+            if self.receiver_runs
+            else None,
+            sender_runs=EdgeRuns.from_graph(graph, "sender")
+            if self.sender_runs
+            else None,
         )
         element = (
             torch.zeros_like(node_attrs[:, 0], dtype=torch.int64)

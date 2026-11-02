@@ -138,6 +138,15 @@ class RadialEmbeddingBlock(torch.nn.Module):
     def extra_repr(self) -> str:
         return f"apply_cutoff={self.apply_cutoff}"
 
+    def span_weights(self) -> tuple[torch.Tensor, ...]:
+        """Live canonical edge-member tensors in the public span call order."""
+        transform = (
+            ()
+            if self.distance_transform is None
+            else self.distance_transform.span_weights()
+        )
+        return (self.cutoff.r_max, *self.basis.span_weights(), *transform)
+
     def canonical_components(self) -> dict[str, torch.nn.Module | None]:
         """Stable checkpoint roles, independent of implementation attributes."""
         return {

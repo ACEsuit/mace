@@ -377,6 +377,7 @@ class _Recording:
             layouts=declared.layouts,
             bases=self._bases,
             supports_double_backward=declared.supports_double_backward,
+            spec_version=declared.spec_version,
         )
 
     def make_interaction_layer(self, descriptors):
@@ -514,12 +515,9 @@ def test_a_convolution_with_an_undescribed_piece_does_not_ask():
     assert "make_interaction_layer" not in backend.calls
 
 
-def test_an_accepted_span_changes_nothing_the_reference_computes():
-    graph = _cluster()
-    plain = _backbone(seed=9)
-    offered = _backbone(_Recording(span=torch.nn.Identity()), seed=9)
-    for ours, theirs in zip(offered(graph).layers, plain(graph).layers, strict=True):
-        assert torch.equal(ours, theirs)
+def test_a_span_without_declared_capabilities_is_refused():
+    with pytest.raises(AttributeError, match="capabilities"):
+        _backbone(_Recording(span=torch.nn.Identity()), seed=9)
 
 
 def test_a_span_holding_state_is_refused():

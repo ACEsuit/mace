@@ -11,6 +11,7 @@ from mace_core.config.precision import PrecisionConfig, PrecisionPolicy
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
+from mace_core.kernels.canonical import KERNEL_SPEC_VERSION
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
@@ -135,7 +136,9 @@ class Recording:
         self.seen: list = []
 
     def capabilities(self) -> BackendCapabilities:
-        return BackendCapabilities(wide_accumulation=self.wide_accumulation)
+        return BackendCapabilities(
+            wide_accumulation=self.wide_accumulation, spec_version=KERNEL_SPEC_VERSION
+        )
 
     def make_linear(self, descriptor):
         self.seen.append(descriptor)

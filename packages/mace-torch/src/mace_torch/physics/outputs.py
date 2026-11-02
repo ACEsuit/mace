@@ -499,6 +499,9 @@ class DerivativeEngine(nn.Module):
         )
         if need_edges and not prepared["shifts"].requires_grad:
             prepared["shifts"] = prepared["shifts"].clone().requires_grad_(True)
+        # A Python boolean carried only in the prepared forward input. The
+        # model's training mode independently controls weight gradients.
+        prepared["differentiated_twice"] = need_hessian or (training and bool(wanted))
         run = self._compiled_model or self.model_forward
         output = run(prepared)
         if wanted_responses:

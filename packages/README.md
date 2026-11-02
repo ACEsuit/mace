@@ -237,6 +237,18 @@ search and joins device edges after host collation. After padding, call
 system and cannot offer batched search. DATA-4 supplies this boundary API;
 the training, calculator and deployment tickets own calling it in their flows.
 
+**A fused edge convolution** matches `EdgeConvolutionSpan` from
+`mace_core.kernels.spans` in `make_interaction_layer`. Declare kernel spec
+`1.2` in the backend capabilities and return a stateless module implementing
+`InteractionSpan` from `mace_torch.backends.spans`. That public module also
+exports `SpanCapabilities`, `EdgeInputs` and `EdgeRuns` and documents the live
+canonical weight tuple. The model selects the span only when its declared
+weight-gradient and double-backward support meets the call's needs; otherwise
+it uses the same model-owned members op by op. Checkpoints are independent of
+that choice. `run_span_conformance` in `mace_torch.backends.span_conformance`
+checks a registered backend on CPU or CUDA, including optional full-graph
+compilation and CUDA replay. No accelerated span ships with this contract.
+
 ### `mace-core`
 
 | File | What is in it |
@@ -302,6 +314,7 @@ the training, calculator and deployment tickets own calling it in their flows.
 | `mace_core/kernels/canonical.py` | The canonical weight layout that makes checkpoints backend independent. |
 | `mace_core/kernels/capabilities.py` | What a kernel backend declares it can build. |
 | `mace_core/kernels/descriptors.py` | Every dispatched op, described before a backend builds it. |
+| `mace_core/kernels/spans.py` | Closed edge-convolution span shape and kernel-version compatibility. |
 | `mace_core/kernels/paths.py` | The tensor-product paths of the convolution and their order. |
 | `mace_core/kernels/precision.py` | Dtype names, and which is wider. |
 | `mace_core/kernels/protocol.py` | The interface a kernel backend implements. |
@@ -344,6 +357,8 @@ the training, calculator and deployment tickets own calling it in their flows.
 | `mace_torch/backends/__init__.py` | The shipped kernel backends. |
 | `mace_torch/backends/composite.py` | A chosen backend with the reference behind it, op by op, and how a name resolves to one. |
 | `mace_torch/backends/conformance.py` | The checks every kernel backend passes against the reference. |
+| `mace_torch/backends/spans.py` | Public stateless span call, capability declaration and build-time validation. |
+| `mace_torch/backends/span_conformance.py` | Span values, derivatives, symmetry, edge order, padding and compiler conformance. |
 | `mace_torch/backends/layout.py` | Views of feature tensors in the agreed canonical `mul_ir` layout. |
 | `mace_torch/backends/cueq.py` | The cuEquivariance backend: linear, convolution, contraction and skip on NVIDIA's kernels. |
 | `mace_torch/backends/oeq.py` | The OpenEquivariance backend: the fused convolution. |

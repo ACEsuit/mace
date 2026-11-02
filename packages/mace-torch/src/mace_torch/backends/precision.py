@@ -19,9 +19,13 @@ from typing import Any
 
 import torch
 from mace_core.config.precision import PrecisionConfig, PrecisionPolicy
+from mace_core.kernels.canonical import CANONICAL_LAYOUT
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.spans import supports_span_contract
 from torch import Tensor, nn
+
+from mace_torch.nn.edges import EdgeInputs
 
 __all__ = [
     "PrecisionBackend",
@@ -106,15 +110,25 @@ class PrecisionBackend:
         A fused kernel has one math dtype, so every member is stamped with the
         span's policy: the widest of its members', which meets each floor.
         """
-        make = getattr(self.backend, "make_interaction_layer", None)
-        if make is None:
+        if not descriptors or not supports_span_contract(
+            self.capabilities().spec_version
+        ):
             return None
-        policy = self.config.policy_for(descriptors)
-        stamped = tuple(self._stamp(member, policy) for member in descriptors)
-        span = make(stamped)
+        stamped = self.span_descriptors(descriptors)
+        span = self.backend.make_interaction_layer(stamped)
         if span is not None and stamped[0].precision != self._interface:
             cast_at_boundary(span, stamped[0].precision, self._interface)
         return span
+
+    def span_descriptors(self, descriptors: tuple[Any, ...]) -> tuple[Any, ...]:
+        """Stamp one policy before compatibility is checked or the span is built."""
+        if not descriptors:
+            return ()
+        policy = self.config.policy_for(descriptors)
+        return tuple(
+            self._stamp(dataclasses.replace(member, layout=CANONICAL_LAYOUT), policy)
+            for member in descriptors
+        )
 
     def _stamp(self, descriptor: Any, policy: PrecisionPolicy | None = None) -> Any:
         if policy is None:
@@ -214,6 +228,8 @@ class _CastOutput:
 
 
 def _cast(value: Any, dtype: torch.dtype) -> Any:
+    if isinstance(value, EdgeInputs):
+        return value.to(dtype)
     if isinstance(value, Tensor):
         return value.to(dtype) if value.is_floating_point() else value
     if isinstance(value, tuple | list):

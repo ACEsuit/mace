@@ -17,16 +17,19 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from mace_core.config.precision import PrecisionConfig
+from mace_core.kernels.canonical import CANONICAL_LAYOUT, KERNEL_SPEC_VERSION
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.protocol import REFERENCE_ONLY_OPS
 from mace_core.kernels.registry import get_backend
+from mace_core.kernels.spans import supports_span_contract
 
 from mace_torch.backends.precision import PrecisionBackend
 from mace_torch.backends.reference import ReferenceBackend
+from mace_torch.backends.spans import validate_span
 
 __all__ = [
     "BuildDecision",
@@ -53,6 +56,7 @@ class BuildDecision:
     descriptor: Any
     backend: str
     reason: str = ""
+    layer: int | None = None
 
 
 class CompositeBackend:
@@ -69,6 +73,7 @@ class CompositeBackend:
         self.name = primary.name
         self._primary_capabilities: BackendCapabilities = primary.capabilities()
         self.decisions: list[BuildDecision] = []
+        self._span_requests = 0
 
     def capabilities(self) -> BackendCapabilities:
         """What the pair can build: everything the reference can.
@@ -88,6 +93,7 @@ class CompositeBackend:
             supports_double_backward=primary.supports_double_backward
             and fallback.supports_double_backward,
             edge_features=primary.edge_features | fallback.edge_features,
+            spec_version=KERNEL_SPEC_VERSION,
         )
 
     def _build(self, op: str, descriptor: Any) -> Any:
@@ -135,7 +141,46 @@ class CompositeBackend:
         return self._build("radial_basis", descriptor)
 
     def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> Any | None:
-        return self.primary.make_interaction_layer(descriptors)
+        """One layout for the span; precision is stamped by PrecisionBackend."""
+        members = tuple(
+            replace(member, layout=CANONICAL_LAYOUT) for member in descriptors
+        )
+        if isinstance(self.primary, PrecisionBackend):
+            members = self.primary.span_descriptors(members)
+        layer = self._span_requests
+        self._span_requests += 1
+        capabilities = self._primary_capabilities
+        span = None
+        if not supports_span_contract(capabilities.spec_version):
+            reason = (
+                f"kernel spec {capabilities.spec_version} predates the span contract"
+            )
+        elif not all(capabilities.supports(member) for member in members):
+            reason = "a span member is not supported"
+        else:
+            span = self.primary.make_interaction_layer(members)
+            reason = "backend declined this span shape" if span is None else ""
+        if span is not None:
+            validate_span(span, self.primary.name)
+        self.decisions.append(
+            BuildDecision(
+                "interaction_layer",
+                members,
+                self.primary.name if span is not None else self.fallback.name,
+                reason,
+                layer,
+            )
+        )
+        return span
+
+    def decline_interaction_layer(self, reason: str) -> None:
+        """Record a layer whose members cannot form a described span."""
+        self.decisions.append(
+            BuildDecision(
+                "interaction_layer", (), self.fallback.name, reason, self._span_requests
+            )
+        )
+        self._span_requests += 1
 
     def served_by_primary(self) -> bool:
         """Whether the chosen backend built any op at all."""
@@ -143,7 +188,8 @@ class CompositeBackend:
 
     def report(self) -> str:
         """One line per op kind: how many each backend built, and why not."""
-        counts = Counter((d.op, d.backend) for d in self.decisions)
+        ops = [d for d in self.decisions if d.layer is None]
+        counts = Counter((d.op, d.backend) for d in ops)
         reasons: dict[str, set[str]] = {}
         for decision in self.decisions:
             if decision.reason:
@@ -152,7 +198,7 @@ class CompositeBackend:
             f"backend {self.primary.name}, with {self.fallback.name} for the ops "
             "it does not build; every op in mul_ir"
         ]
-        for op in sorted({d.op for d in self.decisions}):
+        for op in sorted({d.op for d in ops}):
             built = ", ".join(
                 f"{counts[op, name]} by {name}"
                 for name in (self.primary.name, self.fallback.name)
@@ -160,6 +206,12 @@ class CompositeBackend:
             )
             why = "; ".join(sorted(reasons.get(op, ())))
             lines.append(f"  {op}: {built}" + (f" ({why})" if why else ""))
+        for decision in self.decisions:
+            if decision.layer is not None:
+                lines.append(
+                    f"  layer {decision.layer} span: {decision.backend}"
+                    + (f"; op by op ({decision.reason})" if decision.reason else "")
+                )
         return "\n".join(lines)
 
 

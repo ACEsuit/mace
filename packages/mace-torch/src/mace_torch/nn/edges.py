@@ -10,7 +10,15 @@ harmonics and the radial embedding inside its kernel.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
+import torch
 from torch import Tensor, nn
+
+from mace_torch.graph.edges import EdgeRuns
+
+if TYPE_CHECKING:
+    from mace_torch.nn.embedding import RadialEmbeddingBlock
 
 __all__ = ["EdgeInputs"]
 
@@ -30,6 +38,10 @@ class EdgeInputs:
         harmonics: The spherical harmonics op, ``[n_edges, 3]`` directions in.
         radial_embedding: The radial embedding block, which applies the
             envelope, the distance transform and the basis.
+        differentiated_twice: The derivative engine's Python flag for force
+            training or a Hessian; independent of the module's training mode.
+        receiver_runs: The receiver grouping requested by the backend, if any.
+        sender_runs: The sender grouping requested by the backend, if any.
     """
 
     def __init__(
@@ -39,16 +51,40 @@ class EdgeInputs:
         edge_index: Tensor,
         harmonics: nn.Module,
         radial_embedding: nn.Module,
+        *,
+        differentiated_twice: bool = False,
+        receiver_runs: EdgeRuns | None = None,
+        sender_runs: EdgeRuns | None = None,
     ) -> None:
         self.vectors = vectors
         self.node_atomic_numbers = node_atomic_numbers
         self.edge_index = edge_index
         self._harmonics = harmonics
         self._radial_embedding = radial_embedding
+        self.differentiated_twice = differentiated_twice
+        self.receiver_runs = receiver_runs
+        self.sender_runs = sender_runs
         self._lengths: Tensor | None = None
         self._attributes: Tensor | None = None
         self._radial: Tensor | None = None
         self._envelope: Tensor | None = None
+
+    def to(self, dtype: torch.dtype) -> EdgeInputs:
+        """A span's precision boundary; no derived per-edge inputs are evaluated."""
+        return EdgeInputs(
+            self.vectors.to(dtype),
+            self.node_atomic_numbers,
+            self.edge_index,
+            self._harmonics,
+            self._radial_embedding,
+            differentiated_twice=self.differentiated_twice,
+            receiver_runs=self.receiver_runs,
+            sender_runs=self.sender_runs,
+        )
+
+    def span_weights(self) -> tuple[Tensor, ...]:
+        """Live radial basis/transform tensors; this does not evaluate the basis."""
+        return cast("RadialEmbeddingBlock", self._radial_embedding).span_weights()
 
     @property
     def lengths(self) -> Tensor:
