@@ -58,6 +58,7 @@ from mace_torch.train.contracts import TorchBuiltModel
 from mace_torch.train.ddp import DistributedContext, broadcast_decision, wrap_model
 from mace_torch.train.ema import ExponentialMovingAverage
 from mace_torch.train.full_batch import full_batch_step
+from mace_torch.train.logs import write_epoch
 from mace_torch.train.loss import build_loss
 from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
 from mace_torch.train.optimizers import build_optimizer, build_scheduler
@@ -334,6 +335,22 @@ def run_train_stage(
             # own epochs, and the model the run ends on is the last stage's.
             best_loss, since_best = None, 0
 
+        if epoch == 0 and not resume:
+            # Validation iterators draw a CPU seed. This diagnostic pass
+            # must not shift training's random sequence or checkpoint state.
+            with torch.random.fork_rng(devices=[]):
+                initial = evaluate_heads(
+                    model,
+                    valid_loaders,
+                    loss,
+                    specs,
+                    device=device,
+                    compute=requested.derivatives,
+                )
+            log_validation(None, initial)
+            if processes.is_main:
+                write_epoch(config.runtime, None, None, initial, last=False)
+
         # The regime follows the optimizer the stage runs, which a stage that
         # inherits its optimizer takes from the one before it.
         full_batch = isinstance(optimizer, torch.optim.LBFGS)
@@ -460,8 +477,6 @@ def run_train_stage(
             )
         )
         if processes.is_main:
-            from mace_torch.train.logs import write_epoch
-
             write_epoch(
                 config.runtime,
                 epoch,
@@ -544,7 +559,7 @@ def report_errors(
     """
     requested = _requested_names(built)
 
-    def evaluate_rows(loaders, *, split_names: bool) -> list[Row]:
+    def evaluate_rows(model: nn.Module, loaders, *, split_names: bool) -> list[Row]:
         rows = []
         for name, batches in loaders.items():
             head = name.split("_", 1)[1] if split_names else name
@@ -569,7 +584,7 @@ def report_errors(
             )
         return rows
 
-    rows = evaluate_rows(built.data.reported_loaders(), split_names=True)
+    rows = evaluate_rows(model, built.data.reported_loaders(), split_names=True)
     table = error_table(config.runtime.error_table, rows)
     logger.info("Errors on the training and validation sets:\n%s", table)
     tracker.summary(
@@ -579,7 +594,7 @@ def report_errors(
             for name, value in row.metrics.items()
         }
     )
-    test_rows = evaluate_rows(built.data.test_loaders, split_names=False)
+    test_rows = evaluate_rows(model, built.data.test_loaders, split_names=False)
     if test_rows:
         logger.info(
             "Errors on the test sets:\n%s",
@@ -619,12 +634,14 @@ def _requested_names(built: TorchBuiltModel) -> _Requested:
     return _Requested(tuple(names), tuple(per_atom), outputs.derivatives)
 
 
-def log_validation(epoch: int, per_head: Mapping[str, dict[str, float]]) -> None:
+def log_validation(epoch: int | None, per_head: Mapping[str, dict[str, float]]) -> None:
     """One line per head, with the head named on every one of them.
 
     Named on every line rather than once per block: the lines are read in a log
     next to the other heads' and next to the next epoch's, where a heading
     several lines up has stopped applying.
+
+    An epoch of ``None`` labels the pre-training evaluation.
 
     **The line does not depend on the error table.** It reports what the run
     measured, so no configuration can silence it and no branch can go
@@ -635,13 +652,14 @@ def log_validation(epoch: int, per_head: Mapping[str, dict[str, float]]) -> None
     measured and the virials one below it is dead. Both are pinned in
     ``tests/unit/test_valid_err_log.py``.
     """
+    label = "initial validation" if epoch is None else f"epoch {epoch}"
     for head, metrics in per_head.items():
         reported = ", ".join(
             f"{name}={value:.4g}"
             for name, value in sorted(metrics.items())
             if name == "loss" or name.startswith(("rmse_", "mae_"))
         )
-        logger.info("epoch %d, head %s: %s", epoch, head, reported)
+        logger.info("%s, head %s: %s", label, head, reported)
 
 
 def _stage_at(schedule: Sequence[StageConfig], epoch: int) -> StageConfig:

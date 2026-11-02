@@ -206,6 +206,61 @@ def test_the_tiny_task_trains(pipeline):
 
 
 @fp64_only
+def test_initial_validation_precedes_steps_and_preserves_weights_and_rng(
+    tmp_path, monkeypatch
+):
+    from mace_torch.train import loop
+    from mace_torch.train.loss import build_loss
+    from mace_torch.train.metrics import metric_specs
+
+    config = configuration(
+        tmp_path,
+        max_num_epochs=1,
+        stages=[{"name": "main", "loss_weights": {"energy": 7.0, "forces": 3.0}}],
+    )
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    expected = loop.evaluate_heads(
+        built.model,
+        data.valid_loaders,
+        build_loss(built.outputs, config.loss, config.schedule()[0]),
+        metric_specs(built.outputs),
+    )["default"]
+    weights = [parameter.detach().clone() for parameter in built.model.parameters()]
+    directory = config.runtime.directory("results")
+    directory.mkdir(parents=True)
+    path = directory / f"{config.runtime.name}.jsonl"
+    path.write_text("stale run record\n")
+    evaluations = []
+    steps = []
+    evaluate_heads, train_one_epoch = loop.evaluate_heads, loop.train_one_epoch
+
+    def measured(*args, **kwargs):
+        evaluations.append(torch.random.get_rng_state())
+        return evaluate_heads(*args, **kwargs)
+
+    def stepped(model, batches, loss, optimizer, **kwargs):
+        steps.append(1)
+        assert len(evaluations) == 1
+        assert torch.equal(torch.random.get_rng_state(), evaluations[0])
+        assert not optimizer.state
+        for before, after in zip(weights, built.model.parameters(), strict=True):
+            assert torch.equal(before, after)
+        records = [json.loads(line) for line in path.read_text().splitlines()]
+        assert records == [
+            {"epoch": None, "mode": "valid", "head": "default", **expected}
+        ]
+        return train_one_epoch(model, batches, loss, optimizer, **kwargs)
+
+    monkeypatch.setattr(loop, "evaluate_heads", measured)
+    monkeypatch.setattr(loop, "train_one_epoch", stepped)
+    trained = run_train_stage(config, built)
+    assert steps == [1]
+    assert trained.best_epoch == 0
+    assert [record.epoch for record in trained.history] == [0]
+
+
+@fp64_only
 def test_the_checkpoint_carries_what_wrote_it(tmp_path):
     config = configuration(tmp_path)
     data = run_data_stage(config, CATALOGUE)
@@ -335,6 +390,7 @@ def test_a_dry_run_stops_before_any_epoch_and_writes_nothing(tmp_path):
     assert trained.history == ()
     assert trained.checkpoint_path is None
     assert not (tmp_path / "model.safetensors").exists()
+    assert not config.runtime.directory("results").exists()
 
 
 @fp64_only
@@ -514,8 +570,8 @@ def test_a_skipped_head_is_left_out_of_the_table(tmp_path, caplog, monkeypatch):
     assert "Errors on the test sets" not in printed
     assert data.train_eval_loaders["small"] not in evaluated
     # The skipped head still validates during training, but not again at the end.
-    assert evaluated.count(data.valid_loaders["small"]) == 2
-    assert evaluated.count(data.valid_loaders["large"]) == 3
+    assert evaluated.count(data.valid_loaders["small"]) == 3
+    assert evaluated.count(data.valid_loaders["large"]) == 4
 
 
 @fp64_only

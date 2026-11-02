@@ -136,7 +136,10 @@ def training_records(directory: Path, name="tiny") -> list[dict]:
 
 def validation_losses(directory: Path) -> dict[int, float]:
     records = training_records(directory)
-    return {record["epoch"]: record["loss"] for record in records if record["mode"] == "valid"}
+    return {
+        record["epoch"]: record["loss"] for record in records
+        if record["mode"] == "valid" and record["epoch"] is not None
+    }
 
 
 def optimizer_steps(directory: Path) -> dict[int, int]:
@@ -157,6 +160,10 @@ def test_the_tiny_task_trains_on_the_v1_engine(tmp_path):
     losses = validation_losses(tmp_path)
     assert len(losses) == 4
     assert losses[3] < losses[0]
+    initial = training_records(tmp_path)[0]
+    assert (initial["epoch"], initial["mode"], initial["head"]) == (None, "valid", "default")
+    assert np.isfinite(initial["loss"])
+    assert "initial validation, head default" in finished.stderr
     assert optimizer_steps(tmp_path) == {0: 2, 1: 2, 2: 2, 3: 2}
     assert (tmp_path / "tiny.run-000004.safetensors").is_file()
 
@@ -312,7 +319,9 @@ def test_a_multihead_run_reports_every_head_separately(tmp_path):
     records = training_records(tmp_path)
     assert [
         (row["epoch"], row["head"]) for row in records if row["mode"] == "valid"
-    ] == [(0, "small"), (0, "large"), (1, "small"), (1, "large")]
+    ] == [(None, "small"), (None, "large"), (0, "small"), (0, "large"), (1, "small"), (1, "large")]
+    for head in ("small", "large"):
+        assert finished.stderr.count(f", head {head}:") == 3
     assert optimizer_steps(tmp_path) == {0: 12, 1: 12}
 
 
@@ -393,8 +402,10 @@ def test_a_fine_tune_leaves_the_replay_head_out_of_its_table(tmp_path):
         assert f"Skipping evaluation of {split} (head replay)" in finished.stderr
     records = training_records(tmp_path, "tuned")
     assert [(row["epoch"], row["head"]) for row in records if row["mode"] == "valid"] == [
-        (0, "replay"), (0, "target"), (1, "replay"), (1, "target")
+        (None, "replay"), (None, "target"), (0, "replay"), (0, "target"), (1, "replay"), (1, "target")
     ]
+    for head in ("replay", "target"):
+        assert finished.stderr.count(f", head {head}:") == 3
     assert {row.get("head") for row in records if row["mode"] == "opt"} == {None}
 
 
@@ -426,11 +437,13 @@ def test_restart_latest_continues_the_run(tmp_path):
     resumed = on_v1("--config", str(variant(config, RESTART)))
     assert resumed.returncode == 0, resumed.stderr
     assert "Resuming from" in resumed.stderr
+    assert "initial validation" not in resumed.stderr
     assert evaluated_epochs(resumed.stderr) == [2, 3]
     after = validation_losses(tmp_path)
     assert after.keys() == {0, 1, 2, 3}
     assert after[2] <= 1.5 * before[1]
     assert training_records(tmp_path)[:len(original_records)] == original_records
+    assert sum(row["epoch"] is None for row in training_records(tmp_path)) == 1
     assert optimizer_steps(tmp_path) == {0: 2, 1: 2, 2: 2, 3: 2}
 
 
@@ -441,6 +454,7 @@ def test_restart_latest_with_nothing_to_restart_from_starts_fresh(tmp_path):
     finished = on_v1("--config", str(variant(tiny_task(tmp_path), RESTART)))
     assert finished.returncode == 0, finished.stderr
     assert "starts at epoch 0" in finished.stderr
+    assert training_records(tmp_path)[0]["epoch"] is None
     assert evaluated_epochs(finished.stderr) == [0, 1, 2, 3]
 
 

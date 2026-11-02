@@ -124,6 +124,7 @@ def test_two_ranks_evaluate_every_closure_at_the_same_point(tmp_path):
         .splitlines()
     ]
     assert [row["epoch"] for row in records if row["mode"] == "opt"] == [0, 1]
+    assert [row["epoch"] for row in records if row["mode"] == "valid"] == [None, 0, 1]
 
     # Not bit for bit: two shares add the set up in another order than one
     # process does, which moves the last bit of each evaluation, and the line

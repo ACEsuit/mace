@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 
@@ -107,7 +108,61 @@ def test_training_writes_citations_config_and_plot(tmp_path, capsys):
     deployed = load_deployed(tmp_path / "mace.json")
     assert deployed.metadata.citations
     assert "Higher Order" in capsys.readouterr().out
-    assert (tmp_path / "results/mace.png").stat().st_size > 1000
+    original = (tmp_path / "results/mace.png").read_bytes()
+    assert original.startswith(b"\x89PNG\r\n\x1a\n") and len(original) > 5000
+    log = tmp_path / "results/mace.jsonl"
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    assert records[0]["epoch"] is None
+    assert {"epoch", "mode", "head", "loss", "rmse_energy"} <= records[0].keys()
+    assert isinstance(records[0]["head"], str)
+    assert {row["mode"] for row in records} == {"opt", "train", "valid"}
+    replotted = tmp_path / "replotted.png"
+    for source in (log, log.parent):
+        assert (
+            main(
+                ["plot", "training", "--path", str(source), "--output", str(replotted)]
+            )
+            == 0
+        )
+        assert replotted.read_bytes() == original
+    # A diagnostic baseline must not become an optimizer epoch on the curve.
+    without_initial = tmp_path / "epochs.jsonl"
+    without_initial.write_text(
+        "\n".join(json.dumps(row) for row in records if row["epoch"] is not None)
+    )
+    assert (
+        main(
+            [
+                "plot",
+                "training",
+                "--path",
+                str(without_initial),
+                "--output",
+                str(replotted),
+            ]
+        )
+        == 0
+    )
+    assert replotted.read_bytes() == original
+    assert main(["plot", "training", "--path", str(log), "--output_format", "pdf"]) == 0
+    assert log.with_suffix(".pdf").read_bytes().startswith(b"%PDF-")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert (
+        main(
+            [
+                "plot",
+                "training",
+                "--path",
+                str(empty),
+                "--output",
+                str(empty / "empty.png"),
+            ]
+        )
+        == 2
+    )
+    assert "no plotted values" in capsys.readouterr().err
+    assert not (empty / "empty.png").exists()
     exported = tmp_path / "resolved.yaml"
     assert (
         main(

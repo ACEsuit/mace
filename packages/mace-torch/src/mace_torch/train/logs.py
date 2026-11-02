@@ -72,31 +72,42 @@ def setup_logging(runtime: RuntimeConfig, rank: int = 0) -> Path | None:
 
 def write_epoch(
     runtime: RuntimeConfig,
-    epoch: int,
-    train_loss: float,
+    epoch: int | None,
+    train_loss: float | None,
     per_head,
     *,
     last: bool,
     step_losses: Sequence[float] = (),
 ) -> None:
-    """Append real per-head metrics and render requested curves on rank zero."""
+    """Write per-head metrics and requested curves on rank zero.
+
+    ``epoch=None`` starts a fresh run with its pre-training validation.
+    Completed epochs append to it, including epoch zero after a restart.
+    """
     import json
 
     directory = runtime.directory("results")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{runtime.name}.jsonl"
     rows = [{"epoch": epoch, "mode": "opt", "loss": loss} for loss in step_losses]
-    rows.append({"epoch": epoch, "mode": "train", "loss": train_loss})
+    if train_loss is not None:
+        rows.append({"epoch": epoch, "mode": "train", "loss": train_loss})
     rows.extend(
         {"epoch": epoch, "mode": "valid", "head": name, **metrics}
         for name, metrics in per_head.items()
     )
-    with path.open("w" if epoch == 0 else "a") as stream:
+    with path.open("w" if epoch is None else "a") as stream:
         for row in rows:
             stream.write(json.dumps(row) + "\n")
-    if runtime.plot and (
-        last
-        or (runtime.plot_frequency > 0 and (epoch + 1) % runtime.plot_frequency == 0)
+    if (
+        epoch is not None
+        and runtime.plot
+        and (
+            last
+            or (
+                runtime.plot_frequency > 0 and (epoch + 1) % runtime.plot_frequency == 0
+            )
+        )
     ):
         from mace_torch.train.plots import plot_training
 

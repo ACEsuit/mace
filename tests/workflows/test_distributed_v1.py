@@ -175,13 +175,17 @@ def test_a_dataset_smaller_than_the_world_size_trains(tmp_path, optimizer, struc
     })))
     assert single.returncode == 0, single.stderr
     alone = [row for row in training_records(single_dir) if row["mode"] == "valid"]
-    assert len(together) == len(alone) == 1
-    assert together[0].keys() == alone[0].keys()
-    for name, value in alone[0].items():
-        if isinstance(value, (int, float)):
-            assert together[0][name] == pytest.approx(
-                value, abs=FP64_CPU_REFERENCE.atol, rel=FP64_CPU_REFERENCE.rtol
-            ), name
+    assert [row["epoch"] for row in together] == [None, 0]
+    assert [row["epoch"] for row in alone] == [None, 0]
+    for distributed_row, single_row in zip(together, alone, strict=True):
+        assert distributed_row.keys() == single_row.keys()
+        for name, value in single_row.items():
+            if isinstance(value, (int, float)):
+                assert distributed_row[name] == pytest.approx(
+                    value, abs=FP64_CPU_REFERENCE.atol, rel=FP64_CPU_REFERENCE.rtol
+                ), name
+            else:
+                assert distributed_row[name] == value
     for row_name in ("train_default", "valid_default"):
         together_row = next(line for line in ranks[0].stderr.splitlines() if f"| {row_name}" in line)
         alone_row = next(line for line in single.stderr.splitlines() if f"| {row_name}" in line)
