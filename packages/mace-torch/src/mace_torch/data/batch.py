@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 import numpy as np
@@ -68,6 +69,20 @@ class TrainingBatch:
             },
         )
 
+    def pin_memory(self) -> TrainingBatch:
+        """Pin every tensor on the host, as Torch's custom-batch hook requires."""
+        return TrainingBatch(
+            graph={
+                name: value.pin_memory() if isinstance(value, Tensor) else value
+                for name, value in self.graph.items()
+            },
+            targets={name: value.pin_memory() for name, value in self.targets.items()},
+            property_weights={
+                name: value.pin_memory()
+                for name, value in self.property_weights.items()
+            },
+        )
+
 
 #: One structure as a dataset hands it over: its graph, its reference values,
 #: and how much each of those counts. Named because three modules pass it
@@ -76,7 +91,7 @@ Item = tuple[Mapping[str, np.ndarray], Mapping[str, np.ndarray], Mapping[str, fl
 
 
 def collate_training(
-    items: Sequence[Item],
+    items: Iterable[Item],
     *,
     z_table: AtomicNumberTable,
     float_dtype: str = "float64",
@@ -91,6 +106,7 @@ def collate_training(
         float_dtype: What the floating fields are bound at.
         features: Custom input names and their declared atom/graph storage.
     """
+    items = list(items)
     graph = collate(
         [item[0] for item in items],
         dtype=getattr(torch, float_dtype),
@@ -184,12 +200,10 @@ def make_collate(
     model\'s rather than any one dataset\'s.
     """
 
-    def collate(items: Iterable[Item]) -> TrainingBatch:
-        return collate_training(
-            list(items), z_table=z_table, float_dtype=float_dtype, features=features
-        )
-
-    return collate
+    # A module-level callable survives spawn/forkserver worker serialization.
+    return partial(
+        collate_training, z_table=z_table, float_dtype=float_dtype, features=features
+    )
 
 
 def make_loader(

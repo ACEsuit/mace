@@ -39,11 +39,6 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
         "checkpoints_dir",
         "results_dir",
         "downloads_dir",
-        "wandb",
-        "wandb_dir",
-        "wandb_project",
-        "wandb_entity",
-        "wandb_name",
         "wandb_log_hypers",
         "multiheads_finetuning",
         "foundation_head",
@@ -166,20 +161,6 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
         raise LegacyFlagError(
             "V1 logs the resolved config; --wandb_log_hypers cannot select a subset"
         )
-    if any(key.startswith("wandb") for key in values):
-        runtime["wandb"] = {
-            **({"enabled": values["wandb"]} if "wandb" in values else {}),
-            **{
-                field: values[flag]
-                for flag, field in (
-                    ("wandb_project", "project"),
-                    ("wandb_entity", "entity"),
-                    ("wandb_name", "name"),
-                    ("wandb_dir", "directory"),
-                )
-                if flag in values
-            },
-        }
     data = document.setdefault("data", {})
     if values.get("heads"):
         head_defaults = data.pop("heads", {}).get("default", {})

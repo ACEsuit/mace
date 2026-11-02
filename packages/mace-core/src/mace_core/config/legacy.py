@@ -134,6 +134,11 @@ _RUNTIME: dict[str, Disposition] = {
         restart_latest="runtime.restart_latest",
         keep_checkpoints="runtime.keep_checkpoints",
         save_all_checkpoints="runtime.save_all_checkpoints",
+        wandb="runtime.wandb.enabled",
+        wandb_dir="runtime.wandb.directory",
+        wandb_project="runtime.wandb.project",
+        wandb_entity="runtime.wandb.entity",
+        wandb_name="runtime.wandb.name",
     ),
     **_merged(
         "runtime.work_dir",
@@ -493,14 +498,9 @@ _EXTRAS: dict[str, Disposition] = {
         "data_aug_magmom_mode",
         applied=True,
     ),
-    **_reserved(
-        "runtime.tracking",
-        "the experiment-tracking work",
-        "wandb",
-        "wandb_dir",
-        "wandb_project",
-        "wandb_entity",
-        "wandb_name",
+    **_merged(
+        "runtime.wandb",
+        "the complete resolved configuration is logged; a subset cannot be selected",
         "wandb_log_hypers",
     ),
 }

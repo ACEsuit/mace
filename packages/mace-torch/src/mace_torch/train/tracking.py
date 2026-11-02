@@ -41,7 +41,7 @@ class Tracker(Protocol):
     def summary(self, values: Mapping[str, float]) -> None:
         """Record the run's final numbers, which belong to no epoch."""
 
-    def finish(self) -> None:
+    def finish(self, *, exit_code: int = 0) -> None:
         """Close the run, so a tracker that buffers flushes it."""
 
 
@@ -54,7 +54,7 @@ class NullTracker:
     def summary(self, values: Mapping[str, float]) -> None:
         return
 
-    def finish(self) -> None:
+    def finish(self, *, exit_code: int = 0) -> None:
         return
 
 
@@ -80,11 +80,10 @@ class WandbTracker:
         except ImportError as missing:
             raise ImportError(
                 "tracking is enabled and wandb is not installed. Install it "
-                "with `pip install mace-torch[wandb]`, or set "
+                "with `pip install mace-torch-v1[wandb]`, or set "
                 "`runtime.wandb.enabled = false`."
             ) from missing
         settings = config.runtime.wandb
-        self._wandb = wandb
         self._run = wandb.init(
             project=settings.project,
             entity=settings.entity,
@@ -94,14 +93,14 @@ class WandbTracker:
         )
 
     def log(self, values: Mapping[str, float], step: int) -> None:
-        self._wandb.log(dict(values), step=step)
+        self._run.log(dict(values), step=step)
 
     def summary(self, values: Mapping[str, float]) -> None:
         for name, value in values.items():
             self._run.summary[name] = value
 
-    def finish(self) -> None:
-        self._run.finish()
+    def finish(self, *, exit_code: int = 0) -> None:
+        self._run.finish(exit_code=exit_code)
 
 
 def open_tracker(config: ResolvedConfig) -> Tracker:

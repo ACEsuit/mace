@@ -62,7 +62,7 @@ from mace_torch.train.logs import write_epoch
 from mace_torch.train.loss import build_loss
 from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
 from mace_torch.train.optimizers import build_optimizer, build_scheduler
-from mace_torch.train.tracking import Tracker, epoch_values, open_tracker
+from mace_torch.train.tracking import NullTracker, Tracker, epoch_values, open_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -240,300 +240,323 @@ def run_train_stage(
     requested = _requested_names(built)
     specs = metric_specs(built.outputs)
     loss = build_loss(built.outputs, config.loss)
-    tracker = open_tracker(config)
-    optimizer = build_optimizer(model, config.training)
-    scheduler = build_scheduler(optimizer, config.training.scheduler)
-    ema = (
-        ExponentialMovingAverage(model.parameters(), config.training.ema.decay)
-        if config.training.ema.enabled
-        else None
-    )
-    # Trained through the wrapper, which averages the gradients across the
-    # processes; evaluated and written without it, since it holds the same
-    # parameters and its hooks would only synchronize what needs no syncing.
-    stepped = wrap_model(model, processes)
-
-    state = RunState(epoch=0)
-    best_state: dict[str, dict[str, Tensor]] | None = None
-    schedule = config.schedule()
-    stage = ""
-    if resume:
-        if checkpoint_path is None:
-            raise ValueError(
-                "a resume was asked for and no checkpoint path was given, so "
-                "there is nothing to resume from."
-            )
-        directory, name = Path(checkpoint_path).parent, Path(checkpoint_path).name
-        latest = latest_run_checkpoint(directory, name)
-        if latest is None:
-            raise FileNotFoundError(
-                f"no run checkpoint for {name!r} in {directory}, so there is no "
-                f"run to continue. Starting from scratch instead would report "
-                f"the first epoch as if it carried on from somewhere."
-            )
-        state = read_run_state(latest)
-        # Every stage up to the one the checkpoint trained in, entered in
-        # order, as the run that wrote it entered them: a stage that names its
-        # own optimizer builds a new one, and restoring into the first stage's
-        # optimizer would have that replace what was restored.
-        for entered in schedule:
-            if stage == state.stage:
-                break
-            stage = entered.name
-            loss, optimizer, scheduler = _enter_stage(
-                entered, config, built, model, optimizer, scheduler
-            )
-        if stage != state.stage:
-            raise CheckpointError(
-                f"{latest} was written in the stage {state.stage!r}, and this "
-                f"configuration's stages are {[s.name for s in schedule]}. "
-                f"Resuming in another stage would train with a schedule the "
-                f"run never had."
-            )
-        resumed = read_run_checkpoint(
-            latest, model=model, optimizer=optimizer, scheduler=scheduler, ema=ema
+    tracker = NullTracker() if config.training.dry_run else open_tracker(config)
+    exit_code = 0
+    try:
+        optimizer = build_optimizer(model, config.training)
+        scheduler = build_scheduler(optimizer, config.training.scheduler)
+        ema = (
+            ExponentialMovingAverage(model.parameters(), config.training.ema.decay)
+            if config.training.ema.enabled
+            else None
         )
-        logger.info("Resuming from %s at epoch %d", latest, state.epoch)
-        if resumed.optimizer_state == "reinitialized":
-            logger.warning("Resumed with a new optimizer: %s", resumed.reason)
-        # The best epoch so far belongs to the run that wrote it. Taken from
-        # its model file, so a resumed run that never improves still ends on
-        # it.
-        if Path(checkpoint_path).with_suffix(".safetensors").is_file():
-            best_state = read_canonical_state(checkpoint_path)
+        # Trained through the wrapper, which averages the gradients across the
+        # processes; evaluated and written without it, since it holds the same
+        # parameters and its hooks would only synchronize what needs no syncing.
+        stepped = wrap_model(model, processes)
 
-    if config.training.dry_run:
-        # Before any epoch and before any file: the point of the flag is to
-        # prove the configuration builds a model, and a dry run that wrote one
-        # would be indistinguishable from a run of length zero.
-        return TrainedModel(model=model, metadata=built.metadata)
-
-    # A resumed run's earlier epochs belong to the run that wrote them:
-    # inventing records for them would put numbers in the history that were
-    # never measured here.
-    history: list[EpochRecord] = []
-    best_loss = state.best_valid_loss
-    best_epoch = state.best_epoch
-    written: Path | None = None
-    since_best = state.since_best
-
-    epoch = state.epoch
-    while epoch < config.training.max_num_epochs:
-        # Before the epoch it applies to, so the epoch that changes the loss
-        # weights is trained with them. The stage is looked up rather than
-        # switched into, which is what lets a resume land mid-schedule.
-        entering = _stage_at(schedule, epoch)
-        if entering.name != stage:
-            stage = entering.name
-            logger.info("Epoch %d starts the stage %r", epoch, stage)
-            loss, optimizer, scheduler = _enter_stage(
-                entering, config, built, model, optimizer, scheduler
-            )
-        if epoch == entering.start_epoch:
-            # A stage scores with its own weights, so its losses and the ones
-            # before it are not on one scale. Its best is the best among its
-            # own epochs, and the model the run ends on is the last stage's.
-            best_loss, since_best = None, 0
-
-        if epoch == 0 and not resume:
-            # Validation iterators draw a CPU seed. This diagnostic pass
-            # must not shift training's random sequence or checkpoint state.
-            with torch.random.fork_rng(devices=[]):
-                initial = evaluate_heads(
-                    model,
-                    valid_loaders,
-                    loss,
-                    specs,
-                    device=device,
-                    compute=requested.derivatives,
+        state = RunState(epoch=0)
+        best_state: dict[str, dict[str, Tensor]] | None = None
+        schedule = config.schedule()
+        stage = ""
+        if resume:
+            if checkpoint_path is None:
+                raise ValueError(
+                    "a resume was asked for and no checkpoint path was given, so "
+                    "there is nothing to resume from."
                 )
-            log_validation(None, initial)
-            if processes.is_main:
-                write_epoch(config.runtime, None, None, initial, last=False)
-
-        # The regime follows the optimizer the stage runs, which a stage that
-        # inherits its optimizer takes from the one before it.
-        full_batch = isinstance(optimizer, torch.optim.LBFGS)
-        step_losses: list[float] = []
-        train_loader = built.data.train_loader
-        if processes.distributed:
-            train_loader.shard = training_shard(
-                processes.rank, processes.world_size, pad=not full_batch
-            )
-        if full_batch:
-            # The whole set, ragged tail and all: a structure left out is one
-            # the step never sees.
-            train_loss = full_batch_step(
-                model,
-                partial(train_loader.batches, epoch, drop_last=False),
-                loss,
-                optimizer,
-                device=device,
-                compute=requested.derivatives,
-                clip_grad=config.training.clip_grad,
-                processes=processes,
-            )
-            step_losses.append(train_loss)
-        else:
-            # A short last batch is a noisier gradient with the same learning
-            # rate behind it, so a mini-batch stage drops it.
-            train_loss = train_one_epoch(
-                stepped,
-                train_loader.batches(epoch, drop_last=True),
-                loss,
-                optimizer,
-                device=device,
-                compute=requested.derivatives,
-                clip_grad=config.training.clip_grad,
-                ema=ema,
-                step_losses=step_losses if processes.is_main else None,
-            )
-
-        per_head = {}
-        valid_loss: float | None = None
-        improved = False
-        if epoch % config.training.eval_interval == 0:
-            context = ema.average_parameters() if ema is not None else nullcontext()
-            with context:
-                per_head = evaluate_heads(
-                    model,
-                    valid_loaders,
-                    loss,
-                    specs,
-                    device=device,
-                    compute=requested.derivatives,
-                )
-                log_validation(epoch, per_head)
-                tracker.log(epoch_values(per_head), step=epoch)
-                valid_loss = selection_loss(per_head, config.training.checkpoint_metric)
-                if best_loss is None or valid_loss < best_loss:
-                    best_loss, best_epoch, since_best = valid_loss, epoch, 0
-                    improved = True
-                    # Inside the average's context, so what is kept is what
-                    # was scored, which is also what the checkpoint holds.
-                    best_state = _snapshot(model)
-                    if checkpoint_path is not None and processes.is_main:
-                        written = write_model(checkpoint_path, model, built.metadata)
-                else:
-                    since_best += 1
-        # Rank zero's word on the patience, so no rank trains an epoch the
-        # others skip or moves to a stage the others do not.
-        following = _following_epoch(
-            schedule,
-            epoch,
-            broadcast_decision(since_best >= config.training.patience, processes),
-        )
-        if following is None:
-            logger.info("Stopping after %d evaluations without improvement", since_best)
-        elif following != epoch + 1:
-            logger.info(
-                "Stage %r stopped improving after %d evaluations; the run moves "
-                "to the next stage at epoch %d",
-                stage,
-                since_best,
-                following,
-            )
-
-        _step_schedule(scheduler, valid_loss)
-        if checkpoint_path is not None and processes.is_main:
-            # After the schedule has stepped, so a resume continues with the
-            # rate the next epoch would have had, and with the raw weights in
-            # place: the average travels as its own state. With the epoch the
-            # run continues at, so a resume after a move to the next stage
-            # continues there.
             directory, name = Path(checkpoint_path).parent, Path(checkpoint_path).name
-            written_run = write_run_checkpoint(
-                directory,
-                name,
-                RunState(
-                    following or epoch + 1,
-                    best_loss,
-                    best_epoch,
-                    since_best,
-                    stage,
-                    improved,
-                ),
-                model=model,
-                optimizer=optimizer,
-                scheduler=scheduler,
-                ema=ema,
-                metadata=built.metadata,
+            latest = latest_run_checkpoint(directory, name)
+            if latest is None:
+                raise FileNotFoundError(
+                    f"no run checkpoint for {name!r} in {directory}, so there is no "
+                    f"run to continue. Starting from scratch instead would report "
+                    f"the first epoch as if it carried on from somewhere."
+                )
+            state = read_run_state(latest)
+            # Every stage up to the one the checkpoint trained in, entered in
+            # order, as the run that wrote it entered them: a stage that names its
+            # own optimizer builds a new one, and restoring into the first stage's
+            # optimizer would have that replace what was restored.
+            for entered in schedule:
+                if stage == state.stage:
+                    break
+                stage = entered.name
+                loss, optimizer, scheduler = _enter_stage(
+                    entered, config, built, model, optimizer, scheduler
+                )
+            if stage != state.stage:
+                raise CheckpointError(
+                    f"{latest} was written in the stage {state.stage!r}, and this "
+                    f"configuration's stages are {[s.name for s in schedule]}. "
+                    f"Resuming in another stage would train with a schedule the "
+                    f"run never had."
+                )
+            resumed = read_run_checkpoint(
+                latest, model=model, optimizer=optimizer, scheduler=scheduler, ema=ema
             )
-            retain_run_checkpoints(
-                directory,
-                name,
-                keep_improving=config.runtime.keep_checkpoints,
-                keep_all=config.runtime.save_all_checkpoints,
-            )
-            logger.debug("Rank %d wrote %s", processes.rank, written_run)
-        history.append(
-            EpochRecord(
-                epoch=epoch,
-                train_loss=train_loss,
-                valid_loss=valid_loss,
-                learning_rate=float(optimizer.param_groups[0]["lr"]),
-                stage=stage,
-                evaluated_with_ema=valid_loss is not None and ema is not None,
-            )
-        )
-        if processes.is_main:
-            write_epoch(
-                config.runtime,
+            logger.info("Resuming from %s at epoch %d", latest, state.epoch)
+            if resumed.optimizer_state == "reinitialized":
+                logger.warning("Resumed with a new optimizer: %s", resumed.reason)
+            # The best epoch so far belongs to the run that wrote it. Taken from
+            # its model file, so a resumed run that never improves still ends on
+            # it.
+            if Path(checkpoint_path).with_suffix(".safetensors").is_file():
+                best_state = read_canonical_state(checkpoint_path)
+
+        if config.training.dry_run:
+            # Before any epoch and before any file: the point of the flag is to
+            # prove the configuration builds a model, and a dry run that wrote one
+            # would be indistinguishable from a run of length zero.
+            return TrainedModel(model=model, metadata=built.metadata)
+
+        # A resumed run's earlier epochs belong to the run that wrote them:
+        # inventing records for them would put numbers in the history that were
+        # never measured here.
+        history: list[EpochRecord] = []
+        best_loss = state.best_valid_loss
+        best_epoch = state.best_epoch
+        written: Path | None = None
+        since_best = state.since_best
+
+        epoch = state.epoch
+        while epoch < config.training.max_num_epochs:
+            # Before the epoch it applies to, so the epoch that changes the loss
+            # weights is trained with them. The stage is looked up rather than
+            # switched into, which is what lets a resume land mid-schedule.
+            entering = _stage_at(schedule, epoch)
+            if entering.name != stage:
+                stage = entering.name
+                logger.info("Epoch %d starts the stage %r", epoch, stage)
+                loss, optimizer, scheduler = _enter_stage(
+                    entering, config, built, model, optimizer, scheduler
+                )
+            if epoch == entering.start_epoch:
+                # A stage scores with its own weights, so its losses and the ones
+                # before it are not on one scale. Its best is the best among its
+                # own epochs, and the model the run ends on is the last stage's.
+                best_loss, since_best = None, 0
+
+            if epoch == 0 and not resume:
+                # Validation iterators draw a CPU seed. This diagnostic pass
+                # must not shift training's random sequence or checkpoint state.
+                with torch.random.fork_rng(devices=[]):
+                    initial = evaluate_heads(
+                        model,
+                        valid_loaders,
+                        loss,
+                        specs,
+                        device=device,
+                        compute=requested.derivatives,
+                    )
+                log_validation(None, initial)
+                if processes.is_main:
+                    write_epoch(config.runtime, None, None, initial, last=False)
+
+            # The regime follows the optimizer the stage runs, which a stage that
+            # inherits its optimizer takes from the one before it.
+            full_batch = isinstance(optimizer, torch.optim.LBFGS)
+            step_losses: list[float] = []
+            train_loader = built.data.train_loader
+            if processes.distributed:
+                train_loader.shard = training_shard(
+                    processes.rank, processes.world_size, pad=not full_batch
+                )
+            if full_batch:
+                # The whole set, ragged tail and all: a structure left out is one
+                # the step never sees.
+                train_loss = full_batch_step(
+                    model,
+                    partial(train_loader.batches, epoch, drop_last=False),
+                    loss,
+                    optimizer,
+                    device=device,
+                    compute=requested.derivatives,
+                    clip_grad=config.training.clip_grad,
+                    processes=processes,
+                )
+                step_losses.append(train_loss)
+            else:
+                # A short last batch is a noisier gradient with the same learning
+                # rate behind it, so a mini-batch stage drops it.
+                train_loss = train_one_epoch(
+                    stepped,
+                    train_loader.batches(epoch, drop_last=True),
+                    loss,
+                    optimizer,
+                    device=device,
+                    compute=requested.derivatives,
+                    clip_grad=config.training.clip_grad,
+                    ema=ema,
+                    step_losses=step_losses if processes.is_main else None,
+                )
+
+            per_head = {}
+            valid_loss: float | None = None
+            improved = False
+            if epoch % config.training.eval_interval == 0:
+                context = ema.average_parameters() if ema is not None else nullcontext()
+                with context:
+                    per_head = evaluate_heads(
+                        model,
+                        valid_loaders,
+                        loss,
+                        specs,
+                        device=device,
+                        compute=requested.derivatives,
+                    )
+                    log_validation(epoch, per_head)
+                    tracker.log(epoch_values(per_head), step=epoch)
+                    valid_loss = selection_loss(
+                        per_head, config.training.checkpoint_metric
+                    )
+                    if best_loss is None or valid_loss < best_loss:
+                        best_loss, best_epoch, since_best = valid_loss, epoch, 0
+                        improved = True
+                        # Inside the average's context, so what is kept is what
+                        # was scored, which is also what the checkpoint holds.
+                        best_state = _snapshot(model)
+                        if checkpoint_path is not None and processes.is_main:
+                            written = write_model(
+                                checkpoint_path, model, built.metadata
+                            )
+                    else:
+                        since_best += 1
+            # Rank zero's word on the patience, so no rank trains an epoch the
+            # others skip or moves to a stage the others do not.
+            following = _following_epoch(
+                schedule,
                 epoch,
-                train_loss,
-                per_head,
-                step_losses=step_losses,
-                last=following is None or following >= config.training.max_num_epochs,
+                broadcast_decision(since_best >= config.training.patience, processes),
             )
-        # Every rank waits for rank zero's writes before any can read them.
+            if following is None:
+                logger.info(
+                    "Stopping after %d evaluations without improvement", since_best
+                )
+            elif following != epoch + 1:
+                logger.info(
+                    "Stage %r stopped improving after %d evaluations; the run moves "
+                    "to the next stage at epoch %d",
+                    stage,
+                    since_best,
+                    following,
+                )
+
+            _step_schedule(scheduler, valid_loss)
+            if checkpoint_path is not None and processes.is_main:
+                # After the schedule has stepped, so a resume continues with the
+                # rate the next epoch would have had, and with the raw weights in
+                # place: the average travels as its own state. With the epoch the
+                # run continues at, so a resume after a move to the next stage
+                # continues there.
+                directory, name = (
+                    Path(checkpoint_path).parent,
+                    Path(checkpoint_path).name,
+                )
+                written_run = write_run_checkpoint(
+                    directory,
+                    name,
+                    RunState(
+                        following or epoch + 1,
+                        best_loss,
+                        best_epoch,
+                        since_best,
+                        stage,
+                        improved,
+                    ),
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    ema=ema,
+                    metadata=built.metadata,
+                )
+                retain_run_checkpoints(
+                    directory,
+                    name,
+                    keep_improving=config.runtime.keep_checkpoints,
+                    keep_all=config.runtime.save_all_checkpoints,
+                )
+                logger.debug("Rank %d wrote %s", processes.rank, written_run)
+            history.append(
+                EpochRecord(
+                    epoch=epoch,
+                    train_loss=train_loss,
+                    valid_loss=valid_loss,
+                    learning_rate=float(optimizer.param_groups[0]["lr"]),
+                    stage=stage,
+                    evaluated_with_ema=valid_loss is not None and ema is not None,
+                )
+            )
+            if processes.is_main:
+                write_epoch(
+                    config.runtime,
+                    epoch,
+                    train_loss,
+                    per_head,
+                    step_losses=step_losses,
+                    last=following is None
+                    or following >= config.training.max_num_epochs,
+                )
+            # Every rank waits for rank zero's writes before any can read them.
+            processes.barrier()
+            if following is None:
+                break
+            epoch = following
+
+        if best_state is None and ema is not None:
+            # The run's model is the averaged one. Leaving the stepped weights in
+            # place would return a model that differs from the checkpoint beside
+            # it and from every number the run reported. Before any merge, while
+            # what trains is still what the average was kept over.
+            with torch.no_grad():
+                for parameter, shadow in zip(
+                    (p for p in model.parameters() if p.requires_grad),
+                    ema.shadow,
+                    strict=True,
+                ):
+                    parameter.copy_(shadow)
+        if config.finetune.lora.enabled:
+            # Folded in before anything is read back or reported: a merged model
+            # has the shapes of one never adapted, which is what the checkpoint
+            # already holds, since a checkpoint reads each weight as adapted.
+            merge_lora(model)
+        if best_state is not None:
+            # The run ends on its best epoch, as the frozen tree does by loading
+            # its last checkpoint, which it writes only on an improvement. Ending
+            # on the last epoch instead returns a model that is not the one on
+            # disk, and every number reported after training describes the
+            # wrong one of the two.
+            load_canonical_state(model, best_state)
+
+        if checkpoint_path is not None and processes.is_main:
+            # The model the run delivers, written once more at its end: the best
+            # epoch's weights, averaged when the run averaged and merged when it
+            # adapted, which is also what a run that never evaluated ends on.
+            written = write_model(checkpoint_path, model, built.metadata)
+
         processes.barrier()
-        if following is None:
-            break
-        epoch = following
-
-    if best_state is None and ema is not None:
-        # The run's model is the averaged one. Leaving the stepped weights in
-        # place would return a model that differs from the checkpoint beside
-        # it and from every number the run reported. Before any merge, while
-        # what trains is still what the average was kept over.
-        with torch.no_grad():
-            for parameter, shadow in zip(
-                (p for p in model.parameters() if p.requires_grad),
-                ema.shadow,
-                strict=True,
-            ):
-                parameter.copy_(shadow)
-    if config.finetune.lora.enabled:
-        # Folded in before anything is read back or reported: a merged model
-        # has the shapes of one never adapted, which is what the checkpoint
-        # already holds, since a checkpoint reads each weight as adapted.
-        merge_lora(model)
-    if best_state is not None:
-        # The run ends on its best epoch, as the frozen tree does by loading
-        # its last checkpoint, which it writes only on an improvement. Ending
-        # on the last epoch instead returns a model that is not the one on
-        # disk, and every number reported after training describes the
-        # wrong one of the two.
-        load_canonical_state(model, best_state)
-
-    if checkpoint_path is not None and processes.is_main:
-        # The model the run delivers, written once more at its end: the best
-        # epoch's weights, averaged when the run averaged and merged when it
-        # adapted, which is also what a run that never evaluated ends on.
-        written = write_model(checkpoint_path, model, built.metadata)
-
-    processes.barrier()
-    report_errors(
-        config, built, model, loss, specs, tracker, device=device, processes=processes
-    )
-    tracker.finish()
-    return TrainedModel(
-        model=model,
-        metadata=built.metadata,
-        history=tuple(history),
-        best_epoch=best_epoch,
-        checkpoint_path=written,
-    )
+        report_errors(
+            config,
+            built,
+            model,
+            loss,
+            specs,
+            tracker,
+            device=device,
+            processes=processes,
+        )
+        return TrainedModel(
+            model=model,
+            metadata=built.metadata,
+            history=tuple(history),
+            best_epoch=best_epoch,
+            checkpoint_path=written,
+        )
+    except BaseException:
+        exit_code = 1
+        raise
+    finally:
+        tracker.finish(exit_code=exit_code)
 
 
 def report_errors(
@@ -587,19 +610,19 @@ def report_errors(
     rows = evaluate_rows(model, built.data.reported_loaders(), split_names=True)
     table = error_table(config.runtime.error_table, rows)
     logger.info("Errors on the training and validation sets:\n%s", table)
-    tracker.summary(
-        {
-            f"final_{row.name}_{name}": value
-            for row in rows
-            for name, value in row.metrics.items()
-        }
-    )
     test_rows = evaluate_rows(model, built.data.test_loaders, split_names=False)
     if test_rows:
         logger.info(
             "Errors on the test sets:\n%s",
             error_table(config.runtime.error_table, test_rows),
         )
+    tracker.summary(
+        {
+            f"final_{row.name}_{name}": value
+            for row in (*rows, *test_rows)
+            for name, value in row.metrics.items()
+        }
+    )
     return table
 
 

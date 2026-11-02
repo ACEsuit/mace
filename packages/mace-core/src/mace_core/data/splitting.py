@@ -89,6 +89,7 @@ def random_train_valid_split(
         if prefix:
             name = f"{prefix}_{name}"
         path = Path(work_dir) / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             "".join(f"{index}\n" for index in valid_indices), encoding="utf-8"
         )
