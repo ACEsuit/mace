@@ -30,7 +30,13 @@ from mace_core.graph import (
     padding_length,
 )
 from mace_core.graph.collate import feature_levels
-from mace_core.graph.schema import EDGE_LEVEL, GRAPH_LEVEL, NODE_LEVEL, level_of
+from mace_core.graph.schema import (
+    DERIVED_KEYS,
+    EDGE_LEVEL,
+    GRAPH_LEVEL,
+    NODE_LEVEL,
+    level_of,
+)
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
 from mace_core.outputs import CORE_FIELD_NAMES, MACEOutput
 
@@ -111,6 +117,8 @@ def pad_batch(
     feature_level = feature_levels(features)
     padded: dict[str, Any] = {}
     for key, value in data.items():
+        if key in DERIVED_KEYS:
+            continue
         if key == "ptr":
             padded[key] = torch.cat((value, padding.ptr_tail(value)))
         elif key in GRAPH_SCHEMA and GRAPH_SCHEMA[key].kind == "host":
@@ -128,6 +136,20 @@ def pad_batch(
                 f"pad_batch cannot tell which dimension to pad. Declare it in "
                 f"`features`, or leave it out of the batch."
             )
+    # Padding edges are self-loops on the final node. They therefore follow
+    # every real edge in either stable run, including for zero-degree nodes.
+    for side in ("sender", "receiver"):
+        order_key, counts_key = f"{side}_order", f"{side}_counts"
+        if order_key not in data and counts_key not in data:
+            continue
+        order, counts = data[order_key], data[counts_key]
+        padded[order_key] = torch.cat(
+            (order, torch.arange(n_edges, budget.edges, device=order.device))
+        )
+        tail = counts.new_zeros(padding.nodes)
+        if padding.edges:
+            tail[-1] = padding.edges
+        padded[counts_key] = torch.cat((counts, tail))
     return padded, info
 
 

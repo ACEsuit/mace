@@ -46,7 +46,8 @@ from mace_core.graph.schema import (
     presence_key,
 )
 from mace_core.neighbors.backends import NeighborListBackend
-from mace_core.neighbors.neighborhood import get_neighborhood
+from mace_core.neighbors.geometry import search_geometry
+from mace_core.neighbors.neighborhood import NeighborList, get_neighborhood
 
 __all__ = ["graph_sample"]
 
@@ -61,7 +62,9 @@ def graph_sample(
     cutoff: float,
     heads: Sequence[str] = (DEFAULT_HEAD,),
     features: Mapping[str, Storage] | None = None,
-    neighbor_backend: NeighborListBackend,
+    neighbor_backend: NeighborListBackend | None = None,
+    neighborhood: NeighborList | None = None,
+    include_edges: bool = True,
 ) -> dict[str, Any]:
     """One structure as a graph sample.
 
@@ -74,6 +77,10 @@ def graph_sample(
         features: The declared embedding features, ``atom`` or ``graph``.
         neighbor_backend: The resolved neighbour-list backend, from
             :func:`~mace_core.neighbors.get_neighbor_backend`.
+        neighborhood: An already searched list, used instead of searching.
+        include_edges: False builds only host structure data. Its effective
+            cell comes from the supplied list, or from ``search_geometry``.
+            Device edges are joined after collation by the framework.
 
     Returns:
         A dict of numpy arrays: floats as float64, indices as int64, flags as
@@ -100,12 +107,23 @@ def graph_sample(
             f"the model's heads {list(heads)}."
         )
     n_atoms = len(config)
-    neighbors = get_neighborhood(
-        config.positions,
-        cutoff,
-        pbc=config.pbc,
-        cell=config.cell,
-        backend=neighbor_backend,
+    neighbors = neighborhood
+    if neighbors is None and include_edges:
+        if neighbor_backend is None:
+            raise ValueError(
+                "graph_sample needs a resolved neighbor_backend or a neighborhood."
+            )
+        neighbors = get_neighborhood(
+            config.positions,
+            cutoff,
+            pbc=config.pbc,
+            cell=config.cell,
+            backend=neighbor_backend,
+        )
+    cell = (
+        neighbors.cell
+        if neighbors is not None
+        else search_geometry(config.positions, cutoff, config.pbc, config.cell).cell
     )
     element_indices = np.array(
         [atomic_number_table.z_to_index(z) for z in config.atomic_numbers],
@@ -118,16 +136,25 @@ def graph_sample(
         "positions": np.array(config.positions, dtype=np.float64),
         "node_attrs": node_attrs,
         "node_atomic_numbers": np.array(config.atomic_numbers, dtype=np.int64),
-        "edge_index": np.array(neighbors.edge_index),
-        "shifts": np.array(neighbors.shifts),
-        "unit_shifts": neighbors.unit_shifts.astype(np.float64),
-        "cell": np.array(neighbors.cell),
+        "cell": np.array(cell) if isinstance(cell, np.ndarray) else cell,
         "pbc": np.array(
             (False, False, False) if config.pbc is None else config.pbc, dtype=bool
         ),
         "head": np.int64(heads.index(config.head)),
         "weight": np.float64(config.weight),
     }
+    if include_edges:
+        assert neighbors is not None
+        if not isinstance(neighbors.unit_shifts, np.ndarray):
+            raise ValueError(
+                "a device neighborhood is joined after host collation; "
+                "use include_edges=False."
+            )
+        sample.update(
+            edge_index=np.array(neighbors.edge_index),
+            shifts=np.array(neighbors.shifts),
+            unit_shifts=neighbors.unit_shifts.astype(np.float64),
+        )
     for name in sorted(LABEL_KEYS):
         _add_label(sample, config, name, n_atoms)
     for name in sorted(INPUT_KEYS):

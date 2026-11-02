@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from mace_core.edges import NeighborListCapabilities
+
 try:
     from matscipy.neighbours import neighbour_list
 except ImportError as missing:
@@ -30,6 +32,11 @@ __all__ = ["MatscipyBackend"]
 
 class MatscipyBackend:
     """Neighbour search through :func:`matscipy.neighbours.neighbour_list`."""
+
+    def capabilities(self) -> NeighborListCapabilities:
+        return NeighborListCapabilities(
+            "matscipy", features=frozenset({"sorted_by_sender"})
+        )
 
     def search(
         self, positions: np.ndarray, cutoff: float, geometry: SearchGeometry

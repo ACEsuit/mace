@@ -34,6 +34,7 @@ import numpy as np
 
 from mace_core.elements.default_keys import STORAGES, Storage
 from mace_core.graph.schema import (
+    DERIVED_KEYS,
     EDGE_LEVEL,
     GRAPH_LEVEL,
     GRAPH_SCHEMA,
@@ -57,6 +58,7 @@ __all__ = [
 COLLATED_KEYS: frozenset[str] = frozenset(
     {key for key, spec in GRAPH_SCHEMA.items() if spec.producer == "coll"}
     | {"rcell", "volume"}
+    | DERIVED_KEYS
 )
 
 

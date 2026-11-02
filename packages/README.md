@@ -227,6 +227,16 @@ reference in `mace_torch/backends/reference.py` is the one to copy.
 **A new long-range solver** does the same against
 `mace_core/electrostatics/capabilities.py` and `mace_torch/electrostatics/solver.py`.
 
+**Neighbour providers and edge order:** `resolve_neighbor_provider` in
+`mace_torch.neighbors` accepts names from `mace.neighbor_backends` and
+`mace.neighbor_backends.torch`. Pass the kernel's `edge_features` as
+`required_features`; the returned object records the provider and its edge
+plan. `build_batch(..., neighbor_backend=provider)` uses optional batched
+search and joins device edges after host collation. After padding, call
+`apply_edge_plan(batch, provider.edge_plan)`. Stateful providers belong to one
+system and cannot offer batched search. DATA-4 supplies this boundary API;
+the training, calculator and deployment tickets own calling it in their flows.
+
 ### `mace-core`
 
 | File | What is in it |
@@ -237,6 +247,7 @@ reference in `mace_torch/backends/reference.py` is the one to copy.
 | `mace_core/clebsch_gordan/conversion.py` | Converting weights between the full and reduced bases, and between layouts. |
 | `mace_core/_entry_points.py` | Shared entry-point collision checks and import diagnostics. |
 | `mace_core/_irreps.py` | Shared irreps syntax; callers retain their spelling and error contracts. |
+| `mace_core/edges.py` | Edge-order vocabulary, provider capabilities and minimal-cost adapter plans. |
 | `mace_core/clebsch_gordan/irreps.py` | O(3) irreps: parsing, ordering, dimensions, selection rules. |
 | `mace_core/clebsch_gordan/real_basis.py` | The Wigner 3j table in the real spherical-harmonic basis the models use. |
 | `mace_core/clebsch_gordan/reduced_basis.py` | The reduced symmetric tensor-product basis and its path order. |
@@ -429,9 +440,11 @@ reference in `mace_torch/backends/reference.py` is the one to copy.
 | `mace_torch/backends/reference.py` | Plain-torch kernels with raw canonical weights and forward normalization. |
 | `mace_torch/graph/__init__.py` | Public torch graph collation and padding API. |
 | `mace_torch/graph/collate.py` | Tensorize and batch graph samples at an explicit dtype. |
+| `mace_torch/graph/edges.py` | Apply edge plans on device and expose stable node runs to backends. |
 | `mace_torch/graph/padding.py` | Pad batches using the shared schema and isolated dummy graph. |
 | `mace_torch/kernels/contraction.py` | Fused monomial contraction with differentiable backward and canonical paths. |
 | `mace_torch/neighbors/__init__.py` | Resolve neighbour backends for PyTorch data construction. |
+| `mace_torch/neighbors/providers.py` | Torch provider protocols, discovery, batch search and edge-plan resolution. |
 | `mace_torch/neighbors/vesin_backend.py` | The vesin neighbour-list adapter. |
 | `mace_torch/nn/edges.py` | Edge geometry and envelope preparation. |
 | `mace_torch/nn/gate.py` | Scalar gates for grouped equivariant features. |

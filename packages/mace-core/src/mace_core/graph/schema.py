@@ -34,6 +34,7 @@ from types import MappingProxyType
 from typing import Literal
 
 __all__ = [
+    "DERIVED_KEYS",
     "EDGE_LEVEL",
     "FLOAT",
     "GRAPH_LEVEL",
@@ -129,6 +130,8 @@ class FieldSpec:
             presence flag, :func:`presence_key`, that is present exactly when
             the label is.
         flags: For a presence flag, the label it belongs to.
+        join: ``by_level`` batches by shape; ``derived`` is computed after
+            collation and padding and is forbidden on an individual sample.
     """
 
     shape: tuple[SymDim | int, ...]
@@ -140,6 +143,7 @@ class FieldSpec:
     kind: Literal["tensor", "host"] = "tensor"
     label: bool = False
     flags: str | None = None
+    join: Literal["by_level", "derived"] = "by_level"
 
 
 def presence_key(label: str) -> str:
@@ -390,8 +394,28 @@ _HOST: dict[str, FieldSpec] = {
 }
 
 #: The schema. Read-only: a change here is a schema change, made in the source.
+_EDGE_RUNS = {
+    f"{side}_{part}": FieldSpec(
+        ("n_edges" if part == "order" else "n_nodes",),
+        "int64",
+        False,
+        "zero",
+        "derived",
+        f"Stable edge permutation by {side}."
+        if part == "order"
+        else f"Number of edges for each {side}, including zero-degree nodes.",
+        join="derived",
+    )
+    for side in ("receiver", "sender")
+    for part in ("order", "counts")
+}
+
 GRAPH_SCHEMA: Mapping[str, FieldSpec] = MappingProxyType(
-    {**_STRUCTURE, **_INPUTS, **_weights(), **_labels(), **_HOST}
+    {**_STRUCTURE, **_INPUTS, **_weights(), **_labels(), **_HOST, **_EDGE_RUNS}
+)
+
+DERIVED_KEYS: frozenset[str] = frozenset(
+    key for key, spec in GRAPH_SCHEMA.items() if spec.join == "derived"
 )
 
 #: The training labels, each with a presence flag.

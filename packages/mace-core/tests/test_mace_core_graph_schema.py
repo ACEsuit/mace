@@ -73,7 +73,8 @@ EXPECTED_KEYS = {
     "stress", "virials", "dipole", "charges", "polarizability", "total_charge",
     "total_spin", "elec_temp", "fermi_level", "external_field",
     "density_coefficients", "structure_sizes", "structure_periodic",
-    "structure_padding",
+    "structure_padding", "sender_order", "sender_counts",
+    "receiver_order", "receiver_counts",
 }  # fmt: skip
 
 

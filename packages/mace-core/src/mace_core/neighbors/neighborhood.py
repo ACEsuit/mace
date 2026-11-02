@@ -23,19 +23,22 @@ directly:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import numpy as np
 
-from mace_core.neighbors.backends import NeighborListBackend
-from mace_core.neighbors.geometry import search_geometry
+from mace_core.neighbors.backends import NeighborListBackend, neighbor_capabilities
+from mace_core.neighbors.geometry import SearchGeometry, search_geometry
 
-__all__ = ["NeighborList", "get_neighborhood"]
+__all__ = ["NeighborList", "get_neighborhood", "get_neighborhoods"]
+
+ArrayT = TypeVar("ArrayT")
 
 
 @dataclass(frozen=True)
-class NeighborList:
+class NeighborList(Generic[ArrayT]):
     """The edges of one structure, and the cell their shifts are measured in.
 
     Attributes:
@@ -47,13 +50,14 @@ class NeighborList:
         cell: ``[3, 3]`` float64, the effective cell (see
             :mod:`mace_core.neighbors.geometry` for its three regimes).
 
-    Every array is read-only.
+    Host helpers return read-only numpy arrays. Framework-native providers
+    return their own tensors; callers treat those as read-only too.
     """
 
-    edge_index: np.ndarray
-    unit_shifts: np.ndarray
-    shifts: np.ndarray
-    cell: np.ndarray
+    edge_index: ArrayT
+    unit_shifts: ArrayT
+    shifts: ArrayT
+    cell: ArrayT
 
 
 def get_neighborhood(
@@ -63,7 +67,7 @@ def get_neighborhood(
     cell: Any = None,
     *,
     backend: NeighborListBackend,
-) -> NeighborList:
+) -> NeighborList[np.ndarray]:
     """Every directed edge shorter than ``cutoff``, and the effective cell.
 
     Args:
@@ -83,7 +87,60 @@ def get_neighborhood(
     positions.setflags(write=False)
     geometry = search_geometry(positions, cutoff, pbc, cell)
     edge_index, unit_shifts = backend.search(positions, float(cutoff), geometry)
-    edge_index, unit_shifts = _checked_edges(edge_index, unit_shifts, len(positions))
+    return _neighborhood(edge_index, unit_shifts, len(positions), geometry)
+
+
+def get_neighborhoods(
+    positions: Sequence[np.ndarray],
+    cutoff: float,
+    pbcs: Sequence[Any],
+    cells: Sequence[Any],
+    *,
+    backend: NeighborListBackend,
+) -> list[NeighborList[np.ndarray]]:
+    """Search several structures, using optional ``search_batch`` when present.
+
+    A stateful provider is confined to one system; callers hold one instance
+    per system and use ``get_neighborhood`` for it instead.
+    """
+    if not (len(positions) == len(pbcs) == len(cells)):
+        raise ValueError(
+            "positions, pbcs and cells must have the same number of structures."
+        )
+    capabilities = neighbor_capabilities(backend, type(backend).__name__)
+    if capabilities.stateful and len(positions) > 1:
+        raise ValueError(
+            "a stateful neighbour provider belongs to one system; "
+            "use one instance per system."
+        )
+    arrays = [np.array(value, dtype=np.float64, copy=True) for value in positions]
+    for array in arrays:
+        array.setflags(write=False)
+    geometries = [
+        search_geometry(p, cutoff, b, c)
+        for p, b, c in zip(arrays, pbcs, cells, strict=True)
+    ]
+    search_batch = getattr(backend, "search_batch", None)
+    edges = (
+        list(search_batch(arrays, cutoff, geometries))
+        if callable(search_batch)
+        else [
+            backend.search(p, cutoff, g)
+            for p, g in zip(arrays, geometries, strict=True)
+        ]
+    )
+    if len(edges) != len(arrays):
+        raise ValueError("search_batch must return one neighbour list per structure.")
+    return [
+        _neighborhood(edge[0], edge[1], len(p), g)
+        for edge, p, g in zip(edges, arrays, geometries, strict=True)
+    ]
+
+
+def _neighborhood(
+    edge_index: Any, unit_shifts: Any, n_atoms: int, geometry: SearchGeometry
+) -> NeighborList[np.ndarray]:
+    edge_index, unit_shifts = _checked_edges(edge_index, unit_shifts, n_atoms)
 
     true_self_edge = (edge_index[0] == edge_index[1]) & np.all(unit_shifts == 0, axis=1)
     edge_index = edge_index[:, ~true_self_edge]

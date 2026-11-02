@@ -12,10 +12,22 @@ from __future__ import annotations
 from mace_core import neighbors
 from mace_core.neighbors import NeighborListBackend, NeighborListConfig
 
-__all__ = ["DEFAULT_NEIGHBOR_BACKEND", "resolve_neighbor_backend"]
+from mace_torch.neighbors.providers import (
+    DEFAULT_NEIGHBOR_BACKEND,
+    BatchedTorchNeighborListBackend,
+    ResolvedNeighborProvider,
+    TorchNeighborListBackend,
+    resolve_neighbor_provider,
+)
 
-#: The backend used when the config names none.
-DEFAULT_NEIGHBOR_BACKEND = "vesin"
+__all__ = [
+    "DEFAULT_NEIGHBOR_BACKEND",
+    "BatchedTorchNeighborListBackend",
+    "ResolvedNeighborProvider",
+    "TorchNeighborListBackend",
+    "resolve_neighbor_backend",
+    "resolve_neighbor_provider",
+]
 
 
 def resolve_neighbor_backend(

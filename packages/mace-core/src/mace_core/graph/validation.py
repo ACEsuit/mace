@@ -163,11 +163,45 @@ def validate_graph(
         )
 
     _check_indices(data, sizes)
+    _check_edge_runs(data, sizes)
     return GraphInfo(
         num_graphs=sizes["n_graphs"],
         num_nodes=sizes["n_nodes"],
         num_edges=sizes["n_edges"],
     )
+
+
+def _check_edge_runs(data: Mapping[str, Any], sizes: dict[str, int]) -> None:
+    for side, row in (("sender", 0), ("receiver", 1)):
+        order_key, counts_key = f"{side}_order", f"{side}_counts"
+        if order_key not in data and counts_key not in data:
+            continue
+        if order_key not in data or counts_key not in data:
+            raise GraphValidationError(
+                f"{order_key!r} and {counts_key!r} must travel together."
+            )
+        order, counts = _host_array(data[order_key]), _host_array(data[counts_key])
+        n_edges = sizes["n_edges"]
+        if (
+            np.any(order < 0)
+            or np.any(order >= n_edges)
+            or not np.all(np.bincount(order, minlength=n_edges) == 1)
+        ):
+            raise GraphValidationError(
+                f"{order_key!r} must be a permutation of [0, {n_edges})."
+            )
+        nodes = _host_array(data["edge_index"])[row]
+        if not np.array_equal(counts, np.bincount(nodes, minlength=sizes["n_nodes"])):
+            raise GraphValidationError(
+                f"{counts_key!r} does not count edge_index[{row}]."
+            )
+        ordered_nodes = nodes[order]
+        if np.any(ordered_nodes[1:] < ordered_nodes[:-1]) or np.any(
+            (ordered_nodes[1:] == ordered_nodes[:-1]) & (order[1:] < order[:-1])
+        ):
+            raise GraphValidationError(
+                f"{order_key!r} must stably group edge_index[{row}]."
+            )
 
 
 def _dtype_name(value: Any) -> str:

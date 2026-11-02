@@ -24,6 +24,7 @@ import math
 
 import numpy as np
 
+from mace_core.edges import NeighborListCapabilities
 from mace_core.neighbors.geometry import SearchGeometry
 
 __all__ = ["AllPairsBackend"]
@@ -31,6 +32,11 @@ __all__ = ["AllPairsBackend"]
 
 class AllPairsBackend:
     """Neighbour search by enumerating every pair and every reachable image."""
+
+    def capabilities(self) -> NeighborListCapabilities:
+        return NeighborListCapabilities(
+            "all_pairs", features=frozenset({"sorted_by_sender"})
+        )
 
     def search(
         self, positions: np.ndarray, cutoff: float, geometry: SearchGeometry

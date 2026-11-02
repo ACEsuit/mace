@@ -87,6 +87,7 @@ class CompositeBackend:
             bases=fallback.bases,
             supports_double_backward=primary.supports_double_backward
             and fallback.supports_double_backward,
+            edge_features=primary.edge_features | fallback.edge_features,
         )
 
     def _build(self, op: str, descriptor: Any) -> Any:

@@ -1,8 +1,9 @@
 """Neighbour-list providers, config and entry-point resolution.
 
-Providers receive ``SearchGeometry`` and return numpy ``(edge_index,
-unit_shifts)`` arrays matching the all-pairs edge set. ``get_neighborhood``
-computes the effective cell and Cartesian shifts uniformly across providers.
+Host providers receive ``SearchGeometry`` and return numpy ``(edge_index,
+unit_shifts)`` arrays matching the all-pairs edge set. Framework groups add
+device providers; their framework owns the tensor protocol. The core decides
+the effective cell through ``search_geometry`` for both kinds.
 
 Listing imports all providers and records failures; named resolution imports
 only the requested provider and raises on failure. Identical registrations
@@ -16,7 +17,7 @@ Provider choice changes performance, not the edge set or model state.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from typing import Any, Protocol, runtime_checkable
@@ -26,11 +27,13 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 
 from mace_core._entry_points import load_entry_point, unique_entries
 from mace_core.config.base import ConfigSection
+from mace_core.edges import NeighborListCapabilities
 from mace_core.neighbors.geometry import SearchGeometry
 
 __all__ = [
     "DEFAULT_NEIGHBOR_BACKEND",
     "NEIGHBOR_BACKEND_GROUP",
+    "BatchedNeighborListBackend",
     "DiscoveredNeighborBackend",
     "DuplicateNeighborBackendError",
     "NeighborBackendNotAvailableError",
@@ -38,6 +41,7 @@ __all__ = [
     "NeighborListConfig",
     "available_neighbor_backends",
     "get_neighbor_backend",
+    "neighbor_capabilities",
     "resolve_neighbor_backend",
 ]
 
@@ -90,13 +94,41 @@ class NeighborListBackend(Protocol):
         ...
 
 
+@runtime_checkable
+class BatchedNeighborListBackend(Protocol):
+    """Optional, stateless search returning each structure's ordinary search order."""
+
+    def search_batch(
+        self,
+        positions: Sequence[np.ndarray],
+        cutoff: float,
+        geometries: Sequence[SearchGeometry],
+    ) -> Sequence[tuple[np.ndarray, np.ndarray]]: ...
+
+
+def neighbor_capabilities(backend: Any, name: str) -> NeighborListCapabilities:
+    """Read a provider's declaration; old host providers guarantee no ordering."""
+    method = getattr(backend, "capabilities", None)
+    capabilities = method() if method is not None else NeighborListCapabilities(name)
+    if not isinstance(capabilities, NeighborListCapabilities):
+        raise NeighborBackendNotAvailableError(
+            f"neighbour provider {name!r} must declare NeighborListCapabilities."
+        )
+    if capabilities.stateful and callable(getattr(backend, "search_batch", None)):
+        raise NeighborBackendNotAvailableError(
+            f"neighbour provider {name!r} is stateful and cannot offer "
+            "search_batch; keep one instance per system."
+        )
+    return capabilities
+
+
 class NeighborListConfig(ConfigSection):
     """Which neighbour-list backend builds the graphs.
 
     Resolved when the graph builder is set up, never inside a model forward.
 
     Attributes:
-        kind: A name registered in the ``mace.neighbor_backends`` entry point
+        kind: A name registered in ``mace.neighbor_backends`` or its framework
             group, or ``None`` for the default of the framework building the
             graphs (see :func:`resolve_neighbor_backend`). ``all_pairs``
             ships with ``mace-core``, ``matscipy`` with its extra of the same
@@ -150,42 +182,71 @@ class DiscoveredNeighborBackend:
         name: The registered name.
         loaded: Whether importing it succeeded on this machine.
         reason: Why it did not, when it did not.
+        framework: The native framework, or ``None`` for a host provider.
     """
 
     name: str
     loaded: bool
     reason: str = ""
     factory: Any = field(default=None, repr=False, compare=False)
+    framework: str | None = None
 
 
-def _registered() -> dict[str, Any]:
-    return unique_entries(
+def _registered(framework: str | None = None) -> dict[str, Any]:
+    registered = unique_entries(
         entry_points(group=NEIGHBOR_BACKEND_GROUP),
         NEIGHBOR_BACKEND_GROUP,
         DuplicateNeighborBackendError,
     )
+    if framework is not None:
+        group = f"{NEIGHBOR_BACKEND_GROUP}.{framework}"
+        native = unique_entries(
+            entry_points(group=group), group, DuplicateNeighborBackendError
+        )
+        overlap = set(registered) & set(native)
+        if overlap:
+            raise DuplicateNeighborBackendError(
+                f"neighbour provider names {sorted(overlap)} occur in both "
+                f"{NEIGHBOR_BACKEND_GROUP!r} and {group!r}; use distinct names."
+            )
+        registered.update(native)
+    return registered
 
 
 def _load(name: str, entry: Any) -> DiscoveredNeighborBackend:
     factory, reason = load_entry_point(entry)
-    return DiscoveredNeighborBackend(name, not reason, reason, factory)
+    group = getattr(entry, "group", NEIGHBOR_BACKEND_GROUP)
+    framework = (
+        None
+        if group == NEIGHBOR_BACKEND_GROUP
+        else group.removeprefix(NEIGHBOR_BACKEND_GROUP + ".")
+    )
+    return DiscoveredNeighborBackend(name, not reason, reason, factory, framework)
 
 
-def available_neighbor_backends() -> list[DiscoveredNeighborBackend]:
+def available_neighbor_backends(
+    framework: str | None = None,
+) -> list[DiscoveredNeighborBackend]:
     """Every registered neighbour-list backend, loaded or not, sorted by name.
 
     Imports every registered backend to find the ones that fail. Use
     :func:`get_neighbor_backend` to resolve one; it imports only that one.
+    With ``framework``, include its native group alongside the host group.
 
     Raises:
         DuplicateNeighborBackendError: if two entry points register different
             objects under one name.
     """
-    return [_load(name, entry) for name, entry in sorted(_registered().items())]
+    return [
+        _load(name, entry) for name, entry in sorted(_registered(framework).items())
+    ]
 
 
 def get_neighbor_backend(
-    name: str, settings: Mapping[str, Any] | None = None
+    name: str,
+    settings: Mapping[str, Any] | None = None,
+    *,
+    framework: str | None = None,
 ) -> NeighborListBackend:
     """The backend registered under ``name``, built with ``settings``.
 
@@ -196,6 +257,8 @@ def get_neighbor_backend(
         settings: Its settings, usually ``NeighborListConfig.settings``,
             validated against the section the backend declares. ``None`` and
             an empty mapping give the section's defaults.
+        framework: Include ``mace.neighbor_backends.<framework>``. The caller
+            is responsible for using that framework's search protocol.
 
     Raises:
         NeighborBackendNotAvailableError: if no backend of that name is
@@ -205,7 +268,7 @@ def get_neighbor_backend(
         DuplicateNeighborBackendError: if two entry points register different
             objects under one name.
     """
-    registered = _registered()
+    registered = _registered(framework)
     if name not in registered:
         raise NeighborBackendNotAvailableError(
             f"no neighbour-list backend is registered as {name!r}. The "
@@ -225,6 +288,7 @@ def get_neighbor_backend(
             f"the entry point {name!r} built a {type(backend).__name__}, which "
             f"has no search(positions, cutoff, geometry) method."
         )
+    neighbor_capabilities(backend, name)
     return backend
 
 

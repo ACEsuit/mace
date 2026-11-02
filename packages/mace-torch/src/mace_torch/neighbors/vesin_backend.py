@@ -22,6 +22,7 @@ from typing import ClassVar
 
 import numpy as np
 from mace_core.config import ConfigSection
+from mace_core.edges import NeighborListCapabilities
 from mace_core.neighbors.geometry import SearchGeometry
 from pydantic import Field, StrictInt
 from vesin import NeighborList
@@ -51,6 +52,9 @@ class VesinBackend:
     """
 
     settings_section: ClassVar[type[VesinSettings]] = VesinSettings
+
+    def capabilities(self) -> NeighborListCapabilities:
+        return NeighborListCapabilities("vesin")
 
     def __init__(self, settings: VesinSettings | None = None) -> None:
         self.settings = settings or VesinSettings()

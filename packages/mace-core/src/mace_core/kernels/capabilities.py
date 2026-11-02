@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from mace_core.edges import EdgeFeature, edge_features
 from mace_core.kernels.descriptors import (
     Descriptor,
     RadialBasisDescriptor,
@@ -57,6 +58,8 @@ class BackendCapabilities:
             they compute in, as a fused kernel with its own accumulator can. A
             backend without it is handed a precision floor as the dtype to
             compute in, and holds that op's weights in it.
+        edge_features: Edge-order features its ops read. The caller completes
+            these once per batch, outside the model forward.
     """
 
     ops: frozenset[str] = field(default_factory=frozenset)
@@ -67,6 +70,10 @@ class BackendCapabilities:
     bases: frozenset[str] = field(default_factory=lambda: frozenset({"reduced"}))
     supports_double_backward: bool = False
     wide_accumulation: bool = False
+    edge_features: frozenset[EdgeFeature] = field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "edge_features", edge_features(self.edge_features))
 
     def supports(self, descriptor: Descriptor) -> bool:
         """Whether this backend can build exactly this op.
