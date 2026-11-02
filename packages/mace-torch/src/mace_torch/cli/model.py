@@ -65,6 +65,13 @@ def select_head(args: argparse.Namespace) -> int:
         raise ValueError(f"unknown head {args.head!r}; choose from {source.heads}")
     document = source.config.to_resolved_dict()
     document["data"]["heads"] = {args.head: document["data"]["heads"][args.head]}
+    document["model"] = source.config.model.model_copy(
+        update={
+            "normalization": source.config.model.normalization_for_heads(
+                {args.head: args.head}
+            )
+        }
+    ).model_dump(mode="json")
     document["data"]["skip_evaluate_heads"] = []
     document["data"]["ratio_guard"] = None
     document["finetune"]["pseudolabels"]["heads"] = []

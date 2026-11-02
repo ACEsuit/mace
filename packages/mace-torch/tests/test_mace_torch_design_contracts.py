@@ -14,10 +14,12 @@ from mace_core.observables import InputSpec, ObservableCatalogue, ObservableSpec
 from mace_torch.cli.run_train import run
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.stages import build
+from mace_torch.models.normalization import ObservableNormalization
 from mace_torch.serialization import canonical_state
 
 
 @fp64_only
+@pytest.mark.parametrize("normalize", [False, True])
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
 @pytest.mark.parametrize(
     "irreps,per_atom,width,derivatives",
@@ -31,7 +33,7 @@ from mace_torch.serialization import canonical_state
     ],
 )
 def test_custom_observable_trains_saves_and_loads_without_energy(
-    tmp_path, irreps, per_atom, width, derivatives, device
+    tmp_path, irreps, per_atom, width, derivatives, device, normalize
 ):
     catalogue = ObservableCatalogue(
         inputs=(
@@ -93,6 +95,9 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
             "catalogue": catalogue.model_dump(),
             "model": {
                 "observables": ["custom_property"],
+                "normalization": {"custom_property": {"default": {"kind": "std"}}}
+                if normalize
+                else {},
                 "num_channels": 2,
                 "num_interactions": 2,
                 "max_ell": 2,
@@ -117,6 +122,14 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
         }
     )
     initial = build(config)
+    if normalize:
+        normalizer = initial.model.get_submodule(
+            "backbone.outputs.normalization.custom_property"
+        )
+        assert isinstance(normalizer, ObservableNormalization)
+        assert torch.all(normalizer.scale > 0)
+        assert not torch.all(normalizer.scale == 1)
+        assert not list(normalizer.parameters())
     before = {
         path: {key: value.to(device).clone() for key, value in values.items()}
         for path, values in canonical_state(initial.model).items()

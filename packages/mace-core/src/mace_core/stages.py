@@ -15,6 +15,7 @@ from typing import Generic, TypeVar
 
 from mace_core.data.backend import DatasetStatistics
 from mace_core.data.e0_resolution import E0Provenance
+from mace_core.data.normalization import NormalizationValues
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.metadata import ModelMetadata
 from mace_core.observables import RequestedOutputs
@@ -47,6 +48,7 @@ class DataBundle(Generic[TrainLoader, Loader]):
         e0s: Resolved isolated-atom energies in eV, by head and element.
         e0_provenance: How each head's E0s were obtained.
         statistics: Neighbour count and interaction-energy statistics against ``e0s``.
+        normalization: Optional measured values by observable and dataset head.
         train_loader: Training batches with heads combined for sampling.
         valid_loaders: Per-head validation passes for evaluation and error tables.
         train_eval_loaders: Per-head training-set passes used only for error tables.
@@ -62,6 +64,9 @@ class DataBundle(Generic[TrainLoader, Loader]):
     valid_loaders: Mapping[str, Loader]
     train_eval_loaders: Mapping[str, Loader] = field(default_factory=dict)
     test_loaders: Mapping[str, Loader] = field(default_factory=dict)
+    normalization: Mapping[str, Mapping[str, NormalizationValues]] = field(
+        default_factory=dict
+    )
 
     def reported_loaders(self) -> dict[str, Loader]:
         """Every loader an error table has a row for, in the legacy order.

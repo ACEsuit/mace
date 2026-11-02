@@ -35,6 +35,7 @@ from mace_core.data import (
 )
 from mace_core.data.backends.xyz import SUFFIXES as XYZ_SUFFIXES
 from mace_core.data.e0_resolution import E0Provenance, EnergyPredictor
+from mace_core.data.normalization import compute_normalization
 from mace_core.data.xyz import ISOLATED_ATOM_CONFIG_TYPE
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import (
@@ -215,6 +216,10 @@ def run_data_stage(
     if not reads_energy:
         # The one spread a model without an energy has data for.
         measured = "rms_dipoles" if "dipole" in config.model.observables else "none"
+    elif set(config.model.normalization.get("energy", {})) == set(heads):
+        # Every energy head has its own recipe; the aggregate is used only
+        # for neighbour counts and must not require unrequested forces.
+        measured = "none"
     statistics = compute_statistics(
         InMemoryBackend(train),
         list(z_table.zs),
@@ -263,6 +268,11 @@ def run_data_stage(
         e0s=resolved,
         e0_provenance=provenance,
         statistics=statistics,
+        normalization=compute_normalization(
+            train, requested.observables, config.model.normalization, resolved
+        )
+        if foundation is None
+        else {},
         train_loader=train_loader,
         valid_loaders={
             name: _evaluation_loader(build(_of_head(valid, name)), config, precision)

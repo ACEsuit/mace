@@ -298,6 +298,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/data/registry.py` | Finding a data backend by name, with no fallback. |
 | `mace_core/data/splitting.py` | Train and validation splits, and grouping for reports. |
 | `mace_core/data/statistics.py` | Average neighbours, energy shift and scale, over any backend. |
+| `mace_core/data/normalization.py` | Per-observable, per-head scales and invariant shifts from training labels. |
 | `mace_core/data/xyz.py` | Reading labelled structure files into configurations. |
 | `mace_core/data_spec/__init__.py` | The on-disk dataset formats, re-exported. |
 | `mace_core/data_spec/shard_format.py` | The v2 shard layout, the manifest check and the shard writer. |
@@ -427,6 +428,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/models/heads.py` | One readout head per declared observable, per head of theory. |
 | `mace_torch/models/magnetic.py` | `MagneticModel`: an energy model reading a moment on every atom, with its one-body term. |
 | `mace_torch/models/outputs.py` | `MACEOutputs`: every declared observable read out and typed. |
+| `mace_torch/models/normalization.py` | Equivariant output normalization and its canonical checkpoint buffers. |
 | `mace_torch/nn/__init__.py` | The building blocks, re-exported. |
 | `mace_torch/nn/backbone.py` | `MACEBackbone`: embeddings, interactions and products, features out. |
 | `mace_torch/nn/embedding.py` | Element and radial embeddings. |

@@ -22,7 +22,11 @@ from mace_core.config.pseudolabels import PseudolabelConfig
 from mace_core.config.runtime import RuntimeConfig
 from mace_core.config.section import FrozenSection
 from mace_core.config.training import StageConfig, TrainingConfig
-from mace_core.observables import ObservableCatalogue
+from mace_core.observables import (
+    DEFAULT_CATALOGUE,
+    ObservableCatalogue,
+    resolve_requested,
+)
 
 __all__ = [
     "ENERGY_OBSERVABLE",
@@ -268,6 +272,28 @@ class ResolvedConfig(BaseConfig):
         else:
             table = "ObservablesRMSE"
         return {**data, "runtime": {**runtime, "error_table": table}}
+
+    @model_validator(mode="after")
+    def _normalization_names_readouts_and_heads(self) -> ResolvedConfig:
+        if not self.model.normalization:
+            return self
+        requested = resolve_requested(
+            self.model.observables, self.catalogue or DEFAULT_CATALOGUE
+        )
+        names = {spec.name for spec in requested.observables}
+        for name, recipes in self.model.normalization.items():
+            if name not in names:
+                raise ValueError(
+                    f"model.normalization.{name}: choose a declared observable, "
+                    "not a derivative; derivatives inherit their observable's scale"
+                )
+            unknown = set(recipes) - set(self.data.heads)
+            if unknown or not recipes:
+                raise ValueError(
+                    f"model.normalization.{name}: specify dataset heads from "
+                    f"{sorted(self.data.heads)}; unknown heads: {sorted(unknown)}"
+                )
+        return self
 
     @model_validator(mode="after")
     def _e0s_that_read_a_foundation_model_need_one(self) -> ResolvedConfig:

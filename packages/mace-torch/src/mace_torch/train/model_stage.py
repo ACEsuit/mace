@@ -15,14 +15,17 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Mapping
 from typing import Any
 
+import torch
 from ase.data import chemical_symbols
 from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.provenance import e0_details
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
+from mace_core.data.normalization import NormalizationValues
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.graph import GRAPH_SCHEMA, INPUT_KEYS
 from mace_core.kernels.descriptors import RadialBasisDescriptor
@@ -57,6 +60,7 @@ from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.models.dipoles import DipoleModel, DipoleSettings
 from mace_torch.models.electrostatics import PolarModel, PolarSettings
 from mace_torch.models.magnetic import MagneticModel
+from mace_torch.models.normalization import ObservableNormalization
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
@@ -180,6 +184,7 @@ def run_model_stage(
         heads=data.heads,
         e0s=data.e0s,
         statistics=data.statistics,
+        normalization=data.normalization if foundation is None else None,
         precision=precision,
         supports_float64=supports_float64,
         initialize=initialize,
@@ -260,7 +265,7 @@ def with_foundation_architecture(
     ours = config.model
     conflicts = sorted(
         name
-        for name in ours.model_fields_set - _RUN_OWNED_MODEL_FIELDS
+        for name in ours.model_fields_set - _RUN_OWNED_MODEL_FIELDS - {"normalization"}
         if getattr(ours, name) != getattr(theirs, name)
     )
     if conflicts:
@@ -284,6 +289,22 @@ def with_foundation_architecture(
     model = theirs.model_copy(
         update={name: getattr(ours, name) for name in _RUN_OWNED_MODEL_FIELDS}
     )
+    if theirs.normalization:
+        sources = readout_sources(
+            tuple(config.data.heads),
+            {name: head.readout_from for name, head in config.data.heads.items()},
+            foundation.heads,
+        )
+        model = model.model_copy(
+            update={"normalization": theirs.normalization_for_heads(sources)}
+        )
+    if (
+        "normalization" in ours.model_fields_set
+        and ours.normalization != model.normalization
+    ):
+        raise ModelStageError(
+            "model.normalization must preserve the foundation head recipes"
+        )
     return config.model_copy(update={"model": model})
 
 
@@ -313,6 +334,7 @@ def build_model(
     heads: tuple[str, ...],
     e0s: ResolvedE0s,
     statistics: DatasetStatistics,
+    normalization: Mapping[str, Mapping[str, NormalizationValues]] | None = None,
     precision: PrecisionConfig = DEFAULT_PRECISION,
     supports_float64: bool = True,
     initialize: bool = True,
@@ -367,6 +389,7 @@ def build_model(
             precision=precision,
             supports_float64=supports_float64,
         )
+        _configure_normalization(model, config, heads, normalization, precision)
         _report_backend(backend)
         if initialize:
             initialize_model_weights(model, config.runtime.seed)
@@ -410,6 +433,7 @@ def build_model(
             precision=precision,
             supports_float64=supports_float64,
         )
+        _configure_normalization(model, config, heads, normalization, precision)
         _report_backend(backend)
         if initialize:
             initialize_model_weights(model, config.runtime.seed)
@@ -428,6 +452,7 @@ def build_model(
             supports_float64=supports_float64,
             trains_derivatives=initialize and bool(requested.derivatives),
         )
+        _configure_normalization(model, config, heads, normalization, precision)
         _report_backend(backend)
         if initialize:
             initialize_model_weights(model, config.runtime.seed)
@@ -445,6 +470,7 @@ def build_model(
         precision=precision.model,
         num_heads=len(heads),
     )
+    _configure_normalization(model, config, heads, normalization, precision)
     _report_backend(backend)
     if initialize:
         # Seeded from the run, so the same configuration and the same seed
@@ -458,6 +484,43 @@ def build_model(
         inputs=catalogue.inputs,
         responses=[spec for spec in requested.observables if spec.name != "energy"],
     ), requested
+
+
+def _configure_normalization(
+    model: MACEModel | MagneticModel,
+    config: ResolvedConfig,
+    heads: tuple[str, ...],
+    measured: Mapping[str, Mapping[str, NormalizationValues]] | None,
+    precision: PrecisionConfig,
+) -> None:
+    """Build optional output buffers, including identity buffers for reloads."""
+    specs = {spec.name: spec for spec in model.outputs.specs}
+    for name, recipes in config.model.normalization.items():
+        if name not in specs:
+            raise ModelStageError(
+                f"model.normalization.{name}: this model computes that quantity "
+                "from physical terms rather than a declarative readout; "
+                "normalizing those terms independently is not supported"
+            )
+        spec = specs[name]
+        identity = NormalizationValues(1.0, (0.0,) * spec.dimension)
+        values = [
+            measured[name][head]
+            if measured is not None and head in recipes
+            else identity
+            for head in heads
+        ]
+        if name == "energy":
+            energy = model.outputs.energy_head
+            assert energy is not None
+            for index, head in enumerate(heads):
+                if head in recipes:
+                    energy.scale[index] = values[index].scale
+                    energy.shift[index] = values[index].shift[0]
+        else:
+            model.outputs.normalization[name] = ObservableNormalization(
+                spec, values, getattr(torch, precision.model)
+            )
 
 
 def _report_backend(backend: Any) -> None:
@@ -754,13 +817,7 @@ def _check_electrostatics(config: ResolvedConfig) -> None:
 def _scale_shift(
     config: ResolvedConfig, statistics: DatasetStatistics, num_heads: int
 ) -> ScaleShiftSpec:
-    """The per-head scale and shift, from the one measurement.
-
-    Every head gets the same pair because there is one statistics object for
-    the run. Per-head statistics are what multi-dataset balancing brings, and
-    inventing them here would put two answers in the tree for the same
-    question.
-    """
+    """Legacy aggregate defaults, before explicit per-head recipes override them."""
     if config.model.scaling == "none":
         return ScaleShiftSpec("none", (1.0,) * num_heads, (0.0,) * num_heads)
     return ScaleShiftSpec(

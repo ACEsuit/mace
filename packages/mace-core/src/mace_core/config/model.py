@@ -17,7 +17,7 @@ Defaults are the legacy command-line defaults (`--num_radial_basis 8`,
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -148,6 +148,29 @@ InteractionKind = Literal[
 
 
 ScalingMethod = Literal["none", "std", "rms_forces", "rms_dipoles"]
+
+
+class NoScaling(ConfigSection):
+    kind: Literal["none"] = "none"
+
+
+class StandardDeviationScaling(ConfigSection):
+    kind: Literal["std"] = "std"
+
+
+class ForceRMSScaling(ConfigSection):
+    kind: Literal["rms_forces"] = "rms_forces"
+
+
+class DipoleRMSScaling(ConfigSection):
+    kind: Literal["rms_dipoles"] = "rms_dipoles"
+
+
+# Recipes only: measured values belong to the output layer's buffers.
+ScaleShiftSpec = Annotated[
+    NoScaling | StandardDeviationScaling | ForceRMSScaling | DipoleRMSScaling,
+    Field(discriminator="kind"),
+]
 ClebschGordanBasis = Literal["reduced", "full"]
 
 
@@ -332,6 +355,9 @@ class ModelConfig(ConfigSection):
     hidden_irreps: str | None = None
     pair_repulsion: bool = False
     scaling: ScalingMethod = "rms_forces"
+    #: Observable -> dataset head -> recipe. Unspecified energy heads retain
+    #: `scaling`; other unspecified heads use the identity transformation.
+    normalization: dict[str, dict[str, ScaleShiftSpec]] = Field(default_factory=dict)
     readout: ReadoutConfig = ReadoutConfig()
     graph_features: tuple[GraphFeatureConfig, ...] = ()
     backend: str = "reference"
@@ -370,6 +396,23 @@ class ModelConfig(ConfigSection):
     #: installed; `full` builds only on a backend that declares it.
     clebsch_gordan_basis: Literal["reduced", "full"] = "reduced"
 
+    def normalization_for_heads(
+        self, sources: Mapping[str, str]
+    ) -> dict[str, dict[str, ScaleShiftSpec]]:
+        """Keep recipes aligned when dataset heads are selected or renamed."""
+        result = {}
+        for name, recipes in self.normalization.items():
+            mapped = {
+                head: recipes.get(source, NoScaling())
+                for head, source in sources.items()
+                if name != "energy" or source in recipes
+            }
+            # Energy always has buffers, even under the legacy aggregate
+            # `scaling` default. Other readouts retain their optional operator.
+            if mapped:
+                result[name] = mapped
+        return result
+
     @property
     def node_irreps(self) -> str:
         """One channel's node irreps, expanding ``max_L`` when unspecified."""
@@ -406,5 +449,6 @@ __all__ += [
     "MagneticConfig",
     "PolarConfig",
     "ReadoutConfig",
+    "ScaleShiftSpec",
     "ScalingMethod",
 ]

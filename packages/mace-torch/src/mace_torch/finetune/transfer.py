@@ -163,6 +163,12 @@ def transfer_foundation(
             # Per head, below: a readout is copied one head at a time.
             state[path] = dict(tensors)
             continue
+        if ".normalization." in f".{path}.":
+            sources = [head_of[readout_from[head]] for head in heads]
+            state[path] = {
+                name: value[sources].clone() for name, value in found.items()
+            }
+            continue
         if path.endswith("energy_head"):
             state[path] = {
                 "e0_table": tensors["e0_table"],

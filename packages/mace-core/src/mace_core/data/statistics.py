@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Literal
 
 import numpy as np
 
+from mace_core.config.model import ScalingMethod
 from mace_core.data.backend import DataBackend, DatasetStatistics
 from mace_core.data.configuration import Configuration
 
@@ -21,7 +21,12 @@ __all__ = [
     "least_squares_atomic_energies",
 ]
 
-Scaling = Literal["none", "std", "rms_forces", "rms_dipoles"]
+Scaling = ScalingMethod
+
+
+def root_mean_square(values) -> float:
+    """Scalar RMS over samples and components; also the spread of centred data."""
+    return float(np.sqrt(np.mean(np.asarray(values, dtype=float) ** 2)))
 
 
 def _shift_counts(
@@ -175,8 +180,8 @@ def compute_statistics(
         )
 
     per_atom_energies: list[float] = []
-    force_squares: list[np.ndarray] = []
-    dipole_squares: list[np.ndarray] = []
+    force_samples: list[np.ndarray] = []
+    dipole_samples: list[np.ndarray] = []
     edges = 0
     atoms = 0
 
@@ -192,10 +197,10 @@ def compute_statistics(
             per_atom_energies.append((float(energy) - reference) / max(numbers.size, 1))
         forces = configuration.properties.get(forces_key)
         if forces is not None:
-            force_squares.append(np.asarray(forces, dtype=float).reshape(-1) ** 2)
+            force_samples.append(np.asarray(forces, dtype=float).reshape(-1))
         dipole = configuration.properties.get(dipole_key)
         if dipole is not None:
-            dipole_squares.append(np.asarray(dipole, dtype=float).reshape(-1) ** 2)
+            dipole_samples.append(np.asarray(dipole, dtype=float).reshape(-1))
 
     mean = float(np.mean(per_atom_energies)) if per_atom_energies else 0.0
     if scaling == "none":
@@ -206,22 +211,22 @@ def compute_statistics(
                 f"no configuration carries a {energy_key!r}, so the energy "
                 f"spread cannot be computed."
             )
-        spread = float(np.std(per_atom_energies))
+        spread = root_mean_square(np.asarray(per_atom_energies) - mean)
     elif scaling == "rms_forces":
-        if not force_squares:
+        if not force_samples:
             raise ValueError(
                 f"no configuration carries a {forces_key!r}, so the force RMS "
                 f"cannot be computed. Choose scaling='std' if this dataset has "
                 f"energies only."
             )
-        spread = float(np.sqrt(np.mean(np.concatenate(force_squares))))
+        spread = root_mean_square(np.concatenate(force_samples))
     else:
-        if not dipole_squares:
+        if not dipole_samples:
             raise ValueError(
                 f"no configuration carries a {dipole_key!r}, so the dipole RMS "
                 f"cannot be computed."
             )
-        spread = float(np.sqrt(np.mean(np.concatenate(dipole_squares))))
+        spread = root_mean_square(np.concatenate(dipole_samples))
 
     return DatasetStatistics(
         atomic_energies={int(z): float(e) for z, e in atomic_energies.items()},

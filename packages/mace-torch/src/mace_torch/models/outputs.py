@@ -117,6 +117,7 @@ class MACEOutputs(nn.Module):
         self.specs = list(observables)
         self.energy_head = energy_head
         self.num_heads = num_heads
+        self.normalization = nn.ModuleDict()
         self.heads = nn.ModuleDict(
             {
                 spec.name: ObservableHead(
@@ -243,6 +244,10 @@ class MACEOutputs(nn.Module):
             value = head(features, node_head)
             if not spec.per_atom:
                 value = segment_sum(value, batch, num_graphs)
+            if spec.name in self.normalization:
+                value = self.normalization[spec.name](
+                    value, graph["head"], batch, graph["ptr"]
+                )
             field = FIELD_BY_OBSERVABLE.get(spec.name, spec.name)
             if field in CORE_FIELD_NAMES:
                 fields[field] = value
@@ -256,5 +261,6 @@ class MACEOutputs(nn.Module):
         return {
             "energy_head": self.energy_head,
             "heads": self.heads,
+            "normalization": self.normalization,
             "embedding_readout": self.embedding_readout,
         }

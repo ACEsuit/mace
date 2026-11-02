@@ -22,9 +22,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
 
 import torch
+from mace_core.config.model import ScalingMethod
 from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from torch import Tensor, nn
@@ -38,15 +38,6 @@ _TORCH_DTYPE = {
     "float32": torch.float32,
     "bfloat16": torch.bfloat16,
 }
-
-#: How the interaction energy's scale and shift were computed. One enumeration,
-#: where the frozen tree has a registry and a CLI choice list that disagree:
-#: the registry offers ``std_scaling``, ``rms_forces_scaling`` and
-#: ``rms_dipoles_scaling``, the flag offers ``std_scaling``,
-#: ``rms_forces_scaling`` and ``no_scaling``, and ``no_scaling`` is implemented
-#: outside the registry by forcing the standard deviation to one. All four are
-#: kept and named here.
-ScalingMethod = Literal["std", "rms_forces", "rms_dipoles", "none"]
 
 
 @dataclass(frozen=True)

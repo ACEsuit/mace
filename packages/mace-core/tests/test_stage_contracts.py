@@ -63,6 +63,7 @@ def test_the_bundle_carries_what_the_model_stage_needs_and_no_more():
         "e0s",
         "e0_provenance",
         "statistics",
+        "normalization",
         "train_loader",
         "valid_loaders",
         "train_eval_loaders",
