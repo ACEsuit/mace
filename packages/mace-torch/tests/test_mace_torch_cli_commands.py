@@ -9,6 +9,7 @@ import sys
 import numpy as np
 import pytest
 import yaml
+from ase import Atoms
 from ase.io import read, write
 from ase.stress import full_3x3_to_voigt_6_stress
 from mace_core.cli import main
@@ -22,7 +23,8 @@ from mace_torch.train.checkpoint import write_model
 from test_mace_torch_calculator import water
 from test_mace_torch_full_batch import CATALOGUE, configuration
 
-from tests.golden.harness import FP64_CPU_REFERENCE
+from tests.golden.harness import FP32, FP64_CPU_REFERENCE
+from tests.helpers import REPO_ROOT, cli_command
 
 
 def close(actual, expected):
@@ -127,7 +129,7 @@ def test_training_writes_citations_config_and_plot(tmp_path, capsys):
 
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_eval_columns_and_calculator_agree(artifact, tmp_path, batch_size):
-    frames = [water(False), water(True)]
+    frames = [water(False), water(True).repeat((2, 1, 1)), water(False)[:2]]
     source, target = tmp_path / "structures.xyz", tmp_path / "evaluated.xyz"
     write(source, frames)
     assert (
@@ -155,6 +157,11 @@ def test_eval_columns_and_calculator_agree(artifact, tmp_path, batch_size):
     evaluated = read(target, ":")
     calculator = MACECalculator(model_paths=artifact)
     for atoms, result in zip(frames, evaluated, strict=True):
+        assert result.arrays["TEST_node_energies"].shape == (len(atoms),)
+        assert result.arrays["TEST_forces"].shape == (len(atoms), 3)
+        assert result.info["TEST_stress"].shape == (3, 3)
+        assert not any(key.startswith("MACE_") for key in result.info)
+        assert not any(key.startswith("MACE_") for key in result.arrays)
         atoms.calc = calculator
         close(result.info["TEST_energy"], atoms.get_potential_energy())
         close(result.arrays["TEST_forces"], atoms.get_forces())
@@ -164,6 +171,145 @@ def test_eval_columns_and_calculator_agree(artifact, tmp_path, batch_size):
         close(result.arrays["TEST_node_energies"].sum(), result.info["TEST_energy"])
         close(result.info["TEST_BO_contributions"].sum(), result.info["TEST_energy"])
         close(result.arrays["TEST_descriptors"], calculator.get_descriptors(atoms))
+
+
+def test_eval_descriptor_options_and_optional_columns(artifact, tmp_path):
+    frames = [water(False), water(True).repeat((2, 1, 1)), water(False)[1:]]
+    source = tmp_path / "structures.xyz"
+    write(source, frames)
+    variants = {
+        "default": [],
+        "nodes": ["--return_descriptors"],
+        "mean": ["--return_descriptors", "--descriptor_aggregation_method", "mean"],
+        "elements": [
+            "--return_descriptors",
+            "--descriptor_aggregation_method",
+            "per_element_mean",
+        ],
+        "one": ["--return_descriptors", "--descriptor_num_layers", "1"],
+        "equivariant": [
+            "--return_descriptors",
+            "--descriptor_invariants_only",
+            "false",
+        ],
+    }
+    results = {}
+    for name, flags in variants.items():
+        target = tmp_path / f"{name}.xyz"
+        assert (
+            main(
+                [
+                    "eval",
+                    "--configs",
+                    str(source),
+                    "--model",
+                    str(artifact),
+                    "--output",
+                    str(target),
+                    "--batch_size",
+                    "2",
+                    *flags,
+                ]
+            )
+            == 0
+        )
+        frames_read = read(target, ":")
+        assert isinstance(frames_read, list)
+        results[name] = frames_read
+    for index, atoms in enumerate(frames):
+        default = results["default"][index]
+        assert "MACE_stress" not in default.info
+        assert "MACE_BO_contributions" not in default.info
+        assert not {"MACE_descriptors", "MACE_node_energies"} & default.arrays.keys()
+        nodes = results["nodes"][index].arrays["MACE_descriptors"]
+        mean, elements = results["mean"][index], results["elements"][index]
+        assert "MACE_descriptors" not in mean.arrays
+        assert "MACE_descriptors" not in elements.arrays
+        close(mean.info["MACE_descriptors"], nodes.mean(axis=0))
+        expected = np.concatenate(
+            [
+                nodes[atoms.numbers == number].mean(axis=0)
+                if (atoms.numbers == number).any()
+                else np.zeros(nodes.shape[1])
+                for number in (1, 8)
+            ]
+        )
+        close(elements.info["MACE_descriptors"], expected)
+        assert (
+            results["one"][index].arrays["MACE_descriptors"].shape[1] < nodes.shape[1]
+        )
+        assert (
+            results["equivariant"][index].arrays["MACE_descriptors"].shape[1]
+            > nodes.shape[1]
+        )
+
+
+def test_eval_from_launcher_converts_precision(artifact, tmp_path):
+    source, target = tmp_path / "source.xyz", tmp_path / "float32.xyz"
+    atoms = water(True)
+    write(source, [atoms])
+    command = cli_command(REPO_ROOT / "mace/cli/eval_configs.py")
+    finished = subprocess.run(
+        [
+            *command,
+            "--engine",
+            "v1",
+            "--model",
+            str(artifact),
+            "--configs",
+            str(source),
+            "--output",
+            str(target),
+            "--default_dtype",
+            "float32",
+            "--compute_stress",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert finished.returncode == 0, finished.stderr
+    result = read(target)
+    assert isinstance(result, Atoms)
+    for dtype in ("float32", "float64"):
+        atoms.calc = MACECalculator(model_paths=artifact, default_dtype=dtype)
+        for actual, expected in (
+            (result.info["MACE_energy"], atoms.get_potential_energy()),
+            (result.arrays["MACE_forces"], atoms.get_forces()),
+            (
+                full_3x3_to_voigt_6_stress(result.info["MACE_stress"]),
+                atoms.get_stress(),
+            ),
+        ):
+            np.testing.assert_allclose(actual, expected, atol=FP32.atol, rtol=FP32.rtol)
+        assert atoms.get_forces().dtype == np.dtype(dtype)
+
+
+def test_eval_refuses_an_unknown_head_and_unsupported_contributions(tmp_path):
+    config = configuration(tmp_path, max_num_epochs=1)
+    assert config.model.model == "scale_shift"
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    artifact = write_model(tmp_path / "scaled", built.model, built.metadata)
+    source, target = tmp_path / "source.xyz", tmp_path / "refused.xyz"
+    write(source, [water(False)])
+    for flags in (["--head", "absent"], ["--return_contributions"]):
+        assert (
+            main(
+                [
+                    "eval",
+                    "--model",
+                    str(artifact),
+                    "--configs",
+                    str(source),
+                    "--output",
+                    str(target),
+                    *flags,
+                ]
+            )
+            == 2
+        )
+        assert not target.exists()
 
 
 def test_basis_conversion_preserves_function_and_records_gate(artifact, tmp_path):
@@ -218,7 +364,7 @@ def test_basis_conversion_preserves_function_and_records_gate(artifact, tmp_path
 
 
 @pytest.mark.parametrize("embedding", [False, True])
-def test_multihead_selection_matches_selected_head(tmp_path, embedding):
+def test_multihead_selection_matches_selected_head(tmp_path, embedding, capsys):
     config = configuration(tmp_path, max_num_epochs=1)
     settings = config.data.heads["default"]
     config = config.model_copy(
@@ -248,6 +394,9 @@ def test_multihead_selection_matches_selected_head(tmp_path, embedding):
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
     write_model(tmp_path / "multi", built.model, built.metadata)
+    command = ["model", "select-head", "--model", str(tmp_path / "multi.json")]
+    assert main([*command, "--list_heads"]) == 0
+    assert capsys.readouterr().out.strip() == "Heads: first, second"
     selected = tmp_path / "selected.json"
     assert (
         main(
@@ -260,10 +409,13 @@ def test_multihead_selection_matches_selected_head(tmp_path, embedding):
                 "second",
                 "--output",
                 str(selected),
+                "--target_device",
+                "cpu",
             ]
         )
         == 0
     )
+    assert not (tmp_path / "multi-second.safetensors").exists()
     atoms = water(True)
     atoms.calc = MACECalculator(model_paths=tmp_path / "multi.json", head="second")
     expected, forces = atoms.get_potential_energy(), atoms.get_forces()
@@ -271,6 +423,10 @@ def test_multihead_selection_matches_selected_head(tmp_path, embedding):
     close(atoms.get_potential_energy(), expected)
     close(atoms.get_forces(), forces)
     assert load_deployed(selected).heads == ("second",)
+    assert next(load_deployed(selected).model.parameters()).device.type == "cpu"
+    assert main([*command, "--head", "second"]) == 0
+    assert (tmp_path / "multi-second.safetensors").is_file()
+    assert load_deployed(tmp_path / "multi-second.json").heads == ("second",)
 
 
 def test_prepare_roundtrips_the_training_split(tmp_path):

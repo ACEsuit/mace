@@ -19,10 +19,13 @@ import torch
 from ase import Atoms
 from ase.stress import full_3x3_to_voigt_6_stress
 from conftest import fp64_only
+from mace_core.config.precision import PrecisionConfig
 from mace_torch.calculators import MACECalculator, PaddingPolicy
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.train import run_train_stage
 from test_mace_torch_full_batch import built_task
+
+from tests.golden.harness import FP32
 
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
 
@@ -99,6 +102,9 @@ def test_the_results_have_the_frozen_tree_s_names_and_shapes(checkpoints, period
     assert results["free_energy"] == results["energy"]
     assert results["forces"].shape == (3, 3) and results["forces"].dtype == np.float64
     assert results["stress"].shape == (6,)
+    assert results["stress"].dtype == np.float64
+    assert np.isfinite(results["forces"]).all()
+    assert np.isfinite(results["stress"]).all()
     assert results["energies"].shape == results["node_energy"].shape == (3,)
     if not periodic:
         assert not np.any(results["stress"])
@@ -276,17 +282,39 @@ def test_a_compiled_calculator_pads_automatically(checkpoints, monkeypatch):
 
 @fp64_only
 @pytest.mark.parametrize("periodic", [False, True])
+@pytest.mark.parametrize(
+    "route", ["constructor", "environment", "precedence", "overflow"]
+)
 def test_padding_leaves_the_real_structure_s_results_as_they_were(
-    checkpoints, periodic
+    checkpoints, periodic, route, monkeypatch
 ):
-    plain = evaluate(MACECalculator(model_paths=checkpoints["a"]), water(periodic))
-    padded = evaluate(
-        MACECalculator(
-            model_paths=checkpoints["a"],
-            padding=PaddingPolicy(mode="fixed", nodes_budget=8, edges_budget=3000),
-        ),
+    monkeypatch.delenv("MACE_ASE_PAD_NUM_ATOMS", raising=False)
+    monkeypatch.delenv("MACE_ASE_PAD_NUM_EDGES", raising=False)
+    plain = evaluate(
+        MACECalculator(model_paths=checkpoints["a"], compute_atomic_stresses=True),
         water(periodic),
     )
+    if route in {"environment", "precedence"}:
+        monkeypatch.setenv("MACE_ASE_PAD_NUM_ATOMS", "9")
+        monkeypatch.setenv("MACE_ASE_PAD_NUM_EDGES", "3100")
+    nodes, edges = (0, 0) if route == "environment" else (8, 3000)
+    if route == "overflow":
+        nodes, edges = 1, 1
+    calculator = MACECalculator(
+        model_paths=checkpoints["a"],
+        compute_atomic_stresses=True,
+        pad_num_atoms=nodes,
+        pad_num_edges=edges,
+    )
+    padded = evaluate(calculator, water(periodic))
+    if route == "overflow":
+        assert calculator.padding.edges_budget > 1
+    else:
+        expected = (9, 3100) if route == "environment" else (8, 3000)
+        assert (
+            calculator.padding.nodes_budget,
+            calculator.padding.edges_budget,
+        ) == expected
     assert set(padded) == set(plain)
     for key, value in plain.items():
         np.testing.assert_allclose(
@@ -402,6 +430,79 @@ def test_the_hessian_is_converted_by_energy_over_length_squared(checkpoints):
 def test_a_head_the_model_does_not_have_is_refused(checkpoints):
     with pytest.raises(ValueError, match="no head 'DFT'"):
         MACECalculator(model_paths=checkpoints["a"], head="DFT")
+
+
+@pytest.mark.parametrize("source", ["paths", "models"])
+@pytest.mark.parametrize("setting", ["default_dtype", "precision"])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def test_calculator_precision_is_instance_local(checkpoints, source, setting, device):
+    from dataclasses import replace
+
+    from mace_torch.serialization import canonical_state
+
+    previous = torch.get_default_dtype()
+    members = [load_deployed(checkpoints[name]) for name in ("a", "b")]
+    # In-memory models can have changed since loading, and their files may no
+    # longer exist. A precision override must preserve their current weights.
+    if source == "models":
+        members = [replace(model, path=Path("not-on-disk.json")) for model in members]
+        with torch.no_grad():
+            next(members[0].model.parameters()).add_(0.25)
+    before = [
+        {
+            path: {name: value.clone() for name, value in tensors.items()}
+            for path, tensors in canonical_state(model.engine).items()
+        }
+        for model in members
+    ]
+    calculator = MACECalculator(
+        device=device,
+        models=members if source == "models" else None,
+        model_paths=[checkpoints["a"], checkpoints["b"]] if source == "paths" else None,
+        default_dtype="float32" if setting == "default_dtype" else None,
+        precision=PrecisionConfig(model="float32") if setting == "precision" else None,
+    )
+    baseline = MACECalculator(models=members)
+    actual, expected = (
+        evaluate(calculator, water(True)),
+        evaluate(baseline, water(True)),
+    )
+    assert torch.get_default_dtype() == previous
+    assert actual["forces"].dtype == np.float32
+    assert expected["forces"].dtype == np.float64
+    graph, _ = calculator._graph(water(True), padded=False)
+    assert graph["positions"].dtype == torch.float32
+    for converted, original, state in zip(
+        calculator.models, members, before, strict=True
+    ):
+        assert next(converted.model.parameters()).dtype == torch.float32
+        assert next(original.model.parameters()).dtype == torch.float64
+        after = canonical_state(original.engine)
+        for path, tensors in state.items():
+            for name, value in tensors.items():
+                assert torch.equal(value, after[path][name])
+    for key in (
+        "energy",
+        "forces",
+        "stress",
+        "energy_comm",
+        "forces_comm",
+        "stress_comm",
+    ):
+        np.testing.assert_allclose(
+            actual[key], expected[key], atol=FP32.atol, rtol=FP32.rtol
+        )
+
+
+def test_calculator_refuses_conflicting_or_unknown_precision(checkpoints):
+    with pytest.raises(ValueError, match="not both"):
+        MACECalculator(
+            model_paths=checkpoints["a"],
+            precision=PrecisionConfig(),
+            default_dtype="float32",
+        )
+    with pytest.raises(ValueError, match="default_dtype"):
+        MACECalculator(model_paths=checkpoints["a"], default_dtype="float33")
 
 
 def test_a_calculator_with_no_model_is_refused():

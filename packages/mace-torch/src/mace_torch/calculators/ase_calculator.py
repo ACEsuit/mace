@@ -71,6 +71,7 @@ from ase import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 from ase.stress import full_3x3_to_voigt_6_stress
 from mace_core.config import FixedPointSpec
+from mace_core.config.precision import PrecisionConfig
 from mace_core.data.configuration import Configuration
 from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
@@ -213,6 +214,9 @@ class MACECalculator(Calculator):
             ``"models/mace_*.json"`` that names a committee.
         models: Models already loaded, instead of paths.
         device: Where to evaluate.
+        precision: Evaluation precision; defaults to the saved model policy.
+        default_dtype: Compatibility spelling for the model interface dtype.
+            Use precision for per-operator policies. Supplying both is an error.
         energy_units_to_eV: What one model energy unit is in eV.
         length_units_to_A: What one model length unit is in Angstrom.
         charges_key: The ``atoms.arrays`` entry passed as ``charges``.
@@ -266,9 +270,17 @@ class MACECalculator(Calculator):
         external_field: Sequence[float] | None = None,
         magmom_key: str = MAGMOM_KEY,
         fixed_point: FixedPointSpec | None = None,
+        precision: PrecisionConfig | None = None,
+        default_dtype: str | None = None,
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, **kwargs)
+        if default_dtype is not None:
+            if precision is not None:
+                raise ValueError("give precision or default_dtype, not both")
+            if default_dtype not in {"float32", "float64"}:
+                raise ValueError("default_dtype must be 'float32' or 'float64'")
+            precision = PrecisionConfig(model=default_dtype)
         if external_field is not None and np.asarray(external_field).size != 3:
             raise ValueError(
                 f"external_field is {list(np.asarray(external_field).ravel())}; "
@@ -280,7 +292,7 @@ class MACECalculator(Calculator):
             else np.asarray(external_field, dtype=float).reshape(3)
         )
         self.device = device
-        self.models = _committee(model_paths, models, device)
+        self.models = _committee(model_paths, models, device, precision)
         cutoffs = [model.r_max for model in self.models]
         if len(set(cutoffs)) != 1:
             raise ValueError(
@@ -736,7 +748,7 @@ class MACECalculator(Calculator):
             if self._rows.get(name) == "graph":
                 # One structure: its row, not a batch of one.
                 stacked = stacked[:, 0]
-            stack = stacked.to(torch.float64).cpu().numpy()
+            stack = stacked.cpu().numpy()
             results[key] = stack.mean(axis=0) * factor
             if len(per_model) > 1 and key in ENSEMBLE_KEYS:
                 results[f"{key}_comm"] = stack * factor
@@ -795,12 +807,17 @@ def _committee(
     model_paths: str | Path | Sequence[str | Path] | None,
     models: DeployedModel | Sequence[DeployedModel] | None,
     device: str,
+    precision: PrecisionConfig | None,
 ) -> list[DeployedModel]:
     if models is not None:
         members = [models] if isinstance(models, DeployedModel) else list(models)
         if not members:
             raise ValueError("an empty list of models was given.")
-        return members
+        return (
+            [model.with_precision(precision, device=device) for model in members]
+            if precision is not None
+            else members
+        )
     if model_paths is None:
         raise ValueError("give model_paths or models.")
     if isinstance(model_paths, str):
@@ -813,7 +830,7 @@ def _committee(
         paths = list(model_paths)
     if not paths:
         raise ValueError("an empty list of model paths was given.")
-    return [load_deployed(path, device=device) for path in paths]
+    return [load_deployed(path, device=device, precision=precision) for path in paths]
 
 
 def _models_matching(pattern: str) -> list[str | Path]:

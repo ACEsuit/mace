@@ -4,10 +4,8 @@ The stage tests exercise the pipeline in process. This is the same run reached
 the way a user reaches it: one console script, one configuration file, a
 subprocess. It is the last thing between the three stages and a person.
 
-It is deliberately not a comparison against legacy. The two engines do not
-produce the same numbers yet and are not meant to at this point; what is
-checked is that the v1 side runs at all from a command line, writes a
-checkpoint that carries its configuration, and gets better while it does.
+These tests pin the native CLI's training artifacts, learning, restart and
+reporting behavior. Numerical comparisons with legacy live in tests/parity.
 """
 
 import importlib.util
@@ -129,12 +127,21 @@ def train_on_v1(directory: Path) -> subprocess.CompletedProcess:
     return on_v1("--config", str(tiny_task(directory)))
 
 
+def validation_losses(directory: Path) -> dict[int, float]:
+    records = [json.loads(line) for line in (directory / "results/tiny.jsonl").read_text().splitlines()]
+    return {record["epoch"]: record["loss"] for record in records if record["mode"] == "valid"}
+
+
 @needs_the_v1_engine
 def test_the_tiny_task_trains_on_the_v1_engine(tmp_path):
     finished = train_on_v1(tmp_path)
     assert finished.returncode == 0, finished.stderr
     assert (tmp_path / "tiny.safetensors").is_file()
     assert (tmp_path / "tiny.json").is_file()
+    losses = validation_losses(tmp_path)
+    assert len(losses) == 4
+    assert losses[3] < losses[0]
+    assert (tmp_path / "tiny.run-000004.safetensors").is_file()
 
 
 @needs_the_v1_engine
@@ -271,6 +278,15 @@ def test_a_multihead_run_prints_an_error_table(tmp_path):
     finished = on_v1("--config", str(multihead_task(tmp_path)))
     assert finished.returncode == 0, finished.stderr
     assert "RMSE E / meV / atom" in finished.stderr
+    rows = {}
+    for line in finished.stderr.splitlines():
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if cells and cells[0] in {"train_small", "train_large", "valid_small", "valid_large"}:
+            rows[cells[0]] = cells[1:]
+    assert set(rows) == {"train_small", "train_large", "valid_small", "valid_large"}
+    for cells in rows.values():
+        assert len(cells) >= 3
+        assert all(np.isfinite(float(cell)) for cell in cells[:3])
 
 
 FINETUNE_CONFIG = """
@@ -353,11 +369,15 @@ def test_restart_latest_continues_the_run(tmp_path):
     first = on_v1("--config", str(config), "--max_num_epochs", "2")
     assert first.returncode == 0, first.stderr
     assert evaluated_epochs(first.stderr) == [0, 1]
+    before = validation_losses(tmp_path)
 
     resumed = on_v1("--config", str(variant(config, RESTART)))
     assert resumed.returncode == 0, resumed.stderr
     assert "Resuming from" in resumed.stderr
     assert evaluated_epochs(resumed.stderr) == [2, 3]
+    after = validation_losses(tmp_path)
+    assert after.keys() == {0, 1, 2, 3}
+    assert after[2] <= 1.5 * before[1]
 
 
 @needs_the_v1_engine
@@ -371,13 +391,21 @@ def test_restart_latest_with_nothing_to_restart_from_starts_fresh(tmp_path):
 
 
 @needs_the_v1_engine
-def test_a_run_keeps_only_its_newest_run_checkpoint_by_default(tmp_path):
-    finished = train_on_v1(tmp_path)
+@pytest.mark.parametrize("retention", [None, "--keep_checkpoints", "--save_all_checkpoints"])
+def test_run_checkpoint_retention_flags(tmp_path, retention):
+    flags = [] if retention is None else [retention]
+    finished = on_v1("--config", str(tiny_task(tmp_path)), *flags)
     assert finished.returncode == 0, finished.stderr
-    assert sorted(path.name for path in tmp_path.glob("tiny.run-*")) == [
-        "tiny.run-000004.json",
-        "tiny.run-000004.safetensors",
-    ]
+    epochs = {int(path.stem.split("run-")[1]) for path in tmp_path.glob("tiny.run-*.json")}
+    if retention is None:
+        assert epochs == {4}
+    elif retention == "--save_all_checkpoints":
+        assert epochs == {1, 2, 3, 4}
+    else:
+        assert len(epochs) > 1 and 4 in epochs
+    assert {path.stem for path in tmp_path.glob("tiny.run-*.json")} == {
+        path.stem for path in tmp_path.glob("tiny.run-*.safetensors")
+    }
 
 
 #: The full-batch regime, named where the optimizer is.
@@ -385,14 +413,24 @@ LBFGS = {"training.optimizer": {"kind": "lbfgs"}}
 
 
 @needs_the_v1_engine
-def test_an_lbfgs_run_trains_from_the_console_script(tmp_path):
+def test_an_lbfgs_run_trains_from_the_console_script(tmp_path, regression_set):
     """The v1 counterpart of the frozen tree's L-BFGS workflow test, which
     also turns on an average and a second stage. Both are refused beside
     L-BFGS here, so this runs the regime alone."""
-    finished = on_v1("--config", str(variant(tiny_task(tmp_path), LBFGS)))
+    settings = {
+        **LBFGS,
+        "runtime.seed": 7,
+        "data.heads.default.train_file": str(regression_set),
+        "data.valid_fraction": 0.25,
+        "model.r_max": 3.5,
+        "precision.model": "float64",
+    }
+    finished = on_v1("--config", str(variant(tiny_task(tmp_path), settings)))
     assert finished.returncode == 0, finished.stderr
     assert evaluated_epochs(finished.stderr) == [0, 1, 2, 3]
     assert (tmp_path / "tiny.safetensors").is_file()
+    losses = validation_losses(tmp_path)
+    assert losses[3] < losses[0]
 
 
 @needs_the_v1_engine

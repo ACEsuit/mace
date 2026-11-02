@@ -14,10 +14,11 @@ consumer never adds them back.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.elements import AtomicNumberTable
 from mace_core.metadata import ModelMetadata
@@ -78,13 +79,40 @@ class DeployedModel:
         """Evaluate one batch, with whichever derivatives are asked for."""
         return self.engine(dict(graph), compute=tuple(compute), training=False)
 
+    def with_precision(
+        self, precision: PrecisionConfig, *, device: str
+    ) -> DeployedModel:
+        """Rebuild from current weights without mutating this model or reading disk.
+
+        Operator policies are fixed at construction; casting tensors alone
+        would leave their compute and accumulation policies unchanged.
+        """
+        from mace_core.data.backend import DatasetStatistics
+        from mace_core.elements import ResolvedE0s
+
+        from mace_torch.serialization import canonical_state, load_canonical_state
+        from mace_torch.train.model_stage import build_model
+
+        engine, outputs = build_model(
+            self.config,
+            self.config.catalogue or DEFAULT_CATALOGUE,
+            z_table=self.z_table,
+            heads=self.heads,
+            e0s=ResolvedE0s(self.e0s),
+            statistics=DatasetStatistics(),
+            precision=precision,
+            initialize=False,
+        )
+        load_canonical_state(engine, canonical_state(self.engine))
+        return replace(self, engine=engine.to(device).eval(), outputs=outputs)
+
 
 def load_deployed(
     path: str | Path,
     *,
     device: str = "cpu",
     catalogue: ObservableCatalogue | None = None,
-    precision: Any = None,
+    precision: PrecisionConfig | None = None,
     solver: str | None = None,
 ) -> DeployedModel:
     """Rebuild a model from a v1 checkpoint.
