@@ -32,7 +32,7 @@ from mace_core.observables import RequestedOutputs
 from mace_core.outputs import MACEOutput
 from torch import Tensor
 
-from mace_torch.data import TrainingBatch
+from mace_torch.data import TrainingBatch, target_specs
 
 __all__ = [
     "LOSS_REGISTRY",
@@ -110,12 +110,15 @@ class LossTerm:
         per_atom: Whether its rows are atoms rather than structures.
         extensive: Whether the residual is divided by the atom count before it
             is squared.
+        output_row_axis: The model output's atom/graph axis, moved first before
+            comparison to row-first labels and application of structure weights.
     """
 
     name: str
     weight: float
     per_atom: bool
     extensive: bool
+    output_row_axis: int = 0
 
 
 def terms_for(
@@ -129,6 +132,7 @@ def terms_for(
     only those: a stage that raises the energy weight says only that.
     """
     overrides = {} if stage is None else stage.loss_weights
+    layouts = {spec.name: spec for spec in target_specs(requested)}
 
     def weight_of(name: str) -> float:
         return overrides.get(name, config.weights.get(name, 1.0))
@@ -151,8 +155,9 @@ def terms_for(
                 LossTerm(
                     name,
                     weight_of(name),
-                    requested.per_atom_derivative(request.wrt),
+                    layouts[name].per_atom,
                     request.extensive,
+                    layouts[name].output_row_axis,
                 )
             )
     return tuple(terms)
@@ -216,15 +221,16 @@ class TermwiseLoss(torch.nn.Module):
         counts = atom_counts(batch)
         total: Tensor | None = None
         for term in self.terms:
-            value = predicted(output, term.name)
-            reference = batch.targets[term.name].to(value.dtype)
-            residual = value - reference.reshape(value.shape)
+            value = predicted(output, term.name, row_axis=term.output_row_axis)
+            reference = reference_for(batch, term.name, value)
+            residual = value - reference
             if term.extensive:
                 # Per atom, so a structure twice the size is not twice the
                 # error. The division is on the residual and not on the
                 # squared term, which is the frozen tree's and squares the
                 # normalisation with it.
-                residual = residual / _broadcast(counts, residual)
+                rows = counts[batch.graph["batch"]] if term.per_atom else counts
+                residual = residual / _broadcast(rows, residual)
             cost = self.elementwise(residual, term)
             weights = row_weights(batch, term.name, term.per_atom, cost)
             if totals is None:
@@ -326,8 +332,8 @@ def row_weights(
     return combined.reshape(-1, *([1] * (like.dim() - 1)))
 
 
-def predicted(output: MACEOutput[Tensor], name: str) -> Tensor:
-    """One quantity off the typed output, by its requested name.
+def predicted(output: MACEOutput[Tensor], name: str, *, row_axis: int = 0) -> Tensor:
+    """One quantity off the typed output, with the requested row axis first.
 
     Through the output's own accessor rather than a table here. A second table
     of which names are core fields is the thing that drifts: it would agree
@@ -342,7 +348,18 @@ def predicted(output: MACEOutput[Tensor], name: str) -> Tensor:
         )
     if not isinstance(value, torch.Tensor):
         raise TypeError(f"{name!r} came back as {type(value)!r} rather than a tensor.")
-    return value
+    return value.movedim(row_axis, 0) if row_axis else value
+
+
+def reference_for(batch: TrainingBatch, name: str, value: Tensor) -> Tensor:
+    """Unflatten value axes only after verifying the labelled row count."""
+    reference = batch.targets[name].to(value.dtype)
+    if reference.shape[0] != value.shape[0] or reference.numel() != value.numel():
+        raise ValueError(
+            f"target {name!r} has shape {tuple(reference.shape)}, but the model "
+            f"has row-first shape {tuple(value.shape)}"
+        )
+    return reference.reshape(value.shape)
 
 
 @register_loss("huber")

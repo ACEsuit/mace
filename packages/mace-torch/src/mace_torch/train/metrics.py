@@ -49,8 +49,8 @@ from mace_core.observables import RequestedOutputs
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
-from mace_torch.data import TrainingBatch
-from mace_torch.train.loss import atom_counts, predicted, row_weights
+from mace_torch.data import TrainingBatch, target_specs
+from mace_torch.train.loss import atom_counts, predicted, reference_for, row_weights
 
 __all__ = [
     "MetricSpec",
@@ -72,16 +72,20 @@ class MetricSpec:
             value per structure and grows with the structure, which is the pair
             of properties that makes a raw error say more about the structure
             sizes than about the model.
+        output_row_axis: The engine's row axis, aligned with row-first labels
+            before applying masks or accumulating errors.
     """
 
     name: str
     per_atom: bool
     per_atom_variant: bool
+    output_row_axis: int = 0
 
 
 def metric_specs(requested: RequestedOutputs) -> tuple[MetricSpec, ...]:
     """A spec per requested quantity, with everything read off a declaration."""
     specs: list[MetricSpec] = []
+    layouts = {spec.name: spec for spec in target_specs(requested)}
     for observable in requested.observables:
         specs.append(
             MetricSpec(
@@ -94,8 +98,15 @@ def metric_specs(requested: RequestedOutputs) -> tuple[MetricSpec, ...]:
             name = observable.derivative_name(request.wrt)
             if name not in requested.derivatives:
                 continue
-            per_atom = requested.per_atom_derivative(request.wrt)
-            specs.append(MetricSpec(name, per_atom, request.extensive and not per_atom))
+            per_atom = layouts[name].per_atom
+            specs.append(
+                MetricSpec(
+                    name,
+                    per_atom,
+                    request.extensive and not per_atom,
+                    layouts[name].output_row_axis,
+                )
+            )
     return tuple(specs)
 
 
@@ -143,8 +154,8 @@ class RunningMetrics:
         self._structures += int(batch.graph["ptr"].shape[0] - 1)
         counts = atom_counts(batch)
         for spec in self.specs:
-            value = predicted(output, spec.name).detach()
-            reference = batch.targets[spec.name].to(value.dtype).reshape(value.shape)
+            value = predicted(output, spec.name, row_axis=spec.output_row_axis).detach()
+            reference = reference_for(batch, spec.name, value)
             # Broadcast, because the weight is one number per row and the
             # mask has to name every component of it: a vector quantity is
             # labelled or not as a whole.

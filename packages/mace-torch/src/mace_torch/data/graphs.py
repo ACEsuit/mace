@@ -17,14 +17,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from math import prod
 
 import numpy as np
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
 from mace_core.elements.default_keys import DefaultKeys
-from mace_core.graph import graph_sample
+from mace_core.graph import GRAPH_SCHEMA, graph_sample
 from mace_core.neighbors import NeighborListBackend
-from mace_core.observables import RequestedOutputs
+from mace_core.observables import RequestedOutputs, irreps_dimension
 
 from mace_torch.neighbors import resolve_neighbor_backend
 
@@ -53,12 +54,15 @@ class TargetSpec:
             right dtype and the wrong length.
         value_shape: Shape of one atom's or structure's value. Missing labels
             use the same shape with zero weight. ``None`` retains the legacy
-            scalar-per-graph or vector-per-atom fallback for derivative labels.
+            scalar-per-graph or vector-per-atom fallback for manual specs.
+        output_row_axis: The model output's atom/graph axis. Training labels
+            always put rows first; tensor responses from the engine put them second.
     """
 
     name: str
     per_atom: bool
     value_shape: tuple[int, ...] | None = None
+    output_row_axis: int = 0
 
 
 def target_specs(requested: RequestedOutputs) -> tuple[TargetSpec, ...]:
@@ -85,14 +89,40 @@ def target_specs(requested: RequestedOutputs) -> tuple[TargetSpec, ...]:
         for request in observable.derivatives:
             name = observable.derivative_name(request.wrt)
             if name in requested.derivatives:
+                shape = conventions.get(name)
+                if shape is None:
+                    shape = _input_shape(requested, request.wrt)
+                    if not observable.is_scalar:
+                        components = prod(
+                            conventions.get(observable.name, (observable.dimension,))
+                        )
+                        shape = (components, *shape)
                 specs.append(
                     TargetSpec(
                         name,
-                        requested.per_atom_derivative(request.wrt),
-                        conventions.get(name),
+                        requested.per_atom_derivative(request.wrt, observable),
+                        shape,
+                        0 if observable.is_scalar else 1,
                     )
                 )
     return tuple(specs)
+
+
+def _input_shape(requested: RequestedOutputs, name: str) -> tuple[int, ...]:
+    """A gradient's trailing axes, including Cartesian strain and matrix inputs."""
+    graph_key = {"pos": "positions", "strain": "displacement"}.get(name, name)
+    if graph_key in GRAPH_SCHEMA:
+        shape = GRAPH_SCHEMA[graph_key].shape[1:]
+        if all(isinstance(size, int) for size in shape):
+            return tuple(int(size) for size in shape)
+    for spec in requested.inputs:
+        if spec.name == name:
+            dimension = irreps_dimension(spec.irreps, observable=name)
+            return () if dimension == 1 else (dimension,)
+    raise ValueError(
+        f"derivative input {name!r} has no declared shape; resolve the request "
+        "with its ObservableCatalogue before building training targets"
+    )
 
 
 def graph_from_configuration(
@@ -175,6 +205,20 @@ def targets_from_configuration(
             weights[spec.name] = 0.0
             continue
         array = np.asarray(value, dtype=float)
-        values[spec.name] = array if spec.per_atom else array.reshape(1, *array.shape)
+        if spec.value_shape is None:
+            values[spec.name] = (
+                array if spec.per_atom else array.reshape(1, *array.shape)
+            )
+        else:
+            shape = (num_atoms if spec.per_atom else 1, *spec.value_shape)
+            if array.size != prod(shape) or (
+                spec.per_atom and (array.ndim == 0 or array.shape[0] != num_atoms)
+            ):
+                raise ValueError(
+                    f"target {spec.name!r} has shape {array.shape}; expected "
+                    f"{shape} with atom/graph rows first "
+                    "(trailing axes may be flattened)"
+                )
+            values[spec.name] = array.reshape(shape)
         weights[spec.name] = float(configuration.property_weights.get(spec.name, 1.0))
     return values, weights

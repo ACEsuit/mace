@@ -199,7 +199,7 @@ def output_rows(
         for request in spec.derivatives if spec.is_scalar else ():
             rows.setdefault(
                 spec.derivative_name(request.wrt),
-                "atom" if requested.per_atom_derivative(request.wrt) else "graph",
+                "atom" if requested.per_atom_derivative(request.wrt, spec) else "graph",
             )
     for name, row in {**extra_rows, **ENGINE_EXTRA_ROWS}.items():
         rows.setdefault(name, cast(Row, row))
