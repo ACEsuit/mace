@@ -19,6 +19,30 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  legacy-size:
+    # GATE-3: retirement may shrink the oracle, but new code belongs in packages/.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: The tracked legacy tree cannot grow
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base_ref=${BASE_SHA:-HEAD^}
+          # A new branch push has an all-zero 'before'; dispatch has no 'before'.
+          if [[ "$base_ref" =~ ^0+$ ]]; then base_ref=HEAD^; fi
+          base_count=$(git ls-tree -r --name-only "$base_ref" -- mace/ | wc -l)
+          head_count=$(git ls-files -- mace/ | wc -l)
+          printf 'Tracked legacy files: base=%s current=%s\n' "$base_count" "$head_count"
+          if (( head_count > base_count )); then
+            echo 'Legacy grew. Put new implementation in packages/.' >&2
+            exit 1
+          fi
+
   legacy-lint:
     # The frozen tree's toolchain: black + isort + pylint, plus mypy against a
     # committed baseline. It runs the hooks scoped to mace/** in
@@ -91,6 +115,7 @@ jobs:
           # resolve every import or it reports the absence as an error.
           python -m pip install ruff==0.16.5 ty==0.0.77 pytest
       - name: Ruff lint and format
+        shell: bash
         # The same set the ruff hooks claim in .pre-commit-config.yaml. A list
         # written out here drifts from that one silently, and the drift shows
         # up as a file that passes CI and fails pre-commit, which is the
@@ -98,11 +123,11 @@ jobs:
         # by PAR-1 and ruff errors on a path that does not exist yet, so it
         # joins the set the moment it appears.
         run: |
-          paths="packages/ tests/conftest.py"
-          [ -d tests/parity ] && paths="$paths tests/parity/"
-          echo "checking: $paths"
-          ruff check $paths
-          ruff format --check $paths
+          paths=(packages/ tests/conftest.py)
+          if [[ -d tests/parity ]]; then paths+=(tests/parity/); fi
+          echo "checking: ${paths[*]}"
+          ruff check "${paths[@]}"
+          ruff format --check "${paths[@]}"
       - name: ty
         # packages/ only: see the ty hook in .pre-commit-config.yaml.
         run: ty check packages/

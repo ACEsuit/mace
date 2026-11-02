@@ -10,7 +10,7 @@ from ase.io import write
 from conftest import fp64_only
 from mace_core.config.model import ModelConfig
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.observables import ObservableCatalogue, ObservableSpec
+from mace_core.observables import InputSpec, ObservableCatalogue, ObservableSpec
 from mace_torch.cli.run_train import run
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.stages import build
@@ -19,21 +19,29 @@ from mace_torch.serialization import canonical_state
 
 @fp64_only
 @pytest.mark.parametrize(
-    "irreps,per_atom,width",
-    [("0e", False, 1), ("0e", True, 1), ("1o", False, 3), ("0e+2e", True, 6)],
+    "irreps,per_atom,width,derivatives",
+    [
+        ("0e", False, 1, ()),
+        ("0e", True, 1, ()),
+        ("1o", False, 3, ()),
+        ("0e+2e", True, 6, ()),
+        ("2e", False, 5, ("pos",)),
+    ],
 )
 def test_custom_observable_trains_saves_and_loads_without_energy(
-    tmp_path, irreps, per_atom, width
+    tmp_path, irreps, per_atom, width, derivatives
 ):
     catalogue = ObservableCatalogue(
+        inputs=(InputSpec(name="pos", irreps="1o", per_atom=True, units="A"),),
         observables=(
             ObservableSpec(
                 name="custom_property",
                 irreps=irreps,
                 per_atom=per_atom,
                 units="test-unit",
+                derivatives=derivatives,
             ),
-        )
+        ),
     )
     frames = []
     for index in range(6):
@@ -107,6 +115,27 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
     assert loaded.metadata.config.resolved["catalogue"] == catalogue.model_dump(
         mode="json"
     )
+    for wrt in derivatives:
+        name = catalogue.observable("custom_property").derivative_name(wrt)
+        assert name == "d_custom_property_d_pos"
+        response = loaded.engine(batch.graph, compute=(name,)).get(name)
+        assert response.shape == (width, len(batch.graph["positions"]), 3)
+        assert torch.isfinite(response).all() and torch.count_nonzero(response)
+        # A real positional derivative of the trained tensor, not just a key.
+        step = 1e-5
+        samples = []
+        for offset in (-step, step):
+            moved = {**batch.graph, "positions": batch.graph["positions"].clone()}
+            moved["positions"][0, 0] += offset
+            samples.append(loaded.engine(moved, compute=()).get("custom_property")[0])
+        from tests.golden.harness import FP64_CPU_REFERENCE
+
+        torch.testing.assert_close(
+            response[:, 0, 0],
+            (samples[1] - samples[0]) / (2 * step),
+            atol=FP64_CPU_REFERENCE.atol,
+            rtol=FP64_CPU_REFERENCE.rtol,
+        )
 
 
 def test_a_second_catalogue_cannot_silently_replace_the_config():
