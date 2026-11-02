@@ -158,20 +158,29 @@ def test_the_v1_run_reports_the_epoch_it_chose(tmp_path):
 
 
 @needs_the_v1_engine
-def test_a_legacy_command_line_on_v1_says_it_has_not_moved(tmp_path):
-    """Until the flag port lands. It is a refusal rather than a crash, which
-    is what lets the black-box suite skip instead of failing."""
+def test_explicit_training_flags_write_a_readable_v1_artifact(tmp_path):
+    """The real launcher accepts legacy flag spellings and writes safetensors."""
+    tiny_task(tmp_path)
     finished = on_v1(
-        "--name",
-        "tiny",
-        "--train_file",
-        str(tmp_path / "absent.xyz"),
-        "--r_max",
-        "5.0",
+        "--name", "flags", "--work_dir", str(tmp_path),
+        "--train_file", str(tmp_path / "train.xyz"),
+        "--r_max", "5.0", "--num_channels", "4", "--max_L", "1",
+        "--max_ell", "1", "--correlation", "2", "--max_num_epochs", "1",
+        "--batch_size", "4", "--valid_batch_size", "4", "--plot", "false",
+        "--default_dtype", "float32",
     )
-    assert finished.returncode != 0
-    assert "not yet available on v1 engine" in finished.stderr
-    assert "--r_max" in finished.stderr
+    assert finished.returncode == 0, finished.stderr
+    from mace_torch.deploy.loader import load_deployed
+
+    model = load_deployed(tmp_path / "flags.json")
+    assert model.config.model.num_channels == 4
+    import torch
+
+    assert model.config.precision.model == "float32"
+    assert next(model.model.parameters()).dtype == torch.float32
+    assert model.metadata.citations
+    assert (tmp_path / "results" / "flags.jsonl").is_file()
+    assert (tmp_path / "flags.safetensors").is_file()
 
 
 MULTIHEAD_CONFIG = """

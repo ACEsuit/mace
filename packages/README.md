@@ -321,6 +321,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/kernels/reorder.py` | The map from canonical contraction weights to a backend's own path order, derived from two bases and split into its independent blocks. |
 | `mace_core/kernels/registry.py` | Finding kernel backends by entry point. |
 | `mace_core/metadata.py` | `ModelMetadata`: the versioned record every checkpoint carries. |
+| `mace_core/citations.py` | Required method citations and deduplication across model metadata. |
 | `mace_core/observables/__init__.py` | Declared observables, re-exported. |
 | `mace_core/observables/defaults.py` | The default observable catalogue: energy with forces and stress. |
 | `mace_core/observables/derivatives.py` | How a derivative of a declared quantity is named. |
@@ -368,6 +369,15 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/calculators/padding.py` | Padding a batch to a fixed size for compiled GPU runs, and cutting it back. |
 | `mace_torch/cli/__init__.py` | Console entry points only. |
 | `mace_torch/cli/commands.py` | `mace train` and `mace model export-config`, declared for the `mace` program. |
+| `mace_torch/train/plots.py` | Plotting shared by training and the standalone command. |
+| `mace_torch/cli/migrate.py` | Migration commands and configuration files for legacy invocations. |
+| `mace_torch/cli/reporting.py` | Print the citations recorded with an artifact. |
+| `mace_torch/cli/plot_train.py` | Training-curve command over recorded metrics. |
+| `mace_torch/cli/preprocess_data.py` | Prepare versioned shards through the shared data reader and statistics. |
+| `mace_torch/cli/model.py` | Head selection and verified full-to-reduced basis conversion. |
+| `mace_torch/cli/training_config.py` | Translate explicit flags and legacy configuration syntax into the V1 schema. |
+| `mace_torch/cli/legacy_flags.py` | Legacy flag spellings and parser grammar at the input boundary. |
+| `mace_torch/cli/eval_configs.py` | Batch extxyz evaluation, descriptors and the thirteen legacy output names. |
 | `mace_torch/cli/convert_legacy.py` | `mace_convert_legacy`: a legacy checkpoint into a v1 one. |
 | `mace_torch/cli/polar_density_cube.py` | `mace_polar_density_cube --engine v1`: a charge-aware model's density as cube files. |
 | `mace_torch/cli/run_train.py` | `mace_run_train --engine v1`: training from a configuration file. |

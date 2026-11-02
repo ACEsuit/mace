@@ -29,6 +29,7 @@ Homepage = "https://github.com/ACEsuit/mace"
 # one script name is undefined behaviour in pip, which is why the root
 # setup.cfg no longer declares these.
 [project.scripts]
+mace = "mace_launcher:main"
 mace_active_learning_md = "mace_launcher:active_learning_md"
 mace_create_lammps_model = "mace_launcher:create_lammps_model"
 mace_eval_configs = "mace_launcher:eval_configs"

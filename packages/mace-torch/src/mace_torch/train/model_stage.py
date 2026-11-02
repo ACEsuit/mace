@@ -141,7 +141,7 @@ def run_model_stage(
     data: TorchDataBundle,
     catalogue: ObservableCatalogue,
     *,
-    precision: PrecisionConfig = DEFAULT_PRECISION,
+    precision: PrecisionConfig | None = None,
     supports_float64: bool = True,
     initialize: bool = True,
     foundation: Foundation | None = None,
@@ -153,7 +153,7 @@ def run_model_stage(
         data: What the data stage resolved. Its statistics are read, never
             recomputed.
         catalogue: The observable declarations.
-        precision: What the model computes and accumulates in.
+        precision: Optional override of config.precision, recorded in metadata.
         supports_float64: Whether the target device has float64 at all. A
             device that does not degrades the accumulation and says so.
         initialize: Draw a fresh set of weights. ``False`` leaves every
@@ -170,6 +170,9 @@ def run_model_stage(
     """
     if foundation is not None:
         config = with_foundation_architecture(config, foundation)
+    precision = precision or config.precision
+    if precision != config.precision:
+        config = config.model_copy(update={"precision": precision})
     engine, requested = build_model(
         config,
         catalogue,
@@ -221,6 +224,9 @@ def run_model_stage(
                 ]
             }
         )
+    from mace_core.citations import required_citations
+
+    metadata = metadata.model_copy(update={"citations": required_citations(metadata)})
     return BuiltModel(
         model=engine,
         outputs=requested,

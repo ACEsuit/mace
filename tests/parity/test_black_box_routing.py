@@ -167,6 +167,7 @@ def test_the_refusal_is_a_skip_whatever_the_caller_asked_for(tmp_path, monkeypat
     if not helpers.launcher_available():
         pytest_module.skip("the launcher is not installed in this environment")
 
+    # DEP-2 is still pending; training flags are supported after CLI-1.
     for capture in (False, True):
         with pytest_module.raises(BaseException) as raised:
             helpers.run_mace_train(
@@ -175,6 +176,7 @@ def test_the_refusal_is_a_skip_whatever_the_caller_asked_for(tmp_path, monkeypat
                     "train_file": str(tmp_path / "none.xyz"),
                     "r_max": 5.0,
                 },
+                script=helpers.CLI_DIRECTORY / "create_lammps_model.py",
                 capture_output=capture,
                 text=True,
                 cwd=tmp_path,

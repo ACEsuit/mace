@@ -65,13 +65,8 @@ lmdb = "mace_core.data.backends.lmdb:ASEDBBackend"
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
 
-# The one console script this package owns. Its subcommands come from the
-# packages that implement them, through the mace.commands entry point group,
-# so it is one program whatever is installed. Every legacy mace_* script stays
-# with mace-launcher; two distributions declaring the same script name is
-# undefined behaviour in pip.
-[project.scripts]
-mace = "mace_core.cli:main"
+# The framework-free registry implements command discovery; mace-launcher owns
+# the executable and engine selection. Implementations register in mace.commands.
 
 [tool.hatch.version]
 source = "vcs"

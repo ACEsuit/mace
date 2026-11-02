@@ -153,7 +153,13 @@ class MACEModel(nn.Module):
         Declared by the model that adds it, so whatever cuts a padded batch
         back reads it here rather than keeping a list of every model's.
         """
-        return dict(ENERGY_EXTRA_ROWS) if self.outputs.energy_head is not None else {}
+        rows = dict(ENERGY_EXTRA_ROWS) if self.outputs.energy_head is not None else {}
+        if (
+            self.outputs.energy_head is not None
+            and not self.outputs.energy_head.zbl_in_scale_shift
+        ):
+            rows["contributions"] = "graph"
+        return rows
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The declared observables. The graph is read and never written to."""

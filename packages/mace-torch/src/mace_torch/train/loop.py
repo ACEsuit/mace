@@ -364,6 +364,7 @@ def run_train_stage(
                 ema=ema,
             )
 
+        per_head = {}
         valid_loss: float | None = None
         improved = False
         if epoch % config.training.eval_interval == 0:
@@ -450,6 +451,16 @@ def run_train_stage(
                 evaluated_with_ema=valid_loss is not None and ema is not None,
             )
         )
+        if processes.is_main:
+            from mace_torch.train.logs import write_epoch
+
+            write_epoch(
+                config.runtime,
+                epoch,
+                train_loss,
+                per_head,
+                last=following is None or following >= config.training.max_num_epochs,
+            )
         # Every rank waits for rank zero's writes before any can read them.
         processes.barrier()
         if following is None:

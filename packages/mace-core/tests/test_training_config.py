@@ -36,6 +36,7 @@ def loaded(schema, path=None, settings=None):
 
 
 SECTIONS = (
+    "precision",
     "runtime",
     "data",
     "model",

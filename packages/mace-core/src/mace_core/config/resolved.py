@@ -17,6 +17,7 @@ from mace_core.config.e0s import FOUNDATION_E0_KINDS, E0sIsolatedAtoms
 from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.loss import LossConfig
 from mace_core.config.model import ModelConfig
+from mace_core.config.precision import PrecisionConfig
 from mace_core.config.pseudolabels import PseudolabelConfig
 from mace_core.config.runtime import RuntimeConfig
 from mace_core.config.section import FrozenSection
@@ -128,6 +129,7 @@ class ResolvedConfig(BaseConfig):
     """A validated run configuration, immutable once built.
 
     Args:
+        precision: Per-op dtypes, also used when an artifact is loaded.
         runtime: Where the run writes and how it is driven.
         data: The structures and the heads.
         model: The architecture and the declared observables.
@@ -139,6 +141,7 @@ class ResolvedConfig(BaseConfig):
 
     model_config = BaseConfig.model_config | {"frozen": True}
 
+    precision: PrecisionConfig = PrecisionConfig()
     runtime: RuntimeConfig = RuntimeConfig()
     data: DataConfig = DataConfig()
     model: ModelConfig = ModelConfig()

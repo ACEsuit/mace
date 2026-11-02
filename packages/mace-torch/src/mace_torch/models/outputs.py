@@ -236,6 +236,8 @@ class MACEOutputs(nn.Module):
                 fields["node_energies"] = terms.node_energy
                 extras["interaction_energy"] = terms.interaction_energy
                 extras["node_interaction_energy"] = terms.node_interaction_energy
+                if terms.contributions is not None:
+                    extras["contributions"] = terms.contributions
                 continue
 
             value = head(features, node_head)

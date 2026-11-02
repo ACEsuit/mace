@@ -102,6 +102,7 @@ class EnergyTerms:
     node_energy: Tensor
     interaction_energy: Tensor
     node_interaction_energy: Tensor
+    contributions: Tensor | None = None
 
 
 class EnergyOutputHead(nn.Module):
@@ -257,13 +258,30 @@ class EnergyOutputHead(nn.Module):
             e0 = e0 + embedding_node_energy
 
         node_energy = scaled.to(node_dtype) + e0.to(node_dtype)
-        interaction_total = segment_sum(scaled.to(accumulate), batch, num_graphs).to(
+        # Reduce the optional per-layer columns alongside the interaction. The
+        # E0 sum stays separate, so small interactions retain their precision.
+        interaction_columns = scaled
+        if not self.zbl_in_scale_shift:
+            pair = torch.zeros_like(e0) if zbl_node_energy is None else zbl_node_energy
+            layers = [self.scale[node_head] * layer for layer in node_energy_layers]
+            # Keep the legacy column count when a native plain model is scaled:
+            # its first interaction column also carries the per-atom shift.
+            layers[0] = layers[0] + self.shift[node_head]
+            interaction_columns = torch.stack([scaled, pair, *layers], dim=-1)
+        totals = segment_sum(interaction_columns.to(accumulate), batch, num_graphs).to(
             model_dtype
         )
+        interaction_total = totals if self.zbl_in_scale_shift else totals[:, 0]
         e0_total = segment_sum(e0.to(accumulate), batch, num_graphs).to(model_dtype)
+        contributions = (
+            None
+            if self.zbl_in_scale_shift
+            else torch.cat([e0_total[:, None], totals[:, 1:]], dim=-1)
+        )
         return EnergyTerms(
             total_energy=interaction_total + e0_total,
             node_energy=node_energy,
             interaction_energy=interaction_total,
             node_interaction_energy=scaled.to(node_dtype),
+            contributions=contributions,
         )

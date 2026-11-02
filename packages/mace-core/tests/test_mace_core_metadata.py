@@ -142,7 +142,7 @@ def test_lossy_value_is_refused_rather_than_stored():
 
 
 def test_schema_version_is_written():
-    assert SCHEMA_VERSION == "1.1"
+    assert SCHEMA_VERSION == "1.2"
     assert as_document(full_record())["schema_version"] == SCHEMA_VERSION
 
 
@@ -162,7 +162,7 @@ READ_ROUTES = pytest.mark.parametrize(
 @pytest.mark.parametrize(
     ("version", "reason"),
     [
-        ("1.2", "newer than this code"),
+        ("1.3", "newer than this code"),
         ("2.0", "newer than this code"),
         ("0.9", "older major"),
         ("0.0", "older major"),
@@ -191,7 +191,7 @@ def test_an_unreadable_schema_version_is_refused_on_every_route(read, version, r
 @pytest.mark.parametrize(
     ("version", "advice"),
     [
-        ("1.2", "Upgrade mace-core to a release that reads schema_version 1.2"),
+        ("1.3", "Upgrade mace-core to a release that reads schema_version 1.3"),
         ("2.0", "Upgrade mace-core to a release that reads schema_version 2.0"),
         ("0.9", "reconvert the model"),
     ],
@@ -404,6 +404,19 @@ SCHEMA_FIELDS["1.1"] = {
     "ElectrostaticsRecord": {"solver", "bit_parity", "descriptor"},
     "ElementExtensionRecord": {"added", "initialization", "seed", "donors"},
     "ParentModel": {"role", "name", "metadata"},
+}
+
+
+SCHEMA_FIELDS["1.2"] = {
+    **SCHEMA_FIELDS["1.1"],
+    "ModelMetadata": SCHEMA_FIELDS["1.1"]["ModelMetadata"] | {"conversion"},
+    "BasisConversionRecord": {
+        "from_basis",
+        "to_basis",
+        "projection_verified",
+        "reference",
+        "golden_gate_passed",
+    },
 }
 
 

@@ -71,7 +71,7 @@ DELIBERATELY_REUSED = frozenset(
 NOT_MODELS = frozenset({"SHModule", "ChebyshevBasisGeneral"})
 
 
-def names_used(source: str) -> set[str]:
+def names_used(source: str, *, input_tokens: bool = False) -> set[str]:
     """Every identifier the code actually refers to, docstrings excluded.
 
     Attribute access and import targets count, so `mace.modules.ScaleShiftMACE`
@@ -104,7 +104,11 @@ def names_used(source: str) -> set[str]:
             if node.asname:
                 used.add(node.asname)
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if node.value not in docstrings:
+            # CLI-1 accepts legacy model spellings as input data. Identifiers,
+            # imports and attribute accesses remain forbidden in these adapters.
+            if node.value not in docstrings and not (
+                input_tokens and node.value in LEGACY_MODEL_CLASSES
+            ):
                 used.update(part for part in node.value.replace(".", " ").split())
     return used
 
@@ -134,7 +138,13 @@ def legacy_top_level_classes() -> set[str]:
 def test_no_packages_file_names_a_legacy_symbol():
     offenders: list[str] = []
     for path in package_sources():
-        hits = names_used(path.read_text(encoding="utf-8")) & DENYLIST
+        input_adapter = path.relative_to(PACKAGES).as_posix() in {
+            "mace-torch/src/mace_torch/cli/legacy_flags.py",
+            "mace-torch/src/mace_torch/cli/training_config.py",
+        }
+        hits = names_used(
+            path.read_text(encoding="utf-8"), input_tokens=input_adapter
+        ) & DENYLIST
         if hits:
             offenders.append(f"{path.relative_to(REPO_ROOT)}: {sorted(hits)}")
     assert not offenders, (
@@ -243,3 +253,10 @@ def test_only_the_runner_names_the_legacy_side():
         if "legacy-extractor" in path.read_text(encoding="utf-8")
     )
     assert naming == ["packages/mace-torch/src/mace_torch/deploy/legacy.py"], naming
+
+
+def test_cli_input_tokens_do_not_allow_legacy_identifiers():
+    assert "MACE" not in names_used('model = "MACE"', input_tokens=True)
+    assert "MACE" in names_used('model = MACE()', input_tokens=True)
+    assert "MACE" in names_used('from mace.modules import MACE', input_tokens=True)
+    assert "MACE" in names_used('model = models.MACE()', input_tokens=True)

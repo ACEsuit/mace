@@ -42,6 +42,8 @@ dependencies = [
     # The reference electrostatics solver computes its Gaussian overlap
     # integrals and normalisations with it when it is built.
     "scipy",
+    # Training curves and the standalone plot command. Imported only when used.
+    "matplotlib>=3.6",
 ]
 
 [project.entry-points."mace.neighbor_backends"]
@@ -84,6 +86,17 @@ reference = "mace_torch.electrostatics.solver:ReferenceSolver"
 # between them. mace_core.cli finds them here and names no package itself.
 train = "mace_torch.cli.commands:TRAIN"
 "model.export-config" = "mace_torch.cli.commands:EXPORT_CONFIG"
+eval = "mace_torch.cli.commands:EVAL"
+"model.select-head" = "mace_torch.cli.commands:SELECT_HEAD"
+"model.convert" = "mace_torch.cli.commands:CONVERT"
+"model.convert-device" = "mace_torch.cli.commands:CONVERT_DEVICE"
+"data.select" = "mace_torch.cli.commands:SELECT_DATA"
+"data.prepare" = "mace_torch.cli.commands:PREPARE"
+"data.pseudolabel" = "mace_torch.cli.commands:PSEUDOLABEL"
+"plot.training" = "mace_torch.cli.commands:PLOT"
+"md.active-learning" = "mace_torch.cli.commands:MD"
+"export.lammps" = "mace_torch.cli.commands:EXPORT_LAMMPS"
+"model.migrate" = "mace_torch.cli.commands:MIGRATE"
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"

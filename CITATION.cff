@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use MACE, cite the software and the references printed for your model."
+type: software
+title: MACE
+authors:
+  - name: MACE developers
+repository-code: "https://github.com/ACEsuit/mace"
+license: MIT
+doi: 10.5281/zenodo.14103332
+preferred-citation:
+  type: conference-paper
+  title: "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields"
+  authors:
+    - family-names: Batatia
+      given-names: Ilyes
+    - family-names: Kovacs
+      given-names: David Peter
+    - family-names: Simm
+      given-names: Gregor N. C.
+    - family-names: Ortner
+      given-names: Christoph
+    - family-names: Csanyi
+      given-names: Gabor
+  year: 2022
+  collection-title: Advances in Neural Information Processing Systems
+  url: "https://openreview.net/forum?id=YPpSngE-ZU"

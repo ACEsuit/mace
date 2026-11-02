@@ -80,7 +80,7 @@ def run_data_stage(
     config: ResolvedConfig,
     catalogue: ObservableCatalogue,
     *,
-    precision: PrecisionConfig = DEFAULT_PRECISION,
+    precision: PrecisionConfig | None = None,
     predict_energy: EnergyPredictor | None = None,
     foundation: FoundationContext | None = None,
     pseudolabel: Callable[[str, list[Configuration]], list[Configuration]]
@@ -92,10 +92,8 @@ def run_data_stage(
         config: The resolved configuration.
         catalogue: The observable declarations the requested names resolve
             against.
-        precision: What the batches are bound at. An argument rather than a
-            configuration section because there is no precision section yet:
-            the legacy `default_dtype` flag is reserved for one, and inventing
-            it here would put the schema in two places.
+        precision: Optional override for batch binding. Otherwise the
+            configuration's per-op precision is used.
         predict_energy: A foundation model's energies, needed only by the
             ``estimated`` E0 kind. Injected rather than imported: fitting an E0
             is arithmetic and the model that corrects it is torch.
@@ -114,6 +112,7 @@ def run_data_stage(
         DataStageError: On anything that would otherwise train a model against
             less data than the configuration asked for.
     """
+    precision = precision or config.precision
     heads = _heads(config.data)
     requested = resolve_requested(config.model.observables, catalogue)
     key_spec = key_specification(config.data, requested)

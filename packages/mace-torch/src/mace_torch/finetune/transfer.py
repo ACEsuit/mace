@@ -174,7 +174,20 @@ def transfer_foundation(
                 ),
             }
             continue
-        if path.endswith(("node_embedding", "sender_embedding", "receiver_embedding")):
+        if path.endswith("embedding_readout"):
+            sources = [head_of[readout_from[head]] for head in heads]
+            state[path] = {
+                "weight": found["weight"]
+                .reshape(len(foundation_heads), -1)[sources]
+                .reshape(-1)
+                .clone(),
+                "bias": found["bias"][sources].clone()
+                if found["bias"].numel()
+                else found["bias"].clone(),
+            }
+        elif path.endswith(
+            ("node_embedding", "sender_embedding", "receiver_embedding")
+        ):
             state[path] = {
                 "weight": _embedding(found["weight"], rows, len(foundation_elements))
                 * (len(rows) / len(foundation_elements)) ** 0.5,

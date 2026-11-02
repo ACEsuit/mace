@@ -106,4 +106,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (ConfigError, ValidationError) as error:
             print(f"mace {' '.join(chosen.path)}: {error}", file=sys.stderr)
             return 2
-    return command.run(arguments)
+    try:
+        return command.run(arguments)
+    except (ConfigError, ValidationError, ValueError, OSError) as error:
+        print(f"mace {' '.join(chosen.path)}: {error}", file=sys.stderr)
+        return 2

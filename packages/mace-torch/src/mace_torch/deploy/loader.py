@@ -114,7 +114,7 @@ def load_deployed(
     from mace_core.elements import ResolvedE0s
 
     from mace_torch.serialization import load_checkpoint, read_sidecar
-    from mace_torch.train.model_stage import DEFAULT_PRECISION, build_model
+    from mace_torch.train.model_stage import build_model
 
     document = read_sidecar(path)
     metadata = ModelMetadata.model_validate(document["config"])
@@ -161,7 +161,7 @@ def load_deployed(
             heads=heads,
             e0s=ResolvedE0s(e0s),
             statistics=DatasetStatistics(),
-            precision=precision or DEFAULT_PRECISION,
+            precision=precision or config.precision,
             initialize=False,
         )
         built.append(outputs)

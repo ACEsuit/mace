@@ -31,7 +31,7 @@ __all__ = [
 #: adds fields, each with a default; renaming or removing a field, or changing
 #: what one means, is a major bump. A record is read when it has this major and
 #: this minor or an older one.
-SCHEMA_VERSION: Final = "1.1"
+SCHEMA_VERSION: Final = "1.2"
 
 _SCHEMA_VERSION_PATTERN: Final = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
@@ -268,6 +268,16 @@ class TrainingSummary(_Record):
         return self
 
 
+class BasisConversionRecord(_Record):
+    """An explicit artifact rewrite, never a load-time basis reinterpretation."""
+
+    from_basis: Literal["full"] = "full"
+    to_basis: Literal["reduced"] = "reduced"
+    projection_verified: bool
+    reference: str | None = None
+    golden_gate_passed: bool | None = None
+
+
 class ModelMetadata(_Record):
     """How a model was made: its config, the code, the data and what to cite."""
 
@@ -289,6 +299,7 @@ class ModelMetadata(_Record):
     elements: list[int] = Field(default_factory=list)
     #: Set only on a model produced by a training run.
     training: TrainingSummary | None = None
+    conversion: BasisConversionRecord | None = None
 
     @model_validator(mode="before")
     @classmethod

@@ -1,7 +1,6 @@
 """Engine selection, argv handling and the not-yet-migrated error."""
 
 import sys
-import types
 
 import mace_launcher
 import pytest
@@ -84,15 +83,13 @@ def test_engine_flag_without_a_value_is_refused(monkeypatch):
 def test_an_unmigrated_capability_names_itself_rather_than_a_module(monkeypatch):
     """A missing v1 CLI is a routine migration state, not an ImportError.
 
-    Evaluation is one of the eleven that have not moved yet. Training has, so
-    it is no longer the example: a script whose v1 side exists reaches it, and
-    the test below is the one that says so.
+    LAMMPS export belongs to DEP-2. Training and evaluation are available.
     """
-    monkeypatch.setattr(sys, "argv", ["mace_eval_configs", "--engine", "v1"])
+    monkeypatch.setattr(sys, "argv", ["mace_create_lammps_model", "--engine", "v1"])
     with pytest.raises(SystemExit) as excinfo:
-        mace_launcher.eval_configs()
+        mace_launcher.create_lammps_model()
     message = str(excinfo.value)
-    assert "mace_eval_configs" in message
+    assert "mace_create_lammps_model" in message
     assert "not yet available on v1 engine" in message
     assert "--engine legacy" in message
 
@@ -100,19 +97,15 @@ def test_an_unmigrated_capability_names_itself_rather_than_a_module(monkeypatch)
 def test_training_reaches_the_v1_module_now_that_it_exists(monkeypatch):
     """The dispatch is the whole of coexistence: the same script name runs one
     stack or the other, and nothing but the flag says which."""
-    called = {}
+    from mace_core import cli
 
-    def record():
-        called["v1"] = list(sys.argv)
-
-    module = types.ModuleType("mace_torch.cli.run_train")
-    module.main = record  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "mace_torch.cli.run_train", module)
+    called = []
+    monkeypatch.setattr(cli, "main", lambda argv: called.extend(argv) or 0)
     monkeypatch.setattr(
         sys, "argv", ["mace_run_train", "--engine", "v1", "--config", "run.yaml"]
     )
     mace_launcher.run_train()
-    assert called["v1"] == ["mace_run_train", "--config", "run.yaml"]
+    assert called == ["train", "--config", "run.yaml"]
 
 
 def test_both_stacks_say_the_same_thing_about_what_has_not_moved():

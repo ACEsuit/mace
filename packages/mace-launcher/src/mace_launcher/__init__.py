@@ -63,6 +63,35 @@ TARGETS = {
 }
 
 
+V1_COMMANDS = {
+    "mace_finetuning_select": ("data", "select"),
+    "mace_run_train": ("train",),
+    "mace_eval_configs": ("eval",),
+    "mace_select_head": ("model", "select-head"),
+    "mace_convert_device": ("model", "convert-device"),
+    "mace_prepare_data": ("data", "prepare"),
+    "mace_plot_train": ("plot", "training"),
+    "mace_active_learning_md": ("md", "active-learning"),
+    "mace_polar_density_cube": ("eval", "density-cube"),
+}
+
+
+def main() -> int:
+    """Hierarchical entry point; the launcher alone chooses the engine."""
+    engine, argv = _take_engine(sys.argv[1:])
+    if engine == "v1" or not argv or argv[0] in {"-h", "--help"}:
+        audit.install()
+        from mace_core.cli import main as commands
+
+        return commands(argv)
+    for script, path in sorted(V1_COMMANDS.items(), key=lambda item: -len(item[1])):
+        if argv[: len(path)] == list(path):
+            sys.argv = [script, *argv[len(path) :]]
+            _load_main(script, "legacy")()
+            return 0
+    raise SystemExit("this command is available through --engine v1")
+
+
 def _take_engine(argv: list[str]) -> tuple[str, list[str]]:
     """Pull ``--engine`` out of argv, returning the engine and what remains.
 
@@ -123,6 +152,14 @@ def _load_main(script: str, engine: str) -> Callable[[], object]:
 def _dispatch(script: str) -> None:
     """Run one console script on the selected engine."""
     engine, argv = _take_engine(sys.argv[1:])
+    if engine == "v1" and script in V1_COMMANDS:
+        audit.install()
+        from mace_core.cli import main as commands
+
+        status = commands([*V1_COMMANDS[script], *argv])
+        if status:
+            raise SystemExit(status)
+        return
     main = _load_main(script, engine)
     # The target reads sys.argv itself rather than taking it as a parameter,
     # which is why this is assigned instead of passed.

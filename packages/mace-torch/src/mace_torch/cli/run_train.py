@@ -9,11 +9,9 @@ Nothing is decided here. A default belongs to the schema, a refusal belongs to
 the stage that can explain it, and this module is what connects them, which is
 why it is short enough to read in one go.
 
-The surface is the one ``mace train`` has: a configuration file and the
-explicit flags of :data:`mace_torch.cli.commands.TRAIN_FLAGS`. This module is
-what the legacy script name ``mace_run_train`` reaches on the v1 engine. The
-faithful port of the legacy flags is its own work, and the shim that maps a
-legacy namespace onto this configuration already exists beside the schema.
+Both ``mace train`` and ``mace_run_train --engine v1`` accept structured
+configuration files and explicit flags. Legacy spellings are translated at the
+CLI boundary; the stages receive only the agreed V1 configuration.
 """
 
 from __future__ import annotations
@@ -22,10 +20,8 @@ import argparse
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast
 
 import torch.distributed as dist
-from mace_core.config import read_config_file
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_core.stages import TrainedModel
@@ -60,53 +56,25 @@ def parse(argv: Sequence[str] | None = None) -> ResolvedConfig:
         The resolved configuration: the file, with the flags given written
         into it, over the schema's own defaults.
     """
-    from mace_torch.cli.commands import TRAIN
+    from mace_torch.cli.legacy_flags import add_arguments
+    from mace_torch.cli.training_config import configuration
 
-    parser = argparse.ArgumentParser(
-        prog="mace_run_train --engine v1",
-        description="Train a model from a configuration file.",
-    )
-    TRAIN.add_to(parser)
+    parser = argparse.ArgumentParser(prog="mace train", allow_abbrev=False)
+    add_arguments(parser)
     known, rest = parser.parse_known_args(argv)
-    options = [
-        argument.split("=", 1)[0] for argument in rest if argument.startswith("--")
+    dotted = [
+        token
+        for token in rest
+        if token.startswith("--") and "." in token.split("=", 1)[0]
     ]
-    dotted = [option for option in options if "." in option]
     if dotted:
         raise SystemExit(
-            f"{', '.join(sorted(dotted))}: this engine takes no dotted "
-            f"overrides. Set the value in the configuration file; the flags it "
-            f"takes are {', '.join(flag.option for flag in TRAIN.flags)}."
+            f"{', '.join(dotted)}: set this value in the configuration "
+            f"file; V1 takes explicit flags"
         )
     if rest:
-        # A flag this command does not declare is a legacy one. Saying so is
-        # the difference between a suite that skips and one that fails: the
-        # port of those flags is its own work, and until it lands a run that
-        # asks for them has not been tried on this engine rather than tried
-        # and broken.
-        raise SystemExit(
-            f"the legacy command-line flags are {NOT_MIGRATED}: "
-            f"{', '.join(sorted(options) or rest)}. This engine takes a "
-            f"configuration file and the flags "
-            f"{', '.join(flag.option for flag in TRAIN.flags)}. Run it with "
-            f"--engine legacy, or write the run as a configuration."
-        )
-    if known.config is not None:
-        legacy_keys = set(read_config_file(known.config)) - set(
-            ResolvedConfig.model_fields
-        )
-        if legacy_keys:
-            # The same distinction for a file: a v1 configuration holds only
-            # sections, so a top-level key that is not one is a legacy flag
-            # written as YAML, which the flag port will read.
-            raise SystemExit(
-                f"a legacy YAML configuration is {NOT_MIGRATED}: {known.config} "
-                f"sets {', '.join(sorted(legacy_keys))} at the top level, where "
-                f"a v1 configuration has only the sections "
-                f"{', '.join(ResolvedConfig.model_fields)}. Run it with "
-                f"--engine legacy."
-            )
-    return cast(ResolvedConfig, TRAIN.configuration(known))
+        parser.error(f"unrecognized arguments: {' '.join(rest)}")
+    return configuration(known)
 
 
 def run(config: ResolvedConfig) -> TrainedModel:
@@ -174,6 +142,9 @@ def train(config: ResolvedConfig) -> int:
             trained.best.valid_loss,
             trained.checkpoint_path,
         )
+    from mace_torch.cli.reporting import print_citations
+
+    print_citations(trained.metadata)
     return 0
 
 

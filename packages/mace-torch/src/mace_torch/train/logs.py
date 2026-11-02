@@ -67,3 +67,29 @@ def setup_logging(runtime: RuntimeConfig, rank: int = 0) -> Path | None:
     to_file._mace_run_log = True  # ty: ignore[unresolved-attribute]
     root.addHandler(to_file)
     return path
+
+
+def write_epoch(
+    runtime: RuntimeConfig, epoch: int, train_loss: float, per_head, *, last: bool
+) -> None:
+    """Append real per-head metrics and render requested curves on rank zero."""
+    import json
+
+    directory = runtime.directory("results")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{runtime.name}.jsonl"
+    rows = [{"epoch": epoch, "mode": "train", "loss": train_loss}]
+    rows.extend(
+        {"epoch": epoch, "mode": "valid", "head": name, **metrics}
+        for name, metrics in per_head.items()
+    )
+    with path.open("w" if epoch == 0 else "a") as stream:
+        for row in rows:
+            stream.write(json.dumps(row) + "\n")
+    if runtime.plot and (
+        last
+        or (runtime.plot_frequency > 0 and (epoch + 1) % runtime.plot_frequency == 0)
+    ):
+        from mace_torch.train.plots import plot_training
+
+        plot_training([path], directory / f"{runtime.name}.png")

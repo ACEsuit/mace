@@ -188,28 +188,21 @@ def test_the_orchestrator_is_short_enough_to_read():
     assert len(statements) < 40
 
 
-def test_a_legacy_flag_says_it_has_not_moved_rather_than_failing_on_a_key():
-    """Until the flag port lands, a legacy command line on this engine has not
-    been tried rather than tried and broken, and the suite skips on it."""
-    with pytest.raises(SystemExit) as caught:
-        run_train.parse(["--name", "tiny", "--r_max", "5.0", "--num_channels", "8"])
-    message = str(caught.value)
-    assert run_train.NOT_MIGRATED in message
-    assert "--r_max" in message and "--num_channels" in message
-    assert "--engine legacy" in message
+def test_legacy_flags_reach_the_typed_configuration():
+    config = run_train.parse(
+        ["--name", "tiny", "--r_max", "5.0", "--num_channels", "8"]
+    )
+    assert config.runtime.name == "tiny"
+    assert config.model.r_max == 5.0 and config.model.num_channels == 8
 
 
-def test_a_legacy_yaml_says_it_has_not_moved(tmp_path):
-    """A legacy YAML holds flags at its top level, where a v1 file holds only
-    sections. Read as v1 it would fail validation on every key; it has not
-    been tried on this engine, so it says so and the suite skips."""
+def test_a_legacy_yaml_reaches_the_typed_configuration(tmp_path):
     path = tmp_path / "legacy.yaml"
     path.write_text("num_channels: 8\nr_max: 5.0\nE0s: average\n")
-    with pytest.raises(SystemExit) as caught:
-        run_train.parse(["--config", str(path), "--work_dir", str(tmp_path)])
-    message = str(caught.value)
-    assert run_train.NOT_MIGRATED in message
-    assert "E0s, num_channels, r_max" in message
+    config = run_train.parse(["--config", str(path), "--work_dir", str(tmp_path)])
+    assert config.model.num_channels == 8
+    assert config.data.heads["default"].e0s.kind == "average"
+    assert config.runtime.work_dir == tmp_path
 
 
 def test_a_dotted_override_is_refused_rather_than_skipped(run_directory):
