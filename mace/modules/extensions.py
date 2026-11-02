@@ -669,6 +669,12 @@ def _permute_to_e3nn_convention(x: torch.Tensor) -> torch.Tensor:
 
 @compile_mode("script")
 class PolarMACE(ScaleShiftMACE):
+    """Polarizable MACE with long-range electrostatics.
+
+    Optional pair repulsion contributes to the scaled short-range interaction
+    energy and its force and stress derivatives, as in ScaleShiftMACE.
+    """
+
     def __init__(
         self,
         kspace_cutoff_factor: float = 1.5,
@@ -1069,7 +1075,7 @@ class PolarMACE(ScaleShiftMACE):
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
-        node_es_list: List[torch.Tensor] = []
+        node_es_list: List[torch.Tensor] = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
         spin_charge_density = torch.zeros(
             (data["batch"].size(-1), self.charges_irreps.dim),
