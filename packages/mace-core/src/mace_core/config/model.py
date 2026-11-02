@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 
 from mace_core.config.base import ConfigSection
+from mace_core.elements.default_keys import Storage
 
 __all__ = [
     "AgnesiTransformConfig",
@@ -216,12 +217,38 @@ class GraphFeatureConfig(ConfigSection):
 
     name: str
     kind: Literal["categorical", "continuous"]
-    embedding_dim: int
-    num_classes: int = 0
-    input_dim: int = 1
+    embedding_dim: int = Field(ge=1)
+    num_classes: int = Field(default=0, ge=0)
+    input_dim: int = Field(default=1, ge=1)
     per: Literal["graph", "atom"] = "graph"
     offset: int = 0
     use_bias: bool = True
+
+    @model_validator(mode="after")
+    def _valid_input(self) -> GraphFeatureConfig:
+        from math import prod
+
+        from mace_core.graph import GRAPH_SCHEMA, INPUT_KEYS
+        from mace_core.graph.collate import feature_levels
+        from mace_core.graph.schema import NODE_LEVEL
+
+        if not self.name or "." in self.name:
+            raise ValueError("graph feature name must be nonempty and contain no '.'")
+        if self.kind == "categorical" and not self.num_classes:
+            raise ValueError(f"categorical feature {self.name!r} needs num_classes")
+        if self.name in INPUT_KEYS:
+            shape = GRAPH_SCHEMA[self.name].shape
+            storage = "atom" if shape[0] == NODE_LEVEL else "graph"
+            if self.per != storage:
+                raise ValueError(f"feature {self.name!r} must be per {storage}")
+            if all(isinstance(size, int) for size in shape[1:]):
+                width = prod(int(size) for size in shape[1:])
+                expected = self.input_dim if self.kind == "continuous" else 1
+                if expected != width:
+                    raise ValueError(f"feature {self.name!r} needs {width} components")
+        else:
+            feature_levels({self.name: self.per})
+        return self
 
 
 class PolarConfig(ConfigSection):
@@ -395,6 +422,30 @@ class ModelConfig(ConfigSection):
     #: against. Recorded with the model and never inferred from what is
     #: installed; `full` builds only on a backend that declares it.
     clebsch_gordan_basis: Literal["reduced", "full"] = "reduced"
+
+    @property
+    def feature_storages(self) -> dict[str, Storage]:
+        """Custom inputs' row ownership for graph building, batching and padding.
+
+        Schema inputs already carry their row declaration in GRAPH_SCHEMA.
+        """
+        from mace_core.graph import INPUT_KEYS
+
+        return {
+            spec.name: spec.per
+            for spec in self.graph_features
+            if spec.name not in INPUT_KEYS
+        }
+
+    @field_validator("graph_features")
+    @classmethod
+    def _unique_features(
+        cls, specs: tuple[GraphFeatureConfig, ...]
+    ) -> tuple[GraphFeatureConfig, ...]:
+        names = [spec.name for spec in specs]
+        if len(set(names)) != len(names):
+            raise ValueError("model.graph_features repeats an input name")
+        return specs
 
     def normalization_for_heads(
         self, sources: Mapping[str, str]

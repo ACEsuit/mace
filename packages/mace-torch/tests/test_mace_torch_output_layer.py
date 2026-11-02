@@ -545,6 +545,7 @@ def test_a_per_structure_feature_reaches_every_atom_of_that_structure():
     )
     graph = make_graph(*water())
     graph["batch"] = torch.tensor([0, 0, 1])
+    graph["ptr"] = torch.tensor([0, 2, 3])
     graph["total_spin"] = torch.tensor([1, 2])
     features = torch.zeros(3, 2, dtype=torch.float64)
 

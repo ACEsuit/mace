@@ -21,6 +21,100 @@ from mace_core.config import (
 )
 from pydantic import ValidationError
 
+
+@pytest.mark.parametrize(
+    "changes,match",
+    [
+        ({"name": "positions"}, "schema"),
+        ({"name": "energy"}, "schema"),
+        ({"name": "conditioning_present"}, "schema"),
+        ({"name": "bad.name"}, "name"),
+        ({"name": ""}, "name"),
+        ({"name": "total_charge", "per": "atom"}, "per graph"),
+        ({"name": "external_field", "input_dim": 1}, "3 components"),
+        ({"kind": "categorical"}, "num_classes"),
+        ({"input_dim": 0}, "input_dim"),
+    ],
+)
+def test_feature_config_refuses_reserved_names_and_invalid_shapes(changes, match):
+    from mace_core.config.model import GraphFeatureConfig
+
+    with pytest.raises(ValueError, match=match):
+        GraphFeatureConfig.model_validate(
+            {
+                "name": "conditioning",
+                "kind": "continuous",
+                "embedding_dim": 2,
+                **changes,
+            }
+        )
+
+
+def test_custom_feature_storage_survives_model_serialization_without_schema_rows():
+    model = ModelConfig.model_validate(
+        {
+            "graph_features": [
+                {
+                    "name": "site_state",
+                    "per": "atom",
+                    "kind": "continuous",
+                    "embedding_dim": 2,
+                },
+                {
+                    "name": "temperature",
+                    "per": "graph",
+                    "kind": "continuous",
+                    "embedding_dim": 2,
+                },
+                {
+                    "name": "total_charge",
+                    "kind": "categorical",
+                    "embedding_dim": 2,
+                    "num_classes": 3,
+                },
+            ]
+        }
+    )
+    assert ModelConfig.model_validate_json(
+        model.model_dump_json()
+    ).feature_storages == {"site_state": "atom", "temperature": "graph"}
+    with pytest.raises(ValueError, match="repeats"):
+        ModelConfig(graph_features=(model.graph_features[0], model.graph_features[0]))
+
+
+@pytest.mark.parametrize(
+    "conflict", ["storage", "dimension", "keys", "label", "categorical"]
+)
+def test_model_data_and_catalogue_agree_on_feature_meaning(conflict):
+    from mace_core.config.resolved import ResolvedConfig
+
+    input_spec = {
+        "name": "conditioning",
+        "per_atom": False,
+        "irreps": "0e",
+        "units": "unit",
+        "differentiable": True,
+    }
+    feature = {"name": "conditioning", "kind": "continuous", "embedding_dim": 2}
+    document = {
+        "catalogue": {"inputs": [input_spec], "observables": []},
+        "model": {"graph_features": [feature]},
+    }
+    if conflict == "storage":
+        feature["per"] = "atom"
+    elif conflict == "dimension":
+        feature["input_dim"] = 2
+    elif conflict == "keys":
+        document["data"] = {"embedding_specs": {"conditioning": {"per": "atom"}}}
+    elif conflict == "label":
+        document.pop("catalogue")
+        feature["name"] = "dipole"
+    else:
+        feature.update(kind="categorical", num_classes=2)
+    with pytest.raises(ValueError, match=r"conditioning|dipole"):
+        ResolvedConfig.model_validate(document)
+
+
 #: A warning the test did not ask for is a failure.
 pytestmark = pytest.mark.filterwarnings("error")
 

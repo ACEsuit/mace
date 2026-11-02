@@ -116,7 +116,7 @@ def run_data_stage(
     precision = precision or config.precision
     heads = _heads(config.data)
     requested = resolve_requested(config.model.observables, catalogue)
-    key_spec = key_specification(config.data, requested)
+    key_spec = key_specification(config.data, requested, model=config.model)
 
     train: list[Configuration] = []
     valid: list[Configuration] = []
@@ -244,6 +244,7 @@ def run_data_stage(
             targets=specs,
             heads=head_names,
             graph_inputs=graph_inputs,
+            features=config.model.feature_storages,
             augmentations=augmentations if augment else (),
         )
 
@@ -332,10 +333,23 @@ def _heads(data: DataConfig) -> dict[str, HeadDataConfig]:
 
 
 def key_specification(
-    data: DataConfig, requested: RequestedOutputs | None = None
+    data: DataConfig,
+    requested: RequestedOutputs | None = None,
+    *,
+    model: ModelConfig | None = None,
 ) -> KeySpecification:
     """The default property keys, plus the graph inputs this run renamed."""
     spec = KeySpecification.from_defaults()
+    embedding_specs = dict(data.embedding_specs)
+    if model is not None:
+        for name, storage in model.feature_storages.items():
+            declared = embedding_specs.setdefault(name, {"per": storage})
+            if declared.get("per") != storage:
+                raise ValueError(
+                    f"data.embedding_specs.{name}.per disagrees with "
+                    "model.graph_features"
+                )
+    spec.add_embedding_features(embedding_specs)
     if requested is not None:
         # Existing labels retain their agreed keys. New properties are read
         # by their declared name, in the declared per-atom/per-graph storage.

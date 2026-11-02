@@ -91,7 +91,7 @@ from mace_torch.nn import MACEBackbone
 from mace_torch.physics import DerivativeEngine
 from mace_torch.physics.fixed_point import FixedPointDriver
 from mace_torch.serialization import FORMAT as CHECKPOINT_FORMAT
-from mace_torch.train.data_stage import graph_inputs_of
+from mace_torch.train.data_stage import graph_inputs_of, key_specification
 
 __all__ = [
     "ENSEMBLE_KEYS",
@@ -303,6 +303,12 @@ class MACECalculator(Calculator):
                 "structure's graph carries one set."
             )
         self.graph_inputs = inputs.pop()
+        self.features = first.config.model.feature_storages
+        if any(
+            model.config.model.feature_storages != self.features
+            for model in self.models
+        ):
+            raise ValueError("the committee disagrees on input feature storage")
         self.has_energy = ENERGY_OBSERVABLE in self.observables
         self.magmom_key = magmom_key
         self.reads_moments = "magmom" in self.graph_inputs
@@ -334,6 +340,14 @@ class MACECalculator(Calculator):
         self.length_units_to_A = length_units_to_A
         self.info_keys = dict(DEFAULT_INFO_KEYS if info_keys is None else info_keys)
         self.arrays_keys = {**dict(arrays_keys or {}), "charges": charges_key}
+        keys = key_specification(first.config.data, model=first.config.model)
+        for name, storage in self.features.items():
+            target, declared_keys = (
+                (self.arrays_keys, keys.atom_keys)
+                if storage == "atom"
+                else (self.info_keys, keys.graph_keys)
+            )
+            target.setdefault(name, declared_keys[name])
         self.compute_atomic_stresses = compute_atomic_stresses
         self.padding = padding or PaddingPolicy.requested(
             pad_num_atoms, pad_num_edges, compiled=compile_mode is not None
@@ -384,8 +398,8 @@ class MACECalculator(Calculator):
         ``atoms.info`` entries included.
 
         Those entries are inputs to the model, so a change in one has to
-        invalidate the cached results. Array values are left to the arrays
-        comparison ASE already makes.
+        invalidate the cached results. Custom arrays need an explicit comparison:
+        ASE compares only its built-in array names.
         """
         state = super().check_state(atoms, tol=tol)
         if (
@@ -394,19 +408,17 @@ class MACECalculator(Calculator):
             and not _infos_equal(self.atoms.info, atoms.info)
         ):
             state.append("info")
-        # The moments are an input as much as the positions are, and ase's own
-        # comparison does not look at an entry it does not know.
-        if (
-            not state
-            and self.reads_moments
-            and self.atoms is not None
-            and not _arrays_equal(
-                self.atoms.arrays.get(self.magmom_key),
-                atoms.arrays.get(self.magmom_key),
-                tol,
+        if not state and self.atoms is not None:
+            keys = set(self.arrays_keys.values())
+            if self.reads_moments:
+                keys.add(self.magmom_key)
+            state.extend(
+                key
+                for key in sorted(keys)
+                if not _arrays_equal(
+                    self.atoms.arrays.get(key), atoms.arrays.get(key), tol
+                )
             )
-        ):
-            state.append(self.magmom_key)
         return state
 
     def calculate(
@@ -417,6 +429,11 @@ class MACECalculator(Calculator):
     ) -> None:
         Calculator.calculate(self, atoms)
         assert self.atoms is not None
+        # ASE copies info shallowly. Keep input arrays independent so in-place
+        # changes invalidate cached predictions as replacements do.
+        for key in self.info_keys.values():
+            if key in self.atoms.info:
+                self.atoms.info[key] = copy.deepcopy(self.atoms.info[key])
         compute = ["forces", "stress"] if self.has_energy else []
         if self.compute_atomic_stresses and self.has_energy:
             compute += ["atomic_stresses", "atomic_virials"]
@@ -576,6 +593,13 @@ class MACECalculator(Calculator):
             for name in self.graph_inputs
             if name in self.info_keys and self.info_keys[name] in atoms.info
         }
+        properties.update(
+            {
+                name: atoms.arrays[self.arrays_keys[name]]
+                for name in self.graph_inputs
+                if name in self.arrays_keys and self.arrays_keys[name] in atoms.arrays
+            }
+        )
         if self.external_field is not None and "external_field" in self.graph_inputs:
             properties["external_field"] = self.external_field
         if self.reads_moments:
@@ -603,6 +627,7 @@ class MACECalculator(Calculator):
             z_table=self.z_table,
             head=self.heads.index(self.head),
             graph_inputs=self.graph_inputs,
+            features=self.features,
         )
         if padded:
             nodes = len(atoms)
@@ -626,14 +651,26 @@ class MACECalculator(Calculator):
                 )
             self.padding = policy
         dtype = interface_dtype(self.models[0].engine)
-        graph = collate([structure], dtype=dtype)
+        graph = collate([structure], dtype=dtype, features=self.features)
         if padded:
             graph, info = pad_batch(
                 graph,
                 self.padding.graph_policy(),
                 self.r_max,
                 atomic_number_table=self.z_table,
+                features=self.features,
             )
+            # Reuse a real category so padding is valid for every committee
+            # member, including members with different category offsets.
+            for feature in self.models[0].config.model.graph_features:
+                if feature.kind == "categorical":
+                    count = (
+                        info.n_real_nodes
+                        if feature.per == "atom"
+                        else info.n_real_graphs
+                    )
+                    values = graph[feature.name]
+                    values[count:] = values[0].clone() if count else -feature.offset
         else:
             info = PaddingInfo(
                 n_real_nodes=len(atoms),
@@ -670,6 +707,8 @@ class MACECalculator(Calculator):
                 padded[0] = row
                 values[field] = padded.to(self.device)
         for field, key in self.arrays_keys.items():
+            if field in self.graph_inputs:
+                continue
             if key in atoms.arrays:
                 rows = torch.as_tensor(np.asarray(atoms.arrays[key]), dtype=dtype)
                 padded = torch.zeros((nodes, *rows.shape[1:]), dtype=dtype)
@@ -838,6 +877,8 @@ def _infos_equal(saved: Mapping[str, Any], current: Mapping[str, Any]) -> bool:
     for key, value in saved.items():
         other = current[key]
         if isinstance(value, np.ndarray) or isinstance(other, np.ndarray):
+            if not np.array_equal(value, other):
+                return False
             continue
         if value != other:
             return False

@@ -14,7 +14,6 @@ undone to save.
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -27,7 +26,6 @@ from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.data.normalization import NormalizationValues
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.graph import GRAPH_SCHEMA, INPUT_KEYS
 from mace_core.kernels.descriptors import RadialBasisDescriptor
 from mace_core.metadata import (
     ConfigRecord,
@@ -679,25 +677,6 @@ def _unbuilt_graph_features(config: ResolvedConfig) -> list[str]:
     embedding that has nothing embedded in it."""
     model = config.model
     refused = []
-    for feature in model.graph_features:
-        name = feature.name
-        if name not in INPUT_KEYS:
-            refused.append(
-                f"model.graph_features.{name} is not a per-structure input the "
-                f"graphs carry; they carry {sorted(INPUT_KEYS)}"
-            )
-        elif feature.per != "graph":
-            refused.append(
-                f"model.graph_features.{name} is per {feature.per}, and "
-                f"{name} is one value per structure"
-            )
-        elif feature.kind == "continuous" and feature.input_dim != math.prod(
-            GRAPH_SCHEMA[name].shape[1:]
-        ):
-            refused.append(
-                f"model.graph_features.{name} has input_dim {feature.input_dim}, "
-                f"and {name} has {math.prod(GRAPH_SCHEMA[name].shape[1:])} component(s)"
-            )
     if model.readout.from_embedding and not model.graph_features:
         refused.append(
             "model.readout.from_embedding is True with no model.graph_features; "

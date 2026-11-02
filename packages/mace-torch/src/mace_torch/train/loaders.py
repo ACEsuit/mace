@@ -128,7 +128,12 @@ class TrainingLoader:
         self.batch_size = batch_size
         self.seed = seed
         self.shard: IndexSharder = shard if shard is not None else list
-        self._collate = make_collate(z_table, float_dtype)
+        features = next(iter(datasets.values())).features
+        if any(dataset.features != features for dataset in datasets.values()):
+            raise ValueError(
+                "all training heads must declare the same input feature storage"
+            )
+        self._collate = make_collate(z_table, float_dtype, features=features)
         self._num_workers = num_workers
         self._pin_memory = pin_memory
 

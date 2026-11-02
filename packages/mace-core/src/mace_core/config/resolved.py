@@ -25,6 +25,7 @@ from mace_core.config.training import StageConfig, TrainingConfig
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
     ObservableCatalogue,
+    irreps_dimension,
     resolve_requested,
 )
 
@@ -175,6 +176,38 @@ class ResolvedConfig(BaseConfig):
             else stage
             for stage in stages
         )
+
+    @model_validator(mode="after")
+    def _feature_declarations_agree(self) -> ResolvedConfig:
+        catalogue = self.catalogue or DEFAULT_CATALOGUE
+        inputs = {spec.name: spec for spec in catalogue.inputs}
+        observables = {spec.name for spec in catalogue.observables}
+        for feature in self.model.graph_features:
+            name = feature.name
+            if name in observables:
+                raise ValueError(f"input feature {name!r} is also an observable label")
+            storage = self.data.embedding_specs.get(name, {}).get("per", feature.per)
+            if storage != feature.per:
+                raise ValueError(
+                    f"data.embedding_specs.{name}.per disagrees with "
+                    "model.graph_features"
+                )
+            if name in inputs:
+                spec = inputs[name]
+                width = feature.input_dim if feature.kind == "continuous" else 1
+                if (
+                    spec.per_atom != (feature.per == "atom")
+                    or irreps_dimension(spec.irreps, observable=name) != width
+                ):
+                    raise ValueError(
+                        f"input feature {name!r} disagrees with its catalogue "
+                        "shape or storage"
+                    )
+                if feature.kind == "categorical" and spec.differentiable:
+                    raise ValueError(
+                        f"categorical feature {name!r} cannot be a differentiable input"
+                    )
+        return self
 
     @model_validator(mode="before")
     @classmethod

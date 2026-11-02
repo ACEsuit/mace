@@ -38,7 +38,7 @@ import hashlib
 import json
 import logging
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -49,6 +49,7 @@ from mace_core.config import PseudolabelConfig, PseudolabelProvenance
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.configuration import Configuration, structures_fingerprint
 from mace_core.elements import AtomicNumberTable
+from mace_core.elements.default_keys import Storage
 from safetensors.numpy import load_file, save_file
 from torch import nn
 from torch.func import functional_call
@@ -119,6 +120,7 @@ def generate_pseudolabels(
     cutoff: float,
     head_index: int,
     graph_inputs: Sequence[str] = (),
+    features: Mapping[str, Storage] | None = None,
     batch_size: int = 10,
     device: str = "cpu",
 ) -> list[Configuration]:
@@ -134,6 +136,7 @@ def generate_pseudolabels(
         cutoff: Its cutoff, in Angstrom.
         head_index: Which of its heads labels them.
         graph_inputs: The inputs it reads beside the geometry.
+        features: Custom input storage, retained through graph collation.
         batch_size: How many are evaluated at once.
         device: Where.
 
@@ -154,6 +157,7 @@ def generate_pseudolabels(
         z_table=z_table,
         targets=(),
         graph_inputs=graph_inputs,
+        features=features,
     )
     labelled: list[Configuration] = []
     batches = (len(dataset) + batch_size - 1) // batch_size
@@ -164,6 +168,7 @@ def generate_pseudolabels(
                 [dataset[index] for index in range(start, start + len(chunk))],
                 z_table=z_table,
                 float_dtype="float64" if dtype == torch.float64 else "float32",
+                features=features,
             ).to(device)
             graph = dict(batch.graph)
             heads = graph["head"]
@@ -566,6 +571,7 @@ def relabelling(
                 cutoff=foundation.config.model.r_max,
                 head_index=foundation.heads.index(labels_head),
                 graph_inputs=inputs,
+                features=foundation.config.model.feature_storages,
                 batch_size=spec.batch_size or config.training.batch_size,
                 device=device,
             )

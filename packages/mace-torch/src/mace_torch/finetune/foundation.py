@@ -147,11 +147,14 @@ class Foundation:
             z_table=self.z_table,
             targets=(),
             heads=self.heads,
+            features=self.config.model.feature_storages,
         )
         rows = []
         with torch.no_grad():
             for index in range(len(dataset)):
-                batch = collate_training([dataset[index]], z_table=self.z_table)
+                batch = collate_training(
+                    [dataset[index]], z_table=self.z_table, features=dataset.features
+                )
                 descriptors = backbone.descriptors(backbone(batch.graph))
                 means = aggregate_descriptors(
                     descriptors,

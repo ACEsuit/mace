@@ -125,26 +125,8 @@ def run(args: argparse.Namespace) -> int:
         raise ValueError("--return_contributions requires a plain energy model")
     structures = list(read(args.configs, index=":"))
     inputs = graph_inputs_of(deployed.config.model)
-    keys = key_specification(deployed.config.data)
-    keys.add_embedding_features(deployed.config.data.embedding_specs)
-    keys.update(
-        graph_keys={
-            feature.name: feature.name
-            for feature in deployed.config.model.graph_features
-            if feature.per == "graph"
-            and feature.name not in keys.graph_keys
-            and feature.name not in keys.atom_keys
-        }
-    )
-    keys.update(
-        atom_keys={
-            feature.name: feature.name
-            for feature in deployed.config.model.graph_features
-            if feature.per == "atom"
-            and feature.name not in keys.atom_keys
-            and feature.name not in keys.graph_keys
-        }
-    )
+    keys = key_specification(deployed.config.data, model=deployed.config.model)
+    features = deployed.config.model.feature_storages
     columns = dict(OUTPUT_COLUMNS)
     for spec in deployed.outputs.observables:
         columns.setdefault(spec.name, OutputColumn(spec.name, spec.per_atom))
@@ -162,13 +144,14 @@ def run(args: argparse.Namespace) -> int:
                 cutoff=deployed.r_max,
                 z_table=deployed.z_table,
                 head=deployed.heads.index(head),
+                features=features,
             )
             for atoms in batch_atoms
         ]
         graph = {
             name: value.to(args.device) if isinstance(value, torch.Tensor) else value
             for name, value in collate(
-                samples, dtype=getattr(torch, args.default_dtype)
+                samples, dtype=getattr(torch, args.default_dtype), features=features
             ).items()
         }
         output = deployed.compute(graph, compute=compute)

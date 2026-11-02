@@ -433,7 +433,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/nn/backbone.py` | `MACEBackbone`: embeddings, interactions and products, features out. |
 | `mace_torch/nn/embedding.py` | Element and radial embeddings. |
 | `mace_torch/nn/field.py` | The charge-aware blocks: density update, electron-energy readout, channel-pair products. |
-| `mace_torch/nn/graph_features.py` | Graph-level inputs embedded into the node features. |
+| `mace_torch/nn/graph_features.py` | Declared graph or atomic inputs embedded into scalar node channels. |
 | `mace_torch/nn/interaction.py` | The interaction blocks: convolution, linear, skip. |
 | `mace_torch/nn/magnetic.py` | The moment-reading blocks: moment features, interaction and product couplings with the moment. |
 | `mace_torch/nn/node_inputs.py` | Declared per-node inputs mixed into the features. |

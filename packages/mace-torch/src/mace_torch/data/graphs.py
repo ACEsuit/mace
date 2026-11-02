@@ -22,7 +22,7 @@ from math import prod
 import numpy as np
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
-from mace_core.elements.default_keys import DefaultKeys
+from mace_core.elements.default_keys import DefaultKeys, Storage
 from mace_core.graph import GRAPH_SCHEMA, graph_sample
 from mace_core.neighbors import NeighborListBackend
 from mace_core.observables import RequestedOutputs, irreps_dimension
@@ -133,6 +133,7 @@ def graph_from_configuration(
     head: int = 0,
     weight: float = 1.0,
     graph_inputs: Sequence[str] = (),
+    features: Mapping[str, Storage] | None = None,
     neighbor_backend: NeighborListBackend | None = None,
 ) -> dict[str, np.ndarray]:
     """One structure's contribution to a batch, as the schema declares it.
@@ -150,6 +151,8 @@ def graph_from_configuration(
             atom. Each is taken from the structure's properties, or from
             :data:`~mace_core.graph.GRAPH_INPUT_DEFAULTS` or
             :data:`~mace_core.graph.NODE_INPUT_DEFAULTS` when it has none.
+        features: Custom input storage. A declared input missing from the
+            structure is refused; it has no schema default.
 
     Raises:
         ValueError: If the structure holds an element the table does not.
@@ -161,6 +164,7 @@ def graph_from_configuration(
         atomic_number_table=z_table,
         cutoff=cutoff,
         heads=(configuration.head,),
+        features=features,
         neighbor_backend=neighbor_backend or resolve_neighbor_backend(),
     )
     sample["head"] = np.int64(head)

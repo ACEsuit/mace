@@ -15,6 +15,7 @@ import numpy as np
 import torch
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
+from mace_core.elements.default_keys import Storage
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 
@@ -79,6 +80,7 @@ def collate_training(
     *,
     z_table: AtomicNumberTable,
     float_dtype: str = "float64",
+    features: Mapping[str, Storage] | None = None,
 ) -> TrainingBatch:
     """Join structures into one batch.
 
@@ -87,8 +89,13 @@ def collate_training(
             :mod:`mace_torch.data.graphs` builds them.
         z_table: The model's element table, used for the element index.
         float_dtype: What the floating fields are bound at.
+        features: Custom input names and their declared atom/graph storage.
     """
-    graph = collate([item[0] for item in items], dtype=getattr(torch, float_dtype))
+    graph = collate(
+        [item[0] for item in items],
+        dtype=getattr(torch, float_dtype),
+        features=features,
+    )
 
     names = list(items[0][1]) if items else []
     targets = {
@@ -125,6 +132,7 @@ class GraphDataset(Dataset):
         targets: Sequence[TargetSpec],
         heads: Sequence[str] = ("default",),
         graph_inputs: Sequence[str] = (),
+        features: Mapping[str, Storage] | None = None,
         augmentations: Sequence[Callable[[Configuration], Configuration]] = (),
     ) -> None:
         self.configurations = list(configurations)
@@ -132,6 +140,7 @@ class GraphDataset(Dataset):
         # without them.
         self.augmentations = tuple(augmentations)
         self.graph_inputs = tuple(graph_inputs)
+        self.features = dict(features or {})
         self.neighbor_backend = resolve_neighbor_backend()
         self.cutoff = cutoff
         self.z_table = z_table
@@ -153,6 +162,7 @@ class GraphDataset(Dataset):
             head=head,
             weight=float(configuration.weight),
             graph_inputs=self.graph_inputs,
+            features=self.features,
             neighbor_backend=self.neighbor_backend,
         )
         targets, weights = targets_from_configuration(
@@ -162,7 +172,10 @@ class GraphDataset(Dataset):
 
 
 def make_collate(
-    z_table: AtomicNumberTable, float_dtype: str = "float64"
+    z_table: AtomicNumberTable,
+    float_dtype: str = "float64",
+    *,
+    features: Mapping[str, Storage] | None = None,
 ) -> Callable[[Iterable[Item]], TrainingBatch]:
     """The collate function a loader over this element table needs.
 
@@ -172,7 +185,9 @@ def make_collate(
     """
 
     def collate(items: Iterable[Item]) -> TrainingBatch:
-        return collate_training(list(items), z_table=z_table, float_dtype=float_dtype)
+        return collate_training(
+            list(items), z_table=z_table, float_dtype=float_dtype, features=features
+        )
 
     return collate
 
@@ -198,7 +213,9 @@ def make_loader(
         # frozen tree seeds its training loader the same way
         # (`mace/cli/run_train.py:778`).
         generator=torch.Generator().manual_seed(seed) if seed is not None else None,
-        collate_fn=make_collate(dataset.z_table, float_dtype),
+        collate_fn=make_collate(
+            dataset.z_table, float_dtype, features=dataset.features
+        ),
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,

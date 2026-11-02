@@ -95,10 +95,12 @@ def select_structures(
         head,
         settings,
         config,
-        key_specification(config.data),
+        key_specification(config.data, model=config.model),
         foundation.context(describe=describe) if foundation is not None else None,
     )
-    return write_configurations(output, structures, key_specification(config.data))
+    return write_configurations(
+        output, structures, key_specification(config.data, model=config.model)
+    )
 
 
 def pseudolabel(
@@ -142,7 +144,7 @@ def pseudolabel(
         head,
         settings,
         config,
-        key_specification(config.data),
+        key_specification(config.data, model=config.model),
         foundation.context(describe=describe),
     )
     relabel = relabelling(config, foundation, root=directory)

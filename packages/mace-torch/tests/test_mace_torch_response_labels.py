@@ -250,16 +250,23 @@ def test_loss_refuses_a_reference_with_the_wrong_rows_even_when_numel_matches():
         ("0e", True, "elec_temp", False),
         ("1o", True, "elec_temp", False),
         ("0e", False, "strain", False),
+        ("2e", False, "conditioning", False),
+        ("2e", False, "conditioning", True),
+        ("0e", False, "conditioning", True),
+        ("1o", True, "conditioning", False),
+        ("2e", False, "pair_conditioning", False),
+        ("2e", False, "pair_conditioning", True),
     ],
 )
 def test_response_labels_train_evaluate_and_reload(
     tmp_path, device, irreps, per_atom, wrt, input_per_atom, deterministic_execution
 ):
+    feature_width = 2 if wrt == "pair_conditioning" else 1
     catalogue = declarations(
         irreps,
         per_atom,
         wrt,
-        "1o" if wrt == "pos" else "0e+2e" if wrt == "strain" else "0e",
+        "1o" if wrt == "pos" else "0e+2e" if wrt == "strain" else f"{feature_width}x0e",
         input_per_atom,
     )
     observable = catalogue.observable("q")
@@ -281,11 +288,19 @@ def test_response_labels_train_evaluate_and_reload(
             atoms.arrays["q"] = np.zeros((count, observable.dimension))
         else:
             atoms.info["q"] = np.zeros(observable.dimension)
-        if wrt == "elec_temp":
+        if wrt not in {"pos", "strain"}:
             if input_per_atom:
-                atoms.arrays[wrt] = 0.2 + 0.1 * np.arange(count)
+                values = 0.2 + 0.1 * np.arange(count)
+                atoms.arrays[wrt] = (
+                    values
+                    if feature_width == 1
+                    else np.stack((values, values + 0.1), axis=-1)
+                )
             else:
-                atoms.info[wrt] = 0.2 + index * 0.1
+                value = 0.2 + index * 0.1
+                atoms.info[wrt] = (
+                    value if feature_width == 1 else np.array([value, value + 0.1])
+                )
         frames.append(atoms)
     train_file, valid_file = tmp_path / "train.xyz", tmp_path / "valid.xyz"
     write(train_file, frames[:4])
@@ -316,10 +331,11 @@ def test_response_labels_train_evaluate_and_reload(
                     "name": wrt,
                     "kind": "continuous",
                     "embedding_dim": 2,
+                    "input_dim": feature_width,
                     "per": "atom" if input_per_atom else "graph",
                 }
             ]
-            if wrt == "elec_temp"
+            if wrt not in {"pos", "strain"}
             else [],
         },
         "training": {

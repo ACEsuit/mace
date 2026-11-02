@@ -1,8 +1,9 @@
-"""Graph-level inputs, embedded and added to the node features.
+"""Graph-level or atomic inputs, embedded and added to scalar node features.
 
-Total charge, total spin, electronic temperature, Fermi level, an external
-field. Each is one value per structure, so it is broadcast to that structure's
-atoms before it can join them.
+Total charge, total spin, electronic temperature and other declared features.
+Per-structure values are broadcast to their atoms; atomic values already have
+one row per node. Continuous components follow the configured scalar-embedding
+semantics; equivariant input streams use the backbone's declared input maps.
 
 The frozen tree configures these through a dict of strings. Here each feature
 carries a typed spec, so a misspelled kind is an error at construction with the
@@ -153,6 +154,17 @@ class GraphFeatureEmbedding(nn.Module):
                     f"{sorted(graph)}."
                 )
             value = graph[spec.name]
+            rows = batch.shape[0] if spec.level == "node" else graph["ptr"].shape[0] - 1
+            width = spec.input_dim if spec.kind == "continuous" else 1
+            if (
+                value.ndim == 0
+                or value.shape[0] != rows
+                or value.numel() != rows * width
+            ):
+                raise ValueError(
+                    f"feature {spec.name!r} has shape {tuple(value.shape)}; "
+                    f"expected {rows} {spec.level} rows with {width} component(s)"
+                )
             if spec.kind == "categorical":
                 embedded = self.embedders[spec.name](
                     (value + spec.offset).long().reshape(-1)
