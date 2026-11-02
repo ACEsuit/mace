@@ -1408,12 +1408,12 @@ class EnergyDipolesMACE(torch.nn.Module):
                 node_attrs=data["node_attrs"],
             )
             node_out = readout(node_feats).squeeze(-1)  # [n_nodes, ]
-            # node_energies = readout(node_feats).squeeze(-1)  # [n_nodes, ]
             node_energies = node_out[:, 0]
             energy = scatter_sum(
                 src=node_energies, index=data["batch"], dim=-1, dim_size=num_graphs
             )  # [n_graphs,]
             energies.append(energy)
+            node_energies_list.append(node_energies)
             node_dipoles = node_out[:, 1:]
             dipoles.append(node_dipoles)
 

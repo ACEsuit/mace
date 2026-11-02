@@ -288,6 +288,10 @@ def test_energy_dipole_mace():
     assert output["dipole"][0].unsqueeze(0).shape == atomic_data.dipole.shape
     # test energy is invariant
     assert torch.allclose(output["energy"][0], output["energy"][1])
+    # test node energies sum to the total energy per graph
+    node_energy_per_graph = torch.zeros_like(output["energy"])
+    node_energy_per_graph.index_add_(0, batch.batch, output["node_energy"])
+    assert torch.allclose(node_energy_per_graph, output["energy"])
     # test equivariance of output dipoles
     assert np.allclose(
         np.array(rot @ output["dipole"][0].detach().numpy()),
@@ -692,9 +696,7 @@ def test_use_edge_irreps_first_narrows_the_first_interaction_block():
     plain_off = modules.ScaleShiftMACE(
         **_energy_model_config(use_edge_irreps_first=False)
     )
-    assert (
-        plain_on.interactions[0].edge_irreps == plain_off.interactions[0].edge_irreps
-    )
+    assert plain_on.interactions[0].edge_irreps == plain_off.interactions[0].edge_irreps
 
 
 def test_use_edge_irreps_first_survives_the_checkpoint_config_round_trip():
@@ -802,9 +804,7 @@ _TRANSLATION_SLAB_CELLS = {
     "tilted_out_of_plane": np.array(
         [[3.2, 0.0, 1.6], [0.0, 3.1, -1.6], [0.0, 0.0, 0.0]]
     ),
-    "acute_and_tilted": np.array(
-        [[3.0, 0.0, 0.0], [2.82, 1.03, 0.4], [0.0, 0.0, 0.0]]
-    ),
+    "acute_and_tilted": np.array([[3.0, 0.0, 0.0], [2.82, 1.03, 0.4], [0.0, 0.0, 0.0]]),
 }
 
 _TRANSLATIONS = [
