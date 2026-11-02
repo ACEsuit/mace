@@ -18,6 +18,7 @@ from mace_torch.serialization import canonical_state
 
 
 @fp64_only
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
 @pytest.mark.parametrize(
     "irreps,per_atom,width,derivatives",
     [
@@ -25,14 +26,25 @@ from mace_torch.serialization import canonical_state
         ("0e", True, 1, ()),
         ("1o", False, 3, ()),
         ("0e+2e", True, 6, ()),
-        ("2e", False, 5, ("pos",)),
+        ("2e", False, 5, ("pos", "strain")),
+        ("2e", False, 5, ("elec_temp",)),
     ],
 )
 def test_custom_observable_trains_saves_and_loads_without_energy(
-    tmp_path, irreps, per_atom, width, derivatives
+    tmp_path, irreps, per_atom, width, derivatives, device
 ):
     catalogue = ObservableCatalogue(
-        inputs=(InputSpec(name="pos", irreps="1o", per_atom=True, units="A"),),
+        inputs=(
+            InputSpec(name="pos", irreps="1o", per_atom=True, units="A"),
+            InputSpec(name="strain", irreps="0e+2e", per_atom=False, units="1"),
+            InputSpec(
+                name="elec_temp",
+                irreps="0e",
+                per_atom=False,
+                units="K",
+                differentiable=True,
+            ),
+        ),
         observables=(
             ObservableSpec(
                 name="custom_property",
@@ -48,6 +60,7 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
         atoms = Atoms(
             "H2O", positions=[[0, 0, 0], [0.8 + index * 0.03, 0, 0], [0.1, 0.9, 0]]
         )
+        atoms.info["elec_temp"] = 0.2 + index * 0.1
         value = np.arange(width, dtype=float) * 0.2 + index * 0.1 + 0.5
         if per_atom:
             atoms.arrays["custom_property"] = (
@@ -66,7 +79,12 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
     write(datafile, frames)
     config = ResolvedConfig.model_validate(
         {
-            "runtime": {"work_dir": str(tmp_path), "name": "custom", "seed": 7},
+            "runtime": {
+                "work_dir": str(tmp_path),
+                "name": "custom",
+                "seed": 7,
+                "device": device,
+            },
             "data": {
                 "heads": {"default": {"train_file": str(datafile)}},
                 "valid_fraction": 0.33,
@@ -82,6 +100,11 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
                 "correlation": 2,
                 "radial_mlp": [4],
                 "readout": {"mlp_irreps": "4x0e+4x1o+4x2e"},
+                "graph_features": [
+                    {"name": "elec_temp", "kind": "continuous", "embedding_dim": 2}
+                ]
+                if "elec_temp" in derivatives
+                else [],
             },
             "loss": {"weights": {"custom_property": 1.0}},
             "training": {
@@ -95,7 +118,7 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
     )
     initial = build(config)
     before = {
-        path: {key: value.clone() for key, value in values.items()}
+        path: {key: value.to(device).clone() for key, value in values.items()}
         for path, values in canonical_state(initial.model).items()
     }
     trained = run(config)
@@ -105,10 +128,25 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
         for path, values in before.items()
         for key, value in values.items()
     )
+    if "elec_temp" in derivatives:
+        embedded = [
+            (path, key, value)
+            for path, values in before.items()
+            if "graph_embedding" in path
+            for key, value in values.items()
+        ]
+        assert embedded and any(
+            not torch.equal(value, after[path][key]) for path, key, value in embedded
+        )
+        from mace_torch.finetune.freeze import freeze
+
+        freeze(initial.model, 1)
+        features = initial.model.get_submodule("backbone.backbone.graph_embedding")
+        assert all(not parameter.requires_grad for parameter in features.parameters())
     assert trained.checkpoint_path is not None
-    loaded = load_deployed(trained.checkpoint_path)
+    loaded = load_deployed(trained.checkpoint_path, device=device)
     assert loaded.engine.energy is None
-    batch = next(iter(initial.data.train_eval_loaders["default"]))
+    batch = next(iter(initial.data.train_eval_loaders["default"])).to(device)
     expected = trained.model(batch.graph, compute=()).get("custom_property")
     actual = loaded.engine(batch.graph, compute=()).get("custom_property")
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
@@ -117,25 +155,61 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
     )
     for wrt in derivatives:
         name = catalogue.observable("custom_property").derivative_name(wrt)
-        assert name == "d_custom_property_d_pos"
+        assert name == f"d_custom_property_d_{wrt}"
         response = loaded.engine(batch.graph, compute=(name,)).get(name)
-        assert response.shape == (width, len(batch.graph["positions"]), 3)
         assert torch.isfinite(response).all() and torch.count_nonzero(response)
-        # A real positional derivative of the trained tensor, not just a key.
+        # Independent perturbations of the physical input of the trained model.
         step = 1e-5
         samples = []
         for offset in (-step, step):
-            moved = {**batch.graph, "positions": batch.graph["positions"].clone()}
-            moved["positions"][0, 0] += offset
+            moved = dict(batch.graph)
+            if wrt == "pos":
+                moved["positions"] = batch.graph["positions"].clone()
+                moved["positions"][0, 0] += offset
+                tested = response[:, 0, 0]
+                assert response.shape == (width, len(moved["positions"]), 3)
+            elif wrt == "strain":
+                strain = torch.zeros_like(batch.graph["cell"])
+                strain[0, 0, 0] = offset
+                moved["positions"] = batch.graph["positions"] + torch.einsum(
+                    "ni,nij->nj", batch.graph["positions"], strain[batch.graph["batch"]]
+                )
+                moved["cell"] = batch.graph["cell"] + batch.graph["cell"] @ strain
+                moved["shifts"] = torch.einsum(
+                    "ni,nij->nj",
+                    batch.graph["unit_shifts"].to(moved["cell"]),
+                    moved["cell"][batch.graph["batch"][batch.graph["edge_index"][0]]],
+                )
+                tested = response[:, 0, 0, 0]
+                assert response.shape == (width, len(moved["cell"]), 3, 3)
+            else:
+                moved[wrt] = batch.graph[wrt].clone()
+                moved[wrt][0] += offset
+                tested = response[:, 0].reshape(width)
+                assert response.shape[1:] == moved[wrt].shape
             samples.append(loaded.engine(moved, compute=()).get("custom_property")[0])
         from tests.golden.harness import FP64_CPU_REFERENCE
 
         torch.testing.assert_close(
-            response[:, 0, 0],
+            tested,
             (samples[1] - samples[0]) / (2 * step),
             atol=FP64_CPU_REFERENCE.atol,
             rtol=FP64_CPU_REFERENCE.rtol,
         )
+        loaded.engine.zero_grad(set_to_none=True)
+        differentiable = loaded.engine(batch.graph, compute=(name,), training=True).get(
+            name
+        )
+        differentiable.square().mean().backward()
+        gradients = [
+            parameter.grad
+            for parameter in loaded.engine.parameters()
+            if parameter.grad is not None
+        ]
+        assert gradients and all(
+            torch.isfinite(gradient).all() for gradient in gradients
+        )
+        assert any(torch.count_nonzero(gradient) for gradient in gradients)
 
 
 def test_a_second_catalogue_cannot_silently_replace_the_config():

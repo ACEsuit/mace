@@ -49,11 +49,11 @@ def freeze(model: nn.Module, level: int | None) -> dict[str, float]:
     """
     factors: dict[str, float] = {}
     for group in frozen_groups(level):
-        marker = GROUP_MARKERS[group]
+        markers = GROUP_MARKERS[group]
         held = [
             parameter
             for name, parameter in model.named_parameters()
-            if marker in f".{name}."
+            if any(marker in f".{name}." for marker in markers)
         ]
         if not held:
             raise ValueError(

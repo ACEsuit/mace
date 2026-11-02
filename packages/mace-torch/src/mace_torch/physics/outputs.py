@@ -324,9 +324,11 @@ class DerivativeEngine(nn.Module):
             magnetic moment and an external field go through the same code, and
             neither appears as a literal in it.
         responses: Observables other than the energy whose declared derivative
-            against the positions can be asked for by its declared name, a
-            dipole's ``dmu_dr`` for one. Each is taken component by component,
-            as ``[components, n_atoms, 3]``.
+            can be asked for by its declared name. Tensor responses have shape
+            ``[components, rows, *input_shape]``; scalars omit the component
+            axis. Rows belong to atoms if either the observable or its input
+            is per atom, and otherwise to structures. Atom-to-atom Jacobians
+            are outside the catalogue contract.
 
     A model with no energy is wrapped with ``energy=None``; it can then be asked
     only for response derivatives.
@@ -356,13 +358,29 @@ class DerivativeEngine(nn.Module):
         self.energy = energy
         self.inputs = list(inputs)
         self.differentiable_inputs = [
-            spec for spec in self.inputs if spec.differentiable
+            spec
+            for spec in self.inputs
+            if spec.differentiable and spec.name not in {"pos", "strain"}
         ]
         self.responses = {
-            spec.derivative_name("pos"): spec
+            spec.derivative_name(request.wrt): (spec, request.wrt)
             for spec in responses
-            if "pos" in spec.requested_derivatives()
+            for request in spec.derivatives
         }
+        for spec, wrt in self.responses.values():
+            declared = next((item for item in self.inputs if item.name == wrt), None)
+            if wrt not in {"pos", "strain"} and declared is None:
+                raise ValueError(
+                    f"{spec.derivative_name(wrt)!r} needs the undeclared input "
+                    f"{wrt!r}. Declare it under `inputs`."
+                )
+            per_atom = wrt == "pos" or (declared is not None and declared.per_atom)
+            if spec.per_atom and per_atom:
+                raise ValueError(
+                    f"{spec.derivative_name(wrt)!r} has one block per pair of "
+                    "atoms, which the catalogue cannot represent. Differentiate "
+                    "a per-graph observable or use a per-graph input."
+                )
         self._compiled_model: Callable[..., MACEOutput[Tensor]] | None = None
 
     def model_forward(self, prepared: Mapping[str, Any]) -> MACEOutput[Tensor]:
@@ -474,17 +492,29 @@ class DerivativeEngine(nn.Module):
         need_forces = (
             bool(wanted & {"forces"}) or need_edges or need_strain or need_hessian
         )
+        response_inputs = {self.responses[name][1]: name for name in wanted_responses}
+        for spec in self.inputs:
+            if (
+                spec.name in response_inputs
+                and spec.name not in {"pos", "strain"}
+                and not spec.differentiable
+            ):
+                raise ValueError(
+                    f"{response_inputs[spec.name]!r} needs input {spec.name!r} "
+                    "to be differentiable. Set `differentiable: true` on it."
+                )
         # Only the inputs whose derivative was actually asked for. A leaf that
         # nobody differentiates still holds the whole backward graph alive.
         leaves = [
             spec
             for spec in self.differentiable_inputs
-            if by_input.get(spec.name) in wanted
+            if by_input.get(spec.name) in wanted or spec.name in response_inputs
         ]
         for spec in leaves:
             if spec.name not in graph:
                 raise KeyError(
-                    f"{by_input[spec.name]!r} was requested, so the declared "
+                    f"{response_inputs.get(spec.name, by_input.get(spec.name))!r} "
+                    "was requested, so the declared "
                     f"input {spec.name!r} has to be in the graph, and it is "
                     f"not. The keys present are {sorted(graph)}. Absence is "
                     f"the key being absent; a value of all zeros is a present "
@@ -493,8 +523,8 @@ class DerivativeEngine(nn.Module):
 
         prepared, positions, displacement = prepare_inputs(
             graph,
-            need_forces=need_forces or bool(wanted_responses),
-            need_stress=need_strain,
+            need_forces=need_forces or bool(response_inputs.keys() & {"pos", "strain"}),
+            need_stress=need_strain or "strain" in response_inputs,
             leaves=[spec.name for spec in leaves],
         )
         if need_edges and not prepared["shifts"].requires_grad:
@@ -505,11 +535,26 @@ class DerivativeEngine(nn.Module):
         run = self._compiled_model or self.model_forward
         output = run(prepared)
         if wanted_responses:
-            for name in wanted_responses:
+            response_targets = {
+                "pos": positions,
+                "strain": displacement,
+                **{spec.name: prepared[spec.name] for spec in leaves},
+            }
+            for index, name in enumerate(wanted_responses):
+                target = response_targets[self.responses[name][1]]
+                assert target is not None
                 output.extras[name] = self._response_derivative(
-                    output, name, positions, training
+                    output,
+                    name,
+                    target,
+                    graph["batch"],
+                    training,
+                    retain_graph=training
+                    or index < len(wanted_responses) - 1
+                    or bool(wanted - set(wanted_responses)),
                 )
             wanted = wanted - set(wanted_responses)
+        leaves = [spec for spec in leaves if by_input.get(spec.name) in wanted]
         if not wanted:
             return output
         # Everything left is an energy derivative, which a model with no energy
@@ -620,20 +665,24 @@ class DerivativeEngine(nn.Module):
         self,
         output: MACEOutput[Tensor],
         name: str,
-        positions: Tensor,
+        target: Tensor,
+        batch: Tensor,
         training: bool,
+        retain_graph: bool,
     ) -> Tensor:
-        """One response derivative, ``[components, n_atoms, 3]``.
+        """Signed response, ``[components, rows, *input_shape]``.
 
-        A scalar observable omits the leading component axis, as forces do.
+        A scalar observable omits the leading component axis. Strain responses
+        are raw derivatives, with no volume division or periodicity masking.
+        Their units are the observable's units divided by the input's units.
 
-        Each component of the per-structure value is differentiated in turn,
-        summed over the structures: an atom belongs to one structure, so the
-        sum takes each atom's derivative of its own structure's value. A matrix
-        value is flattened row major, so a polarizability's nine components are
-        ``xx, xy, xz, yx, ...``.
+        Each component is differentiated in turn, summed over independent
+        structures. A per-atom observable against a per-graph input needs one
+        Jacobian row per atom instead; summing those rows loses each atom's
+        response. Matrix observables are flattened row major, preserving the
+        existing dielectric layout.
         """
-        spec = self.responses[name]
+        spec, wrt = self.responses[name]
         value = output.get(spec.name)
         if value is None:
             raise ValueError(
@@ -643,16 +692,33 @@ class DerivativeEngine(nn.Module):
         flat = value.reshape(value.shape[0], -1)
         rows = []
         for component in range(flat.shape[1]):
-            (gradient,) = torch.autograd.grad(
-                outputs=[flat[:, component].sum()],
-                inputs=[positions],
-                retain_graph=True,
-                create_graph=training,
-                allow_unused=True,
+            values = (
+                flat[:, component]
+                if spec.per_atom
+                else flat[:, component].sum().unsqueeze(0)
             )
-            rows.append(torch.zeros_like(positions) if gradient is None else gradient)
+            derivatives = []
+            for row, value in enumerate(values):
+                keep = (
+                    retain_graph
+                    or component < flat.shape[1] - 1
+                    or row < len(values) - 1
+                )
+                gradient = None
+                if value.requires_grad:
+                    (gradient,) = torch.autograd.grad(
+                        value,
+                        target,
+                        retain_graph=keep,
+                        create_graph=training,
+                        allow_unused=True,
+                    )
+                if gradient is None:
+                    gradient = target * 0 if training else torch.zeros_like(target)
+                derivatives.append(gradient[batch[row]] if spec.per_atom else gradient)
+            rows.append(torch.stack(derivatives) if spec.per_atom else derivatives[0])
         derivative = rows[0] if spec.is_scalar else torch.stack(rows)
-        return spec.derivative_sign("pos") * derivative
+        return spec.derivative_sign(wrt) * derivative
 
     def canonical_components(self) -> dict[str, nn.Module | None]:
         """Stable checkpoint roles, independent of implementation attributes."""

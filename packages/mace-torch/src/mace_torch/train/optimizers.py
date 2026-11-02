@@ -47,11 +47,11 @@ GROUPS = ("embedding", "interactions", "products", "readouts")
 
 #: What a parameter's name contains when it belongs to each group. Stated once,
 #: because freezing a group and optimizing it have to agree on what it holds.
-GROUP_MARKERS: dict[str, str] = {
-    "embedding": "node_embedding",
-    "interactions": ".interactions.",
-    "products": ".products.",
-    "readouts": ".readouts.",
+GROUP_MARKERS: dict[str, tuple[str, ...]] = {
+    "embedding": ("node_embedding", "graph_embedding"),
+    "interactions": (".interactions.",),
+    "products": (".products.",),
+    "readouts": (".readouts.",),
 }
 
 #: The blocks a charge-aware model adds around its density, one group without
@@ -80,9 +80,12 @@ class UnsupportedOptimizerError(NotImplementedError):
     """An optimizer kind this stage does not build."""
 
 
-def _named(model: nn.Module, prefix: str) -> Iterator[tuple[str, nn.Parameter]]:
+def _named(
+    model: nn.Module, prefix: str | tuple[str, ...]
+) -> Iterator[tuple[str, nn.Parameter]]:
+    markers = (prefix,) if isinstance(prefix, str) else prefix
     for name, parameter in model.named_parameters():
-        if parameter.requires_grad and prefix in name:
+        if parameter.requires_grad and any(marker in name for marker in markers):
             yield name, parameter
 
 

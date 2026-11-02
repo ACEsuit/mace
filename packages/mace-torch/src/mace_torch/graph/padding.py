@@ -259,7 +259,8 @@ def unpad_outputs(
     """The real slots of a padded model's outputs.
 
     Per-graph values keep their first ``n_real_graphs`` rows and per-atom
-    values their first ``n_real_nodes``. Whether a value is per atom comes
+    values their first ``n_real_nodes``. Tensor responses keep their leading
+    component axis and trim their second axis. Whether a value is per atom comes
     from the core fields of :class:`~mace_core.outputs.MACEOutput` and, for
     anything else, from ``catalogue``; it is never inferred from a shape.
 
@@ -279,34 +280,38 @@ def unpad_outputs(
         unpadded: MACEOutput = MACEOutput()
         for name in CORE_FIELD_NAMES:
             value = getattr(outputs, name)
-            setattr(unpadded, name, _keep_real(value, _CORE_FIELD_PER_ATOM[name], info))
+            setattr(
+                unpadded, name, _keep_real(value, _CORE_FIELD_PER_ATOM[name], info=info)
+            )
         unpadded.extras = {
-            name: _keep_real(value, _per_atom(name, catalogue), info)
+            name: _keep_real(value, *_layout(name, catalogue), info=info)
             for name, value in outputs.extras.items()
         }
         return unpadded
     return {
-        name: _keep_real(value, _per_atom(name, catalogue), info)
+        name: _keep_real(value, *_layout(name, catalogue), info=info)
         for name, value in outputs.items()
     }
 
 
-def _per_atom(name: str, catalogue: ObservableCatalogue) -> bool:
+def _layout(name: str, catalogue: ObservableCatalogue) -> tuple[bool, int]:
     if name in _CORE_FIELD_PER_ATOM:
-        return _CORE_FIELD_PER_ATOM[name]
+        return _CORE_FIELD_PER_ATOM[name], 0
     for spec in catalogue.observables:
         if spec.name == name:
-            return spec.per_atom
-    for derivative in catalogue.requested_derivatives():
-        if derivative.name == name:
-            return derivative.per_atom
+            return spec.per_atom, 0
+        for request in spec.derivatives:
+            if spec.derivative_name(request.wrt) == name:
+                derivative = catalogue.derivative(spec.name, request.wrt)
+                return derivative.per_atom, 0 if spec.is_scalar else 1
     raise KeyError(
         f"{name!r} is not an observable the catalogue declares, so whether it is "
         f"per atom is unknown. Declare it, or pass the model's catalogue."
     )
 
 
-def _keep_real(value: Any, per_atom: bool, info: PaddingInfo) -> Any:
+def _keep_real(value: Any, per_atom: bool, axis: int = 0, *, info: PaddingInfo) -> Any:
     if value is None:
         return None
-    return value[: info.n_real_nodes] if per_atom else value[: info.n_real_graphs]
+    count = info.n_real_nodes if per_atom else info.n_real_graphs
+    return value[:count] if axis == 0 else value[:, :count]

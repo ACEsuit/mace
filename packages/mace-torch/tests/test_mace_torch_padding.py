@@ -335,8 +335,7 @@ def test_a_misspelled_feature_storage_is_refused_when_padding(batch):
 
 
 def _electrostatic_catalogue():
-    """A catalogue declaring per-atom extras and a per-atom derivative of a
-    per-graph observable, the shape of the Born effective charges."""
+    """Response derivatives and solver-produced observables have distinct layouts."""
     positions = InputSpec(name="pos", irreps="1o", per_atom=True, units="Å")
     return ObservableCatalogue(
         inputs=(positions,),
@@ -352,36 +351,41 @@ def _electrostatic_catalogue():
             ObservableSpec(
                 name="latent_charges", irreps="0e", per_atom=True, units="e"
             ),
+            # ARCH-5: BEC is returned by the solver, not computed by the
+            # derivative engine. Its atom axis remains first.
+            ObservableSpec(
+                name="born_charges", irreps="0e+1e+2e", per_atom=True, units="e"
+            ),
         ),
     )
 
 
 def test_declared_extras_and_derivatives_are_stripped_by_their_declaration():
     catalogue = _electrostatic_catalogue()
-    born_charges = catalogue.derivative("dipole", "pos").name
+    response = catalogue.derivative("dipole", "pos").name
     info = PaddingInfo(n_real_nodes=4, n_real_edges=0, n_real_graphs=1)
     output = MACEOutput(total_energy=torch.zeros(2), forces=torch.zeros(9, 3))
     output.extras = {
         "latent_charges": torch.zeros(9),
-        born_charges: torch.zeros(9, 3, 3),
+        response: torch.zeros(3, 9, 3),
     }
     real = unpad_outputs(output, info, catalogue=catalogue)
     assert real.extras["latent_charges"].shape == (4,)
-    assert real.extras[born_charges].shape == (4, 3, 3)
+    assert real.extras[response].shape == (3, 4, 3)
     mapping = unpad_outputs(
-        {"dipole": torch.zeros(2, 3), born_charges: torch.zeros(9, 3, 3)},
+        {"dipole": torch.zeros(2, 3), response: torch.zeros(3, 9, 3)},
         info,
         catalogue=catalogue,
     )
     assert mapping["dipole"].shape == (1, 3)
-    assert mapping[born_charges].shape == (4, 3, 3)
+    assert mapping[response].shape == (3, 4, 3)
 
 
 def test_born_charge_forces_add_to_the_forces_after_unpadding():
     """forces += einsum(born charges, field) broadcasts only if both were
     stripped of the same padding rows."""
     catalogue = _electrostatic_catalogue()
-    born_charges = catalogue.derivative("dipole", "pos").name
+    born_charges = "born_charges"
     info = PaddingInfo(n_real_nodes=4, n_real_edges=0, n_real_graphs=1)
     real = unpad_outputs(
         {"forces": torch.zeros(9, 3), born_charges: torch.ones(9, 3, 3)},

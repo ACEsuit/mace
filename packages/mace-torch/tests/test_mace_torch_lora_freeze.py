@@ -233,7 +233,11 @@ def test_a_frozen_group_takes_no_gradient_and_has_no_learning_rate(level):
     from mace_torch.train.optimizers import GROUP_MARKERS
 
     for name, parameter in engine.named_parameters():
-        frozen = any(GROUP_MARKERS[g] in f".{name}." for g in frozen_groups(level))
+        frozen = any(
+            marker in f".{name}."
+            for group in frozen_groups(level)
+            for marker in GROUP_MARKERS[group]
+        )
         assert parameter.requires_grad is not frozen, name
     training = config.training.model_copy(
         update={
