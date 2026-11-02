@@ -127,9 +127,25 @@ def train_on_v1(directory: Path) -> subprocess.CompletedProcess:
     return on_v1("--config", str(tiny_task(directory)))
 
 
+def training_records(directory: Path, name="tiny") -> list[dict]:
+    return [
+        json.loads(line)
+        for line in (directory / f"results/{name}.jsonl").read_text().splitlines()
+    ]
+
+
 def validation_losses(directory: Path) -> dict[int, float]:
-    records = [json.loads(line) for line in (directory / "results/tiny.jsonl").read_text().splitlines()]
+    records = training_records(directory)
     return {record["epoch"]: record["loss"] for record in records if record["mode"] == "valid"}
+
+
+def optimizer_steps(directory: Path) -> dict[int, int]:
+    from collections import Counter
+
+    records = [row for row in training_records(directory) if row["mode"] == "opt"]
+    assert records
+    assert all(np.isfinite(row["loss"]) and row.get("head") is None for row in records)
+    return dict(Counter(row["epoch"] for row in records))
 
 
 @needs_the_v1_engine
@@ -141,7 +157,29 @@ def test_the_tiny_task_trains_on_the_v1_engine(tmp_path):
     losses = validation_losses(tmp_path)
     assert len(losses) == 4
     assert losses[3] < losses[0]
+    assert optimizer_steps(tmp_path) == {0: 2, 1: 2, 2: 2, 3: 2}
     assert (tmp_path / "tiny.run-000004.safetensors").is_file()
+
+
+@needs_the_v1_engine
+@pytest.mark.parametrize("balancing", ["balanced", "proportional"])
+@pytest.mark.parametrize("lbfgs", [False, True])
+def test_oversized_batch_is_diagnosed_only_for_minibatch_training(tmp_path, balancing, lbfgs):
+    config = variant(tiny_task(tmp_path), {"training.head_balancing": balancing})
+    flags = ["--lbfgs"] if lbfgs else []
+    finished = on_v1(
+        "--config", str(config), "--batch_size", "64", "--max_num_epochs", "1", *flags
+    )
+    if lbfgs:
+        assert finished.returncode == 0, finished.stderr
+        assert optimizer_steps(tmp_path) == {0: 1}
+        assert (tmp_path / "tiny.safetensors").is_file()
+    else:
+        assert finished.returncode != 0
+        assert "--batch_size" in finished.stderr
+        assert "training.batch_size=64" in finished.stderr
+        assert "incomplete batch" in finished.stderr
+        assert not (tmp_path / "tiny.safetensors").exists()
 
 
 @needs_the_v1_engine
@@ -169,7 +207,7 @@ def test_explicit_training_flags_write_a_readable_v1_artifact(tmp_path):
     """The real launcher accepts legacy flag spellings and writes safetensors."""
     tiny_task(tmp_path)
     finished = on_v1(
-        "--name", "flags", "--work_dir", str(tmp_path),
+        "--name", "flags", "--results_dir", str(tmp_path),
         "--train_file", str(tmp_path / "train.xyz"),
         "--E0s", "isolated", "--num_radial_basis", "6",
         "--r_max", "5.0", "--num_channels", "4", "--max_L", "1",
@@ -271,6 +309,11 @@ def test_a_multihead_run_reports_every_head_separately(tmp_path):
         assert row in finished.stderr
     assert "head small" in finished.stderr
     assert "head large" in finished.stderr
+    records = training_records(tmp_path)
+    assert [
+        (row["epoch"], row["head"]) for row in records if row["mode"] == "valid"
+    ] == [(0, "small"), (0, "large"), (1, "small"), (1, "large")]
+    assert optimizer_steps(tmp_path) == {0: 12, 1: 12}
 
 
 @needs_the_v1_engine
@@ -343,8 +386,16 @@ def test_a_fine_tune_runs_from_the_console_script(tmp_path):
 def test_a_fine_tune_leaves_the_replay_head_out_of_its_table(tmp_path):
     finished = fine_tune(tmp_path)
     assert finished.returncode == 0, finished.stderr
-    assert "valid_target" in finished.stderr
-    assert "valid_replay" not in finished.stderr
+    assert "train_target" in finished.stderr and "valid_target" in finished.stderr
+    assert "| train_replay" not in finished.stderr
+    assert "| valid_replay" not in finished.stderr
+    for split in ("train_replay", "valid_replay"):
+        assert f"Skipping evaluation of {split} (head replay)" in finished.stderr
+    records = training_records(tmp_path, "tuned")
+    assert [(row["epoch"], row["head"]) for row in records if row["mode"] == "valid"] == [
+        (0, "replay"), (0, "target"), (1, "replay"), (1, "target")
+    ]
+    assert {row.get("head") for row in records if row["mode"] == "opt"} == {None}
 
 
 #: A run that continues the newest checkpoint of the same name.
@@ -370,6 +421,7 @@ def test_restart_latest_continues_the_run(tmp_path):
     assert first.returncode == 0, first.stderr
     assert evaluated_epochs(first.stderr) == [0, 1]
     before = validation_losses(tmp_path)
+    original_records = training_records(tmp_path)
 
     resumed = on_v1("--config", str(variant(config, RESTART)))
     assert resumed.returncode == 0, resumed.stderr
@@ -378,6 +430,8 @@ def test_restart_latest_continues_the_run(tmp_path):
     after = validation_losses(tmp_path)
     assert after.keys() == {0, 1, 2, 3}
     assert after[2] <= 1.5 * before[1]
+    assert training_records(tmp_path)[:len(original_records)] == original_records
+    assert optimizer_steps(tmp_path) == {0: 2, 1: 2, 2: 2, 3: 2}
 
 
 @needs_the_v1_engine
@@ -431,6 +485,7 @@ def test_an_lbfgs_run_trains_from_the_console_script(tmp_path, regression_set):
     assert (tmp_path / "tiny.safetensors").is_file()
     losses = validation_losses(tmp_path)
     assert losses[3] < losses[0]
+    assert optimizer_steps(tmp_path) == {0: 1, 1: 1, 2: 1, 3: 1}
 
 
 @needs_the_v1_engine
@@ -438,7 +493,7 @@ def test_a_mini_batch_run_continued_under_lbfgs_says_its_optimizer_is_new(tmp_pa
     """The frozen tree's way of finishing a run with L-BFGS: train, then
     restart with the flag. The restart reports that the optimizer's state did
     not carry over rather than loading one optimizer's state into another."""
-    config = tiny_task(tmp_path)
+    config = variant(tiny_task(tmp_path), {"training.eval_interval": 2})
     first = on_v1("--config", str(config), "--max_num_epochs", "2")
     assert first.returncode == 0, first.stderr
 
@@ -446,7 +501,9 @@ def test_a_mini_batch_run_continued_under_lbfgs_says_its_optimizer_is_new(tmp_pa
     assert resumed.returncode == 0, resumed.stderr
     assert "Resumed with a new optimizer" in resumed.stderr
     assert "written by Adam and the run resumes with LBFGS" in resumed.stderr
-    assert evaluated_epochs(resumed.stderr) == [2, 3]
+    assert evaluated_epochs(resumed.stderr) == [2]
+    assert validation_losses(tmp_path).keys() == {0, 2}
+    assert optimizer_steps(tmp_path) == {0: 2, 1: 2, 2: 1, 3: 1}
 
 
 @needs_the_v1_engine

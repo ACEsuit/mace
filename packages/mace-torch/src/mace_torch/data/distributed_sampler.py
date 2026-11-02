@@ -55,18 +55,29 @@ def training_shard(rank: int, world_size: int, *, pad: bool = True):
 
 
 class EvaluationSampler(Sampler[int]):
-    """Every ``world_size``-th structure from this process's offset, unpadded.
+    """Every ``world_size``-th batch from this process's offset, unpadded.
 
     Args:
         dataset: What is evaluated.
         rank: The process's index.
         world_size: How many processes share it.
+        batch_size: Keep whole evaluation batches together so the sum of
+            batch losses is the same as in a single-process evaluation.
     """
 
-    def __init__(self, dataset: Dataset, rank: int, world_size: int) -> None:
+    def __init__(
+        self, dataset: Dataset, rank: int, world_size: int, *, batch_size: int = 1
+    ) -> None:
         if not 0 <= rank < world_size:
             raise ValueError(f"rank {rank} is not in a world of {world_size}.")
-        self._indices = list(range(rank, len(dataset), world_size))  # ty: ignore[invalid-argument-type]
+        if batch_size < 1:
+            raise ValueError("evaluation batch_size must be positive")
+        length = len(dataset)  # ty: ignore[invalid-argument-type]
+        self._indices = [
+            index
+            for start in range(rank * batch_size, length, world_size * batch_size)
+            for index in range(start, min(start + batch_size, length))
+        ]
 
     def __iter__(self) -> Iterator[int]:
         return iter(self._indices)

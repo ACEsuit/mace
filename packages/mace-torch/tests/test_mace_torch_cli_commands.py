@@ -244,7 +244,8 @@ def test_eval_descriptor_options_and_optional_columns(artifact, tmp_path):
         )
 
 
-def test_eval_from_launcher_converts_precision(artifact, tmp_path):
+@pytest.mark.parametrize("requested_dtype", ["float32", "float64"])
+def test_eval_from_launcher_converts_precision(artifact, tmp_path, requested_dtype):
     source, target = tmp_path / "source.xyz", tmp_path / "float32.xyz"
     atoms = water(True)
     write(source, [atoms])
@@ -261,7 +262,7 @@ def test_eval_from_launcher_converts_precision(artifact, tmp_path):
             "--output",
             str(target),
             "--default_dtype",
-            "float32",
+            requested_dtype,
             "--compute_stress",
         ],
         capture_output=True,
@@ -269,6 +270,9 @@ def test_eval_from_launcher_converts_precision(artifact, tmp_path):
         check=False,
     )
     assert finished.returncode == 0, finished.stderr
+    assert ("does not match model dtype" in finished.stderr) == (
+        requested_dtype == "float32"
+    )
     result = read(target)
     assert isinstance(result, Atoms)
     for dtype in ("float32", "float64"):
@@ -424,7 +428,10 @@ def test_multihead_selection_matches_selected_head(tmp_path, embedding, capsys):
     close(atoms.get_forces(), forces)
     assert load_deployed(selected).heads == ("second",)
     assert next(load_deployed(selected).model.parameters()).device.type == "cpu"
-    assert main([*command, "--head", "second"]) == 0
+    assert (
+        main(["model", "select-head", str(tmp_path / "multi.json"), "--head", "second"])
+        == 0
+    )
     assert (tmp_path / "multi-second.safetensors").is_file()
     assert load_deployed(tmp_path / "multi-second.json").heads == ("second",)
 

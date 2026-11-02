@@ -290,3 +290,13 @@ def test_a_head_with_no_structures_is_refused(datasets):
     empty = {**datasets, "empty": dataset(0, "empty")}
     with pytest.raises(ValueError, match="no training structures"):
         BalancedLoader(empty, z_table=Z_TABLE, batch_size=1)
+
+
+@pytest.mark.parametrize("kind", [BalancedLoader, ProportionalLoader])
+def test_an_empty_shard_is_not_blamed_on_the_batch_size(datasets, kind):
+    built = kind(datasets, z_table=Z_TABLE, batch_size=1, shard=lambda indices: [])
+    with pytest.raises(ValueError, match=r"sampler.*no training data") as error:
+        list(built.batches(0, drop_last=True))
+    assert "--batch_size" not in str(error.value)
+    # An empty full-batch rank still participates in the collective gradient.
+    assert list(built.batches(0, drop_last=False)) == []

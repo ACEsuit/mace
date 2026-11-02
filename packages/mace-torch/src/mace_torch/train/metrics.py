@@ -50,7 +50,13 @@ from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.data import TrainingBatch, target_specs
-from mace_torch.train.loss import atom_counts, predicted, reference_for, row_weights
+from mace_torch.train.loss import (
+    TermwiseLoss,
+    atom_counts,
+    predicted,
+    reference_for,
+    row_weights,
+)
 
 __all__ = [
     "MetricSpec",
@@ -133,6 +139,8 @@ class RunningMetrics:
         loss: The loss the run scores on. Accumulated here as well because the
             number a checkpoint is selected by has to come from the same pass
             as the errors beside it.
+        device: Where collective tensors live, including on a rank with no
+            local batches. Must match the process group's backend.
 
     The loss is reported as the sum over batches divided by the number of
     structures, which is the frozen tree's definition. The training loop's own
@@ -141,16 +149,27 @@ class RunningMetrics:
     the other.
     """
 
-    def __init__(self, specs: Sequence[MetricSpec], loss: nn.Module) -> None:
+    def __init__(
+        self, specs: Sequence[MetricSpec], loss: nn.Module, *, device: str = "cpu"
+    ) -> None:
         self.specs = tuple(specs)
         self.loss = loss
+        self.device = device
         self._samples = {spec.name: _Samples() for spec in self.specs}
         self._total_loss = 0.0
         self._structures = 0
 
     def update(self, output: MACEOutput[Tensor], batch: TrainingBatch) -> None:
         """Score one batch and keep what it contributed."""
-        self._total_loss += float(self.loss(output, batch).detach())
+        # Evaluation assigns whole batches to ranks, which may own different
+        # numbers of batches. Only compute() may enter a collective; a
+        # training loss's per-step reduction would deadlock an empty rank.
+        value = (
+            self.loss(output, batch, self.loss.element_counts(batch))
+            if isinstance(self.loss, TermwiseLoss)
+            else self.loss(output, batch)
+        )
+        self._total_loss += float(value.detach())
         self._structures += int(batch.graph["ptr"].shape[0] - 1)
         counts = atom_counts(batch)
         for spec in self.specs:
@@ -186,9 +205,9 @@ class RunningMetrics:
             # branch. Testing the local ones first would have a rank that
             # happened to draw no labelled row skip the gathers the others are
             # waiting in.
-            residual = _gather(_joined(samples.residual))
-            reference = _gather(_joined(samples.reference))
-            divided = _gather(_joined(samples.per_atom))
+            residual = _gather(_joined(samples.residual), self.device)
+            reference = _gather(_joined(samples.reference), self.device)
+            divided = _gather(_joined(samples.per_atom), self.device)
             if residual.numel() == 0:
                 continue
             results.update(_errors(spec.name, residual, reference))
@@ -198,7 +217,11 @@ class RunningMetrics:
 
     def _reduced_loss(self) -> float:
         """The loss per structure, summed across ranks before the division."""
-        totals = torch.tensor([self._total_loss, float(self._structures)])
+        totals = torch.tensor(
+            [self._total_loss, float(self._structures)],
+            dtype=torch.float64,
+            device=self.device,
+        )
         if _distributed():
             dist.all_reduce(totals, op=dist.ReduceOp.SUM)
         if totals[1] == 0:
@@ -253,7 +276,7 @@ def _distributed() -> bool:
     return dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
 
 
-def _gather(values: Tensor | None) -> Tensor:
+def _gather(values: Tensor | None, device: str) -> Tensor:
     """One rank's masked values, joined with every other rank's.
 
     The only place the values themselves cross ranks. A percentile is not a
@@ -264,8 +287,13 @@ def _gather(values: Tensor | None) -> Tensor:
     property of the data rather than of the split. So the counts go first and
     the payloads are padded to the longest.
     """
-    if values is None:
-        values = torch.zeros(0)
+    # Empty ranks must use the same dtype and device as ranks with samples.
+    # Metrics already compute in float64 after gathering.
+    values = (
+        torch.zeros(0, dtype=torch.float64, device=device)
+        if values is None
+        else values.to(device=device, dtype=torch.float64)
+    )
     values = values.reshape(-1)
     if not _distributed():
         return values

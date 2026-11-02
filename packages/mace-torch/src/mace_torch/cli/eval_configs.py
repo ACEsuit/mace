@@ -7,6 +7,7 @@ canonical names. Energies are eV, forces eV/Angstrom and stress eV/Angstrom^3.
 from __future__ import annotations
 
 import argparse
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -104,6 +105,13 @@ def run(args: argparse.Namespace) -> int:
         device=args.device,
         precision=PrecisionConfig(model=args.default_dtype),
     )
+    if args.default_dtype != deployed.config.precision.model:
+        logging.getLogger(__name__).warning(
+            "Requested dtype %s does not match model dtype %s; evaluating with %s.",
+            args.default_dtype,
+            deployed.config.precision.model,
+            args.default_dtype,
+        )
     head = _choose_head(deployed.heads, args.head)
     available = produced_outputs(
         [spec.name for spec in deployed.outputs.observables],

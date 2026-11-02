@@ -15,6 +15,7 @@ the one whose output matters, and it is the one whose output legacy discards.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 from mace_core.config.runtime import RuntimeConfig
@@ -70,7 +71,13 @@ def setup_logging(runtime: RuntimeConfig, rank: int = 0) -> Path | None:
 
 
 def write_epoch(
-    runtime: RuntimeConfig, epoch: int, train_loss: float, per_head, *, last: bool
+    runtime: RuntimeConfig,
+    epoch: int,
+    train_loss: float,
+    per_head,
+    *,
+    last: bool,
+    step_losses: Sequence[float] = (),
 ) -> None:
     """Append real per-head metrics and render requested curves on rank zero."""
     import json
@@ -78,7 +85,8 @@ def write_epoch(
     directory = runtime.directory("results")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{runtime.name}.jsonl"
-    rows = [{"epoch": epoch, "mode": "train", "loss": train_loss}]
+    rows = [{"epoch": epoch, "mode": "opt", "loss": loss} for loss in step_losses]
+    rows.append({"epoch": epoch, "mode": "train", "loss": train_loss})
     rows.extend(
         {"epoch": epoch, "mode": "valid", "head": name, **metrics}
         for name, metrics in per_head.items()

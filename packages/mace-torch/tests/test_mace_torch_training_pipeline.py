@@ -9,6 +9,7 @@ loss goes down, and the checkpoint carries enough to rebuild what wrote it.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import cast
 
 import numpy as np
@@ -482,7 +483,9 @@ def test_a_finished_run_prints_an_error_table(tmp_path, caplog):
 
 
 @fp64_only
-def test_a_skipped_head_is_left_out_of_the_table(tmp_path, caplog):
+def test_a_skipped_head_is_left_out_of_the_table(tmp_path, caplog, monkeypatch):
+    from mace_torch.train import loop
+
     config = two_head_configuration(tmp_path)
     config = config.model_copy(
         update={
@@ -490,12 +493,29 @@ def test_a_skipped_head_is_left_out_of_the_table(tmp_path, caplog):
         }
     )
     data = run_data_stage(config, CATALOGUE)
+    data = replace(data, test_loaders={"small": data.valid_loaders["small"]})
     built = run_model_stage(config, data, CATALOGUE)
+    evaluated = []
+    evaluate = loop.evaluate
+
+    def recorded(model, batches, *args, **kwargs):
+        evaluated.append(batches)
+        return evaluate(model, batches, *args, **kwargs)
+
+    monkeypatch.setattr(loop, "evaluate", recorded)
     with caplog.at_level("INFO"):
         run_train_stage(config, built)
     printed = "\n".join(record.message for record in caplog.records)
     assert "valid_large" in printed
-    assert "valid_small" not in printed
+    assert "| valid_small" not in printed
+    assert "Skipping evaluation of train_small (head small)" in printed
+    assert "Skipping evaluation of valid_small (head small)" in printed
+    assert "Skipping evaluation of small (head small)" in printed
+    assert "Errors on the test sets" not in printed
+    assert data.train_eval_loaders["small"] not in evaluated
+    # The skipped head still validates during training, but not again at the end.
+    assert evaluated.count(data.valid_loaders["small"]) == 2
+    assert evaluated.count(data.valid_loaders["large"]) == 3
 
 
 @fp64_only

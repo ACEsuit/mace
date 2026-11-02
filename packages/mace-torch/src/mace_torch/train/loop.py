@@ -86,12 +86,16 @@ def train_one_epoch(
     compute: tuple[str, ...] = ("forces",),
     clip_grad: float | None = None,
     ema: ExponentialMovingAverage | None = None,
+    step_losses: list[float] | None = None,
 ) -> float:
     """One pass over the training batches. Returns the mean loss.
 
     ``training=True`` on the forward is what keeps the derivative's own graph
     alive, and without it a force term has no gradient at all: the loss goes
     down, the forces do not, and nothing says so.
+
+    When supplied, ``step_losses`` receives the loss before each completed
+    optimizer step for the run's JSONL record.
     """
     model.train()
     total, seen = 0.0, 0
@@ -106,7 +110,10 @@ def train_one_epoch(
         optimizer.step()
         if ema is not None:
             ema.update()
-        total += float(value.detach())
+        measured = float(value.detach())
+        total += measured
+        if step_losses is not None:
+            step_losses.append(measured)
         seen += 1
     if seen == 0:
         raise ValueError(
@@ -132,15 +139,13 @@ def evaluate(
     dropped per batch instead, by not asking for a second derivative.
     """
     model.eval()
-    metrics = RunningMetrics(specs, loss)
-    seen = 0
+    metrics = RunningMetrics(specs, loss, device=device)
     for batch in batches:
         batch = batch.to(device)
         output = model(batch.graph, compute=compute, training=False)
         metrics.update(output, batch)
-        seen += 1
-    if seen == 0:
-        raise ValueError("the validation loader yielded no batches.")
+    # A rank may own no validation batches. All ranks still reduce the
+    # metrics; the accumulator rejects a globally empty evaluation.
     return metrics.compute()
 
 
@@ -332,6 +337,7 @@ def run_train_stage(
         # The regime follows the optimizer the stage runs, which a stage that
         # inherits its optimizer takes from the one before it.
         full_batch = isinstance(optimizer, torch.optim.LBFGS)
+        step_losses: list[float] = []
         train_loader = built.data.train_loader
         if processes.distributed:
             train_loader.shard = training_shard(
@@ -350,6 +356,7 @@ def run_train_stage(
                 clip_grad=config.training.clip_grad,
                 processes=processes,
             )
+            step_losses.append(train_loss)
         else:
             # A short last batch is a noisier gradient with the same learning
             # rate behind it, so a mini-batch stage drops it.
@@ -362,6 +369,7 @@ def run_train_stage(
                 compute=requested.derivatives,
                 clip_grad=config.training.clip_grad,
                 ema=ema,
+                step_losses=step_losses if processes.is_main else None,
             )
 
         per_head = {}
@@ -459,6 +467,7 @@ def run_train_stage(
                 epoch,
                 train_loss,
                 per_head,
+                step_losses=step_losses,
                 last=following is None or following >= config.training.max_num_epochs,
             )
         # Every rank waits for rank zero's writes before any can read them.
@@ -499,7 +508,9 @@ def run_train_stage(
         written = write_model(checkpoint_path, model, built.metadata)
 
     processes.barrier()
-    report_errors(config, built, model, loss, specs, tracker, device=device)
+    report_errors(
+        config, built, model, loss, specs, tracker, device=device, processes=processes
+    )
     tracker.finish()
     return TrainedModel(
         model=model,
@@ -519,6 +530,7 @@ def report_errors(
     tracker: Tracker,
     *,
     device: str = "cpu",
+    processes: DistributedContext | None = None,
 ) -> str:
     """Evaluate every reported loader once and log the table.
 
@@ -531,26 +543,34 @@ def report_errors(
     against a test row across a table boundary is doing it deliberately.
     """
     requested = _requested_names(built)
-    rows = [
-        Row(
-            name=name,
-            head=name.split("_", 1)[1],
-            metrics=evaluate(
-                model,
-                batches,
-                loss,
-                specs,
-                device=device,
-                compute=requested.derivatives,
-            ),
-        )
-        for name, batches in built.data.reported_loaders().items()
-    ]
-    table = error_table(
-        config.runtime.error_table,
-        rows,
-        skip_heads=config.data.skip_evaluate_heads,
-    )
+
+    def evaluate_rows(loaders, *, split_names: bool) -> list[Row]:
+        rows = []
+        for name, batches in loaders.items():
+            head = name.split("_", 1)[1] if split_names else name
+            if head in config.data.skip_evaluate_heads:
+                logger.info("Skipping evaluation of %s (head %s)", name, head)
+                continue
+            if processes is not None and processes.distributed:
+                batches = _evaluated_share(batches, processes)
+            rows.append(
+                Row(
+                    name=name,
+                    head=head,
+                    metrics=evaluate(
+                        model,
+                        batches,
+                        loss,
+                        specs,
+                        device=device,
+                        compute=requested.derivatives,
+                    ),
+                )
+            )
+        return rows
+
+    rows = evaluate_rows(built.data.reported_loaders(), split_names=True)
+    table = error_table(config.runtime.error_table, rows)
     logger.info("Errors on the training and validation sets:\n%s", table)
     tracker.summary(
         {
@@ -559,29 +579,11 @@ def report_errors(
             for name, value in row.metrics.items()
         }
     )
-    if built.data.test_loaders:
-        test_rows = [
-            Row(
-                name=name,
-                head=name,
-                metrics=evaluate(
-                    model,
-                    batches,
-                    loss,
-                    specs,
-                    device=device,
-                    compute=requested.derivatives,
-                ),
-            )
-            for name, batches in built.data.test_loaders.items()
-        ]
+    test_rows = evaluate_rows(built.data.test_loaders, split_names=False)
+    if test_rows:
         logger.info(
             "Errors on the test sets:\n%s",
-            error_table(
-                config.runtime.error_table,
-                test_rows,
-                skip_heads=config.data.skip_evaluate_heads,
-            ),
+            error_table(config.runtime.error_table, test_rows),
         )
     return table
 
@@ -729,7 +731,12 @@ def _evaluated_share(loader: DataLoader, context: DistributedContext) -> DataLoa
     return DataLoader(
         loader.dataset,
         batch_size=loader.batch_size,
-        sampler=EvaluationSampler(loader.dataset, context.rank, context.world_size),
+        sampler=EvaluationSampler(
+            loader.dataset,
+            context.rank,
+            context.world_size,
+            batch_size=loader.batch_size or 1,
+        ),
         collate_fn=loader.collate_fn,
         num_workers=loader.num_workers,
         pin_memory=loader.pin_memory,

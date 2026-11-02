@@ -154,6 +154,18 @@ class TrainingLoader:
         and letting the loader draw its own would put the one thing this module
         exists to make reproducible back on the global generator.
         """
+        if drop_last and len(indices) < self.batch_size:
+            if not indices:
+                raise ValueError(
+                    "the training sampler assigned no training data to this "
+                    "process; check the sampler and distributed world size."
+                )
+            raise ValueError(
+                f"--batch_size (training.batch_size={self.batch_size}) exceeds "
+                f"the {len(indices)} training structures assigned to this "
+                "loader on this process. Mini-batch training drops the "
+                "incomplete batch; lower --batch_size."
+            )
         return DataLoader(
             dataset,
             batch_size=self.batch_size,

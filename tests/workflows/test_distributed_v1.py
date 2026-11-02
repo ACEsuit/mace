@@ -18,13 +18,20 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from tests.golden.harness import FP64_CPU_REFERENCE
 from tests.helpers import cli_command, run_train
 from tests.workflows.test_run_train_v1 import (
     RESTART,
     evaluated_epochs,
     needs_the_v1_engine,
+    on_v1,
+    optimizer_steps,
     tiny_task,
+    training_records,
     variant,
+    write_frames,
 )
 
 #: Written into the parsed file rather than appended to it: a second
@@ -114,6 +121,7 @@ def test_two_ranks_train_and_only_rank_zero_writes(tmp_path):
     assert "Rank 0 wrote" in ranks[0].stderr
     assert "Rank 1 wrote" not in ranks[1].stderr
     assert evaluated_epochs(ranks[0].stderr) == [0, 1, 2, 3]
+    assert optimizer_steps(tmp_path) == {0: 1, 1: 1, 2: 1, 3: 1}
     for finished in ranks:
         assert "Epoch 2 starts the stage 'stage_two'" in finished.stderr
     assert sorted(path.name for path in tmp_path.glob("tiny*")) == [
@@ -136,3 +144,45 @@ def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
         assert "Resuming from" in finished.stderr
     assert evaluated_epochs(resumed[0].stderr) == [3]
+    assert optimizer_steps(tmp_path) == {0: 1, 1: 1, 2: 1, 3: 1}
+
+
+@needs_the_v1_engine
+@pytest.mark.parametrize("optimizer,structures,valid_batch_size", [
+    ("adam", 2, 4), ("lbfgs", 2, 4), ("lbfgs", 4, 1),
+])
+def test_a_dataset_smaller_than_the_world_size_trains(tmp_path, optimizer, structures, valid_batch_size):
+    config = tiny_task(tmp_path)
+    write_frames(tmp_path / "train.xyz", structures, seed=0)
+    # One training structure across two ranks: mini-batch sampling pads;
+    # full-batch training lets the empty rank contribute a zero gradient.
+    settings = {
+        "data.valid_fraction": (structures - 1) / structures,
+        "training.batch_size": 1,
+        "training.valid_batch_size": valid_batch_size,
+        "training.max_num_epochs": 1,
+        "training.optimizer": {"kind": optimizer},
+        "training.stage_two.enabled": False,
+    }
+    ranks = both_ranks(config, settings=settings)
+    for rank, finished in enumerate(ranks):
+        assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
+    assert optimizer_steps(tmp_path) == {0: 1}
+    together = [row for row in training_records(tmp_path) if row["mode"] == "valid"]
+    single_dir = tmp_path / "single"
+    single = on_v1("--config", str(variant(config, {
+        **settings, "runtime.work_dir": str(single_dir),
+    })))
+    assert single.returncode == 0, single.stderr
+    alone = [row for row in training_records(single_dir) if row["mode"] == "valid"]
+    assert len(together) == len(alone) == 1
+    assert together[0].keys() == alone[0].keys()
+    for name, value in alone[0].items():
+        if isinstance(value, (int, float)):
+            assert together[0][name] == pytest.approx(
+                value, abs=FP64_CPU_REFERENCE.atol, rel=FP64_CPU_REFERENCE.rtol
+            ), name
+    for row_name in ("train_default", "valid_default"):
+        together_row = next(line for line in ranks[0].stderr.splitlines() if f"| {row_name}" in line)
+        alone_row = next(line for line in single.stderr.splitlines() if f"| {row_name}" in line)
+        assert together_row == alone_row

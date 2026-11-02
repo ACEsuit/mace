@@ -11,6 +11,7 @@ to.
 
 from __future__ import annotations
 
+import json
 import logging
 import multiprocessing
 import os
@@ -114,6 +115,15 @@ def test_two_ranks_evaluate_every_closure_at_the_same_point(tmp_path):
     first, second = outcomes[0][0], outcomes[1][0]
     assert len(first) > 2, "meant to see the line search evaluate several times"
     assert first == second
+    records = [
+        json.loads(line)
+        for line in (
+            config.runtime.directory("results") / f"{config.runtime.name}.jsonl"
+        )
+        .read_text()
+        .splitlines()
+    ]
+    assert [row["epoch"] for row in records if row["mode"] == "opt"] == [0, 1]
 
     # Not bit for bit: two shares add the set up in another order than one
     # process does, which moves the last bit of each evaluation, and the line

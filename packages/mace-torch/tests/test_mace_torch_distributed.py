@@ -136,3 +136,11 @@ def test_evaluation_is_split_without_padding(length, world):
 def test_a_rank_outside_the_world_is_refused():
     with pytest.raises(ValueError, match="not in a world"):
         training_shard(2, 2)
+
+
+def test_evaluation_preserves_whole_batches_and_the_ragged_tail():
+    data = torch.utils.data.TensorDataset(torch.arange(11))
+    assert list(EvaluationSampler(data, 0, 2, batch_size=4)) == [0, 1, 2, 3, 8, 9, 10]
+    assert list(EvaluationSampler(data, 1, 2, batch_size=4)) == [4, 5, 6, 7]
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        EvaluationSampler(data, 0, 2, batch_size=0)
