@@ -149,11 +149,17 @@ def test_a_relative_error_is_already_a_percentage():
     assert cells_of(text, 3)[3] == "12.50"
 
 
-def test_the_stress_column_takes_the_virials_when_there_is_no_stress():
+@pytest.mark.parametrize(
+    "kind,statistic",
+    [("PerAtomRMSEstressvirials", "rmse"), ("PerAtomMAEstressvirials", "mae")],
+)
+def test_the_stress_column_takes_the_virials_when_there_is_no_stress(kind, statistic):
     """One column, whichever of the two the run produced."""
-    metrics = {**ENERGY_METRICS, "rmse_virials": 0.02}
-    text = error_table("PerAtomRMSEstressvirials", rows(metrics))
+    metrics = {**ENERGY_METRICS, f"{statistic}_virials": 0.02}
+    text = error_table(kind, rows(metrics))
     assert cells_of(text, 3)[4] == "20.0"
+    metrics[f"{statistic}_stress"] = 0.008
+    assert cells_of(error_table(kind, rows(metrics)), 3)[4] == "8.0"
 
 
 # ---------------------------------------------------------------------------

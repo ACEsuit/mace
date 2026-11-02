@@ -96,7 +96,10 @@ def _forces(statistic: str) -> Column:
 def _relative_forces(statistic: str, short: bool = False) -> Column:
     label = "rel" if short else "relative"
     return Column(
-        f"{label} F {statistic.upper()} %", (f"rel_{statistic}_forces",), 1.0, 2
+        f"{label} F {statistic.upper()} %",
+        (f"rel_{statistic}_forces",),
+        1.0,
+        1 if short else 2,
     )
 
 

@@ -31,8 +31,9 @@ def plot_training(
             epoch = row.get("epoch")
             if epoch is None or epoch < min_epoch:
                 continue
-            head = row.get("head", "default")
-            if heads and head not in heads:
+            head = row.get("head", "all heads")
+            # Optimizer/training records belong to the whole run.
+            if heads and "head" in row and head not in heads:
                 continue
             for key in keys:
                 value = row.get(key)
@@ -50,7 +51,14 @@ def plot_training(
         means = np.array([np.mean(epochs[step]) for step in steps])
         (line,) = axis.plot(steps, means, label=f"{head} {mode} {key}")
         if error_bars:
-            deviation = np.array([np.std(epochs[step]) for step in steps])
+            # Match the sample deviation of the legacy grouped logs. A
+            # single measurement has no uncertainty band.
+            deviation = np.array(
+                [
+                    np.std(epochs[step], ddof=1) if len(epochs[step]) > 1 else 0.0
+                    for step in steps
+                ]
+            )
             axis.fill_between(
                 steps,
                 means - deviation,
