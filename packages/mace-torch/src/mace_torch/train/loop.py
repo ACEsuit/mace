@@ -319,6 +319,28 @@ def run_train_stage(
         written: Path | None = None
         since_best = state.since_best
 
+        if not resume:
+            entering = _stage_at(schedule, 0)
+            stage = entering.name
+            logger.info("Epoch 0 starts the stage %r", stage)
+            loss, optimizer, scheduler = _enter_stage(
+                entering, config, built, model, optimizer, scheduler
+            )
+            # Validation iterators draw a CPU seed. This diagnostic pass must
+            # not shift training's random sequence, including a zero-epoch run.
+            with torch.random.fork_rng(devices=[]):
+                initial = evaluate_heads(
+                    model,
+                    valid_loaders,
+                    loss,
+                    specs,
+                    device=device,
+                    compute=requested.derivatives,
+                )
+            log_validation(None, initial)
+            if processes.is_main:
+                write_epoch(config.runtime, None, None, initial, last=False)
+
         epoch = state.epoch
         while epoch < config.training.max_num_epochs:
             # Before the epoch it applies to, so the epoch that changes the loss
@@ -336,22 +358,6 @@ def run_train_stage(
                 # before it are not on one scale. Its best is the best among its
                 # own epochs, and the model the run ends on is the last stage's.
                 best_loss, since_best = None, 0
-
-            if epoch == 0 and not resume:
-                # Validation iterators draw a CPU seed. This diagnostic pass
-                # must not shift training's random sequence or checkpoint state.
-                with torch.random.fork_rng(devices=[]):
-                    initial = evaluate_heads(
-                        model,
-                        valid_loaders,
-                        loss,
-                        specs,
-                        device=device,
-                        compute=requested.derivatives,
-                    )
-                log_validation(None, initial)
-                if processes.is_main:
-                    write_epoch(config.runtime, None, None, initial, last=False)
 
             # The regime follows the optimizer the stage runs, which a stage that
             # inherits its optimizer takes from the one before it.

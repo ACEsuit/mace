@@ -136,6 +136,8 @@ def parameter_groups(model: nn.Module, config: TrainingConfig) -> list[dict]:
     groups[-1]["lr"] = factors.get("interactions", 1.0) * config.lr
     add("products", list(_named(model, GROUP_MARKERS["products"])), config.weight_decay)
     add("readouts", list(_named(model, GROUP_MARKERS["readouts"])), 0.0)
+    # Legacy keeps this optional readout independent of the freeze levels.
+    add("embedding_readout", list(_named(model, ".embedding_readout.")), 0.0)
     add(
         "polar",
         [

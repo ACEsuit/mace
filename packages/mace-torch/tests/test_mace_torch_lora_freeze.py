@@ -26,7 +26,7 @@ CATALOGUE = DEFAULT_CATALOGUE
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
 
 
-def model(seed=0):
+def model(seed=0, embedding_readout=False):
     config = ResolvedConfig.model_validate(
         {
             "runtime": {"seed": seed},
@@ -38,6 +38,17 @@ def model(seed=0):
                 "max_ell": 1,
                 "num_interactions": 2,
                 "correlation": 2,
+                "readout": {"from_embedding": embedding_readout},
+                "graph_features": [
+                    {
+                        "name": "total_charge",
+                        "kind": "categorical",
+                        "embedding_dim": 2,
+                        "num_classes": 2,
+                    }
+                ]
+                if embedding_readout
+                else [],
             },
         }
     )
@@ -266,6 +277,36 @@ def test_a_soft_freeze_is_the_factors_alone():
     assert groups["embedding"]["lr"] == pytest.approx(0.1 * training.lr)
     assert groups["readouts"]["lr"] == pytest.approx(training.lr)
     assert all(parameter.requires_grad for parameter in engine.parameters())
+
+
+@fp64_only
+@pytest.mark.parametrize("level", [0, 7])
+def test_embedding_readout_trains_as_an_independent_optional_group(level):
+    """Legacy keeps this optional readout trainable even at freeze level seven."""
+    from mace_torch.train.optimizers import build_optimizer
+
+    engine, config = model(embedding_readout=True)
+    factors = freeze(engine, level)
+    training = config.training.model_copy(
+        update={
+            "weight_decay": 0.5,
+            "scheduler": config.training.scheduler.model_copy(
+                update={"group_factors": {**factors, "embedding_readout": 0.25}}
+            ),
+        }
+    )
+    optimizer = build_optimizer(engine, training)
+    (group,) = [g for g in optimizer.param_groups if g["name"] == "embedding_readout"]
+    readout = engine.backbone.outputs.embedding_readout
+    assert {id(p) for p in group["params"]} == {id(p) for p in readout.parameters()}
+    all_ids = [id(p) for g in optimizer.param_groups for p in g["params"]]
+    assert len(all_ids) == len(set(all_ids))
+    assert group["weight_decay"] == 0.0
+    assert group["lr"] == pytest.approx(0.25 * training.lr)
+    before = readout.weight.detach().clone()
+    energy(engine).sum().backward()
+    optimizer.step()
+    assert not torch.equal(readout.weight, before)
 
 
 def test_a_negative_level_is_refused():

@@ -206,8 +206,9 @@ def test_the_tiny_task_trains(pipeline):
 
 
 @fp64_only
+@pytest.mark.parametrize("epochs", [0, 1])
 def test_initial_validation_precedes_steps_and_preserves_weights_and_rng(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, epochs
 ):
     from mace_torch.train import loop
     from mace_torch.train.loss import build_loss
@@ -215,7 +216,7 @@ def test_initial_validation_precedes_steps_and_preserves_weights_and_rng(
 
     config = configuration(
         tmp_path,
-        max_num_epochs=1,
+        max_num_epochs=epochs,
         stages=[{"name": "main", "loss_weights": {"energy": 7.0, "forces": 3.0}}],
     )
     data = run_data_stage(config, CATALOGUE)
@@ -255,9 +256,16 @@ def test_initial_validation_precedes_steps_and_preserves_weights_and_rng(
     monkeypatch.setattr(loop, "evaluate_heads", measured)
     monkeypatch.setattr(loop, "train_one_epoch", stepped)
     trained = run_train_stage(config, built)
-    assert steps == [1]
-    assert trained.best_epoch == 0
-    assert [record.epoch for record in trained.history] == [0]
+    assert steps == [1] * epochs
+    assert trained.best_epoch == (0 if epochs else None)
+    assert [record.epoch for record in trained.history] == list(range(epochs))
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert records[0] == {"epoch": None, "mode": "valid", "head": "default", **expected}
+    if not epochs:
+        assert len(records) == 1
+        assert len(evaluations) == 1
+        for before, after in zip(weights, built.model.parameters(), strict=True):
+            assert torch.equal(before, after)
 
 
 @fp64_only

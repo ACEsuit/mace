@@ -213,8 +213,12 @@ def transfer_foundation(
                 "offset": found["offset"][rows][:, sources].clone(),
             }
         elif path.endswith(".contraction"):
+            # A shared product has one row for every element together.
+            # Only element-dependent products are indexed by atomic species.
             state[path] = {
-                name: value[rows].clone() if name == "weight" else value
+                name: value[rows].clone()
+                if name == "weight" and value.shape[0] != 1
+                else value.clone()
                 for name, value in found.items()
             }
         else:

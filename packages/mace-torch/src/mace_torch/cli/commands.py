@@ -66,7 +66,7 @@ TRAIN_FLAGS: tuple[ConfigFlag, ...] = (
     ConfigFlag(
         "--foundation_model",
         "finetune.foundation_model",
-        "Fine-tune this foundation model: a path or a published name.",
+        "Fine-tune a V1 safetensors checkpoint. Convert legacy artifacts first.",
     ),
     ConfigFlag(
         "--max_num_epochs",

@@ -673,17 +673,25 @@ def _state(
             source = descriptor.irreps_in
             target = descriptor.irreps_out
             output = list(Irreps.parse(target).slices())
+            normalization = {
+                irrep: linear_path_normalization(source, irrep)
+                for _, irrep in Irreps.parse(target)
+            }
             factors = [
-                linear_path_normalization(source, output[out][1])
+                normalization[output[out][1]]
                 for out, _ in linear_weight_table(source, target)
             ]
         elif isinstance(descriptor, FullyConnectedTPDescriptor):
             source, target = descriptor.irreps_in1, descriptor.irreps_out
             output = list(Irreps.parse(target).slices())
-            factors = [
-                fully_connected_tp_path_normalization(
-                    source, descriptor.irreps_in2, output[out][1]
+            normalization = {
+                irrep: fully_connected_tp_path_normalization(
+                    source, descriptor.irreps_in2, irrep
                 )
+                for _, irrep in Irreps.parse(target)
+            }
+            factors = [
+                normalization[output[out][1]]
                 for out, _ in linear_weight_table(source, target)
             ]
         else:

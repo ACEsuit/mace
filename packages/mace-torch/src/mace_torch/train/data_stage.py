@@ -163,13 +163,15 @@ def run_data_stage(
     # A fine-tune keeps the foundation model's whole element table unless the
     # run asks for the data's, so a model fine-tuned on two elements can be
     # fine-tuned again on a third. The energies are resolved over the elements
-    # the data holds, as they would be without a foundation model, and every
-    # other element takes the energy of the foundation head its readout starts
-    # from: no structure holds it, so it trains nothing, and the model stays
-    # ready for it.
+    # each head's data holds. Other elements take the energy of the foundation
+    # head its readout starts from: no training structure in this head holds
+    # them, and the model stays ready for them.
     keeps_foundation_table = (
         foundation is not None and config.finetune.element_table == "foundation"
     )
+    if keeps_foundation_table:
+        assert foundation is not None
+        z_table = foundation.z_table
 
     # A model that reads out no energy has no isolated-atom energies to be
     # shifted by, and a declaration of them is refused when the configuration
@@ -182,23 +184,28 @@ def run_data_stage(
             provenance[name] = E0Provenance(kind="none")
             continue
         head_train = [item for item in train if item.head == name]
+        # Another head's elements do not require references in this head's
+        # dataset. Unseen elements keep this head's foundation references.
+        energy_elements = (
+            AtomicNumberTable(
+                sorted({int(z) for item in head_train for z in item.atomic_numbers})
+            )
+            if foundation is not None
+            else z_table
+        )
         values, record = resolve_e0s(
             head.e0s,
-            z_table,
+            energy_elements,
             head_train,
             foundation_e0s=_foundation_e0s(name, head, foundation),
             predict_energy=predict_energy,
         )
-        if keeps_foundation_table:
-            assert foundation is not None
+        if foundation is not None:
             values, record = _with_foundation_energies(
-                name, head, values, record, foundation
+                name, head, values, record, foundation, z_table
             )
         e0s[name] = values
         provenance[name] = record
-    if keeps_foundation_table:
-        assert foundation is not None
-        z_table = foundation.z_table
 
     # After the energies have been read off them, and only for the heads that
     # did not ask to keep them. An isolated atom left in the training set is a
@@ -591,8 +598,9 @@ def _with_foundation_energies(
     values: Mapping[int, float],
     record: E0Provenance,
     foundation: FoundationContext,
+    z_table: AtomicNumberTable,
 ) -> tuple[dict[int, float], E0Provenance]:
-    """A head's energies over the foundation model's whole element table.
+    """A head's energies over the fine-tune's selected element table.
 
     The elements the data holds keep what the head's declaration resolved to.
     Every other one takes the energy of the foundation head the head's readout
@@ -605,7 +613,7 @@ def _with_foundation_energies(
     given = head.e0s.values if isinstance(head.e0s, E0sTable) else {}
     filled = dict(values)
     taken = []
-    for z in foundation.z_table.zs:
+    for z in z_table.zs:
         if z in filled:
             continue
         if z in given:

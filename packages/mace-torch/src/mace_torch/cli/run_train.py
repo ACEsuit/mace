@@ -133,7 +133,7 @@ def train(config: ResolvedConfig) -> int:
             dist.destroy_process_group()
     if trained.best is None:
         logging.info(
-            "Trained %d epoch(s); nothing was evaluated.", len(trained.history)
+            "Trained %d epoch(s); no best epoch selected.", len(trained.history)
         )
     else:
         logging.info(

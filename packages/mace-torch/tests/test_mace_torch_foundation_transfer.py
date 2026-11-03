@@ -78,8 +78,10 @@ def dataset(path, seed=0):
     return path
 
 
-@pytest.fixture(scope="module")
-def checkpoint(tmp_path_factory):
+@pytest.fixture(
+    scope="module", params=[False, True], ids=["per-element", "shared-product"]
+)
+def checkpoint(tmp_path_factory, request):
     """A foundation trained for two epochs and written to disk."""
     torch.set_default_dtype(torch.float64)
     directory = tmp_path_factory.mktemp("foundation")
@@ -103,6 +105,7 @@ def checkpoint(tmp_path_factory):
                 "max_ell": 1,
                 "num_interactions": 2,
                 "correlation": 2,
+                "use_agnostic_product": request.param,
             },
             "training": {
                 "max_num_epochs": 2,
@@ -169,6 +172,58 @@ def test_the_record_gives_the_elements_heads_and_energies(checkpoint):
     assert foundation.e0s["pbe"][6] == CARBON
 
 
+@fp64_only
+@pytest.mark.parametrize("run_checkpoint", [False, True])
+def test_checkpoint_preserves_head_identity_after_reload(tmp_path, run_checkpoint):
+    import json
+
+    from mace_torch.train import RunState, read_run_checkpoint, write_run_checkpoint
+    from mace_torch.train.optimizers import build_optimizer
+    from test_mace_torch_training_pipeline import configuration
+
+    document = configuration(tmp_path, max_num_epochs=0).model_dump(mode="json")
+    source = document["data"]["heads"]["default"]
+    document["data"]["heads"] = {
+        name: {**source, "e0s": {"kind": "table", "values": {1: hydrogen, 8: OXYGEN}}}
+        for name, hydrogen in (("zeta", HYDROGEN), ("alpha", HYDROGEN + 2.0))
+    }
+    config = ResolvedConfig.model_validate(document)
+    data = run_data_stage(config, CATALOGUE)
+    built = run_model_stage(config, data, CATALOGUE)
+    if run_checkpoint:
+        path = write_run_checkpoint(
+            tmp_path,
+            "ordered",
+            RunState(0),
+            model=built.model,
+            optimizer=build_optimizer(built.model, config.training),
+            metadata=built.metadata,
+        )
+        recorded = json.loads(path.read_text())["config"]
+        restored_config = ResolvedConfig.model_validate(recorded["config"]["resolved"])
+        restored_data = run_data_stage(restored_config, CATALOGUE)
+        restored = run_model_stage(restored_config, restored_data, CATALOGUE)
+        read_run_checkpoint(
+            path,
+            model=restored.model,
+            optimizer=build_optimizer(restored.model, config.training),
+        )
+        heads, engine = restored_data.heads, restored.model
+    else:
+        path = write_model(tmp_path / "ordered", built.model, built.metadata)
+        restored = read_foundation(path, CATALOGUE)
+        heads, engine = restored.heads, restored.engine
+    assert heads == ("zeta", "alpha")
+    energies = []
+    for index in range(2):
+        expected = built.model(water_graph(data.z_table, index), compute=("forces",))
+        actual = engine(water_graph(data.z_table, index), compute=("forces",))
+        assert torch.equal(actual.total_energy, expected.total_energy)
+        assert torch.equal(actual.forces, expected.forces)
+        energies.append(actual.total_energy)
+    assert not torch.equal(*energies)
+
+
 # ---------------------------------------------------------------------------
 # Into a smaller model with two heads
 # ---------------------------------------------------------------------------
@@ -196,11 +251,12 @@ def fine_tune_model(foundation, heads=("replay", "target"), elements=(1, 8)):
 
 
 @fp64_only
-def test_every_head_computes_the_foundations_interaction_energy(checkpoint):
+@pytest.mark.parametrize("elements", [(1, 8), (1, 6, 8)])
+def test_every_head_computes_the_foundations_interaction_energy(checkpoint, elements):
     """The whole transfer in one number per head: the backbone read at two of
     three elements, the copied readout, the copied scale and shift."""
     foundation = read_foundation(checkpoint[0], CATALOGUE)
-    engine, table = fine_tune_model(foundation)
+    engine, table = fine_tune_model(foundation, elements=elements)
     transfer_foundation(
         foundation.model,
         engine.get_submodule("backbone"),
@@ -211,13 +267,24 @@ def test_every_head_computes_the_foundations_interaction_energy(checkpoint):
         readout_from={"replay": "pbe", "target": "pbe"},
     )
     expected = foundation.engine(
-        dict(water_graph(foundation.z_table)), compute=()
-    ).extras["interaction_energy"]
+        dict(water_graph(foundation.z_table)), compute=("forces",)
+    )
     for head in (0, 1):
-        got = engine(dict(water_graph(table, head)), compute=()).extras[
-            "interaction_energy"
-        ]
-        assert torch.allclose(got, expected, rtol=0, atol=1e-12), head
+        got = engine(dict(water_graph(table, head)), compute=("forces",))
+        assert torch.allclose(
+            got.extras["interaction_energy"],
+            expected.extras["interaction_energy"],
+            rtol=0,
+            atol=1e-12,
+        ), head
+        from tests.golden.harness import CLOSED_FORM_FP64
+
+        torch.testing.assert_close(
+            got.forces,
+            expected.forces,
+            rtol=CLOSED_FORM_FP64.rtol,
+            atol=CLOSED_FORM_FP64.atol,
+        )
 
 
 @fp64_only

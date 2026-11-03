@@ -276,7 +276,8 @@ def write_run_checkpoint(
     weights, sidecar = _files(root, stem)
     staged_weights, staged_sidecar = _files(root, f"{stem}.partial")
     save_file(tensors, str(staged_weights))
-    staged_sidecar.write_text(json.dumps(document, indent=1, sort_keys=True))
+    # Preserve the configured head order, which indexes the saved weight rows.
+    staged_sidecar.write_text(json.dumps(document, indent=1))
     # Tensors first, sidecar last: the sidecar is what makes a checkpoint
     # visible, so until it is in place the previous one is the newest.
     os.replace(staged_weights, weights)

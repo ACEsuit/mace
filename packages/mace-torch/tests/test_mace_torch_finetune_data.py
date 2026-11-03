@@ -211,6 +211,58 @@ def test_an_element_no_structure_holds_takes_the_foundation_s_energy(tmp_path):
 
 
 @fp64_only
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("kind", ["isolated_atoms", "table"])
+@pytest.mark.parametrize("element_table", ["foundation", "data"])
+def test_other_heads_elements_use_this_heads_foundation_energies(
+    tmp_path, reverse, kind, element_table
+):
+    """Replay carbon must not require a carbon reference in a water-only head."""
+    path = tmp_path / "carbon.xyz"
+    frames = []
+    for length in (1.2, 1.3, 1.4, 1.5):
+        atoms = Atoms("C2", positions=[[0, 0, 0], [length, 0, 0]])
+        atoms.info["REF_energy"] = -2060.0
+        atoms.arrays["REF_forces"] = np.zeros((2, 3))
+        frames.append(atoms)
+    write(path, frames)
+    target = target_head(tmp_path, readout_from="r2scan")
+    if kind == "table":
+        target["e0s"] = {"kind": "table", "values": {1: HYDROGEN, 8: OXYGEN}}
+    heads = {
+        "memory": {
+            "train_file": str(path),
+            "readout_from": "pbe",
+            "e0s": {"kind": "foundation", "head": "pbe"},
+        },
+        "target": target,
+    }
+    if reverse:
+        heads = dict(reversed(heads.items()))
+    source = foundation(
+        e0s={
+            "pbe": {1: -13.0, 6: -1030.0, 8: -2041.0},
+            "r2scan": {1: -14.0, 6: -1040.0, 8: -2050.0},
+        },
+        heads=("pbe", "r2scan"),
+    )
+    config = configuration(tmp_path, heads)
+    config = config.model_copy(
+        update={
+            "finetune": config.finetune.model_copy(
+                update={"element_table": element_table}
+            )
+        }
+    )
+    data = run_data_stage(config, CATALOGUE, foundation=source)
+    assert data.e0s.values["target"] == {1: HYDROGEN, 6: -1040.0, 8: OXYGEN}
+    assert data.e0s.values["memory"] == source.e0s["pbe"]
+    assert data.e0_provenance["target"].from_foundation == (6,)
+    assert data.e0_provenance["memory"].from_foundation == (1, 8)
+    assert list(data.z_table.zs) == [1, 6, 8]
+
+
+@fp64_only
 def test_a_table_declaration_keeps_its_own_value_for_an_absent_element(tmp_path):
     head = target_head(tmp_path)
     head["e0s"] = {"kind": "table", "values": {1: -13.5, 6: -1029.0, 8: -2040.5}}

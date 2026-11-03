@@ -237,6 +237,8 @@ def save_checkpoint(
 
     tensors.parent.mkdir(parents=True, exist_ok=True)
     save_file(flat, str(tensors))
+    # Configuration mapping order assigns head indices to weight rows.
+    # Sorting JSON keys would silently relabel a multi-head model on reload.
     sidecar.write_text(
         json.dumps(
             {
@@ -247,7 +249,6 @@ def save_checkpoint(
                 "tensors": entries,
             },
             indent=2,
-            sort_keys=True,
         )
     )
     return sidecar
