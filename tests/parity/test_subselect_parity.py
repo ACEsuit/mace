@@ -85,3 +85,89 @@ def test_a_random_selection_keeps_what_the_frozen_tree_keeps(
         seed=seed,
     )
     assert [signature(item) for item in kept] == legacy
+
+
+@pytest.mark.parametrize(
+    ("filtering", "elements"),
+    [
+        ("none", ()),
+        ("combinations", (1, 6, 8)),
+        ("inclusive", (26,)),
+        ("exclusive", (6,)),
+    ],
+)
+def test_precomputed_descriptor_rows_match_the_frozen_filtered_input(
+    isolated, tmp_path, monkeypatch, filtering, elements
+):
+    import numpy as np
+    from mace_core.config.resolved import ResolvedConfig
+    from mace_torch.finetune.stages import select_structures
+    from mace_torch.finetune.subselect import ABSENT, passes_filter
+    from mace_torch.train import data_stage
+
+    from mace.cli.fine_tuning_select import _load_descriptors
+
+    species = sorted(
+        {symbol for atoms in SIX for symbol in atoms.get_chemical_symbols()}
+    )
+    sparse = [
+        {
+            symbol: np.array([index, index + 0.5])
+            for symbol in set(atoms.get_chemical_symbols())
+        }
+        for index, atoms in enumerate(SIX)
+    ]
+    dense = np.array(
+        [
+            np.concatenate([row.get(symbol, np.full(2, ABSENT)) for symbol in species])
+            for row in sparse
+        ]
+    )
+    legacy_file, native_file = tmp_path / "legacy.npy", tmp_path / "numeric.npy"
+    np.save(legacy_file, sparse, allow_pickle=True)
+    np.save(native_file, dense, allow_pickle=False)
+    mask = [passes_filter(atoms.numbers, elements, filtering) for atoms in SIX]
+    filtered = [atoms.copy() for atoms, keep in zip(SIX, mask, strict=True) if keep]
+    _load_descriptors(filtered, mask, str(legacy_file), None, len(SIX))
+    expected = np.array(
+        [
+            np.concatenate(
+                [
+                    atoms.info["mace_descriptors"].get(symbol, np.full(2, ABSENT))
+                    for symbol in species
+                ]
+            )
+            for atoms in filtered
+        ]
+    )
+    captured = []
+    original = data_stage.select
+
+    def observe(*args, **kwargs):
+        captured.append(kwargs["descriptors"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(data_stage, "select", observe)
+    source = tmp_path / "pool.xyz"
+    ase.io.write(source, SIX, format="extxyz")
+    config = ResolvedConfig.model_validate(
+        {
+            "data": {
+                "heads": {
+                    "selected": {
+                        "train_file": str(source),
+                        "subselect": {
+                            "method": "fps",
+                            "num_samples": 1,
+                            "filtering": filtering,
+                            "elements": elements,
+                            "descriptors": str(native_file),
+                        },
+                    }
+                }
+            },
+        }
+    )
+    select_structures(config, "selected", tmp_path / "selected.xyz")
+    assert len(captured) == 1
+    np.testing.assert_array_equal(captured[0], expected)

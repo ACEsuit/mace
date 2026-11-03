@@ -52,7 +52,13 @@ from mace_torch.data.transforms import apply_transforms
 from mace_torch.finetune.foundation import FoundationContext, FoundationError
 from mace_torch.finetune.ratio import RatioGuardError, repeat_count
 from mace_torch.finetune.replay import read_curated
-from mace_torch.finetune.subselect import SelectionError, select, split_by_filter
+from mace_torch.finetune.subselect import (
+    SelectionError,
+    passes_filter,
+    read_descriptors,
+    select,
+    split_by_filter,
+)
 from mace_torch.train.contracts import TorchDataBundle
 from mace_torch.train.loaders import build_training_loader
 
@@ -540,7 +546,20 @@ def _subselect(
     assert settings is not None
     descriptors = None
     passed, _ = split_by_filter(structures, settings.elements, settings.filtering)
-    if (
+    if settings.descriptors is not None:
+        try:
+            descriptors = read_descriptors(settings.descriptors, len(structures))
+        except SelectionError as failure:
+            raise DataStageError(f"head {name!r}: {failure}") from failure
+        descriptors = descriptors[
+            [
+                passes_filter(
+                    item.atomic_numbers, settings.elements, settings.filtering
+                )
+                for item in structures
+            ]
+        ]
+    elif (
         settings.method == "fps"
         and settings.num_samples is not None
         and 0 < settings.num_samples < len(passed)

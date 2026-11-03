@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
@@ -185,7 +186,11 @@ class Foundation:
 
 
 def read_foundation(
-    path: str | Path, catalogue: ObservableCatalogue, precision=None
+    path: str | Path,
+    catalogue: ObservableCatalogue,
+    precision: PrecisionConfig | None = None,
+    *,
+    device: str = "cpu",
 ) -> Foundation:
     """Rebuild a foundation model from its checkpoint.
 
@@ -202,7 +207,9 @@ def read_foundation(
     from mace_torch.deploy.loader import DeployError, load_deployed
 
     try:
-        deployed = load_deployed(path, catalogue=catalogue, precision=precision)
+        deployed = load_deployed(
+            path, catalogue=catalogue, precision=precision, device=device
+        )
     except DeployError as error:
         raise FoundationError(str(error)) from error
     return Foundation(

@@ -512,7 +512,7 @@ def relabelling(
     foundation,
     *,
     context=None,
-    device: str = "cpu",
+    device: str | None = None,
     root: str | Path | None = None,
 ) -> Callable[[str, list[Configuration]], list[Configuration]] | None:
     """What the data stage relabels a head's structures with, if anything.
@@ -523,7 +523,7 @@ def relabelling(
             :class:`~mace_torch.finetune.foundation.Foundation`.
         context: The run's distributed context. The first process generates
             and writes; every process reads what it wrote.
-        device: Where to generate.
+        device: Where to generate, defaulting to the supplied model's device.
         root: Where each head's labels are written, one directory per head.
             ``<work_dir>/pseudolabels`` unless given.
 
@@ -534,6 +534,8 @@ def relabelling(
     if not heads:
         return None
     spec = config.finetune.pseudolabels
+    if device is None:
+        device = str(next(foundation.engine.parameters()).device)
     from mace_torch.train.data_stage import graph_inputs_of
 
     fingerprint = foundation_fingerprint(foundation.name)

@@ -30,6 +30,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import torch
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backends.xyz import SUFFIXES as XYZ_SUFFIXES
 from mace_core.data.xyz import write_configurations
@@ -92,8 +93,13 @@ def select_structures(
     """
     if Path(output).suffix.lower() not in XYZ_SUFFIXES:
         raise DataStageError("selection output must end in .xyz or .extxyz")
+    torch.device(config.runtime.device)
     settings = _head(config, head)
-    describe = settings.subselect is not None and settings.subselect.method == "fps"
+    describe = (
+        settings.subselect is not None
+        and settings.subselect.method == "fps"
+        and settings.subselect.descriptors is None
+    )
     if describe and foundation is None and config.finetune.foundation_model is not None:
         foundation = _foundation(config, catalogue)
     structures = selected_structures(
@@ -202,7 +208,9 @@ def build(
     if catalogue is None:
         catalogue = DEFAULT_CATALOGUE
     if foundation is None and config.finetune.foundation_model is not None:
-        foundation = _foundation(config, catalogue)
+        foundation = _foundation(
+            config, catalogue, device=context.device if context is not None else None
+        )
     if foundation is not None:
         # Before the data is read: the graphs are cut off at the foundation's
         # radius and carry the inputs its family reads.
@@ -253,10 +261,20 @@ def _head(config: ResolvedConfig, head: str):
     return config.data.heads[head]
 
 
-def _foundation(config: ResolvedConfig, catalogue: ObservableCatalogue) -> Foundation:
+def _foundation(
+    config: ResolvedConfig,
+    catalogue: ObservableCatalogue,
+    *,
+    device: str | None = None,
+) -> Foundation:
     if config.finetune.foundation_model is None:
         raise DataStageError(
             "the step needs the foundation model and the configuration names "
             "none. Set `finetune.foundation_model`."
         )
-    return read_foundation(config.finetune.foundation_model, catalogue)
+    return read_foundation(
+        config.finetune.foundation_model,
+        catalogue,
+        precision=config.precision,
+        device=device if device is not None else config.runtime.device,
+    )

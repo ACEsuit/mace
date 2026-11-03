@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -40,6 +41,7 @@ __all__ = [
     "SelectionError",
     "farthest_point_indices",
     "passes_filter",
+    "read_descriptors",
     "select",
     "split_by_filter",
 ]
@@ -64,6 +66,28 @@ ABSENT = 10e10
 
 class SelectionError(ValueError):
     """A selection that cannot be made as asked."""
+
+
+def read_descriptors(path: Path, count: int) -> np.ndarray:
+    """Read a numeric ``[count, features]`` NPY array in unfiltered source order.
+
+    The caller owns the row-to-structure correspondence. No implicit cache,
+    model inference or executable object deserialization is involved.
+    """
+    try:
+        with path.open("rb") as stream:
+            values = np.lib.format.read_array(stream, allow_pickle=False)
+        if (
+            values.ndim != 2
+            or values.shape[0] != count
+            or values.shape[1] == 0
+            or values.dtype.kind not in "fiu"
+            or not np.isfinite(values).all()
+        ):
+            raise ValueError(f"expected a finite numeric [{count}, features] matrix")
+    except (OSError, ValueError) as error:
+        raise SelectionError(f"subselect.descriptors {str(path)!r}: {error}") from error
+    return values
 
 
 def passes_filter(

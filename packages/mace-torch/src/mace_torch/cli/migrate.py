@@ -128,11 +128,6 @@ def selection_document(tokens: list[str]) -> tuple[dict, str]:
     )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args(tokens)
-    if args.descriptors:
-        raise ValueError(
-            "cached descriptors are recomputed from the selected V1 foundation model; "
-            "remove --descriptors after converting that model"
-        )
     selected = {
         "train_file": args.configs_pt,
         "weight": args.weight_pt,
@@ -140,6 +135,7 @@ def selection_document(tokens: list[str]) -> tuple[dict, str]:
         "readout_from": args.head_pt,
         "subselect": {
             "method": args.subselect,
+            "descriptors": args.descriptors,
             "num_samples": args.num_samples,
             "filtering": args.filtering_type,
             "elements": ast.literal_eval(args.filter_atomic_numbers_pt)
