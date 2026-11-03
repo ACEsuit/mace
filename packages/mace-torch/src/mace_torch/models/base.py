@@ -89,7 +89,20 @@ class MACEModel(nn.Module):
         if config.readout.gate != "silu":
             raise ValueError("the readout currently supports only the silu gate")
         if last_layer_irreps is None:
-            last_layer_irreps = "0e" if energy_head is not None else config.node_irreps
+            last_layer_irreps = config.node_irreps
+            if energy_head is not None:
+                # Energy needs scalars; additional observables must retain their
+                # own irreps too, or their final readout silently disappears.
+                required = {
+                    irrep
+                    for spec in observables
+                    for _, irrep in Irreps.parse(spec.irreps).terms
+                }
+                last_layer_irreps = "+".join(
+                    f"{multiplicity}x{irrep}"
+                    for multiplicity, irrep in Irreps.parse(config.node_irreps).terms
+                    if irrep in required
+                )
         self.config = config
         graph_features = tuple(
             FeatureSpec(

@@ -35,6 +35,7 @@ __all__ = ["dipole_config", "transfer_dipole_weights"]
 _OUTPUT_COPIES = {
     "dipole": {"atomic_dipoles": [0]},
     "dielectric": {"charges": [0], "polarizability_sh": [1, 3], "atomic_dipoles": [2]},
+    "energy_dipole": {"energy": [0], "dipole": [1]},
 }
 
 

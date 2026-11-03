@@ -29,7 +29,35 @@ from mace_torch.kernels import segment_sum
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.heads import ObservableHead, per_head_irreps
 
-__all__ = ["ENERGY_EXTRA_ROWS", "ENERGY_OBSERVABLE", "MACEOutputs"]
+__all__ = [
+    "ENERGY_EXTRA_ROWS",
+    "ENERGY_OBSERVABLE",
+    "MACEOutputs",
+    "fixed_charge_dipole",
+]
+
+#: The frozen dipole models' conversion, 1e-11 / c / e with exact SI constants.
+#: It differs from ASE's Debye in the eighth digit; trained weights depend on it.
+E_ANGSTROM_PER_DEBYE = 1e-11 / 299_792_458.0 / 1.602176634e-19
+
+
+def fixed_charge_dipole(
+    positions: Tensor, charges: Tensor | None, batch: Tensor, num_graphs: int
+) -> Tensor:
+    """Return ``[n_graphs, 3]`` fixed-charge dipoles in Debye.
+
+    Positions are ``[n_atoms, 3]`` in Angstrom and charges ``[n_atoms]`` in e.
+    The convention matches ``compute_fixed_charge_dipole`` in the frozen
+    ``mace/modules/utils.py``. Missing charges mean zero. The result remains
+    differentiable in both inputs.
+    """
+    if charges is None:
+        return positions.new_zeros((num_graphs, 3))
+    return (
+        segment_sum(positions * charges.unsqueeze(-1), batch, num_graphs)
+        / E_ANGSTROM_PER_DEBYE
+    )
+
 
 #: The one observable whose head is not a plain readout. Its site energies go
 #: through the energy head, which owns the isolated-atom energies, the scale and
@@ -116,6 +144,7 @@ class MACEOutputs(nn.Module):
 
         self.specs = list(observables)
         self.energy_head = energy_head
+        self.fixed_charge_dipole = wants_energy and "dipole" in names
         self.num_heads = num_heads
         self.normalization = nn.ModuleDict()
         self.heads = nn.ModuleDict(
@@ -247,6 +276,11 @@ class MACEOutputs(nn.Module):
             if spec.name in self.normalization:
                 value = self.normalization[spec.name](
                     value, graph["head"], batch, graph["ptr"]
+                )
+            if self.fixed_charge_dipole and spec.name == "dipole":
+                # Normalize the learned residual, never the physical q*r term.
+                value = value + fixed_charge_dipole(
+                    graph["positions"], graph.get("charges"), batch, num_graphs
                 )
             field = FIELD_BY_OBSERVABLE.get(spec.name, spec.name)
             if field in CORE_FIELD_NAMES:

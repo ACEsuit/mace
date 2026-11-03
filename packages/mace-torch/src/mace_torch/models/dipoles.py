@@ -48,6 +48,8 @@ from torch import Tensor
 
 from mace_torch.kernels import segment_sum
 from mace_torch.models.base import MACEModel
+from mace_torch.models.outputs import E_ANGSTROM_PER_DEBYE as E_ANGSTROM_PER_DEBYE
+from mace_torch.models.outputs import fixed_charge_dipole
 
 __all__ = [
     "DIPOLE_EXTRA_ROWS",
@@ -56,11 +58,6 @@ __all__ = [
     "DipoleModel",
     "DipoleSettings",
 ]
-
-#: A charge dipole in e Angstrom divided by this is in Debye. Spelled as the
-#: frozen tree spells it, ``1e-11 / c / e``, with the exact SI speed of light
-#: and elementary charge, so the two are the same float.
-E_ANGSTROM_PER_DEBYE = 1e-11 / 299_792_458.0 / 1.602176634e-19
 
 #: What each quantity the model adds to ``extras`` has a row for.
 DIPOLE_EXTRA_ROWS: dict[str, str] = {
@@ -234,14 +231,8 @@ class DipoleModel(MACEModel):
             output.extras["charges"] = charges
             baseline = segment_sum(positions * charges.unsqueeze(-1), batch, num_graphs)
         else:
-            charges = graph.get("charges")
-            baseline = (
-                torch.zeros(
-                    (num_graphs, 3), dtype=positions.dtype, device=positions.device
-                )
-                if charges is None
-                else segment_sum(positions * charges.unsqueeze(-1), batch, num_graphs)
-                / E_ANGSTROM_PER_DEBYE
+            baseline = fixed_charge_dipole(
+                positions, graph.get("charges"), batch, num_graphs
             )
 
         atomic_dipoles = output.extras["atomic_dipoles"]

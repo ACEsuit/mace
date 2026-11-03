@@ -2,8 +2,8 @@
 
 These are deployment workflows, not comparisons of stochastic training paths.
 The fixed-anchor comparisons with legacy live in tests/parity/test_calculator*.
-The joint energy/dipole case checks the declared output surface only: its
-missing legacy fixed-charge baseline remains open in the GATE-3 audit.
+The joint energy/dipole case also checks the physical charge contribution and
+the vector features of the final layer after training and checkpoint reload.
 """
 
 import copy
@@ -152,6 +152,16 @@ def test_trained_response_calculators(trained_calculators, device, family, tmp_p
     assert dipole.shape == (3,) and np.isfinite(dipole).all()
     if family == "energy-dipole":
         close(calculate_numerical_forces(atoms, eps=1e-4), atoms.get_forces())
+        from mace_torch.models.dipoles import E_ANGSTROM_PER_DEBYE
+
+        assert atoms.calc.models[0].model.backbone.layer_irreps[-1] == "4x0e+4x1o"
+        energy = atoms.get_potential_energy()
+        force = atoms.get_forces().copy()
+        delta = np.array([0.1, -0.1, 0.0])
+        atoms.arrays["Qs"] += delta
+        close(atoms.get_dipole_moment() - dipole, delta @ atoms.positions / E_ANGSTROM_PER_DEBYE)
+        close(atoms.get_potential_energy(), energy)
+        close(atoms.get_forces(), force)
     roundtrip(atoms, tmp_path / "response.xyz")
 
 

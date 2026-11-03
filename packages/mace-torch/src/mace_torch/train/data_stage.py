@@ -356,6 +356,10 @@ def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
         from mace_torch.models.magnetic import MAGNETIC_GRAPH_INPUTS
 
         inputs = MAGNETIC_GRAPH_INPUTS
+    elif "dipole" in model.observables:
+        # Declared joint energy/dipole readouts need the same fixed charges as
+        # the dipole-only model, through every data and deployment consumer.
+        inputs = ("charges",)
     return inputs + tuple(
         feature.name for feature in model.graph_features if feature.name not in inputs
     )
