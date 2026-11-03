@@ -365,6 +365,71 @@ def test_a_growing_structure_changes_the_batch_shape_once_per_growth(
 
 
 @fp64_only
+@pytest.mark.parametrize("override", [False, True])
+def test_declared_temperature_uses_recorded_key_without_replacing_aliases(
+    tmp_path, override
+):
+    from mace_core.config.resolved import ResolvedConfig
+    from mace_core.observables import DEFAULT_CATALOGUE
+    from mace_torch.train import run_data_stage, run_model_stage, write_model
+
+    config, _ = built_task(tmp_path, max_num_epochs=0)
+    document = config.model_dump(mode="json")
+    document["data"]["graph_input_keys"] = {
+        "elec_temp": "training_temperature",
+        "total_charge": "training_charge",
+        "total_spin": "training_spin",
+    }
+    document["model"]["graph_features"] = [
+        {"name": "elec_temp", "kind": "continuous", "embedding_dim": 2},
+        {
+            "name": "total_charge",
+            "kind": "categorical",
+            "embedding_dim": 2,
+            "num_classes": 4,
+        },
+        {
+            "name": "total_spin",
+            "kind": "categorical",
+            "embedding_dim": 2,
+            "num_classes": 4,
+        },
+    ]
+    config = ResolvedConfig.model_validate(document)
+    data = run_data_stage(config, DEFAULT_CATALOGUE)
+    built = run_model_stage(config, data, DEFAULT_CATALOGUE)
+    path = write_model(tmp_path / "conditioned", built.model, built.metadata)
+    calculator = MACECalculator(
+        model_paths=path,
+        info_keys={
+            "elec_temp": "evaluation_temperature",
+            "total_charge": "evaluation_charge",
+            "total_spin": "evaluation_spin",
+        }
+        if override
+        else None,
+    )
+    atoms = water()
+    atoms.info.update(
+        training_temperature=300.0,
+        evaluation_temperature=600.0,
+        training_charge=3,
+        training_spin=3,
+        charge=1,
+        spin=1,
+        evaluation_charge=2,
+        evaluation_spin=2,
+    )
+    graph, _ = calculator._graph(atoms, padded=False)
+    assert graph["elec_temp"].item() == (600.0 if override else 300.0)
+    assert graph["total_charge"].item() == (2 if override else 1)
+    assert graph["total_spin"].item() == (2 if override else 1)
+    calculator.calculate(atoms)
+    atoms.info["evaluation_temperature" if override else "training_temperature"] += 1
+    assert "info" in calculator.check_state(atoms)
+
+
+@fp64_only
 def test_passed_through_entries_reach_the_graph(checkpoints):
     calculator = MACECalculator(
         model_paths=checkpoints["a"],

@@ -8,6 +8,9 @@ cases are its `--freeze` thresholds, `mace/tools/scripts_utils.py:944-960`.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 import torch
@@ -24,6 +27,23 @@ from mace_torch.train.optimizers import parameter_groups
 
 CATALOGUE = DEFAULT_CATALOGUE
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
+
+
+@pytest.mark.parametrize("first", ["finetune.freeze", "train.optimizers"])
+def test_freezing_and_optimization_import_in_either_order(first):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"import mace_torch.{first}; "
+            "from mace_torch.finetune.freeze import freeze; "
+            "from mace_torch.train import build_optimizer, run_train_stage",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def model(seed=0, embedding_readout=False):

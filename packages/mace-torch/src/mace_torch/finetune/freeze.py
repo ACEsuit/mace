@@ -16,8 +16,6 @@ from __future__ import annotations
 
 from torch import nn
 
-from mace_torch.train.optimizers import GROUP_MARKERS
-
 __all__ = ["FREEZE_LEVELS", "freeze", "frozen_groups"]
 
 #: The level from which each group is frozen.
@@ -47,6 +45,9 @@ def freeze(model: nn.Module, level: int | None) -> dict[str, float]:
         ValueError: If a group the level names holds no parameter at all, which
             is a freeze that freezes nothing.
     """
+    # The training package imports this function when it exposes its loop.
+    from mace_torch.train.optimizers import GROUP_MARKERS
+
     factors: dict[str, float] = {}
     for group in frozen_groups(level):
         markers = GROUP_MARKERS[group]

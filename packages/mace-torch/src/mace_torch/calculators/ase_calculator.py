@@ -221,7 +221,8 @@ class MACECalculator(Calculator):
         length_units_to_A: What one model length unit is in Angstrom.
         charges_key: The ``atoms.arrays`` entry passed as ``charges``.
         info_keys: Graph field to ``atoms.info`` key, for the entries that
-            reach the model.
+            reach the model. Unmapped declared inputs use the checkpoint's
+            data keys; explicit mappings and the default aliases take priority.
         arrays_keys: Graph field to ``atoms.arrays`` key, likewise.
         head: The head to evaluate, by name. Required when the model has
             several and none is called ``default``.
@@ -353,6 +354,9 @@ class MACECalculator(Calculator):
         self.info_keys = dict(DEFAULT_INFO_KEYS if info_keys is None else info_keys)
         self.arrays_keys = {**dict(arrays_keys or {}), "charges": charges_key}
         keys = key_specification(first.config.data, model=first.config.model)
+        for name in self.graph_inputs:
+            if name in keys.graph_keys:
+                self.info_keys.setdefault(name, keys.graph_keys[name])
         for name, storage in self.features.items():
             target, declared_keys = (
                 (self.arrays_keys, keys.atom_keys)
