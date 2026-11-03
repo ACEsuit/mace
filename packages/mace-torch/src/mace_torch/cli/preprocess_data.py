@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import ast
+import math
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -75,6 +77,12 @@ def run(args: argparse.Namespace) -> int:
         else value
         for name, value in document.items()
     }
+    if "compute_statistics" in document:
+        document["compute_statistics"] = (
+            False
+            if document["compute_statistics"] is None
+            else boolean(str(document["compute_statistics"]))
+        )
     args = argparse.Namespace(
         **{
             **defaults,
@@ -86,12 +94,13 @@ def run(args: argparse.Namespace) -> int:
     from mace_core.config.data import HeadDataConfig
     from mace_core.config.e0s import E0sIsolatedAtoms
     from mace_core.config.legacy import from_namespace
+    from mace_core.data import open_dataset
     from mace_core.data.backends.memory import InMemoryBackend
     from mace_core.data.e0_resolution import resolve_e0s
     from mace_core.data.keys import KeySpecification
     from mace_core.data.splitting import random_train_valid_split
     from mace_core.data.statistics import compute_statistics
-    from mace_core.data.xyz import read_configurations
+    from mace_core.data.xyz import ISOLATED_ATOM_CONFIG_TYPE
     from mace_core.data_spec.shard_format import write_shards
     from mace_core.elements import AtomicNumberTable
 
@@ -103,59 +112,108 @@ def run(args: argparse.Namespace) -> int:
         )
     if args.head_key != "head":
         raise ValueError("prepare one dataset per head; --head_key is fixed to 'head'")
-    if args.batch_size < 1:
-        raise ValueError("--batch_size must be positive")
+    for name in ("batch_size", "num_process", "shard_size"):
+        if getattr(args, name) < 1:
+            raise ValueError(f"--{name} must be positive")
+    if not math.isfinite(args.r_max) or args.r_max <= 0:
+        raise ValueError("--r_max must be finite and positive")
+    scaling = {
+        "no_scaling": "none",
+        "rms_forces_scaling": "rms_forces",
+        "rms_dipoles_scaling": "rms_dipoles",
+        "std_scaling": "std",
+    }.get(args.scaling, args.scaling)
+    if scaling not in ("none", "std", "rms_forces", "rms_dipoles"):
+        raise ValueError(f"--scaling {args.scaling!r} is unknown")
+    destination = args.work_dir / args.output
+    if destination.exists() and any(destination.iterdir()):
+        raise FileExistsError(
+            f"{destination} is not empty; prepare into an empty directory"
+        )
     keys = KeySpecification.from_defaults().apply_overrides(
         {
-            name.removesuffix("_key"): value
+            name: value
             for name, value in vars(args).items()
             if name.endswith("_key") and name != "head_key"
         }
     )
-    weights = ast.literal_eval(args.config_type_weights)
-    parsed = read_configurations(
-        args.train_file,
-        keys,
-        config_type_weights=weights,
-        extract_isolated_atom_energies=True,
-        keep_isolated_atoms=True,
+
+    def literal(value):
+        return ast.literal_eval(value) if isinstance(value, str) else value
+
+    head = HeadDataConfig.model_validate(
+        {
+            "train_file": args.train_file,
+            "valid_file": args.valid_file,
+            "test_file": args.test_file,
+            "config_type_weights": literal(args.config_type_weights),
+        }
     )
+
+    def read(source):
+        items = []
+        for path in source if isinstance(source, tuple) else (source,):
+            # Preparation accepts ASE-readable files, including .traj, as the
+            # original command did. Select that reader explicitly, without
+            # adding a fallback to the registry's format discovery.
+            backend = open_dataset(
+                path, format="xyz", key_spec=keys, keep_isolated_atoms=True
+            )
+            if not len(backend):
+                raise ValueError(f"{path} holds no configurations")
+            items.extend(
+                replace(
+                    item,
+                    weight=item.weight
+                    * head.config_type_weights.get(item.config_type, 1.0),
+                )
+                for item in backend.iter_range()
+            )
+        return items
+
+    configurations = read(head.train_file)
+    references = [
+        item for item in configurations if item.config_type == ISOLATED_ATOM_CONFIG_TYPE
+    ]
+    structures = [
+        item for item in configurations if item.config_type != ISOLATED_ATOM_CONFIG_TYPE
+    ]
+    if head.valid_file is not None:
+        train, valid = structures, read(head.valid_file)
+    else:
+        train, valid = random_train_valid_split(
+            structures, args.valid_fraction, args.seed, destination
+        )
+    test = read(head.test_file) if head.test_file is not None else []
+    if not train or not valid:
+        raise ValueError("preparation requires nonempty train and valid sets")
     numbers = sorted(
         {
-            int(number)
-            for item in parsed.configurations
-            for number in item.atomic_numbers
+            int(z)
+            for item in [*configurations, *valid, *test]
+            for z in item.atomic_numbers
         }
     )
     if args.atomic_numbers is not None:
-        declared = ast.literal_eval(args.atomic_numbers)
+        declared = literal(args.atomic_numbers)
+        try:
+            declared = list(AtomicNumberTable(declared).zs)
+        except (TypeError, ValueError) as failure:
+            raise ValueError(f"--atomic_numbers: {failure}") from failure
         if not set(numbers) <= set(declared):
             raise ValueError(
                 "--atomic_numbers does not cover every element in the data"
             )
-        numbers = list(declared)
+        numbers = declared
     spec = E0sIsolatedAtoms()
     if args.E0s is not None:
         spec = HeadDataConfig.model_validate(
             from_namespace(argparse.Namespace(E0s=args.E0s))["data"]["heads"]["default"]
         ).e0s
+    # Validation and test labels cannot contribute to fitted reference energies.
     e0s, provenance = resolve_e0s(
-        spec, AtomicNumberTable(numbers), parsed.configurations
+        spec, AtomicNumberTable(numbers), [*references, *train]
     )
-    structures = [
-        item for item in parsed.configurations if item.config_type != "IsolatedAtom"
-    ]
-    destination = args.work_dir / args.output
-    destination.mkdir(parents=True, exist_ok=True)
-    if args.valid_file:
-        train = structures
-        valid = read_configurations(
-            args.valid_file, keys, config_type_weights=weights
-        ).configurations
-    else:
-        train, valid = random_train_valid_split(
-            structures, args.valid_fraction, args.seed, destination
-        )
     if args.shuffle:
         np.random.default_rng(args.seed).shuffle(train)
     statistics = None
@@ -165,16 +223,11 @@ def run(args: argparse.Namespace) -> int:
             numbers,
             args.r_max,
             e0s,
-            scaling=args.scaling.removesuffix("_scaling").replace("no", "none"),
+            scaling=scaling,
         )
-    references = [
-        item for item in parsed.configurations if item.config_type == "IsolatedAtom"
-    ]
     splits = {"train": [*references, *train], "valid": valid}
-    if args.test_file:
-        splits["test"] = read_configurations(
-            args.test_file, keys, config_type_weights=weights
-        ).configurations
+    if test:
+        splits["test"] = test
     for name, configurations in splits.items():
         write_shards(
             configurations,

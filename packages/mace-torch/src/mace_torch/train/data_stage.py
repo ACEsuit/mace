@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import math
 from collections.abc import Callable, Mapping, Sequence
 
 from mace_core.config.data import DataConfig, DatasetSource, HeadDataConfig
@@ -221,13 +222,41 @@ def run_data_stage(
         # Every energy head has its own recipe; the aggregate is used only
         # for neighbour counts and must not require unrequested forces.
         measured = "none"
-    statistics = compute_statistics(
-        InMemoryBackend(train),
-        list(z_table.zs),
-        config.model.r_max,
-        _average_e0s(e0s, z_table) if reads_energy else {},
-        scaling=measured,
-    )
+    energies = _average_e0s(e0s, z_table) if reads_energy else {}
+    if config.data.statistics_file is None:
+        statistics = compute_statistics(
+            InMemoryBackend(train),
+            list(z_table.zs),
+            config.model.r_max,
+            energies,
+            scaling=measured,
+        )
+    else:
+        from mace_core.data.backends.hdf5_legacy import read_legacy_statistics
+
+        path = config.data.statistics_file
+        try:
+            statistics = read_legacy_statistics(path)
+        except Exception as failure:
+            raise DataStageError(f"data.statistics_file {path}: {failure}") from failure
+        expected = dict(
+            r_max=config.model.r_max,
+            atomic_numbers=list(z_table.zs),
+            atomic_energies=energies,
+        )
+        for name, value in expected.items():
+            if getattr(statistics, name) != value:
+                raise DataStageError(
+                    f"data.statistics_file {path}: {name} disagrees with the "
+                    "resolved data/model; regenerate statistics using these inputs"
+                )
+        for name in ("mean", "std", "avg_num_neighbors"):
+            value = getattr(statistics, name)
+            if not math.isfinite(value) or (name != "mean" and value < 0):
+                raise DataStageError(
+                    f"data.statistics_file {path}: {name} must be finite"
+                    + (" and nonnegative" if name != "mean" else "")
+                )
 
     specs = target_specs(requested)
     head_names = tuple(heads)
