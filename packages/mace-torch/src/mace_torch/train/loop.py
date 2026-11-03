@@ -585,7 +585,11 @@ def report_errors(
     def evaluate_rows(model: nn.Module, loaders, *, split_names: bool) -> list[Row]:
         rows = []
         for name, batches in loaders.items():
-            head = name.split("_", 1)[1] if split_names else name
+            head = (
+                name.split("_", 1)[1]
+                if split_names
+                else batches.dataset.configurations[0].head
+            )
             if head in config.data.skip_evaluate_heads:
                 logger.info("Skipping evaluation of %s (head %s)", name, head)
                 continue

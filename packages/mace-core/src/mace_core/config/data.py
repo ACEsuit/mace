@@ -7,7 +7,7 @@ temperature and total charge have configurable file keys.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -19,6 +19,7 @@ __all__ = [
     "AugmentationSpec",
     "CuratedDataset",
     "DataConfig",
+    "DatasetSource",
     "GraphInputKeys",
     "HeadDataConfig",
     "RatioGuardConfig",
@@ -34,6 +35,9 @@ CuratedDataset = Literal["mp", "omat", "matpes_pbe", "matpes_r2scan"]
 
 #: The same names, for a caller that enumerates them.
 CURATED_DATASETS: tuple[str, ...] = ("mp", "omat", "matpes_pbe", "matpes_r2scan")
+
+# A scalar keeps existing configs and metadata stable; sequences preserve order.
+DatasetSource = Path | Annotated[tuple[Path, ...], Field(min_length=1)]
 
 
 class GraphInputKeys(FrozenSection):
@@ -163,10 +167,12 @@ class HeadDataConfig(FrozenSection):
     """One level of theory: its structures, and where its E0s come from.
 
     Args:
-        train_file: The structures this head trains on.
+        train_file: One dataset path or an ordered, nonempty list of paths.
+            Files and dataset directories may use different registered formats.
         valid_file: Its validation structures. ``None`` splits them out of
             ``train_file`` by ``valid_fraction``.
-        test_file: Structures evaluated after training.
+        test_file: Structures evaluated after training. Like ``train_file`` and
+            ``valid_file``, a list is concatenated in its declared order.
         e0s: Where the isolated-atom energies come from. Per head because two
             levels of theory do not share them, which is the whole reason a
             head exists.
@@ -186,9 +192,9 @@ class HeadDataConfig(FrozenSection):
             error when it has several.
     """
 
-    train_file: Path | None = None
-    valid_file: Path | None = None
-    test_file: Path | None = None
+    train_file: DatasetSource | None = None
+    valid_file: DatasetSource | None = None
+    test_file: DatasetSource | None = None
     e0s: E0Spec = E0sIsolatedAtoms()
     config_type_weights: dict[str, float] = Field(default_factory=dict)
     keep_isolated_atoms: bool = False
@@ -222,7 +228,10 @@ class DataConfig(FrozenSection):
             be rewritten to add a second head.
         valid_fraction: Fraction of a head's training set held out when it
             declares no ``valid_file``.
-        test_dir: A directory of test sets, each file evaluated separately.
+        test_dir: A directory of test datasets. Each non-hidden child is opened
+            through the backend registry, in sorted order, for every head.
+            Files and shard directories produce separate ``<head>_<stem>`` rows
+            (directories keep their full name). Duplicate row names raise.
         statistics_file: A precomputed statistics document. Statistics
             normally travel with the prepared shards; this is the path for a
             legacy `statistics.json` and for a dataset prepared elsewhere.

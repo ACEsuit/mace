@@ -167,6 +167,11 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
         heads = _literal(values["heads"])
         data["heads"] = {}
         for name, settings in heads.items():
+            if settings.get("test_dir") is not None:
+                raise LegacyFlagError(
+                    f"heads.{name}.test_dir is not a per-head V1 setting; "
+                    "use the global test_dir or explicit per-head test_file paths"
+                )
             translated = legacy_document(settings)
             unsupported = {key for key, value in translated.items() if value} - {"data"}
             if unsupported:

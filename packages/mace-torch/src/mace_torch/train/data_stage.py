@@ -17,9 +17,8 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
 
-from mace_core.config.data import DataConfig, HeadDataConfig
+from mace_core.config.data import DataConfig, DatasetSource, HeadDataConfig
 from mace_core.config.e0s import E0sTable
 from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
@@ -131,6 +130,8 @@ def run_data_stage(
         train.extend(head_train)
         valid.extend(head_valid)
         test.extend(head_test)
+
+    test_sets = _test_sets(test, config, key_spec)
 
     present = {int(z) for item in train for z in item.atomic_numbers}
     if not present:
@@ -284,9 +285,8 @@ def run_data_stage(
             for name in head_names
         },
         test_loaders={
-            name: _evaluation_loader(build(_of_head(test, name)), config, precision)
-            for name in head_names
-            if _of_head(test, name)
+            name: _evaluation_loader(build(items), config, precision)
+            for name, items in test_sets.items()
         },
     )
 
@@ -425,7 +425,7 @@ def _read_head(
         item for item in train if item.config_type != ISOLATED_ATOM_CONFIG_TYPE
     ]
     if head.valid_file is not None:
-        valid = list(_open(head.valid_file, name, key_spec).iter_range())
+        valid = _read(head.valid_file, name, key_spec)
         train = structures
     else:
         train, valid = random_train_valid_split(
@@ -436,11 +436,7 @@ def _read_head(
             prefix=name,
         )
     train = references + train
-    test = (
-        list(_open(head.test_file, name, key_spec).iter_range())
-        if head.test_file is not None
-        else []
-    )
+    test = _read(head.test_file, name, key_spec) if head.test_file is not None else []
     return train, valid, test
 
 
@@ -465,7 +461,7 @@ def selected_structures(
         # The reference structures stay in: the isolated-atom E0 kind reads
         # them, and a backend that dropped them first would hand over whatever
         # its own extraction does with an unlabelled one, which is a zero.
-        structures = list(_open(head.train_file, name, key_spec).iter_range())
+        structures = _read(head.train_file, name, key_spec)
         source = str(head.train_file)
     else:
         raise DataStageError(
@@ -571,9 +567,11 @@ def _reads_in_memory(head: HeadDataConfig) -> bool:
     """
     if head.curated is not None:
         return True
-    return (
-        head.train_file is not None and head.train_file.suffix.lower() in XYZ_SUFFIXES
-    )
+    source = head.train_file
+    if source is None:
+        return False
+    paths = source if isinstance(source, tuple) else (source,)
+    return all(path.suffix.lower() in XYZ_SUFFIXES for path in paths)
 
 
 def _guard_ratio(
@@ -621,16 +619,61 @@ def _guard_ratio(
     return kept + repeated * copies
 
 
-def _open(path: Path, head: str, key_spec: KeySpecification):
-    """Open one file, saying which head asked for it when it cannot be read."""
+def _read(
+    source: DatasetSource, head: str, key_spec: KeySpecification
+) -> list[Configuration]:
+    """Concatenate requested datasets, retaining their order and source errors."""
+    items = []
+    for path in source if isinstance(source, tuple) else (source,):
+        try:
+            dataset = open_dataset(
+                path, key_spec=key_spec, head=head, keep_isolated_atoms=True
+            )
+            if not len(dataset):
+                raise ValueError("the dataset holds no structures")
+            items.extend(dataset.iter_range())
+        except Exception as failure:
+            raise DataStageError(
+                f"head {head!r} could not read {path}: {failure}"
+            ) from failure
+    return items
+
+
+def _test_sets(
+    test: Sequence[Configuration], config: ResolvedConfig, key_spec: KeySpecification
+) -> dict[str, list[Configuration]]:
+    sets = {
+        name: items for name in config.data.heads if (items := _of_head(test, name))
+    }
+    directory = config.data.test_dir
+    if directory is None:
+        return sets
     try:
-        return open_dataset(
-            path, key_spec=key_spec, head=head, keep_isolated_atoms=True
+        paths = sorted(
+            path for path in directory.iterdir() if not path.name.startswith(".")
         )
-    except Exception as failure:
-        raise DataStageError(f"head {head!r} could not read {path}: {failure}") from (
-            failure
-        )
+    except OSError as failure:
+        raise DataStageError(f"data.test_dir {directory}: {failure}") from failure
+    if not paths:
+        raise DataStageError(f"data.test_dir {directory} holds no test datasets")
+    reserved = {
+        f"{split}_{head}" for head in config.data.heads for split in ("train", "valid")
+    }
+    for head in config.data.heads:
+        for path in paths:
+            name = f"{head}_{path.name if path.is_dir() else path.stem}"
+            if name in sets or name in reserved:
+                raise DataStageError(
+                    f"test set {path} produces duplicate row {name!r}; "
+                    "rename the dataset or head"
+                )
+            try:
+                sets[name] = _read(path, head, key_spec)
+            except DataStageError as failure:
+                raise DataStageError(
+                    f"data.test_dir {directory}: {failure}"
+                ) from failure
+    return sets
 
 
 def _average_e0s(
