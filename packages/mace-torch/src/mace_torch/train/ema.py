@@ -26,9 +26,9 @@ from torch import Tensor, nn
 
 __all__ = ["ExponentialMovingAverage"]
 
-#: The warm-up cap. With `n` updates taken, the decay is at most
-#: `(1 + n) / (10 + n)`, so it rises from 0.09 rather than starting at the
-#: configured value while the average is still mostly its initial copy.
+#: The warm-up cap. At update `n`, counted from one, the decay is at most
+#: `(1 + n) / (10 + n)`, so it starts at 2/11 while the average is still
+#: mostly its initial copy.
 _WARMUP_OFFSET = 10.0
 
 
@@ -62,9 +62,8 @@ class ExponentialMovingAverage:
         """What the next update will actually use."""
         if not self.warmup:
             return self.decay
-        return min(
-            self.decay, (1.0 + self.num_updates) / (_WARMUP_OFFSET + self.num_updates)
-        )
+        updates = self.num_updates + 1
+        return min(self.decay, (1.0 + updates) / (_WARMUP_OFFSET + updates))
 
     @torch.no_grad()
     def update(self) -> None:
