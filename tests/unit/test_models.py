@@ -130,6 +130,52 @@ def test_mace():
     assert torch.allclose(output2["energy"][0], output2["energy"][1])
 
 
+def test_scale_shift_mace_embedding_readout_forward():
+    model = modules.ScaleShiftMACE(
+        r_max=5.0,
+        num_bessel=4,
+        num_polynomial_cutoff=3,
+        max_ell=1,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("4x0e + 4x1o"),
+        MLP_irreps=o3.Irreps("4x0e"),
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+        avg_num_neighbors=3.0,
+        atomic_numbers=table.zs,
+        correlation=1,
+        radial_type="bessel",
+        atomic_inter_scale=1.0,
+        atomic_inter_shift=0.0,
+        embedding_specs={
+            "elec_temp": {
+                "type": "continuous",
+                "per": "graph",
+                "in_dim": 1,
+                "emb_dim": 4,
+            }
+        },
+        use_embedding_readout=True,
+    )
+    atomic_data = data.AtomicData.from_config(config, z_table=table, cutoff=3.0)
+    loader = torch_geometric.dataloader.DataLoader(
+        dataset=[atomic_data, atomic_data], batch_size=2, shuffle=False
+    )
+    batch = next(iter(loader)).to_dict()
+    batch["elec_temp"] = torch.tensor([300.0, 600.0])
+
+    output = model(batch, training=True, compute_force=False)
+
+    assert output["energy"].shape == (2,)
+
+
 def test_dipole_mace():
     # create dipole MACE model
     model_config = dict(

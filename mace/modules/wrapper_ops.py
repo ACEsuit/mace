@@ -7,6 +7,7 @@ import types
 from typing import Any, List, Optional
 
 import torch
+import torch.nn.functional as F
 from e3nn import o3
 
 from mace.modules.symmetric_contraction import SymmetricContraction
@@ -43,8 +44,14 @@ class CuEquivarianceConfig:
     optimize_symmetric: bool = False
     optimize_fctp: bool = False
     conv_fusion: bool = False  # Set to True to enable conv fusion
+    conv_fusion_node_bucket: Optional[int] = 256
 
     def __post_init__(self):
+        if (
+            self.conv_fusion_node_bucket is not None
+            and self.conv_fusion_node_bucket <= 0
+        ):
+            raise ValueError("conv_fusion_node_bucket must be positive or None")
         if self.enabled and CUET_AVAILABLE:
             self.layout_str = self.layout
             self.layout = getattr(cue, self.layout)
@@ -143,8 +150,16 @@ class CueqConvFusionWrapper(torch.nn.Module):
         forward([tp_weights, node_feats, edge_attrs], input_indices, output_shapes, output_indices)
     """
 
-    def __init__(self, conv_tp: torch.nn.Module, polynomial: Any):
+    def __init__(
+        self,
+        conv_tp: torch.nn.Module,
+        polynomial: Any,
+        node_bucket: Optional[int] = 256,
+    ):
         super().__init__()
+
+        if node_bucket is not None and node_bucket <= 0:
+            raise ValueError("node_bucket must be positive or None")
 
         # cuet.SegmentedPolynomial silently downgrades to SegmentedPolynomialNaive
         # when cuequivariance_ops_torch cannot be imported: it warns and sets
@@ -164,11 +179,19 @@ class CueqConvFusionWrapper(torch.nn.Module):
             )
 
         self.conv_tp = conv_tp
+        # Zero disables padding: compiled graphs then specialize on the exact
+        # node count of every batch and recompile whenever it changes.
+        self.node_bucket = 0 if node_bucket is None else node_bucket
         # operands[0] is the weight operand; its size is num_segments * extent,
         # the same product the fused implementation exposes through
         # buffer_num_segments/operand_extent. Reading it from the descriptor keeps
         # this independent of which backend cuequivariance selected.
         self.weight_numel = polynomial.operands[0].size
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if not hasattr(self, "node_bucket"):
+            self.node_bucket = 256
 
     @property
     def m(self):
@@ -183,18 +206,33 @@ class CueqConvFusionWrapper(torch.nn.Module):
     ) -> torch.Tensor:
         sender = edge_index[0]
         receiver = edge_index[1]
+        num_nodes = node_feats.shape[0]
+        if self.node_bucket > 0:
+            # Pad the node axis up to a multiple of the bucket so compiled
+            # kernels specialize per bucket rather than per exact node count;
+            # node counts vary from batch to batch and would otherwise force a
+            # recompilation (or a graph break) on every new shape.
+            bucket_nodes = (
+                (num_nodes + self.node_bucket - 1) // self.node_bucket
+            ) * self.node_bucket
+            node_feats = F.pad(node_feats, (0, 0, 0, bucket_nodes - num_nodes))
 
-        return self.conv_tp(
+        output = self.conv_tp(
             [tp_weights, node_feats, edge_attrs],
             {1: sender},
             {0: node_feats},
             {0: receiver},
         )[0]
+        return output[:num_nodes]
 
 
-def with_cueq_conv_fusion(conv_tp: torch.nn.Module, polynomial: Any) -> torch.nn.Module:
+def with_cueq_conv_fusion(
+    conv_tp: torch.nn.Module,
+    polynomial: Any,
+    node_bucket: Optional[int] = 256,
+) -> torch.nn.Module:
     """Wraps a cuet.SegmentedPolynomial / ConvTensorProduct to use conv fusion."""
-    return CueqConvFusionWrapper(conv_tp, polynomial)
+    return CueqConvFusionWrapper(conv_tp, polynomial, node_bucket=node_bucket)
 
 
 def with_oeq_conv_fusion(
@@ -306,6 +344,7 @@ class TensorProduct:
                         method="uniform_1d",
                     ),
                     polynomial,
+                    node_bucket=getattr(cueq_config, "conv_fusion_node_bucket", 256),
                 )
             return cuet.ChannelWiseTensorProduct(
                 cue.Irreps(cueq_config.group, irreps_in1),

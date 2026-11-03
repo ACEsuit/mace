@@ -205,3 +205,23 @@ def filter_nonzero_weight(
 
     quantity_l[-1] = filtered_q
     return 1.0
+
+
+def cueq_conv_fusion_node_bucket() -> int | None:
+    """Node-count bucket for cuEq conv fusion (MACE_CUEQ_CONV_FUSION_NODE_BUCKET)."""
+    raw = os.environ.get("MACE_CUEQ_CONV_FUSION_NODE_BUCKET")
+    if raw is None:
+        return 256
+    try:
+        bucket = int(raw)
+    except ValueError:
+        raise ValueError(
+            "MACE_CUEQ_CONV_FUSION_NODE_BUCKET must be a positive integer, "
+            f"got {raw!r}"
+        ) from None
+    if bucket <= 0:
+        raise ValueError(
+            "MACE_CUEQ_CONV_FUSION_NODE_BUCKET must be a positive integer, "
+            f"got {bucket}"
+        )
+    return bucket

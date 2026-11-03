@@ -1437,13 +1437,21 @@ class SHModule(torch.nn.Module):
                 "Cannot import 'sphericart.torch'. Please install the 'sphericart.torch' library from https://github.com/lab-cosmo/sphericart."
             ) from exc
         self.SH = sphericart.torch.SolidHarmonics(l_max)
+        # Fixed xyz -> zyx column permutation for sphericart. Non-persistent
+        # so state_dicts are unchanged; registered so FX tracing treats it as
+        # a graph input instead of baking the values into the traced graph.
+        self.register_buffer(
+            "xyz_perm",
+            torch.tensor([2, 0, 1], dtype=torch.long),
+            persistent=False,
+        )
 
     def forward(self, xyz):
-        sh = self.SH(
-            torch.index_select(
-                xyz, 1, torch.tensor([2, 0, 1], dtype=torch.long, device=xyz.device)
-            )
-        )
+        # Old pickled checkpoints predate the buffer; recreate eagerly there.
+        perm = getattr(self, "xyz_perm", None)
+        if perm is None:
+            perm = torch.tensor([2, 0, 1], dtype=torch.long, device=xyz.device)
+        sh = self.SH(torch.index_select(xyz, 1, perm))
         return sh
 
 

@@ -858,7 +858,10 @@ def prepare_graph(
         cell = data["cell"]
         pbc = data["pbc"] if "pbc" in data else None
         num_atoms_arange = torch.arange(positions.shape[0], device=positions.device)
-        num_graphs = int(data["ptr"].numel() - 1)
+        # Keep the frame count symbolic for make_fx/torch.compile training.
+        # Converting it to a Python int bakes the trace batch size into force,
+        # virial, stress, and scatter shapes before Inductor sees the graph.
+        num_graphs = data["ptr"].numel() - 1
         displacement = torch.zeros(
             (num_graphs, 3, 3), dtype=positions.dtype, device=positions.device
         )

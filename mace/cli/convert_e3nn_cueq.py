@@ -221,7 +221,8 @@ def run(
     device="cpu",
     return_model=True,
     layout: str = "ir_mul",
-    conv_fusion: bool = True,
+    conv_fusion: bool | None = None,
+    conv_fusion_node_bucket: int | None = 256,
 ):
     # Setup logging
 
@@ -244,15 +245,18 @@ def run(
     keep_last_layer_irreps = config.get("keep_last_layer_irreps", False)
 
     # Add cuequivariance config
+    if conv_fusion is None:
+        conv_fusion = torch.device(device).type == "cuda"
     config["cueq_config"] = CuEquivarianceConfig(
         enabled=True,
         layout=layout,
         group="O3_e3nn",
         optimize_all=True,
-        conv_fusion=conv_fusion and torch.device(device).type == "cuda",
+        conv_fusion=conv_fusion,
+        conv_fusion_node_bucket=conv_fusion_node_bucket,
     )
 
-    # Create new model with cuequivariance config
+    # Create new model with cuequivariance settings
     logging.info("Creating new model with cuequivariance settings")
     target_model = source_model.__class__(**config).to(device)
 
