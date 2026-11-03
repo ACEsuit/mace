@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.helpers import REPO_ROOT, base_mace_params, run_mace_train
+from tests.helpers import REPO_ROOT, base_mace_params
 
 # Only the two byte-identity tests need the script on PATH. The ownership test
 # reads installed metadata and must run everywhere, since a second distribution
@@ -102,6 +102,18 @@ def run_via_launcher(params: dict, tmp_path: Path) -> subprocess.CompletedProces
     )
 
 
+def run_direct(params: dict, tmp_path: Path) -> subprocess.CompletedProcess:
+    # The shared run_mace_train helper now routes through the launcher too.
+    # This side must bypass it to detect changes introduced by dispatch.
+    command = [sys.executable, str(REPO_ROOT / "mace/cli/run_train.py")]
+    command += [f"--{key}" if value is None else f"--{key}={value}"
+                for key, value in params.items()]
+    return subprocess.run(
+        command, env={**os.environ, "PYTHONPATH": os.pathsep.join(map(str, sys.path))},
+        check=True, capture_output=True, text=True, cwd=tmp_path,
+    )
+
+
 def model_bytes(params: dict) -> bytes:
     path = Path(params["model_dir"]) / f"{params['name']}.model"
     assert path.exists(), f"no model written at {path}"
@@ -114,7 +126,7 @@ def test_the_launcher_reproduces_a_direct_call_flag_for_flag(tmp_path, fitting_c
     direct_params = tiny_params(tmp_path / "direct", fitting_configs)
     launcher_params = tiny_params(tmp_path / "launcher", fitting_configs)
 
-    direct = run_mace_train(direct_params, cwd=tmp_path, capture_output=True, text=True)
+    direct = run_direct(direct_params, tmp_path)
     launched = run_via_launcher(launcher_params, tmp_path)
 
     assert normalise(direct.stdout) == normalise(launched.stdout)
@@ -134,9 +146,7 @@ def test_the_launcher_is_transparent_to_the_config_file_path(tmp_path, fitting_c
     direct_yaml.write_text(yaml.safe_dump(direct_params))
     launcher_yaml.write_text(yaml.safe_dump(launcher_params))
 
-    direct = run_mace_train(
-        {"config": str(direct_yaml)}, cwd=tmp_path, capture_output=True, text=True
-    )
+    direct = run_direct({"config": str(direct_yaml)}, tmp_path)
     launched = run_via_launcher({"config": str(launcher_yaml)}, tmp_path)
 
     assert normalise(direct.stdout) == normalise(launched.stdout)
@@ -156,7 +166,9 @@ def test_exactly_one_distribution_provides_each_console_script():
     for distribution in distributions():
         name = distribution.metadata["Name"]
         for entry in distribution.entry_points:
-            if entry.group == "console_scripts" and entry.name.startswith("mace_"):
+            if entry.group == "console_scripts" and (
+                entry.name == "mace" or entry.name.startswith("mace_")
+            ):
                 owners.setdefault(entry.name, set()).add(name)
 
     duplicated = {k: sorted(v) for k, v in owners.items() if len(v) > 1}
@@ -179,9 +191,11 @@ def test_exactly_one_distribution_provides_each_console_script():
             if entry.group == "console_scripts"
         }
     )
-    assert len(declared) == 12, f"expected twelve scripts, found {len(declared)}"
+    from mace_launcher import TARGETS
+
+    assert set(declared) == {"mace", *TARGETS}, declared
     wrong = {
-        name: sorted(owners[name])
+        name: sorted(owners.get(name, []))
         for name in declared
         if sorted(owners.get(name, [])) != ["mace-launcher"]
     }

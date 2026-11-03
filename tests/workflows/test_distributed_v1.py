@@ -12,12 +12,14 @@ from them.
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from tests.golden.harness import FP64_CPU_REFERENCE
@@ -133,18 +135,118 @@ def test_two_ranks_train_and_only_rank_zero_writes(tmp_path):
 
 
 @needs_the_v1_engine
-def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path):
+@pytest.mark.parametrize("stop_epoch", [1, 3])
+def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path, stop_epoch):
+    """Resume before/after the stage switch preserves raw and averaged state."""
+    from ase.io import read
+    from mace_torch.calculators import MACECalculator
+    from safetensors.torch import load_file
+
     config = tiny_task(tmp_path)
-    first = both_ranks(config, "--max_num_epochs", "3")
+    settings = {
+        "training.ema.enabled": True,
+        "training.scheduler.kind": {"kind": "exponential", "gamma": 0.8},
+    }
+    first = both_ranks(config, "--max_num_epochs", str(stop_epoch), settings=settings)
     for rank, finished in enumerate(first):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
 
-    resumed = both_ranks(config, settings=RESTART)
+    earlier_records = training_records(tmp_path)
+    resumed = both_ranks(config, settings={**settings, **RESTART})
     for rank, finished in enumerate(resumed):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
         assert "Resuming from" in finished.stderr
-    assert evaluated_epochs(resumed[0].stderr) == [3]
+    assert evaluated_epochs(resumed[0].stderr) == list(range(stop_epoch, 4))
+    assert training_records(tmp_path)[:len(earlier_records)] == earlier_records
+    assert "initial validation" not in resumed[0].stderr
     assert optimizer_steps(tmp_path) == {0: 1, 1: 1, 2: 1, 3: 1}
+
+    uninterrupted = tmp_path / "uninterrupted"
+    for rank, finished in enumerate(both_ranks(
+        config, settings={**settings, "runtime.work_dir": str(uninterrupted)},
+    )):
+        assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
+
+    def same_state(actual, expected):
+        if isinstance(expected, dict):
+            assert actual.keys() == expected.keys()
+            for key in expected:
+                same_state(actual[key], expected[key])
+        elif isinstance(expected, list):
+            assert len(actual) == len(expected)
+            for left, right in zip(actual, expected, strict=True):
+                same_state(left, right)
+        elif isinstance(expected, float):
+            assert actual == pytest.approx(
+                expected, abs=FP64_CPU_REFERENCE.atol, rel=FP64_CPU_REFERENCE.rtol
+            )
+        else:
+            assert actual == expected
+
+    actual = json.loads((tmp_path / "tiny.run-000004.json").read_text())
+    expected = json.loads((uninterrupted / "tiny.run-000004.json").read_text())
+    assert expected["ema"] is not None and expected["scheduler"] is not None
+    for key in ("state", "optimizer", "scheduler", "ema"):
+        same_state(actual[key], expected[key])
+    same_state(training_records(tmp_path), training_records(uninterrupted))
+    for filename in ("tiny.run-000004.safetensors", "tiny.safetensors"):
+        actual, expected = load_file(tmp_path / filename), load_file(uninterrupted / filename)
+        assert actual.keys() == expected.keys()
+        for key in expected:
+            np.testing.assert_allclose(
+                actual[key], expected[key],
+                atol=FP64_CPU_REFERENCE.atol, rtol=FP64_CPU_REFERENCE.rtol,
+            )
+    atoms = read(tmp_path / "train.xyz", index=-1)
+    atoms.calc = MACECalculator(uninterrupted / "tiny.safetensors", device="cpu")
+    energy, forces = atoms.get_potential_energy(), atoms.get_forces()
+    atoms.calc = MACECalculator(tmp_path / "tiny.safetensors", device="cpu")
+    np.testing.assert_allclose(
+        atoms.get_potential_energy(), energy,
+        atol=FP64_CPU_REFERENCE.atol, rtol=FP64_CPU_REFERENCE.rtol,
+    )
+    np.testing.assert_allclose(
+        atoms.get_forces(), forces,
+        atol=FP64_CPU_REFERENCE.atol, rtol=FP64_CPU_REFERENCE.rtol,
+    )
+
+
+@needs_the_v1_engine
+def test_two_rank_update_matches_one_concatenated_batch(tmp_path):
+    """Two disjoint five-structure shards have the same update as ten at once."""
+    from safetensors.torch import load_file
+
+    config = tiny_task(tmp_path)
+    settings = {
+        "training.max_num_epochs": 1,
+        "training.stage_two.enabled": False,
+        "training.batch_size": 5,
+        "training.ema.enabled": True,
+    }
+    for rank, finished in enumerate(both_ranks(config, settings=settings)):
+        assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
+    single_dir = tmp_path / "single"
+    single = on_v1("--config", str(variant(config, {
+        **settings, "runtime.work_dir": str(single_dir), "training.batch_size": 10,
+    })))
+    assert single.returncode == 0, single.stderr
+    assert optimizer_steps(tmp_path) == optimizer_steps(single_dir) == {0: 1}
+    together = [row for row in training_records(tmp_path) if row["mode"] == "valid"]
+    alone = [row for row in training_records(single_dir) if row["mode"] == "valid"]
+    assert len(together) == len(alone) == 2
+    for actual, expected in zip(together, alone, strict=True):
+        assert actual == pytest.approx(
+            expected, abs=FP64_CPU_REFERENCE.atol, rel=FP64_CPU_REFERENCE.rtol
+        )
+    # Includes the raw weights, Adam's moments and EMA shadow, not just E/F.
+    actual = load_file(tmp_path / "tiny.run-000001.safetensors")
+    expected = load_file(single_dir / "tiny.run-000001.safetensors")
+    assert actual.keys() == expected.keys()
+    for key in expected:
+        np.testing.assert_allclose(
+            actual[key], expected[key],
+            atol=FP64_CPU_REFERENCE.atol, rtol=FP64_CPU_REFERENCE.rtol,
+        )
 
 
 @needs_the_v1_engine
