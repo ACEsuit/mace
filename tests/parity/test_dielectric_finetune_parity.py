@@ -212,3 +212,32 @@ def test_the_converted_foundation_drives_the_calculator(foundation):
         reference["polarizability"].detach().numpy()[0],
         atol=1e-12,
     )
+
+
+def test_periodic_dielectric_rotation_matches_legacy(foundation):
+    legacy, path = foundation
+    atoms = Atoms("OHH", positions=[[0, -2, 0], [1, 0, 0], [0, 1, 0]],
+                  cell=[4, 4, 4], pbc=True)
+    rotation, _ = np.linalg.qr(np.random.default_rng(19).normal(size=(3, 3)))
+    rotated = atoms.copy()
+    # A rigid rotation of a periodic structure includes its lattice vectors.
+    # The historical workflow helper rotated only positions and changed the
+    # structure's neighbourhood instead of testing the same physical system.
+    rotated.positions = atoms.positions @ rotation.T
+    rotated.cell = atoms.cell.array @ rotation.T
+    calculator = MACECalculator(model_paths=path)
+    predictions = []
+    for structure in (atoms, rotated):
+        reference = legacy(legacy_batch(legacy, structure, [0.0] * 3, 0.0))
+        calculator.calculate(structure)
+        values = {}
+        for name in ("dipole", "polarizability"):
+            expected = reference[name].detach().numpy()[0]
+            actual = calculator.results[name]
+            np.testing.assert_allclose(actual, expected, atol=1e-12, rtol=0)
+            values[name] = actual.copy()
+        predictions.append(values)
+    before, after = predictions
+    np.testing.assert_allclose(after["dipole"], rotation @ before["dipole"], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(after["polarizability"], rotation @ before["polarizability"] @ rotation.T,
+                               atol=1e-12, rtol=0)

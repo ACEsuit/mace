@@ -125,3 +125,110 @@ def test_published_foundation_replay_starts_at_zero_error(tmp_path, monkeypatch,
         'foundation_e0s': expected_e0s, 'initial_metrics': initial,
         'pseudolabel_provenance': provenance.model_dump(mode='json'),
     }, indent=2, default=str))
+
+
+@pytest.mark.parametrize('device', ['cpu', pytest.param('cuda', marks=pytest.mark.gpu)])
+@pytest.mark.parametrize('name', ['mh_1', 'omol'])
+def test_published_foundation_trains_updates_weights_and_reloads(tmp_path, monkeypatch, fitting_configs, name, device):
+    import torch
+    from ase.io import write
+    from mace_core.artifacts import resolve_artifact
+    from mace_core.config.resolved import ResolvedConfig
+    from mace_core.observables import DEFAULT_CATALOGUE
+    from mace_torch.calculators import MACECalculator
+    from mace_torch.deploy.legacy import convert_legacy
+    from mace_torch.deploy.loader import load_deployed
+    from mace_torch.deploy.reference import verify_against_reference
+    from mace_torch.finetune.stages import build
+    from mace_torch.train.data_stage import graph_inputs_of
+
+    artifact = ARTIFACTS[name]
+    source = resolve_artifact(artifact.origin)
+    with source.open('rb') as stream:
+        digest_builder = hashlib.sha256()
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest_builder.update(block)
+    digest = digest_builder.hexdigest()
+    assert digest == artifact.sha256
+    monkeypatch.setenv('PYTHONPATH', os.pathsep.join(
+        [str(GOLDEN.parents[1]), os.environ.get('PYTHONPATH', '')]))
+    conversion = convert_legacy(source, tmp_path / 'foundation', DEFAULT_CATALOGUE,
+                                python=sys.executable)
+    foundation_path = conversion.checkpoint.with_suffix('.safetensors')
+    del conversion
+    gc.collect()
+    parent = load_deployed(foundation_path, device=device)
+    assert parent.heads == HEADS[name]
+    source_head = 'omol' if name == 'omol' else 'omat_pbe'
+    report = verify_against_reference(
+        parent.engine, GOLDEN / 'references' / artifact.reference, GOLDEN / 'fixtures',
+        z_table=parent.z_table, cutoff=parent.config.model.r_max,
+        head=parent.heads.index(artifact.loader_kwargs.get('head', source_head)),
+        graph_inputs=graph_inputs_of(parent.config.model), device=device,
+        atol=FP32.atol, rtol=FP32.rtol)
+    assert report.deviations and not report.skipped
+    assert report.passed, report.describe()
+    elements = tuple(parent.z_table.zs)
+    del parent
+    gc.collect()
+    if device == 'cuda':
+        torch.cuda.empty_cache()
+
+    # These are the same 20 periodic waters and two isolated references used by
+    # the historical OMOL/mh-1 training workflows; their E0s are both zero.
+    source_data = tmp_path / 'fit.xyz'
+    write(source_data, fitting_configs)
+    document = {
+        'runtime': {'name': 'fit', 'seed': 123, 'device': device},
+        'precision': {'model': 'float64'},
+        'finetune': {'foundation_model': str(foundation_path)},
+        'data': {'heads': {'target': {
+            'train_file': str(source_data), 'readout_from': source_head,
+            'e0s': {'kind': 'isolated_atoms'},
+        }}, 'valid_fraction': 0.1, 'pin_memory': False},
+        'model': {'observables': ['energy', 'forces']},
+        'training': {'max_num_epochs': 2, 'batch_size': 2, 'valid_batch_size': 2,
+                     'lr': 0.001, 'scheduler': {'kind': {'kind': 'constant'}}},
+        'loss': {'weights': {'energy': 1.0, 'forces': 100.0}},
+    }
+
+    def fingerprints(engine):
+        return {key: hashlib.sha256(value.detach().cpu().numpy().tobytes()).hexdigest()
+                for key, value in engine.named_parameters() if value.numel()}
+
+    built = build(ResolvedConfig.from_dict(document))
+    before = fingerprints(built.model)
+    assert built.data.e0s.values['target'][1] == built.data.e0s.values['target'][8] == 0.0
+    del built
+    gc.collect()
+    if device == 'cuda':
+        torch.cuda.empty_cache()
+    launch(tmp_path, document, 'trained')
+    records = training_records(tmp_path / 'trained', 'fit')
+    updates = [row for row in records if row['mode'] == 'opt']
+    assert updates and {row['epoch'] for row in updates} == {0, 1}
+    assert all(np.isfinite(row['loss']) for row in records if 'loss' in row)
+    loaded = load_deployed(tmp_path / 'trained/fit.safetensors', device=device)
+    assert loaded.heads == ('target',)
+    assert tuple(loaded.z_table.zs) == elements
+    assert loaded.e0s['target'][1] == loaded.e0s['target'][8] == 0.0
+    assert loaded.config.data.heads['target'].readout_from == source_head
+    after = fingerprints(loaded.engine)
+    assert before.keys() == after.keys()
+    changed = [key for key in before if before[key] != after[key]]
+    for group in ('node_embedding', '.interactions.', '.products.', '.readouts.'):
+        assert any(group in key for key in changed), (group, changed)
+    calculator = MACECalculator(models=loaded, device=device, head='target')
+    predictions = []
+    for atoms in fitting_configs:
+        atoms.calc = calculator
+        energy, forces = atoms.get_potential_energy(), atoms.get_forces()
+        assert np.isfinite(energy) and np.isfinite(forces).all()
+        assert forces.shape == (len(atoms), 3)
+        predictions.append({'energy': energy, 'forces': forces.tolist()})
+    assert len(predictions) == 22
+    (tmp_path / 'training-evidence.json').write_text(json.dumps({
+        'artifact_sha256': digest, 'device': device, 'source_head': source_head,
+        'steps': len(updates), 'changed': changed, 'golden': asdict(report),
+        'predictions': predictions,
+    }, indent=2))
