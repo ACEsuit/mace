@@ -278,18 +278,29 @@ def test_the_replay_head_starts_as_the_anchor(anchor_foundation, tmp_path):
     )
 
 
-def test_foundation_selection_descriptors_match_legacy_element_means(anchor_foundation):
+@pytest.mark.parametrize("selection_dtype", ["float32", "float64"])
+def test_foundation_selection_descriptors_match_legacy_element_means(
+    anchor_foundation, selection_dtype
+):
     """Selection consumes the reviewed descriptor API, including absent elements."""
     import numpy as np
     from ase import Atoms
+    from mace_core.config.precision import PrecisionConfig
     from mace_core.data.configuration import Configuration
     from mace_torch.finetune.subselect import ABSENT
 
     from mace.calculators import MACECalculator
+    from tests.golden.harness import FP32
 
     legacy, path = anchor_foundation
-    foundation = read_foundation(path, CATALOGUE)
-    calculator = MACECalculator(models=[legacy], device="cpu", default_dtype="float64")
+    foundation = read_foundation(
+        path,
+        CATALOGUE,
+        precision=PrecisionConfig(model=selection_dtype, accumulate=selection_dtype),
+    )
+    calculator = MACECalculator(
+        models=[legacy], device="cpu", default_dtype=selection_dtype
+    )
     structures = [
         Atoms("OH2", positions=[[0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]]),
         Atoms("H2", positions=[[0, 0, 0], [0.74, 0, 0]]),
@@ -314,6 +325,14 @@ def test_foundation_selection_descriptors_match_legacy_element_means(anchor_foun
                 else np.full(node_features.shape[1], ABSENT)
             )
         expected.append(np.concatenate(rows))
-    np.testing.assert_allclose(
-        foundation.describe(configurations), expected, atol=1e-12, rtol=0
-    )
+    if selection_dtype == "float32":
+        np.testing.assert_allclose(
+            foundation.describe(configurations),
+            expected,
+            atol=FP32.atol,
+            rtol=FP32.rtol,
+        )
+    else:
+        np.testing.assert_allclose(
+            foundation.describe(configurations), expected, atol=1e-12, rtol=0
+        )

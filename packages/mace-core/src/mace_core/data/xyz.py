@@ -398,6 +398,8 @@ def _check_something_is_labelled(
     path: str,
     no_data_ok: bool,
 ) -> None:
+    if key_spec.label_names == ():
+        return
     if key_spec.label_names is not None:
         stores: list[tuple[str, Storage]] = []
         for name in key_spec.label_names:

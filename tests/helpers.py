@@ -55,6 +55,16 @@ MACE_ENGINE = os.environ.get("MACE_ENGINE", "legacy")
 NOT_MIGRATED = "not yet available on v1 engine"
 
 
+def v1_command(*command: str) -> list[str]:
+    """A native hierarchical command with no legacy console-script equivalent."""
+    return [
+        sys.executable,
+        "-c",
+        "import sys; from mace_core.cli import main; raise SystemExit(main(sys.argv[1:]))",
+        *command,
+    ]
+
+
 def cli_command(script) -> list[str]:
     """The argv prefix that runs a MACE command line on the selected engine.
 

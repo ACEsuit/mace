@@ -38,7 +38,13 @@ def signature(atoms_or_configuration) -> str:
 
 @pytest.mark.parametrize(
     ("num_samples", "filtering", "elements"),
-    [(2, "none", ()), (3, "none", ()), (4, "combinations", (8, 26))],
+    [
+        (2, "none", ()),
+        (3, "none", ()),
+        (4, "combinations", (8, 26)),
+        (1, "inclusive", (8, 26)),
+        (3, "exclusive", (8, 26)),
+    ],
 )
 @pytest.mark.parametrize("seed", [0, 42, 1234])
 def test_a_random_selection_keeps_what_the_frozen_tree_keeps(

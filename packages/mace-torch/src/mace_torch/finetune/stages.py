@@ -27,9 +27,11 @@ its structures.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from mace_core.config.resolved import ResolvedConfig
+from mace_core.data.backends.xyz import SUFFIXES as XYZ_SUFFIXES
 from mace_core.data.xyz import write_configurations
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
 from mace_core.stages import TrainedModel
@@ -43,6 +45,7 @@ from mace_torch.train.data_stage import (
     key_specification,
     run_data_stage,
     selected_structures,
+    validation_structures,
 )
 from mace_torch.train.ddp import DistributedContext
 from mace_torch.train.loop import run_train_stage
@@ -87,15 +90,17 @@ def select_structures(
         DataStageError: If the configuration has no such head, or the head
             cannot be read or selected from.
     """
+    if Path(output).suffix.lower() not in XYZ_SUFFIXES:
+        raise DataStageError("selection output must end in .xyz or .extxyz")
     settings = _head(config, head)
     describe = settings.subselect is not None and settings.subselect.method == "fps"
-    if describe and foundation is None:
+    if describe and foundation is None and config.finetune.foundation_model is not None:
         foundation = _foundation(config, catalogue)
     structures = selected_structures(
         head,
         settings,
         config,
-        key_specification(config.data, model=config.model),
+        replace(key_specification(config.data, model=config.model), label_names=()),
         foundation.context(describe=describe) if foundation is not None else None,
     )
     return write_configurations(
@@ -112,8 +117,8 @@ def pseudolabel(
 ) -> Path:
     """Relabel a head's structures with the foundation model, and write them.
 
-    The structures are the head's after its subselection, which is what a run
-    relabels, so a run that reads the labels back with
+    The structures are the selected training set followed by any explicit
+    validation set, which is what a run relabels. A run that reads the labels with
     ``finetune.pseudolabels.labels_from`` set to ``directory`` finds them made
     from its own structures. The settings are the configuration's
     ``finetune.pseudolabels``, whether or not it turns them on.
@@ -146,6 +151,9 @@ def pseudolabel(
         config,
         key_specification(config.data, model=config.model),
         foundation.context(describe=describe),
+    )
+    structures += validation_structures(
+        head, settings, config, key_specification(config.data, model=config.model)
     )
     relabel = relabelling(config, foundation, root=directory)
     assert relabel is not None

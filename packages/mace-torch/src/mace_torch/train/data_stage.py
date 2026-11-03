@@ -63,6 +63,7 @@ __all__ = [
     "key_specification",
     "run_data_stage",
     "selected_structures",
+    "validation_structures",
 ]
 
 #: What a run computes in until a precision section exists to say otherwise.
@@ -424,8 +425,11 @@ def _read_head(
     through every step here alike; the source is the one line that differs.
     """
     train = selected_structures(name, head, config, key_spec, foundation)
+    valid = validation_structures(name, head, config, key_spec)
     if pseudolabel is not None:
-        train = list(pseudolabel(name, train))
+        train_count = len(train)
+        labelled = list(pseudolabel(name, [*train, *valid]))
+        train, valid = labelled[:train_count], labelled[train_count:]
     if head.weight != 1.0:
         train = [
             dataclasses.replace(item, weight=item.weight * head.weight)
@@ -454,7 +458,6 @@ def _read_head(
         item for item in train if item.config_type != ISOLATED_ATOM_CONFIG_TYPE
     ]
     if head.valid_file is not None:
-        valid = _read(head.valid_file, name, key_spec)
         train = structures
     else:
         train, valid = random_train_valid_split(
@@ -483,6 +486,8 @@ def selected_structures(
     head reading the written structures with no subselection goes through the
     rest exactly as this one would.
     """
+    if name in config.pseudolabelled_heads:
+        key_spec = dataclasses.replace(key_spec, label_names=())
     if head.curated is not None:
         structures = read_curated(head.curated, head=name)
         source = f"the {head.curated!r} replay dataset"
@@ -505,6 +510,20 @@ def selected_structures(
     return structures
 
 
+def validation_structures(
+    name: str,
+    head: HeadDataConfig,
+    config: ResolvedConfig,
+    key_spec: KeySpecification,
+) -> list[Configuration]:
+    """Explicit validation structures, before applying their label source."""
+    if head.valid_file is None:
+        return []
+    if name in config.pseudolabelled_heads:
+        key_spec = dataclasses.replace(key_spec, label_names=())
+    return _read(head.valid_file, name, key_spec)
+
+
 def _subselect(
     name: str,
     head: HeadDataConfig,
@@ -520,13 +539,17 @@ def _subselect(
     settings = head.subselect
     assert settings is not None
     descriptors = None
-    if settings.method == "fps":
+    passed, _ = split_by_filter(structures, settings.elements, settings.filtering)
+    if (
+        settings.method == "fps"
+        and settings.num_samples is not None
+        and 0 < settings.num_samples < len(passed)
+    ):
         if foundation is None or foundation.describe is None:
             raise DataStageError(
                 f"head {name!r} asks for farthest-point sampling, which reads "
                 f"a foundation model's descriptors, and the run has none."
             )
-        passed, _ = split_by_filter(structures, settings.elements, settings.filtering)
         descriptors = foundation.describe(passed)
     try:
         return select(

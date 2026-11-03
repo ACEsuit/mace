@@ -544,6 +544,7 @@ def relabelling(
         if name not in heads:
             return structures
         digest = structures_fingerprint(structures, inputs)
+        labels_head = _labelling_head(config, name, foundation.heads)
         if spec.labels_from is not None:
             labelled, provenance = load_pseudolabel_artifact(
                 Path(spec.labels_from) / name
@@ -555,13 +556,23 @@ def relabelling(
                 torch_version=torch.__version__,
                 kernel_backend=backend,
             )
+            if provenance.foundation_head != labels_head:
+                raise PseudolabelError(
+                    f"foundation_head is {provenance.foundation_head!r} in the "
+                    f"labels, but this head requests {labels_head!r}; regenerate them"
+                )
+            for field in ("properties", "stress_if_missing"):
+                if getattr(provenance.spec, field) != getattr(spec, field):
+                    raise PseudolabelError(
+                        f"finetune.pseudolabels.{field} differs from the saved labels; "
+                        "regenerate them with the requested settings"
+                    )
             return labelled
         directory = (
             pseudolabel_directory(config.runtime.work_dir, name)
             if root is None
             else Path(root) / name
         )
-        labels_head = _labelling_head(config, name, foundation.heads)
         if context is None or context.is_main:
             labelled = generate_pseudolabels(
                 foundation.engine,

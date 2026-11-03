@@ -101,6 +101,10 @@ def split_by_filter(
     filtering: Filtering,
 ) -> tuple[list[Configuration], list[Configuration]]:
     """The structures the filter allows, and the rest, both in order."""
+    if filtering not in FILTERINGS:
+        raise SelectionError(
+            f"{filtering!r} is not a filter. The filters are {list(FILTERINGS)}."
+        )
     if filtering != "none" and not elements:
         raise SelectionError(
             f"the {filtering!r} filter was given no elements, so it has "
@@ -137,7 +141,11 @@ def farthest_point_indices(
         count: How many to take, at most ``n``.
         generator: Draws the first point.
     """
+    if points.ndim != 2 or not np.isfinite(points).all():
+        raise SelectionError("descriptors must be a finite [n, d] array")
     total = points.shape[0]
+    if count < 1:
+        raise SelectionError("keep at least one farthest point")
     if count > total:
         raise SelectionError(f"{count} farthest points were asked for out of {total}.")
     start = int(generator.randint(0, total))
@@ -159,6 +167,9 @@ def _exact_farthest_points(points: np.ndarray, count: int, start: int) -> list[i
     chosen = [start]
     nearest = np.linalg.norm(values - values[start], axis=1)
     for _ in range(count - 1):
+        # Equal descriptors still represent distinct structures. Exclude each
+        # chosen index even when all remaining distances are zero.
+        nearest[chosen[-1]] = -np.inf
         candidate = int(np.argmax(nearest))
         chosen.append(candidate)
         nearest = np.minimum(
@@ -201,6 +212,8 @@ def select(
             short. The frozen tree raises from inside its random helper for the
             same cases, with a message about the remaining set.
     """
+    if method not in METHODS:
+        raise SelectionError(f"{method!r} is not a method. They are {list(METHODS)}.")
     if num_samples is not None and num_samples < 1:
         raise SelectionError(f"num_samples is {num_samples}; keep at least one.")
     generator = np.random.RandomState(seed)
