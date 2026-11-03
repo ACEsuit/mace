@@ -139,7 +139,7 @@ def pseudolabel(
     settings = _head(config, head)
     if foundation is None:
         foundation = _foundation(config, catalogue)
-    config = with_foundation_architecture(config, foundation)
+    config = with_foundation_architecture(config, foundation, catalogue)
     pseudolabels = config.finetune.pseudolabels.model_copy(
         update={"enabled": True, "labels_from": None, "heads": (head,)}
     )
@@ -214,7 +214,7 @@ def build(
     if foundation is not None:
         # Before the data is read: the graphs are cut off at the foundation's
         # radius and carry the inputs its family reads.
-        config = with_foundation_architecture(config, foundation)
+        config = with_foundation_architecture(config, foundation, catalogue)
     describe = any(
         head.subselect is not None and head.subselect.method == "fps"
         for head in config.data.heads.values()

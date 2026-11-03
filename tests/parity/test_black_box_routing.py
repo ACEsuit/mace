@@ -11,9 +11,9 @@ does not get the engine. Under `MACE_ENGINE=v1` it runs **legacy** and passes,
 which is a green tick for a stack that was never exercised: the exact silent
 pass the re-run exists to avoid.
 
-No file does, and the list that would record an exception is empty. A new one
-fails this test, which is the point: the gap it would open is a green tick for
-a stack that was never run.
+Only the launcher's own tests bypass the shared runner: they need independent
+direct calls to verify dispatch. Their exact paths are listed below; any new
+bypass fails this test.
 """
 
 from __future__ import annotations
@@ -26,15 +26,14 @@ from tests.helpers import NOT_MIGRATED
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BLACK_BOX = ("tests/workflows", "tests/integrations")
 
-#: Files that launch a MACE command line without going through the shared
-#: runner, and therefore ignore `MACE_ENGINE`. Such a file runs legacy whatever
-#: engine is asked for, so its v1 result means nothing.
-#:
-#: Empty, and meant to stay that way. Six files were on it and all six are
-#: routed: the ones that need `Popen` take the argv prefix from the same place
-#: the runner does, which is what keeps the launcher known in one module rather
-#: than in each of them.
-UNROUTED: set[str] = set()
+#: Only tests of dispatch itself may construct an independent command line.
+#: Routing their reference side through the launcher would compare it to itself.
+UNROUTED = {
+    "tests/workflows/test_launcher_engine_parity.py":
+        "The frozen script is the independent reference for legacy dispatch.",
+    "tests/workflows/test_launcher_v1.py":
+        "Installed commands are compared with direct V1 training; both engine selectors are under test.",
+}
 
 
 def launches_a_command_line(source: str) -> bool:
@@ -104,7 +103,7 @@ def test_no_new_file_launches_the_command_line_on_its_own():
         if launches_a_command_line(path.read_text()):
             offenders.add(relative)
 
-    unexpected = sorted(offenders - UNROUTED)
+    unexpected = sorted(offenders - UNROUTED.keys())
     assert not unexpected, (
         f"{unexpected} launch a MACE command line without going through "
         f"tests/helpers.run_mace_train, so they ignore MACE_ENGINE and their "
@@ -120,7 +119,7 @@ def test_the_bypass_list_has_no_stale_entries():
         for path in black_box_files()
         if launches_a_command_line(path.read_text())
     }
-    stale = sorted(UNROUTED - offenders)
+    stale = sorted(UNROUTED.keys() - offenders)
     assert not stale, (
         f"{stale} no longer launch their own command line, so they can come "
         f"off the list"
@@ -139,11 +138,9 @@ def test_the_shared_runner_knows_about_both_engines():
         "the engine is read in tests/helpers.py and nowhere else"
     )
     for path in black_box_files():
-        # Two files have the engine as their subject rather than as something
-        # they happen to choose: the launcher's own parity test, and the one
-        # that exercises the v1 side specifically. Everything else is re-run on
-        # whichever engine the suite was asked for, and must not decide.
-        if path.name in ("test_launcher_engine_parity.py", "test_run_train_v1.py"):
+        # Dispatch tests and the native workflow helper explicitly exercise an
+        # engine. Other workflows must use the shared runner's selection.
+        if str(path.relative_to(REPO_ROOT)) in UNROUTED or path.name == "test_run_train_v1.py":
             continue
         assert "MACE_ENGINE" not in path.read_text(), (
             f"{path.name} reads the engine itself; it is chosen in one place"

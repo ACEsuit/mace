@@ -201,6 +201,69 @@ def test_the_architecture_is_the_foundations(foundation_path):
 
 
 @fp64_only
+@pytest.mark.parametrize("requested", [("energy", "stress"), ("energy", "forces")])
+def test_finetuning_can_request_derivatives_of_a_trained_head(
+    foundation_path, requested
+):
+    from mace_torch.train.model_stage import with_foundation_architecture
+
+    path, directory = foundation_path
+    foundation = read_foundation(path, CATALOGUE)
+    config = fine_tune_config(directory, path, observables=requested)
+    before = config.to_resolved_dict()
+    resolved = with_foundation_architecture(config, foundation)
+    assert resolved.model.observables == requested
+    assert config.to_resolved_dict() == before
+
+
+@fp64_only
+@pytest.mark.parametrize("recorded", [False, True])
+def test_custom_derivatives_use_the_callers_catalogue(foundation_path, recorded):
+    from mace_torch.train.model_stage import with_foundation_architecture
+
+    path, directory = foundation_path
+    foundation = read_foundation(path, CATALOGUE)
+    energy = CATALOGUE.observables[0]
+    energy = energy.model_copy(
+        update={
+            "derivatives": tuple(
+                request.model_copy(update={"name": "strain_response"})
+                if request.wrt == "strain"
+                else request
+                for request in energy.derivatives
+            )
+        }
+    )
+    catalogue = CATALOGUE.model_copy(
+        update={"observables": (energy, *CATALOGUE.observables[1:])}
+    )
+    config = fine_tune_config(directory, path)
+    config = config.model_copy(
+        update={
+            "catalogue": catalogue if recorded else None,
+            "model": config.model.model_copy(
+                update={"observables": ("energy", "strain_response")}
+            ),
+        }
+    )
+    resolved = with_foundation_architecture(
+        config, foundation, CATALOGUE if recorded else catalogue
+    )
+    assert resolved.model.observables == ("energy", "strain_response")
+
+
+@fp64_only
+def test_a_derivative_of_an_untrained_head_is_still_refused(foundation_path):
+    from mace_torch.train.model_stage import with_foundation_architecture
+
+    path, directory = foundation_path
+    foundation = read_foundation(path, CATALOGUE)
+    config = fine_tune_config(directory, path, observables=("energy", "dmu_dr"))
+    with pytest.raises(ModelStageError, match="dipole"):
+        with_foundation_architecture(config, foundation)
+
+
+@fp64_only
 def test_a_setting_that_contradicts_the_foundation_is_refused(foundation_path):
     """A run that asked for a cutoff of five and trained at three would never
     be told, so it is told now."""

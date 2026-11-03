@@ -171,7 +171,7 @@ def run_model_stage(
         built from and the record that travels with the weights.
     """
     if foundation is not None:
-        config = with_foundation_architecture(config, foundation)
+        config = with_foundation_architecture(config, foundation, catalogue)
     precision = precision or config.precision
     if precision != config.precision:
         config = config.model_copy(update={"precision": precision})
@@ -244,7 +244,9 @@ _RUN_OWNED_MODEL_FIELDS = frozenset({"observables", "backend"})
 
 
 def with_foundation_architecture(
-    config: ResolvedConfig, foundation: Foundation
+    config: ResolvedConfig,
+    foundation: Foundation,
+    catalogue: ObservableCatalogue = DEFAULT_CATALOGUE,
 ) -> ResolvedConfig:
     """The configuration with the foundation model's architecture in it.
 
@@ -277,7 +279,16 @@ def with_foundation_architecture(
             f"with ({details}). A fine-tune takes the foundation's "
             f"architecture, so drop them or start from a model built that way."
         )
-    unread = sorted(set(ours.observables) - set(theirs.observables))
+    # Derivatives reuse their parent's trained head. A foundation that was
+    # trained without stress labels can still differentiate its energy.
+    requested = resolve_requested(ours.observables, config.catalogue or catalogue)
+    available = resolve_requested(
+        theirs.observables, foundation.config.catalogue or catalogue
+    )
+    unread = sorted(
+        {spec.name for spec in requested.observables}
+        - {spec.name for spec in available.observables}
+    )
     if unread:
         raise ModelStageError(
             f"the run reads out {unread}, which the foundation model does not; "
