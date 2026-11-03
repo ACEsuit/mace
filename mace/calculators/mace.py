@@ -84,6 +84,7 @@ class MACECalculator(Calculator):
                 to make a committee use a wild card notation like mace_*.model
         device: str, device to run on (cuda or cpu or xpu)
         energy_units_to_eV: float, conversion factor from model energy units to eV
+                Applies to node energies and their subtracted atomic references too.
         length_units_to_A: float, conversion factor from model length units to Angstroms
         default_dtype: str, default dtype of model
         charges_key: str, Array field of atoms object where atomic charges are stored
@@ -866,7 +867,7 @@ class MACECalculator(Calculator):
             self.results["free_energy"] = self.results["energy"]
         if self.results.get("node_energy") is not None:
             self.results["energies"] = self.results["node_energy"].copy()
-            self.results["node_energy"] -= node_e0
+            self.results["node_energy"] -= node_e0 * self.energy_units_to_eV
         if self.results.get("stress") is not None:
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
         # The committee's stresses go with it. Leaving them 3x3 while `stress` is
