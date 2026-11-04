@@ -23,12 +23,18 @@ from mace_core.config.training import (
     ExponentialSchedule,
     LBFGSOptimizer,
     PlateauSchedule,
+    ScheduleFreeOptimizer,
     SchedulerConfig,
     TrainingConfig,
 )
 from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
+
+try:
+    from schedulefree import AdamWScheduleFree
+except ImportError:
+    AdamWScheduleFree = None
 
 __all__ = [
     "GROUPS",
@@ -39,6 +45,7 @@ __all__ = [
     "build_optimizer",
     "build_scheduler",
     "parameter_groups",
+    "set_optimizer_training",
 ]
 
 #: The four groups, in the order they are built, and whether weight decay
@@ -192,10 +199,36 @@ def build_optimizer(model: nn.Module, config: TrainingConfig) -> Optimizer:
         )
     if isinstance(settings, LBFGSOptimizer):
         return _lbfgs(groups, config, settings)
+    if isinstance(settings, ScheduleFreeOptimizer):
+        if AdamWScheduleFree is None:
+            raise ImportError(
+                "training.optimizer.kind='schedulefree' requires schedulefree. "
+                "Install mace-torch-v1[schedulefree]."
+            )
+        return AdamWScheduleFree(
+            groups,
+            lr=config.lr,
+            betas=(settings.beta1, settings.beta2),
+            warmup_steps=settings.warmup_steps,
+        )
     raise UnsupportedOptimizerError(
-        f"the {settings.kind!r} optimizer is not built here. 'adam', 'adamw' "
-        f"and 'lbfgs' are; the schedule-free regime is its own work."
+        f"the {settings.kind!r} optimizer is not built here. "
+        "Use 'adam', 'adamw', 'schedulefree' or 'lbfgs'."
     )
+
+
+def set_optimizer_training(optimizer: Optimizer, *, training: bool) -> None:
+    """Select ScheduleFree's training or evaluation weights in place.
+
+    Its optimizer state records which coordinates the parameters hold, so a
+    run checkpoint saves both together. Ordinary optimizers have one set of
+    coordinates and need no mode change.
+    """
+    if AdamWScheduleFree is not None and isinstance(optimizer, AdamWScheduleFree):
+        if training:
+            optimizer.train()
+        else:
+            optimizer.eval()
 
 
 def _lbfgs(
@@ -241,7 +274,13 @@ def _lbfgs(
 def build_scheduler(
     optimizer: Optimizer, config: SchedulerConfig
 ) -> LRScheduler | None:
-    """The learning-rate schedule, or ``None`` for a constant one."""
+    """The learning-rate schedule, or ``None`` for constant/ScheduleFree.
+
+    ScheduleFree owns its warmup and averaging; the frozen training loop also
+    leaves external schedules inactive for this optimizer.
+    """
+    if AdamWScheduleFree is not None and isinstance(optimizer, AdamWScheduleFree):
+        return None
     schedule = config.kind
     if isinstance(schedule, ConstantSchedule):
         return None

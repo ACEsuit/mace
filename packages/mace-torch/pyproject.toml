@@ -52,6 +52,7 @@ dependencies = [
 vesin = "mace_torch.neighbors.vesin_backend:VesinBackend"
 
 [project.optional-dependencies]
+schedulefree = ["schedulefree"]
 # Reporting a run to Weights and Biases. Optional in the sense that matters:
 # the import happens inside the tracker's constructor, so a run with tracking
 # off never touches the package.

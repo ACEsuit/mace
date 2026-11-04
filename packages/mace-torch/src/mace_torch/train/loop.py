@@ -61,7 +61,11 @@ from mace_torch.train.full_batch import full_batch_step
 from mace_torch.train.logs import write_epoch
 from mace_torch.train.loss import build_loss
 from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
-from mace_torch.train.optimizers import build_optimizer, build_scheduler
+from mace_torch.train.optimizers import (
+    build_optimizer,
+    build_scheduler,
+    set_optimizer_training,
+)
 from mace_torch.train.tracking import NullTracker, Tracker, epoch_values, open_tracker
 
 logger = logging.getLogger(__name__)
@@ -383,6 +387,7 @@ def run_train_stage(
                 )
                 step_losses.append(train_loss)
             else:
+                set_optimizer_training(optimizer, training=True)
                 # A short last batch is a noisier gradient with the same learning
                 # rate behind it, so a mini-batch stage drops it.
                 train_loss = train_one_epoch(
@@ -397,6 +402,9 @@ def run_train_stage(
                     step_losses=step_losses if processes.is_main else None,
                 )
 
+            # Epoch boundaries hold inference weights, including checkpoints
+            # between validations and handoffs to another optimizer.
+            set_optimizer_training(optimizer, training=False)
             per_head = {}
             valid_loss: float | None = None
             improved = False
@@ -513,6 +521,7 @@ def run_train_stage(
                 break
             epoch = following
 
+        set_optimizer_training(optimizer, training=False)
         if best_state is None and ema is not None:
             # The run's model is the averaged one. Leaving the stepped weights in
             # place would return a model that differs from the checkpoint beside
@@ -745,6 +754,9 @@ def _enter_stage(
     """
     loss = build_loss(built.outputs, config.loss, stage)
     if not isinstance(stage.optimizer, InheritOptimizer):
+        # A replacement optimizer starts from the model's evaluation weights,
+        # never from ScheduleFree's internal training coordinates.
+        set_optimizer_training(optimizer, training=False)
         optimizer = build_optimizer(
             model, config.training.model_copy(update={"optimizer": stage.optimizer})
         )

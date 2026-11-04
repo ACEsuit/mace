@@ -47,7 +47,7 @@ class AdamOptimizer(FrozenSection):
     """Adam.
 
     Args:
-        beta: The second moment's decay, legacy's single ``--beta``.
+        beta: The first moment's decay, legacy's single ``--beta``.
         amsgrad: The AMSGrad variant.
     """
 

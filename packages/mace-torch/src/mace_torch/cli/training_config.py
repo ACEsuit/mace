@@ -282,6 +282,17 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
         if key in values:
             flag.apply(document, values.pop(key))
     if values:
+        # A parameter-only override belongs to the choice in the file. Without
+        # that context the compatibility translator can only use CLI defaults.
+        training = document.get("training", {})
+        if isinstance(training.get("optimizer"), Mapping):
+            values.setdefault(
+                "optimizer", training["optimizer"].get("kind", DEFAULTS["optimizer"])
+            )
+        scheduler = training.get("scheduler", {})
+        choice = scheduler.get("kind") if isinstance(scheduler, Mapping) else None
+        if isinstance(choice, Mapping) and not values.get("lbfgs"):
+            values.setdefault("scheduler", choice.get("kind", DEFAULTS["scheduler"]))
         if "num_radial_basis" in values and "radial_type" not in values:
             radial = document.get("model", {}).get("radial_basis", {})
             if "kind" in radial:
@@ -305,6 +316,21 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
         for name, settings in updates.items():
             if "e0s" in settings and name in heads:
                 heads[name].pop("e0s", None)
+        # Changing a tagged choice replaces that choice's settings. Merging
+        # across variants would keep, for example, Adam's beta in ScheduleFree.
+        training = document.get("training", {})
+        changed = translated.get("training", {})
+        for previous, incoming, key in (
+            (training, changed, "optimizer"),
+            (training.get("scheduler", {}), changed.get("scheduler", {}), "kind"),
+        ):
+            if (
+                isinstance(previous, Mapping)
+                and isinstance(previous.get(key), Mapping)
+                and isinstance(incoming.get(key), Mapping)
+                and previous[key].get("kind") != incoming[key].get("kind")
+            ):
+                previous.pop(key)
         document = apply_overrides(document, translated)
         if values.get("foundation_head"):
             for settings in document.get("data", {}).get("heads", {}).values():

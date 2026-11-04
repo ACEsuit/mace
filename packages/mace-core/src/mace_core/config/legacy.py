@@ -886,6 +886,10 @@ def _collapse_optimizer(namespace: Any, values: dict[str, Any]) -> None:
     """`--lbfgs` wins over `--optimizer`, which is what legacy does by swapping
     the object after the fact."""
     kind = "lbfgs" if _read(namespace, "lbfgs") else _read(namespace, "optimizer")
+    if kind is None and any(
+        _read(namespace, dest) is not None for dest in _OPTIMIZER_SETTINGS["adam"]
+    ):
+        kind = "adam"
     if kind is None:
         return
     settings = {
@@ -898,6 +902,10 @@ def _collapse_optimizer(namespace: Any, values: dict[str, Any]) -> None:
 
 def _collapse_schedule(namespace: Any, values: dict[str, Any]) -> None:
     scheduler = _read(namespace, "scheduler")
+    if scheduler is None and any(
+        _read(namespace, dest) is not None for dest in _SCHEDULE_SETTINGS["plateau"]
+    ):
+        scheduler = "ReduceLROnPlateau"
     if scheduler is None:
         return
     kind = _SCHEDULE_KINDS.get(scheduler, scheduler)
