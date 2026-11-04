@@ -589,12 +589,16 @@ def _unreachable(dest: str, disposition: Dropped | Reserved | Merged) -> str:
 
 def interaction_kind(name: str) -> str:
     """Translate the frozen class spelling at the legacy import boundary."""
+    if name == "RealAgnosticAttResidualInteractionBlock":
+        raise LegacyFlagError(
+            f"interaction {name!r} was retired by ARCH-2; choose a supported "
+            "interaction explicitly. No equivalent replacement is available."
+        )
     return {
         "RealAgnosticInteractionBlock": "plain",
         "RealAgnosticResidualInteractionBlock": "residual",
         "RealAgnosticDensityInteractionBlock": "density",
         "RealAgnosticDensityResidualInteractionBlock": "density_residual",
-        "RealAgnosticAttResidualInteractionBlock": "nonlinear",
         "RealAgnosticResidualNonLinearInteractionBlock": "nonlinear",
     }.get(name, name)
 

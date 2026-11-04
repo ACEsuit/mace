@@ -304,6 +304,78 @@ def test_preparation_retains_the_one_dataset_per_head_contract(tmp_path, flag, v
     assert not (tmp_path / "prepared").exists()
 
 
+def test_separately_prepared_heads_reproduce_raw_data_training(tmp_path):
+    import torch
+    from mace_torch.train import (
+        latest_run_checkpoint,
+        run_model_stage,
+        run_train_stage,
+    )
+    from safetensors.torch import load_file
+
+    settings = configuration(tmp_path, max_num_epochs=2).to_resolved_dict()
+    raw_heads, prepared_heads = {}, {}
+    for head, count, e0 in (("first", 4, 2.0), ("second", 6, -1.0)):
+        source = molecules(tmp_path / f"{head}.xyz", count=count)
+        valid = molecules(tmp_path / f"{head}_valid.xyz", count=2, offset=2)
+        destination = tmp_path / head
+        main(
+            [
+                "--train_file",
+                str(source),
+                "--valid_file",
+                str(valid),
+                "--output",
+                str(destination),
+                "--E0s",
+                repr({1: e0}),
+                "--r_max",
+                "5.0",
+                "--num_process",
+                "1",
+                "--shard_size",
+                "3",
+                "--shuffle",
+                "false",
+                "--compute_statistics",
+            ]
+        )
+        raw_heads[head] = {
+            "train_file": str(source),
+            "valid_file": str(valid),
+            "e0s": {"kind": "table", "values": {1: e0}},
+        }
+        prepared_heads[head] = {
+            **raw_heads[head],
+            "train_file": str(destination / "train"),
+            "valid_file": str(destination / "valid"),
+        }
+        assert dataset(destination / "train").statistics().atomic_energies == {1: e0}
+
+    results, tensors = [], []
+    for name, heads in (("raw", raw_heads), ("prepared", prepared_heads)):
+        config = ResolvedConfig.from_dict(
+            {**settings, "data": {**settings["data"], "heads": heads}}
+        )
+        data = run_data_stage(config, CATALOGUE)
+        assert data.e0s.values == {"first": {1: 2.0}, "second": {1: -1.0}}
+        built = run_model_stage(config, data, CATALOGUE)
+        results.append(run_train_stage(config, built, checkpoint_path=tmp_path / name))
+        checkpoint = latest_run_checkpoint(tmp_path, name)
+        assert checkpoint is not None
+        tensors.append(load_file(str(checkpoint.with_suffix(".safetensors"))))
+    assert [record.train_loss for record in results[0].history] == [
+        record.train_loss for record in results[1].history
+    ]
+    assert [record.valid_loss for record in results[0].history] == [
+        record.valid_loss for record in results[1].history
+    ]
+    assert tensors[0].keys() == tensors[1].keys()
+    assert any(key.startswith("optimizer") for key in tensors[0])
+    for key, value in tensors[0].items():
+        assert torch.equal(value, tensors[1][key]), key
+
+
 def test_ase_trajectory_input_remains_supported(tmp_path):
     from ase.io import read
 

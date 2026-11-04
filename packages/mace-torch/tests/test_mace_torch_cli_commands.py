@@ -724,6 +724,44 @@ def test_retired_training_flags_are_refused(flag):
         parse(arguments)
 
 
+@pytest.mark.parametrize("flag", ["interaction", "interaction_first"])
+@pytest.mark.parametrize("via_file", [False, True])
+def test_retired_attention_is_refused_in_flags_and_legacy_yaml(
+    tmp_path, flag, via_file
+):
+    name = "RealAgnosticAttResidualInteractionBlock"
+    arguments = ["--" + flag, name]
+    if via_file:
+        path = tmp_path / "legacy.yaml"
+        path.write_text(yaml.safe_dump({flag: name}))
+        arguments = ["--config", str(path)]
+    with pytest.raises(ValueError, match="retired by ARCH-2"):
+        parse(arguments)
+
+
+@pytest.mark.parametrize(
+    "flag,default,nondefault",
+    [
+        ("field_norm_factor", "0.02", "1.0"),
+        ("field_norm_factor", "0.02", "5.0"),
+        ("return_electrostatic_potentials", "False", "True"),
+    ],
+)
+def test_inert_polar_flags_keep_default_compatibility_and_refuse_requests(
+    tmp_path, flag, default, nondefault
+):
+    arguments = ["--model", "polar"]
+    assert parse([*arguments, "--" + flag, default]) == parse(arguments)
+    with pytest.raises(ValueError, match=flag):
+        parse([*arguments, "--" + flag, nondefault])
+    path = tmp_path / "legacy.yaml"
+    path.write_text(
+        yaml.safe_dump({"model": "polar", flag: yaml.safe_load(nondefault)})
+    )
+    with pytest.raises(ValueError, match=flag):
+        parse(["--config", str(path)])
+
+
 def test_explicit_flags_keep_native_defaults_and_the_named_head(tmp_path):
     native = ResolvedConfig.from_dict({"data": {"heads": {"water": {}}}})
     path = tmp_path / "native.yaml"

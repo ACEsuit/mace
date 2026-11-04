@@ -174,6 +174,17 @@ def test_a_missing_field_fails_the_import(converted, tmp_path):
         import_neutral(broken, CATALOGUE)
 
 
+@pytest.mark.parametrize("key", ["interaction_cls", "interaction_cls_first"])
+def test_retired_attention_is_refused_at_the_neutral_boundary(converted, tmp_path, key):
+    _, sidecar = converted
+    changed = rewritten(
+        sidecar, tmp_path, "attention",
+        config=lambda config: {**config, key: "RealAgnosticAttResidualInteractionBlock"},
+    )
+    with pytest.raises(NeutralImportError, match="retired by ARCH-2"):
+        import_neutral(changed, CATALOGUE)
+
+
 def test_a_field_the_import_does_not_map_fails_it(converted, tmp_path):
     _, sidecar = converted
     broken = rewritten(

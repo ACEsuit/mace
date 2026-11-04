@@ -34,7 +34,7 @@ from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,
 )
-from mace_core.config.legacy import interaction_kind
+from mace_core.config.legacy import LegacyFlagError, interaction_kind
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
@@ -223,6 +223,11 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         )
 
     transform = take("distance_transform")
+    try:
+        interaction = interaction_kind(take("interaction_cls"))
+        interaction_first = interaction_kind(take("interaction_cls_first"))
+    except LegacyFlagError as error:
+        raise NeutralImportError(str(error)) from error
     model = {
         "model": _SPELLINGS[family],
         "observables": list(
@@ -234,8 +239,8 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         "hidden_irreps": "+".join(str(irrep) for _, irrep in hidden.terms),
         "max_ell": int(take("max_ell")),
         "correlation": int(take("correlation")),
-        "interaction": interaction_kind(take("interaction_cls")),
-        "interaction_first": interaction_kind(take("interaction_cls_first")),
+        "interaction": interaction,
+        "interaction_first": interaction_first,
         "use_agnostic_product": bool(take("use_agnostic_product")),
         "radial_basis": {
             "kind": take("radial_type"),

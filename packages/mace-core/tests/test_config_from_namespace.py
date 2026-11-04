@@ -36,6 +36,12 @@ def test_a_namespace_missing_a_dest_contributes_nothing():
     assert from_namespace(Namespace(seed=7)) == {"runtime": {"seed": 7}}
 
 
+@pytest.mark.parametrize("flag", ["interaction", "interaction_first"])
+def test_retired_attention_is_never_substituted_for_another_model(flag):
+    with pytest.raises(LegacyFlagError, match="retired by ARCH-2"):
+        from_namespace(Namespace(**{flag: "RealAgnosticAttResidualInteractionBlock"}))
+
+
 def test_isolated_e0s_reaches_the_data_stage_contract():
     config = ResolvedConfig.from_dict(from_namespace(Namespace(E0s="isolated")))
     assert config.data.heads["default"].e0s.kind == "isolated_atoms"
