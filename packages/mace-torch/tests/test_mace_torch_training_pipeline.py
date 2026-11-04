@@ -752,6 +752,12 @@ def test_a_setting_the_model_cannot_build_is_refused(tmp_path, setting, value):
         build_with(tmp_path, **{setting: value})
 
 
+@pytest.mark.parametrize("model", ["BOTNet", "ScaleShiftBOTNet"])
+def test_retired_model_choices_are_refused(tmp_path, model):
+    with pytest.raises(ModelStageError, match=model):
+        build_with(tmp_path, model=model)
+
+
 def test_each_spelling_of_the_first_layer_builds_its_own_block(tmp_path):
     """Two models, as in the frozen tree: the residual first layer takes its
     skip from the element embedding and carries it to the product basis, the

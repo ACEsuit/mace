@@ -86,7 +86,23 @@ def test_all_thirteen_output_columns_are_accounted_for():
     ],
 )
 @pytest.mark.parametrize("weight", [1.0, 3.25])
-def test_dipole_cli_presets_preserve_loss_and_gradient(fp64, preset, model, weight):
+@pytest.mark.parametrize(
+    "config_weights",
+    [
+        (1.0, 1.0),
+        pytest.param(
+            (2.0, 3.0),
+            marks=pytest.mark.xfail(
+                strict=True,
+                raises=AssertionError,
+                reason="GATE-3/TRN-2: V1 weights dipole labels by structure; legacy does not",
+            ),
+        ),
+    ],
+)
+def test_dipole_cli_presets_preserve_loss_and_gradient(
+    fp64, preset, model, weight, config_weights
+):
     from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
     from mace_core.outputs import MACEOutput
     from mace_torch.cli.run_train import parse
@@ -122,7 +138,7 @@ def test_dipole_cli_presets_preserve_loss_and_gradient(fp64, preset, model, weig
         graph={
             "ptr": pointers,
             "batch": torch.tensor([0, 0, 1, 1, 1]),
-            "weight": torch.ones(2),
+            "weight": torch.tensor(config_weights),
         },
         targets=targets,
     )
@@ -136,7 +152,9 @@ def test_dipole_cli_presets_preserve_loss_and_gradient(fp64, preset, model, weig
         if preset == "dipole"
         else DipolePolarLoss(dipole_weight=weight, polarizability_weight=weight)
     )
-    legacy = legacy_loss(Data(ptr=pointers, **targets), predictions)
+    legacy = legacy_loss(
+        Data(ptr=pointers, weight=torch.tensor(config_weights), **targets), predictions
+    )
     tensors = tuple(predictions.values())
     native_gradients = torch.autograd.grad(native, tensors, retain_graph=True)
     legacy_gradients = torch.autograd.grad(legacy, tensors)

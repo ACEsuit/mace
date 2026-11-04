@@ -80,16 +80,27 @@ def test_engine_flag_without_a_value_is_refused(monkeypatch):
     assert "needs a value" in str(excinfo.value)
 
 
-def test_an_unmigrated_capability_names_itself_rather_than_a_module(monkeypatch):
+@pytest.mark.parametrize(
+    "script,entrypoint",
+    [
+        ("mace_create_lammps_model", "create_lammps_model"),
+        ("mace_e3nn_cueq", "e3nn_cueq"),
+        ("mace_cueq_to_e3nn", "cueq_to_e3nn"),
+    ],
+)
+def test_an_unmigrated_capability_names_itself_rather_than_a_module(
+    monkeypatch, script, entrypoint
+):
     """A missing v1 CLI is a routine migration state, not an ImportError.
 
-    LAMMPS export belongs to DEP-2. Training and evaluation are available.
+    LAMMPS export belongs to DEP-2. Backend converter scripts are retired for
+    canonical V1 weights. Neither may fall through to the legacy implementation.
     """
-    monkeypatch.setattr(sys, "argv", ["mace_create_lammps_model", "--engine", "v1"])
+    monkeypatch.setattr(sys, "argv", [script, "--engine", "v1"])
     with pytest.raises(SystemExit) as excinfo:
-        mace_launcher.create_lammps_model()
+        getattr(mace_launcher, entrypoint)()
     message = str(excinfo.value)
-    assert "mace_create_lammps_model" in message
+    assert script in message
     assert "not yet available on v1 engine" in message
     assert "--engine legacy" in message
 

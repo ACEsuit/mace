@@ -586,6 +586,17 @@ def test_md_remains_retired_as_the_inventory_agrees(capsys):
     assert "ASE dynamics" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "flag", ["save_cpu", "use_so3", "force_mh_ft_lr", "plot_interaction_e"]
+)
+def test_retired_training_flags_are_refused(flag):
+    arguments = ["--" + flag]
+    if flag != "save_cpu":
+        arguments.append("True")
+    with pytest.raises(ValueError, match=flag):
+        parse(arguments)
+
+
 def test_explicit_flags_keep_native_defaults_and_the_named_head(tmp_path):
     native = ResolvedConfig.from_dict({"data": {"heads": {"water": {}}}})
     path = tmp_path / "native.yaml"
