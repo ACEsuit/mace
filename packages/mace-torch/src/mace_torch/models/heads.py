@@ -47,7 +47,7 @@ from torch import Tensor, nn
 
 from mace_torch.backends import layout
 from mace_torch.backends.layout import expanded_irreps
-from mace_torch.nn.radial_mlp import SECOND_MOMENT_SCALE
+from mace_torch.nn.gate import ScalarActivation
 
 __all__ = [
     "ObservableHead",
@@ -228,17 +228,20 @@ def _check_reachable(spec: ObservableSpec, hidden_irreps: str) -> None:
 
 
 class _Gate(nn.Module):
-    """Scalars through a normalized SiLU, everything else scaled by a gate.
+    """Activated scalars, and higher irreps multiplied by activated scalar gates.
 
     The standard equivariant gate. A pointwise nonlinearity is only equivariant
     on scalars, so a higher irrep is instead multiplied by a scalar, which
     leaves its direction alone and changes only its length. The gates go
-    through the same normalized SiLU as the scalars, not a sigmoid: that is the
+    through the same normalized activation as the scalars: that is the
     frozen tree's readout, whose gates take the model's one activation.
     """
 
-    def __init__(self, irreps_scalars: str, irreps_gated: str) -> None:
+    def __init__(
+        self, irreps_scalars: str, irreps_gated: str, gate: str = "silu"
+    ) -> None:
         super().__init__()
+        self.activation = ScalarActivation(gate)
         self.scalars = Irreps.parse(irreps_scalars)
         # An empty string, not an empty `Irreps`: a scalar output has nothing
         # to gate, and the declaration grammar has no spelling for "nothing".
@@ -267,14 +270,10 @@ class _Gate(nn.Module):
         return "+".join(pieces)
 
     def forward(self, features: Tensor) -> Tensor:
-        # The same unit-second-moment multiplier the radial network carries.
-        # Trained readouts depend on it exactly as trained radial networks do.
-        scalars = SECOND_MOMENT_SCALE * torch.nn.functional.silu(
-            features[..., : self.scalar_dim]
-        )
+        scalars = self.activation(features[..., : self.scalar_dim])
         if not self.num_gates:
             return scalars
-        gates = SECOND_MOMENT_SCALE * torch.nn.functional.silu(
+        gates = self.activation(
             features[..., self.scalar_dim : self.scalar_dim + self.num_gates]
         )
         pieces, offset = [], 0
@@ -328,6 +327,7 @@ class ObservableHead(nn.Module):
         num_heads: int = 1,
         last_only: bool = False,
         biased: bool = False,
+        gate: str = "silu",
     ) -> None:
         super().__init__()
         if num_heads < 1:
@@ -379,6 +379,7 @@ class ObservableHead(nn.Module):
                         precision,
                         num_heads=num_heads,
                         biased=biased,
+                        gate=gate,
                     )
                 )
             else:
@@ -618,6 +619,7 @@ class _GatedReadout(nn.Module):
         precision: Precision,
         num_heads: int = 1,
         biased: bool = False,
+        gate: str = "silu",
     ) -> None:
         super().__init__()
         self.num_heads = num_heads
@@ -665,6 +667,7 @@ class _GatedReadout(nn.Module):
         self.gate = _Gate(
             f"{num_heads * hidden_scalars}x0e",
             per_head_irreps(gated, num_heads) if gated else "",
+            gate=gate,
         )
         self.first = backend.make_linear(
             LinearDescriptor(

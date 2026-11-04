@@ -50,6 +50,8 @@ CONTINUOUS_CHARGE = {"type": "continuous", "per": "graph", "in_dim": 1, "emb_dim
 
 #: Each setting as the frozen tree's keyword arguments.
 SETTINGS = {
+    **{f"gate-{name}": {"gate": modules.gate_dict[name]}
+       for name in ("tanh", "abs", "None")},
     "graph-features": {"embedding_specs": {"total_charge": CHARGE, "total_spin": SPIN}},
     "continuous-feature": {"embedding_specs": {"total_charge": CONTINUOUS_CHARGE}},
     "embedding-readout": {

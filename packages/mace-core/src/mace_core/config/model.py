@@ -184,7 +184,7 @@ class ReadoutConfig(ConfigSection):
 
     Args:
         mlp_irreps: Hidden irreps of the final non-linear readout.
-        gate: The gate activation the non-linear readout uses.
+        gate: The readout activation; ``"None"`` leaves scalars and gates linear.
         last_only: Read out only from the last interaction layer, instead of
             summing a readout per layer.
         from_embedding: Add a readout on the node embedding, before any
@@ -194,7 +194,7 @@ class ReadoutConfig(ConfigSection):
     """
 
     mlp_irreps: str = "16x0e"
-    gate: str = "silu"
+    gate: Literal["silu", "tanh", "abs", "None"] = "silu"
     last_only: bool = False
     from_embedding: bool = False
     bias: bool = False

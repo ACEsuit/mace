@@ -186,6 +186,15 @@ def legacy_config(model) -> dict[str, Any]:
     if plain:
         for key in ("atomic_inter_scale", "atomic_inter_shift"):
             config.pop(key, None)
+    if type(model).__name__ == "AtomicDielectricMACE":
+        # The legacy reader hardcodes SiLU for this family. Read the actual
+        # activation, including identity, from the trained readout instead.
+        nonlinear = model.readouts[-1].equivariant_nonlin
+        if hasattr(nonlinear, "_act_scalar"):
+            config["gate"] = nonlinear._act_scalar
+        else:
+            activation = nonlinear.act_scalars.acts[0]
+            config["gate"] = getattr(activation, "f", activation)
     if type(model).__name__ == "PolarMACE":
         # The cutoff the forward sums to, which is not always what the recorded
         # factor gives: the published models hold the cutoff of a factor of one
@@ -795,7 +804,7 @@ def walk(model, spelling: str) -> Walk:
             )
         walker.linear(f"{prefix}.second", readout.linear_2, f"{prefix}.linear_2")
         acts = getattr(readout.non_linearity, "acts", [])
-        gate = [getattr(act, "f", act).__name__ for act in acts]
+        gate = [getattr(getattr(act, "f", act), "__name__", None) for act in acts]
         walker.ops[f"{prefix}.first"]["descriptor"]["gate"] = gate[0] if gate else None
     if spelling == "polar":
         walk_polar(walker, model)

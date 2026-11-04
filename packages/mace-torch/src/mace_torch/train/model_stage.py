@@ -130,7 +130,6 @@ _BUILT_ONE_WAY: dict[str, tuple[object, ...]] = {
     ),
     "distance_transform.kind": ("none", "agnesi", "soft"),
     "clebsch_gordan_basis": ("reduced", "full"),
-    "readout.gate": ("silu",),
 }
 
 

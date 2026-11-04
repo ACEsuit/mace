@@ -741,7 +741,7 @@ def build_with(tmp_path, **model):
     "setting,value",
     [
         ("edge_irreps", "4x0e"),
-        ("readout", {"gate": "tanh"}),
+        ("readout", {"gate": "tahn"}),
         ("readout", {"from_embedding": True}),
     ],
 )
@@ -816,10 +816,10 @@ def test_edge_irreps_a_standard_block_would_read_are_refused(tmp_path, setting):
         build_with(tmp_path, **setting)
 
 
-def test_an_unbuilt_readout_gate_is_refused(tmp_path):
-    with pytest.raises(ModelStageError) as caught:
-        build_with(tmp_path, clebsch_gordan_basis="full", readout={"gate": "tanh"})
-    assert "model.readout.gate" in str(caught.value)
+@pytest.mark.parametrize("gate", ["tanh", "abs", "None"])
+def test_retained_readout_gates_build_with_a_full_basis(tmp_path, gate):
+    engine = build_with(tmp_path, clebsch_gordan_basis="full", readout={"gate": gate})
+    assert engine.backbone.config.readout.gate == gate
 
 
 def test_reviewed_plain_layers_and_full_basis_reach_the_built_model(tmp_path):

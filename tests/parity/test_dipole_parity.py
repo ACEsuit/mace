@@ -72,10 +72,10 @@ CASES = {
 }
 
 
-def legacy_dielectric(mlp_irreps: str, atomic_numbers=(1, 6, 8)):
+def legacy_dielectric(mlp_irreps: str, atomic_numbers=(1, 6, 8), gate="silu"):
     from e3nn import o3
 
-    from mace.modules import interaction_classes
+    from mace.modules import gate_dict, interaction_classes
     from mace.modules.models import AtomicDielectricMACE
 
     torch.manual_seed(5)
@@ -93,7 +93,7 @@ def legacy_dielectric(mlp_irreps: str, atomic_numbers=(1, 6, 8)):
         avg_num_neighbors=3.0,
         atomic_numbers=list(atomic_numbers),
         correlation=2,
-        gate=torch.nn.functional.silu,
+        gate=gate_dict[gate],
         radial_MLP=[64, 64, 64],
         use_polarizability=True,
     )

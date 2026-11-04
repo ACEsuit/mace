@@ -287,6 +287,7 @@ class PolarModel(MACEModel):
                 f"{settings.fukui_hidden}x0e",
                 "2x0e",
                 precision,
+                gate=config.readout.gate,
             )
             self.updates = nn.ModuleList(
                 ChargeUpdate(

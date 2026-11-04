@@ -13,6 +13,7 @@ import yaml
 from ase import Atoms
 from ase.io import read, write
 from ase.stress import full_3x3_to_voigt_6_stress
+from conftest import fp64_only
 from mace_core.cli import main
 from mace_core.config.legacy import LegacyFlagError
 from mace_core.config.model import GraphFeatureConfig
@@ -86,6 +87,74 @@ def test_native_and_legacy_configuration_precedence(tmp_path):
     reread = parse(["--config", str(path), "--max_num_epochs", "4"])
     assert reread.training.max_num_epochs == 4
     assert reread.model == config.model
+
+
+@fp64_only
+@pytest.mark.parametrize("gate", ["silu", "tanh", "abs", "None"])
+@pytest.mark.parametrize(
+    "backend,device",
+    [
+        ("reference", "cpu"),
+        pytest.param("cueq", "cuda", marks=[pytest.mark.gpu, pytest.mark.cueq]),
+    ],
+)
+def test_readout_gate_training_resume_and_reload(tmp_path, gate, backend, device):
+    from safetensors.numpy import load_file
+
+    def run(directory, epochs, restart=False):
+        root = tmp_path / directory
+        root.mkdir(exist_ok=True)
+        document = configuration(root, max_num_epochs=epochs).to_resolved_dict()
+        document["runtime"].update(device=device, restart_latest=restart)
+        document["model"]["backend"] = backend
+        document["training"]["ema"] = {"enabled": True, "decay": 0.9}
+        path = root / "config.json"
+        path.write_text(json.dumps(document))
+        assert train(parse(["--config", str(path), "--gate", gate])) == 0
+        return root
+
+    whole = run("whole", 2)
+    split = run("split", 1)
+    before = load_file(split / "mace.run-000001.safetensors")
+    run("split", 2, restart=True)
+    expected = load_file(whole / "mace.run-000002.safetensors")
+    actual = load_file(split / "mace.run-000002.safetensors")
+    assert actual.keys() == expected.keys()
+    for key in actual:
+        close(actual[key], expected[key])
+    metadata = [
+        json.loads((root / "mace.run-000002.json").read_text())
+        for root in (whole, split)
+    ]
+    for key in ("state", "optimizer", "scheduler", "ema", "model_tensors"):
+        assert metadata[0][key] == metadata[1][key]
+    assert any(
+        not np.array_equal(before[key], actual[key])
+        for key in metadata[1]["model_tensors"]
+    )
+    loaded = load_deployed(split / "mace.safetensors", device=device)
+    assert loaded.config.model.readout.gate == gate
+    called = set()
+    hooks = [
+        module.register_forward_hook(
+            lambda module, args, output: called.add(type(module).__name__)
+        )
+        for module in loaded.engine.modules()
+        if type(module).__name__.startswith("CuEq")
+    ]
+    calculator = MACECalculator(models=loaded, device=device)
+    calculator.calculate(water())
+    for hook in hooks:
+        hook.remove()
+    if backend == "cueq":
+        assert {
+            "CuEqLinear",
+            "CuEqChannelwiseTPConv",
+            "CuEqSymmetricContraction",
+            "CuEqFullyConnectedTP",
+        } <= called
+    assert np.isfinite(calculator.results["energy"]).all()
+    assert np.isfinite(calculator.results["forces"]).all()
 
 
 @pytest.mark.parametrize("source", ["flags", "legacy_yaml", "quoted_yaml"])

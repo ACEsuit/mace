@@ -38,7 +38,7 @@ from mace_core.kernels.precision import Precision
 from torch import Tensor, nn
 
 from mace_torch.backends import layout
-from mace_torch.nn.radial_mlp import SECOND_MOMENT_SCALE
+from mace_torch.nn.gate import ScalarActivation
 
 __all__ = [
     "SIGMOID_SECOND_MOMENT_SCALE",
@@ -51,7 +51,7 @@ __all__ = [
 ]
 
 #: The multiplier trained gates carry on their sigmoid: the unit-second-moment
-#: constant sampled from a standard normal, as :data:`SECOND_MOMENT_SCALE` is
+#: constant sampled from a standard normal, as the scalar activation's factor is
 #: for the SiLU. It is the sampled value and not the exact one, because trained
 #: weights were fitted against the sampled one.
 SIGMOID_SECOND_MOMENT_SCALE = 1.8467055342154763
@@ -244,24 +244,23 @@ class ScalarModulation(nn.Module):
 
 
 class _GatedActivation(nn.Module):
-    """SiLU on the scalars, and each higher channel scaled by a sigmoid gate.
+    """Activated scalars, and each higher channel scaled by a sigmoid gate.
 
     Both activations carry their unit-second-moment multiplier, as trained
     charge-aware readouts do. The input is the scalars, then one gate per
     gated channel, then the gated channels; the gates are spent.
     """
 
-    def __init__(self, num_scalars: int, gated: str) -> None:
+    def __init__(self, num_scalars: int, gated: str, gate: str = "silu") -> None:
         super().__init__()
+        self.scalar_activation = ScalarActivation(gate)
         self.num_scalars = num_scalars
         self.gated_terms = layout.terms(gated) if gated else ()
         self.copies = [mul for mul, _ in Irreps.parse(gated).terms] if gated else []
         self.num_gates = sum(self.copies)
 
     def forward(self, features: Tensor) -> Tensor:
-        scalars = SECOND_MOMENT_SCALE * torch.nn.functional.silu(
-            features[..., : self.num_scalars]
-        )
+        scalars = self.scalar_activation(features[..., : self.num_scalars])
         if not self.num_gates:
             return scalars
         split = self.num_scalars + self.num_gates
@@ -299,6 +298,7 @@ class BiasReadout(nn.Module):
         hidden: str,
         irreps_out: str,
         precision: Precision = "float64",
+        gate: str = "silu",
     ) -> None:
         super().__init__()
         out_irreps = {ir for _, ir in Irreps.parse(irreps_out).terms}
@@ -314,7 +314,7 @@ class BiasReadout(nn.Module):
             if ir.degree > 0 and ir in out_irreps
         )
         num_gates = sum(mul for mul, _ in Irreps.parse(gated).terms) if gated else 0
-        self.activation = _GatedActivation(num_scalars, gated)
+        self.activation = _GatedActivation(num_scalars, gated, gate=gate)
         gate_in = f"{num_scalars + num_gates}x0e" + (f"+{gated}" if gated else "")
         middle = f"{num_scalars}x0e" + (f"+{gated}" if gated else "")
         self.first = backend.make_linear(

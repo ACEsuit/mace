@@ -22,6 +22,19 @@ from mace_core.config import (
 from pydantic import ValidationError
 
 
+@pytest.mark.parametrize("gate", ["silu", "tanh", "abs", "None"])
+def test_readout_activation_round_trips(gate):
+    config = ModelConfig(readout={"gate": gate})
+    assert (
+        ModelConfig.model_validate_json(config.model_dump_json()).readout.gate == gate
+    )
+
+
+def test_unknown_readout_activation_is_refused():
+    with pytest.raises(ValidationError, match="gate"):
+        ModelConfig(readout={"gate": "tahn"})
+
+
 @pytest.mark.parametrize(
     "changes,match",
     [

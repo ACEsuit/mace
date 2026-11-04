@@ -104,10 +104,10 @@ CASES = {
 }
 
 
-def legacy_polar(agnostic=True):
+def legacy_polar(agnostic=True, gate="silu", field_norm_factor=0.02):
     from e3nn import o3
 
-    from mace.modules import interaction_classes
+    from mace.modules import gate_dict, interaction_classes
     from mace.modules.extensions import PolarMACE as LegacyPolarMACE
 
     torch.manual_seed(7)
@@ -126,7 +126,8 @@ def legacy_polar(agnostic=True):
         avg_num_neighbors=3.0,
         atomic_numbers=[1, 8],
         correlation=2,
-        gate=torch.nn.functional.silu,
+        gate=gate_dict[gate],
+        field_norm_factor=field_norm_factor,
         radial_MLP=[64, 64, 64],
         radial_type="bessel",
         kspace_cutoff_factor=1.0,

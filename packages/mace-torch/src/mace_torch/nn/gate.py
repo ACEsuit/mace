@@ -17,13 +17,46 @@ from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import SILU_SECOND_MOMENT_SCALE
 from torch import Tensor, nn
 
-__all__ = ["SIGMOID_SECOND_MOMENT_SCALE", "Gate", "gate_input_irreps"]
+__all__ = [
+    "SIGMOID_SECOND_MOMENT_SCALE",
+    "Gate",
+    "ScalarActivation",
+    "gate_input_irreps",
+]
 
 #: ``1 / sqrt(E[sigmoid(z)^2])`` for a standard normal ``z``, the factor that
 #: gives the gate activation unit second moment. A Monte Carlo estimate, as
 #: :data:`~mace_core.kernels.canonical.SILU_SECOND_MOMENT_SCALE` is, and the
 #: number the frozen tree's gate multiplies by.
 SIGMOID_SECOND_MOMENT_SCALE = 1.8467055342154763
+
+
+class ScalarActivation(nn.Module):
+    """A scalar activation with the frozen model's second-moment normalization.
+
+    ``"None"`` is identity. Factors follow e3nn.math.normalize2mom (MIT),
+    including its fixed Monte Carlo estimate for abs rather than the exact 1:
+    https://github.com/e3nn/e3nn/blob/0.4.4/e3nn/math/_normalize_activation.py
+    They are trained-model conventions, not recomputed at construction.
+    """
+
+    def __init__(self, gate: str = "silu") -> None:
+        super().__init__()
+        activations = {
+            "silu": (torch.nn.functional.silu, SILU_SECOND_MOMENT_SCALE),
+            "tanh": (torch.tanh, 1.5937334472592695),
+            "abs": (torch.abs, 1.0011106008384667),
+            "None": (nn.Identity(), 1.0),
+        }
+        if gate not in activations:
+            raise ValueError(
+                f"unknown readout gate {gate!r}; choose {tuple(activations)}"
+            )
+        self.activation, self.scale = activations[gate]
+
+    def forward(self, features: Tensor) -> Tensor:
+        """Preserve the shape and dtype of scalar features."""
+        return self.scale * self.activation(features)
 
 
 def gate_input_irreps(irreps_out: str) -> str:

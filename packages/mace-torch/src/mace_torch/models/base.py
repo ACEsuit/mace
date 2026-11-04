@@ -86,8 +86,6 @@ class MACEModel(nn.Module):
         super().__init__()
         if config.pair_repulsion and energy_head is None:
             raise ValueError("pair repulsion requires an energy head")
-        if config.readout.gate != "silu":
-            raise ValueError("the readout currently supports only the silu gate")
         if last_layer_irreps is None:
             last_layer_irreps = config.node_irreps
             if energy_head is not None:
@@ -144,6 +142,7 @@ class MACEModel(nn.Module):
                 energy_head=energy_head,
                 precision=precision,
                 readout_irreps=config.readout.mlp_irreps,
+                gate=config.readout.gate,
                 num_heads=num_heads,
                 last_only=config.readout.last_only,
                 biased=config.readout.bias,

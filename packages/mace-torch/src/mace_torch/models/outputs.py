@@ -112,6 +112,7 @@ class MACEOutputs(nn.Module):
         last_only: bool = False,
         biased: bool = False,
         embedding_irreps: str | None = None,
+        gate: str = "silu",
     ) -> None:
         super().__init__()
         names = [spec.name for spec in observables]
@@ -160,6 +161,7 @@ class MACEOutputs(nn.Module):
                     num_heads=num_heads,
                     last_only=last_only,
                     biased=biased,
+                    gate=gate,
                 )
                 for spec in observables
             }
