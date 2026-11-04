@@ -240,3 +240,108 @@ def test_head_and_custom_stage_names_cannot_alias_paths(tmp_path):
         "run_a_stage-one%5Fstage-two.png",
     } <= names
     assert not (tmp_path / "run_water").exists()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        [],
+        ["--heads", "water", "--error_bars"],
+        [
+            "--keys",
+            "rmse_energy",
+            "--min_epoch",
+            "2",
+            "--linear",
+            "--start_stage_two",
+            "3",
+        ],
+    ],
+)
+def test_arbitrary_input_names_preserve_curves_and_options(log, options):
+    output = log.parent / "chosen.png"
+    baseline = None
+    for name in (
+        "fit_run-7_train.txt",
+        "not-a-results-log.txt",
+        "native.jsonl",
+        "a log without a suffix",
+    ):
+        source = log.with_name(name)
+        source.write_bytes(log.read_bytes())
+        assert (
+            main(
+                [
+                    "plot",
+                    "training",
+                    "--path",
+                    str(source),
+                    "--output",
+                    str(output),
+                    *options,
+                ]
+            )
+            == 0
+        )
+        content = output.read_bytes()
+        if baseline is None:
+            baseline = content
+        assert content == baseline
+
+
+@pytest.mark.parametrize(
+    "invalid,expected",
+    [
+        ("{", "Expecting property name"),
+        ("[]", "JSON object"),
+        ("null", "JSON object"),
+        ('{"loss": 1.0}', "missing epoch"),
+        *[
+            (json.dumps({"epoch": epoch, "loss": 1.0}), "epoch must be")
+            for epoch in ("one", True, float("nan"), float("inf"))
+        ],
+        (json.dumps({"epoch": 0, "head": ["water"], "loss": 1.0}), "head must be"),
+        (json.dumps({"epoch": 0, "mode": None, "loss": 1.0}), "mode must be"),
+        *[
+            (json.dumps({"epoch": 0, "loss": loss}), "metric 'loss'")
+            for loss in ({"value": 1.0}, "bad", True)
+        ],
+    ],
+)
+def test_invalid_log_content_names_file_and_line_before_drawing(
+    tmp_path, capsys, figures, invalid, expected
+):
+    directory = tmp_path / "logs"
+    directory.mkdir()
+    valid = json.dumps({"epoch": 1, "head": "water", "loss": 1.0})
+    (directory / "a.jsonl").write_text(valid + "\n")
+    source = directory / "z arbitrary.txt"
+    source.write_text("\n" + valid + "\n" + invalid + "\n")
+    output = directory.with_suffix(".png")
+    output.write_bytes(b"previous plot")
+    assert main(["plot", "training", "--path", str(directory)]) == 2
+    error = capsys.readouterr().err
+    assert f"{source}:3:" in error and expected in error
+    assert "Traceback" not in error
+    assert not figures
+    assert output.read_bytes() == b"previous plot"
+    assert list(tmp_path.glob("*.png")) == [output]
+
+
+def test_optional_metrics_and_initial_diagnostics_remain_readable(tmp_path, figures):
+    rows = [
+        {"epoch": None, "loss": None, "head": "water"},
+        {"epoch": 0, "loss": 1000},
+        {"epoch": 1.0, "loss": 2, "head": None, "unselected": {"detail": 1}},
+        {"epoch": 2, "loss": float("nan")},
+        {"epoch": 3, "loss": float("inf")},
+        {"epoch": 4, "loss": None},
+        {"epoch": 5, "other_metric": 1},
+    ]
+    source = tmp_path / "diagnostics.jsonl"
+    source.write_text("\n".join(json.dumps(row) for row in rows) + "\n\n")
+    assert main(["plot", "training", "--path", str(source), "--heads", "water"]) == 0
+    (line,) = figures[-1].axes[0].lines
+    assert line.get_label() == "all heads valid loss"
+    np.testing.assert_array_equal(line.get_xdata(), [1, 2, 3])
+    np.testing.assert_array_equal(line.get_ydata(), [2, float("nan"), float("inf")])

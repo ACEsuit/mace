@@ -85,6 +85,18 @@ resolved references. Selection and pseudolabelling call the same FT-2 functions
 used during training. Training writes per-head JSON-lines metrics; plotting
 runs on rank zero and is shared with the standalone command.
 
+`mace plot training --path` accepts a file with any name, or a directory of
+`*.txt` and `*.jsonl` files. It validates records before writing plots and
+reports invalid content with its file and line number. Each nonblank line is a
+JSON object with a finite numeric `epoch`, or `null` for initial diagnostics.
+Optional `head` is a string or null; optional `mode` is a string and defaults
+to `valid`. Requested metrics are numbers or null; missing metrics are skipped.
+Nonfinite metrics remain readable for diagnosing divergence. Other fields are
+ignored. The CLI selects epochs strictly greater than `--min_epoch` (default
+zero); `--min_epoch -1` includes epoch zero. Input basenames do not determine
+run or seed metadata. This is an explicitly accepted difference from legacy's
+`<run>_run-<seed>_train.txt` requirement.
+
 LAMMPS export remains assigned to DEP-2. The agreed MD-driver removal remains
 in force; ASE dynamics can use the calculator's committee mean and variance.
 

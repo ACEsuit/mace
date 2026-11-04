@@ -13,6 +13,30 @@ from mace_torch.train.plots import plot_training
 from tests.golden.harness import CLOSED_FORM_FP64
 
 
+def test_free_input_names_are_an_explicit_legacy_contract_change(tmp_path, isolated):
+    from mace_core.cli import main
+
+    with matplotlib.rc_context():
+        from mace.cli.plot_train import parse_training_results
+
+        canonical = tmp_path / "fit_run-7_train.txt"
+        arbitrary = tmp_path / "not-a-results-log.txt"
+        content = '{"epoch": 1, "mode": "opt", "loss": 1.0}\n'
+        canonical.write_text(content)
+        arbitrary.write_text(content)
+        records = parse_training_results(str(canonical))
+        assert records == [dict(epoch=1, mode="opt", loss=1.0, name="fit", seed=7)]
+        with pytest.raises(RuntimeError, match="Cannot parse"):
+            parse_training_results(str(arbitrary))
+        output = tmp_path / "chosen.png"
+        plots = []
+        for source in (canonical, arbitrary):
+            assert main(["plot", "training", "--path", str(source),
+                         "--output", str(output)]) == 0
+            plots.append(output.read_bytes())
+        assert plots[0] == plots[1]
+
+
 @pytest.mark.parametrize("min_epoch", [-1, 0, 2])
 @pytest.mark.parametrize("head", ["water", "salt"])
 def test_minimum_epoch_matches_legacy_for_each_head(tmp_path, monkeypatch, isolated, min_epoch, head):

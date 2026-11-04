@@ -119,7 +119,9 @@ def test_training_writes_citations_config_and_plot(tmp_path, capsys):
     replotted = tmp_path / "replotted.png"
     # This run has only epoch zero; the plotting CLI excludes its boundary.
     include_epoch_zero = ["--min_epoch", "-1"]
-    for source in (log, log.parent):
+    renamed = tmp_path / "freely named training log.txt"
+    renamed.write_bytes(log.read_bytes())
+    for source in (log, log.parent, renamed):
         assert (
             main(
                 [

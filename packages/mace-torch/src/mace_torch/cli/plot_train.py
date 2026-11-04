@@ -7,7 +7,12 @@ from pathlib import Path
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--path", type=Path, required=True)
+    parser.add_argument(
+        "--path",
+        type=Path,
+        required=True,
+        help="Metrics file (any name), or a directory of *.txt/*.jsonl logs.",
+    )
     parser.add_argument(
         "--output",
         type=Path,

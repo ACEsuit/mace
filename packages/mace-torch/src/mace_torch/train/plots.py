@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from urllib.parse import quote
 
@@ -27,22 +29,20 @@ def plot_training(
     supplies its own default of zero; ``epoch=None`` is never a trained epoch.
     ``separate_heads`` adds head-specific files beside the combined output;
     ``stage`` identifies the training snapshot in those filenames.
+    Input names are unrestricted; each nonblank line must be a metric record.
     """
     series = defaultdict(lambda: defaultdict(list))
     known_heads = set()
     for path in paths:
-        for line in Path(path).read_text().splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if "head" in row:
-                known_heads.add(row["head"])
+        for row in _log_rows(Path(path), keys):
+            head = row.get("head")
+            if head is not None:
+                known_heads.add(head)
             epoch = row.get("epoch")
             if epoch is None or epoch <= min_epoch:
                 continue
-            head = row.get("head")
             # Optimizer/training records belong to the whole run.
-            if heads and "head" in row and head not in heads:
+            if heads and head is not None and head not in heads:
                 continue
             for key in keys:
                 value = row.get(key)
@@ -67,6 +67,39 @@ def plot_training(
                 )
     _draw(series, output, linear, start_stage_two, error_bars)
     return output
+
+
+def _log_rows(path: Path, keys: Sequence[str]) -> Iterator[dict]:
+    for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError("expected a JSON object containing epoch and metrics")
+            if "epoch" not in row:
+                raise ValueError("missing epoch; use null for initial diagnostics")
+            epoch = row["epoch"]
+            if epoch is not None and (
+                isinstance(epoch, bool)
+                or not isinstance(epoch, (int, float))
+                or not math.isfinite(epoch)
+            ):
+                raise ValueError("epoch must be a finite number or null")
+            if row.get("head") is not None and not isinstance(row["head"], str):
+                raise ValueError("head must be a string or null")
+            if not isinstance(row.get("mode", "valid"), str):
+                raise ValueError("mode must be a string")
+            for key in keys:
+                value = row.get(key)
+                # Nonfinite metrics are useful when diagnosing a diverged run.
+                if value is not None and (
+                    isinstance(value, bool) or not isinstance(value, (int, float))
+                ):
+                    raise ValueError(f"metric {key!r} must be a number or null")
+        except ValueError as error:
+            raise ValueError(f"{path}:{line_number}: {error}") from error
+        yield row
 
 
 def _head_path(output: Path, head: str, stage: str | None) -> Path:
