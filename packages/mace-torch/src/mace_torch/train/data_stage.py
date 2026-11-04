@@ -135,9 +135,9 @@ def run_data_stage(
         head_train, head_valid, head_test = _read_head(
             name, head, config, key_spec, pseudolabel, foundation
         )
-        train.extend(head_train)
-        valid.extend(head_valid)
-        test.extend(head_test)
+        train.extend(_type_weighted(head_train, head.config_type_weights))
+        valid.extend(_type_weighted(head_valid, head.config_type_weights))
+        test.extend(_type_weighted(head_test, head.config_type_weights))
 
     test_sets = _test_sets(test, config, key_spec)
 
@@ -722,6 +722,22 @@ def _read(
     return items
 
 
+def _type_weighted(
+    configurations: Sequence[Configuration], weights: Mapping[str, float]
+) -> list[Configuration]:
+    """Apply run-specific multipliers once, after source selection/relabelling.
+
+    Dataset weights may already include preparation-time weighting. These
+    explicit run settings multiply the stored weights for every data format.
+    """
+    return [
+        dataclasses.replace(item, weight=item.weight * weights[item.config_type])
+        if item.config_type in weights
+        else item
+        for item in configurations
+    ]
+
+
 def _test_sets(
     test: Sequence[Configuration], config: ResolvedConfig, key_spec: KeySpecification
 ) -> dict[str, list[Configuration]]:
@@ -751,7 +767,10 @@ def _test_sets(
                     "rename the dataset or head"
                 )
             try:
-                sets[name] = _read(path, head, key_spec)
+                sets[name] = _type_weighted(
+                    _read(path, head, key_spec),
+                    config.data.heads[head].config_type_weights,
+                )
             except DataStageError as failure:
                 raise DataStageError(
                     f"data.test_dir {directory}: {failure}"
