@@ -205,6 +205,19 @@ def test_a_legacy_yaml_reaches_the_typed_configuration(tmp_path):
     assert config.runtime.work_dir == tmp_path
 
 
+@pytest.mark.parametrize("empty", ["{}", "{ }", {}])
+def test_empty_foundation_options_in_legacy_yaml_are_compatibility_only(
+    tmp_path, empty
+):
+    import yaml
+
+    path = tmp_path / "legacy.yaml"
+    path.write_text(yaml.safe_dump({"name": "fit", "foundation_model_kwargs": empty}))
+    actual = run_train.parse(["--config", str(path)])
+    expected = run_train.parse(["--name", "fit"])
+    assert actual == expected
+
+
 def test_a_dotted_override_is_refused_rather_than_skipped(run_directory):
     """There is no dotted override syntax. A dotted path is not a legacy flag
     either, so it is an error to fix, not a capability to wait for."""

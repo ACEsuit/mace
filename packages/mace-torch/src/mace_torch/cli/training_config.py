@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import ast
 from collections.abc import Mapping
+from contextlib import suppress
 from typing import Any
 
 from mace_core.config import read_config_file
@@ -28,6 +29,13 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
     if unknown:
         raise LegacyFlagError(f"unknown legacy options: {sorted(unknown)}")
     values: dict[str, Any] = dict(given)
+    if "foundation_model_kwargs" in values:
+        options = values["foundation_model_kwargs"]
+        # Invalid literals retain their value for the option-specific error below.
+        with suppress(ValueError, SyntaxError):
+            options = _literal(options)
+        if isinstance(options, dict) and not options:
+            values["foundation_model_kwargs"] = DEFAULTS["foundation_model_kwargs"]
     handled = {
         "heads",
         "default_dtype",
@@ -69,7 +77,7 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
             "otherwise set the ordinary heads under data.heads"
         )
     check = argparse.Namespace(
-        **{key: value for key, value in given.items() if key not in handled}
+        **{key: value for key, value in values.items() if key not in handled}
     )
     from_namespace(check, defaults=DEFAULTS)
     namespace = argparse.Namespace(

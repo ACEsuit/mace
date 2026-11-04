@@ -429,10 +429,11 @@ _FINETUNE: dict[str, Disposition] = {
         "filter_type_pt",
         "allow_random_padding_pt",
     ),
-    **_reserved(
-        "finetune",
-        "loading a foundation model by name",
-        "foundation_model_kwargs",
+    "foundation_model_kwargs": Dropped(
+        "foundation loading uses a native safetensors path; only an empty "
+        "dictionary is accepted for compatibility. Configure runtime.device, "
+        "precision.model, model.backend and data.heads.<name>.readout_from "
+        "explicitly."
     ),
     **_reserved(
         "finetune",
