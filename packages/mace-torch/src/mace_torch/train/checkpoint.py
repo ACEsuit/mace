@@ -11,7 +11,8 @@ canonical weights, never the average; the optimizer's state, the schedule's and
 the average's own shadow; and the counters, which are the next epoch, the best
 loss and its epoch, how many evaluations have passed since, and the stage. The
 tensors go in safetensors and everything else in a JSON sidecar, so reading one
-back executes nothing.
+back executes nothing. LoRA runs also retain the unmerged base, both factors
+and their scaling: a merged weight cannot reconstruct the optimizer's coordinates.
 
 **A checkpoint is found by what it says, not by its name.** Each run checkpoint
 is two files named for the run and its epoch, but the newest is the one whose
@@ -43,6 +44,7 @@ from torch import Tensor, nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
+from mace_torch.finetune.lora import DenseLowRank, EquivariantLowRank
 from mace_torch.serialization import (
     CheckpointError,
     canonical_state,
@@ -206,6 +208,51 @@ def _topology(optimizer: Optimizer) -> list[list[list[int]]]:
     ]
 
 
+def _adapter_state(model: nn.Module) -> tuple[dict[str, float], dict[str, Tensor]]:
+    """LoRA's training coordinates, separate from the merged canonical model."""
+    scales = {
+        name: module.scaling
+        for name, module in model.named_modules()
+        if isinstance(module, (DenseLowRank, EquivariantLowRank))
+    }
+    prefixes = tuple(name.rsplit(".", 1)[0] + "." for name in scales)
+    parameters: dict[str, Tensor] = {
+        name: parameter
+        for name, parameter in model.named_parameters()
+        if name.startswith(prefixes)
+    }
+    return scales, parameters
+
+
+def _restore_adapters(
+    model: nn.Module, recorded: dict[str, Any] | None, tensors: Mapping[str, Tensor]
+) -> None:
+    """Restore the unmerged base and both factors, or refuse a partial resume."""
+    scales, parameters = _adapter_state(model)
+    if not scales and recorded is None:
+        return
+    if recorded is None or recorded.get("scales") != scales:
+        raise CheckpointError(
+            "LoRA training state is missing or its adapters/scaling differ. "
+            "Resume with the same LoRA configuration and a checkpoint containing "
+            "adapter state; use the merged model as a foundation for a new run."
+        )
+    try:
+        saved = _decode(recorded["parameters"], tensors)
+    except KeyError as error:
+        raise CheckpointError(f"LoRA checkpoint is missing tensor {error}.") from error
+    if saved.keys() != parameters.keys() or any(
+        saved[name].shape != parameter.shape for name, parameter in parameters.items()
+    ):
+        raise CheckpointError(
+            "LoRA parameter names or shapes differ; resume with the same adapter "
+            "rank, or use the merged model as a foundation for a new run."
+        )
+    with torch.no_grad():
+        for name, parameter in parameters.items():
+            parameter.copy_(saved[name])
+
+
 # ---------------------------------------------------------------------------
 # Writing and finding
 # ---------------------------------------------------------------------------
@@ -272,6 +319,14 @@ def write_run_checkpoint(
         "ema": None if ema is None else _encode(ema.state_dict(), "ema", tensors),
         "config": None if metadata is None else metadata.model_dump(mode="json"),
     }
+    scales, parameters = _adapter_state(model)
+    if scales:
+        # Merged weights cannot reconstruct A and B, or the frozen base, whose
+        # coordinates the optimizer and EMA refer to. Deployment stays merged.
+        document["lora"] = {
+            "scales": scales,
+            "parameters": _encode(parameters, "lora", tensors),
+        }
     stem = f"{name}.run-{state.epoch:06d}"
     weights, sidecar = _files(root, stem)
     staged_weights, staged_sidecar = _files(root, f"{stem}.partial")
@@ -378,6 +433,7 @@ def read_run_checkpoint(
         _, module, tensor_name = key.split(_SEPARATOR)
         weights.setdefault(module, {})[tensor_name] = tensors[key]
     load_canonical_state(model, weights)
+    _restore_adapters(model, document.get("lora"), tensors)
 
     saved = document["optimizer"]["topology"]
     current = _topology(optimizer)

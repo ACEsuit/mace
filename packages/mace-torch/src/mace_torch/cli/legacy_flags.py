@@ -310,6 +310,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         }
         if action == "store":
             settings.update(type=kind, nargs=nargs)
-            if nargs == "?":
-                settings["const"] = True
+            if dest == "foundation_model_readout":
+                # Legacy's bare flag disables copying; an explicit bool wins.
+                settings["const"] = False
         parser.add_argument(*options, **settings)
