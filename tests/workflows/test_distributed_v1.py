@@ -115,6 +115,23 @@ def both_ranks(
     return finished
 
 
+def assert_same_state(actual, expected):
+    if isinstance(expected, dict):
+        assert actual.keys() == expected.keys()
+        for key in expected:
+            assert_same_state(actual[key], expected[key])
+    elif isinstance(expected, list):
+        assert len(actual) == len(expected)
+        for left, right in zip(actual, expected, strict=True):
+            assert_same_state(left, right)
+    elif isinstance(expected, float):
+        assert actual == pytest.approx(
+            expected, abs=FP64_CPU_REFERENCE.atol, rel=FP64_CPU_REFERENCE.rtol
+        )
+    else:
+        assert actual == expected
+
+
 @needs_the_v1_engine
 def test_two_ranks_train_and_only_rank_zero_writes(tmp_path):
     ranks = both_ranks(tiny_task(tmp_path))
@@ -167,28 +184,12 @@ def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path, stop_epoch):
     )):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
 
-    def same_state(actual, expected):
-        if isinstance(expected, dict):
-            assert actual.keys() == expected.keys()
-            for key in expected:
-                same_state(actual[key], expected[key])
-        elif isinstance(expected, list):
-            assert len(actual) == len(expected)
-            for left, right in zip(actual, expected, strict=True):
-                same_state(left, right)
-        elif isinstance(expected, float):
-            assert actual == pytest.approx(
-                expected, abs=FP64_CPU_REFERENCE.atol, rel=FP64_CPU_REFERENCE.rtol
-            )
-        else:
-            assert actual == expected
-
     actual = json.loads((tmp_path / "tiny.run-000004.json").read_text())
     expected = json.loads((uninterrupted / "tiny.run-000004.json").read_text())
     assert expected["ema"] is not None and expected["scheduler"] is not None
     for key in ("state", "optimizer", "scheduler", "ema"):
-        same_state(actual[key], expected[key])
-    same_state(training_records(tmp_path), training_records(uninterrupted))
+        assert_same_state(actual[key], expected[key])
+    assert_same_state(training_records(tmp_path), training_records(uninterrupted))
     for filename in ("tiny.run-000004.safetensors", "tiny.safetensors"):
         actual, expected = load_file(tmp_path / filename), load_file(uninterrupted / filename)
         assert actual.keys() == expected.keys()
@@ -254,6 +255,8 @@ def test_two_rank_update_matches_one_concatenated_batch(tmp_path):
     ("adam", 2, 4), ("lbfgs", 2, 4), ("lbfgs", 4, 1),
 ])
 def test_a_dataset_smaller_than_the_world_size_trains(tmp_path, optimizer, structures, valid_batch_size):
+    from safetensors.torch import load_file
+
     config = tiny_task(tmp_path)
     write_frames(tmp_path / "train.xyz", structures, seed=0)
     # One training structure across two ranks: mini-batch sampling pads;
@@ -276,6 +279,21 @@ def test_a_dataset_smaller_than_the_world_size_trains(tmp_path, optimizer, struc
         **settings, "runtime.work_dir": str(single_dir),
     })))
     assert single.returncode == 0, single.stderr
+    assert optimizer_steps(single_dir) == {0: 1}
+    actual = json.loads((tmp_path / "tiny.run-000001.json").read_text())
+    expected = json.loads((single_dir / "tiny.run-000001.json").read_text())
+    for key in ("state", "optimizer", "scheduler", "ema"):
+        assert_same_state(actual[key], expected[key])
+    # Includes optimizer state and raw weights, even when a rank has no data.
+    actual = load_file(tmp_path / "tiny.run-000001.safetensors")
+    expected = load_file(single_dir / "tiny.run-000001.safetensors")
+    assert actual.keys() == expected.keys()
+    for key in expected:
+        np.testing.assert_allclose(
+            actual[key], expected[key],
+            atol=FP64_CPU_REFERENCE.atol, rtol=FP64_CPU_REFERENCE.rtol,
+            err_msg=key,
+        )
     alone = [row for row in training_records(single_dir) if row["mode"] == "valid"]
     assert [row["epoch"] for row in together] == [None, 0]
     assert [row["epoch"] for row in alone] == [None, 0]

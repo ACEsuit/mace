@@ -85,6 +85,14 @@ resolved references. Selection and pseudolabelling call the same FT-2 functions
 used during training. Training writes per-head JSON-lines metrics; plotting
 runs on rank zero and is shared with the standalone command.
 
+Distributed mini-batch training repeats samples as needed to give each process
+the same number of samples. Each process must still have enough samples for its
+configured batch size. Full-batch L-BFGS partitions the data without repetition;
+processes with an empty share contribute zero to the collective loss and
+gradient. Evaluation also avoids repetition. Having more processes than
+structures is supported when these conditions hold. Legacy's rejection of this
+case is explicitly retired for V1.
+
 `mace plot training --path` accepts a file with any name, or a directory of
 `*.txt` and `*.jsonl` files. It validates records before writing plots and
 reports invalid content with its file and line number. Each nonblank line is a

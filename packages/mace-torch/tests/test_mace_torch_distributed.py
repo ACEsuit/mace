@@ -104,7 +104,7 @@ def test_a_single_process_is_neither_wrapped_nor_broadcast_to():
     assert broadcast_decision(True, context) is True
 
 
-@pytest.mark.parametrize("length,world", [(10, 2), (11, 2), (7, 3), (2, 4)])
+@pytest.mark.parametrize("length,world", [(10, 2), (11, 2), (7, 3), (2, 4), (1, 8)])
 def test_every_rank_takes_as_many_steps_and_together_they_cover_the_epoch(
     length, world
 ):
@@ -113,6 +113,12 @@ def test_every_rank_takes_as_many_steps_and_together_they_cover_the_epoch(
     assert len({len(share) for share in shares}) == 1
     assert set().union(*shares) == set(order)
     assert sum(len(share) for share in shares) == -(-length // world) * world
+    dataset = torch.utils.data.TensorDataset(torch.tensor(order))
+    for rank, share in enumerate(shares):
+        reference = torch.utils.data.DistributedSampler(
+            dataset, num_replicas=world, rank=rank, shuffle=False, drop_last=False
+        )
+        assert share == [order[index] for index in reference]
 
 
 def test_the_shares_follow_the_epoch_s_own_order():
