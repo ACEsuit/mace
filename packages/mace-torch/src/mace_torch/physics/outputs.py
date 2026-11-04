@@ -106,7 +106,7 @@ def stress_from_strain_gradient(
     Args:
         strain_gradient: ``dE/dstrain``, ``[n_graphs, 3, 3]``. This is the raw
             gradient, **not** the virial: the virial is its negative.
-        cell: ``[n_graphs, 3, 3]``.
+        cell: The input (reference) cell, ``[n_graphs, 3, 3]``.
         pbc: ``[n_graphs, 3]`` of bool, or ``None``.
     """
     volume, periodic = cell_volume_and_mask(cell, pbc)
@@ -128,11 +128,12 @@ def atomic_virials_and_stresses(
     """The virial and the stress of each atom, from the forces on its edges.
 
     Each edge's contribution to the strain derivative, ``dE/dv (x) v``, is
-    split evenly between its two atoms and symmetrised, so the atoms' shares
-    add up to the whole structure's: their virials to ``virials`` and their
-    stresses to ``stress``, with the same signs and the same masking of a
-    structure that has no volume. The frozen tree's split, which it takes from
-    an edge force of the opposite sign.
+    split evenly between its two atoms and symmetrised. At zero external strain
+    the shares sum to the total virial and stress. At finite external strain
+    they use deformed edge vectors, as legacy does; the total virial instead
+    differentiates the reference geometry. Both use the input cell's volume
+    and mask structures with no periodic direction. Legacy takes the same
+    split from an edge force of the opposite sign.
 
     Args:
         edge_forces: ``-dE/dv`` per edge, ``[n_edges, 3]``, as the engine
@@ -270,6 +271,7 @@ def prepare_inputs(
     positions = graph["positions"]
     if need_forces and not positions.requires_grad:
         positions = positions.clone().requires_grad_(True)
+    position_leaf = positions
 
     prepared = dict(graph)
     displacement: Tensor | None = None
@@ -309,7 +311,9 @@ def prepare_inputs(
             value if value.requires_grad else value.clone().requires_grad_(True)
         )
 
-    return prepared, positions, displacement
+    # Forces differentiate the caller's coordinates, including the strain
+    # Jacobian when an integration supplies a nonzero displacement.
+    return prepared, position_leaf, displacement
 
 
 class DerivativeEngine(nn.Module):
@@ -623,7 +627,9 @@ class DerivativeEngine(nn.Module):
             if "stress" in wanted:
                 output.stress = stress_from_strain_gradient(
                     strain_gradient,
-                    prepared["cell"],
+                    # The strain derivative is conjugate to the input geometry;
+                    # its volume is the input cell's, including at finite strain.
+                    graph["cell"],
                     # Membership rather than `.get`: the parity harness hands
                     # this a legacy `Batch`, which implements `__contains__`
                     # and not `.get`, so the shorter spelling raises an
@@ -654,7 +660,7 @@ class DerivativeEngine(nn.Module):
                     - prepared["positions"][prepared["edge_index"][0]]
                     + prepared["shifts"],
                     prepared["batch"],
-                    prepared["cell"],
+                    graph["cell"],
                     graph["pbc"] if "pbc" in graph else None,  # noqa: SIM401
                 )
                 if "atomic_virials" in wanted:
