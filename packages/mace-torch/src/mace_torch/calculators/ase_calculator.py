@@ -62,6 +62,7 @@ import glob
 import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -212,7 +213,8 @@ class MACECalculator(Calculator):
     Args:
         model_paths: A checkpoint, a list of them, or a pattern such as
             ``"models/mace_*.json"`` that names a committee.
-        models: Models already loaded, instead of paths.
+        models: Models already loaded, instead of paths. Each calculator owns
+            an independent copy on its evaluation device.
         device: Where to evaluate.
         precision: Evaluation precision; defaults to the saved model policy.
         default_dtype: Compatibility spelling for the model interface dtype.
@@ -282,6 +284,17 @@ class MACECalculator(Calculator):
                 raise TypeError(
                     f"{flag} is replaced by model.backend in the checkpoint "
                     "configuration; canonical weights need no conversion"
+                )
+        for option, default in (
+            ("compute_bec", False),
+            ("eps_infty", None),
+            ("electric_field_unit", 1.0),
+            ("keep_neutral", True),
+        ):
+            if (value := kwargs.pop(option, default)) != default:
+                raise NotImplementedError(
+                    f"{option}={value!r} requires the LES calculator surface, "
+                    "which this V1 build does not yet implement"
                 )
         Calculator.__init__(self, **kwargs)
         if default_dtype is not None:
@@ -828,7 +841,10 @@ def _committee(
         return (
             [model.with_precision(precision, device=device) for model in members]
             if precision is not None
-            else members
+            else [
+                replace(model, engine=copy.deepcopy(model.engine).to(device))
+                for model in members
+            ]
         )
     if model_paths is None:
         raise ValueError("give model_paths or models.")

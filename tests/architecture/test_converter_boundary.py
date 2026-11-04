@@ -87,6 +87,7 @@ def test_the_wheel_ships_the_extraction_script(tmp_path):
         metadata = Parser().parsestr(archive.read(metadata_name).decode())
     requirements = [Requirement(value) for value in metadata.get_all("Requires-Dist", [])]
     for extra, dependency in {
+        "fpsample": "fpsample",
         "cueq": "cuequivariance-torch",
         "cueq-cuda-12": "cuequivariance-ops-torch-cu12",
         "cueq-cuda-13": "cuequivariance-ops-torch-cu13",
@@ -99,3 +100,5 @@ def test_the_wheel_ships_the_extraction_script(tmp_path):
         assert [item.name for item in optional] == [dependency]
         if extra.startswith("cueq-cuda"):
             assert "0.11.0" not in optional[0].specifier
+    assert "magnetic" not in metadata.get_all("Provides-Extra", [])
+    assert not {"sphericart-torch", "torch-geometric"} & {item.name for item in requirements}

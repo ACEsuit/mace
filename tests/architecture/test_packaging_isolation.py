@@ -56,3 +56,36 @@ def test_legacy_wheel_does_not_discover_the_v1_packages():
         f"the v1 stack is installed from packages/*/pyproject.toml, never from "
         f"the legacy build"
     )
+
+
+def test_repository_wheel_keeps_the_test_and_dual_toolchain_extras(tmp_path):
+    import shutil
+    import subprocess
+    import zipfile
+    from email.parser import Parser
+
+    import pytest
+    from packaging.requirements import Requirement
+
+    if shutil.which("uv") is None:
+        pytest.skip("building the wheel needs uv")
+    completed = subprocess.run(
+        ["uv", "build", "--wheel", "--quiet", str(REPO_ROOT), "-o", str(tmp_path)],
+        capture_output=True, text=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    wheel, = tmp_path.glob("*.whl")
+    with zipfile.ZipFile(wheel) as archive:
+        name, = [n for n in archive.namelist() if n.endswith(".dist-info/METADATA")]
+        metadata = Parser().parsestr(archive.read(name).decode())
+    requirements = [Requirement(value) for value in metadata.get_all("Requires-Dist", [])]
+    extras = {}
+    for extra in ("test", "dev"):
+        assert extra in metadata.get_all("Provides-Extra", [])
+        extras[extra] = {item.name: item for item in requirements
+                         if item.marker is not None and item.marker.evaluate({"extra": extra})
+                         and not item.marker.evaluate({"extra": ""})}
+    tests = {"pytest", "pytest-benchmark", "pytest-cov", "pytest-split", "pytest-timeout", "pytest-xdist"}
+    assert set(extras["test"]) == tests
+    assert tests | {"black", "isort", "pylint", "mypy", "pre-commit", "import-linter", "ruff", "ty", "prek"} <= set(extras["dev"])
+    assert "9.2" not in extras["test"]["pytest"].specifier
