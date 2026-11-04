@@ -128,6 +128,43 @@ def test_the_correction_moves_the_answer():
     assert corrected != pytest.approx(plain)
 
 
+def test_estimated_adds_corrections_to_the_foundation_references():
+    values, _ = resolve_e0s(
+        E0sEstimated(),
+        Z_TABLE,
+        DATASET,
+        foundation_e0s={1: 10.0, 8: 20.0},
+        predict_energy=zero_energy,
+    )
+    assert values == pytest.approx({1: HYDROGEN + 10.0, 8: OXYGEN + 20.0})
+
+
+@pytest.mark.parametrize("policy", ["error", "average", "zero"])
+def test_estimated_enforces_the_missing_foundation_policy(policy):
+    options = dict(foundation_e0s={1: 0.0}, predict_energy=zero_energy)
+    spec = E0sEstimated(missing=policy)
+    if policy == "average":
+        values, provenance = resolve_e0s(spec, Z_TABLE, DATASET, **options)
+        assert values == pytest.approx({1: HYDROGEN, 8: OXYGEN})
+        assert provenance.missing_filled == (8,)
+    else:
+        with pytest.raises(E0ResolutionError, match="8"):
+            resolve_e0s(spec, Z_TABLE, DATASET, **options)
+
+
+def test_estimated_keeps_unseen_references_and_zero_pads_only_unseen_elements():
+    dataset = [configuration([1, 1], 6.0)]
+    values, provenance = resolve_e0s(
+        E0sEstimated(missing="zero"),
+        AtomicNumberTable([1, 6, 8]),
+        dataset,
+        foundation_e0s={1: 10.0, 8: 20.0},
+        predict_energy=zero_energy,
+    )
+    assert values == pytest.approx({1: 13.0, 6: 0.0, 8: 20.0})
+    assert provenance.missing_filled == (6,)
+
+
 # ---------------------------------------------------------------------------
 # The four refusals
 # ---------------------------------------------------------------------------

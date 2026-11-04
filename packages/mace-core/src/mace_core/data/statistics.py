@@ -157,7 +157,7 @@ def compute_statistics(
         scaling: Which spread to report as ``std``. ``"none"`` measures only
             neighbour counts and uses a unit scale for models without energy.
             ``"rms_forces"`` is the frozen tree's default model behaviour,
-            ``"std"`` the spread of the per-atom interaction energy itself,
+            ``"std"`` the population spread of per-atom interaction energies,
             ``"rms_dipoles"`` for a dipole
             model. Named rather than inferred, because on the frozen tree the
             choice is spread across a command-line flag and a model default
@@ -166,7 +166,11 @@ def compute_statistics(
 
     Returns:
         The statistics, with ``mean`` always the mean per-atom interaction
-        energy and ``std`` whatever ``scaling`` asked for.
+        energy and ``std`` whatever ``scaling`` asked for. Neighbour counts
+        include atoms with no edges. Both conventions are the native V1
+        contract; legacy uses sample spread and omits zero-neighbour atoms.
+        A zero spread is retained here; the output layer uses a unit scale
+        for it so a constant target does not freeze the readout.
 
     Raises:
         ValueError: On an unknown scaling, or when the chosen one has no data

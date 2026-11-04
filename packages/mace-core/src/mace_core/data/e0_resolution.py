@@ -291,9 +291,26 @@ def _from_corrected_least_squares(spec, z_table, configurations, **kwargs: Any):
     residuals = [
         label - float(guess) for label, guess in zip(energies, predicted, strict=True)
     ]
-    values, rank = _least_squares(kept, z_table, residuals, spec.kind)
+    source = kwargs.get("foundation_e0s")
+    present = {int(z) for item in kept for z in item.atomic_numbers}
+    fitted_table = AtomicNumberTable([z for z in z_table.zs if z in present])
+    corrections, rank = _least_squares(kept, fitted_table, residuals, spec.kind)
+    # Follow mace.data.utils.estimate_e0s_from_foundation: the residual fit
+    # corrects the selected foundation head's references. A zero-reference
+    # predictor may omit the source table, as in the standalone resolver API.
+    values = (
+        corrections
+        if source is None
+        else {
+            z: float(source[z]) + corrections.get(z, 0.0)
+            for z in z_table.zs
+            if z in source
+        }
+    )
     missing = [z for z in z_table.zs if z not in values]
-    values, filled = _fill_missing(values, missing, spec.missing, spec.kind, kept)
+    values, filled = _fill_missing(
+        values, missing, spec.missing, spec.kind, configurations
+    )
     return values, E0Provenance(
         kind=spec.kind,
         solver="foundation_corrected_least_squares",

@@ -226,7 +226,8 @@ _MODEL: dict[str, Disposition] = {
     ),
     **_merged(
         "the dataset statistics",
-        "a measured property of the data, carried in the model's metadata",
+        "scale/shift and neighbor counts come from data or --statistics_file; "
+        "element tables come from datasets or finetune.element_table",
         "avg_num_neighbors",
         "compute_avg_num_neighbors",
         "atomic_numbers",

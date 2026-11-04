@@ -813,7 +813,9 @@ def _scale_shift(
         return ScaleShiftSpec("none", (1.0,) * num_heads, (0.0,) * num_heads)
     return ScaleShiftSpec(
         config.model.scaling,
-        (statistics.std,) * num_heads,
+        # Keep a constant target trainable, as the per-head recipes do. The
+        # measured spread remains zero in the dataset statistics.
+        (statistics.std or 1.0,) * num_heads,
         (statistics.mean,) * num_heads,
     )
 

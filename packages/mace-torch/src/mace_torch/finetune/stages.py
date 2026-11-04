@@ -27,22 +27,28 @@ its structures.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
 import torch
+from mace_core.config.e0s import E0sEstimated
+from mace_core.config.pseudolabels import PseudolabelConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backends.xyz import SUFFIXES as XYZ_SUFFIXES
+from mace_core.data.configuration import Configuration
 from mace_core.data.xyz import write_configurations
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
 from mace_core.stages import TrainedModel
 
 from mace_torch.finetune.extend import NewSpeciesInit, extend_elements
 from mace_torch.finetune.foundation import Foundation, read_foundation
-from mace_torch.finetune.pseudolabels import relabelling
+from mace_torch.finetune.pseudolabels import generate_pseudolabels, relabelling
 from mace_torch.train.contracts import TorchBuiltModel
 from mace_torch.train.data_stage import (
     DataStageError,
+    graph_inputs_of,
     key_specification,
     run_data_stage,
     selected_structures,
@@ -230,8 +236,41 @@ def build(
             if foundation is not None
             else None
         ),
+        predict_energy=(
+            partial(_foundation_energies, foundation=foundation, config=config)
+            if foundation is not None
+            else None
+        ),
     )
     return run_model_stage(config, data, catalogue, foundation=foundation)
+
+
+def _foundation_energies(
+    configurations: Sequence[Configuration],
+    *,
+    foundation: Foundation,
+    config: ResolvedConfig,
+) -> list[float]:
+    """Total energies in eV for one head's E0 fit, without changing its labels."""
+    target = configurations[0].head
+    spec = config.data.heads[target].e0s
+    assert isinstance(spec, E0sEstimated)
+    # E0 resolution validates an ambiguous or absent source head before
+    # requesting predictions. Use that same head for the residual energies.
+    source = spec.head if spec.head is not None else foundation.heads[0]
+    labelled = generate_pseudolabels(
+        foundation.engine,
+        configurations,
+        PseudolabelConfig(properties=("energy",)),
+        z_table=foundation.z_table,
+        cutoff=foundation.config.model.r_max,
+        head_index=foundation.heads.index(source),
+        graph_inputs=graph_inputs_of(foundation.config.model),
+        features=foundation.config.model.feature_storages,
+        batch_size=config.training.valid_batch_size,
+        device=str(next(foundation.engine.parameters()).device),
+    )
+    return [float(item.properties["energy"]) for item in labelled]
 
 
 def train(
