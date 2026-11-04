@@ -275,6 +275,8 @@ class MACECalculator(Calculator):
         default_dtype: str | None = None,
         **kwargs: Any,
     ) -> None:
+        if "model_path" in kwargs:
+            raise TypeError("model_path is retired in V1; use model_paths instead")
         Calculator.__init__(self, **kwargs)
         if default_dtype is not None:
             if precision is not None:

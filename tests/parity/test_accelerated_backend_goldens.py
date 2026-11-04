@@ -18,6 +18,7 @@ host with no GPU.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -71,7 +72,10 @@ def test_the_committed_cpu_reference_is_reproduced(
     from mace_torch.calculators import MACECalculator
 
     legacy = load_anchor(ANCHOR)
-    checkpoint = on_backend(Path(write_anchor_checkpoint(legacy, tmp_path)), backend)
+    checkpoint = Path(write_anchor_checkpoint(legacy, tmp_path))
+    weights = checkpoint.with_suffix(".safetensors")
+    original_weights = hashlib.sha256(weights.read_bytes()).hexdigest()
+    checkpoint = on_backend(checkpoint, backend)
     calculator = MACECalculator(model_paths=checkpoint, device=device)
     engine = calculator.models[0].engine
     assert next(engine.parameters()).device.type == device
@@ -104,6 +108,7 @@ def test_the_committed_cpu_reference_is_reproduced(
     assert not idle, f"{backend} ops that never ran: {idle}"
 
     harness.compare_to_reference(snapshot, harness.load_reference(REFERENCE), row=row)
+    assert hashlib.sha256(weights.read_bytes()).hexdigest() == original_weights
     if backend == "cueq":
         from mace_torch.backends.cueq import compiled_operations_available
 

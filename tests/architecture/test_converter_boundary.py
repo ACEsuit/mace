@@ -72,3 +72,7 @@ def test_the_wheel_ships_the_extraction_script(tmp_path):
     (wheel,) = tmp_path.glob("*.whl")
     names = zipfile.ZipFile(wheel).namelist()
     assert SCRIPT in names, sorted(name for name in names if "deploy" in name)
+    # Runtime artifacts are loaded explicitly. In particular the retired ANI-CC
+    # pickle must not arrive through wheel contents.
+    assert not any(name.endswith((".model", ".pt", ".safetensors")) for name in names)
+    assert not any("ani500k" in name or "torch_geometric" in name for name in names)
