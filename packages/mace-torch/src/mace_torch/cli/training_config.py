@@ -16,6 +16,7 @@ from mace_core.config import read_config_file
 from mace_core.config.cli import apply_overrides
 from mace_core.config.legacy import LegacyFlagError, from_namespace
 from mace_core.config.resolved import ResolvedConfig
+from mace_core.observables import DEFAULT_CATALOGUE
 
 from mace_torch.cli.eval_configs import boolean
 from mace_torch.cli.legacy_flags import DEFAULTS
@@ -243,6 +244,11 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
                 ]
             )
         )
+        if values["loss"] == "universal" and model.get("model") == "magnetic":
+            model["observables"].append("magforces")
+            document["loss"]["use_structure_weights"]["magforces"] = False
+    elif values.get("loss") == "energy_forces_dipole":
+        model["observables"] = ["energy", "forces", "dipole"]
     training = document.setdefault("training", {})
     if values.get("swa") and values.get("start_swa") is None:
         training.setdefault("stage_two", {})["start_epoch"] = int(
@@ -268,7 +274,7 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
         )
     )
     if legacy_file:
-        return ResolvedConfig.from_dict(legacy_document({**document, **values}))
+        return _resolve_document(legacy_document({**document, **values}))
     from mace_torch.cli.commands import TRAIN_FLAGS
 
     for flag in TRAIN_FLAGS:
@@ -303,4 +309,23 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
         if values.get("foundation_head"):
             for settings in document.get("data", {}).get("heads", {}).values():
                 settings["readout_from"] = values["foundation_head"]
+    return _resolve_document(document)
+
+
+def _resolve_document(document: dict[str, Any]) -> ResolvedConfig:
+    if "virials" in document.get("model", {}).get(
+        "observables", ()
+    ) and not document.get("catalogue"):
+        # A virial is an extensive negative strain derivative. The default
+        # catalogue declares stress instead; persist the alternate declaration
+        # for the loss, data loader and checkpoint to use the same convention.
+        catalogue = DEFAULT_CATALOGUE.model_dump(mode="json")
+        for observable in catalogue["observables"]:
+            if observable["name"] == "energy":
+                for derivative in observable["derivatives"]:
+                    if derivative["wrt"] == "strain":
+                        derivative.update(
+                            name="virials", sign=-1, units="eV", extensive=True
+                        )
+        document["catalogue"] = catalogue
     return ResolvedConfig.from_dict(document)

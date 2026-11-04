@@ -21,7 +21,7 @@ rather than a NaN, and nothing has to know which properties are missing.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import torch
@@ -29,7 +29,7 @@ import torch.distributed as dist
 from mace_core.config.loss import LossConfig, RegisteredLoss
 from mace_core.config.training import StageConfig
 from mace_core.observables import RequestedOutputs
-from mace_core.outputs import MACEOutput
+from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor
 
 from mace_torch.data import TrainingBatch, target_specs
@@ -431,9 +431,15 @@ class UniversalLoss(TermwiseLoss):
     BANDS = (1.0, 0.7, 0.4, 0.1)
     EDGES = (100.0, 200.0, 300.0)
 
-    def __init__(self, terms: Sequence[LossTerm], delta: float = 0.01) -> None:
+    def __init__(
+        self,
+        terms: Sequence[LossTerm],
+        delta: float = 0.01,
+        weight_residuals: bool = False,
+    ) -> None:
         super().__init__(terms)
         self.delta = delta
+        self.weight_residuals = weight_residuals
         self._reference: dict[str, Tensor] = {}
 
     def forward(
@@ -442,6 +448,27 @@ class UniversalLoss(TermwiseLoss):
         batch: TrainingBatch,
         totals: Mapping[str, float] | None = None,
     ) -> Tensor:
+        if self.weight_residuals:
+            # The frozen Universal objective weights its arguments, including
+            # the reference used for band selection, not the Huber costs.
+            # Build local views: callers reuse the original batch for metrics.
+            weighted_output: MACEOutput[Tensor] = MACEOutput()
+            targets = {}
+            for term in self.terms:
+                value = predicted(output, term.name, row_axis=term.output_row_axis)
+                reference = reference_for(batch, term.name, value)
+                weights = row_weights(
+                    batch, term.name, term.per_atom, value, use_structure_weight=False
+                )
+                targets[term.name] = weights * reference
+                value = (weights * value).movedim(0, term.output_row_axis)
+                field = FIELD_BY_OBSERVABLE.get(term.name, term.name)
+                if field in CORE_FIELD_NAMES:
+                    setattr(weighted_output, field, value)
+                else:
+                    weighted_output.extras[term.name] = value
+            batch = replace(batch, targets=targets, property_weights={})
+            output = weighted_output
         # The band is a property of the reference, so it is read here and used
         # by `elementwise`, which only sees the residual.
         self._reference = dict(batch.targets)

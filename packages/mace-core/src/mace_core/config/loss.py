@@ -57,10 +57,14 @@ class UniversalLoss(FrozenSection):
 
     Args:
         delta: As :class:`HuberLoss`.
+        weight_residuals: Apply property weights to predictions and references
+            before Huber and force band selection, as in the legacy preset.
+            False retains native weighting of the resulting costs.
     """
 
     kind: Literal["universal"] = "universal"
     delta: float = 0.01
+    weight_residuals: bool = False
 
 
 class L1L2Loss(FrozenSection):

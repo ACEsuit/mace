@@ -58,6 +58,8 @@ def test_projection_matches_legacy_values_and_derivatives(checkpoint, name, batc
     native = load_deployed(path, device=device).with_precision(
         PrecisionConfig(model=str(dtype).split('.')[-1]), device=device)
     projected = native.with_time_reversal(batched=batched)
+    assert all(value.device == next(native.engine.parameters()).device
+               for value in (*projected.engine.parameters(), *projected.engine.buffers()))
     called = set()
     hooks = [module.register_forward_hook(lambda module, args, output: called.add(type(module).__name__))
              for module in projected.engine.modules() if type(module).__name__.startswith('CuEq')]

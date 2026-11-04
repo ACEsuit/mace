@@ -864,6 +864,111 @@ def test_dipole_presets_train_from_flags_and_reload(tmp_path, preset, model):
     assert result.shape == (3,) and np.isfinite(result).all()
 
 
+@fp64_only
+@pytest.mark.parametrize(
+    "preset",
+    [
+        "forces_only",
+        "stress",
+        "virials",
+        "huber",
+        "universal",
+        "l1l2energyforces",
+        "energy_forces_dipole",
+    ],
+)
+def test_loss_presets_train_resume_and_preserve_the_resolved_objective(
+    tmp_path, preset
+):
+    from safetensors.numpy import load_file
+
+    base = configuration(tmp_path, max_num_epochs=2).to_resolved_dict()
+    source = tmp_path / "train.xyz"
+    frames = read(source, index=":")[:8]
+    for index, atoms in enumerate(frames):
+        if atoms.info.get("config_type") == "IsolatedAtom":
+            continue
+        atoms.cell = np.eye(3) * 8.0
+        atoms.pbc = True
+        atoms.info["REF_stress"] = np.eye(3) * 0.01 * index
+        atoms.info["REF_virials"] = -atoms.info["REF_stress"] * atoms.get_volume()
+        atoms.info["dipole"] = np.array([0.1 * index, 0.2, -0.1])
+        atoms.info["config_weight"] = (0.0, 2.0, 3.0)[index % 3]
+        atoms.info["config_forces_weight"] = 0.5
+        atoms.arrays["REF_charges"] = np.zeros(len(atoms))
+    write(source, frames)
+    base["training"].update(ema={"enabled": True, "decay": 0.9})
+
+    def run(directory, epochs, restart=False):
+        root = tmp_path / directory
+        root.mkdir(exist_ok=True)
+        document = {
+            **base,
+            "runtime": {
+                **base["runtime"],
+                "work_dir": str(root),
+                "name": "loss",
+                "restart_latest": restart,
+            },
+        }
+        path = root / "config.json"
+        path.write_text(json.dumps(document))
+        flags = [
+            "--config",
+            str(path),
+            "--loss",
+            preset,
+            "--max_num_epochs",
+            str(epochs),
+            "--stage_two",
+            "--start_stage_two",
+            "1",
+            "--swa_forces_weight",
+            "3.5",
+            "--swa_energy_weight",
+            "2.0",
+            "--swa_stress_weight",
+            "1.7",
+            "--swa_virials_weight",
+            "2.3",
+            "--swa_dipole_weight",
+            "0.8",
+        ]
+        if preset in {"huber", "universal"}:
+            flags += ["--huber_delta", "0.2"]
+        config = parse(flags)
+        assert train(config) == 0
+        loaded = load_deployed(root / "loss.json")
+        assert loaded.config.loss == config.loss
+        assert loaded.config.catalogue == config.catalogue
+        assert (
+            loaded.config.schedule()[1].loss_weights
+            == config.schedule()[1].loss_weights
+        )
+        return root
+
+    complete = run("complete", 2)
+    first = run("resumed", 1)
+    before = load_file(first / "loss.run-000001.safetensors")
+    resumed = run("resumed", 2, restart=True)
+    for suffix in (".safetensors", ".run-000002.safetensors"):
+        expected = load_file(complete / f"loss{suffix}")
+        actual = load_file(resumed / f"loss{suffix}")
+        assert actual.keys() == expected.keys()
+        for name in expected:
+            np.testing.assert_array_equal(actual[name], expected[name], err_msg=name)
+    metadata = [
+        json.loads((root / "loss.run-000002.json").read_text())
+        for root in (complete, resumed)
+    ]
+    for key in ("state", "optimizer", "scheduler", "ema", "model_tensors"):
+        assert metadata[0][key] == metadata[1][key]
+    assert any(
+        not np.array_equal(before[name], actual[name])
+        for name in metadata[1]["model_tensors"]
+    )
+
+
 def test_prepare_without_statistics_preserves_training_references(tmp_path):
     from mace_core.data import open_dataset
     from mace_core.data.keys import KeySpecification

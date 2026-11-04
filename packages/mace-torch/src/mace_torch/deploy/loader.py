@@ -140,7 +140,9 @@ class DeployedModel:
                 )
             }
         )
-        engine = deepcopy(self.engine)
+        # Some backend FX modules reconstruct CPU coefficient buffers when
+        # deep-copied. Restore the runtime device without casting op dtypes.
+        engine = deepcopy(self.engine).to(next(self.engine.parameters()).device)
         model = engine.backbone
         if not isinstance(model, MagneticModel):
             raise DeployError("time reversal requires a magnetic energy model")

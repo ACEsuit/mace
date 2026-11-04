@@ -833,6 +833,7 @@ def _collapse_observables(namespace: Any, values: dict[str, Any]) -> None:
 
 
 def _collapse_loss(namespace: Any, values: dict[str, Any]) -> None:
+    """Preset semantics from mace/modules/loss.py, expressed as native terms."""
     if (loss := _read(namespace, "loss")) is not None:
         settings: dict[str, Any] = {}
         if (
@@ -840,14 +841,29 @@ def _collapse_loss(namespace: Any, values: dict[str, Any]) -> None:
             and (delta := _read(namespace, "huber_delta")) is not None
         ):
             settings["delta"] = delta
-        kind = "weighted" if loss in {"dipole", "dipole_polar"} else loss
+        kind = {
+            "forces_only": "weighted",
+            "stress": "weighted",
+            "virials": "weighted",
+            "dipole": "weighted",
+            "dipole_polar": "weighted",
+            "energy_forces_dipole": "weighted",
+            "l1l2energyforces": "l1l2",
+        }.get(loss, loss)
+        if loss == "universal":
+            settings["weight_residuals"] = True
         _set(values, "loss.kind", {"kind": kind, **settings})
-        if loss in {"dipole", "dipole_polar"}:
-            # The frozen dipole/polarizability objectives ignore config_weight.
-            # Record that choice so reload does not depend on the CLI spelling.
-            names = (
-                ("dipole", "polarizability") if loss == "dipole_polar" else ("dipole",)
-            )
+        # These frozen terms ignore config_weight. Persist the policy so a
+        # reload does not depend on the CLI spelling; property masks still apply.
+        names = {
+            "dipole": ("dipole",),
+            "dipole_polar": ("dipole", "polarizability"),
+            "energy_forces_dipole": ("dipole",),
+            "huber": ("energy", "forces", "stress"),
+            "universal": ("energy", "forces", "stress"),
+            "l1l2energyforces": ("forces",),
+        }.get(loss, ())
+        if names:
             _set(values, "loss.use_structure_weights", dict.fromkeys(names, False))
     for stage, prefix in (("weights", ""), ("stage_two_weights", "swa_")):
         written = {
@@ -855,10 +871,13 @@ def _collapse_loss(namespace: Any, values: dict[str, Any]) -> None:
             for dest, observable in _WEIGHT_FLAGS.items()
             if (weight := _read(namespace, f"{prefix}{dest}")) is not None
         }
-        if loss == "dipole" and (stage == "weights" or "dipole" in written):
-            # The legacy dipole-only preset scales its per-atom squared error
-            # by 100. The dipole+polarizability preset has no such factor.
+        if loss in {"dipole", "energy_forces_dipole"} and (
+            stage == "weights" or "dipole" in written
+        ):
+            # The dipole+polarizability preset alone has no factor of 100.
             written["dipole"] = 100.0 * written.get("dipole", 1.0)
+        if loss == "forces_only":
+            written["energy"] = 0.0
         if written:
             _set(values, f"loss.{stage}", written)
 
