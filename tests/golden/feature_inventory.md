@@ -144,7 +144,7 @@ instead of a hand-written runtime raise.
 | `choice.EnergyDipolesMACE` | `--model EnergyDipolesMACE` | `mace/tools/arg_parser.py:146` | MERGE — idem, energy + dipole observables | `tests/unit/test_models.py::test_energy_dipole_mace` |
 | `choice.MagneticScaleShiftMACE` | `--model MagneticScaleShiftMACE` | `mace/tools/arg_parser.py:147` | MERGE — idem; the only magnetic entry in the choices | `tests/extensions/magnetic` + `tests/golden/test_tiny_magnetic.py::test_anchor_reproduces_its_reference` |
 
-## 3. `mace_run_train` flags — 184 dests
+## 3. `mace_run_train` flags — 186 dests
 
 One row per **dest** of `build_default_arg_parser` (`mace/tools/arg_parser.py`), which is what a
 knob is; the option strings that spell it are in the feature cell. 184 dests carry 194 option
@@ -245,6 +245,7 @@ Group default: MERGE into the declarative observable specification — an observ
 |---|---|---|---|---|
 | `train.scaling` | `--scaling` | `mace/tools/arg_parser.py:401` | KEEP — see the scaling rows in §7 | `tests/unit/test_e0s_characterization.py::test_the_mean_and_std_scaling_is_the_per_atom_interaction_energy` + `tests/unit/test_e0s_characterization.py::test_no_scaling_overrides_even_an_explicit_std` |
 | `train.avg_num_neighbors` | `--avg_num_neighbors` | `mace/tools/arg_parser.py:408` | MERGE — dataset statistics + model metadata | `tests/unit/test_e0s_characterization.py::test_the_average_neighbour_count_skips_atoms_that_have_no_neighbours` |
+| `train.compile_training` | `--compile_training` | `mace/tools/arg_parser.py:85` | KEEP — the compiled-training mode (symbolic-shape FX tracing of the force/stress training forward; default off, falls back to eager with a warning) | `tests/unit/test_compile_training.py` + `tests/unit/test_train_compile_integration.py` |
 | `train.compute_avg_num_neighbors` | `--compute_avg_num_neighbors` | `mace/tools/arg_parser.py:414` | MERGE — idem | `tests/unit/test_e0s_characterization.py::test_the_average_neighbour_count_skips_atoms_that_have_no_neighbours` |
 | `train.compute_stress` | `--compute_stress` | `mace/tools/arg_parser.py:420` | MERGE — observable spec (stress declared ⇒ computed) | `tests/unit/test_physics_glue.py::test_stress_is_the_strain_derivative_over_the_volume` + `tests/unit/test_physics_glue.py::test_which_derivatives_a_flag_combination_produces` |
 | `train.compute_forces` | `--compute_forces` | `mace/tools/arg_parser.py:426` | MERGE — idem | `tests/unit/test_physics_glue.py::test_forces_are_minus_the_energy_gradient` |
@@ -975,7 +976,7 @@ their downstream scripts. The default prefix is `MACE_`.
 | `out.eval.latent_alphas` | `<info_prefix>latent_alphas` → `atoms.arrays` | `mace/cli/eval_configs.py:417` | KEEP | `tests/golden/test_tiny_maceles.py::test_the_eval_cli_lands_on_the_same_numbers_as_the_forward` |
 | `out.eval.latent_quads` | `<info_prefix>latent_quads` → `atoms.arrays` | `mace/cli/eval_configs.py:421` | KEEP | `tests/golden/test_tiny_maceles.py::test_the_eval_cli_lands_on_the_same_numbers_as_the_forward` |
 
-## 13. Behaviour-affecting environment variables (9 + 3)
+## 13. Behaviour-affecting environment variables (10 + 3)
 
 Every `MACE_*` literal in the package. They are gated as a set because an environment variable is
 the one configuration channel that leaves no trace in the run metadata.
@@ -991,6 +992,7 @@ the one configuration channel that leaves no trace in the run metadata.
 | `env.MACE_ASE_PAD_NUM_ATOMS` | `MACE_ASE_PAD_NUM_ATOMS` | `mace/calculators/mace.py:411` | KEEP — the calculator's padding override, as an explicit config field in v1 | `tests/workflows/test_cli_contracts.py::test_padding_through_the_two_environment_variables_behaves_identically` |
 | `env.MACE_ASE_PAD_NUM_EDGES` | `MACE_ASE_PAD_NUM_EDGES` | `mace/calculators/mace.py:413` | KEEP — idem | `tests/workflows/test_cli_contracts.py::test_padding_through_the_two_environment_variables_behaves_identically` |
 | `env.MACE_USE_CUEQ_CG` | `MACE_USE_CUEQ_CG` | `mace/tools/cg.py:23` | DROP — the variable goes, not the capability: an environment variable that silently changes model numerics is unreproducible and never lands in the run metadata; it is what makes machine-to-machine differences unexplainable. The CG source becomes a backend decision recorded in the resolved config | — |
+| `env.MACE_CUEQ_CONV_FUSION_NODE_BUCKET` | `MACE_CUEQ_CONV_FUSION_NODE_BUCKET` | `mace/tools/utils.py:212` | KEEP — tuning knob for the fused-conv node-count bucket (default 256); sizes only padding, never numerics | `tests/unit/test_cueq_conv_fusion_bucket.py` |
 
 Three further variables are read but are not MACE's own namespace, so they are not in the gated
 set:

@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 import ase.io
+import pytest
 
 from tests.helpers import REPO_ROOT, base_mace_params, run_train
 
@@ -23,13 +24,14 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def test_run_train_distributed_cpu(tmp_path, fitting_configs):
+@pytest.mark.parametrize("compile_training", [False, True])
+def test_run_train_distributed_cpu(tmp_path, fitting_configs, compile_training):
     ase.io.write(tmp_path / "fit.xyz", fitting_configs)
 
     params = base_mace_params()
     params.update(
         {
-            "name": "ddp",
+            "name": "ddp_compiled" if compile_training else "ddp_eager",
             "hidden_irreps": "16x0e",
             "checkpoints_dir": str(tmp_path),
             "model_dir": str(tmp_path),
@@ -41,9 +43,17 @@ def test_run_train_distributed_cpu(tmp_path, fitting_configs):
             "device": "cpu",
         }
     )
-    argv = [
-        (f"--{k}={v}" if v is not None else f"--{k}") for k, v in params.items()
-    ]
+    if compile_training:
+        params["compile_training"] = None
+        params.update(
+            {
+                "model": "ScaleShiftMACE",
+                "hidden_irreps": "8x0e + 8x1o",
+                "correlation": 2,
+                "use_reduced_cg": True,
+            }
+        )
+    argv = [(f"--{k}={v}" if v is not None else f"--{k}") for k, v in params.items()]
 
     base_env = os.environ.copy()
     base_env["PYTHONPATH"] = str(REPO_ROOT) + ":" + base_env.get("PYTHONPATH", "")
@@ -75,8 +85,16 @@ def test_run_train_distributed_cpu(tmp_path, fitting_configs):
         out, _ = proc.communicate(timeout=800)
         outputs.append(out)
 
-    for rank, (proc, out) in enumerate(zip(procs, outputs)):
-        assert proc.returncode == 0, (
-            f"rank {rank} failed (rc={proc.returncode})\n{out[-4000:]}"
-        )
-    assert (tmp_path / "ddp.model").exists()
+    failures = [
+        f"rank {rank} failed (rc={proc.returncode})\n{out[-12000:]}"
+        for rank, (proc, out) in enumerate(zip(procs, outputs))
+        if proc.returncode != 0
+    ]
+    assert not failures, "\n\n".join(failures)
+    model_name = "ddp_compiled" if compile_training else "ddp_eager"
+    assert (tmp_path / f"{model_name}.model").exists()
+    assert (tmp_path / f"{model_name}_stagetwo.model").exists()
+    combined_output = "\n".join(outputs)
+    if compile_training:
+        assert "Compiled training DDP active" in combined_output
+        assert "Compiler-friendly distributed training fallback" not in combined_output

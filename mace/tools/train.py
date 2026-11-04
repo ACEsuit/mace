@@ -5,6 +5,7 @@
 ###########################################################################################
 
 import dataclasses
+import itertools
 import logging
 import time
 from collections import defaultdict
@@ -24,6 +25,7 @@ from torchmetrics import Metric
 
 from mace.cli.visualise_train import TrainingPlotter
 
+from . import compile as mace_compile
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
 from .torch_tools import to_numpy
@@ -44,6 +46,33 @@ class SWAContainer:
     scheduler: SWALR
     start: int
     loss_fn: torch.nn.Module
+
+
+def _compiled_training_facade(model: torch.nn.Module) -> torch.nn.Module:
+    if isinstance(model, DistributedDataParallel):
+        return model.module
+    return model
+
+
+def _synchronize_compiled_training_state(
+    model: torch.nn.Module,
+    *,
+    device: torch.device,
+    distributed: bool,
+) -> torch.nn.Module:
+    if not distributed:
+        return model
+
+    facade = _compiled_training_facade(model)
+    compiled_flag = torch.tensor(
+        [int(facade.is_compiled)], dtype=torch.int32, device=device
+    )
+    torch.distributed.all_reduce(compiled_flag, op=torch.distributed.ReduceOp.MIN)
+    if compiled_flag.item() == 0 and facade.is_compiled:
+        reason = "another distributed rank entered eager fallback"
+        facade.disable_compilation(reason)
+        logging.warning("Compiler-friendly distributed training fallback: %s", reason)
+    return model
 
 
 def valid_err_log(
@@ -177,11 +206,28 @@ def train(
     save_all_checkpoints: bool = False,
     plotter: TrainingPlotter = None,
     distributed_model: Optional[DistributedDataParallel] = None,
+    distributed_device_ids: Optional[List[int]] = None,
     train_sampler: Optional[DistributedSampler] = None,
     rank: Optional[int] = 0,
     data_aug_magmom: Optional[bool] = False,
     data_aug_magmom_mode: str = "non-soc",
+    compile_training: bool = False,
 ):
+    if compile_training:
+        if isinstance(optimizer, LBFGS):
+            raise ValueError("compile_training does not yet support lbfgs")
+        supported_outputs = {"energy", "forces", "virials", "stress"}
+        unsupported_outputs = sorted(
+            name
+            for name, enabled in output_args.items()
+            if enabled and name not in supported_outputs
+        )
+        if unsupported_outputs:
+            raise ValueError(
+                "compile_training does not support output objectives: "
+                + ", ".join(unsupported_outputs)
+            )
+
     lowest_loss = np.inf
     valid_loss = np.inf
     patience_counter = 0
@@ -224,6 +270,7 @@ def train(
             train_loader, mode=data_aug_magmom_mode
         )
 
+    compiled_training_model: Optional[torch.nn.Module] = None
     while epoch < max_num_epochs:
         # LR scheduler and SWA update
         if swa is None or epoch < swa.start:
@@ -248,7 +295,7 @@ def train(
         if "ScheduleFree" in type(optimizer).__name__:
             optimizer.train()
 
-        train_one_epoch(
+        compiled_training_model = train_one_epoch(
             model=model,
             loss_fn=loss_fn,
             data_loader=train_loader,
@@ -261,7 +308,10 @@ def train(
             device=device,
             distributed=distributed,
             distributed_model=distributed_model,
+            distributed_device_ids=distributed_device_ids,
             rank=rank,
+            compile_training=compile_training,
+            compiled_training_model=compiled_training_model,
         )
         if distributed:
             torch.distributed.barrier()
@@ -269,7 +319,9 @@ def train(
         # Validate
         if epoch % eval_interval == 0:
             model_to_evaluate = (
-                model if distributed_model is None else distributed_model
+                model
+                if compile_training or distributed_model is None
+                else distributed_model
             )
             param_context = (
                 ema.average_parameters() if ema is not None else nullcontext()
@@ -363,6 +415,7 @@ def train(
 
         epoch += 1
 
+    compiled_training_model = None
     logging.info("Training complete")
 
 
@@ -379,9 +432,14 @@ def train_one_epoch(
     device: torch.device,
     distributed: bool,
     distributed_model: Optional[DistributedDataParallel] = None,
+    distributed_device_ids: Optional[List[int]] = None,
     rank: Optional[int] = 0,
-) -> None:
-    model_to_train = model if distributed_model is None else distributed_model
+    compile_training: bool = False,
+    compiled_training_model: Optional[torch.nn.Module] = None,
+) -> Optional[torch.nn.Module]:
+    model_to_train = (
+        model if compile_training or distributed_model is None else distributed_model
+    )
 
     if isinstance(optimizer, LBFGS):
         _, opt_metrics = take_step_lbfgs(
@@ -401,9 +459,54 @@ def train_one_epoch(
         if rank == 0:
             logger.log(opt_metrics)
     else:
-        for batch in data_loader:
+        batch_iterator = iter(data_loader)
+        if compile_training and compiled_training_model is None:
+            try:
+                first_batch = next(batch_iterator).to(device)
+            except StopIteration:
+                return None
+            try:
+                validation_batch = next(batch_iterator).to(device)
+            except StopIteration:
+                validation_batch = None
+
+            compiled_training_model = mace_compile.compile_training_model(
+                model,
+                first_batch.to_dict(),
+                output_args=output_args,
+                mode="default",
+                dynamic=True,
+                validation_batch=(
+                    None if validation_batch is None else validation_batch.to_dict()
+                ),
+            )
+            if distributed:
+                compiled_training_model.materialize_compiled_backward(
+                    first_batch.to_dict()
+                )
+            compiled_training_model = _synchronize_compiled_training_state(
+                compiled_training_model,
+                device=device,
+                distributed=distributed,
+            )
+            if distributed:
+                compiled_training_model = DistributedDataParallel(
+                    compiled_training_model,
+                    device_ids=distributed_device_ids,
+                )
+                logging.info("Compiled training DDP active")
+
+            prefetched = (
+                (first_batch,)
+                if validation_batch is None
+                else (first_batch, validation_batch)
+            )
+            batch_iterator = itertools.chain(prefetched, batch_iterator)
+
+        for batch in batch_iterator:
             _, opt_metrics = take_step(
                 model=model_to_train,
+                forward_model=compiled_training_model,
                 loss_fn=loss_fn,
                 batch=batch,
                 optimizer=optimizer,
@@ -412,10 +515,18 @@ def train_one_epoch(
                 max_grad_norm=max_grad_norm,
                 device=device,
             )
+            if compile_training:
+                compiled_training_model = _synchronize_compiled_training_state(
+                    compiled_training_model,
+                    device=device,
+                    distributed=distributed,
+                )
             opt_metrics["mode"] = "opt"
             opt_metrics["epoch"] = epoch
             if rank == 0:
                 logger.log(opt_metrics)
+
+    return compiled_training_model
 
 
 def take_step(
@@ -427,6 +538,7 @@ def take_step(
     output_args: Dict[str, bool],
     max_grad_norm: Optional[float],
     device: torch.device,
+    forward_model: Optional[torch.nn.Module] = None,
 ) -> Tuple[float, Dict[str, Any]]:
     start_time = time.time()
     batch = batch.to(device)
@@ -442,7 +554,10 @@ def take_step(
         )
         if output_args.get("magforces", False):
             kwargs["compute_magforces"] = True
-        output = model(batch_dict, **kwargs)
+        if forward_model is None:
+            output = model(batch_dict, **kwargs)
+        else:
+            output = forward_model(batch_dict)
         loss = loss_fn(pred=output, ref=batch)
         loss.backward()
         if max_grad_norm is not None:

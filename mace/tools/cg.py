@@ -5,8 +5,11 @@
 ###########################################################################################
 
 import collections
+import functools
 import itertools
 import os
+from fractions import Fraction
+from math import factorial
 from typing import Iterator, List, Union
 
 import numpy as np
@@ -33,6 +36,102 @@ warn_env("MACE_USE_CUEQ_CG")
 
 _TP = collections.namedtuple("_TP", "op, args")
 _INPUT = collections.namedtuple("_INPUT", "tensor, start, stop")
+# ---------------------------------------------------------------------------------------
+# Wigner 3j extension beyond e3nn 0.4.4's cached table
+#
+# e3nn 0.4.4 ships precomputed Wigner 3j tables only up to l1+l2+l3 combinations
+# covered by its constants.pt (wigner_3j raises NotImplementedError beyond). MACE's
+# symmetric-contraction CG recursion for correlation 3 over l=4 spherical harmonics
+# needs couplings such as (4, 8, 12). The computation below (real Clebsch-Gordan via
+# exact rational SU(2) coefficients) is ported from e3nn
+# (e3nn/o3/_wigner.py, MIT license); its Clebsch-Gordan coefficient routine
+# originates from QuTiP (BSD 3-clause). It reproduces e3nn 0.4.4's cached entries
+# and extends to arbitrary l.
+# ---------------------------------------------------------------------------------------
+
+
+def _change_basis_real_to_complex(l: int) -> torch.Tensor:
+    """Change-of-basis matrix from e3nn's real basis to the complex basis."""
+    q = torch.zeros((2 * l + 1, 2 * l + 1), dtype=torch.complex128)
+    for m in range(-l, 0):
+        q[l + m, l + abs(m)] = 1 / 2**0.5
+        q[l + m, l - abs(m)] = -1j / 2**0.5
+    q[l, l] = 1
+    for m in range(1, l + 1):
+        q[l + m, l + abs(m)] = (-1) ** m / 2**0.5
+        q[l + m, l - abs(m)] = 1j * (-1) ** m / 2**0.5
+    return (-1j) ** l * q
+
+
+def _su2_clebsch_gordan_coeff(j1, m1, j2, m2, j3, m3) -> float:
+    """SU(2) Clebsch-Gordan coefficient (QuTiP implementation, exact rationals)."""
+    if m3 != m1 + m2:
+        return 0.0
+    vmin = int(max([-j1 + j2 + m3, -j1 + m1, 0]))
+    vmax = int(min([j2 + j3 + m1, j3 - j1 + j2, j3 + m3]))
+
+    def f(n: int) -> int:
+        assert n == round(n)
+        return factorial(round(n))
+
+    c = (
+        (2.0 * j3 + 1.0)
+        * Fraction(
+            f(j3 + j1 - j2)
+            * f(j3 - j1 + j2)
+            * f(j1 + j2 - j3)
+            * f(j3 + m3)
+            * f(j3 - m3),
+            f(j1 + j2 + j3 + 1) * f(j1 - m1) * f(j1 + m1) * f(j2 - m2) * f(j2 + m2),
+        )
+    ) ** 0.5
+
+    s = 0
+    for v in range(vmin, vmax + 1):
+        s += (-1) ** int(v + j2 + m2) * Fraction(
+            f(j2 + j3 + m1 - v) * f(j1 - m1 + v),
+            f(v) * f(j3 - j1 + j2 - v) * f(j3 + m3 - v) * f(v + j1 - j2 - m3),
+        )
+    return float(c * s)
+
+
+@functools.lru_cache(maxsize=None)
+def _su2_clebsch_gordan(j1: int, j2: int, j3: int) -> torch.Tensor:
+    mat = torch.zeros((2 * j1 + 1, 2 * j2 + 1, 2 * j3 + 1), dtype=torch.float64)
+    if 2 * j3 in range(2 * abs(j1 - j2), 2 * (j1 + j2) + 1, 2):
+        for m1 in range(-j1, j1 + 1):
+            for m2 in range(-j2, j2 + 1):
+                if abs(m1 + m2) <= j3:
+                    mat[j1 + m1, j2 + m2, j3 + m1 + m2] = _su2_clebsch_gordan_coeff(
+                        j1, m1, j2, m2, j3, m1 + m2
+                    )
+    return mat
+
+
+@functools.lru_cache(maxsize=None)
+def _compute_wigner_3j(l1: int, l2: int, l3: int) -> torch.Tensor:
+    """Wigner 3j in e3nn's real basis, computed for arbitrary l."""
+    q1 = _change_basis_real_to_complex(l1)
+    q2 = _change_basis_real_to_complex(l2)
+    q3 = _change_basis_real_to_complex(l3)
+    c = _su2_clebsch_gordan(l1, l2, l3).to(dtype=torch.complex128)
+    c = torch.einsum("ij,kl,mn,ikn->jlm", q1, q2, torch.conj(q3.T), c)
+    assert torch.all(torch.abs(torch.imag(c)) < 1e-5)
+    return torch.real(c) / torch.norm(c)
+
+
+def _wigner_3j(l1: int, l2: int, l3: int, dtype=None):
+    """o3.wigner_3j with an on-demand fallback beyond e3nn 0.4.4's cached table."""
+    try:
+        return o3.wigner_3j(l1, l2, l3, dtype=dtype)
+    except NotImplementedError:
+        cached = _compute_wigner_3j(l1, l2, l3)
+        out = cached.to(dtype=torch.get_default_dtype() if dtype is None else dtype)
+        if out is cached:
+            # Same dtype: .to() hands back the lru_cache-shared tensor. Never
+            # let callers mutate the process-global cache in place.
+            out = cached.clone()
+        return out
 
 
 def _wigner_nj(
@@ -71,11 +170,11 @@ def _wigner_nj(
                 if filter_ir_mid is not None and ir_out not in filter_ir_mid:
                     continue
 
-                C = o3.wigner_3j(ir_out.l, ir_left.l, ir.l, dtype=dtype)
+                C = _wigner_3j(ir_out.l, ir_left.l, ir.l, dtype=dtype)
                 if normalization == "component":
-                    C *= ir_out.dim**0.5
+                    C = C * ir_out.dim**0.5
                 if normalization == "norm":
-                    C *= ir_left.dim**0.5 * ir.dim**0.5
+                    C = C * ir_left.dim**0.5 * ir.dim**0.5
 
                 C = torch.einsum("jk,ijl->ikl", C_left.flatten(1), C)
                 C = C.reshape(
@@ -255,7 +354,7 @@ if CUET_AVAILABLE:
             rep1, rep2, rep3 = cls._from(rep1), cls._from(rep2), cls._from(rep3)
 
             if rep1.p * rep2.p == rep3.p:
-                return o3.wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(
+                return _wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(
                     rep3.dim
                 )
             return np.zeros((0, rep1.dim, rep2.dim, rep3.dim))

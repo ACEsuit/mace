@@ -55,19 +55,37 @@ def test_conversion_fusion_policy(monkeypatch, device, kwargs, expected):
 
 
 def test_training_conversion_forwards_fusion_flag():
-    tree = ast.parse(inspect.getsource(run_train.run))
+    # run() -> _convert_e3nn_to_cueq_for_training() -> run_e3nn_to_cueq():
+    # the training fusion flag must be forwarded explicitly at every hop.
+    run_tree = ast.parse(inspect.getsource(run_train.run))
+    delegation_calls = [
+        node
+        for node in ast.walk(run_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_convert_e3nn_to_cueq_for_training"
+    ]
+    assert len(delegation_calls) == 1
+    delegation_kwargs = {
+        keyword.arg: keyword.value for keyword in delegation_calls[0].keywords
+    }
+    assert isinstance(delegation_kwargs["conv_fusion"], ast.Attribute)
+    assert delegation_kwargs["conv_fusion"].attr == "cueq_conv_fusion"
+
+    convert_tree = ast.parse(
+        inspect.getsource(run_train._convert_e3nn_to_cueq_for_training)
+    )
     conversion_calls = [
         node
-        for node in ast.walk(tree)
+        for node in ast.walk(convert_tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "run_e3nn_to_cueq"
     ]
-
     assert len(conversion_calls) == 1
     keywords = {keyword.arg: keyword.value for keyword in conversion_calls[0].keywords}
-    assert isinstance(keywords["conv_fusion"], ast.Attribute)
-    assert keywords["conv_fusion"].attr == "cueq_conv_fusion"
+    assert isinstance(keywords["conv_fusion"], ast.Name)
+    assert keywords["conv_fusion"].id == "conv_fusion"
 
 
 @pytest.mark.parametrize(

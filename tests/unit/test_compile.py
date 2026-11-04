@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+import textwrap
 from functools import wraps
 from typing import Callable
 
@@ -17,6 +20,45 @@ from mace.tools import torch_geometric
 table = tools.AtomicNumberTable([6])
 atomic_energies = np.array([1.0], dtype=float)
 cutoff = 5.0
+
+
+def test_compile_module_does_not_require_compiler_training_dependencies():
+    script = textwrap.dedent(
+        """
+        import importlib.abc
+        import sys
+
+
+        class BlockCompileTraining(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, path, target=None):
+                if fullname == "mace.tools.compile_training":
+                    raise ImportError("compiler training dependencies unavailable")
+                return None
+
+
+        sys.meta_path.insert(0, BlockCompileTraining())
+
+        from mace.tools import compile as mace_compile
+
+        assert "mace.tools.compile_training" not in sys.modules
+
+        try:
+            mace_compile.compile_training_model(None, None, output_args={})
+        except RuntimeError as exc:
+            message = str(exc)
+            assert "--compile_training" in message
+            assert "PyTorch 2" in message
+        else:
+            raise AssertionError("missing compiler dependencies should be actionable")
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def setup_cueq(enable: bool, device: str):

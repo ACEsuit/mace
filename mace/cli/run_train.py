@@ -8,6 +8,7 @@ import ast
 import json
 import logging
 import os
+from contextlib import nullcontext
 from copy import deepcopy
 from glob import glob
 from pathlib import Path
@@ -37,6 +38,7 @@ from mace.cli.convert_oeq_e3nn import run as run_oeq_to_e3nn
 from mace.cli.visualise_train import TrainingPlotter
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.lora import inject_LoRAs, merge_lora_weights
+from mace.tools import compile as mace_compile
 from mace.tools import deprecation, torch_geometric
 from mace.tools.distributed_tools import init_distributed, xpu_device_index
 from mace.tools.model_script_utils import configure_model
@@ -75,7 +77,7 @@ from mace.tools.scripts_utils import (
     setup_wandb,
 )
 from mace.tools.tables_utils import create_error_table
-from mace.tools.utils import AtomicNumberTable
+from mace.tools.utils import AtomicNumberTable, cueq_conv_fusion_node_bucket
 
 
 def main() -> None:
@@ -99,12 +101,76 @@ def _warn_about_v1_removals(parser, args) -> None:
             deprecation.warn_choice("reg", getattr(args, dest, None))
 
 
+_COMPILE_TRAINING_SUPPORTED_MODELS = (
+    "MACE",
+    "ScaleShiftMACE",
+    "FoundationMACE",
+    "MagneticScaleShiftMACE",
+)
+
+
+def _validate_compile_training_args(args) -> None:
+    if not getattr(args, "compile_training", False):
+        return
+    if args.lbfgs:
+        raise ValueError("--compile_training does not yet support --lbfgs")
+    model = getattr(args, "model", None)
+    if model is not None and model not in _COMPILE_TRAINING_SUPPORTED_MODELS:
+        raise ValueError(
+            "--compile_training currently supports standard MACE models "
+            "(MACE, ScaleShiftMACE, FoundationMACE) and "
+            "MagneticScaleShiftMACE; "
+            f"got --model={model}"
+        )
+
+
+def _configure_model_for_training(args, *configure_args):
+    construction_context = (
+        mace_compile.disable_e3nn_codegen()
+        if getattr(args, "compile_training", False)
+        else nullcontext()
+    )
+    with construction_context:
+        return configure_model(args, *configure_args)
+
+
+def _convert_e3nn_to_cueq_for_training(
+    model,
+    device,
+    conv_fusion: bool = False,
+    compile_training: bool = False,
+):
+    construction_context = (
+        mace_compile.disable_e3nn_codegen() if compile_training else nullcontext()
+    )
+    with construction_context:
+        return run_e3nn_to_cueq(
+            deepcopy(model),
+            device=device,
+            conv_fusion=conv_fusion,
+            conv_fusion_node_bucket=cueq_conv_fusion_node_bucket(),
+        )
+
+
+def _build_eager_distributed_model(
+    model,
+    *,
+    distributed: bool,
+    compile_training: bool,
+    device_ids: Optional[List[int]],
+):
+    if not distributed or compile_training:
+        return None
+    return DDP(model, device_ids=device_ids)
+
+
 def run(args) -> None:
     """
     This script runs the training/fine tuning for mace
     """
     tag = tools.get_tag(name=args.name, seed=args.seed)
     args, input_log_messages = tools.check_args(args)
+    _validate_compile_training_args(args)
 
     # default keyspec to update using heads dictionary
     args.key_specification = KeySpecification()
@@ -851,7 +917,15 @@ def run(args) -> None:
     args.avg_num_neighbors = get_avg_num_neighbors(head_configs, args, train_loader, device)
 
     # Model
-    model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
+    model, output_args = _configure_model_for_training(
+        args,
+        train_loader,
+        atomic_energies,
+        model_foundation,
+        heads,
+        z_table,
+        head_configs,
+    )
     model.to(device)
 
     if args.lora:
@@ -904,8 +978,11 @@ def run(args) -> None:
             "MagneticScaleShiftMACE",
             "AtomicDielectricMACE",
         ]
-        model = run_e3nn_to_cueq(
-            deepcopy(model), device=device, conv_fusion=args.cueq_conv_fusion
+        model = _convert_e3nn_to_cueq_for_training(
+            model,
+            device,
+            conv_fusion=args.cueq_conv_fusion,
+            compile_training=getattr(args, "compile_training", False),
         )
     if args.enable_oeq:
         logging.info("Converting model to OEQ for accelerated training")
@@ -995,19 +1072,21 @@ def run(args) -> None:
 
     if args.wandb:
         setup_wandb(args)
-    if args.distributed:
-        # device_ids is only valid for single-device accelerator modules;
-        # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
-        # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
-        if args.device == "cuda":
-            device_ids = [local_rank]
-        elif args.device == "xpu":
-            device_ids = [xpu_device_index(local_rank)]
-        else:
-            device_ids = None
-        distributed_model = DDP(model, device_ids=device_ids)
+    # device_ids is only valid for single-device accelerator modules;
+    # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
+    # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
+    if args.device == "cuda":
+        distributed_device_ids = [local_rank]
+    elif args.device == "xpu":
+        distributed_device_ids = [xpu_device_index(local_rank)]
     else:
-        distributed_model = None
+        distributed_device_ids = None
+    distributed_model = _build_eager_distributed_model(
+        model,
+        distributed=args.distributed,
+        compile_training=getattr(args, "compile_training", False),
+        device_ids=distributed_device_ids,
+    )
 
 
     train_valid_data_loader = {}
@@ -1065,11 +1144,13 @@ def run(args) -> None:
         log_wandb=args.wandb,
         distributed=args.distributed,
         distributed_model=distributed_model,
+        distributed_device_ids=distributed_device_ids,
         plotter=plotter,
         train_sampler=train_sampler,
         rank=rank,
         data_aug_magmom=args.data_aug_magmom,
         data_aug_magmom_mode=getattr(args, "data_aug_magmom_mode", "non-soc"),
+        compile_training=getattr(args, "compile_training", False),
     )
 
     logging.info("")
@@ -1164,16 +1245,7 @@ def run(args) -> None:
             # after param.requires_grad = False was called before evaluating stage-one model
             for param in model.parameters():
                 param.requires_grad = True
-            # device_ids is only valid for single-device accelerator modules;
-            # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
-            # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
-            if args.device == "cuda":
-                device_ids = [local_rank]
-            elif args.device == "xpu":
-                device_ids = [xpu_device_index(local_rank)]
-            else:
-                device_ids = None
-            distributed_model = DDP(model, device_ids=device_ids)
+            distributed_model = DDP(model, device_ids=distributed_device_ids)
         model_to_evaluate = model if not args.distributed else distributed_model
         if swa_eval:
             logging.info(f"Loaded Stage two model from epoch {epoch} for evaluation")

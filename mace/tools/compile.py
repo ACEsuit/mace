@@ -1,6 +1,8 @@
 from contextlib import contextmanager
 from functools import wraps
-from typing import Callable, Tuple
+from typing import Callable, Mapping, Tuple
+
+import torch
 
 try:
     import torch._dynamo as dynamo
@@ -12,6 +14,43 @@ from torch.fx import symbolic_trace
 
 ModuleFactory = Callable[..., nn.Module]
 TypeTuple = Tuple[type, ...]
+
+
+def compile_training_model(
+    model: nn.Module,
+    example_batch: Mapping[str, torch.Tensor],
+    output_args: Mapping[str, bool],
+    mode: str = "default",
+    dynamic: bool = True,
+    validation_batch: Mapping[str, torch.Tensor] | None = None,
+) -> nn.Module:
+    """Compile the experimental training path when its PyTorch APIs exist."""
+
+    if not hasattr(torch, "compile"):
+        raise RuntimeError(
+            "--compile_training requires PyTorch 2.0 or newer; upgrade PyTorch "
+            "or omit --compile_training to use standard training."
+        )
+
+    try:
+        from mace.tools.compile_training import (
+            compile_training_model as _compile_training_model,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "--compile_training requires PyTorch 2.0 or newer with torch.func "
+            "and make_fx support; install a current PyTorch release or omit "
+            "--compile_training to use standard training."
+        ) from exc
+
+    return _compile_training_model(
+        model,
+        example_batch,
+        output_args=output_args,
+        mode=mode,
+        dynamic=dynamic,
+        validation_batch=validation_batch,
+    )
 
 
 def configure_autograd_for_compile(allow_autograd: bool = True) -> None:
@@ -36,8 +75,10 @@ def disable_e3nn_codegen():
     """Context manager that disables the legacy PyTorch code generation used in e3nn."""
     init_val = get_optimization_defaults()["jit_script_fx"]
     set_optimization_defaults(jit_script_fx=False)
-    yield
-    set_optimization_defaults(jit_script_fx=init_val)
+    try:
+        yield
+    finally:
+        set_optimization_defaults(jit_script_fx=init_val)
 
 
 def prepare(func: ModuleFactory, allow_autograd: bool = True) -> ModuleFactory:

@@ -11,7 +11,7 @@ from mace.tools.deprecation import warn
 from mace.tools.finetuning_utils import load_foundations_elements, load_foundations_mdp
 from mace.tools.scripts_utils import extract_config_mace_model, resolve_m_max
 from mace.tools.torch_tools import dtype_dict
-from mace.tools.utils import AtomicNumberTable
+from mace.tools.utils import AtomicNumberTable, cueq_conv_fusion_node_bucket
 
 
 def configure_model(
@@ -187,6 +187,7 @@ def configure_model(
                 optimize_all=True,
                 conv_fusion=args.cueq_conv_fusion
                 and torch.device(args.device).type == "cuda",
+                conv_fusion_node_bucket=cueq_conv_fusion_node_bucket(),
             )
 
         model_config = dict(
