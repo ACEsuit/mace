@@ -17,6 +17,7 @@ from mace_core.config.cli import apply_overrides
 from mace_core.config.legacy import LegacyFlagError, from_namespace
 from mace_core.config.resolved import ResolvedConfig
 
+from mace_torch.cli.eval_configs import boolean
 from mace_torch.cli.legacy_flags import DEFAULTS
 
 
@@ -132,13 +133,24 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
     document = from_namespace(namespace)
     if "default_dtype" in values:
         document["precision"] = {"model": values["default_dtype"]}
+    for flag in ("enable_cueq", "only_cueq", "enable_oeq"):
+        try:
+            values[flag] = boolean(str(values.get(flag, False)))
+        except argparse.ArgumentTypeError as error:
+            raise LegacyFlagError(f"--{flag}: {error}") from error
+    # V1 prefers CuEq for every supported op; both legacy spellings select it.
     backends = [
         name
-        for flag, name in (("enable_cueq", "cueq"), ("enable_oeq", "oeq"))
-        if values.get(flag)
+        for enabled, name in (
+            (values.get("enable_cueq") or values.get("only_cueq"), "cueq"),
+            (values.get("enable_oeq"), "oeq"),
+        )
+        if enabled
     ]
     if len(backends) > 1:
-        raise LegacyFlagError("choose only one of --enable_cueq and --enable_oeq")
+        raise LegacyFlagError(
+            "choose one backend: --enable_cueq/--only_cueq or --enable_oeq"
+        )
     if backends:
         document.setdefault("model", {})["backend"] = backends[0]
     runtime = document.setdefault("runtime", {})

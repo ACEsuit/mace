@@ -14,6 +14,7 @@ from ase import Atoms
 from ase.io import read, write
 from ase.stress import full_3x3_to_voigt_6_stress
 from mace_core.cli import main
+from mace_core.config.legacy import LegacyFlagError
 from mace_core.config.model import GraphFeatureConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_torch.calculators import MACECalculator
@@ -85,6 +86,63 @@ def test_native_and_legacy_configuration_precedence(tmp_path):
     reread = parse(["--config", str(path), "--max_num_epochs", "4"])
     assert reread.training.max_num_epochs == 4
     assert reread.model == config.model
+
+
+@pytest.mark.parametrize("source", ["flags", "legacy_yaml", "quoted_yaml"])
+@pytest.mark.parametrize(
+    "enabled,expected",
+    [
+        ((False, False, False), "reference"),
+        ((False, False, True), "oeq"),
+        ((False, True, False), "cueq"),
+        ((False, True, True), None),
+        ((True, False, False), "cueq"),
+        ((True, False, True), None),
+        ((True, True, False), "cueq"),
+        ((True, True, True), None),
+    ],
+)
+def test_backend_flags_select_one_dispatch_policy(tmp_path, source, enabled, expected):
+    options = dict(
+        zip(("enable_cueq", "only_cueq", "enable_oeq"), enabled, strict=True)
+    )
+    if source != "flags":
+        path = tmp_path / "legacy.yaml"
+        if source == "quoted_yaml":
+            options = {key: str(value) for key, value in options.items()}
+        path.write_text(yaml.safe_dump(options))
+        arguments = ["--config", str(path)]
+    else:
+        arguments = [
+            word for key, value in options.items() for word in (f"--{key}", str(value))
+        ]
+    if expected is None:
+        with pytest.raises(LegacyFlagError, match="--enable_oeq"):
+            parse(arguments)
+    else:
+        config = parse(arguments)
+        assert config.model.backend == expected
+        assert ResolvedConfig.from_dict(config.to_resolved_dict()) == config
+
+
+@pytest.mark.parametrize("flag", ["enable_cueq", "only_cueq", "enable_oeq"])
+@pytest.mark.parametrize("value", ["typo", 2])
+def test_backend_yaml_refuses_invalid_booleans(tmp_path, flag, value):
+    path = tmp_path / "legacy.yaml"
+    path.write_text(yaml.safe_dump({flag: value}))
+    with pytest.raises(LegacyFlagError, match=f"--{flag}.*expected true or false"):
+        parse(["--config", str(path)])
+
+
+@pytest.mark.parametrize("backend", ["reference", "cueq", "oeq"])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_only_cueq_overrides_native_backend_only_when_enabled(
+    tmp_path, backend, enabled
+):
+    path = tmp_path / "native.yaml"
+    path.write_text(yaml.safe_dump({"model": {"backend": backend}}))
+    config = parse(["--config", str(path), "--only_cueq", str(enabled)])
+    assert config.model.backend == ("cueq" if enabled else backend)
 
 
 def test_unknown_config_and_options_are_errors(tmp_path):

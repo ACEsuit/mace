@@ -18,17 +18,18 @@ from tests.workflows.test_run_train_v1 import needs_the_v1_engine, on_v1, traini
 
 pytestmark = needs_the_v1_engine
 RECIPES = [
-    ("energy", "reference"), ("multihead", "reference"),
-    ("dipole", "reference"), ("dielectric", "reference"),
-    pytest.param("energy", "cueq", marks=[pytest.mark.gpu, pytest.mark.cueq]),
-    *[pytest.param(name, "reference", marks=pytest.mark.network) for name in
+    ("energy", "reference", None), ("multihead", "reference", None),
+    ("dipole", "reference", None), ("dielectric", "reference", None),
+    *[pytest.param("energy", "cueq", flag, marks=[pytest.mark.gpu, pytest.mark.cueq])
+      for flag in (None, "only_cueq", "enable_cueq")],
+    *[pytest.param(name, "reference", None, marks=pytest.mark.network) for name in
       ("foundation", "foundation_multi", "foundation_json", "foundation_pseudo")],
-    pytest.param("foundation_json", "cueq", marks=[pytest.mark.network, pytest.mark.gpu, pytest.mark.cueq]),
+    pytest.param("foundation_json", "cueq", None, marks=[pytest.mark.network, pytest.mark.gpu, pytest.mark.cueq]),
 ]
 
 
-@pytest.mark.parametrize("recipe,backend", RECIPES)
-def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, backend):
+@pytest.mark.parametrize("recipe,backend,backend_flag", RECIPES)
+def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, backend, backend_flag):
     from mace_torch.calculators import MACECalculator
     from mace_torch.deploy.loader import load_deployed
     from safetensors.numpy import load_file
@@ -91,9 +92,14 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
         settings = copy.deepcopy(document)
         settings["training"]["max_num_epochs"] = epochs
         settings["runtime"]["restart_latest"] = restart
+        run_flags = list(flags)
+        if backend_flag and directory == "split":
+            # Compare native CuEq training with the legacy flag plus resume.
+            settings["model"]["backend"] = "reference"
+            run_flags += [f"--{backend_flag}", "True"]
         config = tmp_path / f"{directory}.json"
         config.write_text(json.dumps(settings))
-        result = on_v1("--config", str(config), "--work_dir", str(tmp_path / directory), *flags)
+        result = on_v1("--config", str(config), "--work_dir", str(tmp_path / directory), *run_flags)
         assert result.returncode == 0, result.stderr
         if restart:
             assert "Resuming from" in result.stderr
@@ -121,6 +127,7 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
     loaded = load_deployed(split / "fit.safetensors", device=device)
     assert set(loaded.heads) == set(names)
     assert loaded.config.model.clebsch_gordan_basis == "reduced"
+    assert loaded.config.model.backend == backend
     assert dict(loaded.config.loss.use_structure_weights) == document["loss"].get(
         "use_structure_weights", {}
     )
@@ -149,3 +156,7 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
             hook.remove()
     if backend == "cueq":
         assert accelerated and called == accelerated.keys()
+        assert {type(module).__name__ for module in accelerated.values()} == {
+            "CuEqLinear", "CuEqChannelwiseTPConv", "CuEqSymmetricContraction",
+            "CuEqFullyConnectedTP",
+        }
