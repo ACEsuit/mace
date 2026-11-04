@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import quote
 
 
 def plot_training(
@@ -17,26 +18,29 @@ def plot_training(
     start_stage_two=None,
     heads=None,
     error_bars=False,
+    separate_heads: bool = False,
+    stage: str | None = None,
 ) -> Path:
     """Draw epochs strictly greater than ``min_epoch``, as in the legacy CLI.
 
     In-run reporting keeps epoch zero with the default of ``-1``. The CLI
     supplies its own default of zero; ``epoch=None`` is never a trained epoch.
+    ``separate_heads`` adds head-specific files beside the combined output;
+    ``stage`` identifies the training snapshot in those filenames.
     """
-    import numpy as np
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-    from matplotlib.figure import Figure
-
     series = defaultdict(lambda: defaultdict(list))
+    known_heads = set()
     for path in paths:
         for line in Path(path).read_text().splitlines():
             if not line.strip():
                 continue
             row = json.loads(line)
+            if "head" in row:
+                known_heads.add(row["head"])
             epoch = row.get("epoch")
             if epoch is None or epoch <= min_epoch:
                 continue
-            head = row.get("head", "all heads")
+            head = row.get("head")
             # Optimizer/training records belong to the whole run.
             if heads and "head" in row and head not in heads:
                 continue
@@ -48,13 +52,58 @@ def plot_training(
                     )
     if not series:
         raise ValueError(f"no plotted values for {list(keys)} in the selected log(s)")
+    if separate_heads:
+        for head in sorted(known_heads.intersection(heads) if heads else known_heads):
+            selected = {
+                key: value for key, value in series.items() if key[0] in (None, head)
+            }
+            if selected:
+                _draw(
+                    selected,
+                    _head_path(output, head, stage),
+                    linear,
+                    start_stage_two,
+                    error_bars,
+                )
+    _draw(series, output, linear, start_stage_two, error_bars)
+    return output
+
+
+def _head_path(output: Path, head: str, stage: str | None) -> Path:
+    suffix = quote(head, safe="")
+    if stage is not None:
+        # Reserve legacy's two suffixes; custom stages get a separate namespace.
+        # Escaping underscores prevents a head/stage pair aliasing another pair.
+        label = (
+            stage
+            if stage in {"stage_one", "stage_two"}
+            else "stage-" + quote(stage, safe="").replace("_", "%5F")
+        )
+        suffix += "_" + label
+    return output.with_name(f"{output.stem}_{suffix}{output.suffix}")
+
+
+def _draw(
+    series, output: Path, linear: bool, start_stage_two, error_bars: bool
+) -> None:
+    import numpy as np
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
     figure = Figure(figsize=(8, 5), constrained_layout=True)
     FigureCanvasAgg(figure)
     axis = figure.subplots()
-    for (head, mode, key), epochs in sorted(series.items()):
+    for (head, mode, key), epochs in sorted(
+        series.items(),
+        key=lambda entry: (
+            "all heads" if entry[0][0] is None else entry[0][0],
+            *entry[0][1:],
+        ),
+    ):
         steps = sorted(epochs)
         means = np.array([np.mean(epochs[step]) for step in steps])
-        (line,) = axis.plot(steps, means, label=f"{head} {mode} {key}")
+        label = "all heads" if head is None else head
+        (line,) = axis.plot(steps, means, label=f"{label} {mode} {key}")
         if error_bars:
             # Match the sample deviation of the legacy grouped logs. A
             # single measurement has no uncertainty band.
@@ -80,4 +129,3 @@ def plot_training(
     axis.legend()
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output)
-    return output

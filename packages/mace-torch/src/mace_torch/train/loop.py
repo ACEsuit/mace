@@ -500,8 +500,12 @@ def run_train_stage(
                     train_loss,
                     per_head,
                     step_losses=step_losses,
+                    stage="stage_one"
+                    if stage == "main" and not config.training.stages
+                    else stage,
                     last=following is None
-                    or following >= config.training.max_num_epochs,
+                    or following >= config.training.max_num_epochs
+                    or _stage_at(schedule, following).name != stage,
                 )
             # Every rank waits for rank zero's writes before any can read them.
             processes.barrier()

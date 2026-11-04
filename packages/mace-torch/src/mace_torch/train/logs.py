@@ -78,11 +78,14 @@ def write_epoch(
     *,
     last: bool,
     step_losses: Sequence[float] = (),
+    stage: str = "stage_one",
 ) -> None:
     """Write per-head metrics and requested curves on rank zero.
 
     ``epoch=None`` starts a fresh run with its pre-training validation.
     Completed epochs append to it, including epoch zero after a restart.
+    ``last`` also marks the end of a stage, whose final head snapshots carry
+    ``stage`` in their filenames alongside the run's combined plot.
     """
     import json
 
@@ -111,4 +114,6 @@ def write_epoch(
     ):
         from mace_torch.train.plots import plot_training
 
-        plot_training([path], directory / f"{runtime.name}.png")
+        plot_training(
+            [path], directory / f"{runtime.name}.png", separate_heads=True, stage=stage
+        )

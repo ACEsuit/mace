@@ -8,7 +8,11 @@ from pathlib import Path
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--path", type=Path, required=True)
-    parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Exact combined-output path; when omitted, also write one file per head.",
+    )
     parser.add_argument(
         "--min_epoch",
         type=int,
@@ -42,6 +46,7 @@ def run(args: argparse.Namespace) -> int:
             start_stage_two=args.start_swa,
             heads=args.heads.split(",") if args.heads else None,
             error_bars=args.error_bars,
+            separate_heads=args.output is None,
         )
     )
     return 0

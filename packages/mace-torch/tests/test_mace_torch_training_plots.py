@@ -1,6 +1,7 @@
 """Plot flags are checked against the data drawn, including error bands."""
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -137,3 +138,105 @@ def test_plot_frequency_includes_final_epoch(
         assert all(
             list(line.get_xdata()) == [0, 1, 2] for line in figures[-1].axes[0].lines
         )
+
+
+@pytest.fixture
+def named_figures(monkeypatch):
+    saved = {}
+    original = Figure.savefig
+
+    def save(figure, path, *args, **kwargs):
+        saved[Path(path).name] = figure
+        return original(figure, path, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", save)
+    return saved
+
+
+def test_cli_names_each_head_and_keeps_an_explicit_output_exact(log, named_figures):
+    options = ["plot", "training", "--path", str(log)]
+    assert main(options) == 0
+    assert set(named_figures) == {"curves.png", "curves_water.png", "curves_salt.png"}
+    for head in ("water", "salt"):
+        labels = {
+            line.get_label()
+            for line in named_figures[f"curves_{head}.png"].axes[0].lines
+        }
+        assert labels == {
+            "all heads opt loss",
+            "all heads train loss",
+            f"{head} valid loss",
+        }
+    original = log.with_name("curves_water.png").read_bytes()
+    named_figures.clear()
+    explicit = log.with_name("chosen.png")
+    assert main([*options, "--heads", "water", "--output", str(explicit)]) == 0
+    assert set(named_figures) == {"chosen.png"}
+    assert explicit.read_bytes() == original
+
+
+def test_stage_files_keep_earlier_snapshots_and_global_curves(tmp_path, named_figures):
+    from mace_torch.train.logs import write_epoch
+
+    runtime = RuntimeConfig(work_dir=tmp_path)
+    metrics = {"water": {"loss": 2.0}, "salt": {"loss": 4.0}}
+    write_epoch(runtime, None, None, metrics, last=False)
+    for epoch in range(2):
+        write_epoch(runtime, epoch, 1.0, metrics, stage="stage_one", last=epoch == 1)
+    directory = runtime.directory("results")
+    earlier = {
+        path.name: path.read_bytes() for path in directory.glob("*stage_one.png")
+    }
+    assert set(earlier) == {"mace_water_stage_one.png", "mace_salt_stage_one.png"}
+    write_epoch(runtime, 2, 3.0, metrics, stage="stage_two", last=True)
+    assert all(
+        (directory / name).read_bytes() == content for name, content in earlier.items()
+    )
+    for head in metrics:
+        curves = named_figures[f"mace_{head}_stage_two.png"].axes[0].lines
+        assert {line.get_label() for line in curves} == {
+            "all heads train loss",
+            f"{head} valid loss",
+        }
+        assert all(list(line.get_xdata()) == [0, 1, 2] for line in curves)
+
+
+def test_requested_heads_name_only_their_own_files(log, named_figures):
+    assert (
+        main(
+            [
+                "plot",
+                "training",
+                "--path",
+                str(log),
+                "--heads",
+                "water",
+                "--output_format",
+                "pdf",
+            ]
+        )
+        == 0
+    )
+    assert set(named_figures) == {"curves.pdf", "curves_water.pdf"}
+    assert log.with_name("curves_water.pdf").read_bytes().startswith(b"%PDF-")
+
+
+def test_head_and_custom_stage_names_cannot_alias_paths(tmp_path):
+    from mace_torch.train.plots import plot_training
+
+    path = tmp_path / "names.jsonl"
+    heads = ["water/ice", "water%2Fice", "a_stage-one", "a", "all heads"]
+    rows = [{"epoch": 0, "mode": "train", "loss": 1.0}]
+    rows += [{"epoch": 0, "mode": "valid", "head": head, "loss": 2.0} for head in heads]
+    path.write_text("\n".join(json.dumps(row) for row in rows))
+    for stage in ("stage_one", "one", "one_stage-two"):
+        plot_training([path], tmp_path / "run.png", separate_heads=True, stage=stage)
+    names = {item.name for item in tmp_path.glob("*.png")}
+    assert len(names) == 1 + len(heads) * 3
+    assert {
+        "run_water%2Fice_stage_one.png",
+        "run_water%252Fice_stage_one.png",
+        "run_a_stage-one_stage-one.png",
+        "run_a_stage-one%5Fstage-two.png",
+    } <= names
+    assert not (tmp_path / "run_water").exists()

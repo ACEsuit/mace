@@ -63,9 +63,8 @@ class RuntimeConfig(FrozenSection):
             rather than where it is rendered, because the render happens after
             the training it reports on.
         plot: Whether to write training curves, enabled by default.
-        plot_frequency: Epochs between plots. ``0`` means only at the end,
-            which is what makes a separate "plot at all" flag worth keeping:
-            the two answer different questions.
+        plot_frequency: Epochs between periodic plots. ``0`` leaves only the
+            final snapshot of each stage. ``plot=False`` disables all plots.
         wandb: Reporting to an experiment tracker, off by default.
         restart_latest: Resume from the newest checkpoint in the run directory.
         keep_checkpoints: Keep every checkpoint an improving epoch wrote,
