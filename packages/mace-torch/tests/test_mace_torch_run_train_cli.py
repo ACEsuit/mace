@@ -205,6 +205,41 @@ def test_a_legacy_yaml_reaches_the_typed_configuration(tmp_path):
     assert config.runtime.work_dir == tmp_path
 
 
+@pytest.mark.parametrize("per_head", [False, True])
+def test_json_e0_flags_replace_the_previous_source(tmp_path, per_head):
+    table = tmp_path / "e0s.json"
+    table.write_text(json.dumps({1: -0.5, 8: -1.0}))
+    head = {
+        "train_file": "train.xyz",
+        "readout_from": "source",
+        "e0s": {"kind": "foundation", "head": "source", "missing": "zero"},
+    }
+    document = {
+        "finetune": {"foundation_model": "foundation.safetensors"},
+        "data": {"heads": {"target": head}},
+    }
+    if per_head:
+        document["data"]["heads"]["memory"] = head
+    path = tmp_path / "run.json"
+    path.write_text(json.dumps(document))
+    flags = (
+        ["--heads", json.dumps({"target": {"E0s": str(table)}})]
+        if per_head
+        else ["--E0s", str(table)]
+    )
+    config = run_train.parse(["--config", str(path), *flags])
+    assert config.data.heads["target"].e0s.model_dump() == {
+        "kind": "table",
+        "values": {1: -0.5, 8: -1.0},
+    }
+    assert config.data.heads["target"].readout_from == "source"
+    assert str(config.data.heads["target"].train_file) == "train.xyz"
+    if per_head:
+        assert config.data.heads["memory"].e0s.kind == "foundation"
+        assert config.data.heads["memory"].e0s.head == "source"
+    assert json.loads(path.read_text()) == document
+
+
 @pytest.mark.parametrize("empty", ["{}", "{ }", {}])
 def test_empty_foundation_options_in_legacy_yaml_are_compatibility_only(
     tmp_path, empty

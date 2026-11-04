@@ -584,17 +584,26 @@ class DerivativeEngine(nn.Module):
                 "`total_energy`. Declare the `energy` observable, or ask for "
                 "no derivatives."
             )
-        gradients = torch.autograd.grad(
-            outputs=[energy],
-            inputs=targets,
-            grad_outputs=[torch.ones_like(energy)],
-            retain_graph=training or need_hessian or len(targets) > 1,
-            # The Hessian differentiates the forces again, so they have to
-            # carry their own graph.
-            create_graph=training or need_hessian,
-            allow_unused=True,
-        )
-        by_name = dict(zip(order, gradients, strict=True))
+        # Frozen models can return a constant when every atom is isolated.
+        # allow_unused handles disconnected inputs, but not an untracked output.
+        if not torch.is_grad_enabled():
+            raise RuntimeError("energy derivatives require gradient tracking")
+        gradients: tuple[Tensor | None, ...] = (None,) * len(targets)
+        if energy.requires_grad:
+            gradients = torch.autograd.grad(
+                outputs=[energy],
+                inputs=targets,
+                grad_outputs=[torch.ones_like(energy)],
+                retain_graph=training or need_hessian or len(targets) > 1,
+                create_graph=training or need_hessian,
+                allow_unused=True,
+            )
+        by_name = {
+            name: target * 0
+            if gradient is None and (training or need_hessian)
+            else gradient
+            for name, target, gradient in zip(order, targets, gradients, strict=True)
+        }
 
         if "forces" in wanted or need_hessian:
             gradient = by_name["positions"]
@@ -605,6 +614,7 @@ class DerivativeEngine(nn.Module):
                 torch.zeros_like(positions) if gradient is None else -gradient
             )
         if need_strain:
+            assert displacement is not None
             strain_gradient = by_name["displacement"]
             if strain_gradient is None:
                 strain_gradient = torch.zeros_like(displacement)

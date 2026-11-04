@@ -282,6 +282,11 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
                     "under data.heads in the configuration"
                 )
             updates[next(iter(heads))] = updates.pop("default")
+        # An E0 flag selects a complete source. Fields belonging to the former
+        # method, such as a foundation head, cannot accompany a literal table.
+        for name, settings in updates.items():
+            if "e0s" in settings and name in heads:
+                heads[name].pop("e0s", None)
         document = apply_overrides(document, translated)
         if values.get("foundation_head"):
             for settings in document.get("data", {}).get("heads", {}).values():

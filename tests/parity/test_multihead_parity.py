@@ -180,3 +180,48 @@ def test_the_converted_model_holds_one_readout_per_head(pair):
     _, model, config = pair
     assert config["num_heads"] == len(HEADS)
     assert model.outputs.heads["energy"].num_heads == len(HEADS)
+
+
+def test_multihead_training_gradients_follow_the_conversion(isolated, pair):
+    """Different head losses reach the shared backbone and their own readouts."""
+    from tests.golden.harness import FP64_CPU_REFERENCE
+
+    legacy, model, config = pair
+    engine = DerivativeEngine(model, ENERGY)
+    atoms = structures()[0]
+    numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
+    for head, name in enumerate(HEADS):
+        expected = legacy(legacy_batch(legacy, atoms, name).to_dict(), training=True)
+        graph = v1_graph(atoms, numbers, config["cutoff"])
+        graph["head"] = torch.tensor([head])
+        actual = engine(graph, compute=("forces",), training=True)
+        (
+            (head + 1)
+            * (expected["energy"].square().sum() + expected["forces"].square().sum())
+        ).backward()
+        (
+            (head + 1)
+            * (actual.total_energy.square().sum() + actual.forces.square().sum())
+        ).backward()
+    assert all(p.grad is not None for p in legacy.parameters() if p.numel())
+    assert all(p.grad is not None for p in model.parameters() if p.numel())
+    for seed in (12, 43):
+        tangent = copy.deepcopy(legacy)
+        generator = torch.Generator().manual_seed(seed)
+        with torch.no_grad():
+            for parameter in tangent.parameters():
+                parameter.copy_(torch.randn(parameter.shape, generator=generator))
+        mapped, _ = convert(tangent)
+        expected = sum(
+            (p.grad * v).sum()
+            for p, v in zip(legacy.parameters(), tangent.parameters(), strict=True)
+            if p.numel()
+        )
+        actual = sum(
+            (p.grad * v).sum()
+            for p, v in zip(model.parameters(), mapped.parameters(), strict=True)
+            if p.numel()
+        )
+        torch.testing.assert_close(
+            actual, expected, atol=FP64_CPU_REFERENCE.atol, rtol=FP64_CPU_REFERENCE.rtol
+        )

@@ -231,3 +231,78 @@ def test_the_dielectric_model_matches_the_live_legacy_model(fp64, name, mlp_irre
     # The predicted charges are fixed to the structure's total.
     assert abs(float(result.extras["charges"].sum()) - total_charge) < 1e-12
     assert float(reference["polarizability_sh"][:, 1:].abs().max()) > TOLERANCE
+
+
+@pytest.mark.parametrize("family", ["dipole", "dielectric"])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def test_training_gradients_follow_the_weight_conversion(
+    isolated, fp64, family, device
+):
+    """Shared readout gradients obey the conversion Jacobian, including gates."""
+    import copy
+
+    from tests.golden.harness import FP64_CPU_REFERENCE
+
+    legacy = (
+        legacy_anchor() if family == "dipole" else legacy_dielectric("8x0e+8x1o+8x2e")
+    )
+    model, config = convert(legacy, family)
+    atoms, charges, total = CASES["charged pair"]
+    batch = {
+        key: value.to(device)
+        for key, value in legacy_batch(legacy, atoms, charges, total).items()
+    }
+    numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
+    graph = {
+        key: value.to(device)
+        for key, value in v1_graph(
+            atoms, numbers, config["cutoff"], charges, total
+        ).items()
+    }
+    expected = legacy.to(device)(batch, training=True)
+    actual = engine(model.to(device))(graph, compute=(), training=True)
+    names = ["dipole", *(["polarizability"] if family == "dielectric" else [])]
+    predictions = {"dipole": actual.dipole, **actual.extras}
+    for name in names:
+        torch.testing.assert_close(
+            predictions[name],
+            expected[name],
+            atol=FP64_CPU_REFERENCE.atol,
+            rtol=FP64_CPU_REFERENCE.rtol,
+        )
+    sum(expected[name].square().sum() for name in names).backward()
+    sum(predictions[name].square().sum() for name in names).backward()
+    assert any(
+        parameter.grad is not None and torch.count_nonzero(parameter.grad)
+        for parameter in legacy.parameters()
+    )
+    assert any(
+        parameter.grad is not None and torch.count_nonzero(parameter.grad)
+        for parameter in model.parameters()
+    )
+    for seed in (12, 43):
+        tangent = copy.deepcopy(legacy).cpu()
+        generator = torch.Generator().manual_seed(seed)
+        with torch.no_grad():
+            for parameter in tangent.parameters():
+                parameter.copy_(torch.randn(parameter.shape, generator=generator))
+        mapped, _ = convert(tangent, family)
+        # The scalar-only final layer of the dipole anchor is unreachable.
+        # An absent autograd gradient contributes zero to the directional derivative.
+        oracle = sum(
+            (parameter.grad * direction.to(device)).sum()
+            for parameter, direction in zip(
+                legacy.parameters(), tangent.parameters(), strict=True
+            )
+            if parameter.grad is not None
+        )
+        gradient = sum(
+            (parameter.grad * direction.to(device)).sum()
+            for parameter, direction in zip(
+                model.parameters(), mapped.parameters(), strict=True
+            )
+            if parameter.grad is not None
+        )
+        torch.testing.assert_close(
+            gradient, oracle, atol=FP64_CPU_REFERENCE.atol, rtol=FP64_CPU_REFERENCE.rtol
+        )

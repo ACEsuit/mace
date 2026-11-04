@@ -26,6 +26,52 @@ from mace_torch_engine_fixtures import (
 PERIODIC = (True, True, True)
 
 
+@pytest.mark.parametrize("trainable", [False, True])
+@pytest.mark.parametrize("training", [False, True])
+def test_position_independent_energy_has_zero_derivatives(dtype, trainable, training):
+    from mace_core.outputs import MACEOutput
+    from mace_torch.physics import DerivativeEngine
+
+    class ConstantEnergy(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.energy = torch.nn.Parameter(
+                torch.tensor([2.0], dtype=dtype), requires_grad=trainable
+            )
+
+        def forward(self, graph):
+            return MACEOutput(total_energy=self.energy)
+
+    engine = DerivativeEngine(ConstantEnergy(), ENERGY)
+    graph = build_graph(np.zeros((1, 3)), [1])
+    result = engine(
+        graph,
+        compute=("forces", "stress", "virials", "hessian", "edge_forces"),
+        training=training,
+    )
+    assert torch.equal(result.total_energy, torch.tensor([2.0], dtype=dtype))
+    for value in (
+        result.forces,
+        result.stress,
+        result.virials,
+        *result.extras.values(),
+    ):
+        assert torch.equal(value, torch.zeros_like(value))
+    assert result.extras["hessian"].shape == (3, 1, 3)
+    assert result.extras["edge_forces"].shape == (0, 3)
+    if training:
+        result.forces.square().sum().backward()
+        assert engine.backbone.energy.grad is None
+
+
+@fp64_only
+def test_disabled_autograd_does_not_report_zero_forces():
+    engine = build_engine()
+    positions, numbers = molecule()
+    with torch.no_grad(), pytest.raises(RuntimeError, match="gradient tracking"):
+        engine(build_graph(positions, numbers), compute=("forces",))
+
+
 @fp64_only
 def test_no_model_forward_takes_a_gradient():
     """The whole point of the split, asserted where a refactor would undo it.

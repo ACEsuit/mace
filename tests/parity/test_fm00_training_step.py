@@ -53,7 +53,7 @@ ENERGY = ObservableSpec(
 CHANNEL_IN = "0e+1o+2e"
 
 
-def converted(legacy):
+def converted(legacy, *, basis="reduced"):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     config = build_config(legacy)
     values, scale, shift = energy_constants_to_canonical(legacy)
@@ -64,11 +64,15 @@ def converted(legacy):
         ScaleShiftSpec("std", scale, shift),
         PrecisionConfig(),
     )
+    arguments = model_arguments(config)
+    arguments["config"] = arguments["config"].model_copy(
+        update={"clebsch_gordan_basis": basis}
+    )
     model = MACEModel(
         ReferenceBackend(),
         observables=[ENERGY],
         energy_head=head,
-        **model_arguments(config),
+        **arguments,
     )
     transfer_weights(legacy, model, config["correlation"])
     return model, numbers
