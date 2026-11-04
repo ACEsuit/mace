@@ -71,9 +71,9 @@ POLAR_GROUP_MARKERS: tuple[str, ...] = (
 ONE_BODY_MARKER = ".one_body."
 
 #: Which interaction tensors decay: the linear maps between feature spaces. The
-#: radial network and the up-projection do not, which is the frozen tree's
-#: split expressed against this tree's names.
-_DECAYING_INTERACTION_SUFFIXES = (".linear.weight", ".skip.weight")
+#: radial network, up-projection and skip connections do not, which is the
+#: frozen tree's split expressed against this tree's names.
+_DECAYING_INTERACTION_SUFFIXES = (".linear.weight",)
 
 
 class UnsupportedOptimizerError(NotImplementedError):
