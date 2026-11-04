@@ -2,13 +2,12 @@
 
 Two shapes legacy has that do not survive.
 
-**LBFGS is a stage, not a boolean.** ``--lbfgs`` swaps the optimizer object
-*after* the scheduler and the EMA have been built around the old one
-(``mace/cli/run_train.py:971-976``), leaving both attached to a full-batch
-closure that steps once an epoch. A plateau scheduler watching a per-epoch
-closure and an EMA averaging one step per epoch are not wrong so much as
-meaningless. Here a stage names its optimizer, so the combination is a
-validation error rather than a silently inert pair of components.
+**LBFGS is a stage, not a boolean.** The TRN-5 contract (#1639) excludes
+EMA and plateau schedules from full-batch stages. Legacy's optimizer swap
+leaves its scheduler attached to the previous optimizer, but its EMA still
+updates the model parameters once per epoch. V1's refusal is an explicit
+stage policy, not a claim that averaging full-batch updates is undefined.
+An averaged mini-batch checkpoint can be resumed in a separate L-BFGS run.
 
 **An optimizer's own tuning is a field, not a flag.** Naming ``schedulefree``
 in an enum carries none of its three betas and warmup, so legacy has them as
@@ -90,8 +89,7 @@ class LBFGSOptimizer(FrozenSection):
 
     A stage running this is a full-batch stage: every epoch is one optimizer
     step over the whole training set, and the set keeps its ragged tail. It
-    forbids an EMA and a plateau schedule. Both are built around a per-step
-    optimizer, and against one step an epoch neither does what its name says.
+    excludes EMA and plateau schedules under the TRN-5 stage contract.
 
     The defaults are the frozen tree's, which builds the optimizer with these
     three and leaves the rest at torch's.

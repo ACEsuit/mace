@@ -351,7 +351,7 @@ def test_pseudolabels_cannot_be_generated_and_read_at_once():
 
 
 def test_lbfgs_refuses_an_ema():
-    """Legacy builds the EMA around the optimizer it then replaces."""
+    """TRN-5 explicitly excludes averaging within a full-batch stage."""
     with pytest.raises(ValidationError, match="once per epoch"):
         loaded(
             ResolvedConfig,

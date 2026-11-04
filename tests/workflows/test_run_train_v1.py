@@ -482,9 +482,11 @@ LBFGS = {"training.optimizer": {"kind": "lbfgs"}}
 
 @needs_the_v1_engine
 def test_an_lbfgs_run_trains_from_the_console_script(tmp_path, regression_set):
-    """The v1 counterpart of the frozen tree's L-BFGS workflow test, which
-    also turns on an average and a second stage. Both are refused beside
-    L-BFGS here, so this runs the regime alone."""
+    """TRN-5's CLI adaptation omits the historical EMA and SWA flags.
+
+    This checks the agreed native recipe; the historical final-energy vector
+    belongs to the different, averaged run and is not asserted here.
+    """
     settings = {
         **LBFGS,
         "runtime.seed": 7,

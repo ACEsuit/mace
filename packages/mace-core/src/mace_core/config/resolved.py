@@ -467,23 +467,23 @@ class ResolvedConfig(BaseConfig):
         return self
 
     @model_validator(mode="after")
-    def _lbfgs_steps_too_rarely_for_an_ema_or_a_plateau(self) -> ResolvedConfig:
+    def _lbfgs_companions_match_the_stage_contract(self) -> ResolvedConfig:
         for optimizer, scheduler in self._stages():
             if optimizer[1] != "lbfgs":
                 continue
             if self.training.ema.enabled:
                 raise ValueError(
                     f"{optimizer[0]} runs lbfgs and training.ema.enabled is "
-                    f"set. L-BFGS steps once per epoch through a full-batch "
-                    f"closure, so an average over its steps is an average "
-                    f"over epochs and not what the field means."
+                    "set. The full-batch stage contract excludes EMA; L-BFGS "
+                    "steps once per epoch. Disable training.ema.enabled, or "
+                    "resume an averaged mini-batch checkpoint in a separate "
+                    "L-BFGS run."
                 )
             if scheduler[1] == "plateau":
                 raise ValueError(
                     f"{optimizer[0]} runs lbfgs and {scheduler[0]} is plateau. "
-                    f"A plateau schedule reduces the rate on evaluations "
-                    f"without improvement, and L-BFGS takes one step between "
-                    f"them. Use a constant schedule for an L-BFGS stage."
+                    "The full-batch stage contract excludes plateau schedules. "
+                    "Use a constant schedule for an L-BFGS stage."
                 )
         return self
 
