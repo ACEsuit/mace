@@ -44,6 +44,7 @@ from typing import Any
 from mace_core.config.model import ModelConfig
 
 __all__ = [
+    "COMPUTE_FLAGS",
     "LEGACY_TRAIN_DESTS",
     "Disposition",
     "Dropped",
@@ -535,7 +536,7 @@ _WEIGHT_FLAGS: dict[str, str] = {
 }
 
 #: Which observable each ``--compute_*`` flag declares.
-_COMPUTE_FLAGS: dict[str, str] = {
+COMPUTE_FLAGS: dict[str, str] = {
     "compute_forces": "forces",
     "compute_stress": "stress",
     "compute_polarizability": "polarizability",
@@ -837,13 +838,16 @@ def _collapse_observables(namespace: Any, values: dict[str, Any]) -> None:
     The energy is not among them: legacy has no `--compute_energy`, because
     every model it can build produces one.
     """
-    declared = ["energy"]
-    declared += [
-        observable
-        for dest, observable in _COMPUTE_FLAGS.items()
-        if _read(namespace, dest)
-    ]
-    if len(declared) > 1 or _read(namespace, "compute_forces") is not None:
+    declared = list(ModelConfig().observables)
+    specified = False
+    for dest, observable in COMPUTE_FLAGS.items():
+        if (enabled := _read(namespace, dest)) is not None:
+            specified = True
+            if enabled and observable not in declared:
+                declared.append(observable)
+            elif not enabled and observable in declared:
+                declared.remove(observable)
+    if specified:
         _set(values, "model.observables", declared)
 
 

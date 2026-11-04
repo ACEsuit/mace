@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from email.parser import Parser
 from pathlib import Path
 
 import pytest
@@ -76,3 +77,25 @@ def test_the_wheel_ships_the_extraction_script(tmp_path):
     # pickle must not arrive through wheel contents.
     assert not any(name.endswith((".model", ".pt", ".safetensors")) for name in names)
     assert not any("ani500k" in name or "torch_geometric" in name for name in names)
+
+    # Inspect the built artifact: declaring an extra in the source tree alone
+    # does not establish that a user installing the wheel receives it.
+    from packaging.requirements import Requirement
+
+    with zipfile.ZipFile(wheel) as archive:
+        metadata_name, = [name for name in names if name.endswith(".dist-info/METADATA")]
+        metadata = Parser().parsestr(archive.read(metadata_name).decode())
+    requirements = [Requirement(value) for value in metadata.get_all("Requires-Dist", [])]
+    for extra, dependency in {
+        "cueq": "cuequivariance-torch",
+        "cueq-cuda-12": "cuequivariance-ops-torch-cu12",
+        "cueq-cuda-13": "cuequivariance-ops-torch-cu13",
+        "oeq": "openequivariance",
+    }.items():
+        assert extra in metadata.get_all("Provides-Extra", [])
+        optional = [item for item in requirements if item.marker is not None
+                    and item.marker.evaluate({"extra": extra})
+                    and not item.marker.evaluate({"extra": ""})]
+        assert [item.name for item in optional] == [dependency]
+        if extra.startswith("cueq-cuda"):
+            assert "0.11.0" not in optional[0].specifier

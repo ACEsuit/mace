@@ -293,12 +293,12 @@ class ResolvedConfig(BaseConfig):
         runtime = data.get("runtime") or {}
         if (
             observables is None
-            or ENERGY_OBSERVABLE in observables
+            or {ENERGY_OBSERVABLE, "forces"}.issubset(observables)
             or not isinstance(runtime, dict)
             or "error_table" in runtime
         ):
             return data
-        if "dipole" in observables:
+        if "dipole" in observables and ENERGY_OBSERVABLE not in observables:
             table = (
                 "DipolePolarRMSE" if "polarizability" in observables else "DipoleRMSE"
             )

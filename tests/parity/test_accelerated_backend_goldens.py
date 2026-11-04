@@ -76,7 +76,9 @@ def test_the_committed_cpu_reference_is_reproduced(
     weights = checkpoint.with_suffix(".safetensors")
     original_weights = hashlib.sha256(weights.read_bytes()).hexdigest()
     checkpoint = on_backend(checkpoint, backend)
-    calculator = MACECalculator(model_paths=checkpoint, device=device)
+    calculator = MACECalculator(
+        model_paths=checkpoint, device=device, enable_cueq=False, enable_oeq=False
+    )
     engine = calculator.models[0].engine
     assert next(engine.parameters()).device.type == device
 
@@ -116,3 +118,71 @@ def test_the_committed_cpu_reference_is_reproduced(
             "cuEquivariance ran its pure-torch path, so this matched without "
             "running a vendor kernel"
         )
+
+
+@pytest.mark.parametrize("backend,device,row", CASES)
+def test_eval_uses_recorded_backend_and_preserves_canonical_weights(
+    fp64, tmp_path, monkeypatch, backend, device, row
+):
+    import numpy as np
+    from ase.io import read, write
+    from ase.stress import full_3x3_to_voigt_6_stress
+    from mace_torch.calculators import MACECalculator
+    from mace_torch.cli.eval_configs import main
+    from mace_torch.deploy import loader
+
+    legacy = load_anchor(ANCHOR)
+    checkpoint = on_backend(Path(write_anchor_checkpoint(legacy, tmp_path)), backend)
+    weights = checkpoint.with_suffix(".safetensors")
+    digest = hashlib.sha256(weights.read_bytes()).hexdigest()
+    frames = list(harness.load_fixtures(elements=[int(z) for z in legacy.atomic_numbers]).values())
+    source, output = tmp_path / "input.xyz", tmp_path / "output.xyz"
+    write(source, frames)
+    arguments = ["--configs", str(source), "--model", str(checkpoint),
+                 "--output", str(output), "--device", device, "--compute_stress",
+                 "--batch_size", "2"]
+    with pytest.raises(ValueError, match="enable_cueq.*checkpoint"):
+        main([*arguments, "--enable_cueq"])
+    assert not output.exists()
+    for flag in ("enable_cueq", "enable_oeq"):
+        with pytest.raises(TypeError, match=flag + ".*model.backend"):
+            MACECalculator(checkpoint, **{flag: True})
+
+    original_load = loader.load_deployed
+    calls, hooks = {}, []
+
+    def load(*args, **kwargs):
+        model = original_load(*args, **kwargs)
+        assert model.config.model.backend == backend
+        assert next(model.engine.parameters()).device.type == device
+        for name, module in model.engine.named_modules():
+            if backend in OPS and type(module).__name__.startswith(OPS[backend]):
+                calls[name] = 0
+
+                def count(_module, _inputs, _output, name=name):
+                    calls[name] += 1
+
+                hooks.append(module.register_forward_hook(count))
+        return model
+
+    monkeypatch.setattr(loader, "load_deployed", load)
+    try:
+        assert main(arguments) == 0
+    finally:
+        for hook in hooks:
+            hook.remove()
+    if backend in OPS:
+        assert calls and all(calls.values()), calls
+    calculator = MACECalculator(checkpoint, device=device)
+    results = read(output, index=":")
+    assert len(results) == len(frames)
+    tolerance = harness.tolerance(row)
+    for expected_atoms, actual in zip(frames, results, strict=True):
+        calculator.calculate(expected_atoms)
+        for name in ("energy", "forces", "stress"):
+            written = (actual.arrays if name == "forces" else actual.info)["MACE_" + name]
+            if name == "stress":
+                written = full_3x3_to_voigt_6_stress(written)
+            np.testing.assert_allclose(written, calculator.results[name],
+                                       atol=tolerance.atol, rtol=tolerance.rtol, err_msg=name)
+    assert hashlib.sha256(weights.read_bytes()).hexdigest() == digest

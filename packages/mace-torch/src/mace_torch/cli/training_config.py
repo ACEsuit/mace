@@ -14,7 +14,7 @@ from typing import Any
 
 from mace_core.config import read_config_file
 from mace_core.config.cli import apply_overrides
-from mace_core.config.legacy import LegacyFlagError, from_namespace
+from mace_core.config.legacy import COMPUTE_FLAGS, LegacyFlagError, from_namespace
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 
@@ -302,6 +302,17 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
                 "foundation_model"
             )
         translated = legacy_document(values)
+        declared = document.get("model", {}).get("observables")
+        if declared is not None and any(flag in values for flag in COMPUTE_FLAGS):
+            selected = list(declared)
+            for flag, observable in COMPUTE_FLAGS.items():
+                if flag not in values:
+                    continue
+                if values[flag] and observable not in selected:
+                    selected.append(observable)
+                elif not values[flag] and observable in selected:
+                    selected.remove(observable)
+            translated.setdefault("model", {})["observables"] = selected
         heads = document.get("data", {}).get("heads", {})
         updates = translated.get("data", {}).get("heads", {})
         if "default" in updates and "heads" not in values and heads:

@@ -59,23 +59,30 @@ def free_port() -> int:
 
 
 def both_ranks(
-    config: Path, *arguments: str, settings: dict | None = None
+    config: Path, *arguments: str, settings: dict | None = None, launcher: str = "torchrun"
 ) -> list[subprocess.CompletedProcess]:
     """Start the two ranks together and wait for both."""
     config = variant(config, {**DISTRIBUTED, **(settings or {})})
     port = free_port()
+    actual_launcher = "mpi" if launcher in {"openmpi", "pmi", "pals"} else launcher
     processes = []
     for rank in (0, 1):
         environment = {
-            **os.environ,
-            "RANK": str(rank),
-            "LOCAL_RANK": str(rank),
-            "WORLD_SIZE": "2",
+            **{key: value for key, value in os.environ.items()
+               if key not in {"RANK", "LOCAL_RANK", "WORLD_SIZE"}
+               and not key.startswith(("SLURM_", "OMPI_", "PMI_", "PALS_", "MPI_LOCAL"))},
             "MASTER_ADDR": "127.0.0.1",
             "MASTER_PORT": str(port),
             "GLOO_SOCKET_IFNAME": "lo0" if sys.platform == "darwin" else "lo",
             "OMP_NUM_THREADS": "1",
         }
+        environment.update({
+            "torchrun": {"RANK": str(rank), "LOCAL_RANK": str(rank), "WORLD_SIZE": "2"},
+            "slurm": {"SLURM_PROCID": str(rank), "SLURM_LOCALID": str(rank), "SLURM_NTASKS": "2", "SLURM_JOB_NODELIST": "127.0.0.1"},
+            "openmpi": {"OMPI_COMM_WORLD_RANK": str(rank), "OMPI_COMM_WORLD_SIZE": "2", "OMPI_COMM_WORLD_LOCAL_SIZE": "2"},
+            "pmi": {"PMI_RANK": str(rank), "PMI_SIZE": "2", "MPI_LOCALRANKID": str(rank)},
+            "pals": {"PALS_RANKID": str(rank), "PALS_NTASKS": "2", "PALS_LOCAL_RANKID": str(rank)},
+        }[launcher])
         processes.append(
             subprocess.Popen(
                 [
@@ -85,6 +92,7 @@ def both_ranks(
                     "--config",
                     str(config),
                     *arguments,
+                    "--launcher", actual_launcher,
                 ],
                 env=environment,
                 stdout=subprocess.PIPE,
@@ -152,8 +160,8 @@ def test_two_ranks_train_and_only_rank_zero_writes(tmp_path):
 
 
 @needs_the_v1_engine
-@pytest.mark.parametrize("stop_epoch", [1, 3])
-def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path, stop_epoch):
+@pytest.mark.parametrize("stop_epoch,launcher", [(1, "torchrun"), (3, "torchrun"), (1, "slurm"), (1, "openmpi"), (1, "pmi"), (1, "pals")])
+def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path, stop_epoch, launcher):
     """Resume before/after the stage switch preserves raw and averaged state."""
     from ase.io import read
     from mace_torch.calculators import MACECalculator
@@ -164,12 +172,12 @@ def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path, stop_epoch):
         "training.ema.enabled": True,
         "training.scheduler.kind": {"kind": "exponential", "gamma": 0.8},
     }
-    first = both_ranks(config, "--max_num_epochs", str(stop_epoch), settings=settings)
+    first = both_ranks(config, "--max_num_epochs", str(stop_epoch), settings=settings, launcher=launcher)
     for rank, finished in enumerate(first):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
 
     earlier_records = training_records(tmp_path)
-    resumed = both_ranks(config, settings={**settings, **RESTART})
+    resumed = both_ranks(config, settings={**settings, **RESTART}, launcher=launcher)
     for rank, finished in enumerate(resumed):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
         assert "Resuming from" in finished.stderr
@@ -180,7 +188,7 @@ def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path, stop_epoch):
 
     uninterrupted = tmp_path / "uninterrupted"
     for rank, finished in enumerate(both_ranks(
-        config, settings={**settings, "runtime.work_dir": str(uninterrupted)},
+        config, settings={**settings, "runtime.work_dir": str(uninterrupted)}, launcher=launcher,
     )):
         assert finished.returncode == 0, f"rank {rank}:\n{finished.stderr}"
 

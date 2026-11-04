@@ -277,6 +277,12 @@ class MACECalculator(Calculator):
     ) -> None:
         if "model_path" in kwargs:
             raise TypeError("model_path is retired in V1; use model_paths instead")
+        for flag in ("enable_cueq", "enable_oeq"):
+            if kwargs.pop(flag, False):
+                raise TypeError(
+                    f"{flag} is replaced by model.backend in the checkpoint "
+                    "configuration; canonical weights need no conversion"
+                )
         Calculator.__init__(self, **kwargs)
         if default_dtype is not None:
             if precision is not None:

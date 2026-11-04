@@ -22,6 +22,7 @@ RECIPES = [
     ("dipole", "reference", None), ("dielectric", "reference", None),
     *[pytest.param("energy", "cueq", flag, marks=[pytest.mark.gpu, pytest.mark.cueq])
       for flag in (None, "only_cueq", "enable_cueq")],
+    pytest.param("energy", "oeq", "enable_oeq", marks=[pytest.mark.gpu, pytest.mark.oeq]),
     *[pytest.param(name, "reference", None, marks=pytest.mark.network) for name in
       ("foundation", "foundation_multi", "foundation_json", "foundation_pseudo")],
     pytest.param("foundation_json", "cueq", None, marks=[pytest.mark.network, pytest.mark.gpu, pytest.mark.cueq]),
@@ -34,7 +35,7 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
     from mace_torch.deploy.loader import load_deployed
     from safetensors.numpy import load_file
 
-    device = "cuda" if backend == "cueq" else "cpu"
+    device = "cuda" if backend in {"cueq", "oeq"} else "cpu"
     foundation = recipe.startswith("foundation")
     multihead = recipe == "multihead" or foundation and recipe != "foundation"
     names = ("memory", "pbe", "mp2") if multihead else ("default",)
@@ -140,7 +141,7 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
         assert labels and provenance.foundation_head == source_head
         assert all({"energy", "forces", "stress"} <= item.properties.keys() for item in labels)
     accelerated = {name: module for name, module in loaded.engine.named_modules()
-                   if type(module).__name__.startswith("CuEq")}
+                   if type(module).__name__.startswith({"cueq": "CuEq", "oeq": "Oeq"}.get(backend, "CuEq"))}
     called = set()
     hooks = [module.register_forward_hook(lambda m, a, o, name=name: called.add(name))
              for name, module in accelerated.items()]
@@ -154,6 +155,9 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
     finally:
         for hook in hooks:
             hook.remove()
+    if backend == "oeq":
+        assert accelerated and called == accelerated.keys()
+        assert {type(module).__name__ for module in accelerated.values()} == {"OeqChannelwiseTPConv"}
     if backend == "cueq":
         assert accelerated and called == accelerated.keys()
         assert {type(module).__name__ for module in accelerated.values()} == {
