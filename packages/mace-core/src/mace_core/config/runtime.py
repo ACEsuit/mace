@@ -62,7 +62,7 @@ class RuntimeConfig(FrozenSection):
         error_table: Which error table the evaluation prints. Validated here
             rather than where it is rendered, because the render happens after
             the training it reports on.
-        plot: Whether to write training curves.
+        plot: Whether to write training curves, enabled by default.
         plot_frequency: Epochs between plots. ``0`` means only at the end,
             which is what makes a separate "plot at all" flag worth keeping:
             the two answer different questions.
@@ -83,7 +83,7 @@ class RuntimeConfig(FrozenSection):
     launcher: str | None = None
     log_level: LogLevel = "INFO"
     error_table: str = "PerAtomRMSE"
-    plot: bool = False
+    plot: bool = True
     plot_frequency: int = 0
     wandb: WandbConfig = WandbConfig()
     restart_latest: bool = False

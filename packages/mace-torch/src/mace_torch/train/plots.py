@@ -12,12 +12,17 @@ def plot_training(
     output: Path,
     *,
     keys=("loss",),
-    min_epoch=0,
+    min_epoch=-1,
     linear=False,
     start_stage_two=None,
     heads=None,
     error_bars=False,
 ) -> Path:
+    """Draw epochs strictly greater than ``min_epoch``, as in the legacy CLI.
+
+    In-run reporting keeps epoch zero with the default of ``-1``. The CLI
+    supplies its own default of zero; ``epoch=None`` is never a trained epoch.
+    """
     import numpy as np
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
@@ -29,7 +34,7 @@ def plot_training(
                 continue
             row = json.loads(line)
             epoch = row.get("epoch")
-            if epoch is None or epoch < min_epoch:
+            if epoch is None or epoch <= min_epoch:
                 continue
             head = row.get("head", "all heads")
             # Optimizer/training records belong to the whole run.

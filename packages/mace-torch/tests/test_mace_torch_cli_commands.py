@@ -117,10 +117,20 @@ def test_training_writes_citations_config_and_plot(tmp_path, capsys):
     assert isinstance(records[0]["head"], str)
     assert {row["mode"] for row in records} == {"opt", "train", "valid"}
     replotted = tmp_path / "replotted.png"
+    # This run has only epoch zero; the plotting CLI excludes its boundary.
+    include_epoch_zero = ["--min_epoch", "-1"]
     for source in (log, log.parent):
         assert (
             main(
-                ["plot", "training", "--path", str(source), "--output", str(replotted)]
+                [
+                    "plot",
+                    "training",
+                    "--path",
+                    str(source),
+                    "--output",
+                    str(replotted),
+                    *include_epoch_zero,
+                ]
             )
             == 0
         )
@@ -139,12 +149,26 @@ def test_training_writes_citations_config_and_plot(tmp_path, capsys):
                 str(without_initial),
                 "--output",
                 str(replotted),
+                *include_epoch_zero,
             ]
         )
         == 0
     )
     assert replotted.read_bytes() == original
-    assert main(["plot", "training", "--path", str(log), "--output_format", "pdf"]) == 0
+    assert (
+        main(
+            [
+                "plot",
+                "training",
+                "--path",
+                str(log),
+                "--output_format",
+                "pdf",
+                *include_epoch_zero,
+            ]
+        )
+        == 0
+    )
     assert log.with_suffix(".pdf").read_bytes().startswith(b"%PDF-")
     empty = tmp_path / "empty"
     empty.mkdir()

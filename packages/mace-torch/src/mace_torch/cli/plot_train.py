@@ -9,7 +9,12 @@ from pathlib import Path
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--path", type=Path, required=True)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--min_epoch", type=int, default=0)
+    parser.add_argument(
+        "--min_epoch",
+        type=int,
+        default=0,
+        help="Plot epochs strictly greater than this value; use -1 to include epoch 0.",
+    )
     parser.add_argument("--start_stage_two", "--start_swa", type=int, dest="start_swa")
     parser.add_argument("--linear", action="store_true")
     parser.add_argument("--error_bars", action="store_true")

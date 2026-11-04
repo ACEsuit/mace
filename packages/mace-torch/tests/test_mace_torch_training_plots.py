@@ -75,8 +75,8 @@ def test_plot_filters_scale_metrics_and_stage_alias(log, figures):
         assert axis.get_yscale() == "linear"
         curve, stage = axis.lines
         assert curve.get_label() == "water valid rmse_energy"
-        assert list(curve.get_xdata()) == [2, 3]
-        assert list(curve.get_ydata()) == [0.02, 0.02]
+        assert list(curve.get_xdata()) == [3]
+        assert list(curve.get_ydata()) == [0.02]
         assert list(stage.get_xdata()) == [3, 3]
         content.append(log.with_suffix(".png").read_bytes())
     assert content[0] == content[1]
@@ -98,14 +98,14 @@ def test_head_selection_keeps_global_training_and_sample_deviation(log, figures)
         "water valid loss",
     }
     curve = curves["all heads opt loss"]
-    assert list(curve.get_xdata()) == [0, 1, 2, 3]
-    assert list(curve.get_ydata()) == [2.0, 3.0, 4.0, 5.0]
-    # Two step losses [1, 3] at epoch zero: sample std is sqrt(2).
+    assert list(curve.get_xdata()) == [1, 2, 3]
+    assert list(curve.get_ydata()) == [3.0, 4.0, 5.0]
+    # Two step losses [2, 4] at epoch one: sample std is sqrt(2).
     band = axis.collections[0].get_paths()[0].vertices
-    limits = band[band[:, 0] == 0, 1]
+    limits = band[band[:, 0] == 1, 1]
     np.testing.assert_allclose(
         [limits.min(), limits.max()],
-        [2 - np.sqrt(2), 2 + np.sqrt(2)],
+        [3 - np.sqrt(2), 3 + np.sqrt(2)],
         atol=CLOSED_FORM_FP64.atol,
         rtol=CLOSED_FORM_FP64.rtol,
     )
