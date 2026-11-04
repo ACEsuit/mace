@@ -315,6 +315,9 @@ class MagneticConfig(ConfigSection):
             included.
         train_one_body: Whether that term's coefficients are trained. Off,
             they keep the values they were built or loaded with.
+        time_reversal: Average the energy at opposite moments before taking
+            derivatives. ``batched`` evaluates both orientations together;
+            ``sequential`` uses less peak memory. ``none`` leaves it unchanged.
     """
 
     saturation: dict[int, float] | tuple[float, ...] | float = Field(
@@ -325,6 +328,7 @@ class MagneticConfig(ConfigSection):
     one_body: bool = False
     one_body_basis: int = Field(default=10, ge=1)
     train_one_body: bool = True
+    time_reversal: Literal["none", "batched", "sequential"] = "none"
 
     @field_validator("saturation")
     @classmethod

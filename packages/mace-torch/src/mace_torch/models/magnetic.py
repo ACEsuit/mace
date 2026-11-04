@@ -15,8 +15,10 @@ of the moment's length goes there too.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
+import torch
 from mace_core.config.model import ModelConfig
 from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
@@ -67,6 +69,10 @@ class MagneticModel(nn.Module):
         precision: Precision = "float64",
     ) -> None:
         super().__init__()
+        if config.magnetic.time_reversal not in {"none", "batched", "sequential"}:
+            raise ValueError(
+                "magnetic.time_reversal must be 'none', 'batched' or 'sequential'"
+            )
         self.config = config
         one_body_basis = (
             config.magnetic.one_body_basis if config.magnetic.one_body else 0
@@ -117,6 +123,45 @@ class MagneticModel(nn.Module):
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The energy at the moments the graph carries under ``magmom``."""
+        mode = self.config.magnetic.time_reversal
+        if mode == "none":
+            return self._forward(graph)
+        moments = graph.get("magmom")
+        if not isinstance(moments, Tensor) or moments.shape != graph["positions"].shape:
+            raise ValueError("time reversal requires magmom with shape [n_atoms, 3]")
+        if mode == "batched":
+            result = self._forward(_opposite_moments(graph))
+            # These are energies only. Differentiating their mean in the outer
+            # engine supplies the minus sign for magnetic forces and all higher
+            # derivatives, without a second table of derivative parities.
+            assert result.total_energy is not None and result.node_energies is not None
+            plus = MACEOutput(
+                total_energy=result.total_energy.chunk(2)[0],
+                node_energies=result.node_energies.chunk(2)[0],
+                extras={key: value.chunk(2)[0] for key, value in result.extras.items()},
+            )
+            minus = MACEOutput(
+                total_energy=result.total_energy.chunk(2)[1],
+                node_energies=result.node_energies.chunk(2)[1],
+                extras={key: value.chunk(2)[1] for key, value in result.extras.items()},
+            )
+        else:
+            plus = self._forward(graph)
+            minus = self._forward({**graph, "magmom": -moments})
+        assert plus.total_energy is not None and minus.total_energy is not None
+        assert plus.node_energies is not None and minus.node_energies is not None
+        return replace(
+            plus,
+            total_energy=(plus.total_energy + minus.total_energy) / 2,
+            node_energies=(plus.node_energies + minus.node_energies) / 2,
+            extras={
+                key: (value + minus.extras[key]) / 2
+                for key, value in plus.extras.items()
+            },
+        )
+
+    def _forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
+        """The unprojected energy in eV; all derivative calls stay outside."""
         features = self.backbone(graph)
         site: Tensor | None = None
         if self.repulsion is not None:
@@ -152,3 +197,31 @@ class MagneticModel(nn.Module):
             "repulsion": self.repulsion,
             "one_body": self.one_body,
         }
+
+
+def _opposite_moments(graph: Mapping[str, Any]) -> dict[str, Any]:
+    """Two disconnected copies, with opposite moments and shared autograd leaves.
+
+    Tensor rows follow the flat graph contract; ptr and connectivity need
+    offsets, and host tuples carry one entry per structure. Input values and
+    gradient flags are never mutated. Strain has already been applied by the
+    derivative engine, so both copies differentiate against the original cell.
+    """
+    nodes = graph["positions"].shape[0]
+    graphs = graph["ptr"].shape[0] - 1
+    doubled = {
+        name: torch.cat((value, value))
+        if isinstance(value, Tensor) and value.ndim
+        else value + value
+        if isinstance(value, tuple)
+        else value
+        for name, value in graph.items()
+        if name not in {"edge_index", "ptr", "batch", "magmom"}
+    }
+    doubled.update(
+        edge_index=torch.cat((graph["edge_index"], graph["edge_index"] + nodes), dim=1),
+        ptr=torch.cat((graph["ptr"], graph["ptr"][1:] + nodes)),
+        batch=torch.cat((graph["batch"], graph["batch"] + graphs)),
+        magmom=torch.cat((graph["magmom"], -graph["magmom"])),
+    )
+    return doubled

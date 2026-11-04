@@ -737,6 +737,8 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
     """
     unbuilt = []
     built = dict(_BUILT_ONE_WAY)
+    if config.model.model != "magnetic":
+        built["magnetic.time_reversal"] = ("none",)
     if config.model.model == "polar":
         # The frozen tree computes the repulsion of this model and never adds
         # it, so the only faithful build is the one without it.

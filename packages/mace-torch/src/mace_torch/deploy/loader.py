@@ -14,6 +14,7 @@ consumer never adds them back.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -105,6 +106,49 @@ class DeployedModel:
         )
         load_canonical_state(engine, canonical_state(self.engine))
         return replace(self, engine=engine.to(device).eval(), outputs=outputs)
+
+    def with_time_reversal(self, *, batched: bool = True) -> DeployedModel:
+        """Project a magnetic model at opposite moments, without changing its weights.
+
+        Returns an independent model whose resolved configuration records the
+        projection, so writing its engine and metadata preserves it on reload.
+        Compose the calculator's fixed-point driver around this projected model.
+        """
+        from mace_torch.models.magnetic import MagneticModel
+        from mace_torch.physics import DerivativeEngine
+
+        if not isinstance(batched, bool):
+            raise DeployError("batched must be a boolean")
+        if not isinstance(self.engine, DerivativeEngine):
+            raise DeployError("apply time reversal before the fixed-point driver")
+        if self.config.model.model != "magnetic":
+            raise DeployError("time reversal requires model.model='magnetic'")
+        if self.config.model.magnetic.time_reversal != "none":
+            raise DeployError("the model already has time-reversal symmetrization")
+        magnetic = self.config.model.magnetic.model_copy(
+            update={"time_reversal": "batched" if batched else "sequential"}
+        )
+        config = self.config.model_copy(
+            update={
+                "model": self.config.model.model_copy(update={"magnetic": magnetic})
+            }
+        )
+        metadata = self.metadata.model_copy(
+            update={
+                "config": self.metadata.config.model_copy(
+                    update={"resolved": config.to_resolved_dict()}
+                )
+            }
+        )
+        engine = deepcopy(self.engine)
+        model = engine.backbone
+        if not isinstance(model, MagneticModel):
+            raise DeployError("time reversal requires a magnetic energy model")
+        model.config = config.model
+        # A compiled callable may still close over the unprojected model.
+        # Copy the actual operator policies/device, but compile the new forward anew.
+        engine._compiled_model = None
+        return replace(self, engine=engine, config=config, metadata=metadata)
 
 
 def load_deployed(
