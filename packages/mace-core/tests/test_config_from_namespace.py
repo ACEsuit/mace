@@ -48,6 +48,7 @@ def test_dipole_preset_preserves_stage_weights_and_resolved_roundtrip():
     config = ResolvedConfig.from_dict(values)
     assert config.loss.weights["dipole"] == 200.0
     assert config.loss.stage_two_weights["dipole"] == 300.0
+    assert config.loss.use_structure_weights == {"dipole": False}
     assert ResolvedConfig.from_dict(config.to_resolved_dict()) == config
 
 

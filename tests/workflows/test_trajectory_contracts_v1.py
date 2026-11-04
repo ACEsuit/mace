@@ -52,9 +52,13 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
                      "scheduler": {"kind": {"kind": "exponential", "gamma": 0.9}}},
         "loss": {"weights": {name: 1.0 for name in observables}},
     }
+    if recipe in ("dipole", "dielectric"):
+        document["loss"]["use_structure_weights"] = {name: False for name in observables}
     for number, name in enumerate(names):
         frames = [atoms.copy() for atoms in fitting_configs]
-        for atoms in frames:
+        for index, atoms in enumerate(frames):
+            if recipe in ("dipole", "dielectric"):
+                atoms.info["config_weight"] = (0.0, 2.0, 3.0)[index % 3]
             if len(atoms) > 1:
                 atoms.info["REF_energy"] += number * 0.2
             for old, new in (("REF_dipoles", "dipole"), ("REF_polarizability", "polarizability")):
@@ -117,6 +121,9 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
     loaded = load_deployed(split / "fit.safetensors", device=device)
     assert set(loaded.heads) == set(names)
     assert loaded.config.model.clebsch_gordan_basis == "reduced"
+    assert dict(loaded.config.loss.use_structure_weights) == document["loss"].get(
+        "use_structure_weights", {}
+    )
     if recipe == "foundation_json":
         for number, name in enumerate(("pbe", "mp2")):
             assert loaded.e0s[name] == {1: number * 0.1, 8: -number * 0.2}

@@ -633,6 +633,7 @@ def test_dipole_presets_train_from_flags_and_reload(tmp_path, preset, model):
         atoms.positions[1, 0] += 0.03 * index
         atoms.info["dipole"] = np.array([0.1 * index, 0.2, -0.1])
         atoms.info["polarizability"] = np.eye(3) * (0.2 + 0.01 * index)
+        atoms.info["config_weight"] = (0.0, 2.0, 3.0)[index % 3]
         atoms.arrays["REF_charges"] = np.zeros(len(atoms))
     source = tmp_path / "labels.xyz"
     write(source, frames)
@@ -665,7 +666,14 @@ def test_dipole_presets_train_from_flags_and_reload(tmp_path, preset, model):
                 "--MLP_irreps",
                 "4x0e+4x1o+4x2e",
                 "--max_num_epochs",
+                "2",
+                "--stage_two",
+                "--start_stage_two",
                 "1",
+                "--swa_dipole_weight",
+                "2",
+                "--swa_polarizability_weight",
+                "3",
                 "--batch_size",
                 "2",
                 "--valid_batch_size",
@@ -680,6 +688,12 @@ def test_dipole_presets_train_from_flags_and_reload(tmp_path, preset, model):
     loaded = load_deployed(artifact)
     assert loaded.config.loss.kind.kind == "weighted"
     assert loaded.config.loss.weight("dipole") == (100.0 if preset == "dipole" else 1.0)
+    assert loaded.config.loss.use_structure_weights == {
+        name: False for name in loaded.config.model.observables
+    }
+    assert loaded.config.schedule()[1].loss_weights["dipole"] == (
+        200.0 if preset == "dipole" else 2.0
+    )
     calculator = MACECalculator(model_paths=artifact, charges_key="REF_charges")
     result = calculator.get_property("dipole", frames[0])
     assert result.shape == (3,) and np.isfinite(result).all()

@@ -10,8 +10,8 @@ easier to write again than to read.
 quantity's shape says whether its rows are atoms or structures. Its
 *extensivity* says whether the residual is compared per atom, which is what
 stops a large structure weighing more for being large. And the weights say how
-much it counts: a global one per quantity from the configuration, and two
-per-structure ones from the data.
+much it counts: one per quantity from the configuration, a per-property data
+weight and an optional structure weight.
 
 The per-structure weights are also the masking. A structure that carries no
 value for a property has weight zero for it, so the term contributes nothing
@@ -112,6 +112,8 @@ class LossTerm:
             is squared.
         output_row_axis: The model output's atom/graph axis, moved first before
             comparison to row-first labels and application of structure weights.
+        use_structure_weight: Whether the structure's global weight multiplies
+            this term. Property weights and label masks still apply.
     """
 
     name: str
@@ -119,6 +121,7 @@ class LossTerm:
     per_atom: bool
     extensive: bool
     output_row_axis: int = 0
+    use_structure_weight: bool = True
 
 
 def terms_for(
@@ -133,6 +136,12 @@ def terms_for(
     """
     overrides = {} if stage is None else stage.loss_weights
     layouts = {spec.name: spec for spec in target_specs(requested)}
+    unknown = config.use_structure_weights.keys() - layouts.keys()
+    if unknown:
+        raise ValueError(
+            f"loss.use_structure_weights has unrequested names {sorted(unknown)}; "
+            f"choose from {sorted(layouts)} or declare them in model.observables"
+        )
 
     def weight_of(name: str) -> float:
         return overrides.get(name, config.weights.get(name, 1.0))
@@ -145,6 +154,9 @@ def terms_for(
                 weight_of(observable.name),
                 observable.per_atom,
                 observable.extensive,
+                use_structure_weight=config.use_structure_weights.get(
+                    observable.name, True
+                ),
             )
         )
         for request in observable.derivatives:
@@ -158,6 +170,7 @@ def terms_for(
                     layouts[name].per_atom,
                     request.extensive,
                     layouts[name].output_row_axis,
+                    use_structure_weight=config.use_structure_weights.get(name, True),
                 )
             )
     return tuple(terms)
@@ -232,7 +245,13 @@ class TermwiseLoss(torch.nn.Module):
                 rows = counts[batch.graph["batch"]] if term.per_atom else counts
                 residual = residual / _broadcast(rows, residual)
             cost = self.elementwise(residual, term)
-            weights = row_weights(batch, term.name, term.per_atom, cost)
+            weights = row_weights(
+                batch,
+                term.name,
+                term.per_atom,
+                cost,
+                use_structure_weight=term.use_structure_weight,
+            )
             if totals is None:
                 reduced = reduce_loss(weights * cost)
             else:
@@ -311,18 +330,27 @@ def _broadcast(per_graph: Tensor, like: Tensor) -> Tensor:
 
 
 def row_weights(
-    batch: TrainingBatch, name: str, per_atom: bool, like: Tensor
+    batch: TrainingBatch,
+    name: str,
+    per_atom: bool,
+    like: Tensor,
+    *,
+    use_structure_weight: bool = True,
 ) -> Tensor:
     """The two per-structure weights, spread over the rows of a quantity.
 
-    The structure's own weight and its weight for this property. The second is
-    what makes a missing value contribute nothing: it is zero where the
-    structure carries no such property.
+    The structure's own weight, when enabled, and its weight for this property.
+    The second makes missing labels contribute nothing and is never disabled.
+    Metrics use the default policy independently of the loss configuration.
     """
     graph_weight = batch.graph["weight"]
     assert isinstance(graph_weight, Tensor)
     property_weight = batch.property_weights.get(name)
-    combined = graph_weight.to(like.dtype)
+    combined = (
+        graph_weight.to(like.dtype)
+        if use_structure_weight
+        else torch.ones_like(graph_weight, dtype=like.dtype)
+    )
     if property_weight is not None:
         combined = combined * property_weight.to(like.dtype)
     if per_atom:

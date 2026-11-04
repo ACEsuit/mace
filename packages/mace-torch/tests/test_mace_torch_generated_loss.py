@@ -336,9 +336,8 @@ def test_the_virial_weight_scales_it():
 def test_a_dipole_is_compared_per_atom():
     """`(2/2)^2 / 3 = 1/3`, from `test_weighted_mean_squared_error_dipole`.
 
-    Where this deliberately differs from the frozen tree is documented in the
-    test below: there the dipole term ignores the structure's own weight and
-    carries a hardcoded factor of one hundred.
+    The global factor and the structure-weight policy are configured by the
+    preset; this checks the common per-atom residual.
     """
     requested, batch = extended_batch(dipole=np.zeros(3))
     predicted = batch.targets["dipole"].clone()
@@ -358,8 +357,8 @@ def test_the_hundred_the_frozen_tree_hides_in_its_dipole_loss_is_a_weight():
 
     It is a weight written where a weight cannot be configured, so asking for
     one hundred reaches the same number and says so. The same term also ignores
-    the structure's weight there, which is not reproduced: a weight that
-    applies to every term except one is a rule nobody can state.
+    the structure's weight there. Legacy presets record that choice through
+    LossConfig.use_structure_weights; native declarations retain their default.
     """
     requested, batch = extended_batch(dipole=np.zeros(3))
     predicted = batch.targets["dipole"].clone()
@@ -371,6 +370,67 @@ def test_the_hundred_the_frozen_tree_hides_in_its_dipole_loss_is_a_weight():
     )
     loss = build_loss(requested, LossConfig(weights={"dipole": 100.0}))
     assert float(loss(output, batch)) == pytest.approx(100.0 / 3.0)
+
+
+@fp64_only
+@pytest.mark.parametrize("use_structure_weight", [True, False])
+def test_dipole_weight_policy_preserves_other_terms_and_label_masks(
+    use_structure_weight,
+):
+    requested = resolve_requested(["energy", "forces", "dipole"], EXTENDED)
+    configurations = [
+        Configuration(
+            atomic_numbers=np.array([1, 1]),
+            positions=POSITIONS,
+            weight=weight,
+            properties={"energy": 0.0, "forces": np.zeros((2, 3)), **values},
+            property_weights={"dipole": property_weight},
+        )
+        for weight, property_weight, values in (
+            (0.0, 2.0, {"dipole": np.zeros(3)}),
+            (3.0, 0.0, {"dipole": np.zeros(3)}),
+            (5.0, 1.0, {}),
+        )
+    ]
+    dataset = GraphDataset(
+        configurations, cutoff=0.5, z_table=Z_TABLE, targets=target_specs(requested)
+    )
+    batch = collate_training([dataset[i] for i in range(3)], z_table=Z_TABLE)
+    assert batch.property_weights["dipole"].tolist() == [2.0, 0.0, 0.0]
+    dipole = torch.full((3, 3), 2.0, requires_grad=True)
+    output = MACEOutput(
+        total_energy=torch.full((3,), 2.0), forces=torch.ones(6, 3), dipole=dipole
+    )
+    # Omitting the policy preserves the native default, including old configs.
+    config = (
+        LossConfig()
+        if use_structure_weight
+        else LossConfig(use_structure_weights={"dipole": False})
+    )
+    actual = build_loss(requested, config)(output, batch)
+    # E and F each cost (0 + 3 + 5)/3; only the first dipole is weighted in.
+    expected_dipole = 0.0 if use_structure_weight else 2.0 / 3.0
+    assert float(actual.detach()) == pytest.approx(16.0 / 3.0 + expected_dipole)
+    (gradient,) = torch.autograd.grad(actual, dipole)
+    assert torch.count_nonzero(gradient[1:]) == 0
+    assert bool(torch.count_nonzero(gradient[0])) is not use_structure_weight
+
+
+@fp64_only
+def test_structure_weight_policy_also_applies_to_declared_derivatives():
+    batch = batch_of(structure(weight=3.0))
+    output = prediction(batch, force_off=1.0)
+    config = LossConfig(
+        weights={"energy": 0.0, "forces": 6.0},
+        use_structure_weights={"forces": False},
+    )
+    assert float(build_loss(REQUESTED, config)(output, batch)) == pytest.approx(1.0)
+
+
+def test_structure_weight_policy_refuses_an_unrequested_quantity():
+    config = LossConfig(use_structure_weights={"force": False})
+    with pytest.raises(ValueError, match=r"loss\.use_structure_weights.*force"):
+        build_loss(REQUESTED, config)
 
 
 @fp64_only

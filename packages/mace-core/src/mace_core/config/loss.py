@@ -111,11 +111,15 @@ class LossConfig(FrozenSection):
         stage_two_weights: Weights that replace ``weights`` in the second
             stage. An observable absent from it keeps its first-stage weight,
             so a stage that only changes the energy says only that.
+        use_structure_weights: Whether each term also uses the structure's
+            global weight. Omitted names use it. Property weights and missing
+            label masks always apply, including when this is false.
     """
 
     kind: LossKind = WeightedLoss()
     weights: dict[str, float] = Field(default_factory=dict)
     stage_two_weights: dict[str, float] = Field(default_factory=dict)
+    use_structure_weights: dict[str, bool] = Field(default_factory=dict)
 
     def weight(self, observable: str, *, stage_two: bool = False) -> float:
         """The weight ``observable`` carries, in the first or the second stage.

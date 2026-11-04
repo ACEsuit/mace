@@ -838,6 +838,13 @@ def _collapse_loss(namespace: Any, values: dict[str, Any]) -> None:
             settings["delta"] = delta
         kind = "weighted" if loss in {"dipole", "dipole_polar"} else loss
         _set(values, "loss.kind", {"kind": kind, **settings})
+        if loss in {"dipole", "dipole_polar"}:
+            # The frozen dipole/polarizability objectives ignore config_weight.
+            # Record that choice so reload does not depend on the CLI spelling.
+            names = (
+                ("dipole", "polarizability") if loss == "dipole_polar" else ("dipole",)
+            )
+            _set(values, "loss.use_structure_weights", dict.fromkeys(names, False))
     for stage, prefix in (("weights", ""), ("stage_two_weights", "swa_")):
         written = {
             observable: weight

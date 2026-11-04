@@ -86,22 +86,11 @@ def test_all_thirteen_output_columns_are_accounted_for():
     ],
 )
 @pytest.mark.parametrize("weight", [1.0, 3.25])
-@pytest.mark.parametrize(
-    "config_weights",
-    [
-        (1.0, 1.0),
-        pytest.param(
-            (2.0, 3.0),
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="GATE-3/TRN-2: V1 weights dipole labels by structure; legacy does not",
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("config_weights", [(1.0, 1.0), (2.0, 3.0), (0.0, 3.0)])
+@pytest.mark.parametrize("stage_two", [False, True])
+@pytest.mark.parametrize("chunked", [False, True])
 def test_dipole_cli_presets_preserve_loss_and_gradient(
-    fp64, preset, model, weight, config_weights
+    fp64, preset, model, weight, config_weights, stage_two, chunked
 ):
     from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
     from mace_core.outputs import MACEOutput
@@ -119,6 +108,13 @@ def test_dipole_cli_presets_preserve_loss_and_gradient(
             str(weight),
             "--polarizability_weight",
             str(weight),
+        ]
+    if stage_two:
+        weight *= 2.0
+        flags += [
+            "--stage_two", "--start_stage_two", "1", "--max_num_epochs", "2",
+            "--swa_dipole_weight", str(weight),
+            "--swa_polarizability_weight", str(weight),
         ]
     config = parse(flags)
     requested = resolve_requested(config.model.observables, DEFAULT_CATALOGUE)
@@ -146,7 +142,26 @@ def test_dipole_cli_presets_preserve_loss_and_gradient(
         dipole=predictions["dipole"],
         extras={name: value for name, value in predictions.items() if name != "dipole"},
     )
-    native = build_loss(requested, config.loss)(output, batch)
+    stage = config.schedule()[-1]
+    loss = build_loss(requested, config.loss, stage)
+    if chunked:
+        totals = loss.element_counts(batch)
+        pieces = []
+        for index, size in enumerate((2, 3)):
+            part = TrainingBatch(
+                graph={"ptr": torch.tensor([0, size]),
+                       "weight": batch.graph["weight"][index:index + 1]},
+                targets={name: value[index:index + 1] for name, value in targets.items()},
+            )
+            prediction = MACEOutput(
+                dipole=predictions["dipole"][index:index + 1],
+                extras={name: value[index:index + 1] for name, value in predictions.items()
+                        if name != "dipole"},
+            )
+            pieces.append(loss(prediction, part, totals))
+        native = sum(pieces)
+    else:
+        native = loss(output, batch)
     legacy_loss = (
         DipoleSingleLoss(dipole_weight=weight)
         if preset == "dipole"
