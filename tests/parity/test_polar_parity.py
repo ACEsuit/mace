@@ -104,14 +104,14 @@ CASES = {
 }
 
 
-def legacy_polar(agnostic=True, gate="silu", field_norm_factor=0.02):
+def legacy_polar(agnostic=True, gate="silu", field_norm_factor=0.02, **overrides):
     from e3nn import o3
 
     from mace.modules import gate_dict, interaction_classes
     from mace.modules.extensions import PolarMACE as LegacyPolarMACE
 
     torch.manual_seed(7)
-    model = LegacyPolarMACE(
+    arguments = dict(
         r_max=4.0,
         num_bessel=6,
         num_polynomial_cutoff=5,
@@ -150,6 +150,8 @@ def legacy_polar(agnostic=True, gate="silu", field_norm_factor=0.02):
         field_readout_config={"type": "OneBodyMLPFieldReadout"},
         use_agnostic_product=agnostic,
     )
+    arguments.update(overrides)
+    model = LegacyPolarMACE(**arguments)
     # Every weight away from zero, including the biases the frozen tree
     # starts at zero, so a bias that is dropped or misplaced shows.
     with torch.no_grad():

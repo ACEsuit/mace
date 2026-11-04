@@ -793,8 +793,22 @@ def _collapse_polar(namespace: Any, values: dict[str, Any]) -> None:
         _set(values, "model.polar.feature_widths", [float(w) for w in widths])
     if (norms := _literal(_read(namespace, "field_feature_norms"))) is not None:
         _set(values, "model.polar.feature_norms", [float(n) for n in norms])
-    update = _literal(_read(namespace, "fixedpoint_update_config")) or {}
-    readout = _literal(_read(namespace, "field_readout_config")) or {}
+    blocks = []
+    for flag, allowed in (
+        (
+            "fixedpoint_update_config",
+            {"type", "potential_embedding_cls", "nonlinearity_cls"},
+        ),
+        ("field_readout_config", {"type"}),
+    ):
+        value = _literal(_read(namespace, flag))
+        value = {} if value is None else value
+        if not isinstance(value, dict):
+            raise LegacyFlagError(f"--{flag} needs a mapping of block settings.")
+        if unknown := set(value) - allowed:
+            raise LegacyFlagError(f"--{flag} has unknown settings: {sorted(unknown)}.")
+        blocks.append(value)
+    update, readout = blocks
     kind = update.get("type", "AgnosticEmbeddedOneBodyVariableUpdate")
     embedding = update.get(
         "potential_embedding_cls", "AgnosticChargeBiasedLinearPotentialEmbedding"

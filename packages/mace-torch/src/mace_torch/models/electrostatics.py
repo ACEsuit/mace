@@ -73,8 +73,11 @@ POLAR_EXTRA_ROWS: dict[str, str] = {
     "charges": "atom",
     "spins": "atom",
     "density_coefficients": "atom",
+    "spin_density": "atom",
     "spin_charge_density": "atom",
     "fukui_functions": "atom",
+    "fermi_level": "graph",
+    "external_field": "graph",
 }
 
 
@@ -111,7 +114,7 @@ class PolarSettings:
         energy_self_interaction: Whether the electrostatic energy includes each
             atom's interaction with its own density.
         add_local_electron_energy: Whether the local energy of the density is
-            added to the total. It is computed and reported either way.
+            added to the total. The reported contribution is zero when disabled.
         quadrupole_feature_corrections: Whether an open system's projection
             carries the quadrupole correction.
         fukui_hidden: The width of the Fukui readout's middle.
@@ -381,6 +384,12 @@ class PolarModel(MACEModel):
         The graph is read and never written to. Beyond an energy model's keys
         it needs ``total_charge`` and ``total_spin`` ``[n_graphs]`` and
         ``external_field`` ``[n_graphs, 3]``.
+
+        Extras include ``spin_density`` ``[n_atoms, (multipole_max_l + 1)**2]``,
+        the alpha minus beta multipoles in units of e A**l; ``external_field``
+        ``[n_graphs, 3]`` in V/Angstrom; and ``fermi_level`` ``[n_graphs]`` in eV.
+        The Fermi level is zero: this model fixes charge and spin and does not
+        couple to an electron reservoir.
         """
         for key in ("total_charge", "total_spin", "external_field"):
             if key not in graph:
@@ -488,8 +497,11 @@ class PolarModel(MACEModel):
                 "charges": charge_density[:, 0],
                 "spins": spin_density[:, 0],
                 "density_coefficients": charge_density,
+                "spin_density": spin_density,
                 "spin_charge_density": density,
                 "fukui_functions": fukui,
+                "fermi_level": applied[:, 0],
+                "external_field": field,
             }
         )
         return output

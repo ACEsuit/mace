@@ -274,7 +274,7 @@ class PolarConfig(ConfigSection):
         energy_self_interaction: Whether the electrostatic energy includes each
             atom's interaction with its own density.
         add_local_electron_energy: Whether the local energy of the density is
-            added to the total. It is computed and reported either way.
+            added to the total. The reported contribution is zero when disabled.
         quadrupole_feature_corrections: Whether an open system's projection
             carries the quadrupole correction as well.
         field_update: The block each step predicts the increment with. One
