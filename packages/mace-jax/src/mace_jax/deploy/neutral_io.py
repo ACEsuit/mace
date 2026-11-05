@@ -6,16 +6,16 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 import jax
 import numpy as np
 from flax import nnx
-from mace_core.artifacts import resolve_artifact
+from mace_core.artifacts import resolve_checkpoint
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.kernels.registry import get_backend
 from mace_core.metadata import ModelMetadata
+from mace_core.model_registry import get_model
 from mace_core.outputs import MACEOutput
 from safetensors.numpy import load_file
 
@@ -112,30 +112,15 @@ def _paths(reference: str | Path) -> tuple[Path, Path]:
         artifact = SUPPORTED_MODELS[text].artifact_ref
         if artifact is None:
             raise ModelLoadError(
-                f"{text}: FM-2 publication and the FM-3 registry URL are pending; "
+                f"{text}: native artifact publication is pending; "
                 "pass its converted local .json or .safetensors path"
             )
         text = artifact
-    if text.startswith("https:"):
-        parts = urlsplit(text)
-        suffix = Path(parts.path).suffix
-        if suffix not in {".json", ".safetensors"}:
-            raise ModelLoadError(
-                "JAX reads canonical .json/.safetensors pairs; "
-                "use mace model convert for a legacy pickle"
-            )
-        urls = [
-            urlunsplit(parts._replace(path=str(Path(parts.path).with_suffix(ext))))
-            for ext in (".json", ".safetensors")
-        ]
-        return resolve_artifact(urls[0]), resolve_artifact(urls[1])
-    path = Path(text)
-    if path.suffix not in {".json", ".safetensors"}:
-        raise ModelLoadError(
-            "JAX reads canonical .json/.safetensors pairs; "
-            "use mace model convert for a legacy pickle"
-        )
-    return path.with_suffix(".json"), path.with_suffix(".safetensors")
+    try:
+        files = resolve_checkpoint(text)
+    except ValueError as error:
+        raise ModelLoadError(str(error)) from error
+    return files.metadata, files.tensors
 
 
 def load_model(
@@ -161,6 +146,17 @@ def load_model(
     metadata = ModelMetadata.from_json(json.dumps(document["config"]))
     config = ResolvedConfig.model_validate(metadata.config.resolved)
     _architecture(config)
+    if str(path_or_id) in SUPPORTED_MODELS:
+        entry = get_model(str(path_or_id))
+        if (
+            config.model != entry.hyperparameters()
+            or tuple(metadata.heads) != tuple(entry.metadata.heads)
+            or tuple(metadata.elements) != tuple(entry.metadata.elements)
+        ):
+            raise ModelLoadError(
+                f"{entry.model_id}: published architecture, heads or elements "
+                "disagree with registry"
+            )
     elements = tuple(metadata.elements)
     if not elements:
         raise ModelLoadError(

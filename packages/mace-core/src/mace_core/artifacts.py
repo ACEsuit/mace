@@ -47,12 +47,14 @@ __all__ = [
     "DOWNLOAD_TIMEOUT",
     "ArtifactDownloadError",
     "ArtifactRef",
+    "CheckpointFiles",
     "cache_dir",
     "cache_name",
     "download",
     "legacy_cache_names",
     "normalize_download_url",
     "resolve_artifact",
+    "resolve_checkpoint",
 ]
 
 #: Seconds without a byte after which a download is abandoned. Per read, not
@@ -84,6 +86,45 @@ class ArtifactRef:
                 f"{self.url!r} is not an https URL. An artifact is published at "
                 f"one; a file already on disk is passed as a path instead."
             )
+
+
+@dataclass(frozen=True)
+class CheckpointFiles:
+    """The two local files of a native checkpoint, including cached pairs.
+
+    Cache keys include each complete URL, so downloaded JSON and safetensors
+    need not have matching local stems. Readers must use both returned paths.
+    """
+
+    metadata: Path
+    tensors: Path
+
+
+def resolve_checkpoint(reference: str | Path | ArtifactRef) -> CheckpointFiles:
+    """Resolve a native JSON/safetensors pair through the shared artifact cache.
+
+    Either member may name the pair. Query parameters are retained for both
+    remote files. Legacy pickle inputs require explicit conversion first.
+    """
+    text = reference.url if isinstance(reference, ArtifactRef) else str(reference)
+    remote = not isinstance(reference, Path) and text.startswith("https:")
+    parts = urllib.parse.urlsplit(text) if remote else None
+    path = Path(parts.path if parts is not None else text)
+    if path.suffix not in {".json", ".safetensors"}:
+        raise ValueError(
+            f"{text}: expected a native .json/.safetensors checkpoint; "
+            "use mace model convert for a legacy pickle"
+        )
+    if parts is None:
+        return CheckpointFiles(
+            resolve_artifact(path.with_suffix(".json")),
+            resolve_artifact(path.with_suffix(".safetensors")),
+        )
+    urls = [
+        urllib.parse.urlunsplit(parts._replace(path=str(path.with_suffix(suffix))))
+        for suffix in (".json", ".safetensors")
+    ]
+    return CheckpointFiles(resolve_artifact(urls[0]), resolve_artifact(urls[1]))
 
 
 def cache_dir(environ: Mapping[str, str] | None = None) -> Path:

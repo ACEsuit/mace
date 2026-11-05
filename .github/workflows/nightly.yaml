@@ -72,13 +72,13 @@ jobs:
           python-version: "3.12"
           extras: dev
           # graph_longrange so the polar foundation loaders run too.
-          pip-packages: -r requirements/polar.txt
+          pip-packages: -r requirements/polar.txt -e packages/mace-core -e packages/mace-torch -e packages/mace-jax
       - name: Cache foundation model downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mace
-          # URLs live in foundations_models.py: new URLs -> new cache.
-          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
+          # Invalidate for either the frozen URLs or the native registry.
+          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py', 'packages/mace-core/src/mace_core/model_registry.json') }}
       # Downloads are allowed and REQUIRED here: a broken download host
       # must turn this job red, never a PR.
       #
@@ -95,6 +95,19 @@ jobs:
           require-caps: network,polar
           allow-network: "true"
           timeout: "1200"
+        env:
+          MACE_REGISTRY_BADGES: .pytest_cache/registry-badges
+      - name: Export registry labels
+        if: always()
+        run: python -c "from mace_core.model_registry import export_registry; export_registry('.pytest_cache/registry-badges/registry.json')"
+      - name: Upload native support matrix
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: foundation-registry-badges
+          path: .pytest_cache/registry-badges
+          include-hidden-files: true
+          if-no-files-found: error
 
   workflows-full:
     runs-on: ubuntu-latest

@@ -175,11 +175,14 @@ def load_deployed(
     catalogue: ObservableCatalogue | None = None,
     precision: PrecisionConfig | None = None,
     solver: str | None = None,
+    tensors_path: str | Path | None = None,
 ) -> DeployedModel:
     """Rebuild a model from a v1 checkpoint.
 
     Args:
         path: Either file of the checkpoint pair, weights or record.
+        tensors_path: Explicit weights file when the cache gives the two
+            members different stems. The manifest is still validated.
         device: Where the model is put.
         catalogue: The observables it may declare. The default catalogue
             unless a model declares others.
@@ -256,7 +259,7 @@ def load_deployed(
         built.append(outputs)
         return engine
 
-    engine = load_checkpoint(path, build).to(device)
+    engine = load_checkpoint(path, build, tensors_path=tensors_path).to(device)
     engine.eval()
     _check_recorded_solve(engine.get_submodule("backbone"), metadata, path)
     return DeployedModel(

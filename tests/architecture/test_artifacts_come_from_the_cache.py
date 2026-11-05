@@ -91,3 +91,6 @@ def test_wheels_ship_no_model_artifact(tmp_path, package):
     with ZipFile(wheel) as archive:
         assert not [name for name in archive.namelist()
                     if _is_model(name, lambda: archive.read(name))]
+        if package == "mace-core":
+            registry = "mace_core/model_registry.json"
+            assert archive.read(registry) == (PACKAGES / package / "src" / registry).read_bytes()

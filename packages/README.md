@@ -17,7 +17,7 @@ in the tree as a frozen numerical oracle until it is retired.
 data layer, the declared observables, the Clebsch-Gordan basis, the kernel and
 solver contracts, and the metadata a model carries. `mace_torch` is the full
 implementation: models, training, deployment. `mace_jax` is inference only and
-is still empty. [Navigating the tree](#navigating-the-tree) says what is in
+covers three foundation architectures. [Navigating the tree](#navigating-the-tree) says what is in
 every file.
 
 ## Names
@@ -337,6 +337,8 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/weights/neutral_format.py` | safetensors for the numbers and JSON for their meaning. |
 
 | `mace_core/artifacts.py` | Artifact directories, sidecars and versioned filenames. |
+| `mace_core/model_registry.py` | Foundation identities, alias warnings, metadata queries and docs export, without frameworks. |
+| `mace_core/model_registry.json` | Canonical roster, licenses, scope, hyperparameters and pending native publication references. |
 | `mace_core/config/cli.py` | Typed command-line overrides for the nested configuration. |
 | `mace_core/graph/__init__.py` | Public graph schema, construction, collation and padding API. |
 | `mace_core/graph/build.py` | Build graph samples from configurations and a resolved neighbour backend. |
@@ -367,6 +369,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/backends/precision.py` | A backend whose ops are built at the precision configured for each, with casts at the boundary of those that differ. |
 | `mace_torch/calculators/__init__.py` | The calculators, re-exported. |
 | `mace_torch/calculators/ase_calculator.py` | `MACECalculator` for ASE: results, committees, Hessian, units. |
+| `mace_torch/calculators/foundations.py` | Five native foundation loaders, shared registry resolution and MP dispersion options. |
 | `mace_torch/calculators/padding.py` | Padding a batch to a fixed size for compiled GPU runs, and cutting it back. |
 | `mace_torch/cli/__init__.py` | Console entry points only. |
 | `mace_torch/cli/commands.py` | `mace train` and `mace model export-config`, declared for the `mace` program. |
@@ -407,6 +410,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/electrostatics/solver.py` | The reference solver, the shared geometry, and resolving a solver once. |
 | `mace_torch/finetune/__init__.py` | Fine-tuning, re-exported. |
 | `mace_torch/finetune/extend.py` | Adding elements to a trained model: rows carried, new rows from a written spec. |
+| `mace_torch/finetune/readouts.py` | Add initialized readouts while preserving every compatible trained operator. |
 | `mace_torch/finetune/foundation.py` | What a run reads from its foundation model. |
 | `mace_torch/finetune/freeze.py` | Freezing parameter groups up to a level. |
 | `mace_torch/finetune/lora.py` | Low-rank adapters in place of the weights they adapt. |

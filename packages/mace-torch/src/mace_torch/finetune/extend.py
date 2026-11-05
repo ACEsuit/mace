@@ -41,7 +41,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from ase.data import chemical_symbols
 from mace_core.data.backend import DatasetStatistics
@@ -59,6 +59,9 @@ from torch import Tensor
 
 from mace_torch import __version__
 from mace_torch.serialization import canonical_state, load_canonical_state
+
+if TYPE_CHECKING:
+    from mace_torch.deploy.loader import DeployedModel
 
 __all__ = ["ElementExtensionError", "NewSpeciesInit", "extend_elements"]
 
@@ -92,7 +95,7 @@ class NewSpeciesInit:
 
 
 def extend_elements(
-    path: str | Path,
+    path: str | Path | DeployedModel,
     output: str | Path,
     e0s: Mapping[str, Mapping[int, float]],
     init: NewSpeciesInit | None = None,
@@ -119,12 +122,17 @@ def extend_elements(
             give different elements or miss one, a donor is missing or unknown,
             or a per-element tensor has no rule here.
     """
-    from mace_torch.deploy.loader import load_deployed
+    from mace_torch.deploy.loader import DeployedModel, load_deployed
     from mace_torch.train.checkpoint import write_model
     from mace_torch.train.model_stage import build_model
 
     init = init or NewSpeciesInit()
-    parent = load_deployed(path, catalogue=catalogue)
+    parent = (
+        path
+        if isinstance(path, DeployedModel)
+        else load_deployed(path, catalogue=catalogue)
+    )
+    catalogue = parent.config.catalogue or catalogue
     added = _added_elements(e0s, parent.heads, parent.z_table)
     if init.kind == "copy":
         _check_donors(init, added, parent.z_table)
@@ -143,6 +151,7 @@ def extend_elements(
         heads=parent.heads,
         e0s=ResolvedE0s(energies),
         statistics=DatasetStatistics(avg_num_neighbors=1.0),
+        precision=parent.config.precision,
         initialize=True,
     )
     model = engine.get_submodule("backbone")
@@ -154,7 +163,9 @@ def extend_elements(
         init,
     )
     load_canonical_state(model, state)
-    return write_model(output, engine, _metadata(parent, energies, added, init, path))
+    return write_model(
+        output, engine, _metadata(parent, energies, added, init, parent.path)
+    )
 
 
 def _added_elements(

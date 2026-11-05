@@ -228,3 +228,45 @@ for name in ("torch","mace","mace_torch","e3nn","e3nn_jax"):
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("fault", [None, "model", "heads", "elements"])
+def test_named_artifact_uses_core_identity_and_checks_its_metadata(monkeypatch, fault):
+    from mace_core import model_registry
+    from mace_core.artifacts import ArtifactRef, CheckpointFiles
+    from mace_core.metadata import ModelMetadata
+    from mace_jax.deploy import neutral_io
+    from mace_jax.models.registry import SUPPORTED_MODELS
+
+    metadata = ModelMetadata.from_json(
+        json.dumps(json.loads(TINY.read_text())["config"])
+    )
+    if fault == "model":
+        metadata.config.resolved["model"]["num_channels"] += 1
+    elif fault == "heads":
+        metadata.heads = {"wrong_head": next(iter(metadata.heads.values()))}
+    elif fault == "elements":
+        metadata.elements = metadata.elements[:-1]
+    entry = model_registry.get_model("mace-mp-0-small").model_copy(
+        update={
+            "artifact_ref": ArtifactRef(url="https://models.example/test.json"),
+            "metadata": metadata,
+        }
+    )
+    monkeypatch.setattr(model_registry, "_entries", lambda: (entry,))
+    requests = []
+
+    def resolve(reference):
+        requests.append(reference)
+        return CheckpointFiles(TINY, TINY.with_suffix(".safetensors"))
+
+    monkeypatch.setattr(neutral_io, "resolve_checkpoint", resolve)
+    assert entry.artifact_ref is not None
+    assert SUPPORTED_MODELS[entry.model_id].artifact_ref == entry.artifact_ref.url
+    if fault:
+        with pytest.raises(ModelLoadError, match="disagree with registry"):
+            load_model(entry.model_id)
+    else:
+        apply, _ = load_model(entry.model_id)
+        assert apply.config.model == entry.hyperparameters()
+    assert requests == [entry.artifact_ref.url]

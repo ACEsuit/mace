@@ -141,6 +141,9 @@ def test_no_packages_file_names_a_legacy_symbol():
         input_adapter = path.relative_to(PACKAGES).as_posix() in {
             "mace-torch/src/mace_torch/cli/legacy_flags.py",
             "mace-torch/src/mace_torch/cli/training_config.py",
+            # FM-3 consumes the released model_type input tokens. Imports,
+            # attributes and class definitions remain forbidden here too.
+            "mace-torch/src/mace_torch/calculators/foundations.py",
         }
         hits = names_used(
             path.read_text(encoding="utf-8"), input_tokens=input_adapter

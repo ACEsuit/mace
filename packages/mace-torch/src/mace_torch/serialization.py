@@ -284,12 +284,17 @@ def read_sidecar(path: str | Path) -> dict[str, Any]:
 
 
 def load_checkpoint(
-    path: str | Path, build: Callable[[dict[str, Any]], Model]
+    path: str | Path,
+    build: Callable[[dict[str, Any]], Model],
+    *,
+    tensors_path: str | Path | None = None,
 ) -> Model:
     """Rebuild a model and put its weights back.
 
     Args:
         path: Either half of the pair; the suffix is replaced as needed.
+        tensors_path: Explicit cached tensor file when URL digests give the
+            two checkpoint files different local stems.
         build: Turns the sidecar's ``config`` into an empty model. The format
             does not know what a configuration means, so the caller says.
 
@@ -304,7 +309,7 @@ def load_checkpoint(
     document = read_sidecar(_refuse_pickle(path))
     model = build(dict(document["config"]))
     check_layout(model, document.get("layout", {}))
-    load_canonical_state(model, read_canonical_state(path))
+    load_canonical_state(model, read_canonical_state(path, tensors_path=tensors_path))
     return model
 
 
@@ -319,7 +324,9 @@ def _refuse_pickle(path: str | Path) -> Path:
     return source
 
 
-def read_canonical_state(path: str | Path) -> dict[str, dict[str, Tensor]]:
+def read_canonical_state(
+    path: str | Path, *, tensors_path: str | Path | None = None
+) -> dict[str, dict[str, Tensor]]:
     """The tensors of a checkpoint, by operator, checked against the sidecar.
 
     For a caller that already holds a model and wants a written state back in
@@ -331,7 +338,7 @@ def read_canonical_state(path: str | Path) -> dict[str, dict[str, Tensor]]:
     """
     source = _refuse_pickle(path)
     document = read_sidecar(source)
-    flat = load_file(str(source.with_suffix(".safetensors")))
+    flat = load_file(str(tensors_path or source.with_suffix(".safetensors")))
 
     declared = {
         f"{entry['module']}{_SEPARATOR}{entry['name']}" for entry in document["tensors"]

@@ -1,0 +1,4008 @@
+[
+  {
+    "model_id": "mace-mp-0-small",
+    "family": "mace_mp",
+    "aliases": [
+      "small"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e",
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            }
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-small. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "mp_small_e3nn_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "mp_small_e3nn_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0-small.json"
+  },
+  {
+    "model_id": "mace-mp-0-medium",
+    "family": "mace_mp",
+    "aliases": [
+      "medium"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            }
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-medium. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_medium_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_medium_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0-medium.json"
+  },
+  {
+    "model_id": "mace-mp-0-large",
+    "family": "mace_mp",
+    "aliases": [
+      "large"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "r_max": 4.5,
+            "num_channels": 256
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-large. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_large_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_large_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0-large.json"
+  },
+  {
+    "model_id": "mace-mp-0b-small",
+    "family": "mace_mp",
+    "aliases": [
+      "small-0b"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "plain"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-small-0b. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_small_0b_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_small_0b_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0b-small.json"
+  },
+  {
+    "model_id": "mace-mp-0b-medium",
+    "family": "mace_mp",
+    "aliases": [
+      "medium-0b"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "plain"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-medium-0b. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_medium_0b_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_medium_0b_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0b-medium.json"
+  },
+  {
+    "model_id": "mace-mp-0b2-small",
+    "family": "mace_mp",
+    "aliases": [
+      "small-0b2"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e",
+            "pair_repulsion": true,
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-small-0b2. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_small_0b2_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_small_0b2_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0b2-small.json"
+  },
+  {
+    "model_id": "mace-mp-0b2-medium",
+    "family": "mace_mp",
+    "aliases": [
+      "medium-0b2"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-medium-0b2. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_medium_0b2_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_medium_0b2_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0b2-medium.json"
+  },
+  {
+    "model_id": "mace-mp-0b2-large",
+    "family": "mace_mp",
+    "aliases": [
+      "large-0b2"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o+2e",
+            "pair_repulsion": true,
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-large-0b2. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_large_0b2_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_large_0b2_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0b2-large.json"
+  },
+  {
+    "model_id": "mace-mp-0b3-medium",
+    "family": "mace_mp",
+    "aliases": [
+      "medium-0b3"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-medium-0b3. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_medium_0b3_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_medium_0b3_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mp-0b3-medium.json"
+  },
+  {
+    "model_id": "mace-mpa-0-medium",
+    "family": "mace_mp",
+    "aliases": [
+      "medium-mpa-0"
+    ],
+    "default": true,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "MIT",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U; preserve the published training reference",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-medium-mpa-0. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "mpa0_medium_e3nn_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "mpa0_medium_e3nn_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mpa-0-medium.json"
+  },
+  {
+    "model_id": "mace-omat-0-small",
+    "family": "mace_mp",
+    "aliases": [
+      "small-omat-0"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U, VASP 54 (OMAT)",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "omat_pbe": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-small-omat-0. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_small_omat_0_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_small_omat_0_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-omat-0-small.json"
+  },
+  {
+    "model_id": "mace-omat-0-medium",
+    "family": "mace_mp",
+    "aliases": [
+      "medium-omat-0"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE+U, VASP 54 (OMAT)",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-medium-omat-0. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_medium_omat_0_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_medium_omat_0_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-omat-0-medium.json"
+  },
+  {
+    "model_id": "mace-matpes-pbe-0-medium",
+    "family": "mace_mp",
+    "aliases": [
+      "mace-matpes-pbe-0"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT PBE without +U (MATPES)",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-mace-matpes-pbe-0. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_mace_matpes_pbe_0_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_mace_matpes_pbe_0_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-matpes-pbe-0-medium.json"
+  },
+  {
+    "model_id": "mace-matpes-r2scan-0-medium",
+    "family": "mace_mp",
+    "aliases": [
+      "mace-matpes-r2scan-0"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Materials within the artifact element table",
+      "level_of_theory": "DFT r2SCAN (MATPES)",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "A foundation model for atomistic materials chemistry",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2401.00096"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-mace-matpes-r2scan-0. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_mp_mace_matpes_r2scan_0_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_mp_mace_matpes_r2scan_0_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-matpes-r2scan-0-medium.json"
+  },
+  {
+    "model_id": "mace-mh-0",
+    "family": "mace_mp",
+    "aliases": [
+      "mh-0"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Inorganic crystals, molecules and surfaces",
+      "level_of_theory": "Head-dependent PBE, r2SCAN or molecular hybrid DFT",
+      "limitations": "Select a head explicitly; heads represent different training references.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "interaction_first": "density",
+            "interaction": "density_residual"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "rgd1_b3lyp": {},
+        "matpes_r2scan": {},
+        "mp_pbe_refit_add": {},
+        "omol": {},
+        "spice_wB97M": {},
+        "oc20_usemppbe": {},
+        "omat_pbe": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "Cross Learning between Electronic Structure Theories for Unifying Molecular, Surface, and Inorganic Crystal Foundation Force Fields",
+          "year": 2025,
+          "doi": "10.48550/arXiv.2510.25380"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-mh-0. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "mh_0_e3nn_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "mh_0_e3nn_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mh-0.json"
+  },
+  {
+    "model_id": "mace-mh-1",
+    "family": "mace_mp",
+    "aliases": [
+      "mh-1"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Inorganic crystals, molecules and surfaces",
+      "level_of_theory": "Head-dependent PBE, r2SCAN or molecular hybrid DFT",
+      "limitations": "Select a head explicitly; heads represent different training references.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "pair_repulsion": true,
+            "r_max": 6.0,
+            "num_channels": 512,
+            "radial_basis": {
+              "kind": "bessel",
+              "num_basis": 10,
+              "trainable": false
+            },
+            "distance_transform": {
+              "kind": "agnesi",
+              "exponent_q": 0.9183,
+              "exponent_p": 4.5791,
+              "amplitude": 1.0805,
+              "trainable": false
+            },
+            "apply_cutoff": false,
+            "interaction_first": "nonlinear",
+            "interaction": "nonlinear",
+            "edge_irreps": "128x0e+128x1o",
+            "use_edge_irreps_first": true,
+            "use_agnostic_product": true
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "matpes_r2scan": {},
+        "mp_pbe_refit_add": {},
+        "spice_wB97M": {},
+        "oc20_usemppbe": {},
+        "omol": {},
+        "omat_pbe": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "Cross Learning between Electronic Structure Theories for Unifying Molecular, Surface, and Inorganic Crystal Foundation Force Fields",
+          "year": 2025,
+          "doi": "10.48550/arXiv.2510.25380"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mp-mh-1. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "mh_1_e3nn_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "mh_1_e3nn_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mh-1.json"
+  },
+  {
+    "model_id": "mace-off23-small",
+    "family": "mace_off",
+    "aliases": [
+      "small"
+    ],
+    "default": false,
+    "default_dtype": "float64",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-off"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Organic molecules and molecular materials",
+      "level_of_theory": "Molecular hybrid DFT (OFF23)",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-off"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e",
+            "r_max": 4.5,
+            "num_channels": 96,
+            "interaction_first": "plain"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "MACE-OFF23: Transferable Machine Learning Force Fields for Organic Molecules",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2312.15211"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of off-small. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        6,
+        7,
+        8,
+        9,
+        15,
+        16,
+        17,
+        35,
+        53
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "off_small_e3nn_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "off_small_e3nn_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-off23-small.json"
+  },
+  {
+    "model_id": "mace-off23-medium",
+    "family": "mace_off",
+    "aliases": [
+      "medium"
+    ],
+    "default": true,
+    "default_dtype": "float64",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-off"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Organic molecules and molecular materials",
+      "level_of_theory": "Molecular hybrid DFT (OFF23)",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-off"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "interaction_first": "plain"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "MACE-OFF23: Transferable Machine Learning Force Fields for Organic Molecules",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2312.15211"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of off-medium. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        6,
+        7,
+        8,
+        9,
+        15,
+        16,
+        17,
+        35,
+        53
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "off_medium_e3nn_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "off_medium_e3nn_cpu_fp64.json",
+      "off_medium_periodic_e3nn_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-off23-medium.json"
+  },
+  {
+    "model_id": "mace-off23-large",
+    "family": "mace_off",
+    "aliases": [
+      "large"
+    ],
+    "default": false,
+    "default_dtype": "float64",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-off"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Organic molecules and molecular materials",
+      "level_of_theory": "Molecular hybrid DFT (OFF23)",
+      "limitations": "Validate the intended chemistry; precision defaults do not establish numerical accuracy.",
+      "source": "https://github.com/ACEsuit/mace-off"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o+2e",
+            "num_channels": 224,
+            "interaction_first": "plain"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "MACE-OFF23: Transferable Machine Learning Force Fields for Organic Molecules",
+          "year": 2023,
+          "url": "https://arxiv.org/abs/2312.15211"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of off-large. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        6,
+        7,
+        8,
+        9,
+        15,
+        16,
+        17,
+        35,
+        53
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_off_large_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_off_large_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-off23-large.json"
+  },
+  {
+    "model_id": "mace-omol-0-extra-large",
+    "family": "mace_omol",
+    "aliases": [
+      "extra_large"
+    ],
+    "default": true,
+    "default_dtype": "float64",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Molecules with charge and spin inputs",
+      "level_of_theory": "DFT wB97M-V/def2-TZVPD (OMol25)",
+      "limitations": "The loader selects head omol; supply the artifact charge and spin inputs.",
+      "source": "https://github.com/ACEsuit/mace-foundations"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o+2e",
+            "readout": {
+              "mlp_irreps": "16x0e",
+              "gate": "silu",
+              "last_only": true,
+              "from_embedding": true,
+              "bias": true
+            },
+            "graph_features": [
+              {
+                "name": "total_spin",
+                "kind": "categorical",
+                "embedding_dim": 1024,
+                "num_classes": 101,
+                "input_dim": 1,
+                "per": "graph",
+                "offset": 0,
+                "use_bias": true
+              },
+              {
+                "name": "total_charge",
+                "kind": "categorical",
+                "embedding_dim": 1024,
+                "num_classes": 201,
+                "input_dim": 1,
+                "per": "graph",
+                "offset": 100,
+                "use_bias": true
+              }
+            ],
+            "r_max": 6.0,
+            "num_interactions": 3,
+            "num_channels": 1024,
+            "correlation": 2,
+            "apply_cutoff": false,
+            "radial_mlp": [
+              128,
+              128,
+              128
+            ],
+            "interaction_first": "nonlinear",
+            "interaction": "nonlinear",
+            "edge_irreps": "128x0e+128x1o+128x2e",
+            "use_agnostic_product": true
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "omol": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "Open Molecules 2025 (OMol25)",
+          "year": 2025,
+          "url": "https://arxiv.org/abs/2505.08762"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of omol. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "omol_e3nn_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "omol_e3nn_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-omol-0-extra-large.json"
+  },
+  {
+    "model_id": "mace-polar-1-small",
+    "family": "mace_polar",
+    "aliases": [
+      "polar-1-s"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations/releases/tag/mace_polar_1"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Molecular chemistry with long-range electrostatics",
+      "level_of_theory": "Hybrid DFT wB97M-V (OMol25)",
+      "limitations": "Supply charge, spin and field inputs; native cell derivatives retain the agreed Polar correction.",
+      "source": "https://github.com/ACEsuit/mace-foundations/releases/tag/mace_polar_1"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "model": "polar",
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e",
+            "polar": {
+              "multipole_max_l": 1,
+              "multipole_width": 1.5,
+              "feature_max_l": 1,
+              "feature_widths": [
+                1.5,
+                3.0
+              ],
+              "feature_norms": [
+                20.0,
+                20.0,
+                0.5,
+                0.5
+              ],
+              "num_recursion_steps": 2,
+              "feature_self_interaction": false,
+              "energy_self_interaction": true,
+              "add_local_electron_energy": true,
+              "quadrupole_feature_corrections": false,
+              "field_update": "embedded_one_body",
+              "field_readout": "one_body_mlp"
+            },
+            "r_max": 6.0,
+            "num_interactions": 1,
+            "num_channels": 512,
+            "apply_cutoff": false,
+            "interaction_first": "nonlinear",
+            "use_agnostic_product": true
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "Default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "MACE-POLAR-1: A Polarisable Electrostatic Foundation Model for Molecular Chemistry",
+          "year": 2026,
+          "doi": "10.48550/arXiv.2602.19411"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of polar-1-s. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "polar_foundation_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "polar_foundation_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-polar-1-small.json"
+  },
+  {
+    "model_id": "mace-polar-1-medium",
+    "family": "mace_polar",
+    "aliases": [
+      "polar-1-m"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations/releases/tag/mace_polar_1"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Molecular chemistry with long-range electrostatics",
+      "level_of_theory": "Hybrid DFT wB97M-V (OMol25)",
+      "limitations": "Supply charge, spin and field inputs; native cell derivatives retain the agreed Polar correction.",
+      "source": "https://github.com/ACEsuit/mace-foundations/releases/tag/mace_polar_1"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "model": "polar",
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o",
+            "readout": {
+              "mlp_irreps": "16x0e",
+              "gate": "silu",
+              "last_only": false,
+              "from_embedding": false,
+              "bias": true
+            },
+            "polar": {
+              "multipole_max_l": 1,
+              "multipole_width": 1.5,
+              "feature_max_l": 1,
+              "feature_widths": [
+                1.5,
+                3.0
+              ],
+              "feature_norms": [
+                20.0,
+                20.0,
+                0.5,
+                0.5
+              ],
+              "num_recursion_steps": 2,
+              "feature_self_interaction": false,
+              "energy_self_interaction": true,
+              "add_local_electron_energy": true,
+              "quadrupole_feature_corrections": false,
+              "field_update": "embedded_one_body",
+              "field_readout": "one_body_mlp"
+            },
+            "r_max": 6.0,
+            "num_channels": 512,
+            "apply_cutoff": false,
+            "interaction_first": "nonlinear",
+            "interaction": "nonlinear",
+            "edge_irreps": "128x0e+128x1o",
+            "use_agnostic_product": true
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "Default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "MACE-POLAR-1: A Polarisable Electrostatic Foundation Model for Molecular Chemistry",
+          "year": 2026,
+          "doi": "10.48550/arXiv.2602.19411"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of polar-1-m. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_polar_1_m_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_polar_1_m_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-polar-1-medium.json"
+  },
+  {
+    "model_id": "mace-polar-1-large",
+    "family": "mace_polar",
+    "aliases": [
+      "polar-1-l"
+    ],
+    "default": false,
+    "default_dtype": "float32",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/ACEsuit/mace-foundations/releases/tag/mace_polar_1"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Molecular chemistry with long-range electrostatics",
+      "level_of_theory": "Hybrid DFT wB97M-V (OMol25)",
+      "limitations": "Supply charge, spin and field inputs; native cell derivatives retain the agreed Polar correction.",
+      "source": "https://github.com/ACEsuit/mace-foundations/releases/tag/mace_polar_1"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "model": "polar",
+            "observables": [
+              "energy",
+              "forces",
+              "stress"
+            ],
+            "hidden_irreps": "0e+1o+2e",
+            "readout": {
+              "mlp_irreps": "16x0e",
+              "gate": "silu",
+              "last_only": false,
+              "from_embedding": false,
+              "bias": true
+            },
+            "polar": {
+              "multipole_max_l": 1,
+              "multipole_width": 1.5,
+              "feature_max_l": 1,
+              "feature_widths": [
+                1.5,
+                3.0
+              ],
+              "feature_norms": [
+                20.0,
+                20.0,
+                0.5,
+                0.5
+              ],
+              "num_recursion_steps": 2,
+              "feature_self_interaction": false,
+              "energy_self_interaction": true,
+              "add_local_electron_energy": true,
+              "quadrupole_feature_corrections": false,
+              "field_update": "embedded_one_body",
+              "field_readout": "one_body_mlp"
+            },
+            "r_max": 6.0,
+            "num_interactions": 3,
+            "num_channels": 512,
+            "apply_cutoff": false,
+            "interaction_first": "nonlinear",
+            "interaction": "nonlinear",
+            "edge_irreps": "128x0e+128x1o+128x2e",
+            "use_agnostic_product": true
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "Default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "MACE-POLAR-1: A Polarisable Electrostatic Foundation Model for Molecular Chemistry",
+          "year": 2026,
+          "doi": "10.48550/arXiv.2602.19411"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of polar-1-l. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "roster_polar_1_l_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "roster_polar_1_l_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-polar-1-large.json"
+  },
+  {
+    "model_id": "mace-mdp",
+    "family": "mace_mdp",
+    "aliases": [
+      "default"
+    ],
+    "default": true,
+    "default_dtype": "float64",
+    "artifact_ref": null,
+    "license": {
+      "identifier": "ASL",
+      "source": "https://github.com/Nilsgoe/MACE-MDP"
+    },
+    "status": "recommended",
+    "recommendation": {
+      "systems": "Organic molecules and materials",
+      "level_of_theory": "DFT wB97M-D3(BJ)/def2-TZVPP (SPICE-alpha)",
+      "limitations": "Dipole and polarizability only; no energy or forces.",
+      "source": "https://github.com/Nilsgoe/MACE-MDP"
+    },
+    "metadata": {
+      "config": {
+        "resolved": {
+          "model": {
+            "model": "dielectric",
+            "observables": [
+              "dipole",
+              "polarizability"
+            ],
+            "hidden_irreps": "0e+1o+2e",
+            "readout": {
+              "mlp_irreps": "16x0e+16x1o+16x2e",
+              "gate": "silu",
+              "last_only": false,
+              "from_embedding": false,
+              "bias": false
+            },
+            "interaction_first": "plain"
+          }
+        }
+      },
+      "provenance": {
+        "versions": {
+          "mace-torch-v1": "0.0.1.dev2184+gfff10e0c0.d20261102"
+        }
+      },
+      "heads": {
+        "Default": {}
+      },
+      "citations": [
+        {
+          "title": "MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields",
+          "authors": [
+            "Ilyes Batatia",
+            "David Peter Kovacs",
+            "Gregor N. C. Simm",
+            "Christoph Ortner",
+            "Gabor Csanyi"
+          ],
+          "venue": "Advances in Neural Information Processing Systems",
+          "year": 2022,
+          "url": "https://openreview.net/forum?id=YPpSngE-ZU"
+        },
+        {
+          "title": "MACE-MDP: A General Dipole and Polarizability Model for Organic Molecules and Materials",
+          "authors": [
+            "Nils Gönnheimer",
+            "Karsten Reuter",
+            "Venkat Kapil",
+            "Johannes T. Margraf"
+          ],
+          "year": 2026,
+          "doi": "10.26434/chemrxiv.15000716"
+        }
+      ],
+      "notes": "Native release candidate: publication and artifact DOI pending. V1 bundles no foundation artifact; a fresh cache downloads on first published load. Architecture summary of mdp. E0s remain in checkpoint tensors.",
+      "elements": [
+        1,
+        6,
+        7,
+        8,
+        9,
+        15,
+        16,
+        17,
+        35,
+        53
+      ],
+      "conversion": {
+        "projection_verified": true,
+        "reference": "mdp_foundation_cpu_fp64.json",
+        "golden_gate_passed": true
+      },
+      "schema_version": "1.2"
+    },
+    "golden_refs": [
+      "mdp_foundation_cpu_fp64.json"
+    ],
+    "badge_ref": "mace-mdp.json"
+  }
+]
