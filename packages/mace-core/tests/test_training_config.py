@@ -45,6 +45,7 @@ SECTIONS = (
     "training",
     "finetune",
     "electrostatics",
+    "fixed_point",
 )
 
 

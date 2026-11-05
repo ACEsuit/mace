@@ -34,6 +34,7 @@ from mace_core.clebsch_gordan.reduced_basis import (
     full_symmetric_tensor_product_basis,
     reduced_symmetric_tensor_product_basis,
 )
+from mace_core.config import FixedPointSpec
 from mace_core.config.legacy import LegacyFlagError, interaction_kind
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
@@ -45,6 +46,7 @@ from mace_core.kernels.canonical import (
     linear_weight_table,
 )
 from mace_core.metadata import (
+    BasisConversionRecord,
     ConfigRecord,
     HeadSummary,
     ModelMetadata,
@@ -60,6 +62,7 @@ from mace_torch.canonical import canonical_modules
 from mace_torch.electrostatics.reference.gto_utils import gto_basis_kspace_cutoff
 from mace_torch.models.heads import ObservableHead
 from mace_torch.physics import DerivativeEngine
+from mace_torch.physics.fixed_point import FixedPointDriver
 from mace_torch.serialization import canonical_state, load_canonical_state
 
 __all__ = [
@@ -75,6 +78,9 @@ _SPELLINGS = {
     "scale_shift": "scale_shift",
     "polar": "polar",
     "dielectric": "dielectric",
+    "dipole": "dipole",
+    "energy_dipole": "plain",
+    "magnetic": "magnetic",
 }
 
 
@@ -140,7 +146,7 @@ class ImportedModel:
         z_table: The elements, in the order of every per-element tensor.
     """
 
-    engine: DerivativeEngine
+    engine: DerivativeEngine | FixedPointDriver
     config: ResolvedConfig
     metadata: ModelMetadata
     heads: tuple[str, ...]
@@ -189,6 +195,13 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
     if family == "dielectric":
         _dielectric_settings(take, readout_class, refusals)
         readout_class = "NonLinearReadoutBlock"
+    if family in {"dipole", "energy_dipole"}:
+        if readout_class not in {
+            "NonLinearDipoleReadoutBlock",
+            "LinearDipoleReadoutBlock",
+        }:
+            refusals.append(f"unexpected dipole readout {readout_class}")
+        readout_class = "NonLinearReadoutBlock"
     # The frozen tree reads the class off the last readout, and a one-layer
     # model's only readout is the linear first-layer one.
     one_layer = int(recorded.get("num_interactions", 0)) == 1
@@ -224,8 +237,25 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
 
     transform = take("distance_transform")
     try:
-        interaction = interaction_kind(take("interaction_cls"))
-        interaction_first = interaction_kind(take("interaction_cls_first"))
+
+        def convert_interaction(name):
+            if family == "magnetic":
+                kinds = {
+                    (
+                        "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock"
+                    ): "plain",
+                    (
+                        "MagneticRealAgnosticResidueSpinOrbitCoupled"
+                        "DensityInteractionBlock"
+                    ): "residual",
+                }
+                if name not in kinds:
+                    raise NeutralImportError(f"unsupported magnetic interaction {name}")
+                return kinds[name]
+            return interaction_kind(name)
+
+        interaction = convert_interaction(take("interaction_cls"))
+        interaction_first = convert_interaction(take("interaction_cls_first"))
     except LegacyFlagError as error:
         raise NeutralImportError(str(error)) from error
     model = {
@@ -272,9 +302,90 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         # Neither builds anything, so the defaults stand in for them.
         model["interaction"] = "residual"
         model["readout"]["gate"] = "silu"
-    if family == "plain":
+    if family in {"dipole", "energy_dipole", "dielectric"}:
+        middle = Irreps.parse(model["readout"]["mlp_irreps"])
+        if not any(irrep.degree == 0 and irrep.parity == 1 for _, irrep in middle):
+            # V1 requires a scalar middle. The copy map fills this disconnected
+            # scalar with zeros; the source's vector gates are carried unchanged.
+            # Keep the original declaration in the neutral artifact.
+            model["readout"]["mlp_irreps"] = f"1x0e+{middle}"
+    if family in {"plain", "energy_dipole"}:
         model["scaling"] = "none"
+    if family == "dipole":
+        model["observables"] = ["dipole"]
+    elif family == "energy_dipole":
+        model["observables"] = [*_OBSERVABLES, "dipole"]
+    elif family == "magnetic":
+        if (model["interaction_first"], model["interaction"]) != ("plain", "residual"):
+            raise NeutralImportError(
+                "the magnetic backbone requires the spin-orbit first block "
+                "followed by its residual blocks"
+            )
+        required = {
+            "radial_mlp": [64, 64, 64],
+            "apply_cutoff": True,
+            "graph_features": [],
+            "edge_irreps": None,
+            "use_agnostic_product": False,
+            "use_edge_irreps_first": False,
+        }
+        for name, value in required.items():
+            if model[name] != value:
+                raise NeutralImportError(
+                    f"the magnetic model requires {name}={value!r}, got {model[name]!r}"
+                )
+        for name, value in {
+            "gate": "silu",
+            "last_only": False,
+            "from_embedding": False,
+            "bias": False,
+        }.items():
+            if model["readout"][name] != value:
+                raise NeutralImportError(
+                    f"the magnetic model requires readout.{name}={value!r}"
+                )
+        model["observables"] = [*_OBSERVABLES, "magforces"]
+        model["magnetic"] = {
+            "saturation": take("m_max"),
+            "lmax": take("max_m_ell"),
+            "num_basis": take("num_mag_radial_basis"),
+            "one_body": take("use_magmom_one_body"),
+        }
+        if "num_mag_radial_basis_one_body" in recorded:
+            model["magnetic"]["one_body_basis"] = take("num_mag_radial_basis_one_body")
     sections: dict[str, Any] = {}
+    if "fixed_point" in recorded:
+        if family != "magnetic":
+            raise NeutralImportError(
+                "a magnetic fixed-point wrapper requires the magnetic family"
+            )
+        settings = take("fixed_point")
+        expected = {
+            "n_scf_step",
+            "scf_tol",
+            "scf_step_size",
+            "scf_logging",
+            "use_scf",
+            "use_collinear",
+        }
+        if set(settings) != expected:
+            raise NeutralImportError(
+                f"fixed_point must record exactly {sorted(expected)}"
+            )
+        if any(
+            type(settings[name]) is not bool
+            for name in ("use_scf", "use_collinear", "scf_logging")
+        ):
+            raise NeutralImportError("fixed_point switches must be booleans")
+        if settings["use_scf"]:
+            sections["fixed_point"] = FixedPointSpec(
+                variable="magmom",
+                max_iter=settings["n_scf_step"],
+                tolerance=settings["scf_tol"],
+                step_size=settings["scf_step_size"],
+                collinear=settings["use_collinear"],
+                require_convergence=False,
+            )
     if family == "polar":
         model["polar"], sections["electrostatics"] = _polar_settings(take)
     unread = sorted(set(recorded) - read)
@@ -541,7 +652,7 @@ def _state(
     outputs = "backbone.outputs."
     ops = artifact.sidecar.ops
     state: dict[str, dict[str, Tensor]] = {}
-    dielectric: dict[str, dict[str, Tensor]] | None = None
+    responses: dict[str, dict[str, Tensor]] | None = None
     for path, tensors in expected.items():
         if path == f"{backbone}node_embedding":
             state[path] = _linear(artifact, "node_embedding", tensors)
@@ -563,7 +674,7 @@ def _state(
                         tensors["neighbours"].dtype
                     )
                 }
-            elif rest in {"body.linear_up", "body.linear"}:
+            elif rest in {"body.linear_up", "body.linear", "linear_up", "linear"}:
                 state[path] = _linear(
                     artifact, f"{source}.{rest.removeprefix('body.')}", tensors
                 )
@@ -576,6 +687,9 @@ def _state(
                 "body.density_mlp",
                 "radial_mlp",
                 "density_mlp",
+                "edge_weights",
+                "moment_weights",
+                "density",
             }:
                 op = f"{source}.{rest.removeprefix('body.').removesuffix('_mlp')}"
                 if ops[op].op_kind == "layer_norm_mlp":
@@ -606,7 +720,7 @@ def _state(
                 }
             else:
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
-        elif path == f"{backbone}radial_embedding.basis":
+        elif path in {f"{backbone}radial_embedding.basis", f"{backbone}radial.basis"}:
             state[path] = {
                 "frequencies": _as(
                     artifact.tensor("radial_basis", "weights"), tensors["frequencies"]
@@ -635,8 +749,13 @@ def _state(
             index, _, rest = path.removeprefix(f"{backbone}products.").partition(".")
             if rest == "contraction":
                 state[path] = _contraction(artifact, int(index), tensors)
-            elif rest == "linear":
-                state[path] = _linear(artifact, f"products.{index}.linear", tensors)
+            elif rest in {"linear", "linear_ori"}:
+                state[path] = _linear(artifact, f"products.{index}.{rest}", tensors)
+            elif rest == "moment_weights":
+                state[path] = {
+                    name: _as(artifact.tensor(f"products.{index}.{rest}", name), value)
+                    for name, value in tensors.items()
+                }
             else:
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
         elif path == f"{outputs}energy_head":
@@ -648,14 +767,26 @@ def _state(
             }
         elif path == f"{outputs}embedding_readout":
             state[path] = _linear(artifact, "embedding_readout", tensors)
-        elif path.removeprefix("backbone.") in ops and path.startswith("backbone."):
-            state[path] = _polar_op(artifact, operators[path], path, tensors)
-        elif path.startswith(f"{outputs}heads.") and artifact.sidecar.family == (
-            "dielectric"
+        elif (
+            artifact.sidecar.family == "polar"
+            and path.removeprefix("backbone.") in ops
+            and path.startswith("backbone.")
         ):
-            if dielectric is None:
-                dielectric = _dielectric_readouts(artifact, engine, expected)
-            state[path] = dielectric[path]
+            state[path] = _polar_op(artifact, operators[path], path, tensors)
+        elif path in {f"{backbone}moments", "backbone.one_body"}:
+            op = "moments" if path.endswith("moments") else "one_body"
+            state[path] = {
+                name: _as(artifact.tensor(op, name), value)
+                for name, value in tensors.items()
+            }
+        elif path.startswith(f"{outputs}heads.") and artifact.sidecar.family in {
+            "dielectric",
+            "dipole",
+            "energy_dipole",
+        }:
+            if responses is None:
+                responses = _response_readouts(artifact, engine, expected)
+            state[path] = responses[path]
         elif path.startswith(f"{outputs}heads.energy.readouts."):
             state[path] = _linear(
                 artifact,
@@ -775,6 +906,8 @@ def _copies(irreps: str) -> list[tuple[str, int]]:
 def _entries(artifact: NeutralArtifact, op: str) -> dict[tuple[int, int], float]:
     """A linear op's weight for each (output copy, input copy) it joins."""
     descriptor = artifact.sidecar.ops[op].descriptor
+    if not descriptor["irreps_in"] or not descriptor["irreps_out"]:
+        return {}
     weight = artifact.tensor(op, "weight").astype(np.float64)
     table = linear_weight_table(descriptor["irreps_in"], descriptor["irreps_out"])
     return {key: float(weight[index]) for key, index in table.items()}
@@ -848,18 +981,23 @@ def _gate_roles(artifact: NeutralArtifact, layer: int, gate):
     ]
 
 
-def _dielectric_readouts(
+def _response_readouts(
     artifact: NeutralArtifact, engine, expected: dict[str, dict[str, Tensor]]
 ) -> dict[str, dict[str, Tensor]]:
-    """Every head of the dielectric model, from the frozen tree's readouts.
+    """Every observable head, split from a shared response readout.
 
-    One of its readouts reads out all three quantities and slices them; v1
+    One legacy readout can emit several quantities and slice them; v1
     gives each its own head. A linear map joins each output copy to input
     copies independently, so each head takes the rows of the copies it reads.
     """
     state: dict[str, dict[str, Tensor]] = {}
     operators = canonical_modules(engine)
-    for name, sources in _DIELECTRIC_COPIES.items():
+    copies = {
+        "dielectric": _DIELECTRIC_COPIES,
+        "dipole": {"atomic_dipoles": [0]},
+        "energy_dipole": {"energy": [0], "dipole": [1]},
+    }
+    for name, sources in copies[artifact.sidecar.family].items():
         path = f"backbone.outputs.heads.{name}"
         head = cast(ObservableHead, operators[path])
         for position, layer in enumerate(head.reachable):
@@ -1020,7 +1158,9 @@ def import_neutral(
     _check_constants(artifact, config)
     load_canonical_state(engine, _state(artifact, engine))
     return ImportedModel(
-        engine=engine,
+        engine=FixedPointDriver(engine, config.fixed_point)
+        if config.fixed_point
+        else engine,
         config=config,
         metadata=_metadata(artifact, config, e0s),
         heads=heads,
@@ -1039,6 +1179,11 @@ def _metadata(
     return ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
         provenance=Provenance(versions={"mace-torch-v1": __version__}),
+        conversion=BasisConversionRecord(projection_verified=True)
+        if any(
+            op.clebsch_gordan_basis == "full" for op in artifact.sidecar.ops.values()
+        )
+        else None,
         heads={
             head: HeadSummary(
                 e0=e0_details(

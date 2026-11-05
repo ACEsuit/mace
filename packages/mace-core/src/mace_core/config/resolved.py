@@ -15,6 +15,7 @@ from mace_core.config.base import BaseConfig
 from mace_core.config.data import DataConfig
 from mace_core.config.e0s import FOUNDATION_E0_KINDS, E0sIsolatedAtoms
 from mace_core.config.electrostatics import ElectrostaticsConfig
+from mace_core.config.fixed_point import FixedPointSpec
 from mace_core.config.loss import LossConfig
 from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
@@ -142,6 +143,7 @@ class ResolvedConfig(BaseConfig):
         training: The optimizer, the schedule and the stages.
         finetune: The foundation model, reserved.
         electrostatics: The long-range solver, for the models that carry one.
+        fixed_point: Optional inference relaxation around the trained model.
     """
 
     model_config = BaseConfig.model_config | {"frozen": True}
@@ -156,6 +158,8 @@ class ResolvedConfig(BaseConfig):
     training: TrainingConfig = TrainingConfig()
     finetune: FinetuneConfig = FinetuneConfig()
     electrostatics: ElectrostaticsConfig = ElectrostaticsConfig()
+    #: Inference relaxation around the derivative engine; no additional model.
+    fixed_point: FixedPointSpec | None = None
 
     def schedule(self) -> tuple[StageConfig, ...]:
         """The stages this run goes through, with their loss weights filled in.

@@ -346,6 +346,10 @@ class MACECalculator(Calculator):
         self.has_energy = ENERGY_OBSERVABLE in self.observables
         self.magmom_key = magmom_key
         self.reads_moments = "magmom" in self.graph_inputs
+        if fixed_point is None:
+            fixed_point = first.config.fixed_point
+            if any(model.config.fixed_point != fixed_point for model in self.models):
+                raise ValueError("the committee disagrees on fixed-point inference")
         self.fixed_point = fixed_point
         if fixed_point is not None:
             if fixed_point.variable not in self.graph_inputs:
@@ -406,7 +410,8 @@ class MACECalculator(Calculator):
         ]
         if compile_mode is not None:
             self._engines = [
-                _compiled(model.engine, compile_mode) for model in self.models
+                _compiled(model.derivative_engine, compile_mode)
+                for model in self.models
             ]
         for model in self.models:
             for parameter in model.engine.parameters():
@@ -818,7 +823,7 @@ def _compiled(engine: nn.Module, mode: str) -> DerivativeEngine:
 
 def _derivative_engine(model: DeployedModel) -> DerivativeEngine:
     """The model's derivative engine, which a fixed point relaxes around."""
-    engine = model.engine
+    engine = model.derivative_engine
     assert isinstance(engine, DerivativeEngine)
     return engine
 

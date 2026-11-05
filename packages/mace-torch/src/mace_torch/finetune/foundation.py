@@ -213,7 +213,7 @@ def read_foundation(
     except DeployError as error:
         raise FoundationError(str(error)) from error
     return Foundation(
-        engine=deployed.engine,
+        engine=deployed.derivative_engine,
         config=deployed.config,
         metadata=deployed.metadata,
         z_table=deployed.z_table,

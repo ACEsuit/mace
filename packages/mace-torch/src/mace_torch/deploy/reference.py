@@ -29,7 +29,6 @@ from mace_core.elements import AtomicNumberTable
 from mace_torch.backends.reference import TORCH_DTYPES as DTYPES
 from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
-from mace_torch.physics import DerivativeEngine
 
 __all__ = [
     "REFERENCE_ATOL",
@@ -49,7 +48,18 @@ REFERENCE_ATOL = 1e-6
 REFERENCE_RTOL = 0.0
 
 #: The outputs compared, as the reference names them.
-QUANTITIES = ("energy", "forces", "stress")
+QUANTITIES = (
+    "energy",
+    "forces",
+    "stress",
+    "dipole",
+    "atomic_dipoles",
+    "polarizability",
+    "polarizability_sh",
+    "charges",
+    "magforces",
+    "equilibrated_magmom",
+)
 
 
 class ReferenceError(ValueError):
@@ -70,7 +80,7 @@ class Deviation:
 
     Attributes:
         fixture: The structure's name.
-        quantity: ``"energy"``, ``"forces"`` or ``"stress"``.
+        quantity: The output's name in the reference, one of ``QUANTITIES``.
         largest: The largest absolute difference, in the output's units.
         allowed: The bound at the element where the excess over the bound is
             largest: ``atol + rtol * |reference|``.
@@ -165,7 +175,7 @@ def read_reference(reference: str | Path, fixtures: str | Path) -> list[_Case]:
 
 
 def _evaluate(
-    engine: DerivativeEngine,
+    engine: torch.nn.Module,
     atoms: Atoms,
     *,
     z_table: AtomicNumberTable,
@@ -173,6 +183,7 @@ def _evaluate(
     head: int,
     graph_inputs: Sequence[str] = (),
     device: str = "cpu",
+    quantities: Sequence[str] = ("energy", "forces", "stress"),
 ) -> dict[str, np.ndarray]:
     cell = np.asarray(atoms.get_cell().array, dtype=np.float64)
     periodic = atoms.get_pbc()
@@ -182,7 +193,14 @@ def _evaluate(
         cell=cell,
         pbc=(bool(periodic[0]), bool(periodic[1]), bool(periodic[2])),
         properties={
-            name: atoms.info[name] for name in graph_inputs if name in atoms.info
+            name: value
+            for name in graph_inputs
+            if (
+                value := atoms.arrays.get(
+                    f"REF_{name}", atoms.arrays.get(name, atoms.info.get(name))
+                )
+            )
+            is not None
         },
     )
     graph = graph_from_configuration(
@@ -199,29 +217,37 @@ def _evaluate(
         key: value.to(device) if isinstance(value, torch.Tensor) else value
         for key, value in batch.graph.items()
     }
-    output = engine(flat, compute=("forces", "stress"))
+    compute = tuple(
+        name for name in quantities if name in {"forces", "stress", "magforces"}
+    )
+    output = engine(flat, compute=compute)
     values = {
-        "energy": output.total_energy.detach().reshape(()),
+        **{name: output.get(name) for name in output.names()},
+        "energy": output.total_energy.detach().reshape(())
+        if output.total_energy is not None
+        else None,
         "forces": output.forces.detach() if output.forces is not None else None,
         "stress": output.stress.detach().reshape(3, 3)
         if output.stress is not None
         else None,
     }
+    if "converged_magmom" in values:
+        values["equilibrated_magmom"] = values["converged_magmom"]
     return {
-        name: value.to(torch.float64).cpu().numpy()
+        name: value.detach().to(torch.float64).cpu().numpy()
         for name, value in values.items()
-        if value is not None
+        if isinstance(value, torch.Tensor)
     }
 
 
-def _float_dtype_of(engine: DerivativeEngine) -> str:
+def _float_dtype_of(engine: torch.nn.Module) -> str:
     """The name of the dtype the model computes in, which the batch is built at."""
     names = {dtype: name for name, dtype in DTYPES.items()}
     return names[next(engine.parameters()).dtype]
 
 
 def verify_against_reference(
-    engine: DerivativeEngine,
+    engine: torch.nn.Module,
     reference: str | Path,
     fixtures: str | Path,
     *,
@@ -235,8 +261,9 @@ def verify_against_reference(
 ) -> VerificationReport:
     """Evaluate the model on every structure of a reference and compare.
 
-    ``graph_inputs`` names the per-structure inputs the model reads, taken
-    from each structure's info or given their defaults, as the data path does.
+    ``graph_inputs`` names the per-structure or per-atom inputs the model reads,
+    taken from info or arrays (including the default REF_ keys), or given
+    their defaults, as the data path does.
     Each structure is batched at the dtype the model computes in and moved to
     ``device``, which is where the model has to be.
 
@@ -262,6 +289,7 @@ def verify_against_reference(
             head=head,
             graph_inputs=graph_inputs,
             device=device,
+            quantities=tuple(case.expected),
         )
         deviations.extend(_compare(case.name, got, case.expected, atol, rtol))
     if not deviations:

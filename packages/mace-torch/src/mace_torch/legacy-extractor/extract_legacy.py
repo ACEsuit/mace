@@ -49,29 +49,23 @@ SUPPORTED = {
     "MACE": "plain",
     "ScaleShiftMACE": "scale_shift",
     "AtomicDielectricMACE": "dielectric",
+    "AtomicDipolesMACE": "dipole",
+    "EnergyDipolesMACE": "energy_dipole",
+    "MagneticScaleShiftMACE": "magnetic",
+    "MagneticSCFMACE": "magnetic",
     "PolarMACE": "polar",
 }
 
-#: The classes refused by name, and what their conversion is waiting for. A
-#: magnetic model's energy blocks look convertible right up to the point where
-#: its magnetic-moment basis would be dropped.
+#: Known classes without an executable conversion target: LES remains assigned
+#: to ELEC-4, and the magnetic base implements no forward of its own.
 REFUSED = {
-    "AtomicDipolesMACE": (
-        "a dipole-only model, which v1 reads out through observable heads "
-        "rather than as a model class of its own"
-    ),
-    "EnergyDipolesMACE": (
-        "an energy and dipole model, which v1 reads out through observable "
-        "heads rather than as a model class of its own"
-    ),
     "MACELES": (
         "a latent Ewald summation model, which is not on the v1 architecture yet"
     ),
-    "MagneticMACE": "a magnetic model, which is not on the v1 architecture yet",
-    "MagneticScaleShiftMACE": (
-        "a magnetic model, which is not on the v1 architecture yet"
+    "MagneticMACE": (
+        "the magnetic base class whose forward raises NotImplementedError; "
+        "convert its executable MagneticScaleShiftMACE or MagneticSCFMACE instead"
     ),
-    "MagneticSCFMACE": "a magnetic model, which is not on the v1 architecture yet",
 }
 
 #: Interaction blocks whose weights this knows how to walk.
@@ -81,6 +75,8 @@ INTERACTIONS = (
     "RealAgnosticDensityInteractionBlock",
     "RealAgnosticDensityResidualInteractionBlock",
     "RealAgnosticResidualNonLinearInteractionBlock",
+    "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
+    "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
 )
 
 #: Readout blocks whose weights this knows how to walk.
@@ -90,6 +86,8 @@ READOUTS = (
     "NonLinearBiasReadoutBlock",
     "LinearDipolePolarReadoutBlock",
     "NonLinearDipolePolarReadoutBlock",
+    "LinearDipoleReadoutBlock",
+    "NonLinearDipoleReadoutBlock",
 )
 
 
@@ -148,13 +146,14 @@ def legacy_config(model) -> dict[str, Any]:
     """What the legacy package itself says it takes to rebuild the model.
 
     Read through the legacy package's own function, which is the authoritative
-    list. It refuses the plain energy class by its name alone, although every
-    field it reads exists on it, so that class is read through a view that
+    list. It refuses the plain energy and dipole classes by their names alone,
+    although their common fields exist, so those classes use a view that
     reports the scale-shift class's name and forwards every attribute. Some
     releases of that function read the scale-shift block without checking it
     exists, so the view offers the identity one, which is what the plain class
-    computes, and the two keys it produces are dropped afterwards: the plain
-    class has no scale and shift to record.
+    computes, and the two keys it produces are dropped afterwards: these
+    classes have no scale and shift to record. Response readout details are
+    read from the actual gate below.
     """
     # Typed loosely on purpose: the plain class is passed through a view that is
     # not a module, and the function reads only attributes.
@@ -162,7 +161,7 @@ def legacy_config(model) -> dict[str, Any]:
         "mace.tools.scripts_utils"
     ).extract_config_mace_model
     target = model
-    plain = type(model).__name__ == "MACE"
+    plain = type(model).__name__ in {"MACE", "AtomicDipolesMACE", "EnergyDipolesMACE"}
     if plain:
         torch = importlib.import_module("torch")
         identity = type(
@@ -186,15 +185,25 @@ def legacy_config(model) -> dict[str, Any]:
     if plain:
         for key in ("atomic_inter_scale", "atomic_inter_shift"):
             config.pop(key, None)
-    if type(model).__name__ == "AtomicDielectricMACE":
+    if type(model).__name__ in {
+        "AtomicDielectricMACE",
+        "AtomicDipolesMACE",
+        "EnergyDipolesMACE",
+    } and hasattr(model.readouts[-1], "equivariant_nonlin"):
         # The legacy reader hardcodes SiLU for this family. Read the actual
         # activation, including identity, from the trained readout instead.
         nonlinear = model.readouts[-1].equivariant_nonlin
         if hasattr(nonlinear, "_act_scalar"):
-            config["gate"] = nonlinear._act_scalar
+            config["gate"] = (
+                nonlinear._act_scalar
+                if len(nonlinear.irreps_scalars)
+                else nonlinear._act_gate
+            )
         else:
-            activation = nonlinear.act_scalars.acts[0]
+            activations = nonlinear.act_scalars.acts or nonlinear.act_gates.acts
+            activation = activations[0]
             config["gate"] = getattr(activation, "f", activation)
+        config["MLP_irreps"] = model.readouts[-1].hidden_irreps
     if type(model).__name__ == "PolarMACE":
         # The cutoff the forward sums to, which is not always what the recorded
         # factor gives: the published models hold the cutoff of a factor of one
@@ -630,7 +639,7 @@ def walk(model, spelling: str) -> Walk:
             "atomic_energies",
             {"values": numpy.atleast_2d(energies).astype(numpy.float64)},
         )
-    if spelling in ("scale_shift", "polar"):
+    if spelling in ("scale_shift", "polar", "magnetic"):
         walker.use("scale_shift.scale", "scale_shift.shift")
         walker.op(
             "energy.scale_shift",
@@ -666,37 +675,18 @@ def walk(model, spelling: str) -> Walk:
             },
         )
         walker.linear(f"{prefix}.linear_up", block.linear_up, f"{prefix}.linear_up")
-        layers = {}
-        widths = list(block.conv_tp_weights.hs)
-        activation = None
-        for layer in range(len(widths) - 1):
-            module = getattr(block.conv_tp_weights, f"layer{layer}")
-            walker.use(f"{prefix}.conv_tp_weights.layer{layer}.weight")
-            layers[f"layer_{layer}"] = module.weight.detach().cpu().numpy()
-            act = getattr(module, "act", None)
-            if act is not None:
-                activation = getattr(act, "f", act).__name__
-        walker.op(
+        if spelling == "magnetic":
+            walk_magnetic_interaction(walker, block, prefix)
+            continue
+        walk_radial(
+            walker,
             f"{prefix}.radial",
-            "radial_mlp",
-            layers,
-            descriptor={"widths": widths, "activation": activation},
+            block.conv_tp_weights,
+            f"{prefix}.conv_tp_weights",
         )
         density = getattr(block, "density_fn", None)
         if density is not None:
-            density_widths = list(density.hs)
-            density_layers = {}
-            for layer in range(len(density_widths) - 1):
-                walker.use(f"{prefix}.density_fn.layer{layer}.weight")
-                density_layers[f"layer_{layer}"] = (
-                    getattr(density, f"layer{layer}").weight.detach().cpu().numpy()
-                )
-            walker.op(
-                f"{prefix}.density",
-                "radial_mlp",
-                density_layers,
-                descriptor={"widths": density_widths, "activation": None},
-            )
+            walk_radial(walker, f"{prefix}.density", density, f"{prefix}.density_fn")
         for key in list(walker.state):
             if key.startswith(f"{prefix}.conv_tp."):
                 walker.derive(
@@ -723,7 +713,10 @@ def walk(model, spelling: str) -> Walk:
         prefix = f"products.{index}"
         contractions = product.symmetric_contractions
         irreps_in = channel_irreps(contractions.irreps_in)
-        targets = [str(irrep) for _, irrep in product.linear.irreps_in]
+        contraction_linear = (
+            product.linear_ori if spelling == "magnetic" else product.linear
+        )
+        targets = [str(irrep) for _, irrep in contraction_linear.irreps_in]
         for position, (target, contraction) in enumerate(
             zip(targets, contractions.contractions, strict=True)
         ):
@@ -769,6 +762,17 @@ def walk(model, spelling: str) -> Walk:
                 },
             )
         walker.linear(f"{prefix}.linear", product.linear, f"{prefix}.linear")
+        if spelling == "magnetic":
+            walker.linear(
+                f"{prefix}.linear_ori", product.linear_ori, f"{prefix}.linear_ori"
+            )
+            walk_radial(
+                walker,
+                f"{prefix}.moment_weights",
+                product.conv_tp_weights,
+                f"{prefix}.conv_tp_weights",
+            )
+            derived_tensor_product(walker, f"{prefix}.conv_tp.")
 
     if hasattr(model, "joint_embedding"):
         tensors = {}
@@ -791,10 +795,14 @@ def walk(model, spelling: str) -> Walk:
                 f"readout {index} is a {kind}, whose weights this converter does "
                 f"not map. It maps {list(READOUTS)}."
             )
-        if kind in ("LinearReadoutBlock", "LinearDipolePolarReadoutBlock"):
+        if kind in (
+            "LinearReadoutBlock",
+            "LinearDipolePolarReadoutBlock",
+            "LinearDipoleReadoutBlock",
+        ):
             walker.linear(prefix, readout.linear, f"{prefix}.linear")
             continue
-        if kind == "NonLinearDipolePolarReadoutBlock":
+        if kind in ("NonLinearDipolePolarReadoutBlock", "NonLinearDipoleReadoutBlock"):
             dipole_polar_readout(walker, readout, prefix)
             continue
         walker.linear(f"{prefix}.first", readout.linear_1, f"{prefix}.linear_1")
@@ -810,7 +818,108 @@ def walk(model, spelling: str) -> Walk:
         walk_polar(walker, model)
     if spelling == "dielectric":
         walk_dielectric(walker, model)
+    if spelling == "magnetic":
+        torch = importlib.import_module("torch")
+        for name in ("mag_radial_embedding", "one_body_cheb_basis_with_const"):
+            if hasattr(model, name):
+                basis = getattr(model, name)
+                first = 0 if name == "one_body_cheb_basis_with_const" else 1
+                expected = torch.arange(first, first + basis.num_basis).to(basis.n)
+                if not torch.equal(basis.n.reshape(-1), expected):
+                    raise ExtractionError(
+                        f"{name}.n differs from the canonical Chebyshev orders"
+                    )
+                walker.derive(
+                    f"{name}.n",
+                    "Chebyshev orders, validated against the configured basis",
+                )
+        walker.use("m_max")
+        walker.op(
+            "moments",
+            "magnetic_moments",
+            {"saturation": model.m_max.detach().cpu().numpy()},
+        )
+        if model.use_magmom_one_body:
+            names = {
+                "coefficients": "onebody_magmombasis_coeffs",
+                "offset": "one_body_magmom_const_correction",
+            }
+            walker.use(*names.values())
+            walker.op(
+                "one_body",
+                "one_body_moment",
+                {
+                    name: getattr(model, source).detach().cpu().numpy()
+                    for name, source in names.items()
+                },
+            )
     return walker
+
+
+def walk_radial(walker: Walk, name: str, module, source: str) -> None:
+    """A legacy fully-connected radial network, with its recorded activation."""
+    layers = {}
+    activation = None
+    for index in range(len(module.hs) - 1):
+        layer = getattr(module, f"layer{index}")
+        walker.use(f"{source}.layer{index}.weight")
+        layers[f"layer_{index}"] = layer.weight.detach().cpu().numpy()
+        act = getattr(layer, "act", None)
+        if act is not None:
+            activation = getattr(act, "f", act).__name__
+    walker.op(
+        name,
+        "radial_mlp",
+        layers,
+        descriptor={"widths": list(module.hs), "activation": activation},
+    )
+
+
+def derived_tensor_product(walker: Walk, prefix: str) -> None:
+    """Only weightless coupling buffers may be reconstructed from the irreps."""
+    for key in walker.state:
+        if key.startswith(prefix):
+            relative = key.removeprefix(prefix)
+            if relative not in {"weight", "output_mask"} and not relative.startswith(
+                "_compiled_main_left_right._w3j_"
+            ):
+                raise ExtractionError(f"unaccounted tensor-product buffer {key}")
+            if key.endswith(".weight") and walker.state[key].numel():
+                raise ExtractionError(
+                    f"{key} has weights in a supposedly weightless tensor product"
+                )
+            walker.derive(
+                key, "weightless tensor product; coefficients rebuilt from the irreps"
+            )
+
+
+def walk_magnetic_interaction(walker: Walk, block, prefix: str) -> None:
+    """The edge and moment networks and the element-conditioned skip."""
+    for name, source in (
+        ("edge_weights", "conv_tp_weights"),
+        ("moment_weights", "conv_tp_weights_magmom"),
+        ("density", "density_fn"),
+    ):
+        walk_radial(
+            walker, f"{prefix}.{name}", getattr(block, source), f"{prefix}.{source}"
+        )
+    walker.linear(f"{prefix}.linear", block.magmom_linear, f"{prefix}.magmom_linear")
+    source = "skip_tp" if hasattr(block, "skip_tp") else "magmom_skip_tp"
+    skip = getattr(block, source)
+    walker.use(f"{prefix}.{source}.weight")
+    walker.derive(f"{prefix}.{source}.output_mask", "rebuilt from the irreps")
+    walker.op(
+        f"{prefix}.skip",
+        "element_linear",
+        {"weight": skip_to_canonical(skip)},
+        descriptor={
+            "irreps_in": str(skip.irreps_in1),
+            "irreps_out": str(skip.irreps_out),
+            "num_elements": int(skip.irreps_in2.dim),
+        },
+    )
+    for name in ("conv_tp", "magmom_conv_tp"):
+        derived_tensor_product(walker, f"{prefix}.{name}.")
 
 
 def dipole_polar_readout(walker: Walk, readout, prefix: str) -> None:
@@ -1008,8 +1117,41 @@ def extract(source: Path, output: Path) -> Path:
         The sidecar's path.
     """
     model = load(source)
+    source_class = type(model).__name__
     spelling = classify(model)
+    fixed_point = None
+    if source_class == "MagneticSCFMACE":
+        wrapped = model.magmom_mace
+        if (
+            classify(wrapped) != "magnetic"
+            or type(wrapped).__name__ != "MagneticScaleShiftMACE"
+        ):
+            raise ExtractionError("MagneticSCFMACE must wrap a MagneticScaleShiftMACE")
+        unknown = set(model.state_dict()) - {
+            f"magmom_mace.{key}" for key in wrapped.state_dict()
+        }
+        if unknown:
+            raise ExtractionError(f"unaccounted wrapper tensors: {sorted(unknown)}")
+        if model.cache_magmom is not None:
+            raise ExtractionError(
+                "clear MagneticSCFMACE.cache_magmom before conversion: runtime "
+                "warm-start state is not model configuration"
+            )
+        fixed_point = {
+            name: getattr(model, name)
+            for name in (
+                "n_scf_step",
+                "scf_tol",
+                "scf_step_size",
+                "scf_logging",
+                "use_scf",
+                "use_collinear",
+            )
+        }
+        model = wrapped
     config = legacy_config(model)
+    if fixed_point is not None:
+        config["fixed_point"] = fixed_point
     headless = not hasattr(model, "heads")
     heads = ["default"] if headless else [str(head) for head in model.heads]
     walker = walk(model, spelling)
@@ -1032,7 +1174,7 @@ def extract(source: Path, output: Path) -> Path:
         "provenance": {
             "source_file": source.name,
             "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-            "source_class": type(model).__name__,
+            "source_class": source_class,
             "source_version": str(getattr(mace, "__version__", "unknown")),
             "converter_version": CONVERTER_VERSION,
             "headless": headless,

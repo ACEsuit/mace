@@ -169,6 +169,11 @@ def run_model_stage(
         The model wrapped in its derivative engine, with the bundle it was
         built from and the record that travels with the weights.
     """
+    if config.fixed_point is not None:
+        raise ModelStageError(
+            "fixed_point configures inference relaxation; "
+            "train the underlying model at fixed inputs"
+        )
     if foundation is not None:
         config = with_foundation_architecture(config, foundation, catalogue)
     precision = precision or config.precision

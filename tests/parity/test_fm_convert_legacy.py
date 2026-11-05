@@ -290,12 +290,8 @@ def test_a_source_that_recorded_its_heads_says_so(converted):
 # ---------------------------------------------------------------------------
 
 UNSUPPORTED = (
-    ("mace.modules.models", "AtomicDipolesMACE"),
-    ("mace.modules.models", "EnergyDipolesMACE"),
     ("mace.modules.extensions", "MACELES"),
     ("mace.modules.extensions", "MagneticMACE"),
-    ("mace.modules.extensions", "MagneticScaleShiftMACE"),
-    ("mace.modules.extensions", "MagneticSCFMACE"),
 )
 
 
@@ -310,9 +306,8 @@ def test_each_unsupported_class_is_refused_by_name(module, name):
         EXTRACTOR["classify"](cls.__new__(cls))
 
 
-def test_the_charge_aware_class_is_the_only_one_taken_off_the_refusals():
-    """It converts onto the charge-aware model; the six others still wait for
-    theirs."""
+def test_the_charge_aware_class_still_converts_alongside_fm5_families():
+    """FM-5 preserves the already implemented polar conversion."""
     from mace.modules.extensions import PolarMACE
 
     assert EXTRACTOR["classify"](PolarMACE.__new__(PolarMACE)) == "polar"
@@ -329,7 +324,7 @@ def test_a_subclass_of_a_supported_class_is_refused():
         EXTRACTOR["classify"](Calibrated.__new__(Calibrated))
 
 
-@pytest.mark.parametrize("anchor", ["tiny_dipoles", "tiny_maceles", "tiny_magnetic"])
+@pytest.mark.parametrize("anchor", ["tiny_maceles"])
 def test_an_unsupported_anchor_is_refused_through_the_subprocess(anchor, tmp_path):
     with pytest.raises(ExtractionFailed, match="This converter carries"):
         extract(
@@ -534,14 +529,14 @@ def test_the_command_refuses_an_unsupported_class(tmp_path, capsys):
 
     code = main(
         [
-            str(GOLDEN / "models" / "tiny_magnetic.model"),
+            str(GOLDEN / "models" / "tiny_maceles.model"),
             str(tmp_path / "converted"),
             "--python",
             sys.executable,
         ]
     )
     assert code == 2
-    assert "MagneticScaleShiftMACE" in capsys.readouterr().err
+    assert "MACELES" in capsys.readouterr().err
 
 
 def test_the_converted_checkpoint_carries_its_record(converted, tmp_path):

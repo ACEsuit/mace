@@ -127,6 +127,8 @@ OpKind = Literal[
     "bessel_basis",
     "polynomial_cutoff",
     "zbl",
+    "magnetic_moments",
+    "one_body_moment",
 ]
 
 
@@ -195,7 +197,15 @@ class NeutralSidecar(_Strict):
     format: Literal["mace-neutral"]
     version: Literal[1]
     provenance: Provenance
-    family: Literal["plain", "scale_shift", "dielectric", "polar"]
+    family: Literal[
+        "plain",
+        "scale_shift",
+        "dielectric",
+        "polar",
+        "dipole",
+        "energy_dipole",
+        "magnetic",
+    ]
     config: dict[str, Any]
     heads: tuple[str, ...]
     dtype: Literal["float32", "float64"]

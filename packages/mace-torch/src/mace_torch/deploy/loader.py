@@ -72,7 +72,18 @@ class DeployedModel:
     @property
     def model(self) -> nn.Module:
         """The model inside the engine, where the canonical state lives."""
-        return self.engine.get_submodule("backbone")
+        return self.derivative_engine.get_submodule("backbone")
+
+    @property
+    def derivative_engine(self):
+        """The underlying model at fixed inputs, without inference relaxation."""
+        from mace_torch.physics.fixed_point import FixedPointDriver
+
+        return (
+            self.engine.engine
+            if isinstance(self.engine, FixedPointDriver)
+            else self.engine
+        )
 
     def compute(
         self, graph: Mapping[str, Any], compute: Iterable[str] = ("forces",)
@@ -104,8 +115,12 @@ class DeployedModel:
             precision=precision,
             initialize=False,
         )
-        load_canonical_state(engine, canonical_state(self.engine))
-        return replace(self, engine=engine.to(device).eval(), outputs=outputs)
+        load_canonical_state(engine, canonical_state(self.derivative_engine))
+        return replace(
+            self,
+            engine=_with_fixed_point(engine.to(device).eval(), self.config),
+            outputs=outputs,
+        )
 
     def with_time_reversal(self, *, batched: bool = True) -> DeployedModel:
         """Project a magnetic model at opposite moments, without changing its weights.
@@ -245,7 +260,7 @@ def load_deployed(
     engine.eval()
     _check_recorded_solve(engine.get_submodule("backbone"), metadata, path)
     return DeployedModel(
-        engine=engine,
+        engine=_with_fixed_point(engine, config),
         config=config,
         metadata=metadata,
         z_table=z_table,
@@ -253,6 +268,14 @@ def load_deployed(
         e0s=e0s,
         outputs=built[0],
         path=Path(path),
+    )
+
+
+def _with_fixed_point(engine, config: ResolvedConfig):
+    from mace_torch.physics.fixed_point import FixedPointDriver
+
+    return (
+        FixedPointDriver(engine, config.fixed_point) if config.fixed_point else engine
     )
 
 

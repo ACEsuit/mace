@@ -21,7 +21,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import venv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.resources import files
 from pathlib import Path
 
@@ -223,6 +223,7 @@ def convert_legacy(
             reference. Nothing is written in that case.
     """
     from mace_torch.train.checkpoint import write_model
+    from mace_torch.train.data_stage import graph_inputs_of
 
     target = Path(output)
     neutral = extract(source, target.with_name(target.name + "-neutral"), python=python)
@@ -241,9 +242,18 @@ def convert_legacy(
             z_table=imported.z_table,
             cutoff=imported.config.model.r_max,
             head=head,
+            graph_inputs=graph_inputs_of(imported.config.model),
         )
         if not report.passed:
             raise VerificationError(report)
+        if imported.metadata.conversion is not None:
+            record = imported.metadata.conversion.model_copy(
+                update={"reference": str(reference), "golden_gate_passed": True}
+            )
+            imported = replace(
+                imported,
+                metadata=imported.metadata.model_copy(update={"conversion": record}),
+            )
     checkpoint = write_model(target, imported.engine, imported.metadata)
     return Conversion(
         neutral=neutral, checkpoint=checkpoint, model=imported, report=report
