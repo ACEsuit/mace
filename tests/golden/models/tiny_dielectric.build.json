@@ -1,0 +1,37 @@
+{
+  "class": "AtomicDielectricMACE",
+  "config": {
+    "MLP_irreps": "4x0e + 4x1o + 4x2e",
+    "atomic_numbers": [
+      1,
+      6,
+      8
+    ],
+    "avg_num_neighbors": 3.0,
+    "correlation": 2,
+    "gate": "silu",
+    "hidden_irreps": "4x0e + 4x1o + 4x2e",
+    "interaction_cls": "RealAgnosticResidualInteractionBlock",
+    "interaction_cls_first": "RealAgnosticInteractionBlock",
+    "max_ell": 2,
+    "num_bessel": 6,
+    "num_elements": 3,
+    "num_interactions": 2,
+    "num_polynomial_cutoff": 5,
+    "r_max": 3.5,
+    "radial_MLP": [
+      64,
+      64,
+      64
+    ],
+    "use_polarizability": true,
+    "use_reduced_cg": false
+  },
+  "dtype": "float64",
+  "model": "tiny_dielectric.model",
+  "num_parameters": 21868,
+  "recipe": "tests/golden/build_dielectric_anchor.py",
+  "regenerate_with": "python tests/golden/regenerate.py --target dielectric --i-know-what-i-am-doing",
+  "seed": 20261105,
+  "sha256": "5a18601814f3a6894b8cf9b2ff3908f2123505eb878fa47b20ac18391ea1d2c9"
+}
