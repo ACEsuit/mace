@@ -112,9 +112,15 @@ def test_dipole_cli_presets_preserve_loss_and_gradient(
     if stage_two:
         weight *= 2.0
         flags += [
-            "--stage_two", "--start_stage_two", "1", "--max_num_epochs", "2",
-            "--swa_dipole_weight", str(weight),
-            "--swa_polarizability_weight", str(weight),
+            "--stage_two",
+            "--start_stage_two",
+            "1",
+            "--max_num_epochs",
+            "2",
+            "--swa_dipole_weight",
+            str(weight),
+            "--swa_polarizability_weight",
+            str(weight),
         ]
     config = parse(flags)
     requested = resolve_requested(config.model.observables, DEFAULT_CATALOGUE)
@@ -149,14 +155,21 @@ def test_dipole_cli_presets_preserve_loss_and_gradient(
         pieces = []
         for index, size in enumerate((2, 3)):
             part = TrainingBatch(
-                graph={"ptr": torch.tensor([0, size]),
-                       "weight": batch.graph["weight"][index:index + 1]},
-                targets={name: value[index:index + 1] for name, value in targets.items()},
+                graph={
+                    "ptr": torch.tensor([0, size]),
+                    "weight": batch.graph["weight"][index : index + 1],
+                },
+                targets={
+                    name: value[index : index + 1] for name, value in targets.items()
+                },
             )
             prediction = MACEOutput(
-                dipole=predictions["dipole"][index:index + 1],
-                extras={name: value[index:index + 1] for name, value in predictions.items()
-                        if name != "dipole"},
+                dipole=predictions["dipole"][index : index + 1],
+                extras={
+                    name: value[index : index + 1]
+                    for name, value in predictions.items()
+                    if name != "dipole"
+                },
             )
             pieces.append(loss(prediction, part, totals))
         native = sum(pieces)

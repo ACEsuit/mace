@@ -124,6 +124,7 @@ def test_lora_cli_trains_resumes_and_saves_a_plain_model(
     tensors, records = [], []
     for directory in (whole, split):
         path = latest_run_checkpoint(directory, "adapted")
+        assert path is not None
         tensors.append(load_file(path.with_suffix(".safetensors")))
         records.append(json.loads(path.read_text()))
     assert tensors[0].keys() == tensors[1].keys()

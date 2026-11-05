@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from ase import Atoms
 from ase.io import read
 from conftest import fp64_only
 from mace_torch.calculators import MACECalculator
@@ -31,6 +32,7 @@ def test_inactive_les_defaults_preserve_energy_inference_and_bec_is_refused(tmp_
     config = configuration(tmp_path, max_num_epochs=1)
     trained = run(config)
     atoms = read(config.data.heads["default"].train_file, index=-1)
+    assert isinstance(atoms, Atoms)
     plain = MACECalculator(trained.checkpoint_path)
     compatible = MACECalculator(
         trained.checkpoint_path,

@@ -81,6 +81,7 @@ def test_device_flag_trains_resumes_and_loads_on_cpu(
         tensors, records = [], []
         for directory in (whole, split):
             path = latest_run_checkpoint(directory, "placement")
+            assert path is not None
             tensors.append(load_file(path.with_suffix(".safetensors")))
             records.append(json.loads(path.read_text()))
         assert tensors[0].keys() == tensors[1].keys()

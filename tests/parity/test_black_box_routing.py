@@ -29,10 +29,13 @@ BLACK_BOX = ("tests/workflows", "tests/integrations")
 #: Only tests of dispatch itself may construct an independent command line.
 #: Routing their reference side through the launcher would compare it to itself.
 UNROUTED = {
-    "tests/workflows/test_launcher_engine_parity.py":
-        "The frozen script is the independent reference for legacy dispatch.",
-    "tests/workflows/test_launcher_v1.py":
-        "Installed commands are compared with direct V1 training; both engine selectors are under test.",
+    "tests/workflows/test_launcher_engine_parity.py": (
+        "The frozen script is the independent reference for legacy dispatch."
+    ),
+    "tests/workflows/test_launcher_v1.py": (
+        "Installed commands are compared with direct V1 training; "
+        "both engine selectors are under test."
+    ),
 }
 
 
@@ -140,7 +143,10 @@ def test_the_shared_runner_knows_about_both_engines():
     for path in black_box_files():
         # Dispatch tests and the native workflow helper explicitly exercise an
         # engine. Other workflows must use the shared runner's selection.
-        if str(path.relative_to(REPO_ROOT)) in UNROUTED or path.name == "test_run_train_v1.py":
+        if (
+            str(path.relative_to(REPO_ROOT)) in UNROUTED
+            or path.name == "test_run_train_v1.py"
+        ):
             continue
         assert "MACE_ENGINE" not in path.read_text(), (
             f"{path.name} reads the engine itself; it is chosen in one place"

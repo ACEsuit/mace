@@ -31,7 +31,7 @@ def test_explicit_download_directory_is_refused_before_creating_outputs(
         arguments = ["--config", str(path)]
     else:
         arguments = [
-            word for key, value in values.items() for word in (f"--{key}", value)
+            word for key, value in values.items() for word in (f"--{key}", str(value))
         ]
     with pytest.raises(LegacyFlagError, match=r"downloads_dir.*XDG cache") as error:
         parse(arguments)
@@ -81,6 +81,8 @@ def test_download_cache_is_shared_by_runs_and_unchanged_by_resume(
     for work in (first, second):
         loaded = load_deployed(work / "cached.json")
         assert loaded.config.runtime.work_dir == work
-        state = read_run_state(latest_run_checkpoint(work, "cached"))
+        checkpoint = latest_run_checkpoint(work, "cached")
+        assert checkpoint is not None
+        state = read_run_state(checkpoint)
         assert state.epoch == 2
         assert not (work / "downloads").exists()

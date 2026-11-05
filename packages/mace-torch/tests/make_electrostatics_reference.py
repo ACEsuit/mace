@@ -1,7 +1,7 @@
 """Write the reference values the in-tree long-range solver is checked against.
 
-Run with the original ``graph_longrange`` importable, the version the in-tree
-copy came from, and ``e3nn`` beside it, which that version needs::
+Run with the original ``graph_longrange`` 0.4.4 importable, at commit
+``6a86de5e3ed35fd86a55fc046aa085fe48a72764``, and ``e3nn`` beside it::
 
     python make_electrostatics_reference.py
 
@@ -14,6 +14,7 @@ original; the file is what carries its numbers.
 from __future__ import annotations
 
 import json
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -59,9 +60,20 @@ def inputs(structures, seed: int) -> dict[str, list]:
 
 
 def evaluate(case: dict, mode: Any) -> dict[str, Any]:
-    from graph_longrange.energy import (  # ty: ignore[unresolved-import]
-        GTOElectrostaticEnergy,
-    )
+    # The generator has its own pinned oracle; the legacy runtime uses an older API.
+    reference = import_module("graph_longrange")
+    version = getattr(reference, "__version__", "unknown")
+    if version != "0.4.4":
+        raise RuntimeError(
+            "This reference generator requires graph_longrange 0.4.4; "
+            f"found {version}. "
+            "Use an isolated environment with commit "
+            "6a86de5e3ed35fd86a55fc046aa085fe48a72764; "
+            "keep the legacy runtime unchanged."
+        )
+    energy_module = import_module("graph_longrange.energy")
+    # This version-specific factory is not the API typed by the legacy environment.
+    solver_type: Any = energy_module.GTOElectrostaticEnergy
     from graph_longrange.gto_utils import (  # ty: ignore[unresolved-import]
         gto_basis_kspace_cutoff,
     )
@@ -73,7 +85,7 @@ def evaluate(case: dict, mode: Any) -> dict[str, Any]:
     feats = torch.tensor(case["source_feats"], requires_grad=True)
     cell = torch.tensor(case["cell"], dtype=torch.float64, requires_grad=True)
     cutoff = KSPACE_FACTOR * gto_basis_kspace_cutoff([SIGMA], MAX_L)
-    solver = GTOElectrostaticEnergy(
+    solver = solver_type(
         density_max_l=MAX_L,
         density_smearing_width=SIGMA,
         kspace_cutoff=cutoff,

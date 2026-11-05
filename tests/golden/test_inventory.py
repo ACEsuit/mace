@@ -533,9 +533,15 @@ def _gap_row(ident, feature="`--thing`", gap="⚠️ gap (nothing yet)"):
     )
 
 
-def test_the_audit_finds_a_gap_the_suite_already_covers():
-    """The failure it exists for: seventy-seven rows here stayed marked as gaps
-    after the tests closing them had merged."""
+def test_the_audit_finds_a_gap_the_suite_already_covers(tmp_path, monkeypatch):
+    """A bounded source tree makes the named-match branch independent of suite growth."""
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_calculator.py").write_text(
+        "def test_calculator_committee():\n"
+        "    assert calculator.results['energy_var'] >= 0\n"
+    )
+    monkeypatch.setattr(check_inventory, "REPO", tmp_path)
     suspects = check_inventory.audit_gaps(
         [_gap_row("out.calc.energy_var", feature="`energy_var` — committee")]
     )
@@ -571,8 +577,16 @@ def test_the_harness_own_suite_is_not_evidence():
     assert not [path for path, _, _ in functions if path in check_inventory.AUDIT_NON_EVIDENCE]
 
 
-def test_a_subject_too_common_to_judge_says_so_instead_of_guessing():
-    suspects = check_inventory.audit_gaps([_gap_row("reg.None")])
+def test_a_subject_too_common_to_judge_says_so_instead_of_guessing(tmp_path, monkeypatch):
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_calculator.py").write_text("\n".join(
+        f"def test_committee_{index}():\n"
+        "    assert calculator.results['energy_var'] >= 0\n"
+        for index in range(7)
+    ))
+    monkeypatch.setattr(check_inventory, "REPO", tmp_path)
+    suspects = check_inventory.audit_gaps([_gap_row("out.calc.energy_var")])
 
     assert len(suspects) == 1
     assert "too common a word" in suspects[0]

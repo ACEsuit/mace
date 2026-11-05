@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import numpy as np
 import pytest
 import torch
+from ase import Atoms
 from ase.io import read, write
 from conftest import fp64_only
 from mace_torch.calculators import MACECalculator
@@ -100,6 +102,7 @@ def test_output_flag_trains_and_reloads_the_same_model_as_native_config(
     for model in checkpoints:
         assert model.config.model.observables == tuple(outputs)
     calculators = [MACECalculator(models=model) for model in checkpoints]
+    assert isinstance(frames[-1], Atoms)
     for calculator in calculators:
         calculator.calculate(frames[-1])
     for name in outputs:
@@ -111,8 +114,9 @@ def test_output_flag_trains_and_reloads_the_same_model_as_native_config(
 
 @pytest.mark.parametrize("flag", ["enable_cueq", "enable_oeq"])
 def test_calculator_backend_flags_cannot_be_silently_ignored(flag):
+    options: dict[str, Any] = {flag: True}
     with pytest.raises(TypeError, match=flag + ".*model.backend"):
-        MACECalculator(model_paths="missing.json", **{flag: True})
+        MACECalculator(model_paths="missing.json", **options)
 
 
 @fp64_only
@@ -144,6 +148,7 @@ def test_array_key_mapping_changes_predictions_and_invalidates_cache(tmp_path, p
         pad_num_atoms=16 if padding else 0,
         pad_num_edges=2048 if padding else 0,
     )
+    assert isinstance(frames[-1], Atoms)
     atoms = frames[-1].copy()
     atoms.arrays["evaluation_value"] = np.arange(len(atoms), dtype=float) + 3
     atoms.calc = calculator

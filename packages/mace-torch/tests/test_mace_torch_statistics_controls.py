@@ -12,8 +12,10 @@ from mace_core.data.keys import KeySpecification
 from mace_core.data.xyz import write_configurations
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.cli.run_train import parse, run
+from mace_torch.data import GraphDataset
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.stages import build
+from mace_torch.models import EnergyOutputHead
 from mace_torch.train import run_data_stage, run_model_stage
 from mace_torch.train.checkpoint import write_model
 from test_mace_torch_training_pipeline import configuration
@@ -58,7 +60,8 @@ def test_explicit_statistics_reach_the_model_and_reload_without_data(
     assert data.e0s == measured.e0s
     assert tuple(data.z_table.zs) == (1, 8)
     built = run_model_stage(selected, data, DEFAULT_CATALOGUE)
-    head = built.model.backbone.outputs.energy_head
+    head = built.model.get_submodule("backbone.outputs.energy_head")
+    assert isinstance(head, EnergyOutputHead)
     assert head.scale.tolist() == [2.5]
     assert head.shift.tolist() == [1.5]
     neighbor_buffers = [
@@ -100,6 +103,7 @@ def test_estimated_e0s_use_the_named_foundation_head_and_train(tmp_path):
             foundation.model(batch.graph, compute=()).get("energy").detach().tolist()
         )
     correction = {1: 0.25, 8: -0.5}
+    assert isinstance(loader.dataset, GraphDataset)
     labelled = [
         replace(
             item,

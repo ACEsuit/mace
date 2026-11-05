@@ -314,7 +314,9 @@ def gap(a, b) -> float:
 
 @pytest.mark.parametrize("name", sorted(CASES))
 @pytest.mark.parametrize("factor", [1.0, 5.0])
-def test_retired_polar_options_leave_legacy_predictions_unchanged(fp64, isolated, name, factor):
+def test_retired_polar_options_leave_legacy_predictions_unchanged(
+    fp64, isolated, name, factor
+):
     from tests.golden.harness import EXACT
 
     atoms, _, inputs = CASES[name]
@@ -330,14 +332,22 @@ def test_retired_polar_options_leave_legacy_predictions_unchanged(fp64, isolated
         if key in buffers:
             assert torch.all(changed_state[key] == factor)
         else:
-            torch.testing.assert_close(changed_state[key], baseline_state[key], atol=0, rtol=0)
+            torch.testing.assert_close(
+                changed_state[key], baseline_state[key], atol=0, rtol=0
+            )
     expected = baseline(legacy_batch(baseline, atoms), compute_force=True)
     actual = changed(legacy_batch(changed, atoms), compute_force=True)
     assert actual.keys() == expected.keys()
-    assert actual['electrostatic_potentials'] is expected['electrostatic_potentials'] is None
+    assert (
+        actual["electrostatic_potentials"]
+        is expected["electrostatic_potentials"]
+        is None
+    )
     for key, value in expected.items():
         if isinstance(value, torch.Tensor):
-            torch.testing.assert_close(actual[key], value, atol=EXACT.atol, rtol=EXACT.rtol)
+            torch.testing.assert_close(
+                actual[key], value, atol=EXACT.atol, rtol=EXACT.rtol
+            )
         else:
             assert actual[key] == value
 

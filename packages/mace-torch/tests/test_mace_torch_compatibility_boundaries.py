@@ -40,10 +40,11 @@ def test_output_directory_alias_trains_and_resumes_the_same_run(tmp_path, flag):
     assert main([*command, "--work_dir", str(reference)]) == 0
     assert main([*command, f"--{flag}", str(resumed), "--max_num_epochs", "1"]) == 0
     assert main([*command, f"--{flag}", str(resumed), "--restart_latest"]) == 0
-    checkpoints = [
-        latest_run_checkpoint(path, "location") for path in (reference, resumed)
-    ]
-    assert all(checkpoints)
+    checkpoints = []
+    for directory in (reference, resumed):
+        path = latest_run_checkpoint(directory, "location")
+        assert path is not None
+        checkpoints.append(path)
     states = [read_run_state(path) for path in checkpoints]
     assert states[0] == states[1]
     weights = [load_file(str(path.with_suffix(".safetensors"))) for path in checkpoints]
@@ -168,6 +169,7 @@ def test_retired_foundation_has_a_replacement_and_no_singular_loader():
     entry = roster_entry("mace_anicc", "default")
     assert entry.family is None
     assert entry.replaced_by == "MACE-OFF23"
+    assert entry.reason is not None
     assert "superseded" in entry.reason
     replacement = roster_entry("mace_off", "small")
     assert replacement.family == "scale_shift" and replacement.replaced_by is None

@@ -15,7 +15,7 @@ from mace_core.data_spec.shard_format import write_shards
 from mace_core.elements import AtomicNumberTable, DefaultKeys
 from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
 from mace_torch.cli.run_train import parse, run
-from mace_torch.data import graph_from_configuration, make_loader
+from mace_torch.data import GraphDataset, graph_from_configuration, make_loader
 from mace_torch.graph.collate import collate
 from mace_torch.train import build_loss, run_data_stage, run_model_stage
 from mace_torch.train.checkpoint import latest_run_checkpoint
@@ -86,6 +86,7 @@ def test_typed_heads_weights_match_stored_weights_and_resume(tmp_path, dtype):
     documents, tensors = [], []
     for directory in (full, baked, split):
         path = latest_run_checkpoint(directory, "weights")
+        assert path is not None
         documents.append(json.loads(path.read_text()))
         tensors.append(load_file(str(path.with_suffix(".safetensors"))))
     for actual in tensors[1:]:
@@ -116,6 +117,7 @@ def test_validation_batch_size_keeps_every_structure_and_the_same_errors(
     requested = resolve_requested(config.model.observables, DEFAULT_CATALOGUE)
     loss, specs = build_loss(requested, config.loss), metric_specs(requested)
     actual = evaluate(built.model, loader, loss, specs)
+    assert isinstance(loader.dataset, GraphDataset)
     whole = make_loader(
         loader.dataset, batch_size=12, shuffle=False, float_dtype=config.precision.model
     )
@@ -145,7 +147,9 @@ def test_test_directory_applies_each_heads_type_weights(tmp_path):
     )
     data = run_data_stage(ResolvedConfig.model_validate(document), DEFAULT_CATALOGUE)
     for name, expected in (("a", 1.0), ("b", 0.0)):
-        items = data.test_loaders[f"{name}_probe"].dataset.configurations
+        dataset = data.test_loaders[f"{name}_probe"].dataset
+        assert isinstance(dataset, GraphDataset)
+        items = dataset.configurations
         assert [item.weight for item in items] == [expected] * 3
         assert all(item.head == name for item in items)
 

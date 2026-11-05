@@ -147,6 +147,7 @@ def test_optimizer_cli_training_and_resume_preserve_every_state(
     documents, tensors = [], []
     for directory in (full, split):
         latest = latest_run_checkpoint(directory, "fit")
+        assert latest is not None
         documents.append(json.loads(latest.read_text()))
         tensors.append(load_file(str(latest).removesuffix(".json") + ".safetensors"))
     assert tensors[0].keys() == tensors[1].keys()
@@ -183,6 +184,8 @@ def test_individual_optimizer_and_scheduler_flags_keep_the_other_settings(
         path.write_text(json.dumps(document))
         flags = ["--config", str(path), *(flags if source == "structured_file" else [])]
     config = parse(flags).training
+    assert config.optimizer.kind == "adam" or config.optimizer.kind == "adamw"
+    assert config.scheduler.kind.kind == "plateau"
     assert config.optimizer.beta == 0.73
     assert config.scheduler.kind.factor == 0.6
     assert config.scheduler.kind.patience == 7
@@ -221,6 +224,7 @@ def test_schedulefree_and_scheduler_overrides_use_the_file_choice(tmp_path):
         "beta2": 0.91,
         "warmup_steps": 3,
     }
+    assert config.scheduler.kind.kind == "exponential"
     assert config.scheduler.kind.gamma == 0.7
     changed = parse(
         [
@@ -235,6 +239,7 @@ def test_schedulefree_and_scheduler_overrides_use_the_file_choice(tmp_path):
         ]
     ).training
     assert changed.optimizer.kind == "adamw"
+    assert changed.scheduler.kind.kind == "plateau"
     assert changed.scheduler.kind.factor == 0.6
     assert changed.scheduler.group_factors == {"embedding": 0.5}
     document["training"]["optimizer"]["beta"] = 0.8

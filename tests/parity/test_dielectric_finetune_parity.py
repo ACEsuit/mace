@@ -216,8 +216,9 @@ def test_the_converted_foundation_drives_the_calculator(foundation):
 
 def test_periodic_dielectric_rotation_matches_legacy(foundation):
     legacy, path = foundation
-    atoms = Atoms("OHH", positions=[[0, -2, 0], [1, 0, 0], [0, 1, 0]],
-                  cell=[4, 4, 4], pbc=True)
+    atoms = Atoms(
+        "OHH", positions=[[0, -2, 0], [1, 0, 0], [0, 1, 0]], cell=[4, 4, 4], pbc=True
+    )
     rotation, _ = np.linalg.qr(np.random.default_rng(19).normal(size=(3, 3)))
     rotated = atoms.copy()
     # A rigid rotation of a periodic structure includes its lattice vectors.
@@ -238,6 +239,12 @@ def test_periodic_dielectric_rotation_matches_legacy(foundation):
             values[name] = actual.copy()
         predictions.append(values)
     before, after = predictions
-    np.testing.assert_allclose(after["dipole"], rotation @ before["dipole"], atol=1e-12, rtol=0)
-    np.testing.assert_allclose(after["polarizability"], rotation @ before["polarizability"] @ rotation.T,
-                               atol=1e-12, rtol=0)
+    np.testing.assert_allclose(
+        after["dipole"], rotation @ before["dipole"], atol=1e-12, rtol=0
+    )
+    np.testing.assert_allclose(
+        after["polarizability"],
+        rotation @ before["polarizability"] @ rotation.T,
+        atol=1e-12,
+        rtol=0,
+    )

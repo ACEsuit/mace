@@ -135,13 +135,25 @@ def test_eval_uses_recorded_backend_and_preserves_canonical_weights(
     checkpoint = on_backend(Path(write_anchor_checkpoint(legacy, tmp_path)), backend)
     weights = checkpoint.with_suffix(".safetensors")
     digest = hashlib.sha256(weights.read_bytes()).hexdigest()
-    frames = list(harness.load_fixtures(elements=[int(z) for z in legacy.atomic_numbers]).values())
+    frames = list(
+        harness.load_fixtures(elements=[int(z) for z in legacy.atomic_numbers]).values()
+    )
     source, output = tmp_path / "input.xyz", tmp_path / "output.xyz"
     write(source, frames)
-    arguments = ["--configs", str(source), "--model", str(checkpoint),
-                 "--output", str(output), "--device", device, "--compute_stress",
-                 "--batch_size", "2"]
-    with pytest.raises(ValueError, match="enable_cueq.*checkpoint"):
+    arguments = [
+        "--configs",
+        str(source),
+        "--model",
+        str(checkpoint),
+        "--output",
+        str(output),
+        "--device",
+        device,
+        "--compute_stress",
+        "--batch_size",
+        "2",
+    ]
+    with pytest.raises(ValueError, match=r"enable_cueq.*checkpoint"):
         main([*arguments, "--enable_cueq"])
     assert not output.exists()
     for flag in ("enable_cueq", "enable_oeq"):
@@ -180,9 +192,16 @@ def test_eval_uses_recorded_backend_and_preserves_canonical_weights(
     for expected_atoms, actual in zip(frames, results, strict=True):
         calculator.calculate(expected_atoms)
         for name in ("energy", "forces", "stress"):
-            written = (actual.arrays if name == "forces" else actual.info)["MACE_" + name]
+            written = (actual.arrays if name == "forces" else actual.info)[
+                "MACE_" + name
+            ]
             if name == "stress":
                 written = full_3x3_to_voigt_6_stress(written)
-            np.testing.assert_allclose(written, calculator.results[name],
-                                       atol=tolerance.atol, rtol=tolerance.rtol, err_msg=name)
+            np.testing.assert_allclose(
+                written,
+                calculator.results[name],
+                atol=tolerance.atol,
+                rtol=tolerance.rtol,
+                err_msg=name,
+            )
     assert hashlib.sha256(weights.read_bytes()).hexdigest() == digest

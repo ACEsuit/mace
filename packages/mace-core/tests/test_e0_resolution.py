@@ -141,15 +141,22 @@ def test_estimated_adds_corrections_to_the_foundation_references():
 
 @pytest.mark.parametrize("policy", ["error", "average", "zero"])
 def test_estimated_enforces_the_missing_foundation_policy(policy):
-    options = dict(foundation_e0s={1: 0.0}, predict_energy=zero_energy)
     spec = E0sEstimated(missing=policy)
     if policy == "average":
-        values, provenance = resolve_e0s(spec, Z_TABLE, DATASET, **options)
+        values, provenance = resolve_e0s(
+            spec, Z_TABLE, DATASET, foundation_e0s={1: 0.0}, predict_energy=zero_energy
+        )
         assert values == pytest.approx({1: HYDROGEN, 8: OXYGEN})
         assert provenance.missing_filled == (8,)
     else:
         with pytest.raises(E0ResolutionError, match="8"):
-            resolve_e0s(spec, Z_TABLE, DATASET, **options)
+            resolve_e0s(
+                spec,
+                Z_TABLE,
+                DATASET,
+                foundation_e0s={1: 0.0},
+                predict_energy=zero_energy,
+            )
 
 
 def test_estimated_keeps_unseen_references_and_zero_pads_only_unseen_elements():

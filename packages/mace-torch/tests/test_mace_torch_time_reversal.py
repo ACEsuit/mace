@@ -30,6 +30,16 @@ ENERGY = DEFAULT_CATALOGUE.observable("energy")
 MAGMOM = DEFAULT_CATALOGUE.input("magmom")
 
 
+@pytest.fixture(autouse=True)
+def isolated_compilation():
+    """Compiled variants belong to one test, including its parameter values."""
+    torch._dynamo.reset()
+    try:
+        yield
+    finally:
+        torch._dynamo.reset()
+
+
 class Quadratic(MagneticModel):
     """A non-even surface with a known projection and relaxed state."""
 

@@ -178,8 +178,13 @@ def test_a_missing_field_fails_the_import(converted, tmp_path):
 def test_retired_attention_is_refused_at_the_neutral_boundary(converted, tmp_path, key):
     _, sidecar = converted
     changed = rewritten(
-        sidecar, tmp_path, "attention",
-        config=lambda config: {**config, key: "RealAgnosticAttResidualInteractionBlock"},
+        sidecar,
+        tmp_path,
+        "attention",
+        config=lambda config: {
+            **config,
+            key: "RealAgnosticAttResidualInteractionBlock",
+        },
     )
     with pytest.raises(NeutralImportError, match="retired by ARCH-2"):
         import_neutral(changed, CATALOGUE)

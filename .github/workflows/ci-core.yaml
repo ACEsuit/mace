@@ -103,8 +103,9 @@ jobs:
         # installed it would stop noticing if that changed.
         run: |
           python -m pip install --upgrade pip
+          # ty checks ScheduleFree's train/eval API in the optimizer integration.
           python -m pip install -e packages/mace-core \
-                                -e packages/mace-torch \
+                                -e "packages/mace-torch[schedulefree]" \
                                 -e packages/mace-jax \
                                 -e packages/mace-launcher \
                                 -e packages/mace-backend-example
