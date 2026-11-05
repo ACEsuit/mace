@@ -64,7 +64,14 @@ def test_atomic_and_total_strain_outputs_match_legacy(
     checkpoints, names, dtype, device
 ):
     legacy, native, graph = models_and_graph(checkpoints, names, dtype, device)
-    wanted = ("forces", "stress", "virials", "atomic_virials", "atomic_stresses")
+    wanted = (
+        "forces",
+        "stress",
+        "virials",
+        "edge_forces",
+        "atomic_virials",
+        "atomic_stresses",
+    )
     original = copy_graph(graph)
     values = []
     for training in (False, True):
@@ -86,6 +93,7 @@ def test_atomic_and_total_strain_outputs_match_legacy(
             (actual.forces, expected["forces"]),
             (actual.virials, expected["virials"]),
             (actual.stress, expected["stress"]),
+            (actual.extras["edge_forces"], expected["edge_forces"]),
         ]
         for name in ("atomic_virials", "atomic_stresses"):
             pairs.append((actual.extras[name], expected[name]))
@@ -196,13 +204,21 @@ def test_external_displacement_matches_legacy_preparation_and_virial(
     )
     actual = native(
         graph,
-        compute=("forces", "virials", "stress", "atomic_virials", "atomic_stresses"),
+        compute=(
+            "forces",
+            "virials",
+            "stress",
+            "edge_forces",
+            "atomic_virials",
+            "atomic_stresses",
+        ),
         training=True,
     )
     close(actual.total_energy, expected["energy"], dtype, device)
     close(actual.forces, expected["forces"], dtype, device)
     close(actual.virials, expected["virials"], dtype, device)
     close(actual.stress, expected["stress"], dtype, device)
+    close(actual.extras["edge_forces"], expected["edge_forces"], dtype, device)
     for name in ("atomic_virials", "atomic_stresses"):
         close(actual.extras[name], expected[name], dtype, device)
     strain_gradient, position_gradient = torch.autograd.grad(

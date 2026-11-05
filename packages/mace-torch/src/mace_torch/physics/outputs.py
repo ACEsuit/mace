@@ -132,12 +132,11 @@ def atomic_virials_and_stresses(
     the shares sum to the total virial and stress. At finite external strain
     they use deformed edge vectors, as legacy does; the total virial instead
     differentiates the reference geometry. Both use the input cell's volume
-    and mask structures with no periodic direction. Legacy takes the same
-    split from an edge force of the opposite sign.
+    and mask structures with no periodic direction.
 
     Args:
-        edge_forces: ``-dE/dv`` per edge, ``[n_edges, 3]``, as the engine
-            reports them.
+        edge_forces: ``+dE/dv`` per edge, ``[n_edges, 3]`` in eV/Angstrom,
+            the export convention reported by the engine.
         edge_index: ``[2, n_edges]``, sender then receiver.
         vectors: The edge vectors, ``[n_edges, 3]``.
         batch: ``[n_atoms]``, which structure each atom belongs to.
@@ -148,7 +147,7 @@ def atomic_virials_and_stresses(
         ``(virials, stresses)``, each ``[n_atoms, 3, 3]``.
     """
     num_atoms = int(batch.shape[0])
-    per_edge = -torch.einsum("ei,ej->eij", edge_forces, vectors)
+    per_edge = torch.einsum("ei,ej->eij", edge_forces, vectors)
     shares = torch.zeros(
         (num_atoms, 3, 3), dtype=per_edge.dtype, device=per_edge.device
     )
@@ -645,10 +644,10 @@ class DerivativeEngine(nn.Module):
 
         if need_edges:
             gradient = by_name["vectors"]
-            # The sign is flipped once, here, so the deployment adapters do not
-            # each flip it again on their own.
+            # Export uses +dE/dv: the negative physical edge force is flipped
+            # once for the coupling. Consumers must not flip it again.
             edge_forces = (
-                torch.zeros_like(prepared["shifts"]) if gradient is None else -gradient
+                torch.zeros_like(prepared["shifts"]) if gradient is None else gradient
             )
             if "edge_forces" in wanted:
                 output.extras["edge_forces"] = edge_forces

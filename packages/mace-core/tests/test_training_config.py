@@ -184,7 +184,6 @@ def test_one_work_dir_replaces_six_directory_flags():
         "models",
         "checkpoints",
         "results",
-        "downloads",
     }
     for which in WORK_DIR_LAYOUT:
         assert config.runtime.directory(which).parent == Path("/runs/a")

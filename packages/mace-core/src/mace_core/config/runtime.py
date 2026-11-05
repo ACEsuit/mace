@@ -6,12 +6,11 @@ flag group without belonging to it: ``--default_dtype`` is a precision choice
 and the three acceleration flags are a backend choice, both resolved once at
 model build time and both owned by their own tickets.
 
-**Six directory flags become one.** Legacy takes ``--work_dir``, ``--log_dir``,
-``--model_dir``, ``--checkpoints_dir``, ``--results_dir`` and
-``--downloads_dir``, each defaulting to ``.``, so the default run scatters six
-kinds of output into the working directory and a user who sets only some of
-them gets a half-organised tree. Here there is one root and a fixed layout
-under it, so a run is one directory and moving it moves everything.
+Training outputs share one root and a fixed layout, replacing ``--log_dir``,
+``--model_dir``, ``--checkpoints_dir`` and ``--results_dir`` with ``--work_dir``.
+Downloaded artifacts are shared across runs through the XDG cache convention
+in :mod:`mace_core.artifacts`; they are not training outputs. The legacy
+``--downloads_dir`` alias is refused rather than changing the run directory.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ from mace_core.tables import OBSERVABLES_TABLE, TABLE_TYPES
 
 __all__ = ["LOG_LEVELS", "WORK_DIR_LAYOUT", "RuntimeConfig"]
 
-#: The layout under ``work_dir``. A convention rather than six fields: the
+#: The layout under ``work_dir``. A convention rather than separate fields: the
 #: names are stated once here so a reader of a run directory and the code that
 #: wrote it cannot disagree.
 WORK_DIR_LAYOUT: dict[str, str] = {
@@ -35,7 +34,6 @@ WORK_DIR_LAYOUT: dict[str, str] = {
     "models": "models",
     "checkpoints": "checkpoints",
     "results": "results",
-    "downloads": "downloads",
 }
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]

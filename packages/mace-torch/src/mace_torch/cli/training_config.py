@@ -48,7 +48,6 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
         "model_dir",
         "checkpoints_dir",
         "results_dir",
-        "downloads_dir",
         "wandb_log_hypers",
         "multiheads_finetuning",
         "foundation_head",
@@ -162,7 +161,6 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
             "model_dir",
             "checkpoints_dir",
             "results_dir",
-            "downloads_dir",
         )
         if given.get(name) is not None
     }

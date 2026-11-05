@@ -143,12 +143,16 @@ _RUNTIME: dict[str, Disposition] = {
     ),
     **_merged(
         "runtime.work_dir",
-        "one work directory with a stated layout, instead of six defaults of '.'",
+        "one work directory with a stated output layout",
         "log_dir",
         "model_dir",
         "checkpoints_dir",
         "results_dir",
-        "downloads_dir",
+    ),
+    "downloads_dir": Merged(
+        "the XDG cache convention",
+        "set XDG_CACHE_HOME for downloads; use --work_dir for training outputs. "
+        "The cache is independent of the run directory",
     ),
     **_merged(
         "the precision config",

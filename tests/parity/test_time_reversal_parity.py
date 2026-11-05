@@ -90,20 +90,20 @@ def test_projection_matches_legacy_values_and_derivatives(checkpoint, name, batc
 
 
 @pytest.mark.parametrize('batched', [False, True])
-def test_projected_hessian_and_edge_forces_match_legacy(checkpoint, batched):
+@pytest.mark.parametrize('device', ['cpu', pytest.param('cuda', marks=pytest.mark.gpu)])
+def test_projected_hessian_and_edge_forces_match_legacy(checkpoint, batched, device):
     from mace.modules import TimeReversalSymmetrizedMACE
 
     legacy, path = checkpoint
     atoms = structure('mag_fe3_canted')
-    native = load_deployed(path).with_time_reversal(batched=batched)
-    old = TimeReversalSymmetrizedMACE(legacy, batched=batched)
-    expected = old(magnetic_surfaces().build_batch(legacy, atoms), training=True,
+    native = load_deployed(path, device=device).with_time_reversal(batched=batched)
+    old = TimeReversalSymmetrizedMACE(legacy.to(device), batched=batched)
+    expected = old(moved(magnetic_surfaces().build_batch(legacy, atoms), torch.float64, device), training=True,
                    compute_force=True, compute_hessian=True, compute_edge_forces=True)
-    graph = v1_graph(atoms, list(native.z_table.zs), native.r_max, atoms.arrays['REF_magmom'])
+    graph = moved(v1_graph(atoms, list(native.z_table.zs), native.r_max, atoms.arrays['REF_magmom']), torch.float64, device)
     result = native.compute(graph, compute=('forces', 'hessian', 'edge_forces', 'atomic_stresses', 'atomic_virials'))
-    close(result.extras['hessian'], expected['hessian'], torch.float64, 'cpu')
-    # V1 defines edge forces as -dE/dv; frozen legacy reports +dE/dv.
-    close(result.extras['edge_forces'], -expected['edge_forces'], torch.float64, 'cpu')
+    close(result.extras['hessian'], expected['hessian'], torch.float64, device)
+    close(result.extras['edge_forces'], expected['edge_forces'], torch.float64, device)
     assert result.extras['hessian'].shape == (3 * len(atoms), len(atoms), 3)
 
 

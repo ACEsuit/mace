@@ -28,9 +28,7 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-@pytest.mark.parametrize(
-    "flag", ["log_dir", "model_dir", "checkpoints_dir", "downloads_dir"]
-)
+@pytest.mark.parametrize("flag", ["log_dir", "model_dir", "checkpoints_dir"])
 def test_output_directory_alias_trains_and_resumes_the_same_run(tmp_path, flag):
     config = configuration(tmp_path, max_num_epochs=2).to_resolved_dict()
     config["runtime"].update(plot=False, name="location")
@@ -81,7 +79,6 @@ def test_directory_aliases_merge_only_when_their_roots_agree(tmp_path, source):
             "log_dir",
             "model_dir",
             "checkpoints_dir",
-            "downloads_dir",
         )
     }
 

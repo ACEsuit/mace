@@ -217,7 +217,7 @@ def test_only_the_symmetric_part_of_the_strain_is_used():
 
 
 @fp64_only
-def test_edge_forces_are_minus_the_gradient_against_the_edge_vectors():
+def test_edge_forces_have_one_nonzero_vector_per_edge():
     engine = build_engine()
     positions, numbers = molecule()
     graph = build_graph(positions, numbers)
@@ -245,7 +245,8 @@ def test_asking_for_edge_forces_as_well_leaves_the_forces_as_they_were():
 @fp64_only
 def test_the_edge_forces_add_up_to_the_forces():
     """Each edge vector is its receiver's position minus its sender's, so the
-    force on an atom is what its edges push it with, receiving minus sending."""
+    export edge gradient contributes positively to the sender's force and
+    negatively to the receiver's force."""
     engine = build_engine()
     positions, numbers = molecule()
     graph = build_graph(positions, numbers)
@@ -253,8 +254,8 @@ def test_the_edge_forces_add_up_to_the_forces():
     edge_forces = result.extras["edge_forces"]
     sender, receiver = graph["edge_index"]
     assembled = torch.zeros_like(result.forces)
-    assembled.index_add_(0, receiver, edge_forces)
-    assembled.index_add_(0, sender, -edge_forces)
+    assembled.index_add_(0, sender, edge_forces)
+    assembled.index_add_(0, receiver, -edge_forces)
     torch.testing.assert_close(assembled, result.forces, rtol=1e-12, atol=1e-14)
 
 
