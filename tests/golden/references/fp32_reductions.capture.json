@@ -1,0 +1,13 @@
+{
+  "command": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 .venv/bin/python tests/golden/regenerate.py --target fp32-reductions --i-know-what-i-am-doing",
+  "seed": 20261105,
+  "torch": "2.11.0",
+  "numpy": "2.4.6",
+  "python": "3.11.15",
+  "platform": "macOS-26.3.1-arm64-arm-64bit",
+  "threads": 1,
+  "deterministic_algorithms": true,
+  "scope": "CPU segment_reduce and scalar-channel channelwise_tp_conv accumulation order",
+  "max_abs_error_limit": 1.1920928955078125e-07,
+  "independent_oracle": "sequential IEEE float32 addition of stored dyadic inputs"
+}

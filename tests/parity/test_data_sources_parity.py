@@ -10,7 +10,8 @@ from ase.io import write
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.train import run_data_stage, run_model_stage, run_train_stage
-from test_data_backend_parity import (
+
+from tests.parity.test_data_backend_parity import (
     ParsedOnly,
     assert_same,
     fixture_databases,  # noqa: F401

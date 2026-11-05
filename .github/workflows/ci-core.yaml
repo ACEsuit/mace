@@ -316,6 +316,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           tests: tests/parity
+          markers: not nightly
           numprocs: "0"
 
   packages:

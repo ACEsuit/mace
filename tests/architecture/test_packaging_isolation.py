@@ -85,7 +85,7 @@ def test_repository_wheel_keeps_the_test_and_dual_toolchain_extras(tmp_path):
         extras[extra] = {item.name: item for item in requirements
                          if item.marker is not None and item.marker.evaluate({"extra": extra})
                          and not item.marker.evaluate({"extra": ""})}
-    tests = {"pytest", "pytest-benchmark", "pytest-cov", "pytest-split", "pytest-timeout", "pytest-xdist"}
+    tests = {"hypothesis", "pytest", "pytest-benchmark", "pytest-cov", "pytest-split", "pytest-timeout", "pytest-xdist"}
     assert set(extras["test"]) == tests
     assert tests | {"black", "isort", "pylint", "mypy", "pre-commit", "import-linter", "ruff", "ty", "prek"} <= set(extras["dev"])
     assert "9.2" not in extras["test"]["pytest"].specifier

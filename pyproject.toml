@@ -33,6 +33,7 @@ markers = [
     "benchmark: performance measurement; never part of correctness gates",
     "bin_lammps: requires an external LAMMPS installation",
     "timeout: per-test timeout (provided by pytest-timeout; registered here so collection works without the plugin)",
+    "nightly: heavy parity campaign; excluded from per-PR and coverage jobs",
 ]
 
 [tool.coverage.run]

@@ -18,6 +18,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  parity-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev
+      - name: Install the v1 parity stack
+        run: python -m pip install -e packages/mace-core -e packages/mace-torch
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/parity/test_fuzz_parity.py tests/parity/test_fp32_bit_golden.py
+          markers: nightly
+          numprocs: "0"
+          timeout: "1200"
+          extra-args: --hypothesis-seed=${{ github.run_id }}
+      - name: Require serialized replay inputs in the artifact
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cases = [p for p in Path('.pytest_cache/par2').glob('*.json')
+                   if 'case' in json.loads(p.read_text())]
+          assert cases, 'PAR-2 produced no serialized examples to upload'
+          print(f'Uploading {len(cases)} replayable structures')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: parity-fuzz-${{ github.run_id }}
+          path: .pytest_cache/par2
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
   foundations:
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -322,7 +366,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           tests: tests
-          markers: not gpu and not benchmark
+          markers: not gpu and not benchmark and not nightly
           require-caps: network,cueq,polar,les,torchsim,schedulefree,magnetic,wandb
           allow-network: "true"
           coverage: "data"
@@ -512,6 +556,7 @@ jobs:
           tests: tests
           allow-network: "true"
           store-durations: "true"
+          markers: not nightly
           timeout: "1200"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -11,7 +11,8 @@ which snapshots the process's globals and puts them back, and
 
 import pytest
 import torch
-from process_state import capture_state, restore_state, state_differences
+
+from tests.parity.process_state import capture_state, restore_state, state_differences
 
 pytest.importorskip("mace_torch", reason="the v1 stack is not installed in this job")
 

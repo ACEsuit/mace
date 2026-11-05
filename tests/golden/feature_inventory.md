@@ -1008,12 +1008,12 @@ set:
 | `stdenv.TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` | `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` — set by `mace/__init__.py` so pickled checkpoints load under newer torch defaults | `mace/__init__.py` | DROP — v1 checkpoints are neutral-format (safetensors + manifest), so nothing needs the unsafe-pickle escape hatch; the legacy loader keeps it until the converter is the only reader | `tests/unit/test_scale_shift_dtype.py::test_a_full_pickle_round_trip_preserves_every_buffer_bit_for_bit` |
 | `stdenv.MASTER_PORT` | `MASTER_ADDR` / `MASTER_PORT` / `RANK` / `WORLD_SIZE` / `LOCAL_RANK` / `SLURM_*` / `OMPI_*` — standard DDP and launcher plumbing | `mace/tools/slurm_distributed.py`, `mace/tools/distributed_tools.py` | KEEP — the launcher contract is torch's and SLURM's, not MACE's, so v1 reads the same variables | `tests/workflows/test_distributed.py` |
 
-## 14. Registered pytest markers (14)
+## 14. Registered pytest markers (15)
 
 The capability model of the suite: locally a test whose capability is missing skips, and in CI a
 job that exports `MACE_REQUIRE_CAPS` fails instead. CI generates its capabilities manifest from
-this list, which is why the one marker that is **not** a capability has to be named here rather
-than left to be inferred.
+this list. Cost and infrastructure markers have no capability probe and are
+listed explicitly below.
 
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
@@ -1029,6 +1029,7 @@ than left to be inferred.
 | `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:34` | KEEP — a capability probe in `tests/conftest.py` (an external binary rather than an import) | `tests/conftest.py::CAPABILITY_PROBES[bin_lammps]` |
 | `marker.network` | `@pytest.mark.network` | `pyproject.toml:24` | KEEP — a capability probe in `tests/conftest.py`; never autodetected, opt-in via `MACE_CI_ALLOW_NETWORK=1` | `tests/conftest.py::CAPABILITY_PROBES[network]` |
 | `marker.slow` | `@pytest.mark.slow` | `pyproject.toml:22` | KEEP — a cost marker, not a capability: applied by directory to `tests/workflows` | `tests/conftest.py::pytest_collection_modifyitems` |
+| `marker.nightly` | `@pytest.mark.nightly` | `pyproject.toml:36` | KEEP — PAR-2 cost marker: the heavy campaign runs in its own nightly job, excluded from per-PR parity, coverage and durations refresh | `tests/parity/test_fuzz_parity.py::test_nightly_upload_keeps_hidden_replays_and_other_jobs_exclude_campaign` |
 | `marker.benchmark` | `@pytest.mark.benchmark` | `pyproject.toml:33` | KEEP — a cost marker: performance measurement, never part of a correctness gate | `tests/conftest.py::pytest_collection_modifyitems` |
 | `marker.timeout` | `@pytest.mark.timeout` | `pyproject.toml:35` | KEEP — test infrastructure, and explicitly **not** a capability: it is registered only so collection works when `pytest-timeout` is absent (the plugin ships in the `test`/`dev` extras). It has no `CAPABILITY_PROBES` entry and must not be absorbed into the capabilities manifest. Three tests use it today (`tests/workflows/test_finetuning_pseudolabels.py:97,133,169`) | `tests/workflows/test_finetuning_pseudolabels.py` |
 
