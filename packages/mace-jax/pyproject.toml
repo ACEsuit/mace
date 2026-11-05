@@ -21,7 +21,7 @@ dependencies = [
     # backend, which, unlike vesin, imports no torch.
     "mace-core[matscipy]",
     "jax>=0.11.0",
-    "flax>=0.12.0",
+    "flax>=0.12.8",
     "safetensors>=0.4",
 ]
 

@@ -59,6 +59,15 @@ def run_jax_model_conformance(
         else SUPPORTED_MODELS[model_id].golden_ref
     )
     reference = harness.load_reference(harness.REFERENCES_DIR / reference_name)
+    if model_id == "mace-off23-medium":
+        periodic = harness.load_reference(
+            harness.REFERENCES_DIR / "off_medium_periodic_e3nn_cpu_fp64.json"
+        )
+        assert periodic["provenance"]["sha256"] == reference["provenance"]["sha256"]
+        reference = {
+            **reference,
+            "fixtures": {**reference["fixtures"], **periodic["fixtures"]},
+        }
     fixtures = harness.load_fixtures(names=tuple(reference["fixtures"]))
     results = []
     for device in devices:

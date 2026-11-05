@@ -1,7 +1,7 @@
 # mace-jax
 
 Native JAX inference for reduced-basis, single-head MACE energy checkpoints.
-Requires Python 3.12+, JAX 0.11+ and Flax NNX. Install alongside the local core:
+Requires Python 3.12+, JAX 0.11+ and Flax NNX 0.12.8+. Install alongside the local core:
 
 ```bash
 python -m pip install -e packages/mace-core -e packages/mace-jax
@@ -64,6 +64,10 @@ artifacts are available from the FM-2 campaign. Publication and the FM-3 URL
 registry are pending, so pass a local path for now; an unresolved registry ID
 raises an actionable error. HTTPS pairs use the existing core artifact cache.
 The loader never reads a pickle.
+
+OFF23's molecular reference is supplemented by
+`off_medium_periodic_e3nn_cpu_fp64.json`, captured independently with frozen
+legacy on the three existing periodic fixtures, to check its stress channel.
 
 Fine-tuned descendants with the same architecture can load, but the certified
 list contains only these three original artifacts. Headless originals have a
