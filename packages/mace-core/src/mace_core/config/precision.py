@@ -84,10 +84,10 @@ class PrecisionConfig:
     Attributes:
         model: The interface dtype, that of every tensor crossing an op
             boundary and of the model's own parameters outside the ops.
-        accumulate: The floor of the model-level reductions: per-atom and total
-            energies. The reason it may be wider than ``model``: a sum over ten
-            thousand site energies loses accuracy the model's own arithmetic
-            does not.
+        accumulate: The floor of model-level reductions: energies, charge
+            totals, density-update normalization statistics and the long-range
+            solve. It may be wider than ``model`` because large sums and
+            cancelling electrostatic terms lose accuracy in narrow arithmetic.
         ops: Per op kind, the policy that replaces the default. The default is
             every op computing, accumulating and holding weights in ``model``.
     """
@@ -183,8 +183,7 @@ class PrecisionConfig:
 
     @classmethod
     def float32(cls) -> PrecisionConfig:
-        """The ops in float32, and the energy reduction in float64, which is
-        what the frozen tree's float32 run does."""
+        """The ops in float32 and model-level reductions in float64."""
         return cls(model="float32", accumulate="float64")
 
     @classmethod

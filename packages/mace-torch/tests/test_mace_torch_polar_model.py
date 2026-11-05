@@ -272,3 +272,118 @@ def test_a_float32_model_sums_its_charges_in_the_energy_floor(
         precision="float32",
     )
     assert model.total_dtype is expected
+    assert getattr(torch, model.descriptor.precision) is expected
+
+
+@pytest.mark.parametrize("scale", [1.0, 1e10, 1e19])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def test_polar_layer_norm_accumulates_without_overflow(scale, device):
+    from mace_torch.nn.field import LayerNormMLP
+    from tests.golden.harness import FP32
+
+    norm = LayerNormMLP([64, 64, 1], accumulate="float64").float().to(device).net[1]
+    assert isinstance(norm, torch.nn.LayerNorm)
+    base = torch.randn(
+        (2, 64), dtype=torch.float32, generator=torch.Generator().manual_seed(179)
+    )
+
+    def evaluate(dtype, candidate):
+        value = base.to(device=device, dtype=dtype).requires_grad_()
+        inputs = value * scale
+        output = (
+            norm(inputs)
+            if candidate
+            else torch.nn.functional.layer_norm(
+                inputs,
+                norm.normalized_shape,
+                norm.weight.double(),
+                norm.bias.double(),
+                norm.eps,
+            )
+        )
+        direction = torch.linspace(
+            -0.7, 0.8, output.numel(), dtype=dtype, device=device
+        ).reshape(output.shape)
+        gradient = torch.autograd.grad(
+            (output * direction).sum(), value, create_graph=True
+        )[0]
+        hessian = torch.autograd.grad((gradient * direction.flip(-1)).sum(), value)[0]
+        return output, gradient, hessian
+
+    expected = evaluate(torch.float64, False)
+    actual = evaluate(torch.float32, True)
+    for value, reference in zip(actual, expected, strict=True):
+        assert torch.isfinite(value).all()
+        torch.testing.assert_close(
+            value.double(), reference, atol=FP32.atol, rtol=FP32.rtol
+        )
+    assert norm.weight.dtype == torch.float32
+
+
+def test_float32_polar_electrostatics_honours_the_reduction_floor():
+    from mace_torch.electrostatics import long_range_geometry
+    from tests.golden.harness import FP32
+
+    model = build_model(
+        head_precision=PrecisionConfig(model="float32"), precision="float32"
+    )
+    control = build_model(precision="float64")
+    positions, numbers = molecule()
+    graph = polar_graph(positions, numbers)
+    graph = {
+        key: value.float()
+        if isinstance(value, torch.Tensor) and value.is_floating_point()
+        else value
+        for key, value in graph.items()
+    }
+    source = torch.randn(
+        (len(numbers), 4),
+        dtype=torch.float32,
+        generator=torch.Generator().manual_seed(11),
+    )
+    cache = model.projection.prepare(long_range_geometry(graph, model.descriptor))
+    expected_cache = control.projection.prepare(
+        long_range_geometry(graph, control.descriptor)
+    )
+    actual = model.projection(cache, source)
+    expected = control.projection(expected_cache, source.double())
+    assert actual.dtype == torch.float32
+    assert model.descriptor.precision == "float64"
+    torch.testing.assert_close(
+        actual.double(), expected, atol=FP32.atol, rtol=FP32.rtol
+    )
+    shifted = torch.nextafter(source, torch.full_like(source, float("inf")))
+    residual = (
+        model.projection(cache, shifted)
+        - actual
+        - model.projection(cache, shifted - source)
+    )
+    torch.testing.assert_close(
+        residual, torch.zeros_like(residual), atol=FP32.atol, rtol=FP32.rtol
+    )
+
+
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def test_float32_force_training_reaches_the_backbone_and_density_updates(device):
+    model = build_model(
+        head_precision=PrecisionConfig(model="float32"), precision="float32"
+    ).to(device)
+    positions, numbers = molecule()
+    graph = {
+        key: value.to(device=device, dtype=torch.float32)
+        if value.is_floating_point()
+        else value.to(device)
+        for key, value in polar_graph(positions, numbers).items()
+        if isinstance(value, torch.Tensor)
+    }
+    graph["positions"].requires_grad_()
+    energy = model(graph).total_energy
+    assert energy is not None
+    forces = -torch.autograd.grad(
+        energy.sum(), graph["positions"], create_graph=True
+    )[0]
+    forces.square().mean().backward()
+    for module in (model.backbone, model.source_maps, model.updates):
+        gradients = [p.grad for p in module.parameters() if p.grad is not None]
+        assert gradients and all(torch.isfinite(g).all() for g in gradients)
+        assert any(torch.count_nonzero(g) for g in gradients)

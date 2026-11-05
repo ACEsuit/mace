@@ -43,12 +43,13 @@ from mace_core.electrostatics import (
     RealspaceMethod,
 )
 from mace_core.kernels.descriptors import LinearDescriptor
-from mace_core.kernels.precision import Precision
+from mace_core.kernels.precision import Precision, widest
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
+from mace_torch.backends.precision import cast_at_boundary
 from mace_torch.electrostatics import (
     build_long_range,
     build_long_range_features,
@@ -260,7 +261,10 @@ class PolarModel(MACEModel):
         self.total_dtype = getattr(torch, energy_head.accumulate)
         self.num_recursion_steps = settings.num_recursion_steps
         self.add_local_electron_energy = settings.add_local_electron_energy
-        self.descriptor = settings.descriptor(precision)
+        # Displaced charges and projected potentials are subtracted after
+        # reduction. Carry the complete solve at the configured accumulation
+        # floor; casting only the final sum cannot recover cancelled bits.
+        self.descriptor = settings.descriptor(widest(precision, energy_head.accumulate))
 
         node_irreps = expanded_irreps(hidden_irreps, num_features)
         one_spin = _spherical(settings.multipole_max_l)
@@ -300,6 +304,7 @@ class PolarModel(MACEModel):
                     self.density_irreps,
                     num_elements=len(atomic_numbers),
                     precision=precision,
+                    accumulate=self.descriptor.precision,
                 )
                 for _ in range(settings.num_recursion_steps)
             )
@@ -309,6 +314,7 @@ class PolarModel(MACEModel):
                 self.potential_irreps,
                 self.density_irreps,
                 precision,
+                accumulate=self.descriptor.precision,
             )
             self.external_field = DisplacedGTOExternalFieldBlock(
                 settings.feature_max_l, list(settings.feature_widths), "receiver"
@@ -325,14 +331,16 @@ class PolarModel(MACEModel):
             self.register_buffer(
                 "field_norms", torch.tensor(expanded, dtype=getattr(torch, precision))
             )
-            # Under the model's precision too: both ops build their basis
-            # constants in the process default.
+        with _constructed_in(self.descriptor.precision):
             self.projection = build_long_range_features(
                 self.descriptor, solver=solver, trains_derivatives=trains_derivatives
             )
             self.coulomb = build_long_range(
                 self.descriptor, solver=solver, trains_derivatives=trains_derivatives
             )
+        if self.descriptor.precision != precision:
+            cast_at_boundary(self.projection, self.descriptor.precision, precision)
+            cast_at_boundary(self.coulomb, self.descriptor.precision, precision)
         self.solver = solver
 
     def solver_record(self) -> dict[str, Any]:

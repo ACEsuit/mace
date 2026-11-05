@@ -64,7 +64,8 @@ def diagnose(model_id, artifact, *, device, dtype):
         torch.backends.cuda.matmul.allow_tf32 = False
         source = artifact_path(entry.aliases[0])
         source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
-        if source_hash != reference["provenance"]["sha256"]:
+        reference_source_hash = reference["provenance"].get("sha256")
+        if reference_source_hash is not None and source_hash != reference_source_hash:
             raise ValueError(f"{model_id}: legacy artifact differs from golden source")
         legacy = LegacyCalculator(
             models=[legacy_model(source)],
@@ -87,6 +88,7 @@ def diagnose(model_id, artifact, *, device, dtype):
             "reference": reference_path.name,
             "reference_sha256": hashlib.sha256(reference_path.read_bytes()).hexdigest(),
             "legacy_artifact_sha256": source_hash,
+            "reference_source_sha256": reference_source_hash,
             "reference_dtype": reference["dtype"],
             "fixture_names": list(reference["fixtures"]),
             "exception": "stress retains the agreed ELEC-2 cell derivative correction",

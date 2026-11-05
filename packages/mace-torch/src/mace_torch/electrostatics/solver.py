@@ -147,8 +147,9 @@ def long_range_geometry(
     """
     from mace_torch.electrostatics.reference.kspace import compute_k_vectors_flat
 
-    positions = graph["positions"]
-    cell = graph["cell"].view(-1, 3, 3)
+    dtype = getattr(torch, descriptor.precision)
+    positions = graph["positions"].to(dtype)
+    cell = graph["cell"].to(dtype).view(-1, 3, 3)
     rcell, volume = reciprocal_cell_and_volume(cell)
     if PBC_HANDLING[descriptor.periodicity_profile] == "realspace":
         k_vectors = positions.new_empty((0, 3))

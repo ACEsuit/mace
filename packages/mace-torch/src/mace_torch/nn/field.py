@@ -73,20 +73,47 @@ def _scalar_channels(irreps: str) -> int:
     )
 
 
+class _AccumulatingLayerNorm(nn.LayerNorm):
+    """Layer normalization with the configured reduction floor.
+
+    Polar density updates can feed values near 1e19 into this reduction.
+    A float32 sum of squared deviations can overflow while its final mean
+    is representable, silently reducing the normalized output to the bias.
+    Parameters and outputs retain the interface dtype.
+    """
+
+    def __init__(self, width: int, accumulate: Precision) -> None:
+        super().__init__(width)
+        self.accumulate = getattr(torch, accumulate)
+
+    def forward(self, input: Tensor) -> Tensor:
+        return torch.nn.functional.layer_norm(
+            input.to(self.accumulate),
+            self.normalized_shape,
+            self.weight.to(self.accumulate),
+            self.bias.to(self.accumulate),
+            self.eps,
+        ).to(input.dtype)
+
+
 class LayerNormMLP(nn.Module):
     """Linear, layer norm and SiLU, repeated, with a plain linear last.
 
     Args:
         widths: The width of every layer, input first and output last.
+        accumulate: The dtype of normalization statistics, from the model's
+            reduction policy.
     """
 
-    def __init__(self, widths: Sequence[int]) -> None:
+    def __init__(
+        self, widths: Sequence[int], accumulate: Precision = "float64"
+    ) -> None:
         super().__init__()
         layers: list[nn.Module] = []
         for index, (width_in, width_out) in enumerate(itertools.pairwise(widths)):
             layers.append(nn.Linear(width_in, width_out, bias=True))
             if index < len(widths) - 2:
-                layers.append(nn.LayerNorm(width_out))
+                layers.append(_AccumulatingLayerNorm(width_out, accumulate))
                 layers.append(nn.SiLU())
         self.net = nn.Sequential(*layers)
 
@@ -377,6 +404,7 @@ class ChargeUpdate(nn.Module):
         density_irreps: str,
         num_elements: int,
         precision: Precision = "float64",
+        accumulate: Precision = "float64",
     ) -> None:
         super().__init__()
         channels = _scalar_channels(node_irreps)
@@ -394,7 +422,7 @@ class ChargeUpdate(nn.Module):
         self.from_density = linear(density_irreps, node_irreps)
         self.element_embedding = linear(f"{num_elements}x0e", invariants)
         self.products = InvariantProducts(node_irreps)
-        self.mlp = LayerNormMLP([2 * channels, 64, 64, 64, channels])
+        self.mlp = LayerNormMLP([2 * channels, 64, 64, 64, channels], accumulate)
         self.modulation = ScalarModulation(node_irreps, channels)
         density_max_l = max(ir.degree for _, ir in Irreps.parse(density_irreps).terms)
         readout_hidden = "+".join(
@@ -477,6 +505,7 @@ class ElectronEnergyReadout(nn.Module):
         potential_irreps: str,
         density_irreps: str,
         precision: Precision = "float64",
+        accumulate: Precision = "float64",
     ) -> None:
         super().__init__()
         channels = _scalar_channels(node_irreps)
@@ -495,7 +524,7 @@ class ElectronEnergyReadout(nn.Module):
         self.from_potential = biased(potential_irreps)
         self.density_products = InvariantProducts(node_irreps)
         self.potential_products = InvariantProducts(node_irreps)
-        self.mlp = LayerNormMLP([2 * channels, 128, 128, 128, 1])
+        self.mlp = LayerNormMLP([2 * channels, 128, 128, 128, 1], accumulate)
 
     def forward(
         self, node_features: Tensor, potential: Tensor, density: Tensor

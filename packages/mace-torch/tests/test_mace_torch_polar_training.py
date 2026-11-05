@@ -303,3 +303,39 @@ def test_a_solve_that_rebuilds_differently_is_refused(trained):
     trained.write_text(json.dumps(document))
     with pytest.raises(CheckpointError, match="kspace_cutoff"):
         load_deployed(trained)
+
+
+def test_an_old_float32_polar_checkpoint_gains_its_configured_reduction_floor(tmp_path):
+    from mace_core.config.precision import PrecisionConfig
+    from mace_torch.train import write_model
+
+    config = polar_configuration(tmp_path).model_copy(
+        update={"precision": PrecisionConfig(model="float32")}
+    )
+    _, stage = built(config)
+    path = write_model(tmp_path / "polar", stage.model, stage.metadata)
+    document = json.loads(path.read_text())
+    document["config"]["electrostatics"]["descriptor"]["precision"] = "float32"
+    path.write_text(json.dumps(document))
+    with pytest.warns(UserWarning, match="configured float64 reduction floor"):
+        loaded = load_deployed(path)
+    polar = loaded.model
+    assert isinstance(polar, PolarModel)
+    assert polar.descriptor.precision == "float64"
+    assert loaded.metadata.electrostatics is not None
+    assert loaded.metadata.electrostatics.descriptor["precision"] == "float64"
+    for original, migrated in zip(
+        stage.model.parameters(), loaded.engine.parameters(), strict=True
+    ):
+        assert torch.equal(original, migrated)
+    saved = write_model(tmp_path / "migrated", loaded.engine, loaded.metadata)
+    restored = load_deployed(saved)
+    for original, recovered in zip(
+        loaded.engine.parameters(), restored.engine.parameters(), strict=True
+    ):
+        assert torch.equal(original, recovered)
+    # The compatibility correction must not admit a changed physical solve.
+    document["config"]["electrostatics"]["descriptor"]["smearing_width"] *= 2
+    path.write_text(json.dumps(document))
+    with pytest.raises(CheckpointError, match="smearing_width"):
+        load_deployed(path)
