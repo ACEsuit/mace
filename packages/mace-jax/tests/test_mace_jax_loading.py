@@ -1,18 +1,79 @@
 """Loud load refusals, named path alignment and the framework boundary."""
 
+import io
 import json
 import subprocess
 import sys
+import urllib.request
 
 import jax
 import numpy as np
 import pytest
 from jax_conformance import TINY, ModelSurface
+from mace_core.artifacts import cache_name
 from mace_core.kernels import available_backends
 from mace_jax.deploy.neutral_io import ModelLoadError, load_model
 from safetensors.numpy import load_file, save_file
 
 from tests.golden import harness
+
+
+@pytest.mark.parametrize("suffix", [".json", ".safetensors"])
+def test_downloaded_checkpoint_pair_reloads_offline_with_golden_parity(
+    tmp_path, monkeypatch, suffix
+):
+    """Both cached files keep the artifact bytes and the frozen predictions."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    root = "https://example.org/tiny"
+    bodies = {
+        root + ext: TINY.with_suffix(ext).read_bytes()
+        for ext in (".json", ".safetensors")
+    }
+    requested = []
+
+    class Response(io.BytesIO):
+        def __init__(self, body):
+            super().__init__(body)
+            self.headers = {
+                "Content-Length": str(len(body)),
+                "Content-Type": "application/octet-stream",
+            }
+
+    def opener(url, timeout):
+        requested.append(url)
+        return Response(bodies[url])
+
+    monkeypatch.setattr(urllib.request, "urlopen", opener)
+    apply, params = load_model(root + suffix)
+    assert requested == list(bodies)
+    for url, body in bodies.items():
+        assert (tmp_path / "mace" / cache_name(url)).read_bytes() == body
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the cached checkpoint tried to use the network")
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    reloaded, state = load_model(root + suffix)
+    reference = harness.load_reference(
+        harness.REFERENCES_DIR / "tiny_scaleshift_e3nn_cpu_fp64.json"
+    )
+    row = harness.FP64_CPU_REFERENCE
+    for name, atoms in harness.load_fixtures(
+        names=["water_cluster", "triclinic_bulk"]
+    ).items():
+        actual = ModelSurface(apply, params).golden_outputs(atoms)
+        again = ModelSurface(reloaded, state).golden_outputs(atoms)
+        expected = reference["fixtures"][name]["outputs"]
+        channels = (
+            ("energy", "forces", "stress") if atoms.pbc.any() else ("energy", "forces")
+        )
+        for key in channels:
+            np.testing.assert_allclose(
+                actual[key], expected[key]["value"], atol=row.atol, rtol=row.rtol
+            )
+            np.testing.assert_array_equal(again[key], actual[key])
+    assert len(list((tmp_path / "mace").iterdir())) == 2
+    jax.clear_caches()
 
 
 def edited(tmp_path, edit):

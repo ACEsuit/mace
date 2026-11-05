@@ -11,7 +11,13 @@ made one call take two paths depending on how MACE was installed.
 from __future__ import annotations
 
 import ast
+import json
+import shutil
+import subprocess
 from pathlib import Path
+from zipfile import ZipFile
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
@@ -22,7 +28,17 @@ RESOLVER = PACKAGES / "mace-core" / "src" / "mace_core" / "artifacts.py"
 NETWORK_MODULES = ("urllib.request", "http.client", "requests", "httpx", "urllib3")
 
 #: What a model file is called, in either stack.
-MODEL_SUFFIXES = (".model", ".pt", ".pth", ".ckpt")
+MODEL_SUFFIXES = (".model", ".pt", ".pth", ".ckpt", ".safetensors")
+
+
+def _is_model(name, read):
+    path = Path(name)
+    if path.suffix in MODEL_SUFFIXES or path.name == "mp_vasp_e0.json":
+        return True
+    if path.suffix == ".json":
+        document = json.loads(read())
+        return isinstance(document, dict) and document.get("format") == "mace-v1-checkpoint"
+    return False
 
 
 def _sources() -> list[Path]:
@@ -53,10 +69,25 @@ def test_only_the_resolver_reaches_the_network():
 def test_no_model_file_is_part_of_any_package():
     bundled = [
         str(path.relative_to(REPO_ROOT))
-        for path in sorted(PACKAGES.rglob("*"))
-        if path.is_file() and path.suffix in MODEL_SUFFIXES
+        for path in sorted(PACKAGES.glob("*/src/**/*"))
+        if path.is_file() and _is_model(path.name, path.read_bytes)
     ]
     assert not bundled, (
         f"{bundled} are model files inside the v1 packages. Every artifact is "
         f"resolved through the cache, so none is bundled."
     )
+
+
+@pytest.mark.parametrize("package", sorted(path.parent.name for path in PACKAGES.glob("*/pyproject.toml")))
+def test_wheels_ship_no_model_artifact(tmp_path, package):
+    if shutil.which("uv") is None:
+        pytest.skip("building the wheel needs uv")
+    completed = subprocess.run(
+        ["uv", "build", "--wheel", "--quiet", str(PACKAGES / package), "-o", str(tmp_path)],
+        capture_output=True, text=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    wheel, = tmp_path.glob("*.whl")
+    with ZipFile(wheel) as archive:
+        assert not [name for name in archive.namelist()
+                    if _is_model(name, lambda: archive.read(name))]

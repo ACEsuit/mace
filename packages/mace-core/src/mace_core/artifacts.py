@@ -32,8 +32,10 @@ through it.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import os
 import sys
+import tempfile
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -76,7 +78,8 @@ class ArtifactRef:
     url: str
 
     def __post_init__(self) -> None:
-        if urllib.parse.urlsplit(self.url).scheme != "https":
+        parts = urllib.parse.urlsplit(self.url)
+        if parts.scheme != "https" or not parts.hostname:
             raise ValueError(
                 f"{self.url!r} is not an https URL. An artifact is published at "
                 f"one; a file already on disk is passed as a path instead."
@@ -157,6 +160,10 @@ def download(
 ) -> Path:
     """Fetch ``url`` into ``destination``, whole or not at all.
 
+    Each transfer owns a distinct temporary sibling, so concurrent downloads
+    cannot write into, rename or remove each other's partial files. When a
+    length is advertised, it must match before the destination is replaced.
+
     Args:
         url: What to fetch. A GitHub file link is rewritten first.
         destination: Where it ends up.
@@ -167,10 +174,11 @@ def download(
 
     Raises:
         ArtifactDownloadError: The response is an HTML page, or the transfer
-            failed. Nothing is left at ``destination`` either way.
+            failed. An existing destination is preserved on failure; otherwise
+            it remains absent. The transfer's partial file is always removed.
     """
     target = normalize_download_url(url)
-    partial = destination.with_name(destination.name + ".part")
+    partial: Path | None = None
     destination.parent.mkdir(parents=True, exist_ok=True)
     opener = opener or urllib.request.urlopen
     total = 0
@@ -183,26 +191,41 @@ def download(
                     f"artifact, which is what an error or login page looks "
                     f"like. Check the URL; nothing was cached."
                 )
-            total = int(response.headers.get("Content-Length", 0) or 0)
+            length = response.headers.get("Content-Length")
+            expected = None if length is None else int(length)
+            if expected is not None and expected < 0:
+                raise ValueError(f"negative Content-Length: {expected}")
+            total = expected or 0
             done = 0
-            with open(partial, "wb") as out:
+            with tempfile.NamedTemporaryFile(
+                dir=destination.parent,
+                prefix=destination.name + ".",
+                suffix=".part",
+                delete=False,
+            ) as out:
+                partial = Path(out.name)
                 while block := response.read(_BLOCK):
                     out.write(block)
                     done += len(block)
                     if progress is not None:
                         progress(done, total)
+            if expected is not None and done != expected:
+                raise ArtifactDownloadError(
+                    f"downloading {target} received {done} bytes; "
+                    f"Content-Length declared {expected}. Nothing was cached; "
+                    "the next attempt starts again."
+                )
         os.replace(partial, destination)
         if progress is not None and total > 0:
             sys.stderr.write("\n")
-    except ArtifactDownloadError:
-        partial.unlink(missing_ok=True)
-        raise
-    except (OSError, ValueError) as failure:
-        partial.unlink(missing_ok=True)
+    except (OSError, ValueError, http.client.HTTPException) as failure:
         raise ArtifactDownloadError(
             f"downloading {target} failed: {failure}. Nothing was cached; "
             f"the next attempt starts again."
         ) from failure
+    finally:
+        if partial is not None:
+            partial.unlink(missing_ok=True)
     return destination
 
 

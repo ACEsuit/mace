@@ -121,8 +121,8 @@ ROSTER: tuple[RosterEntry, ...] = (
         None,
         replaced_by="MACE-OFF23",
         reason=(
-            "a 2023 organic-chemistry model superseded by MACE-OFF23, and the "
-            "only artifact that was bundled inside the package"
+            "a 2023 organic-chemistry model superseded by MACE-OFF23; its "
+            "bundled pickle was available in source checkouts, not legacy wheels"
         ),
     ),
 )

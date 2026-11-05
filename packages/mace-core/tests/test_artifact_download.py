@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import os
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from http.client import IncompleteRead
+from threading import Event
 
 import pytest
 from mace_core import artifacts
@@ -21,6 +24,7 @@ from mace_core.artifacts import (
     normalize_download_url,
     resolve_artifact,
 )
+from mace_core.foundation_roster import ROSTER
 from mace_core_artifact_urls import FAMILIES, OFF_MEDIUM
 
 BODY = b"a model, in several blocks " * 40000
@@ -147,6 +151,107 @@ def test_an_interrupted_download_leaves_nothing_and_the_next_one_succeeds(tmp_pa
     assert sorted(p.name for p in tmp_path.iterdir()) == [cache_name(OFF_MEDIUM)]
 
 
+@pytest.mark.parametrize("advertised", [0, len(BODY) + 1, len(BODY) - 1])
+def test_eof_with_the_wrong_length_is_not_committed(tmp_path, advertised):
+    response = Response()
+    response.headers["Content-Length"] = str(advertised)
+    destination = tmp_path / "model.safetensors"
+    with pytest.raises(ArtifactDownloadError, match="Content-Length declared"):
+        download(OFF_MEDIUM, destination, opener=Server(response), progress=None)
+    assert list(tmp_path.iterdir()) == []
+    assert (
+        download(
+            OFF_MEDIUM, destination, opener=Server(Response()), progress=None
+        ).read_bytes()
+        == BODY
+    )
+
+
+@pytest.mark.parametrize("advertised", ["-1", "invalid"])
+def test_invalid_content_length_cannot_replace_a_cached_file(tmp_path, advertised):
+    response = Response()
+    response.headers["Content-Length"] = advertised
+    destination = tmp_path / "model.safetensors"
+    destination.write_bytes(b"previous complete download")
+    with pytest.raises(ArtifactDownloadError, match="downloading"):
+        download(OFF_MEDIUM, destination, opener=Server(response), progress=None)
+    assert destination.read_bytes() == b"previous complete download"
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_a_response_without_content_length_can_be_cached(tmp_path):
+    response = Response()
+    del response.headers["Content-Length"]
+    path = download(
+        OFF_MEDIUM,
+        tmp_path / "model.safetensors",
+        opener=Server(response),
+        progress=None,
+    )
+    assert path.read_bytes() == BODY
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("failure", [IncompleteRead(b"partial"), KeyboardInterrupt()])
+def test_stream_failures_clean_up_and_preserve_an_existing_destination(
+    tmp_path, failure
+):
+    class BrokenResponse(Response):
+        def read(self, size):
+            if self._offset:
+                raise failure
+            return super().read(size)
+
+    destination = tmp_path / "model.safetensors"
+    destination.write_bytes(b"previous complete download")
+    exception = (
+        KeyboardInterrupt
+        if isinstance(failure, KeyboardInterrupt)
+        else ArtifactDownloadError
+    )
+    with pytest.raises(exception):
+        download(
+            OFF_MEDIUM, destination, opener=Server(BrokenResponse()), progress=None
+        )
+    assert destination.read_bytes() == b"previous complete download"
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_concurrent_transfers_only_publish_complete_files(tmp_path):
+    """Pause one writer after a block while another replaces the destination."""
+    started, resume = Event(), Event()
+    destination = tmp_path / "model.safetensors"
+    second_body = b"a different complete transfer" * 50000
+
+    def pause_after_first_block(done, total):
+        if not started.is_set():
+            started.set()
+            assert resume.wait(10), "the other transfer did not finish"
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(
+            download,
+            OFF_MEDIUM,
+            destination,
+            opener=Server(Response()),
+            progress=pause_after_first_block,
+        )
+        try:
+            assert started.wait(10), "the first transfer did not start"
+            assert not destination.exists()
+            second = download(
+                OFF_MEDIUM,
+                destination,
+                opener=Server(Response(second_body)),
+                progress=None,
+            )
+            assert second.read_bytes() == second_body
+        finally:
+            resume.set()
+        assert first.result(timeout=10).read_bytes() == BODY
+    assert list(tmp_path.iterdir()) == [destination]
+
+
 def test_a_timeout_is_reported_as_a_failed_download(tmp_path):
     def silent(url, timeout):
         raise TimeoutError(f"no byte in {timeout} s")
@@ -213,10 +318,14 @@ def test_a_cached_artifact_is_read_with_no_network(tmp_path, monkeypatch):
     assert resolve_artifact(ArtifactRef(OFF_MEDIUM), cache=tmp_path) == first
 
 
-@pytest.mark.parametrize("family", sorted(FAMILIES))
-def test_a_file_under_a_legacy_name_is_adopted_where_it_is(tmp_path, family):
+@pytest.mark.parametrize(
+    "entry",
+    [entry for entry in ROSTER if entry.family is not None],
+    ids=lambda entry: f"{entry.loader}-{entry.name}",
+)
+def test_a_file_under_a_legacy_name_is_adopted_where_it_is(tmp_path, entry):
     """Where it is, not moved: the frozen tree still looks there."""
-    url = FAMILIES[family]
+    url = entry.url
     for name in legacy_cache_names(url):
         cache = tmp_path / name.replace("/", "_")
         cache.mkdir()

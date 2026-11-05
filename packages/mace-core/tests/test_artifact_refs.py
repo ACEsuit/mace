@@ -18,8 +18,14 @@ from mace_core_artifact_urls import FAMILIES, MDP, MP_SMALL, OFF_MEDIUM, POLAR_S
 
 def test_a_reference_is_an_https_url():
     assert ArtifactRef(OFF_MEDIUM).url == OFF_MEDIUM
+
+
+@pytest.mark.parametrize(
+    "url", ["http://example.com/model.model", "https:model.json", "https:///model.json"]
+)
+def test_a_reference_needs_https_and_a_host(url):
     with pytest.raises(ValueError, match="https"):
-        ArtifactRef("http://example.com/model.model")
+        ArtifactRef(url)
 
 
 def test_the_cache_follows_xdg_and_defaults_under_home(tmp_path):
