@@ -1,6 +1,6 @@
 """The JAX stack for MACE v1, inference only.
 
-Scaffold only. The public surface arrives with the tickets that build it.
+Load native checkpoints through ``mace_jax.deploy.neutral_io.load_model``.
 """
 
 from importlib.metadata import PackageNotFoundError, version

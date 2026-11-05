@@ -105,3 +105,13 @@ layers =
     (kernels)
 containers =
     mace_torch
+
+[importlinter:contract:jax-is-native]
+name = JAX inference imports no torch or e3nn implementation
+type = forbidden
+source_modules =
+    mace_jax
+forbidden_modules =
+    torch
+    e3nn
+    e3nn_jax

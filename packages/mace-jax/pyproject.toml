@@ -7,11 +7,10 @@ name = "mace-jax"
 dynamic = ["version"]
 description = "The JAX stack for MACE v1, inference only."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "MACE developers" }]
 classifiers = [
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -21,17 +20,19 @@ dependencies = [
     # The matscipy extra brings this package's default neighbour-list
     # backend, which, unlike vesin, imports no torch.
     "mace-core[matscipy]",
+    "jax>=0.11.0",
+    "flax>=0.12.0",
+    "safetensors>=0.4",
 ]
+
+[project.entry-points."mace.kernel_backends.jax"]
+reference = "mace_jax.kernels.reference:ReferenceBackend"
+
+[project.scripts]
+mace-jax = "mace_jax.cli.eval:main"
 
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
-
-# No [project.scripts] yet. Every mace_* console entry point is owned by one
-# distribution, mace-launcher; two distributions declaring the same script name
-# is undefined behaviour in pip. This package gains exactly one script of its
-# own when its CLI lands: `mace-jax`, hyphenated so it stays outside the mace_*
-# set, since mace-jax does not depend on mace-torch and has to be usable with
-# no torch installed.
 
 [tool.hatch.version]
 source = "vcs"

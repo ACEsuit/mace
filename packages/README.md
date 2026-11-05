@@ -200,7 +200,7 @@ packages/
     nn/                          equivariant building blocks
     physics/                     forces, stress and fixed points, around the model
     train/                       the three stages and the training loop
-  mace-jax/src/mace_jax/         inference only, not yet implemented
+  mace-jax/src/mace_jax/         inference only; native JAX kernels and canonical checkpoint loading
   mace-launcher/src/mace_launcher/  console scripts, engine dispatch, import audit
 ```
 
@@ -480,11 +480,27 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 
 | File | What is in it |
 |---|---|
-| `mace_jax/__init__.py` | The package version; inference code arrives with its tickets. |
+| `mace_jax/__init__.py` | The installed package version; the JAX inference distribution. |
 | `mace_launcher/__init__.py` | The `mace_*` console scripts, dispatching on `--engine` or `MACE_ENGINE`. |
 | `mace_launcher/audit.py` | The runtime guard that fails when a v1 module imports the legacy package. |
 
 | `mace_jax/neighbors.py` | Resolve framework-neutral neighbour backends for JAX. |
+| `mace_jax/cli/__init__.py` | Inference command namespace. |
+| `mace_jax/cli/eval.py` | The mace-jax XYZ inference command. |
+| `mace_jax/deploy/__init__.py` | Canonical deployment namespace. |
+| `mace_jax/deploy/neutral_io.py` | Strict safetensors/JSON loader and pure NNX apply boundary. |
+| `mace_jax/graph.py` | Bind shared natural graph batching to JAX arrays. |
+| `mace_jax/kernels/__init__.py` | Native kernel namespace. |
+| `mace_jax/kernels/ops.py` | Canonical linear, convolution, reduced contraction and radial MLP operators. |
+| `mace_jax/kernels/reference.py` | Reference backend factories, capabilities, harmonics and reductions. |
+| `mace_jax/models/__init__.py` | Inference model namespace. |
+| `mace_jax/models/energy.py` | Energy readouts, E0 assembly and backbone/output composition. |
+| `mace_jax/models/registry.py` | The three supported foundation architectures and pending publication references. |
+| `mace_jax/nn/__init__.py` | Neural building-block namespace. |
+| `mace_jax/nn/backbone.py` | Four interaction variants and the descriptor-built product basis. |
+| `mace_jax/nn/radial.py` | Bessel basis, polynomial envelope, Agnesi transform and ZBL repulsion. |
+| `mace_jax/physics/__init__.py` | Derivative-output namespace. |
+| `mace_jax/physics/outputs.py` | Forces, stress and virials from position and symmetric-strain gradients. |
 
 ### `mace-backend-example`
 

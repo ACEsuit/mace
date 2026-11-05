@@ -68,8 +68,7 @@ jobs:
         # though this job only lints one of them.
         run: |
           python -m pip install -e packages/mace-core \
-                                -e packages/mace-torch \
-                                -e packages/mace-jax
+                                -e packages/mace-torch
       - name: Legacy hooks
         # `pre-commit run` takes at most one hook id, so the new toolchain's
         # hooks are skipped by name instead. That is what keeps a packages/**
@@ -354,10 +353,14 @@ jobs:
         # sees the local path in the same run.
         run: |
           python -m pip install --upgrade pip
+          # JAX 0.11 requires Python 3.12; keep the other distributions on 3.11.
+          jax_package=()
+          if [[ '${{ matrix.python-version }}' != '3.11' ]]; then
+            jax_package=(-e packages/mace-jax)
+          fi
           python -m pip install -e packages/mace-core \
                                 -e packages/mace-torch \
-                                -e packages/mace-jax \
-                                -e packages/mace-launcher
+                                -e packages/mace-launcher "${jax_package[@]}"
           # Test dependencies only. numpy comes from mace-core, which declares
           # it as a runtime dependency.
           python -m pip install pytest
@@ -370,7 +373,60 @@ jobs:
       - name: Install the example backend, which is the only step that adds it
         run: python -m pip install -e packages/mace-backend-example
       - name: Run the package suites
-        run: python -m pytest packages/*/tests -v
+        shell: bash
+        run: |
+          suites=(packages/*/tests)
+          if [[ '${{ matrix.python-version }}' == '3.11' ]]; then
+            suites=(packages/mace-core/tests packages/mace-torch/tests
+                    packages/mace-launcher/tests packages/mace-backend-example/tests)
+          fi
+          python -m pytest "${suites[@]}" -v
+
+  jax-anchor:
+    # Configure this stable check name as Required when the branch is published.
+    # The job itself always runs: an unrelated PR reports an explicit no-op.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            jax:
+              - 'packages/mace-jax/**'
+              - 'packages/mace-core/**'
+              - 'tests/golden/**'
+              - 'pyproject.toml'
+              - '.github/workflows/ci-core.yaml'
+              - '.github/actions/run-tests/**'
+      - uses: actions/setup-python@e9d6f990972a57673cdb72ec29e19d42ba28880f # v6.0.0
+        if: github.event_name != 'pull_request' || steps.filter.outputs.jax == 'true'
+        with:
+          python-version: '3.13'
+      - name: Install the JAX-only runtime
+        if: github.event_name != 'pull_request' || steps.filter.outputs.jax == 'true'
+        run: |
+          python -m pip install -e packages/mace-core -e packages/mace-jax \
+                                pytest pytest-timeout
+      - uses: ./.github/actions/run-tests
+        if: github.event_name != 'pull_request' || steps.filter.outputs.jax == 'true'
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          OMP_NUM_THREADS: '1'
+          OPENBLAS_NUM_THREADS: '1'
+        with:
+          tests: packages/mace-jax/tests/test_mace_jax_parity_neutral.py
+          markers: not network and not gpu
+          numprocs: '0'
+          allow-network: 'false'
+      - name: No JAX inputs changed
+        if: github.event_name == 'pull_request' && steps.filter.outputs.jax != 'true'
+        run: echo 'No JAX inputs changed; the tiny-anchor check is not needed.'
 
   workflows:
     # End-to-end CLI trainings via subprocess — the expensive suite. PRs run
