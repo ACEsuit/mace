@@ -56,6 +56,8 @@ QUANTITIES = (
     "atomic_dipoles",
     "polarizability",
     "polarizability_sh",
+    "dmu_dr",
+    "dalpha_dr",
     "charges",
     "magforces",
     "equilibrated_magmom",
@@ -218,7 +220,9 @@ def _evaluate(
         for key, value in batch.graph.items()
     }
     compute = tuple(
-        name for name in quantities if name in {"forces", "stress", "magforces"}
+        name
+        for name in quantities
+        if name in {"forces", "stress", "magforces", "dmu_dr", "dalpha_dr"}
     )
     output = engine(flat, compute=compute)
     values = {

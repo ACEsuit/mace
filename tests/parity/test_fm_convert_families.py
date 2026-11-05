@@ -104,6 +104,40 @@ def test_fm_convert_dipole_committed_reference(fp64, tmp_path):
 
 
 @pytest.mark.magnetic
+def test_fm_convert_magnetic_base_scope(fp64, isolated, tmp_path):
+    """The base owns shared state but provides no executable model to convert."""
+    import inspect
+
+    from mace.modules.extensions import MagneticMACE, MagneticScaleShiftMACE
+    from mace.tools.scripts_utils import extract_config_mace_model
+    from tests.golden.magnetic_surfaces import load_anchor
+
+    concrete = load_anchor()
+    assert type(concrete) is MagneticScaleShiftMACE
+    config = extract_config_mace_model(concrete)
+    parameters = inspect.signature(MagneticMACE).parameters
+    base = MagneticMACE(
+        **{key: value for key, value in config.items() if key in parameters}
+    )
+    base_state, concrete_state = base.state_dict(), concrete.state_dict()
+    assert base_state.keys() < concrete_state.keys()
+    for name, value in base_state.items():
+        assert value.shape == concrete_state[name].shape, name
+    base.load_state_dict({name: concrete_state[name] for name in base_state})
+    with pytest.raises(NotImplementedError):
+        base({})
+    source = tmp_path / "base.model"
+    torch.save(base, source)
+    output = tmp_path / "refused"
+    with pytest.raises(
+        EXTRACTOR["ExtractionError"], match="forward raises NotImplementedError"
+    ):
+        extract_here(source, output)
+    assert not output.with_suffix(".json").exists()
+    assert not output.with_suffix(".safetensors").exists()
+
+
+@pytest.mark.magnetic
 def test_fm_convert_magnetic_goldens_and_live_legacy(fp64, tmp_path):
     from tests.golden import magnetic_surfaces as surfaces
     from tests.parity.test_magnetic_parity import evaluate

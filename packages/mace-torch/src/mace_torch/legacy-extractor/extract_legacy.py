@@ -961,7 +961,12 @@ def walk_dielectric(walker: Walk, model) -> None:
         "polarizability_std",
     ):
         walker.derive(name, "recorded at construction and never read by the forward")
-    fixed = importlib.import_module("mace.tools.torch_tools").get_change_of_basis()
+    torch_tools = importlib.import_module("mace.tools.torch_tools")
+    # The extractor starts with float32 by default, independently of the
+    # checkpoint. Construct at the buffer's precision before comparing;
+    # promoting an already rounded float32 matrix cannot recover fp64 values.
+    with torch_tools.default_dtype(model.change_of_basis.dtype):
+        fixed = torch_tools.get_change_of_basis()
     if not torch.allclose(
         model.change_of_basis.double(), fixed.double(), atol=1e-12, rtol=0
     ):
