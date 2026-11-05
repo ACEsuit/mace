@@ -604,6 +604,34 @@ def test_a_dielectric_configuration_is_read_in_full(fp64, isolated, tmp_path):
     assert len(recorded) == 32
 
 
+def test_unused_legacy_edge_irreps_do_not_change_the_converted_model(
+    fp64, isolated, tmp_path
+):
+    from e3nn import o3
+
+    original = load_anchor("tiny_scaleshift.model")
+    baseline = import_neutral(
+        extract_here(GOLDEN / "models/tiny_scaleshift.model", tmp_path / "baseline"),
+        CATALOGUE,
+    )
+    original.edge_irreps = o3.Irreps("7x0e+7x1o")
+    original.use_edge_irreps_first = True
+    source = tmp_path / "unused.model"
+    torch.save(original, source)
+    sidecar = extract_here(source, tmp_path / "unused")
+    assert read_neutral(sidecar).sidecar.config["edge_irreps"] == "7x0e+7x1o"
+    imported = import_neutral(sidecar, CATALOGUE)
+    assert imported.config == baseline.config
+    report = verify_against_reference(
+        imported.engine,
+        reference("tiny_scaleshift"),
+        FIXTURES,
+        z_table=imported.z_table,
+        cutoff=imported.config.model.r_max,
+    )
+    assert report.passed, report.describe()
+
+
 def test_a_dielectric_model_converts_and_reads_back_from_disk(fp64, isolated, tmp_path):
     """Its one readout of all three quantities becomes three heads, and the
     checkpoint of a model with no energy rebuilds with its element table."""

@@ -76,7 +76,10 @@ def run():
             provenance={
                 "source": spec.origin,
                 "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-                "recipe": "python tests/golden/regenerate.py --target foundation-roster --i-know-what-i-am-doing",
+                "recipe": (
+                    "python tests/golden/regenerate.py --target foundation-roster "
+                    "--i-know-what-i-am-doing"
+                ),
                 "loader": spec.loader,
                 "loader_kwargs": spec.loader_kwargs,
                 "description": spec.description,

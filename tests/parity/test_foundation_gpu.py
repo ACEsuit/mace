@@ -35,9 +35,14 @@ from tests.parity.test_foundation_roster import (
     FLOAT32_PRECISION,
     GOLDEN_PARAMS,
     GOLDENS,
+    IN_PROCESS,
     artifact_path,
     assert_reproduces_golden,
     converted,
+    deviations,
+    exact_rebuild,
+    float32_constants,
+    legacy_calculator,
 )
 from tests.parity.test_foundation_roster import v1_outputs as outputs_on
 
@@ -117,3 +122,32 @@ def test_atomic_float32_sums_stay_inside_the_float32_row(name):
     assert not exceeded(atomic, reference, FLOAT32), exceeded(
         atomic, reference, FLOAT32
     )
+
+
+@pytest.mark.network
+@pytest.mark.parametrize(
+    "name",
+    [
+        "mp-medium-0b",
+        "mp-mh-0",
+        "mp-mh-1",
+        "omol",
+        *[
+            pytest.param(f"polar-1-{size}", marks=pytest.mark.polar)
+            for size in ("s", "m", "l")
+        ],
+    ],
+)
+def test_rounded_foundation_matches_exact_legacy_bases_on_gpu(name, fp64, isolated):
+    """Separate source rounding from full-to-reduced conversion on the GPU."""
+    path = artifact_path(name)
+    assert float32_constants(path)
+    model = exact_rebuild(path)
+    found = deviations(
+        path,
+        lambda head: legacy_calculator(path, head, model, device="cuda"),
+        device="cuda",
+    )
+    assert found
+    failed = [entry for entry in found if entry[3] > IN_PROCESS * max(entry[4], 1.0)]
+    assert not failed, failed

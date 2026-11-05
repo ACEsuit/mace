@@ -261,7 +261,7 @@ def charge_aware(path: Path) -> bool:
     return type(legacy_model(path)).__name__ == "PolarMACE"
 
 
-def legacy_calculator(path: Path, head: str, model=None):
+def legacy_calculator(path: Path, head: str, model=None, device: str = "cpu"):
     """The frozen tree's calculator, on the file or on a model already built."""
     from mace.calculators import MACECalculator
 
@@ -269,14 +269,14 @@ def legacy_calculator(path: Path, head: str, model=None):
     if model is None:
         return MACECalculator(
             model_paths=str(path),
-            device="cpu",
+            device=device,
             default_dtype="float64",
             head=head,
             model_type=kind,
         )
     return MACECalculator(
         models=[model],
-        device="cpu",
+        device=device,
         default_dtype="float64",
         head=head,
         model_type=kind,
@@ -295,29 +295,42 @@ def legacy_outputs(calculator, atoms) -> dict[str, np.ndarray]:
     return values
 
 
-def deviations(path: Path, calculator_for) -> list[tuple[str, str, str, float, float]]:
+def deviations(
+    path: Path, calculator_for, device: str = "cpu"
+) -> list[tuple[str, str, str, float, float]]:
     """``(head, fixture, quantity, largest difference, largest component)``
     for every head of the artifact on every structure it can evaluate."""
     imported, _ = converted(path)
-    heads = list(getattr(legacy_model(path), "heads", ["Default"]))
-    found = []
-    for index, head in enumerate(heads):
-        calculator = calculator_for(head)
-        for fixture, atoms in load_fixtures().items():
-            if not set(atoms.get_atomic_numbers().tolist()) <= set(imported.z_table.zs):
-                continue
-            got = v1_outputs(imported, atoms, index)
-            for quantity, value in legacy_outputs(calculator, atoms).items():
-                if quantity == "stress" and charge_aware(path):
-                    # The frozen tree's charge-aware stress leaves out the
-                    # long-range energy's cell dependence; v1's is checked
-                    # against a finite difference instead.
+    imported.engine.to(device)
+    try:
+        heads = list(getattr(legacy_model(path), "heads", ["Default"]))
+        found = []
+        for index, head in enumerate(heads):
+            calculator = calculator_for(head)
+            for fixture, atoms in load_fixtures().items():
+                if not set(atoms.get_atomic_numbers().tolist()) <= set(
+                    imported.z_table.zs
+                ):
                     continue
-                difference = float(np.abs(got[quantity] - value).max())
-                found.append(
-                    (head, fixture, quantity, difference, float(np.abs(value).max()))
-                )
-    return found
+                got = v1_outputs(imported, atoms, index, device)
+                for quantity, value in legacy_outputs(calculator, atoms).items():
+                    if quantity == "stress" and charge_aware(path):
+                        # Legacy omits the long-range cell derivative; the
+                        # native stress has independent finite-difference tests.
+                        continue
+                    difference = float(np.abs(got[quantity] - value).max())
+                    found.append(
+                        (
+                            head,
+                            fixture,
+                            quantity,
+                            difference,
+                            float(np.abs(value).max()),
+                        )
+                    )
+        return found
+    finally:
+        imported.engine.to("cpu")
 
 
 @pytest.mark.parametrize("name", PARAMS)

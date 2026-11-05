@@ -302,6 +302,19 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
         # Neither builds anything, so the defaults stand in for them.
         model["interaction"] = "residual"
         model["readout"]["gate"] = "silu"
+    if family != "magnetic":
+        # Older checkpoints can record edge irreps even when every interaction
+        # ignores them. Keep that source declaration in the neutral artifact;
+        # resolved V1 config describes only operators that are actually built.
+        edge_read = (
+            model["num_interactions"] > 1 and model["interaction"] == "nonlinear"
+        ) or (
+            model["interaction_first"] == "nonlinear" and model["use_edge_irreps_first"]
+        )
+        if not edge_read:
+            model["edge_irreps"] = None
+        if model["interaction_first"] != "nonlinear":
+            model["use_edge_irreps_first"] = False
     if family in {"dipole", "energy_dipole", "dielectric"}:
         middle = Irreps.parse(model["readout"]["mlp_irreps"])
         if not any(irrep.degree == 0 and irrep.parity == 1 for _, irrep in middle):
