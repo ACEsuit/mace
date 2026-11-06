@@ -12,6 +12,7 @@ import pytest
 from jax_conformance import TINY, ModelSurface
 from mace_core.artifacts import cache_name
 from mace_core.kernels import available_backends
+from mace_jax.calculators import MACECalculator
 from mace_jax.deploy.neutral_io import ModelLoadError, load_model
 from safetensors.numpy import load_file, save_file
 
@@ -112,15 +113,19 @@ def test_unsupported_architectures_are_named(tmp_path, field, value, match):
     )
     with pytest.raises(ValueError, match=match):
         load_model(path)
+    if field == "clebsch_gordan_basis":
+        with pytest.raises(ModelLoadError, match=match):
+            MACECalculator(path)
 
 
-def test_multihead_points_to_explicit_selection(tmp_path):
+@pytest.mark.parametrize("load", [load_model, MACECalculator])
+def test_multihead_points_to_explicit_selection(tmp_path, load):
     def change(doc, weights):
         heads = doc["config"]["config"]["resolved"]["data"]["heads"]
         heads["other"] = dict(next(iter(heads.values())))
 
     with pytest.raises(ModelLoadError, match="mace model select-head"):
-        load_model(edited(tmp_path, change))
+        load(edited(tmp_path, change))
 
 
 @pytest.mark.parametrize("path", ["legacy.model", "legacy.pt", "legacy.pkl"])

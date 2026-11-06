@@ -1,15 +1,13 @@
-"""Inference-only XYZ evaluation; no training or calculator API."""
+"""Evaluate XYZ frames through the compiled ASE calculator."""
 
 from __future__ import annotations
 
 import argparse
 
 import ase.io
-import jax
 import numpy as np
 
-from mace_jax.deploy.neutral_io import load_model
-from mace_jax.graph import graph_from_atoms
+from mace_jax.calculators import MACECalculator
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -21,26 +19,23 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--backend", default="reference")
     args = parser.parse_args(argv)
-    device = jax.devices("gpu" if args.device == "cuda" else "cpu")[0]
-    with jax.default_device(device):
-        apply, params = load_model(args.model, dtype=args.dtype, backend=args.backend)
-        structures = ase.io.read(args.configs, index=":")
-        for atoms in structures:
-            graph = graph_from_atoms(
-                atoms,
-                elements=apply.elements,
-                cutoff=apply.config.model.r_max,
-                dtype=args.dtype,
-                head=next(iter(apply.config.data.heads)),
-            )
-            output = apply(params, graph)
-            assert output.total_energy is not None and output.stress is not None
-            assert output.forces is not None
-            atoms.info["MACE_energy"] = float(output.total_energy[0])
-            atoms.arrays["MACE_forces"] = np.asarray(output.forces)
-            atoms.info["MACE_stress"] = np.asarray(output.stress[0])
-            atoms.calc = None
-        ase.io.write(args.output, structures, format="extxyz")
+    calculator = MACECalculator(
+        args.model, dtype=args.dtype, device=args.device, backend=args.backend
+    )
+    structures = ase.io.read(args.configs, index=":")
+    for atoms in structures:
+        atoms.calc = calculator
+        # XYZ predictions are raw model values even on constrained ASE frames.
+        atoms.info["MACE_energy"] = atoms.get_potential_energy(apply_constraint=False)
+        atoms.arrays["MACE_forces"] = atoms.get_forces(apply_constraint=False)
+        # The XYZ contract includes a zero stress matrix for molecular frames.
+        atoms.info["MACE_stress"] = (
+            atoms.get_stress(voigt=False, apply_constraint=False)
+            if atoms.pbc.any()
+            else np.zeros((3, 3))
+        )
+        atoms.calc = None
+    ase.io.write(args.output, structures, format="extxyz")
 
 
 if __name__ == "__main__":

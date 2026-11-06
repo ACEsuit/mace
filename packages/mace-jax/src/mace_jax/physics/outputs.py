@@ -15,26 +15,39 @@ def evaluate(
         raise ValueError(f"JAX does not support requested outputs {sorted(unknown)}")
     if not set(compute) & {"forces", "stress", "virials"}:
         return model(graph)
-    cells = graph["cell"].reshape((-1, 3, 3))
-    strain = jnp.zeros_like(cells)
     edge_graph = graph["batch"][graph["edge_index"][0]]
 
-    def energy(positions, displacement):
-        symmetric = (displacement + jnp.swapaxes(displacement, -1, -2)) / 2
-        shifted = dict(graph)
-        shifted["positions"] = positions + jnp.einsum(
-            "ni,nij->nj", positions, symmetric[graph["batch"]]
-        )
+    def energies(positions, cells, symmetric):
+        shifted = dict(graph, positions=positions, cell=cells)
         shifted["shifts"] = graph["shifts"] + jnp.einsum(
             "ei,eij->ej", graph["shifts"], symmetric[edge_graph]
         )
-        shifted["cell"] = cells + jnp.einsum("nij,njk->nik", cells, symmetric)
         output = model(shifted)
-        return jnp.sum(output.total_energy), (output.total_energy, output.node_energies)
+        return output.total_energy, output.node_energies
+
+    return strain_outputs(energies, graph["positions"], graph["cell"], graph, compute)
+
+
+def strain_outputs(energies, positions, cells, graph, compute):
+    """Differentiate the same symmetric deformation in eager and compiled inference."""
+
+    def energy(coordinates, displacement):
+        symmetric = (displacement + jnp.swapaxes(displacement, -1, -2)) / 2
+        moved = coordinates + jnp.einsum(
+            "ni,nij->nj",
+            coordinates,
+            symmetric[graph["batch"]],
+            precision=jax.lax.Precision.HIGHEST,
+        )
+        deformed = cells + jnp.einsum(
+            "nij,njk->nik", cells, symmetric, precision=jax.lax.Precision.HIGHEST
+        )
+        total, nodes = energies(moved, deformed, symmetric)
+        return jnp.sum(total), (total, nodes)
 
     (_, (total, nodes)), (position_gradient, strain_gradient) = jax.value_and_grad(
         energy, argnums=(0, 1), has_aux=True
-    )(graph["positions"], strain)
+    )(positions, jnp.zeros_like(cells))
     output = MACEOutput(total_energy=total, node_energies=nodes)
     if "forces" in compute:
         output.forces = -position_gradient

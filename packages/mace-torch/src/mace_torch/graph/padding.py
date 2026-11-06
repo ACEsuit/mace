@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any, overload
+from typing import Any
 
 import torch
 from mace_core.elements import AtomicNumberTable
@@ -28,6 +28,7 @@ from mace_core.graph import (
     PaddingInfo,
     padding_budget,
     padding_length,
+    unpad_outputs,
 )
 from mace_core.graph.collate import feature_levels
 from mace_core.graph.schema import (
@@ -37,24 +38,12 @@ from mace_core.graph.schema import (
     NODE_LEVEL,
     level_of,
 )
-from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
-from mace_core.outputs import CORE_FIELD_NAMES, MACEOutput
 
 from mace_torch.graph.collate import derived_cell_quantities
 
 __all__ = ["pad_batch", "unpad_outputs"]
 
 logger = logging.getLogger(__name__)
-
-#: Whether each core field of a model output is per atom.
-_CORE_FIELD_PER_ATOM = {
-    "total_energy": False,
-    "node_energies": True,
-    "forces": True,
-    "stress": False,
-    "virials": False,
-    "dipole": False,
-}
 
 
 def pad_batch(
@@ -230,88 +219,3 @@ class _Padding:
         if key == "structure_periodic":
             return (False,) * self.graphs
         return (True,) * self.graphs
-
-
-@overload
-def unpad_outputs(
-    outputs: MACEOutput,
-    info: PaddingInfo,
-    *,
-    catalogue: ObservableCatalogue = ...,
-) -> MACEOutput: ...
-
-
-@overload
-def unpad_outputs(
-    outputs: Mapping[str, Any],
-    info: PaddingInfo,
-    *,
-    catalogue: ObservableCatalogue = ...,
-) -> dict[str, Any]: ...
-
-
-def unpad_outputs(
-    outputs: MACEOutput | Mapping[str, Any],
-    info: PaddingInfo,
-    *,
-    catalogue: ObservableCatalogue = DEFAULT_CATALOGUE,
-) -> MACEOutput | dict[str, Any]:
-    """The real slots of a padded model's outputs.
-
-    Per-graph values keep their first ``n_real_graphs`` rows and per-atom
-    values their first ``n_real_nodes``. Tensor responses keep their leading
-    component axis and trim their second axis. Whether a value is per atom comes
-    from the core fields of :class:`~mace_core.outputs.MACEOutput` and, for
-    anything else, from ``catalogue``; it is never inferred from a shape.
-
-    Args:
-        outputs: A :class:`~mace_core.outputs.MACEOutput`, or a mapping from
-            observable name to tensor. ``None`` values are kept.
-        info: What :func:`pad_batch` returned.
-        catalogue: The declared observables of the model.
-
-    Returns:
-        A new object of the same kind.
-
-    Raises:
-        KeyError: for a value the catalogue does not declare.
-    """
-    if isinstance(outputs, MACEOutput):
-        unpadded: MACEOutput = MACEOutput()
-        for name in CORE_FIELD_NAMES:
-            value = getattr(outputs, name)
-            setattr(
-                unpadded, name, _keep_real(value, _CORE_FIELD_PER_ATOM[name], info=info)
-            )
-        unpadded.extras = {
-            name: _keep_real(value, *_layout(name, catalogue), info=info)
-            for name, value in outputs.extras.items()
-        }
-        return unpadded
-    return {
-        name: _keep_real(value, *_layout(name, catalogue), info=info)
-        for name, value in outputs.items()
-    }
-
-
-def _layout(name: str, catalogue: ObservableCatalogue) -> tuple[bool, int]:
-    if name in _CORE_FIELD_PER_ATOM:
-        return _CORE_FIELD_PER_ATOM[name], 0
-    for spec in catalogue.observables:
-        if spec.name == name:
-            return spec.per_atom, 0
-        for request in spec.derivatives:
-            if spec.derivative_name(request.wrt) == name:
-                derivative = catalogue.derivative(spec.name, request.wrt)
-                return derivative.per_atom, 0 if spec.is_scalar else 1
-    raise KeyError(
-        f"{name!r} is not an observable the catalogue declares, so whether it is "
-        f"per atom is unknown. Declare it, or pass the model's catalogue."
-    )
-
-
-def _keep_real(value: Any, per_atom: bool, axis: int = 0, *, info: PaddingInfo) -> Any:
-    if value is None:
-        return None
-    count = info.n_real_nodes if per_atom else info.n_real_graphs
-    return value[:count] if axis == 0 else value[:, :count]

@@ -50,17 +50,10 @@ Tag prefixes are keyed on the directory rather than the distribution name, so
 each package versions independently from git tags and the RET-6 rename touches
 only the `name` field.
 
-`mace-launcher` owns every `mace_*` console script and none of the other three
-declares one, because two distributions declaring the same script name is
-undefined behaviour in pip. That is not a theoretical hazard: uninstalling one
-of two such distributions deletes the script files the other one had
-overwritten, and the surviving distribution is left with none.
-
-The rule is one owner per script name, not one owner overall. `mace-jax` will
-declare a single script of its own, `mace-jax`, when its CLI lands: it does not
-depend on `mace-torch` and has to work with no torch installed, so it cannot
-inherit a script from either the launcher or `mace-torch`. The hyphen keeps the
-name outside the `mace_*` set, so the two owners never overlap.
+The launcher owns `mace` and the `mace_*` console scripts. The JAX distribution
+owns `mace-jax` for XYZ inference and installs independently. Each script name
+has a single owner so uninstalling one distribution preserves the other's
+commands.
 
 The launcher is also the only place the two stacks meet. It picks one with
 `--engine {legacy,v1}` or `MACE_ENGINE`, defaulting to `legacy`, and installs a
@@ -160,9 +153,8 @@ with its package: `test_mace_core_scaffold.py`, not `test_scaffold.py`.
 
 `mace-core` depends on numpy, ase, pydantic, pyyaml, tomli, matscipy and
 safetensors, and on no array framework. `mace-torch-v1` adds torch and scipy,
-with `wandb` as its one extra. `mace-jax` requires only `mace-core` until its
-inference code lands. `mace-launcher` has no dependency of its own; it runs
-whichever engine is installed.
+with optional extensions. `mace-jax` uses JAX, Flax, safetensors and the core
+matscipy extra. The launcher runs whichever engine is installed.
 
 ## Navigating the tree
 
@@ -493,7 +485,9 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_jax/cli/eval.py` | The mace-jax XYZ inference command. |
 | `mace_jax/deploy/__init__.py` | Canonical deployment namespace. |
 | `mace_jax/deploy/neutral_io.py` | Strict safetensors/JSON loader and pure NNX apply boundary. |
-| `mace_jax/graph.py` | Bind shared natural graph batching to JAX arrays. |
+| `mace_jax/graph.py` | Natural JAX batches and schema-defined inert padding. |
+| `mace_jax/inference.py` | Jitted energy, geometry derivatives and reusable graph capacity. |
+| `mace_jax/calculators.py` | Compiled ASE inference for a neutral single-head checkpoint. |
 | `mace_jax/kernels/__init__.py` | Native kernel namespace. |
 | `mace_jax/kernels/ops.py` | Canonical linear, convolution, reduced contraction and radial MLP operators. |
 | `mace_jax/kernels/reference.py` | Reference backend factories, capabilities, harmonics and reductions. |

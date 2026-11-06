@@ -1,5 +1,7 @@
 """Natural batches, real-model derivatives, empty graphs and the inference CLI."""
 
+import subprocess
+import sysconfig
 from pathlib import Path
 
 import ase.io
@@ -7,10 +9,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from ase.constraints import FixAtoms
 from jax_conformance import TINY, ModelSurface, run_jax_model_conformance
-from mace_jax.cli.eval import main
 from mace_jax.deploy.neutral_io import load_model
 from mace_jax.graph import graph_from_atoms
+from mace_jax.inference import JITPipeline
 
 from tests.golden import harness
 
@@ -41,8 +44,12 @@ def test_mixed_batch_keeps_isolated_atoms_and_periodic_stress(loaded):
     separate = [apply(params, graph_for(apply, item)) for item in atoms]
     graph = graph_for(apply, atoms)
     result = apply(params, graph)
+    compiled = JITPipeline(apply, params)(graph)
     row = harness.FP64_CPU_REFERENCE
     for name in ("total_energy", "node_energies", "forces", "stress", "virials"):
+        np.testing.assert_allclose(
+            getattr(compiled, name), getattr(result, name), atol=row.atol, rtol=row.rtol
+        )
         np.testing.assert_allclose(
             getattr(result, name),
             np.concatenate([getattr(item, name) for item in separate]),
@@ -96,19 +103,38 @@ def test_force_and_symmetric_strain_are_energy_derivatives(loaded):
 
 def test_cli_writes_predictions_for_every_structure(loaded, tmp_path):
     apply, params = loaded
-    atoms = harness.load_fixtures(names=["water_cluster", "isolated_atom"])
+    atoms = harness.load_fixtures(names=["triclinic_bulk", "isolated_atom"])
+    # extxyz preserves FixAtoms. The command must write raw model forces.
+    atoms["triclinic_bulk"].set_constraint(FixAtoms(indices=[0]))
     source, target = tmp_path / "input.xyz", tmp_path / "output.xyz"
     ase.io.write(source, list(atoms.values()), format="extxyz")
-    main(["--model", str(TINY), "--configs", str(source), "--output", str(target)])
+    script = Path(sysconfig.get_path("scripts")) / "mace-jax"
+    subprocess.run(
+        [
+            str(script),
+            "--model",
+            str(TINY),
+            "--configs",
+            str(source),
+            "--output",
+            str(target),
+        ],
+        check=True,
+    )
     written = ase.io.read(target, index=":")
     assert len(written) == len(atoms)
     for original, actual in zip(atoms.values(), written, strict=True):
         reference = ModelSurface(apply, params).golden_outputs(original)
+        if original.constraints:
+            assert actual.constraints and np.max(np.abs(reference["forces"][0])) > 1e-5
         np.testing.assert_allclose(
             actual.info["MACE_energy"], reference["energy"], atol=1e-6, rtol=0
         )
         np.testing.assert_allclose(
             actual.arrays["MACE_forces"], reference["forces"], atol=1e-6, rtol=0
+        )
+        np.testing.assert_allclose(
+            actual.info["MACE_stress"], reference["stress"], atol=1e-6, rtol=0
         )
 
 

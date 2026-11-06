@@ -162,24 +162,34 @@ def test_exactly_one_distribution_provides_each_console_script():
     # once per sys.path entry that contains it, and the tests put the repo on
     # the path more than once. What matters is how many distinct distributions
     # claim a script, never how many times one of them is seen.
+    installed = list(distributions())
     owners: dict[str, set[str]] = {}
-    for distribution in distributions():
+    for distribution in installed:
         name = distribution.metadata["Name"]
         for entry in distribution.entry_points:
-            if entry.group == "console_scripts" and (
-                entry.name == "mace" or entry.name.startswith("mace_")
-            ):
+            if entry.group == "console_scripts":
                 owners.setdefault(entry.name, set()).add(name)
 
     duplicated = {k: sorted(v) for k, v in owners.items() if len(v) > 1}
     assert not duplicated, f"more than one distribution provides {duplicated}"
+
+    jax_scripts = {
+        (entry.name, entry.value)
+        for dist in installed
+        if dist.metadata["Name"] == "mace-jax"
+        for entry in dist.entry_points
+        if entry.group == "console_scripts"
+    }
+    if any(dist.metadata["Name"] == "mace-jax" for dist in installed):
+        assert jax_scripts == {("mace-jax", "mace_jax.cli.eval:main")}
+        assert owners["mace-jax"] == {"mace-jax"}
 
     # Read what the launcher declares from its installed metadata rather than
     # from its pyproject: that is the reality a user gets, and it avoids a TOML
     # parser, which the standard library does not have before 3.11.
     launcher = [
         distribution
-        for distribution in distributions()
+        for distribution in installed
         if distribution.metadata["Name"] == "mace-launcher"
     ]
     if not launcher:

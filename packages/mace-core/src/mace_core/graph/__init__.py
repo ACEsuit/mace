@@ -21,6 +21,7 @@ from mace_core.graph.padding import (
     PaddingPolicy,
     padding_budget,
     padding_length,
+    unpad_outputs,
 )
 from mace_core.graph.schema import (
     FLOAT,
@@ -70,5 +71,6 @@ __all__ = [
     "padding_budget",
     "padding_length",
     "presence_key",
+    "unpad_outputs",
     "validate_graph",
 ]

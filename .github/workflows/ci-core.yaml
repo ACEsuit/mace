@@ -279,7 +279,10 @@ jobs:
         run: python tests/architecture/check_capabilities_manifest.py
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/architecture
+          # This environment installs both console-script owners.
+          tests: >-
+            tests/architecture
+            tests/workflows/test_launcher_engine_parity.py::test_exactly_one_distribution_provides_each_console_script
           numprocs: "0"
 
   parity:
@@ -413,6 +416,7 @@ jobs:
         run: |
           python -m pip install -e packages/mace-core -e packages/mace-jax \
                                 pytest pytest-timeout
+          python -c "from importlib.util import find_spec; assert find_spec('torch') is None"
       - uses: ./.github/actions/run-tests
         if: github.event_name != 'pull_request' || steps.filter.outputs.jax == 'true'
         env:
@@ -420,7 +424,9 @@ jobs:
           OMP_NUM_THREADS: '1'
           OPENBLAS_NUM_THREADS: '1'
         with:
-          tests: packages/mace-jax/tests/test_mace_jax_parity_neutral.py
+          tests: >-
+            packages/mace-jax/tests/test_mace_jax_parity_neutral.py
+            packages/mace-jax/tests/test_mace_jax_equivariance.py::test_cli_writes_predictions_for_every_structure
           markers: not network and not gpu
           numprocs: '0'
           allow-network: 'false'
