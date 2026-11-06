@@ -146,6 +146,10 @@ A numerical mismatch is `failed` and fails the validation command. Polar's
 agreed long-range stress correction remains explicitly excluded from direct
 legacy stress comparison. The matrix tests the family default precision as
 well as fp64; a failure at either precision prevents a supported row.
+The PyTorch default check calls the public loader with its dtype argument
+omitted and reads the resulting engine's interface dtype. A failed check
+records the precision it expected, the precision it observed when available,
+and the hardware used. Earlier successful checks stay in the same row.
 
 To reproduce local candidate validation without publishing:
 

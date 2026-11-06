@@ -14,7 +14,7 @@ import os
 import platform
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -66,6 +66,7 @@ class _DielectricSurface:
     def golden_outputs(self, atoms):
         from mace_torch.deploy.reference import _evaluate
         from mace_torch.train.data_stage import graph_inputs_of
+
         from tests.golden.targets.dielectric import QUANTITIES
 
         model = self.model
@@ -88,21 +89,52 @@ class _DielectricSurface:
         }
 
 
-def _torch_checks(entry, reference, records, device, results):
+def _torch_checks(entry, reference, records, device, results, hardware):
     import torch
+    from mace_torch.backends.precision import interface_dtype
     from mace_torch.calculators import foundations
+
     from tests.golden import foundation_artifacts
 
-    # Explicit fp64 reproduces the conversion gate; the other case exercises
-    # each released family default through its public calculator loader.
+    hardware.update(
+        framework_version=torch.__version__,
+        accelerator=torch.cuda.get_device_name(device)
+        if torch.device(device).type == "cuda"
+        else None,
+    )
+    # Supplying the expected family default as an override would hide a
+    # loader whose actual default was accidentally changed.
     for dtype in dict.fromkeys(("float64", entry.default_dtype)):
         head = next(iter(entry.metadata.heads))
         if entry.model_id in {"mace-mh-0", "mace-mh-1"}:
             key = "mh_0" if entry.model_id == "mace-mh-0" else "mh_1"
             head = foundation_artifacts.ARTIFACTS[key].loader_kwargs["head"]
         loader = getattr(foundations, entry.family)
-        calculator = loader(reference, device=device, default_dtype=dtype, head=head)
+        default = dtype == entry.default_dtype
+        options = {} if default else {"default_dtype": dtype}
+        row = (
+            harness.FP32
+            if dtype == "float32" or entry.model_id in _ROUNDED
+            else harness.FP64_CPU_REFERENCE
+        )
+        comparisons = {}
+        check = dict(
+            dtype=dtype,
+            loader_default=default,
+            head=head,
+            tolerance_row=row.name,
+            status="failed",
+            comparisons=comparisons,
+        )
+        results.append(check)
+        calculator = loader(reference, device=device, head=head, **options)
         loaded = calculator.models[0]
+        actual_dtype = interface_dtype(loaded.engine)
+        check["interface_dtype"] = str(actual_dtype).removeprefix("torch.")
+        if actual_dtype != getattr(torch, dtype):
+            raise ValueError(
+                f"{entry.model_id}: expected {dtype} interface, got {actual_dtype}"
+            )
         if loaded.config.model != entry.hyperparameters():
             raise ValueError(f"{entry.model_id}: registry hyperparameters differ")
         if loaded.heads != tuple(entry.metadata.heads):
@@ -112,12 +144,6 @@ def _torch_checks(entry, reference, records, device, results):
             if entry.family == "mace_mdp"
             else calculator
         )
-        row = (
-            harness.FP32
-            if dtype == "float32" or entry.model_id in _ROUNDED
-            else harness.FP64_CPU_REFERENCE
-        )
-        comparisons = {}
         for record in records:
             expected = record["expected"]
             fixtures = harness.load_fixtures(names=tuple(expected["fixtures"]))
@@ -155,27 +181,22 @@ def _torch_checks(entry, reference, records, device, results):
                     if key in channels
                 },
             }
-        results.append(
-            {
-                "dtype": dtype,
-                "head": head,
-                "tolerance_row": row.name,
-                "comparisons": comparisons,
-            }
-        )
+        check["status"] = "passed"
         del surface, calculator, loaded
-    return results, {
-        "framework_version": torch.__version__,
-        "accelerator": torch.cuda.get_device_name() if device == "cuda" else None,
-    }
 
 
-def _jax_checks(entry, reference, records, device, results):
+def _jax_checks(entry, reference, records, device, results, hardware):
     import jax
     from mace_jax.models.registry import SUPPORTED_MODELS
 
     if entry.model_id not in SUPPORTED_MODELS:
         raise ValueError(f"{entry.model_id}: outside the JAX architecture closure")
+    hardware.update(
+        framework_version=jax.__version__,
+        accelerator=[
+            str(item) for item in jax.devices("gpu" if device == "cuda" else device)
+        ],
+    )
     sys.path.insert(0, str(ROOT / "packages/mace-jax/tests"))
     try:
         from jax_conformance import run_jax_model_conformance
@@ -186,12 +207,6 @@ def _jax_checks(entry, reference, records, device, results):
     finally:
         sys.path.pop(0)
     results.extend(checks)
-    return results, {
-        "framework_version": jax.__version__,
-        "accelerator": [
-            str(item) for item in jax.devices("gpu" if device == "cuda" else device)
-        ],
-    }
 
 
 def evaluate_entry(entry, *, framework, device="cpu", local_artifact=None):
@@ -199,7 +214,7 @@ def evaluate_entry(entry, *, framework, device="cpu", local_artifact=None):
     row = {
         "model_id": entry.model_id,
         "framework": framework,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "code_version": importlib.metadata.version("mace-core"),
         "code_commit": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
@@ -228,7 +243,8 @@ def evaluate_entry(entry, *, framework, device="cpu", local_artifact=None):
         ),
         "exceptions": (
             [
-                "Polar stress retains the agreed long-range cell derivative correction; "
+                "Polar stress retains the agreed long-range cell derivative "
+                "correction; "
                 "legacy stress is excluded (ELEC-2 evidence in gate3)."
             ]
             if entry.family == "mace_polar"
@@ -242,17 +258,16 @@ def evaluate_entry(entry, *, framework, device="cpu", local_artifact=None):
         evaluator = {"torch": _torch_checks, "jax": _jax_checks}[framework]
         # Published validation goes through the canonical-name loader, including
         # metadata versions, registry identity and the normal download cache.
-        checks, hardware = evaluator(
+        evaluator(
             entry,
             local_artifact or entry.model_id,
             row["goldens"],
             device,
             row["checks"],
+            row["hardware"],
         )
-        if not checks:
+        if not row["checks"]:
             raise ValueError("empty conformance result cannot establish support")
-        row["checks"] = checks
-        row["hardware"].update(hardware)
         row["supported"] = local_artifact is None
         row["status"] = "supported" if row["supported"] else "validated_local"
     except Exception as error:
