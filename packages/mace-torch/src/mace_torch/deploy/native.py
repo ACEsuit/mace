@@ -123,13 +123,27 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
         raise DeployError("multi-layer native export requires --halo-exchange")
     model = _SiteEnergy(deployed).to(device).eval().requires_grad_(False)
     dtype = next(model.parameters()).dtype
-    index = torch.arange(edges, device=device)
-    senders = index % (nodes - 1)
-    receivers = (senders + 1) % (nodes - 1)
+    # Keep the probe geometry independent of the rank capacity. Repeating a
+    # sub-Å bond thousands of times produces unphysical densities in trained
+    # models. Real LAMMPS steps put unused edges beyond the cutoff instead.
+    positions = (
+        torch.tensor(
+            [[0, 0, 0], [0.48, 0.02, 0.03], [0.12, 0.45, -0.05]],
+            dtype=dtype,
+            device=device,
+        )[: nodes - 1]
+        * manifest.r_max
+    )
+    pairs = torch.triu_indices(len(positions), len(positions), offset=1, device=device)
+    pairs = torch.stack((pairs, pairs.flip(0)), dim=2).flatten(1)[:, :edges]
+    index = torch.full((2, edges), nodes - 1, dtype=torch.long, device=device)
+    index[:, : pairs.shape[1]] = pairs
+    vectors = positions.new_zeros((edges, 3))
+    vectors[:, 0] = 2 * manifest.r_max
+    vectors[: pairs.shape[1]] = positions[pairs[1]] - positions[pairs[0]]
     elements = torch.arange(nodes, device=device) % len(deployed.z_table.zs)
-    vectors = torch.full((edges, 3), 0.5, dtype=dtype, device=device)
-    owned = (torch.arange(nodes, device=device) < nodes - 1).to(dtype)
-    args = (vectors, torch.stack((senders, receivers)), elements, owned)
+    owned = (torch.arange(nodes, device=device) < len(positions)).to(dtype)
+    args = (vectors, index, elements, owned)
     joint = make_fx(model)(vectors.detach().requires_grad_(), *args[1:])
     aten = make_fx(joint, decomposition_table=reference_lowerings())(*args)
     program = torch.export.export(aten, args, strict=True)
@@ -156,8 +170,11 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
         )
     # A constant captured derivative could pass at its tracing geometry.
     # Exercise a second geometry, species ordering and ownership mask too.
-    shifted = vectors + (index % 5)[:, None] * vectors.new_tensor([0.07, -0.04, 0.02])
-    variants = (args, (shifted, args[1].flip(0), elements.roll(1), owned.roll(1)))
+    shifted = vectors.clone()
+    shifted[: pairs.shape[1]] *= vectors.new_tensor([-1.08, -0.94, -1.03])
+    partial = owned.clone()
+    partial[0] = 0
+    variants = (args, (shifted, index.flip(0), elements.roll(1), partial))
     exported = program.module()
     for sample in variants:
         with torch.no_grad():

@@ -1,0 +1,29 @@
+--- a/pair_mace_native.cpp
++++ b/pair_mace_native.cpp
+@@ -4,2 +4,4 @@
+ #include <ATen/ATen.h>
++#include <c10/cuda/CUDAStream.h>
++#include <cstdio>
+ #include <c10/core/DeviceGuard.h>
+@@ -185,3 +187,8 @@
+   // Even CPU doubles must be copied: the dispatcher operator is out-of-place.
++  const auto stream = c10::cuda::getCurrentCUDAStream();
++  const double entered = MPI_Wtime();
++  stream.synchronize();
++  const double ready = MPI_Wtime();
+   buffer = values.to(at::kCPU, at::kDouble, false, true).contiguous();
++  const double staged = MPI_Wtime();
+   if (reverse) {
+@@ -192,3 +199,11 @@
+   }
+-  return buffer.to(values.options());
++  const double exchanged = MPI_Wtime();
++  auto result = buffer.to(values.options());
++  stream.synchronize();
++  const double returned = MPI_Wtime();
++  std::printf("MACE_HALO %lld %d %d %.9f %.9f %.9f %.9f %d %d %d\n",
++              static_cast<long long>(update->ntimestep), comm->me, int(reverse),
++              ready - entered, staged - ready, exchanged - staged,
++              returned - exchanged, atom->nlocal, atom->nghost, width);
++  return result;
+ }

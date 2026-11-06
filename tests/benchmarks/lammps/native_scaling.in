@@ -1,0 +1,41 @@
+# Run from the directory containing silicon.data. All timings use units metal.
+units metal
+atom_style atomic
+boundary p p p
+processors ${ranks} 1 1
+read_data silicon.data
+plugin load ${plugin}
+pair_style mace/native ${model}
+pair_coeff * * Si
+neighbor 0.5 bin
+neigh_modify every 1 delay 0 check yes
+fix integrate all nve
+timestep 0.0005
+timer normal
+compute site all pe/atom
+compute stress all pressure NULL virial
+thermo 100000
+thermo_style custom step atoms pe c_stress[1] c_stress[2] c_stress[3] c_stress[4] c_stress[5] c_stress[6]
+thermo_modify norm no format float %.17g
+
+# Keep the oracle snapshots and the first cuEq call outside the timed windows.
+dump snapshot all custom 1 ${out}/initial.dump id type x y z fx fy fz c_site
+dump_modify snapshot sort id format float %.17g
+run 0
+undump snapshot
+
+run 30
+dump snapshot all custom 1 ${out}/warm.dump id type x y z fx fy fz c_site
+dump_modify snapshot sort id format float %.17g
+run 0
+undump snapshot
+
+variable block loop 5
+label sample
+run 30 pre no post yes
+next block
+jump SELF sample
+
+dump snapshot all custom 1 ${out}/final.dump id type x y z fx fy fz c_site
+dump_modify snapshot sort id format float %.17g
+run 0
