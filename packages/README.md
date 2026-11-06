@@ -386,6 +386,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/deploy/__init__.py` | Loading and converting models, re-exported. |
 | `mace_torch/deploy/legacy.py` | Legacy conversion: extract in the legacy venv, import here. |
 | `mace_torch/deploy/bundle.py` | Atomic export of a deployment directory from a canonical checkpoint pair. |
+| `mace_torch/deploy/grouped_skip.py` | Lower scalar residual connections to fixed-shape per-species matrix products for native export. |
 | `mace_torch/deploy/native.py` | Compile owned site energies, edge gradients and explicit MPI exchanges for the native LAMMPS pair style. |
 | `mace_torch/deploy/manifest.py` | Deployment schema, selected head and halo exchange contract. |
 | `mace_torch/deploy/loader.py` | `load_deployed`: a checkpoint rebuilt for evaluation. |

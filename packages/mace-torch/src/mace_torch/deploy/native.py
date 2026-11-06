@@ -10,6 +10,7 @@ from ase.data import chemical_symbols
 from mace_core.clebsch_gordan.irreps import Irreps
 from torch import Tensor, nn
 
+from mace_torch.deploy.grouped_skip import lower_scalar_skips
 from mace_torch.deploy.loader import DeployError, load_deployed
 from mace_torch.kernels import ops
 from mace_torch.kernels.contraction import symmetric_contraction_grouped_aten
@@ -144,6 +145,19 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
     elements = torch.arange(nodes, device=device) % len(deployed.z_table.zs)
     owned = (torch.arange(nodes, device=device) < len(positions)).to(dtype)
     args = (vectors, index, elements, owned)
+    # A constant captured derivative could pass at its tracing geometry.
+    # Exercise a second geometry, species ordering and ownership mask too.
+    shifted = vectors.clone()
+    shifted[: pairs.shape[1]] *= vectors.new_tensor([-1.08, -0.94, -1.03])
+    partial = owned.clone()
+    partial[0] = 0
+    variants = (args, (shifted, index.flip(0), elements.roll(1), partial))
+    # Keep the original operator values and derivatives as a separate check
+    # on the lowering before the strict eager-versus-capture check.
+    expected_samples = [
+        model(sample[0].detach().requires_grad_(), *sample[1:]) for sample in variants
+    ]
+    grouped_skips = lower_scalar_skips(model.model.backbone.interactions)
     joint = make_fx(model)(vectors.detach().requires_grad_(), *args[1:])
     aten = make_fx(joint, decomposition_table=reference_lowerings())(*args)
     program = torch.export.export(aten, args, strict=True)
@@ -168,18 +182,17 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
         raise DeployError(
             f"native cuEq requires supported vendor operators; captured {vendor_ops}"
         )
-    # A constant captured derivative could pass at its tracing geometry.
-    # Exercise a second geometry, species ordering and ownership mask too.
-    shifted = vectors.clone()
-    shifted[: pairs.shape[1]] *= vectors.new_tensor([-1.08, -0.94, -1.03])
-    partial = owned.clone()
-    partial[0] = 0
-    variants = (args, (shifted, index.flip(0), elements.roll(1), partial))
     exported = program.module()
-    for sample in variants:
+    for sample, expected in zip(variants, expected_samples, strict=True):
+        if grouped_skips:
+            lowered = model(sample[0].detach().requires_grad_(), *sample[1:])
+            for value, original in zip(lowered, expected, strict=True):
+                # Site energies can be stored in float64 after a float32 skip.
+                # Compare the two contraction orders at their compute precision.
+                torch.testing.assert_close(value.to(dtype), original.to(dtype))
+            expected = lowered
         with torch.no_grad():
             actual = exported(*sample)
-        expected = model(sample[0].detach().requires_grad_(), *sample[1:])
         for tensor, reference in zip(actual, expected, strict=True):
             torch.testing.assert_close(tensor, reference)
     metadata = {
@@ -191,6 +204,7 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
         "mace_device": device,
         "mace_dtype": manifest.dtype,
         "mace_backend": backend,
+        "mace_grouped_scalar_skips": str(grouped_skips),
         "mace_cueq_operators": " ".join(vendor_ops),
         "mace_comm_width": str(
             max(

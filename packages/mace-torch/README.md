@@ -51,6 +51,14 @@ to increase. The neutral export without `--native` retains its three-file
 format. Native export adds `native.pt2` and records target `lammps-native`
 in version 1.1 of the deployment manifest.
 
+For scalar element-conditioned skips, the native exporter groups node slots
+by their one-hot species and applies the canonical channel matrix for each
+group. Counts and row order are recomputed from each step's input. Whole tiles
+keep the compiled shapes fixed across atom migration. Vector or mixed-precision
+skips use the original backend operation. The optional
+`mace_grouped_scalar_skips` field in the AOT package metadata records how many
+layers use the grouped implementation.
+
 ```text
 units metal
 atom_style atomic
