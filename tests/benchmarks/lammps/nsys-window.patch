@@ -1,0 +1,54 @@
+--- a/pair_mace_native.cpp
++++ b/pair_mace_native.cpp
+@@ -7,2 +7,4 @@
+ #include <cuda_runtime_api.h>
++#include <cuda_profiler_api.h>
++#include <nvtx3/nvToolsExt.h>
+ #endif
+@@ -199,2 +201,5 @@
+     c10::DeviceGuard device_guard(device);
++    // Benchmark build only: Nsight records eight warmed steps per rank.
++    if (update->ntimestep == 31) cudaProfilerStart();
++    nvtxRangePushA("MACE pair step");
+     at::NoGradGuard guard;
+@@ -272,2 +277,4 @@
+       virial_fdotr_compute();
++    nvtxRangePop();
++    if (update->ntimestep == 38) cudaProfilerStop();
+   } catch (const std::exception &e) {
+--- a/cueq_ops.cpp
++++ b/cueq_ops.cpp
+@@ -5,2 +5,3 @@
+ #include <ATen/ATen.h>
++#include <nvtx3/nvToolsExt.h>
+ #include <c10/cuda/CUDAGuard.h>
+@@ -129,2 +130,5 @@
+   }
++  const auto label = "MACE cuEq uniform " + s[A::name].toStringRef() +
++                     " rows=" + std::to_string(batch);
++  nvtxRangePushA(label.c_str());
+   u1::run_uniform_1d_cuda(
+@@ -137,2 +141,3 @@
+       c10::cuda::getCurrentCUDAStream().stream());
++  nvtxRangePop();
+   s.clear();
+@@ -148,2 +153,4 @@
+   auto out = at::empty_like(x);
++  const auto label = "MACE cuEq transpose rows=" + std::to_string(x.size(0));
++  nvtxRangePushA(label.c_str());
+   AT_DISPATCH_FLOATING_TYPES(x.scalar_type(), "mace_cueq_transpose", [&] {
+@@ -156,2 +163,3 @@
+   s.emplace_back(out);
++  nvtxRangePop();
+ }
+@@ -204,2 +212,6 @@
+       stride};
++  const auto label = std::string(backward ? "MACE cuEq TP backward rows="
++                                          : "MACE cuEq TP forward rows=") +
++                     std::to_string(sizes.batch_size);
++  nvtxRangePushA(label.c_str());
+   auto stream = c10::cuda::getCurrentCUDAStream().stream();
+@@ -231,2 +243,3 @@
+   }
++  nvtxRangePop();
+ }
