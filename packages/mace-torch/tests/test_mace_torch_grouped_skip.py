@@ -82,3 +82,46 @@ def test_lowering_respects_canonical_weights_irreps_and_precision():
         torch.autograd.grad(actual, x, seed)[0],
         torch.autograd.grad(expected, x, seed)[0],
     )
+
+
+@pytest.mark.slow
+def test_native_bundle_selects_and_executes_scalar_skips(tmp_path):
+    from mace_torch.deploy.bundle import export_lammps
+    from mace_torch.deploy.loader import load_deployed
+    from mace_torch.deploy.native import _SiteEnergy
+    from mace_torch.train import run_data_stage, run_model_stage
+    from mace_torch.train.checkpoint import write_model
+    from test_mace_torch_full_batch import CATALOGUE, configuration
+
+    config = configuration(tmp_path)
+    config = config.model_copy(
+        update={
+            "model": config.model.model_copy(
+                update={"hidden_irreps": "0e", "interaction_first": "residual"}
+            )
+        }
+    )
+    data = run_data_stage(config, CATALOGUE)
+    trained = run_model_stage(config, data, CATALOGUE)
+    write_model(tmp_path / "source", trained.model, trained.metadata)
+    dtype = torch.get_default_dtype()
+    precision = "float32" if dtype == torch.float32 else "float64"
+    bundle = export_lammps(
+        tmp_path / "source.json",
+        halo_exchange=True,
+        native_capacity=(6, 4),
+        dtype=precision,
+    )
+    compiled = torch._inductor.aoti_load_package(str(bundle / "native.pt2"))
+    assert compiled.get_metadata()["mace_grouped_scalar_skips"] == "2"
+    original = _SiteEnergy(load_deployed(bundle)).eval().requires_grad_(False)
+    edges = torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]])
+    vectors = torch.tensor(
+        [[2.1, 0.2, 0.1], [-2.1, -0.2, -0.1], [1.7, 0.4, 0.2], [-1.7, -0.4, -0.2]]
+    )
+    owned = torch.tensor([1, 1, 0, 0, 0, 0], dtype=dtype)
+    for species in (torch.zeros(6, dtype=torch.long), torch.tensor([1, 0, 1, 0, 0, 0])):
+        expected = original(vectors.detach().requires_grad_(), edges, species, owned)
+        actual = compiled(vectors, edges, species, owned)
+        for value, reference in zip(actual, expected, strict=True):
+            torch.testing.assert_close(value.to(dtype), reference.to(dtype))
