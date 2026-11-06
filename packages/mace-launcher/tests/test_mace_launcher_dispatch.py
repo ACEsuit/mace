@@ -83,7 +83,6 @@ def test_engine_flag_without_a_value_is_refused(monkeypatch):
 @pytest.mark.parametrize(
     "script,entrypoint",
     [
-        ("mace_create_lammps_model", "create_lammps_model"),
         ("mace_e3nn_cueq", "e3nn_cueq"),
         ("mace_cueq_to_e3nn", "cueq_to_e3nn"),
     ],
@@ -93,8 +92,7 @@ def test_an_unmigrated_capability_names_itself_rather_than_a_module(
 ):
     """A missing v1 CLI is a routine migration state, not an ImportError.
 
-    LAMMPS export belongs to DEP-2. Backend converter scripts are retired for
-    canonical V1 weights. Neither may fall through to the legacy implementation.
+    Backend converter scripts are retired for canonical V1 weights.
     """
     monkeypatch.setattr(sys, "argv", [script, "--engine", "v1"])
     with pytest.raises(SystemExit) as excinfo:

@@ -82,7 +82,7 @@ def run(args: argparse.Namespace) -> int:
     from mace_core.config.precision import PrecisionConfig
     from mace_core.data.xyz import configuration_from_atoms
 
-    from mace_torch.calculators.ase_calculator import _choose_head, produced_outputs
+    from mace_torch.calculators.ase_calculator import produced_outputs
     from mace_torch.cli.reporting import print_citations
     from mace_torch.data.graphs import graph_from_configuration
     from mace_torch.deploy.loader import load_deployed
@@ -112,7 +112,7 @@ def run(args: argparse.Namespace) -> int:
             deployed.config.precision.model,
             args.default_dtype,
         )
-    head = _choose_head(deployed.heads, args.head)
+    head = deployed.select_head(args.head)
     available = produced_outputs(
         [spec.name for spec in deployed.outputs.observables],
         getattr(deployed.model, "extra_rows", {}),

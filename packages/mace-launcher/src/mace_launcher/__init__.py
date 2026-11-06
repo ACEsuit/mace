@@ -64,6 +64,7 @@ TARGETS = {
 
 
 V1_COMMANDS = {
+    "mace_create_lammps_model": ("export", "lammps"),
     "mace_finetuning_select": ("data", "select"),
     "mace_run_train": ("train",),
     "mace_eval_configs": ("eval",),

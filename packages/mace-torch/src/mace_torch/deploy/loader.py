@@ -14,7 +14,7 @@ consumer never adds them back.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -31,6 +31,8 @@ from mace_core.observables import (
 )
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
+
+from mace_torch.deploy.manifest import DeployManifest
 
 __all__ = ["DeployError", "DeployedModel", "load_deployed"]
 
@@ -64,6 +66,17 @@ class DeployedModel:
     e0s: Mapping[str, Mapping[int, float]]
     outputs: RequestedOutputs
     path: Path
+    manifest: DeployManifest | None = None
+
+    def select_head(self, head: str | None = None) -> str:
+        """The head this deployment evaluates, or the checkpoint default."""
+        if self.manifest is not None:
+            if head is not None and head != self.manifest.head:
+                raise DeployError(
+                    f"bundle selects {self.manifest.head!r}, requested head {head!r}"
+                )
+            head = self.manifest.head
+        return choose_head(self.heads, head)
 
     @property
     def r_max(self) -> float:
@@ -90,7 +103,11 @@ class DeployedModel:
         self, graph: Mapping[str, Any], compute: Iterable[str] = ("forces",)
     ) -> MACEOutput[Tensor]:
         """Evaluate one batch, with whichever derivatives are asked for."""
-        return self.engine(dict(graph), compute=tuple(compute), training=False)
+        inputs = dict(graph)
+        if self.manifest is not None:
+            index = self.heads.index(self.manifest.head)
+            inputs["head"] = inputs["head"].new_full(inputs["head"].shape, index)
+        return self.engine(inputs, compute=tuple(compute), training=False)
 
     def with_precision(
         self, precision: PrecisionConfig, *, device: str
@@ -176,18 +193,20 @@ def load_deployed(
     catalogue: ObservableCatalogue | None = None,
     precision: PrecisionConfig | None = None,
     solver: str | None = None,
+    backend: str | None = None,
     tensors_path: str | Path | None = None,
 ) -> DeployedModel:
     """Rebuild a model from a v1 checkpoint.
 
     Args:
-        path: Either file of the checkpoint pair, weights or record.
+        path: Either file of the checkpoint pair, or a deployment bundle directory.
         tensors_path: Explicit weights file when the cache gives the two
             members different stems. The manifest is still validated.
         device: Where the model is put.
         catalogue: The observables it may declare. The default catalogue
             unless a model declares others.
         precision: What it computes in. The default precision unless given.
+        backend: Runtime kernel backend. An explicit bundle pin must agree.
         solver: The electrostatics solver to rebuild a long-range model with,
             when it is not the one it recorded. Allowed only between two
             solvers that both reproduce the reference bit for bit.
@@ -209,9 +228,25 @@ def load_deployed(
     from mace_torch.serialization import load_checkpoint, read_sidecar
     from mace_torch.train.model_stage import build_model
 
-    document = read_sidecar(path)
+    source = Path(path)
+    manifest = None
+    if source.is_dir():
+        if tensors_path is not None:
+            raise DeployError("a deployment bundle supplies its own model.safetensors")
+        manifest = DeployManifest.read(source / "deploy.json")
+        if backend is not None and manifest.backend not in (None, backend):
+            raise DeployError(f"the bundle pins backend {manifest.backend!r}")
+        backend = manifest.backend or backend or "reference"
+        source = source / "model.json"
+    document = read_sidecar(source)
     metadata = ModelMetadata.model_validate(document["config"])
     config = ResolvedConfig.model_validate(metadata.config.resolved)
+    if backend is not None:
+        config = config.model_copy(
+            update={"model": config.model.model_copy(update={"backend": backend})}
+        )
+    if manifest is not None and precision is None:
+        precision = replace(config.precision, model=manifest.dtype)
     catalogue = catalogue or config.catalogue or DEFAULT_CATALOGUE
     config = _with_solver(config, metadata, solver, path)
     heads = tuple(config.data.heads)
@@ -244,6 +279,17 @@ def load_deployed(
             )
         z_table = AtomicNumberTable(list(tables.pop()))
 
+    if manifest is not None:
+        choose_head(heads, manifest.head)
+        for name, expected in (
+            ("species", tuple(z_table.zs)),
+            ("r_max", config.model.r_max),
+            ("num_interactions", config.model.num_interactions),
+        ):
+            if getattr(manifest, name) != expected:
+                raise DeployError(
+                    f"deploy {name} disagrees with {source}: expected {expected}"
+                )
     built: list[RequestedOutputs] = []
 
     def build(_: object) -> nn.Module:
@@ -260,7 +306,7 @@ def load_deployed(
         built.append(outputs)
         return engine
 
-    engine = load_checkpoint(path, build, tensors_path=tensors_path).to(device)
+    engine = load_checkpoint(source, build, tensors_path=tensors_path).to(device)
     engine.eval()
     metadata = _check_recorded_solve(engine.get_submodule("backbone"), metadata, path)
     return DeployedModel(
@@ -272,7 +318,33 @@ def load_deployed(
         e0s=e0s,
         outputs=built[0],
         path=Path(path),
+        manifest=manifest,
     )
+
+
+def choose_head(heads: Sequence[str], head: str | None) -> str:
+    """The head a structure is evaluated with.
+
+    Raises:
+        ValueError: For a head the model does not have, naming the ones it
+            does. The frozen tree warns and takes the last one, which
+            evaluates a level of theory nobody asked for.
+    """
+    if head is not None:
+        if head not in heads:
+            raise ValueError(
+                f"the model has no head {head!r}; its heads are {list(heads)}."
+            )
+        return head
+    if len(heads) == 1:
+        return heads[0]
+    defaults = [name for name in heads if name.lower() == "default"]
+    if not defaults:
+        raise ValueError(
+            f"the model has the heads {list(heads)} and none is called "
+            f"'default', so which to evaluate has to be said: pass head=."
+        )
+    return defaults[0]
 
 
 def _with_fixed_point(engine, config: ResolvedConfig):

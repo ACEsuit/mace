@@ -146,21 +146,22 @@ def test_backend_converter_arguments_cannot_rewrite_a_canonical_artifact(
 
 
 @fp64_only
-def test_old_lammps_wrapper_is_refused_without_producing_an_artifact(
-    tmp_path, capsys, monkeypatch
-):
+def test_lammps_export_requires_a_v1_checkpoint(tmp_path, capsys, monkeypatch):
     import mace_launcher
 
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ImportError):
         exec("from mace_torch.calculators import LAMMPS_MACE", {})
-    assert main(["export", "lammps"]) == 2
-    assert "DEP-2" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as missing:
+        main(["export", "lammps"])
+    assert missing.value.code == 2
     monkeypatch.setattr(
         sys, "argv", ["mace_create_lammps_model", "--engine", "v1", "missing.model"]
     )
-    with pytest.raises(SystemExit, match="not yet available on v1 engine"):
+    with pytest.raises(SystemExit) as rejected:
         mace_launcher.create_lammps_model()
+    assert rejected.value.code == 2
+    assert "V1 .safetensors" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
 
 

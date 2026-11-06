@@ -385,6 +385,8 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/data/transforms.py` | Registered transforms of what a run trains against. |
 | `mace_torch/deploy/__init__.py` | Loading and converting models, re-exported. |
 | `mace_torch/deploy/legacy.py` | Legacy conversion: extract in the legacy venv, import here. |
+| `mace_torch/deploy/bundle.py` | Atomic export of a deployment directory from a canonical checkpoint pair. |
+| `mace_torch/deploy/manifest.py` | Deployment schema, selected head and halo exchange contract. |
 | `mace_torch/deploy/loader.py` | `load_deployed`: a checkpoint rebuilt for evaluation. |
 | `mace_torch/deploy/neutral_io.py` | A neutral artifact into a v1 model through the checkpoint path. |
 | `mace_torch/deploy/reference.py` | Checking a converted model against committed reference values. |

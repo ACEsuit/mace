@@ -388,7 +388,12 @@ class MACECalculator(Calculator):
         self.r_max = cutoffs[0]
         self.z_table = first.z_table
         self.heads = first.heads
-        self.head = _choose_head(self.heads, head)
+        self.head = first.select_head(head)
+        if any(member.manifest is not None for member in self.models):
+            index = self.heads.index(self.head)
+            for member in self.models[1:]:
+                if member.heads.index(member.select_head(self.head)) != index:
+                    raise ValueError("committee bundles must agree on the head index")
         self.energy_units_to_eV = energy_units_to_eV
         self.length_units_to_A = length_units_to_A
         self.info_keys = dict(DEFAULT_INFO_KEYS if info_keys is None else info_keys)
@@ -925,6 +930,9 @@ def _models_matching(pattern: str) -> list[str | Path]:
     """
     records: set[Path] = set()
     for match in glob.glob(pattern):
+        if Path(match).is_dir() and (Path(match) / "deploy.json").is_file():
+            records.add(Path(match))
+            continue
         record = Path(match).with_suffix(".json")
         if not record.is_file():
             continue
@@ -935,31 +943,6 @@ def _models_matching(pattern: str) -> list[str | Path]:
         if written == CHECKPOINT_FORMAT:
             records.add(record)
     return sorted(records)
-
-
-def _choose_head(heads: Sequence[str], head: str | None) -> str:
-    """The head a structure is evaluated with.
-
-    Raises:
-        ValueError: For a head the model does not have, naming the ones it
-            does. The frozen tree warns and takes the last one, which
-            evaluates a level of theory nobody asked for.
-    """
-    if head is not None:
-        if head not in heads:
-            raise ValueError(
-                f"the model has no head {head!r}; its heads are {list(heads)}."
-            )
-        return head
-    if len(heads) == 1:
-        return heads[0]
-    defaults = [name for name in heads if name.lower() == "default"]
-    if not defaults:
-        raise ValueError(
-            f"the model has the heads {list(heads)} and none is called "
-            f"'default', so which to evaluate has to be said: pass head=."
-        )
-    return defaults[0]
 
 
 def _arrays_equal(saved: Any, current: Any, tol: float) -> bool:

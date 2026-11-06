@@ -192,11 +192,35 @@ def _pseudolabel(args):
     return 0
 
 
-def _unavailable(args):
-    raise ValueError(
-        "capability export lammps not yet available on v1 engine; it "
-        "is implemented by DEP-2 #1594"
+def _lammps_arguments(parser):
+    parser.add_argument("checkpoint", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--head")
+    parser.add_argument("--dtype", choices=("float32", "float64"))
+    parser.add_argument("--backend", help="Request a kernel backend when loading.")
+    parser.add_argument(
+        "--halo-exchange", action=argparse.BooleanOptionalAction, default=True
     )
+    parser.add_argument(
+        "--compile-regions", action=argparse.BooleanOptionalAction, default=True
+    )
+
+
+def _lammps(args):
+    from mace_torch.deploy.bundle import export_lammps
+
+    print(
+        export_lammps(
+            args.checkpoint,
+            args.output,
+            head=args.head,
+            dtype=args.dtype,
+            backend=args.backend,
+            halo_exchange=args.halo_exchange,
+            compile_regions=args.compile_regions,
+        )
+    )
+    return 0
 
 
 def _convert_device_arguments(parser):
@@ -255,7 +279,9 @@ MD = Command(
     help="Retired: use ASE dynamics with the committee calculator.", run=_retired_md
 )
 MIGRATE = _module_command("migrate", "Translate a legacy command or training YAML.")
-EXPORT_LAMMPS = Command(help="LAMMPS export (DEP-2).", run=_unavailable)
+EXPORT_LAMMPS = Command(
+    help="Export an ML-IAP deployment bundle.", arguments=_lammps_arguments, run=_lammps
+)
 
 
 def _select_data(args):
