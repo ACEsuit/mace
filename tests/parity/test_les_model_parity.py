@@ -502,15 +502,19 @@ def test_cueq_force_training_and_checkpoint_on_cuda(tmp_path, fp64, isolated):
         assert np.isfinite(calc.results[name]).all(), name
 
 
-@pytest.mark.gpu
 @pytest.mark.parametrize(
-    "backend", ["reference", pytest.param("cueq", marks=pytest.mark.cueq)]
+    "device,backend",
+    [
+        ("cpu", "reference"),
+        pytest.param("cuda", "reference", marks=pytest.mark.gpu),
+        pytest.param("cuda", "cueq", marks=[pytest.mark.gpu, pytest.mark.cueq]),
+    ],
 )
 @pytest.mark.parametrize(
     "dtype,row",
     [("float64", harness.FP64_ACCELERATED_BACKEND), ("float32", harness.FP32)],
 )
-def test_les_cuda_reference_rows(converted_les, backend, dtype, row, fp64, isolated):
+def test_les_precision_rows(converted_les, device, backend, dtype, row, fp64, isolated):
     from mace_core.config.precision import PrecisionConfig
     from mace_core.data.backend import DatasetStatistics
     from mace_core.elements import ResolvedE0s
@@ -543,14 +547,14 @@ def test_les_cuda_reference_rows(converted_les, backend, dtype, row, fp64, isola
             type(op).__module__ == "mace_torch.backends.cueq" for op in engine.modules()
         )
     report = verify_against_reference(
-        engine.to("cuda"),
+        engine.to(device),
         GOLDEN / "references/tiny_maceles_e3nn_cpu_fp64.json",
         GOLDEN / "fixtures",
         z_table=imported.z_table,
         cutoff=imported.config.model.r_max,
         atol=row.atol,
         rtol=row.rtol,
-        device="cuda",
+        device=device,
     )
     assert report.passed, report.describe()
     assert len({entry.fixture for entry in report.deviations}) == 6

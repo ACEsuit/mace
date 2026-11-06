@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextlib import nullcontext
 from importlib import import_module
 from typing import cast
 
@@ -15,6 +16,7 @@ from mace_core.kernels.precision import Precision
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
+from torch.overrides import TorchFunctionMode
 
 from mace_torch.models.base import MACEModel, _constructed_in
 from mace_torch.models.energy import EnergyOutputHead
@@ -23,6 +25,21 @@ from mace_torch.nn.les import TensorReadout
 FIELD_FORCES = ObservableSpec(
     name="field_forces", irreps="1o", per_atom=True, units="eV/Å"
 )
+
+
+class _CellVolume(TorchFunctionMode):
+    """Use the signed triple product for the pinned solver's 3-by-3 determinant.
+
+    PyTorch's det backward can promote its LU factors to the process default
+    dtype and then fail in lu_solve. The triple product differentiates entirely
+    in the cell dtype, including strain gradients used in stress training.
+    """
+
+    def __torch_function__(self, func, types, args: tuple = (), kwargs=None):
+        if func is torch.det:
+            a, b, c = args[0].unbind(-2)
+            return (a * torch.linalg.cross(b, c)).sum(-1)
+        return func(*args, **(kwargs or {}))
 
 
 class LatentEwaldModel(MACEModel):
@@ -295,17 +312,25 @@ class LatentEwaldModel(MACEModel):
                             alphas[0].new_zeros((count, *alphas[0].shape[1:]))
                         )
                 continue
-            result = self.solver(
-                positions=positions[atoms],
-                cell=cells[index : index + 1],
-                atomic_numbers=graph["node_atomic_numbers"][atoms],
-                latent_charges=charge[atoms],
-                latent_dipoles=None if dipole is None else dipole[atoms],
-                latent_quads=None if quad is None else quad[atoms],
-                latent_kappas=None if kappa is None else kappa[atoms],
-                latent_alphas=None if alpha is None else alpha[atoms],
-                e_ext=None if field is None else field.reshape(-1, 3)[index],
+            # Only the external solve with differentiable, lower-precision
+            # cells needs this workaround. TorchFunctionMode is thread-local.
+            mixed_det = (
+                cells.requires_grad
+                and cells.dtype == torch.float32
+                and torch.get_default_dtype() == torch.float64
             )
+            with _CellVolume() if mixed_det else nullcontext():
+                result = self.solver(
+                    positions=positions[atoms],
+                    cell=cells[index : index + 1],
+                    atomic_numbers=graph["node_atomic_numbers"][atoms],
+                    latent_charges=charge[atoms],
+                    latent_dipoles=None if dipole is None else dipole[atoms],
+                    latent_quads=None if quad is None else quad[atoms],
+                    latent_kappas=None if kappa is None else kappa[atoms],
+                    latent_alphas=None if alpha is None else alpha[atoms],
+                    e_ext=None if field is None else field.reshape(-1, 3)[index],
+                )
             energies.append(result["E_lr"])
             charges.append(result["latent_charges"])
             if result["latent_dipoles"] is not None:
