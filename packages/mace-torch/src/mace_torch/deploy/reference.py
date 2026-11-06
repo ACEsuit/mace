@@ -61,6 +61,13 @@ QUANTITIES = (
     "charges",
     "magforces",
     "equilibrated_magmom",
+    "les_energy",
+    "latent_charges",
+    "latent_dipoles",
+    "latent_kappas",
+    "latent_alphas",
+    "latent_quads",
+    "BEC",
 )
 
 
@@ -222,7 +229,7 @@ def _evaluate(
     compute = tuple(
         name
         for name in quantities
-        if name in {"forces", "stress", "magforces", "dmu_dr", "dalpha_dr"}
+        if name in {"forces", "stress", "magforces", "dmu_dr", "dalpha_dr", "BEC"}
     )
     output = engine(flat, compute=compute)
     values = {

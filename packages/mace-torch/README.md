@@ -17,4 +17,11 @@ python -m pip install ./packages/mace-core './packages/mace-torch[les]'
 ```
 
 The `les` extra selects the solver commit used by the frozen LES references.
-The native model and checkpoint conversion are tracked in ELEC-4.
+Set `model.model` to `les` and configure the multipoles under `model.les`.
+The training CLI also accepts the historical model name `MACELES` and a
+`--les_arguments` YAML file. Request Born effective charges with
+`mace eval --compute_bec` or `MACECalculator(..., compute_bec=True)`.
+
+MACE readouts supply the charges to the solver. A new training configuration
+rejects `use_atomwise=True`. Conversion records that setting when present
+in an old checkpoint and uses the charge readouts that produced its predictions.

@@ -54,14 +54,11 @@ SUPPORTED = {
     "MagneticScaleShiftMACE": "magnetic",
     "MagneticSCFMACE": "magnetic",
     "PolarMACE": "polar",
+    "MACELES": "les",
 }
 
-#: Known classes without an executable conversion target: LES remains assigned
-#: to ELEC-4, and the magnetic base implements no forward of its own.
+#: The magnetic base implements no forward of its own.
 REFUSED = {
-    "MACELES": (
-        "a latent Ewald summation model, which is not on the v1 architecture yet"
-    ),
     "MagneticMACE": (
         "the magnetic base class whose forward raises NotImplementedError; "
         "convert its executable MagneticScaleShiftMACE or MagneticSCFMACE instead"
@@ -204,6 +201,8 @@ def legacy_config(model) -> dict[str, Any]:
             activation = activations[0]
             config["gate"] = getattr(activation, "f", activation)
         config["MLP_irreps"] = model.readouts[-1].hidden_irreps
+    if type(model).__name__ == "MACELES":
+        config["les_arguments"] = les_settings(model)
     if type(model).__name__ == "PolarMACE":
         # The cutoff the forward sums to, which is not always what the recorded
         # factor gives: the published models hold the cutoff of a factor of one
@@ -215,6 +214,49 @@ def legacy_config(model) -> dict[str, Any]:
         # order, and the sidecar is written with its keys sorted.
         config["embedding_specs"] = [[name, spec] for name, spec in specs.items()]
     return {key: jsonable(value) for key, value in config.items()}
+
+
+def les_settings(model) -> dict[str, Any]:
+    """Recover what the readouts and external solver actually use, even without YAML."""
+    settings = {
+        "use_dipole": getattr(model, "use_dipoles", False),
+        "use_quad": getattr(model, "use_quads", False),
+        "use_induced_charge": getattr(model, "use_induced_charges", False),
+        "use_induced_dipole": getattr(model, "use_induced_dipoles", False),
+        **{
+            name: getattr(model, "les_" + name, 1.0)
+            for name in ("output_scale", "alpha_scale", "kappa_scale")
+        },
+    }
+    for name, fallback in {
+        "compute_bec": False,
+        "bec_output_index": None,
+        "use_anisotropic_polarizability": False,
+        "alpha_irreps": "0e+1o+2e",
+        "alpha_1o_nonlinear_readout": False,
+        "alpha_1o_linear_w_pos": True,
+        "make_kappa_positive": False,
+        "make_alpha_positive": False,
+    }.items():
+        settings[name] = getattr(model, name, fallback)
+    for name in (
+        "use_atomwise",
+        "sigma",
+        "dl",
+        "remove_self_interaction",
+        "remove_mean",
+        "epsilon_factor",
+        "use_atomic_alpha",
+        "use_epsilon_r_scaling",
+        "use_fixed_atomic_charges",
+        "fixed_atomic_charges_scaling_factor",
+        "n_layers",
+        "n_hidden",
+        "add_linear_nn",
+        "output_scaling_factor",
+    ):
+        settings[name] = getattr(model.les, name)
+    return settings
 
 
 def jsonable(value: Any) -> Any:
@@ -639,7 +681,7 @@ def walk(model, spelling: str) -> Walk:
             "atomic_energies",
             {"values": numpy.atleast_2d(energies).astype(numpy.float64)},
         )
-    if spelling in ("scale_shift", "polar", "magnetic"):
+    if spelling in ("scale_shift", "polar", "magnetic", "les"):
         walker.use("scale_shift.scale", "scale_shift.shift")
         walker.op(
             "energy.scale_shift",
@@ -814,6 +856,8 @@ def walk(model, spelling: str) -> Walk:
         acts = getattr(readout.non_linearity, "acts", [])
         gate = [getattr(getattr(act, "f", act), "__name__", None) for act in acts]
         walker.ops[f"{prefix}.first"]["descriptor"]["gate"] = gate[0] if gate else None
+    if spelling == "les":
+        walk_les(walker, model)
     if spelling == "polar":
         walk_polar(walker, model)
     if spelling == "dielectric":
@@ -854,6 +898,47 @@ def walk(model, spelling: str) -> Walk:
                 },
             )
     return walker
+
+
+def walk_les(walker: Walk, model) -> None:
+    """The LES-specific readouts. Equivariant maps use the usual canonical weights."""
+    for source, role in {
+        "les_readouts": "outputs.heads.latent_charges.readouts",
+        "les_alpha_readouts": "outputs.heads.latent_alphas.readouts",
+        "les_kappa_readouts": "outputs.heads.latent_kappas.readouts",
+        "les_u_readouts": "multipoles.dipole",
+        "les_quad_2e_readouts": "multipoles.quad_sh",
+        "les_alpha_2e_readouts": "multipoles.alpha_sh",
+        "les_quad_1o_readouts": "multipoles.quad_tensor",
+        "les_alpha_1o_readouts": "multipoles.alpha_tensor",
+    }.items():
+        for index, block in enumerate(getattr(model, source, ())):
+            prefix, target = f"{source}.{index}", f"{role}.{index}"
+            if role.endswith("_tensor"):
+                walker.linear(target + ".linear", block.linear, prefix + ".linear")
+                mixer = {}
+                for name, part in (
+                    ("mlp", "1o"),
+                    ("scalar_to_weight_1o", "1o"),
+                    ("scalar_to_weight_1e", "1e"),
+                ):
+                    module = getattr(block, name, None)
+                    if module is not None:
+                        for key, value in module.named_parameters():
+                            walker.use(f"{prefix}.{name}.{key}")
+                            mixer[f"{part}.{key}"] = value.detach().numpy()
+                walker.op(target, "les_tensor_mixing", mixer)
+            elif hasattr(block, "linear"):
+                walker.linear(target, block.linear, prefix + ".linear")
+            else:
+                walker.linear(target + ".first", block.linear_1, prefix + ".linear_1")
+                walker.linear(target + ".second", block.linear_2, prefix + ".linear_2")
+    for buffer in ("change_of_basis", "change_of_basis_quads"):
+        if buffer in walker.state:
+            walker.use(buffer)
+            walker.op(
+                buffer, "les_cartesian_basis", {"basis": walker.state[buffer].numpy()}
+            )
 
 
 def walk_radial(walker: Walk, name: str, module, source: str) -> None:

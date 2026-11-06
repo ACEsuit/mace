@@ -37,10 +37,18 @@ from collections.abc import Mapping, Sequence
 from typing import cast
 
 import torch
+from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.kernels.canonical import linear_weight_table
+from mace_core.kernels.descriptors import FullyConnectedTPDescriptor, LinearDescriptor
 from torch import Tensor, nn
 
+from mace_torch.canonical import canonical_modules
 from mace_torch.models import ObservableHead
-from mace_torch.serialization import canonical_state, load_canonical_state
+from mace_torch.serialization import (
+    canonical_metadata,
+    canonical_state,
+    load_canonical_state,
+)
 
 __all__ = ["TransferError", "readout_sources", "transfer_foundation"]
 
@@ -114,6 +122,43 @@ def _embedding(weight: Tensor, rows: list[int], count: int) -> Tensor:
     return weight.reshape(-1, count)[:, rows].reshape(-1).clone()
 
 
+def _keep_scalar_paths(
+    source_op: nn.Module,
+    target_op: nn.Module,
+    transferred: dict[str, Tensor],
+    initial: dict[str, Tensor],
+) -> dict[str, Tensor]:
+    """Embed a scalar-only final operator in the full LES layer. Retain new paths."""
+    weights = initial["weight"].clone()
+    if "path_counts" in transferred:
+        source_paths = canonical_metadata(source_op)[""]["paths"]
+        paths = canonical_metadata(target_op)[""]["paths"]
+        target_paths = {name: i for i, name in enumerate(paths)}
+        weights[:, [target_paths[name] for name in source_paths], :] = transferred[
+            "weight"
+        ]
+    else:
+        descriptor = target_op.descriptor
+        if isinstance(descriptor, FullyConnectedTPDescriptor):
+            inputs = descriptor.irreps_in1
+        elif isinstance(descriptor, LinearDescriptor):
+            inputs = descriptor.irreps_in
+        else:
+            raise TransferError(
+                "LES final-layer expansion requires a linear or element-conditioned map"
+            )
+        outputs = list(Irreps.parse(descriptor.irreps_out).slices())
+        indices = [
+            slot
+            for (out, _), slot in linear_weight_table(
+                inputs, descriptor.irreps_out
+            ).items()
+            if str(outputs[out][1]) == "0e"
+        ]
+        weights[..., indices] = transferred["weight"]
+    return {**initial, "weight": weights}
+
+
 def transfer_foundation(
     foundation: nn.Module,
     model: nn.Module,
@@ -147,7 +192,26 @@ def transfer_foundation(
     """
     source = canonical_state(foundation)
     target = canonical_state(model)
-    if set(source) != set(target):
+    source_config, target_config = (
+        getattr(foundation, "config", None),
+        getattr(model, "config", None),
+    )
+    add_les = (
+        source_config is not None
+        and source_config.model == "scale_shift"
+        and target_config is not None
+        and target_config.model == "les"
+    )
+    fresh = (
+        {
+            name
+            for name in target
+            if name.startswith(("multipoles.", "outputs.heads.latent_"))
+        }
+        if add_les
+        else set()
+    )
+    if set(source) != set(target) - fresh:
         raise TransferError(
             f"the foundation model and the model being built hold different "
             f"operators. Only in the foundation: {sorted(set(source) - set(target))}. "
@@ -158,6 +222,9 @@ def transfer_foundation(
     head_of = {name: position for position, name in enumerate(foundation_heads)}
     state: dict[str, dict[str, Tensor]] = {}
     for path, tensors in target.items():
+        if path in fresh or (path.startswith("multipoles.") and not transfer_readout):
+            state[path] = tensors
+            continue
         found = source[path]
         if ".readouts." in f".{path}.":
             # Per head, below: a readout is copied one head at a time.
@@ -223,6 +290,23 @@ def transfer_foundation(
             }
         else:
             state[path] = {name: value.clone() for name, value in found.items()}
+        if (
+            add_les
+            and "weight" in state[path]
+            and state[path]["weight"].shape != tensors["weight"].shape
+        ):
+            last = target_config.num_interactions - 1
+            if path in {
+                f"backbone.interactions.{last}.skip",
+                f"backbone.products.{last}.contraction",
+                f"backbone.products.{last}.linear",
+            }:
+                state[path] = _keep_scalar_paths(
+                    canonical_modules(foundation)[path],
+                    canonical_modules(model)[path],
+                    state[path],
+                    tensors,
+                )
         for name, value in state[path].items():
             if value.shape != tensors[name].shape:
                 raise TransferError(
@@ -237,6 +321,8 @@ def transfer_foundation(
     outputs = model.get_submodule("outputs")
     source_outputs = foundation.get_submodule("outputs")
     for name, head in cast(nn.ModuleDict, outputs.get_submodule("heads")).items():
+        if add_les and name.startswith("latent_"):
+            continue
         donor = cast(ObservableHead, source_outputs.get_submodule(f"heads.{name}"))
         receiver = cast(ObservableHead, head)
         with torch.no_grad():

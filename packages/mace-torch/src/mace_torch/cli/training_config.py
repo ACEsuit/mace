@@ -97,6 +97,8 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
             for value in namespace.skip_evaluate_heads.split(",")
             if value.strip()
         )
+    if hasattr(namespace, "les_arguments") and isinstance(namespace.les_arguments, str):
+        namespace.les_arguments = read_config_file(namespace.les_arguments)
     if hasattr(namespace, "model"):
         # The old class spelling is translated only here; no class is imported.
         family = namespace.model.removesuffix("MACE")
@@ -112,6 +114,7 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
             "AtomicDipoles": "dipole",
             "AtomicDielectric": "dielectric",
             "Polar": "polar",
+            "MACELES": "les",
             "Magnetic": "magnetic",
             "MagneticScaleShift": "magnetic",
         }.get(family, namespace.model)

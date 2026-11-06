@@ -77,6 +77,7 @@ _SPELLINGS = {
     "plain": "plain",
     "scale_shift": "scale_shift",
     "polar": "polar",
+    "les": "les",
     "dielectric": "dielectric",
     "dipole": "dipole",
     "energy_dipole": "plain",
@@ -399,6 +400,10 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
                 collinear=settings["use_collinear"],
                 require_convergence=False,
             )
+    if family == "les":
+        # Source checkpoints always passed explicit charges to Les, bypassing
+        # its optional descriptor MLP even when the source flag was true.
+        model["les"] = dict(take("les_arguments"), use_atomwise=False)
     if family == "polar":
         model["polar"], sections["electrostatics"] = _polar_settings(take)
     unread = sorted(set(recorded) - read)
@@ -792,6 +797,15 @@ def _state(
                 name: _as(artifact.tensor(op, name), value)
                 for name, value in tensors.items()
             }
+        elif artifact.sidecar.family == "les" and path.removeprefix("backbone.") in ops:
+            op = path.removeprefix("backbone.")
+            if ops[op].op_kind == "linear":
+                state[path] = _linear(artifact, op, tensors)
+            else:
+                state[path] = {
+                    name: _as(artifact.tensor(op, name), value)
+                    for name, value in tensors.items()
+                }
         elif path.startswith(f"{outputs}heads.") and artifact.sidecar.family in {
             "dielectric",
             "dipole",
@@ -1168,6 +1182,18 @@ def import_neutral(
         precision=precision or DEFAULT_PRECISION,
         initialize=False,
     )
+    if artifact.sidecar.family == "les":
+        from mace_core.clebsch_gordan import symmetric_matrix_basis
+
+        matrix_basis = symmetric_matrix_basis()
+        for op, expected in (
+            ("change_of_basis", matrix_basis),
+            ("change_of_basis_quads", matrix_basis[1:]),
+        ):
+            if op in artifact.sidecar.ops and not np.allclose(
+                artifact.tensor(op, "basis"), expected, atol=1e-7, rtol=0
+            ):
+                raise NeutralImportError(f"{op}: incompatible LES Cartesian basis")
     _check_constants(artifact, config)
     load_canonical_state(engine, _state(artifact, engine))
     return ImportedModel(
@@ -1211,6 +1237,12 @@ def _metadata(
             f"Converted from a {provenance.source_class} checkpoint written by "
             f"version {provenance.source_version}, by converter version "
             f"{provenance.converter_version}. The source {origin}."
+            + (
+                " Source use_atomwise=True was inactive with model charge readouts."
+                if artifact.sidecar.family == "les"
+                and artifact.sidecar.config["les_arguments"].get("use_atomwise")
+                else ""
+            )
         ),
         parents=[
             ParentModel(

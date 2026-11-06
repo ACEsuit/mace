@@ -91,6 +91,11 @@ jobs:
               - 'requirements/les.txt'
               - 'packages/mace-core/pyproject.toml'
               - 'packages/mace-torch/pyproject.toml'
+              - 'packages/mace-core/src/**'
+              - 'packages/mace-torch/src/**'
+              - 'packages/mace-torch/tests/test_mace_torch_maceles.py'
+              - 'packages/mace-torch/tests/test_mace_torch_les_bec.py'
+              - 'tests/parity/test_les_model_parity.py'
             magnetic:
               - *shared
               - 'mace/calculators/**'
@@ -182,7 +187,10 @@ jobs:
       # in both.
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/les tests/golden
+          tests: >-
+            tests/extensions/les tests/golden tests/parity/test_les_model_parity.py
+            packages/mace-torch/tests/test_mace_torch_maceles.py
+            packages/mace-torch/tests/test_mace_torch_les_bec.py
           markers: not gpu
           require-caps: les
           allow-network: "true"

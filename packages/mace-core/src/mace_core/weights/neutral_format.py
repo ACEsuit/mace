@@ -127,6 +127,8 @@ OpKind = Literal[
     "bessel_basis",
     "polynomial_cutoff",
     "zbl",
+    "les_tensor_mixing",
+    "les_cartesian_basis",
     "magnetic_moments",
     "one_body_moment",
 ]
@@ -202,6 +204,7 @@ class NeutralSidecar(_Strict):
         "scale_shift",
         "dielectric",
         "polar",
+        "les",
         "dipole",
         "energy_dipole",
         "magnetic",
@@ -267,7 +270,12 @@ def write_neutral(
         str(weights),
     )
     document.write_text(
-        json.dumps(sidecar.model_dump(mode="json"), indent=2, sort_keys=True)
+        # Preserve optional fields the source omitted, as well as explicit defaults.
+        json.dumps(
+            sidecar.model_dump(mode="json", exclude_unset=True),
+            indent=2,
+            sort_keys=True,
+        )
     )
     return document
 

@@ -57,6 +57,7 @@ from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.models.dipoles import DipoleModel, DipoleSettings
 from mace_torch.models.electrostatics import PolarModel, PolarSettings
+from mace_torch.models.les import LatentEwaldModel
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.models.normalization import ObservableNormalization
 from mace_torch.physics import DerivativeEngine
@@ -84,7 +85,7 @@ logger = logging.getLogger(__name__)
 #: Which model spelling puts the short-range repulsion inside the scaled sum.
 #: The two differ by about 77 eV on a probe geometry, so it is a fact about a
 #: trained model rather than a preference.
-_ZBL_INSIDE = {"scale_shift": True, "plain": False}
+_ZBL_INSIDE = {"scale_shift": True, "les": True, "plain": False}
 
 #: Which energy models hand out per-atom energies in the accumulation dtype
 #: rather than their own. The frozen tree widens them in its scale-shift, polar
@@ -93,6 +94,7 @@ _WIDENS_NODE_ENERGY = {
     "scale_shift": True,
     "plain": False,
     "polar": True,
+    "les": True,
     "magnetic": False,
 }
 
@@ -267,6 +269,10 @@ def with_foundation_architecture(
     """
     theirs = _saturations_by_element(foundation.config.model, foundation)
     ours = config.model
+    if ours.model == "les" and theirs.model == "scale_shift":
+        # Keep the donor backbone and add fresh LES readouts. The LES family
+        # itself keeps all final irreps; its new vector channels start fresh.
+        theirs = theirs.model_copy(update={"model": "les", "les": ours.les})
     conflicts = sorted(
         name
         for name in ours.model_fields_set - _RUN_OWNED_MODEL_FIELDS - {"normalization"}
@@ -416,7 +422,8 @@ def build_model(
     )
     energy_head = None
     if energy is None and (
-        config.model.model in {"polar", "magnetic"} or config.model.pair_repulsion
+        config.model.model in {"les", "polar", "magnetic"}
+        or config.model.pair_repulsion
     ):
         raise ModelStageError(
             "this model's physical energy terms require an `energy` observable"
@@ -470,7 +477,8 @@ def build_model(
         if initialize:
             initialize_model_weights(model, config.runtime.seed)
         return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
-    model = MACEModel(
+    model_type = LatentEwaldModel if config.model.model == "les" else MACEModel
+    model = model_type(
         backend,
         config=config.model,
         atomic_numbers=list(z_table.zs),

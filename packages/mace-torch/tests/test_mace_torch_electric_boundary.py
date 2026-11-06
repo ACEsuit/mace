@@ -22,9 +22,11 @@ from test_mace_torch_full_batch import configuration
         ("keep_neutral", False),
     ],
 )
-def test_unsupported_les_options_are_not_silently_ignored(option, value):
-    with pytest.raises(NotImplementedError, match=option + ".*LES"):
-        MACECalculator("missing.json", **{option: value})
+@fp64_only
+def test_unsupported_les_options_are_not_silently_ignored(tmp_path, option, value):
+    trained = run(configuration(tmp_path, max_num_epochs=1))
+    with pytest.raises(ValueError, match=option + ".*LES"):
+        MACECalculator(trained.checkpoint_path, **{option: value})
 
 
 @fp64_only

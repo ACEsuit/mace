@@ -422,12 +422,14 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/models/electrostatics.py` | `PolarModel`: the charge-aware model, its refined density of multipoles and long-range energy. |
 | `mace_torch/models/energy.py` | The energy head: E0s, scale and shift, and the two reductions. |
 | `mace_torch/models/heads.py` | One readout head per declared observable, per head of theory. |
+| `mace_torch/models/les.py` | Long-range LES coupling, latent quantities, Born charges and their applied-field force. |
 | `mace_torch/models/magnetic.py` | `MagneticModel`: an energy model reading a moment on every atom, with its one-body term. |
 | `mace_torch/models/outputs.py` | `MACEOutputs`: every declared observable read out and typed. |
 | `mace_torch/models/normalization.py` | Equivariant output normalization and its canonical checkpoint buffers. |
 | `mace_torch/nn/__init__.py` | The building blocks, re-exported. |
 | `mace_torch/nn/backbone.py` | `MACEBackbone`: embeddings, interactions and products, features out. |
 | `mace_torch/nn/embedding.py` | Element and radial embeddings. |
+| `mace_torch/nn/les.py` | Linear and nonlinear Cartesian tensor readouts for LES multipoles. |
 | `mace_torch/nn/field.py` | The charge-aware blocks: density update, electron-energy readout, channel-pair products. |
 | `mace_torch/nn/graph_features.py` | Declared graph or atomic inputs embedded into scalar node channels. |
 | `mace_torch/nn/interaction.py` | The interaction blocks: convolution, linear, skip. |

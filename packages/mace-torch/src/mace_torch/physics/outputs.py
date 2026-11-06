@@ -357,6 +357,10 @@ class DerivativeEngine(nn.Module):
         # both. The engine brackets a model; that the model came in two pieces
         # was an assumption, and a model with a pair repulsion in it does not.
         self.backbone = backbone
+        self.model_requests = frozenset(getattr(backbone, "requestable_outputs", ()))
+        self.model_needs_position_grad = getattr(
+            backbone, "requires_position_grad", False
+        )
         self.output_layer = output_layer
         self.energy = energy
         self.inputs = list(inputs)
@@ -467,7 +471,7 @@ class DerivativeEngine(nn.Module):
         wanted_responses = sorted(wanted & set(self.responses))
         if self.energy is None:
             known = set()
-        known |= set(self.responses)
+        known |= set(self.responses) | self.model_requests
         unknown = sorted(wanted - known)
         if unknown:
             undeclared = [
@@ -489,6 +493,8 @@ class DerivativeEngine(nn.Module):
                 f"{unknown} are not derivatives this computes. The choices are "
                 f"{sorted(known)}."
             )
+        model_requests = self.model_requests & wanted
+        wanted -= model_requests
         need_strain = bool(wanted & {"stress", "virials"})
         need_edges = "edge_forces" in wanted or bool(wanted & per_atom_strain)
         need_hessian = "hessian" in wanted
@@ -526,7 +532,10 @@ class DerivativeEngine(nn.Module):
 
         prepared, positions, displacement = prepare_inputs(
             graph,
-            need_forces=need_forces or bool(response_inputs.keys() & {"pos", "strain"}),
+            need_forces=need_forces
+            or bool(model_requests)
+            or self.model_needs_position_grad
+            or bool(response_inputs.keys() & {"pos", "strain"}),
             need_stress=need_strain or "strain" in response_inputs,
             leaves=[spec.name for spec in leaves],
         )
@@ -535,6 +544,9 @@ class DerivativeEngine(nn.Module):
         # A Python boolean carried only in the prepared forward input. The
         # model's training mode independently controls weight gradients.
         prepared["differentiated_twice"] = need_hessian or (training and bool(wanted))
+        prepare = getattr(self.backbone, "prepare_model_inputs", None)
+        if prepare is not None:
+            prepare(prepared, model_requests)
         run = self._compiled_model or self.model_forward
         output = run(prepared)
         if wanted_responses:

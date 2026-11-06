@@ -58,7 +58,7 @@ GROUP_MARKERS: dict[str, tuple[str, ...]] = {
     "embedding": ("node_embedding", "graph_embedding"),
     "interactions": (".interactions.",),
     "products": (".products.",),
-    "readouts": (".readouts.",),
+    "readouts": (".readouts.", ".multipoles."),
 }
 
 #: The blocks a charge-aware model adds around its density, one group without
@@ -100,16 +100,19 @@ def parameter_groups(model: nn.Module, config: TrainingConfig) -> list[dict]:
     """The optimizer's groups, with every trainable parameter in exactly one.
 
     Raises:
-        ValueError: If a trainable parameter belongs to no group. One that no
-            group claims is never updated, and the symptom is a model that
-            trains except for the part nobody looks at.
+        ValueError: If a trainable parameter belongs to multiple groups or none.
     """
     factors = config.scheduler.group_factors
     claimed: set[str] = set()
     groups: list[dict] = []
 
     def add(name: str, items: list[tuple[str, nn.Parameter]], decay: float) -> None:
-        claimed.update(parameter for parameter, _ in items)
+        for parameter_name, _ in items:
+            if parameter_name in claimed:
+                raise ValueError(
+                    f"{parameter_name} is claimed twice by optimizer groups"
+                )
+            claimed.add(parameter_name)
         groups.append(
             {
                 "name": name,

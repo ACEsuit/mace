@@ -342,7 +342,9 @@ def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
     from their defaults.
     """
     inputs: tuple[str, ...] = ()
-    if model.model == "polar":
+    if model.model == "les":
+        inputs = ("external_field",)
+    elif model.model == "polar":
         from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS
 
         inputs = POLAR_GRAPH_INPUTS

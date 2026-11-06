@@ -302,7 +302,7 @@ _DATA: dict[str, Disposition] = {
         "reads off the dataset",
         "multi_processed_test",
     ),
-    **_reserved("data.les", "the electrostatics extra", "les_arguments"),
+    **_kept(les_arguments="model.les"),
 }
 
 #: Loss.

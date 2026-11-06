@@ -127,7 +127,10 @@ def run(args: argparse.Namespace) -> int:
     ):
         if flag:
             if name not in available:
-                raise ValueError(f"the model does not declare {name!r}")
+                raise ValueError(
+                    f"the model does not declare {name!r} "
+                    f"(model={deployed.config.model.model!r})"
+                )
             compute.append(name)
     if args.return_contributions and deployed.config.model.model != "plain":
         raise ValueError("--return_contributions requires a plain energy model")
@@ -152,6 +155,7 @@ def run(args: argparse.Namespace) -> int:
                 cutoff=deployed.r_max,
                 z_table=deployed.z_table,
                 head=deployed.heads.index(head),
+                graph_inputs=inputs,
                 features=features,
             )
             for atoms in batch_atoms

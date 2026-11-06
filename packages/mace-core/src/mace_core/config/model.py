@@ -371,6 +371,62 @@ class MagneticConfig(ConfigSection):
         return [float(self.saturation)] * len(numbers)
 
 
+class LESConfig(ConfigSection):
+    """Latent multipole readouts and the pinned LES energy/Born-charge solver."""
+
+    use_atomwise: Literal[False] = False
+    compute_bec: bool = False
+    bec_output_index: Literal[0, 1, 2] | None = None
+    use_dipole: bool = False
+    use_quad: bool = False
+    use_induced_charge: bool = False
+    use_induced_dipole: bool = False
+    use_anisotropic_polarizability: bool = False
+    alpha_irreps: str = "0e+1o+2e"
+    alpha_1o_nonlinear_readout: bool = False
+    alpha_1o_linear_w_pos: bool = True
+    make_alpha_positive: bool = False
+    make_kappa_positive: bool = False
+    output_scale: float = Field(default=0.1, allow_inf_nan=False)
+    kappa_scale: float = Field(default=0.01, allow_inf_nan=False)
+    alpha_scale: float = Field(default=0.01, allow_inf_nan=False)
+    # Solver settings are model state too. sigma and dl are lengths in Å.
+    sigma: float = Field(default=1.0, gt=0, allow_inf_nan=False)
+    dl: float = Field(default=2.0, gt=0, allow_inf_nan=False)
+    remove_self_interaction: bool = True
+    use_epsilon_r_scaling: bool = False
+    remove_mean: bool = True
+    epsilon_factor: float = Field(default=1.0, ge=0, allow_inf_nan=False)
+    use_atomic_alpha: bool = False
+    use_fixed_atomic_charges: bool = False
+    fixed_atomic_charges_scaling_factor: float = Field(default=0.5, allow_inf_nan=False)
+    n_layers: int = Field(default=3, ge=1)
+    n_hidden: int | tuple[int, ...] | None = (32, 16)
+    add_linear_nn: bool = True
+    output_scaling_factor: float = Field(default=0.1, allow_inf_nan=False)
+
+    @field_validator("use_atomwise", mode="before")
+    @classmethod
+    def _charge_source(cls, value):
+        if value is True or (
+            isinstance(value, str) and value.lower() in {"true", "1", "yes"}
+        ):
+            raise ValueError(
+                "The model readouts supply the charges. Set use_atomwise to false."
+            )
+        return value
+
+    @field_validator("alpha_irreps")
+    @classmethod
+    def _alpha_channels(cls, value: str) -> str:
+        from mace_core.clebsch_gordan.irreps import Irreps
+
+        terms = Irreps.parse(value).terms
+        if not terms or any(str(ir) not in {"0e", "1o", "2e"} for _, ir in terms):
+            raise ValueError("alpha_irreps must select from 0e, 1o and 2e")
+        return value
+
+
 class ModelConfig(ConfigSection):
     """The architecture of the backbone.
 
@@ -392,6 +448,7 @@ class ModelConfig(ConfigSection):
     readout: ReadoutConfig = ReadoutConfig()
     graph_features: tuple[GraphFeatureConfig, ...] = ()
     backend: str = "reference"
+    les: LESConfig | None = None
     polar: PolarConfig = PolarConfig()
     magnetic: MagneticConfig = MagneticConfig()
 
@@ -426,6 +483,12 @@ class ModelConfig(ConfigSection):
     #: against. Recorded with the model and never inferred from what is
     #: installed; `full` builds only on a backend that declares it.
     clebsch_gordan_basis: Literal["reduced", "full"] = "reduced"
+
+    @model_validator(mode="after")
+    def _les_settings_belong_to_les(self) -> ModelConfig:
+        if self.les is not None and self.model != "les":
+            raise ValueError("model.les requires model.model='les'")
+        return self
 
     @property
     def feature_storages(self) -> dict[str, Storage]:

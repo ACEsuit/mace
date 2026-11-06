@@ -191,7 +191,14 @@ class MACEModel(nn.Module):
             if self.outputs.embedding_readout is not None
             else None
         )
-        return self.outputs(graph, features, repulsion, embedding)
+        output = self.outputs(graph, features, repulsion, embedding)
+        return self.transform_outputs(graph, features, output)
+
+    def transform_outputs(
+        self, graph: Mapping[str, Any], layers: list[Tensor], output: MACEOutput[Tensor]
+    ) -> MACEOutput[Tensor]:
+        """Apply a model-specific physical coupling before energy derivatives."""
+        return output
 
     def canonical_components(self) -> dict[str, nn.Module | None]:
         """Stable checkpoint roles, independent of implementation attributes."""

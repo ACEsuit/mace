@@ -147,6 +147,10 @@ RESULTS: dict[str, tuple[str, str]] = {
     "stresses": ("atomic_stresses", "stress"),
     "virials": ("atomic_virials", "energy"),
     **POLAR_RESULTS,
+    "bec": ("BEC", "none"),
+    "LES_alphas": ("latent_alphas", "none"),
+    "LES_kappas": ("latent_kappas", "none"),
+    "field_forces": ("field_forces", "none"),
     "polarizability": ("polarizability", "none"),
     "polarizability_sh": ("polarizability_sh", "none"),
     # An energy per moment: the moments are not converted, so the energy is.
@@ -271,6 +275,10 @@ class MACECalculator(Calculator):
         compile_mode: str | None = None,
         compute_atomic_stresses: bool = False,
         external_field: Sequence[float] | None = None,
+        compute_bec: bool = False,
+        eps_infty: float | None = None,
+        electric_field_unit: float = 1.0,
+        keep_neutral: bool = True,
         magmom_key: str = MAGMOM_KEY,
         fixed_point: FixedPointSpec | None = None,
         precision: PrecisionConfig | None = None,
@@ -284,17 +292,6 @@ class MACECalculator(Calculator):
                 raise TypeError(
                     f"{flag} is replaced by model.backend in the checkpoint "
                     "configuration; canonical weights need no conversion"
-                )
-        for option, default in (
-            ("compute_bec", False),
-            ("eps_infty", None),
-            ("electric_field_unit", 1.0),
-            ("keep_neutral", True),
-        ):
-            if (value := kwargs.pop(option, default)) != default:
-                raise NotImplementedError(
-                    f"{option}={value!r} requires the LES calculator surface, "
-                    "which this V1 build does not yet implement"
                 )
         Calculator.__init__(self, **kwargs)
         if default_dtype is not None:
@@ -322,6 +319,24 @@ class MACECalculator(Calculator):
                 f"graph has one cutoff. Every member has to share it."
             )
         first = self.models[0]
+        self.compute_bec = compute_bec
+        self.eps_infty = eps_infty
+        self.keep_neutral = keep_neutral
+        self.electric_field_unit = electric_field_unit
+        if any(member.config.model.model != "les" for member in self.models):
+            for option, active in (
+                ("compute_bec", compute_bec),
+                ("eps_infty", eps_infty is not None),
+                ("electric_field_unit", electric_field_unit != 1),
+                ("keep_neutral", not keep_neutral),
+            ):
+                if active:
+                    raise ValueError(
+                        f"{option} requires LES (model={first.config.model.model!r})"
+                    )
+        elif eps_infty is not None and (not np.isfinite(eps_infty) or eps_infty < 0):
+            raise ValueError("eps_infty must be finite and nonnegative")
+
         declared = {tuple(_declared(model)) for model in self.models}
         if len(declared) != 1:
             raise ValueError(
@@ -405,6 +420,13 @@ class MACECalculator(Calculator):
             ],
             derivatives=[MAGNETIC_DERIVATIVE] if self.reads_moments else [],
         )
+        if not compute_bec:
+            self._outputs.discard("BEC")
+        elif self.external_field is not None:
+            from mace_torch.models.les import FIELD_FORCES
+
+            self._outputs.add(FIELD_FORCES.name)
+            self._rows[FIELD_FORCES.name] = "atom" if FIELD_FORCES.per_atom else "graph"
         self._engines: list[Callable[..., Any]] = [
             model.engine for model in self.models
         ]
@@ -477,6 +499,8 @@ class MACECalculator(Calculator):
             if key in self.atoms.info:
                 self.atoms.info[key] = copy.deepcopy(self.atoms.info[key])
         compute = ["forces", "stress"] if self.has_energy else []
+        if self.compute_bec:
+            compute.append("BEC")
         if self.compute_atomic_stresses and self.has_energy:
             compute += ["atomic_stresses", "atomic_virials"]
         if self.reads_moments:
@@ -499,6 +523,27 @@ class MACECalculator(Calculator):
                 )
                 for engine in self._engines
             ]
+        if "field_forces" in self._outputs:
+            from mace_torch.models.les import field_forces
+
+            # Legacy screens the committee mean BEC with the mean alpha.
+            b = torch.stack([out.extras["BEC"] for out in per_model]).mean(0)
+            alpha = (
+                torch.stack([out.extras["latent_alphas"] for out in per_model]).mean(0)
+                if "latent_alphas" in self._outputs
+                else None
+            )
+            correction = field_forces(
+                b,
+                alpha,
+                torch.as_tensor(self.external_field),
+                volume=float(self.atoms.cell.volume),
+                eps_infty=self.eps_infty,
+                keep_neutral=self.keep_neutral,
+                electric_field_unit=self.electric_field_unit,
+            )
+            for out in per_model:
+                out.extras["field_forces"] = correction
         self.results = self._results(per_model)
         if RELAXED_MAGMOM_KEY in self.results:
             # Onto the structure the caller holds, not only the copy ase keeps.
@@ -780,6 +825,11 @@ class MACECalculator(Calculator):
                 stacked = stacked[:, 0]
             stack = stacked.cpu().numpy()
             results[key] = stack.mean(axis=0) * factor
+            if key == "forces" and "field_forces" in self._outputs:
+                results[key] = (
+                    results[key]
+                    + per_model[0].extras["field_forces"].detach().cpu().numpy()
+                )
             if len(per_model) > 1 and key in ENSEMBLE_KEYS:
                 results[f"{key}_comm"] = stack * factor
                 results[f"{key}_var"] = stack.var(axis=0) * factor**2

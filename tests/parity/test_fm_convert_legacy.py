@@ -24,7 +24,6 @@ from mace_core.clebsch_gordan.reduced_basis import (
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_core.weights.neutral_format import read_neutral, write_neutral
 from mace_torch.deploy.legacy import (
-    ExtractionFailed,
     convert_legacy,
     extract,
     extractor_path,
@@ -289,10 +288,7 @@ def test_a_source_that_recorded_its_heads_says_so(converted):
 # Refusals
 # ---------------------------------------------------------------------------
 
-UNSUPPORTED = (
-    ("mace.modules.extensions", "MACELES"),
-    ("mace.modules.extensions", "MagneticMACE"),
-)
+UNSUPPORTED = (("mace.modules.extensions", "MagneticMACE"),)
 
 
 @pytest.mark.parametrize(("module", "name"), UNSUPPORTED)
@@ -322,16 +318,6 @@ def test_a_subclass_of_a_supported_class_is_refused():
 
     with pytest.raises(EXTRACTOR["ExtractionError"], match="subclass"):
         EXTRACTOR["classify"](Calibrated.__new__(Calibrated))
-
-
-@pytest.mark.parametrize("anchor", ["tiny_maceles"])
-def test_an_unsupported_anchor_is_refused_through_the_subprocess(anchor, tmp_path):
-    with pytest.raises(ExtractionFailed, match="This converter carries"):
-        extract(
-            GOLDEN / "models" / f"{anchor}.model",
-            tmp_path / anchor,
-            python=sys.executable,
-        )
 
 
 def test_a_tensor_nothing_accounts_for_aborts_naming_it(fp64, isolated, tmp_path):
@@ -525,18 +511,17 @@ def test_the_command_converts_verifies_and_writes(fp64, tmp_path):
 
 
 def test_the_command_refuses_an_unsupported_class(tmp_path, capsys):
+    unsupported = tmp_path / "unknown.model"
+    torch.save(torch.nn.Identity(), unsupported)
     from mace_torch.cli.convert_legacy import main
 
-    code = main(
-        [
-            str(GOLDEN / "models" / "tiny_maceles.model"),
-            str(tmp_path / "converted"),
-            "--python",
-            sys.executable,
-        ]
+    assert (
+        main(
+            [str(unsupported), str(tmp_path / "converted"), "--python", sys.executable]
+        )
+        == 2
     )
-    assert code == 2
-    assert "MACELES" in capsys.readouterr().err
+    assert "Identity" in capsys.readouterr().err
 
 
 def test_the_converted_checkpoint_carries_its_record(converted, tmp_path):

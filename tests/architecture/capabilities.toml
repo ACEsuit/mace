@@ -201,7 +201,7 @@ burn_step = "RET-4 (#1600)"
 
 [capabilities.les.ci]
 filter = "les"
-paths = ["tests/extensions/les/**", "tests/golden/**", "mace/calculators/**", "mace/cli/eval_configs.py", "requirements/les.txt", "packages/mace-core/pyproject.toml", "packages/mace-torch/pyproject.toml"]
+paths = ["tests/extensions/les/**", "tests/golden/**", "mace/calculators/**", "mace/cli/eval_configs.py", "requirements/les.txt", "packages/mace-core/pyproject.toml", "packages/mace-torch/pyproject.toml", "packages/mace-core/src/**", "packages/mace-torch/src/**", "packages/mace-torch/tests/test_mace_torch_maceles.py", "packages/mace-torch/tests/test_mace_torch_les_bec.py", "tests/parity/test_les_model_parity.py"]
 
 [capabilities.les.ci.path_notes]
 "tests/golden/**" = "The golden anchors run in this job, and two of the three surfaces they pin live outside mace/modules: the external-field and BEC handling in the calculator, and the eval CLI's flattened latent multipoles. Without these paths a change to either would not run the job that holds its numbers."
