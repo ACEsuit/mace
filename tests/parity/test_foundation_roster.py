@@ -345,6 +345,39 @@ def test_the_conversion_is_the_model_the_artifact_describes(name, fp64):
     assert not exceeded, exceeded
 
 
+@pytest.mark.network
+@pytest.mark.polar
+def test_polar_medium_conversion_near_a_spin_density_cancellation(fp64, tmp_path):
+    """Check the reduced model against the same float64 basis on both sides of a zero."""
+    from mace_torch.calculators.foundations import mace_polar
+    from mace_torch.train import write_model
+
+    source = artifact_path("polar-1-m")
+    reference = legacy_calculator(source, "Default", exact_rebuild(source))
+    imported, _ = converted(source)
+    path = write_model(tmp_path / "polar", imported.engine, imported.metadata)
+    native = mace_polar(path, device="cpu", default_dtype="float64")
+    atoms = load_fixtures(names=("dimer_short",))["dimer_short"]
+    # Consecutive binary32 C–O distances bracket a zero of atom 1's z multipole.
+    left = np.float32(0.6201075911521912)
+    signs = []
+    for distance in (left, np.nextafter(left, np.float32(np.inf))):
+        atoms.positions[1, 2] = float(distance)
+        reference.calculate(atoms)
+        native.calculate(atoms)
+        density = reference.results["density_coefficients"]
+        spin = reference.results["spin_charge_density"][1, :, 2]
+        assert abs(density[1, 2]) < np.finfo(np.float32).eps * abs(spin).sum()
+        signs.append(np.sign(density[1, 2]))
+        np.testing.assert_allclose(
+            native.results["density_coefficients"],
+            density,
+            atol=IN_PROCESS * max(np.abs(density).max(), 1.0),
+            rtol=0,
+        )
+    assert signs == [1, -1]
+
+
 @pytest.mark.parametrize("name", PARAMS)
 def test_the_conversion_is_the_model_as_published(name, fp64):
     """At ten digits for an artifact built in float64, and at the float32 row
