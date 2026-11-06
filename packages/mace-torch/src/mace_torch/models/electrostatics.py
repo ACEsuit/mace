@@ -256,15 +256,13 @@ class PolarModel(MACEModel):
         num_layers, num_features = config.num_interactions, config.num_channels
         hidden_irreps = config.node_irreps
         self.settings = settings
-        # The charge totals are sums over a structure, accumulated in the
-        # energy head's floor as the frozen tree accumulates them in float64.
-        self.total_dtype = getattr(torch, energy_head.accumulate)
         self.num_recursion_steps = settings.num_recursion_steps
         self.add_local_electron_energy = settings.add_local_electron_energy
         # Displaced charges and projected potentials are subtracted after
         # reduction. Carry the complete solve at the configured accumulation
         # floor; casting only the final sum cannot recover cancelled bits.
         self.descriptor = settings.descriptor(widest(precision, energy_head.accumulate))
+        self.total_dtype = getattr(torch, self.descriptor.precision)
 
         node_irreps = expanded_irreps(hidden_irreps, num_features)
         one_spin = _spherical(settings.multipole_max_l)
@@ -371,16 +369,16 @@ class PolarModel(MACEModel):
         Returns:
             The corrected density, and the normalized weights.
         """
-        accumulate = self.total_dtype
-        norm = segment_sum(fukui.to(accumulate), batch, num_graphs)[batch]
-        norm = torch.where(norm == 0, torch.ones_like(norm), norm).to(density.dtype)
-        fukui = fukui / norm
-        totals = segment_sum(density[:, :, 0].to(accumulate), batch, num_graphs)[
-            batch
-        ].to(density.dtype)
-        correction = torch.zeros_like(density)
-        correction[:, :, 0] = fukui * (spin_totals - totals)
-        return density + correction, fukui
+        # Rounding the weights or the residual before adding the correction
+        # can leave two representable, opposite charges with a nonzero sum.
+        weights = fukui.to(self.total_dtype)
+        norm = segment_sum(weights, batch, num_graphs)[batch]
+        weights = weights / torch.where(norm == 0, torch.ones_like(norm), norm)
+        charges = density[:, :, 0].to(self.total_dtype)
+        residual = spin_totals - segment_sum(charges, batch, num_graphs)[batch]
+        charges = (charges + weights * residual).to(density.dtype)
+        corrected = torch.cat((charges.unsqueeze(-1), density[:, :, 1:]), dim=-1)
+        return corrected, weights.to(fukui.dtype)
 
     @property
     def extra_rows(self) -> dict[str, str]:
@@ -501,7 +499,9 @@ class PolarModel(MACEModel):
             {
                 "electrostatic_energy": electrostatic_energy,
                 "electron_energy": electron_energy,
-                "total_charge": segment_sum(charge_density[:, 0], batch, num_graphs),
+                "total_charge": segment_sum(
+                    charge_density[:, 0].to(self.total_dtype), batch, num_graphs
+                ).to(dtype),
                 "charges": charge_density[:, 0],
                 "spins": spin_density[:, 0],
                 "density_coefficients": charge_density,

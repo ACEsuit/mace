@@ -97,6 +97,15 @@ def polar_graph(positions, numbers, cell=None, pbc=(False,) * 3, charge=0.0, spi
     return graph
 
 
+def float32_molecule(device="cpu", charge=0.0, spin=1.0):
+    graph = polar_graph(*molecule(), charge=charge, spin=spin)
+    for name, value in graph.items():
+        if isinstance(value, torch.Tensor):
+            dtype = torch.float32 if value.is_floating_point() else value.dtype
+            graph[name] = value.to(device=device, dtype=dtype)
+    return graph
+
+
 # ---------------------------------------------------------------------------
 # What the density carries
 # ---------------------------------------------------------------------------
@@ -257,28 +266,88 @@ def test_an_open_molecule_energy_does_not_depend_on_its_orientation():
 
 
 @pytest.mark.parametrize(
-    ("supports_float64", "expected"),
-    [(True, torch.float64), (False, torch.float32)],
+    ("precision", "accumulate", "supports_float64", "expected"),
+    [
+        ("float32", "float64", True, torch.float64),
+        ("float32", "float64", False, torch.float32),
+        ("float64", "float32", True, torch.float64),
+    ],
 )
-def test_a_float32_model_sums_its_charges_in_the_energy_floor(
-    supports_float64, expected
+def test_charge_reductions_use_the_resolved_precision_floor(
+    precision, accumulate, supports_float64, expected
 ):
-    """The frozen tree sums the Fukui weights and the charge totals through
-    ``safe_double``: float64 where the device has it, the model's own where it
-    does not."""
     model = build_model(
-        head_precision=PrecisionConfig(model="float32", accumulate="float64"),
+        head_precision=PrecisionConfig(model=precision, accumulate=accumulate),
         supports_float64=supports_float64,
-        precision="float32",
+        precision=precision,
     )
     assert model.total_dtype is expected
     assert getattr(torch, model.descriptor.precision) is expected
+
+
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def test_float32_fukui_projection_conserves_representable_spin_totals(device):
+    model = build_model(
+        head_precision=PrecisionConfig.float32(), precision="float32"
+    ).to(device)
+    # The second neutral dimer carries two unpaired electrons. All four
+    # target sums survive a single final rounding of the monopoles.
+    batch = torch.tensor([0, 0, 1, 1], device=device)
+    density = torch.tensor(
+        [[100000, 300000], [-50000, 100000], [12, 20], [-2, 4]],
+        dtype=torch.float32,
+        device=device,
+    )
+    fukui = density.new_tensor([[1, 1], [2, 2], [3, 2], [1, 3]])
+    target = torch.zeros_like(fukui)
+    target[2:] = density.new_tensor([1, -1])
+    multipoles = torch.stack([density, 2 * density], dim=-1)
+    corrected, weights = model._fix_totals(multipoles, fukui, target, batch, 2)
+    assert corrected.dtype == weights.dtype == torch.float32
+    torch.testing.assert_close(corrected[:, :, 1], multipoles[:, :, 1], atol=0, rtol=0)
+    expected = density.new_tensor(
+        [
+            [250000 / 3, 500000 / 3],
+            [-250000 / 3, -500000 / 3],
+            [5.25, 10],
+            [-4.25, -11],
+        ],
+    )
+    torch.testing.assert_close(corrected[:, :, 0], expected, atol=0, rtol=0)
+    for start in (0, 2):
+        charges = corrected[start : start + 2, :, 0]
+        torch.testing.assert_close(charges.sum(0), target[start], atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32], indirect=True)
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def test_reported_total_charge_sums_the_emitted_monopoles_in_the_floor(device):
+    model = build_model(
+        steps=0, head_precision=PrecisionConfig.float32(), precision="float32"
+    ).to(device)
+    graph = float32_molecule(device, charge=1, spin=2)
+    # A unit charge between two opposite, exactly representable monopoles.
+    charges = torch.tensor([2**24, 1, -(2**24), 0], device=device, dtype=torch.float32)
+
+    def known_monopoles(_module, _args, out):
+        return torch.nn.functional.pad(charges[:, None], (0, out.shape[-1] - 1))
+
+    model.source_maps[0].register_forward_hook(known_monopoles)
+    model.source_maps[1].register_forward_hook(
+        lambda _m, _args, out: torch.zeros_like(out)
+    )
+    result = model(graph).extras
+    torch.testing.assert_close(result["charges"], charges, atol=0, rtol=0)
+    torch.testing.assert_close(
+        result["total_charge"], charges.new_ones(1), atol=0, rtol=0
+    )
 
 
 @pytest.mark.parametrize("scale", [1.0, 1e10, 1e19])
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
 def test_polar_layer_norm_accumulates_without_overflow(scale, device):
     from mace_torch.nn.field import LayerNormMLP
+
     from tests.golden.harness import FP32
 
     norm = LayerNormMLP([64, 64, 1], accumulate="float64").float().to(device).net[1]
@@ -322,22 +391,16 @@ def test_polar_layer_norm_accumulates_without_overflow(scale, device):
 
 def test_float32_polar_electrostatics_honours_the_reduction_floor():
     from mace_torch.electrostatics import long_range_geometry
+
     from tests.golden.harness import FP32
 
     model = build_model(
         head_precision=PrecisionConfig(model="float32"), precision="float32"
     )
     control = build_model(precision="float64")
-    positions, numbers = molecule()
-    graph = polar_graph(positions, numbers)
-    graph = {
-        key: value.float()
-        if isinstance(value, torch.Tensor) and value.is_floating_point()
-        else value
-        for key, value in graph.items()
-    }
+    graph = float32_molecule()
     source = torch.randn(
-        (len(numbers), 4),
+        (len(graph["positions"]), 4),
         dtype=torch.float32,
         generator=torch.Generator().manual_seed(11),
     )
@@ -368,20 +431,13 @@ def test_float32_force_training_reaches_the_backbone_and_density_updates(device)
     model = build_model(
         head_precision=PrecisionConfig(model="float32"), precision="float32"
     ).to(device)
-    positions, numbers = molecule()
-    graph = {
-        key: value.to(device=device, dtype=torch.float32)
-        if value.is_floating_point()
-        else value.to(device)
-        for key, value in polar_graph(positions, numbers).items()
-        if isinstance(value, torch.Tensor)
-    }
+    graph = float32_molecule(device)
     graph["positions"].requires_grad_()
     energy = model(graph).total_energy
     assert energy is not None
-    forces = -torch.autograd.grad(
-        energy.sum(), graph["positions"], create_graph=True
-    )[0]
+    forces = -torch.autograd.grad(energy.sum(), graph["positions"], create_graph=True)[
+        0
+    ]
     forces.square().mean().backward()
     for module in (model.backbone, model.source_maps, model.updates):
         gradients = [p.grad for p in module.parameters() if p.grad is not None]
