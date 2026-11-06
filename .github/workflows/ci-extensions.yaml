@@ -89,6 +89,8 @@ jobs:
               - 'mace/calculators/**'
               - 'mace/cli/eval_configs.py'
               - 'requirements/les.txt'
+              - 'packages/mace-core/pyproject.toml'
+              - 'packages/mace-torch/pyproject.toml'
             magnetic:
               - *shared
               - 'mace/calculators/**'
@@ -170,8 +172,9 @@ jobs:
         with:
           python-version: "3.11"
           extras: dev
-          pip-packages: -r requirements/les.txt
-      # First CI coverage of LES ever; documented xfails (see test file).
+      - name: Install the pinned solver through the V1 extra
+        run: python -m pip install -e packages/mace-core -e 'packages/mace-torch[les]'
+      # The LES goldens check the installed solver commit against requirements/les.txt.
       # tests/golden rides along because the MACELES anchor is les-marked and
       # this is the only PR job with les installed at the pinned commit -- the
       # ci-core unit job runs the same directory without it and skips that one

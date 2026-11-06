@@ -52,6 +52,8 @@ dependencies = [
 vesin = "mace_torch.neighbors.vesin_backend:VesinBackend"
 
 [project.optional-dependencies]
+# Use the solver revision recorded by the LES goldens and requirements/les.txt.
+les = ["les @ git+https://github.com/ChengUCB/les.git@fadfb0ca3b89ed371e5de6b383f4425defabd4a8"]
 fpsample = ["fpsample"]
 schedulefree = ["schedulefree"]
 # Reporting a run to Weights and Biases. Optional in the sense that matters:
@@ -106,6 +108,10 @@ Homepage = "https://github.com/ACEsuit/mace"
 # No [project.scripts]. Every mace_* console entry point is owned by one
 # distribution, mace-launcher; two distributions declaring the same script name
 # is undefined behaviour in pip.
+
+[tool.hatch.metadata]
+# LES is distributed from its Git repository.
+allow-direct-references = true
 
 [tool.hatch.version]
 source = "vcs"
