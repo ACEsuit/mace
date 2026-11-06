@@ -148,8 +148,7 @@ def _horner_basis(joined: Tensor, dim: int, degree: int) -> Tensor:
     return padded.transpose(1, 2).reshape(dim * joined.shape[1], lower)
 
 
-@torch.library.custom_op("mace::symmetric_contraction_grouped", mutates_args=())
-def symmetric_contraction_grouped(
+def symmetric_contraction_grouped_aten(
     features: Tensor,
     weights: list[Tensor],
     bases: list[Tensor],
@@ -229,6 +228,11 @@ def _weighted(
             )
         pieces.append(total)
     return torch.cat(pieces, dim=-1)
+
+
+symmetric_contraction_grouped = torch.library.custom_op(
+    "mace::symmetric_contraction_grouped", mutates_args=()
+)(symmetric_contraction_grouped_aten)
 
 
 @symmetric_contraction_grouped.register_fake

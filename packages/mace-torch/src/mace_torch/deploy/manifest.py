@@ -15,9 +15,9 @@ from pydantic.dataclasses import dataclass
 class DeployManifest:
     """Options for the MD runtime. Distances and cutoffs are in Å."""
 
-    VERSION: ClassVar[str] = "1.0"
+    VERSION: ClassVar[str] = "1.1"
     schema_version: str
-    target: Literal["lammps-mliap", "ase", "openmm"]
+    target: Literal["lammps-mliap", "lammps-native", "ase", "openmm"]
     head: Annotated[str, Field(min_length=1)]
     dtype: Literal["float32", "float64"]
     halo_exchange: StrictBool
@@ -39,6 +39,8 @@ class DeployManifest:
                 f"unsupported deploy schema_version {self.schema_version!r}. "
                 f"This reader supports {self.VERSION} and earlier minors of that major."
             )
+        if self.target == "lammps-native" and minor < 1:
+            raise ValueError("lammps-native requires deploy schema_version 1.1")
         if len(set(self.species)) != len(self.species):
             raise ValueError("deploy species must be unique and in element-table order")
         if self.receptive_field != self.num_interactions * self.r_max:

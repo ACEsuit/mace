@@ -1,0 +1,303 @@
+// Native LAMMPS plugin. The MPI pack/unpack contract follows the LAMMPS
+// many-body pair styles; gradients require reverse summation, not a second
+// gather.
+#include <ATen/ATen.h>
+#include <c10/core/DeviceGuard.h>
+#ifdef MACE_HAS_CUEQ
+#include <cuda_runtime_api.h>
+#endif
+#include <torch/csrc/inductor/aoti_package/model_package_loader.h>
+#include <torch/library.h>
+
+#include "atom.h"
+#include "comm.h"
+#include "error.h"
+#include "force.h"
+#include "lammpsplugin.h"
+#include "memory.h"
+#include "neigh_list.h"
+#include "neighbor.h"
+#include "pair.h"
+#include "update.h"
+#include "version.h"
+
+#include <algorithm>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace {
+using namespace LAMMPS_NS;
+using Loader = torch::inductor::AOTIModelPackageLoader;
+
+class NativePair final : public Pair {
+public:
+  explicit NativePair(LAMMPS *lmp) : Pair(lmp) {
+    manybody_flag = 1;
+    single_enable = restartinfo = 0;
+    centroidstressflag = CENTROID_NOTAVAIL;
+  }
+  ~NativePair() override {
+    if (allocated) {
+      memory->destroy(setflag);
+      memory->destroy(cutsq);
+    }
+  }
+  void settings(int argc, char **argv) override {
+    if (argc != 1)
+      error->all(FLERR, "pair_style mace/native requires the native.pt2 path");
+    try {
+      auto meta = Loader::load_metadata_from_package(argv[0], "model");
+      if (meta.at("mace_native_version") != "1")
+        throw std::runtime_error("unsupported native package version");
+#ifndef MACE_HAS_CUEQ
+      if (meta.at("mace_backend") == "cueq")
+        throw std::runtime_error(
+            "cuEq package requires a plugin built with CUEQ_OPS_DIR");
+#endif
+      nodes = std::stoi(meta.at("mace_nodes"));
+      edges = std::stoi(meta.at("mace_edges"));
+      cutoff = std::stod(meta.at("mace_cutoff"));
+      comm_forward = comm_reverse = std::stoi(meta.at("mace_comm_width"));
+      const auto precision = meta.at("mace_dtype");
+      if (precision != "float64" && precision != "float32")
+        throw std::runtime_error("unsupported native package dtype");
+      dtype = precision == "float64" ? at::kDouble : at::kFloat;
+      species.clear();
+      std::istringstream symbols(meta.at("mace_species"));
+      for (std::string symbol; symbols >> symbol;)
+        species.push_back(symbol);
+      if (nodes < 3 || edges < 1 || !(cutoff > 0) || species.empty())
+        throw std::runtime_error("invalid native capacity, species or cutoff");
+      device = at::Device(meta.at("mace_device"));
+      if (device.is_cuda()) {
+        const int count = at::getNumGPUs();
+        if (!count)
+          throw std::runtime_error("CUDA package requires a visible GPU");
+        MPI_Comm shared;
+        MPI_Comm_split_type(world, MPI_COMM_TYPE_SHARED, comm->me,
+                            MPI_INFO_NULL, &shared);
+        int rank;
+        MPI_Comm_rank(shared, &rank);
+        MPI_Comm_free(&shared);
+        device = at::Device(at::kCUDA, rank % count);
+#ifdef MACE_HAS_CUEQ
+        cudaDeviceProp properties{};
+        const auto status =
+            cudaGetDeviceProperties(&properties, device.index());
+        if (status != cudaSuccess)
+          throw std::runtime_error(cudaGetErrorString(status));
+        const std::string sm =
+            std::to_string(properties.major) + std::to_string(properties.minor);
+        const auto compiled = meta.at("AOTI_COMPUTE_CAPABILITY");
+        if (compiled != sm)
+          throw std::runtime_error("package targets SM" + compiled +
+                                   " but this GPU is SM" + sm +
+                                   "; re-export on the target GPU");
+#endif
+      }
+      loader =
+          std::make_unique<Loader>(argv[0], "model", false, 1, device.index());
+    } catch (const std::exception &e) {
+      // A device or loader failure can be local to a single rank.
+      error->one(FLERR, "Cannot load mace/native package: {}", e.what());
+    }
+  }
+  void coeff(int argc, char **argv) override {
+    if (argc != atom->ntypes + 2 || std::string(argv[0]) != "*" ||
+        std::string(argv[1]) != "*")
+      error->all(
+          FLERR,
+          "Use pair_coeff * * followed by one element symbol per atom type");
+    if (!allocated) {
+      memory->create(setflag, atom->ntypes + 1, atom->ntypes + 1,
+                     "mace:setflag");
+      memory->create(cutsq, atom->ntypes + 1, atom->ntypes + 1, "mace:cutsq");
+      allocated = 1;
+    }
+    types.resize(atom->ntypes + 1);
+    for (int i = 1; i <= atom->ntypes; ++i) {
+      auto found = std::find(species.begin(), species.end(), argv[i + 1]);
+      if (found == species.end())
+        error->all(FLERR, "Unknown mace/native element {}", argv[i + 1]);
+      types[i] = found - species.begin();
+      for (int j = i; j <= atom->ntypes; ++j)
+        setflag[i][j] = 1;
+    }
+  }
+  double init_one(int, int) override { return cutoff; }
+  void init_style() override {
+    if (!force->newton_pair)
+      error->all(FLERR, "mace/native requires newton pair on");
+    if (std::string(update->unit_style) != "metal")
+      error->all(FLERR, "mace/native requires units metal (eV and Angstrom)");
+    if (atom->molecular != Atom::ATOMIC)
+      error->all(FLERR, "mace/native requires atomic neighbor lists without "
+                        "bonded exclusions");
+    neighbor->add_request(this, NeighConst::REQ_FULL);
+  }
+
+  void compute(int eflag, int vflag) override;
+  at::Tensor exchange(const at::Tensor &, bool);
+  int pack_forward_comm(int n, int *indices, double *buf, int, int *) override {
+    for (int j = 0; j < n; ++j)
+      std::copy_n(row(indices[j]), width, buf + j * width);
+    return n * width;
+  }
+  void unpack_forward_comm(int n, int first, double *buf) override {
+    std::copy_n(buf, n * width, row(first));
+  }
+  int pack_reverse_comm(int n, int first, double *buf) override {
+    std::copy_n(row(first), n * width, buf);
+    return n * width;
+  }
+  void unpack_reverse_comm(int n, int *indices, double *buf) override {
+    for (int j = 0; j < n; ++j) {
+      auto dest = row(indices[j]);
+      for (int k = 0; k < width; ++k)
+        dest[k] += buf[j * width + k];
+    }
+  }
+
+private:
+  std::unique_ptr<Loader> loader;
+  at::Device device{at::kCPU};
+  at::ScalarType dtype = at::kDouble;
+  int nodes = 0, edges = 0, width = 0;
+  double cutoff = 0;
+  std::vector<std::string> species;
+  std::vector<int> types;
+  at::Tensor buffer;
+  double *row(int index) { return buffer.data_ptr<double>() + index * width; }
+};
+
+// Custom operators in a package can execute only during its owning LAMMPS call.
+thread_local NativePair *active = nullptr;
+
+at::Tensor NativePair::exchange(const at::Tensor &values, bool reverse) {
+  TORCH_CHECK(values.dim() == 2,
+              "expected [nodes, features] at the MPI exchange");
+  width = values.size(1);
+  TORCH_CHECK(values.dim() == 2 && values.size(0) == nodes &&
+                  width <= comm_forward,
+              "unexpected mace/native halo shape");
+  // Even CPU doubles must be copied: the dispatcher operator is out-of-place.
+  buffer = values.to(at::kCPU, at::kDouble, false, true).contiguous();
+  if (reverse) {
+    comm->reverse_comm(this, width);
+    buffer.narrow(0, atom->nlocal, nodes - atom->nlocal).zero_();
+  } else {
+    comm->forward_comm(this, width);
+  }
+  return buffer.to(values.options());
+}
+
+void NativePair::compute(int eflag, int vflag) {
+  ev_init(eflag, vflag);
+  try {
+    c10::DeviceGuard device_guard(device);
+    at::NoGradGuard guard;
+    int local = atom->nlocal;
+    int total = local + atom->nghost;
+    if (total >= nodes)
+      error->one(
+          FLERR,
+          "mace/native needs {} node slots including padding; exported {}",
+          total + 1, nodes);
+    auto elements = at::zeros({nodes}, at::kLong);
+    auto owned = at::zeros({nodes}, at::kDouble);
+    auto index = at::full({2, edges}, nodes - 1, at::kLong);
+    auto vectors = at::zeros({edges, 3}, at::kDouble);
+    // Synthetic edges touch the padding slot only, beyond the radial cutoff.
+    vectors.select(1, 0).fill_(2 * cutoff);
+    owned.narrow(0, 0, local).fill_(1);
+    for (int i = 0; i < total; ++i)
+      elements.data_ptr<int64_t>()[i] = types[atom->type[i]];
+    auto edge = index.accessor<int64_t, 2>();
+    auto vec = vectors.accessor<double, 2>();
+    int count = 0;
+    for (int ii = 0; ii < list->inum; ++ii) {
+      int i = list->ilist[ii];
+      for (int jj = 0; jj < list->numneigh[i]; ++jj) {
+        int j = list->firstneigh[i][jj] & NEIGHMASK;
+        double dx[3], rsq = 0;
+        for (int k = 0; k < 3; ++k) {
+          dx[k] = atom->x[i][k] - atom->x[j][k];
+          rsq += dx[k] * dx[k];
+        }
+        if (rsq >= cutoff * cutoff)
+          continue;
+        if (count == edges)
+          error->one(FLERR,
+                     "mace/native exceeds {} edge slots; re-export with a "
+                     "larger capacity",
+                     edges);
+        edge[0][count] = j;
+        edge[1][count] = i;
+        std::copy_n(dx, 3, vec[count].data());
+        ++count;
+      }
+    }
+    struct Scope {
+      NativePair *before;
+      explicit Scope(NativePair *current) : before(active) { active = current; }
+      ~Scope() { active = before; }
+    } scope(this);
+    auto out = loader->run({vectors.to(device, dtype), index.to(device),
+                            elements.to(device), owned.to(device, dtype)});
+    auto site = out.at(0).to(at::kCPU, at::kDouble).contiguous();
+    auto grad = out.at(1).to(at::kCPU, at::kDouble).contiguous();
+    TORCH_CHECK(site.dim() == 1 && site.size(0) == nodes && grad.dim() == 2 &&
+                    grad.size(0) == edges && grad.size(1) == 3,
+                "invalid native.pt2 output shape");
+    auto g = grad.accessor<double, 2>();
+    for (int i = 0; i < local; ++i) {
+      if (eflag_global)
+        eng_vdwl += site.data_ptr<double>()[i];
+      if (eflag_atom)
+        eatom[i] += site.data_ptr<double>()[i];
+    }
+    for (int p = 0; p < count; ++p) {
+      int j = edge[0][p], i = edge[1][p];
+      for (int k = 0; k < 3; ++k) {
+        atom->f[j][k] += g[p][k];
+        atom->f[i][k] -= g[p][k];
+      }
+      if (vflag_either)
+        ev_tally_xyz(i, j, local, 1, 0, 0, -g[p][0], -g[p][1], -g[p][2],
+                     vec[p][0], vec[p][1], vec[p][2]);
+    }
+    if (vflag_fdotr)
+      virial_fdotr_compute();
+  } catch (const std::exception &e) {
+    error->one(FLERR, "mace/native evaluation failed: {}", e.what());
+  }
+}
+
+at::Tensor forward_halo(const at::Tensor &v) {
+  TORCH_CHECK(active, "halo outside a mace/native step");
+  return active->exchange(v, false);
+}
+at::Tensor reverse_halo(const at::Tensor &v) {
+  TORCH_CHECK(active, "halo adjoint outside a mace/native step");
+  return active->exchange(v, true);
+}
+TORCH_LIBRARY(mace_native, m) {
+  m.def("halo(Tensor features) -> Tensor", forward_halo);
+  m.def("halo_adjoint(Tensor adjoint) -> Tensor", reverse_halo);
+}
+Pair *create_pair(LAMMPS *lmp) { return new NativePair(lmp); }
+} // namespace
+
+extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc) {
+  lammpsplugin_t plugin{};
+  plugin.version = LAMMPS_VERSION;
+  plugin.style = "pair";
+  plugin.name = "mace/native";
+  plugin.info = "Native AOTInductor MACE energy and forces";
+  plugin.author = "MACE developers";
+  plugin.creator.v1 = reinterpret_cast<lammpsplugin_factory1 *>(&create_pair);
+  plugin.handle = handle;
+  reinterpret_cast<lammpsplugin_regfunc>(regfunc)(&plugin, lmp);
+}

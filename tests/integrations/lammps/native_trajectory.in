@@ -1,0 +1,36 @@
+units metal
+atom_style atomic
+boundary p p p
+processors ${ranks} 1 1
+region cell block 0 20 0 16 0 16
+create_box 3 cell
+mass 1 1.008
+mass 2 12.011
+mass 3 15.999
+create_atoms 1 single 9.88 8.0 8.0 units box
+create_atoms 3 single 6.44 8.0 8.0 units box
+create_atoms 2 single 13.47 8.25 8.0 units box
+create_atoms 1 single 10.8 7.4 8.1 units box
+create_atoms 3 single 7.5 9.0 8.4 units box
+create_atoms 1 single 12.0 8.8 9.1 units box
+create_atoms 2 single 0.65 5.6 6.1 units box
+create_atoms 3 single 19.15 5.1 6.1 units box
+plugin load ${plugin}
+pair_style mace/native ${model}
+pair_coeff * * H C O
+neighbor 0.1 bin
+neigh_modify delay 0 every 1 check no
+group crossing id 1
+group rest subtract all crossing
+fix move1 crossing move linear 20.0 0.0 0.0 units box
+fix integrate rest nve
+compute site all pe/atom
+compute neighbors all coord/atom cutoff 3.5
+compute stress all pressure NULL virial
+thermo 1
+thermo_style custom step pe c_stress[1] c_stress[2] c_stress[3] c_stress[4] c_stress[5] c_stress[6]
+thermo_modify norm no format float %.16g
+dump d all custom 1 ${out}/atoms.dump id type proc x y z fx fy fz c_site c_neighbors
+dump_modify d sort id format float %.17g
+timestep 0.001
+run 14

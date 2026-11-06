@@ -125,3 +125,10 @@ raw-options = { root = "../..", git_describe_command = ["git", "describe", "--di
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mace_torch"]
+
+
+[tool.hatch.build.targets.wheel.force-include]
+"lammps/CMakeLists.txt" = "mace_torch/deploy/lammps/CMakeLists.txt"
+"lammps/pair_mace_native.cpp" = "mace_torch/deploy/lammps/pair_mace_native.cpp"
+"lammps/cueq_ops.cpp" = "mace_torch/deploy/lammps/cueq_ops.cpp"
+"lammps/cueq_schemas.py" = "mace_torch/deploy/lammps/cueq_schemas.py"

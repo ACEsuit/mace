@@ -194,6 +194,17 @@ def _pseudolabel(args):
 
 def _lammps_arguments(parser):
     parser.add_argument("checkpoint", type=Path)
+    parser.add_argument(
+        "--native",
+        nargs=2,
+        type=int,
+        metavar=("NODE_SLOTS", "EDGE_SLOTS"),
+        help=(
+            "Compile native.pt2 for the LAMMPS pair style. "
+            "Node slots include ghosts and one padding atom."
+        ),
+    )
+    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--head")
     parser.add_argument("--dtype", choices=("float32", "float64"))
@@ -218,6 +229,8 @@ def _lammps(args):
             backend=args.backend,
             halo_exchange=args.halo_exchange,
             compile_regions=args.compile_regions,
+            native_capacity=args.native,
+            device=args.device,
         )
     )
     return 0

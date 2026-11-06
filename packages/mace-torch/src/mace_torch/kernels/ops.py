@@ -37,8 +37,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-@torch.library.custom_op("mace::segment_sum", mutates_args=())
-def segment_sum(values: Tensor, index: Tensor, num_segments: int) -> Tensor:
+def segment_sum_aten(values: Tensor, index: Tensor, num_segments: int) -> Tensor:
     """Sum ``values`` into ``num_segments`` segments given by ``index``.
 
     No irreps semantics. The same op reduces messages onto nodes, site energies
@@ -51,6 +50,11 @@ def segment_sum(values: Tensor, index: Tensor, num_segments: int) -> Tensor:
     """
     out = values.new_zeros((num_segments, *values.shape[1:]))
     return out.index_add(0, index, values)
+
+
+segment_sum = torch.library.custom_op("mace::segment_sum", mutates_args=())(
+    segment_sum_aten
+)
 
 
 @segment_sum.register_fake
@@ -92,8 +96,7 @@ def _outer_power(features: Tensor, order: int) -> Tensor:
     return power
 
 
-@torch.library.custom_op("mace::symmetric_contraction", mutates_args=())
-def symmetric_contraction(
+def symmetric_contraction_aten(
     features: Tensor,
     weights: list[Tensor],
     bases: list[Tensor],
@@ -132,6 +135,11 @@ def symmetric_contraction(
             (features.shape[0], features.shape[1], bases[0].shape[1])
         )
     return total
+
+
+symmetric_contraction = torch.library.custom_op(
+    "mace::symmetric_contraction", mutates_args=()
+)(symmetric_contraction_aten)
 
 
 @symmetric_contraction.register_fake
@@ -215,8 +223,7 @@ symmetric_contraction.register_autograd(
 # ---------------------------------------------------------------------------
 
 
-@torch.library.custom_op("mace::channelwise_tp_conv", mutates_args=())
-def channelwise_tp_conv(
+def channelwise_tp_conv_aten(
     node_features: Tensor,
     edge_attributes: Tensor,
     radial_weights: Tensor,
@@ -255,6 +262,11 @@ def channelwise_tp_conv(
         (num_nodes, node_features.shape[1], coefficients.shape[1])
     )
     return out.index_add(0, receiver, messages)
+
+
+channelwise_tp_conv = torch.library.custom_op(
+    "mace::channelwise_tp_conv", mutates_args=()
+)(channelwise_tp_conv_aten)
 
 
 @channelwise_tp_conv.register_fake
@@ -328,8 +340,7 @@ channelwise_tp_conv.register_autograd(_conv_backward, setup_context=_conv_setup)
 # ---------------------------------------------------------------------------
 
 
-@torch.library.custom_op("mace::equivariant_linear", mutates_args=())
-def equivariant_linear(
+def equivariant_linear_aten(
     features: Tensor,
     weights: Tensor,
     row: Tensor,
@@ -366,6 +377,11 @@ def equivariant_linear(
         addition = out.new_zeros((dim_out,)).index_add(0, bias_row, bias)
         out = out + addition
     return out
+
+
+equivariant_linear = torch.library.custom_op(
+    "mace::equivariant_linear", mutates_args=()
+)(equivariant_linear_aten)
 
 
 @equivariant_linear.register_fake

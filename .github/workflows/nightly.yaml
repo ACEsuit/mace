@@ -291,6 +291,42 @@ jobs:
           numprocs: "0"
           timeout: "1200"
 
+  lammps-native-mpi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.11"
+          extras: dev
+      - run: python -m pip install -e packages/mace-core -e packages/mace-torch
+      - name: Check out the LAMMPS plugin API for the native MPI tier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: lammps/lammps
+          ref: 611ca3b7f8525ba802373b04f9e3d632d515f7e3 # stable_22Jul2025_update4
+          path: .native-build/lammps
+          sparse-checkout: |
+            cmake
+            src
+      - name: Check energy and forces across two native MPI ranks
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y mpich libmpich-dev
+          root="$PWD/.native-build"
+          cmake -S "$root/lammps/cmake" -B "$root/build" -D BUILD_SHARED_LIBS=ON \
+            -D BUILD_MPI=ON -D MPI_CXX_COMPILER="$(command -v mpicxx.mpich)" \
+            -D PKG_PLUGIN=ON -D BUILD_OMP=OFF -D CMAKE_BUILD_TYPE=Release
+          cmake --build "$root/build" -j 3
+          cmake -S packages/mace-torch/lammps -B "$root/plugin" \
+            -D LAMMPS_SOURCE_DIR="$root/lammps" -D LAMMPS_LIBRARY="$root/build/liblammps.so" \
+            -D MPI_CXX_COMPILER="$(command -v mpicxx.mpich)" -D Python3_EXECUTABLE="$(command -v python)"
+          cmake --build "$root/plugin" -j 2
+          export MACE_NATIVE_PLUGIN="$root/plugin/mace_native.so" MACE_NATIVE_LMP="$root/build/lmp"
+          export MPIEXEC=mpiexec.mpich TORCHINDUCTOR_COMPILE_THREADS=1 OMP_NUM_THREADS=1
+          pytest -q tests/parity/test_native_lammps.py -m 'not gpu' --timeout=600
+
   packages-coexistence:
     # The v1 package suites with BOTH stacks installed in one environment.
     #

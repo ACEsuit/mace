@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from typing import Any
 
 import numpy as np
 import pytest
@@ -90,7 +91,7 @@ def test_manifest_validation_and_runtime_pins(artifact, tmp_path):
         ({"receptive_field": -1}, "receptive_field"),
         ({"halo_exchange": "false"}, "halo_exchange"),
         ({"schema_version": "2.0"}, "schema_version"),
-        ({"schema_version": "1.1"}, "schema_version"),
+        ({"schema_version": "1.2"}, "schema_version"),
         ({"schema_version": "0.9"}, "schema_version"),
         ({"unknown": True}, "unknown"),
     ):
@@ -146,3 +147,23 @@ def test_multihead_bundle_uses_the_exported_head(tmp_path):
     assert result.total_energy is not None
     assert result.total_energy.item() == original.results["energy"]
     assert graph["head"].item() == 0
+
+
+@fp64_only
+@pytest.mark.parametrize(
+    "options,message",
+    [
+        ({"native_capacity": (2, 4)}, "node slots"),
+        ({"native_capacity": (8, 12), "halo_exchange": False}, "halo-exchange"),
+        ({"native_capacity": (8, 12), "compile_regions": False}, "compiles"),
+        ({"device": "cuda"}, "only applies"),
+    ],
+)
+def test_native_export_rejects_unsupported_runtime_choices(
+    artifact, tmp_path, options: dict[str, Any], message
+):
+    target = tmp_path / "invalid-native"
+    with pytest.raises(ValueError, match=message):
+        kwargs: dict[str, Any] = {"halo_exchange": True, **options}
+        export_lammps(artifact, target, **kwargs)
+    assert not target.exists()

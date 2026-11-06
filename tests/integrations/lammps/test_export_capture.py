@@ -160,8 +160,7 @@ def test_export_energy_forces(cases, route):
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
 def test_precomputed_gradient_runs_in_native_cpp(cases, tmp_path, device):
     """Compile both derivatives at export time, then load them in standalone C++."""
-    from mace_torch.kernels import ops
-    from mace_torch.kernels.contraction import symmetric_contraction_grouped
+    from mace_torch.deploy.native import reference_lowerings
     from torch.fx.experimental.proxy_tensor import make_fx
     from torch.utils.cpp_extension import include_paths, library_paths
 
@@ -173,23 +172,7 @@ def test_precomputed_gradient_runs_in_native_cpp(cases, tmp_path, device):
     samples = [(tuple(x.to(device) for x in args), e, f) for args, e, f in samples]
     example = samples[0][0]
     joint = make_fx(EnergyForces(model, "autograd"))(*grad_inputs(example))
-    # The reference custom operators are registered in Python. Inline their
-    # existing ATen implementations at export time. _init_fn is experimental
-    # and belongs only to this promotion probe, outside the runtime API.
-    names = (
-        "segment_sum",
-        "channelwise_tp_conv",
-        "equivariant_linear",
-        "symmetric_contraction",
-    )
-    lowerings = {
-        getattr(torch.ops.mace, name).default: getattr(ops, name)._init_fn
-        for name in names
-    }
-    lowerings[torch.ops.mace.symmetric_contraction_grouped.default] = (
-        symmetric_contraction_grouped._init_fn
-    )
-    aten = make_fx(joint, decomposition_table=lowerings)(*example)
+    aten = make_fx(joint, decomposition_table=reference_lowerings())(*example)
     program = torch.export.export(aten, example, strict=True)
     assert not any(str(node.target).startswith("mace.") for node in program.graph.nodes)
     with torch.no_grad():
