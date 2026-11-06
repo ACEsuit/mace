@@ -13,8 +13,6 @@ from glob import glob
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
-os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-
 import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
@@ -271,7 +269,7 @@ class MACECalculator(Calculator):
                 raise ValueError("No mace file names supplied")
             self.num_models = len(model_paths)
             self.models = [
-                torch.load(f=model_path, map_location=device)
+                torch.load(f=model_path, map_location=device, weights_only=False)
                 for model_path in model_paths
             ]
         elif models is not None:
@@ -1234,7 +1232,7 @@ class MagneticMACECalculator(Calculator):
             # dtype change and for the `models=` branch too. Doing it twice
             # fed a converted model to a converter expecting e3nn layout.
             self.models = [
-                torch.load(f=model_path, map_location=device)
+                torch.load(f=model_path, map_location=device, weights_only=False)
                 for model_path in model_paths
             ]
 

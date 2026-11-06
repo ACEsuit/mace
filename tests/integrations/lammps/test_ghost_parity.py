@@ -28,7 +28,7 @@ from tests.integrations.lammps._harness import (
 @pytest.fixture(scope="module", name="tiny_model")
 def fixture_tiny_model(trained_tiny_model_path):
     torch.set_default_dtype(torch.float64)
-    return torch.load(trained_tiny_model_path, map_location="cpu").double()
+    return torch.load(trained_tiny_model_path, map_location="cpu", weights_only=False).double()
 
 
 @pytest.fixture(scope="module", name="periodic_reference")

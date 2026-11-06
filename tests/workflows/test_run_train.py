@@ -929,7 +929,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     # Load model and check elements
-    model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu", weights_only=False)
     filtered_elements = set(int(z) for z in model_filtered.atomic_numbers)
     assert filtered_elements == {1, 8}  # Only H and O should be present
 
@@ -941,7 +941,7 @@ def test_run_train_foundation_elements(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     # Load model and check elements
-    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu")
+    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu", weights_only=False)
     all_elements = set(int(z) for z in model_all.atomic_numbers)
 
     # Get elements from foundation model for comparison
@@ -1056,7 +1056,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
     assert completed_process.returncode == 0
 
     # Load model and check elements
-    model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    model_filtered = torch.load(tmp_path / "MACE.model", map_location="cpu", weights_only=False)
     filtered_elements = set(int(z) for z in model_filtered.atomic_numbers)
     assert filtered_elements == {1, 8}  # Only H and O should be present
     assert len(model_filtered.heads) == 3  # pt_head + DFT + MP2
@@ -1069,7 +1069,7 @@ def test_run_train_foundation_elements_multihead(tmp_path, fitting_configs):
     assert p.returncode == 0
 
     # Load model and check elements
-    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu")
+    model_all = torch.load(tmp_path / "MACE_all_elements.model", map_location="cpu", weights_only=False)
     all_elements = set(int(z) for z in model_all.atomic_numbers)
 
     # Get elements from foundation model for comparison
