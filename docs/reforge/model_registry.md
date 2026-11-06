@@ -86,6 +86,10 @@ ASE calculator. `return_raw_model=True` returns the native PyTorch module;
 extension. MP and Polar retain `float32` defaults; OFF, OMOL and MDP retain
 `float64`. `device=""` chooses CUDA when available, otherwise CPU.
 
+Pass `precision=PrecisionConfig(...)` to select an operator policy. Both the
+calculator and the raw module read checkpoint tensors directly in the selected
+precisions. `load_foundation` also records that policy in the resolved metadata.
+
 OMOL requires its `omol` head. Multi-head MH retains all heads and requires the
 caller to choose one explicitly. MDP warns that it predicts dipoles and
 polarizability without energy or forces and rejects a different `model_type`.

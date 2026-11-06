@@ -45,13 +45,15 @@ def load_foundation(
     family: Family = "mace_mp",
     device: str = "",
     default_dtype: str | None = None,
+    precision: PrecisionConfig | None = None,
 ) -> DeployedModel:
     """Load a native checkpoint or registry identity as a structured model.
 
     Canonical names require published native URLs. Local paths and explicit
     HTTPS URLs allow conversion candidates and fine-tuned descendants; those
     inputs acquire no registry support claim. Metadata versions are checked by
-    the shared schema before constructing the model.
+    the shared schema before constructing the model. An explicit operator
+    precision policy takes effect when reading the checkpoint weights.
     """
     entry = None
     reference: str | Path | ArtifactRef
@@ -66,6 +68,7 @@ def load_foundation(
     dtype = default_dtype or family_default_dtype(family)
     if dtype not in {"float32", "float64"}:
         raise ValueError(f"default_dtype={dtype!r}; use float32 or float64")
+    policy = precision or PrecisionConfig(model=dtype)
     if entry is not None and (notice := entry.license.notice()) is not None:
         print(notice)
     files = resolve_checkpoint(reference)
@@ -75,7 +78,7 @@ def load_foundation(
         files.metadata,
         tensors_path=files.tensors,
         device=device or ("cuda" if torch.cuda.is_available() else "cpu"),
-        precision=PrecisionConfig(model=dtype),
+        precision=policy,
     )
     expected = {"mace_mdp": {"dielectric"}, "mace_polar": {"polar"}}.get(
         family, {"plain", "scale_shift"}
@@ -85,9 +88,7 @@ def load_foundation(
             f"{family} requires {sorted(expected)}; checkpoint declares "
             f"{loaded.config.model.model!r}"
         )
-    config = loaded.config.model_copy(
-        update={"precision": PrecisionConfig(model=dtype)}
-    )
+    config = loaded.config.model_copy(update={"precision": policy})
     loaded = replace(
         loaded,
         config=config,
@@ -159,7 +160,11 @@ def _calculator(
             raise ValueError("mace_omol requires head='omol'")
         kwargs["head"] = "omol"
     loaded = load_foundation(
-        model, family=family, device=device, default_dtype=default_dtype
+        model,
+        family=family,
+        device=device,
+        default_dtype=default_dtype,
+        precision=kwargs.pop("precision", None),
     )
     if return_raw_model:
         return loaded.engine
@@ -199,10 +204,13 @@ def mace_mp(
         raise RuntimeError(
             "Install torch-dftd to use dispersion corrections"
         ) from error
+    precision = kwargs.pop("precision", None)
     correction = TorchDFTD3Calculator(
         device=device or ("cuda" if torch.cuda.is_available() else "cpu"),
         damping=dispersion_damping,
-        dtype=getattr(torch, default_dtype),
+        dtype=getattr(
+            torch, precision.model if precision is not None else default_dtype
+        ),
         xc=dispersion_xc,
         cutoff=dispersion_cutoff,
         cnthr=dispersion_coord_cutoff,

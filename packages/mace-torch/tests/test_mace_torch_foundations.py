@@ -7,6 +7,7 @@ import pytest
 import torch
 from ase import units
 from conftest import fp64_only
+from mace_core.config.precision import PrecisionConfig
 from mace_torch.calculators import foundations as fm
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.serialization import canonical_state
@@ -40,6 +41,31 @@ def test_local_loader_uses_its_family_precision_and_raw_model(
             assert torch.equal(
                 canonical_state(converted.models[0].engine)[op][key], value
             )
+
+
+@fp64_only
+@pytest.mark.parametrize("raw", [False, True])
+@pytest.mark.parametrize("policy", [PrecisionConfig.float64(), PrecisionConfig.mixed()])
+def test_explicit_precision_reads_weights_directly_from_the_checkpoint(
+    foundation, raw, policy
+):
+    result = fm.mace_mp(
+        foundation, device="cpu", return_raw_model=raw, precision=policy
+    )
+    if isinstance(result, fm.MACECalculator):
+        deployed = result.models[0]
+        assert deployed.config.precision == policy
+        assert (
+            deployed.metadata.config.resolved["precision"]
+            == deployed.config.to_resolved_dict()["precision"]
+        )
+        result = deployed.engine
+    assert isinstance(result, torch.nn.Module)
+    actual = canonical_state(result)
+    expected = canonical_state(load_deployed(foundation, precision=policy).engine)
+    for op, tensors in expected.items():
+        for key, value in tensors.items():
+            torch.testing.assert_close(actual[op][key], value, atol=0, rtol=0)
 
 
 @fp64_only
@@ -122,6 +148,15 @@ def test_dispersion_options_do_not_reach_the_model_calculator(monkeypatch, d3_kw
     )
     assert d3_kwargs["damping"] == "zero"
     assert not any(key.startswith("dispersion") or key == "damping" for key in seen)
+
+
+@fp64_only
+def test_dispersion_uses_the_requested_interface_dtype(d3_kwargs):
+    fm.mace_mp(
+        "small", device="cpu", dispersion=True, precision=PrecisionConfig.float64()
+    )
+    assert d3_kwargs["dtype"] == torch.float64
+    assert "precision" not in d3_kwargs
 
 
 @fp64_only
