@@ -43,6 +43,9 @@ jobs:
               - 'mace/cli/select_head.py'
               - 'mace/calculators/lammps_*.py'
               - 'tests/integrations/**'
+              - 'packages/mace-core/**'
+              - 'packages/mace-torch/**'
+              - 'packages/mace-jax/tests/fixtures/tiny.*'
               # The export golden lives with the other goldens, not with the
               # test that reads it, so a change to the committed numbers or
               # to the anchor they were taken from has to reach this job too
@@ -64,6 +67,7 @@ jobs:
           python-version: "3.11"
           # cueq: the mliap export path converts to the cueq layout.
           extras: dev, cueq
+      - run: python -m pip install -e packages/mace-core -e packages/mace-torch
       - name: Run LAMMPS contract tests (no binary)
         env:
           MACE_REQUIRE_CAPS: cueq
