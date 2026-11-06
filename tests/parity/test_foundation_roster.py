@@ -348,7 +348,7 @@ def test_the_conversion_is_the_model_the_artifact_describes(name, fp64):
 @pytest.mark.network
 @pytest.mark.polar
 def test_polar_medium_conversion_near_a_spin_density_cancellation(fp64, tmp_path):
-    """Check the reduced model against the same float64 basis on both sides of a zero."""
+    """Compare both sides of a zero in the same reduced float64 basis."""
     from mace_torch.calculators.foundations import mace_polar
     from mace_torch.train import write_model
 
@@ -358,7 +358,7 @@ def test_polar_medium_conversion_near_a_spin_density_cancellation(fp64, tmp_path
     path = write_model(tmp_path / "polar", imported.engine, imported.metadata)
     native = mace_polar(path, device="cpu", default_dtype="float64")
     atoms = load_fixtures(names=("dimer_short",))["dimer_short"]
-    # Consecutive binary32 C–O distances bracket a zero of atom 1's z multipole.
+    # Consecutive binary32 C-O distances bracket a zero of atom 1's z multipole.
     left = np.float32(0.6201075911521912)
     signs = []
     for distance in (left, np.nextafter(left, np.float32(np.inf))):
