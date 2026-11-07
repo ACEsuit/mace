@@ -31,7 +31,7 @@ from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.models.energy import EnergyOutputHead
-from mace_torch.models.outputs import ENERGY_EXTRA_ROWS, MACEOutputs
+from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
 from mace_torch.nn.graph_features import FeatureSpec
 from mace_torch.nn.radial import ZBLBasis
@@ -159,19 +159,46 @@ class MACEModel(nn.Module):
             )
 
     @property
+    def input_specs(self) -> tuple[InputSpec, ...]:
+        """Embedded scalar inputs, declared for deployment consumers."""
+        return tuple(
+            InputSpec(
+                name=feature.name,
+                irreps=f"{feature.input_dim}x0e",
+                per_atom=feature.per == "atom",
+                units="1",
+            )
+            for feature in self.config.graph_features
+        )
+
+    @property
+    def extra_observables(self) -> tuple[ObservableSpec, ...]:
+        """Declarations of diagnostics emitted alongside the configured heads."""
+        if self.outputs.energy_head is None:
+            return ()
+        specs = list(ENERGY_EXTRA_OBSERVABLES)
+        if not self.outputs.energy_head.zbl_in_scale_shift:
+            specs.append(
+                ObservableSpec(
+                    name="contributions",
+                    irreps=f"{self.config.num_interactions + 2}x0e",
+                    per_atom=False,
+                    units="eV",
+                )
+            )
+        return tuple(specs)
+
+    @property
     def extra_rows(self) -> dict[str, str]:
         """What each quantity the model adds to ``extras`` has a row for.
 
         Declared by the model that adds it, so whatever cuts a padded batch
         back reads it here rather than keeping a list of every model's.
         """
-        rows = dict(ENERGY_EXTRA_ROWS) if self.outputs.energy_head is not None else {}
-        if (
-            self.outputs.energy_head is not None
-            and not self.outputs.energy_head.zbl_in_scale_shift
-        ):
-            rows["contributions"] = "graph"
-        return rows
+        return {
+            spec.name: "atom" if spec.per_atom else "graph"
+            for spec in self.extra_observables
+        }
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The declared observables. The graph is read and never written to."""

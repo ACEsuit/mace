@@ -30,6 +30,7 @@ from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.heads import ObservableHead, per_head_irreps
 
 __all__ = [
+    "ENERGY_EXTRA_OBSERVABLES",
     "ENERGY_EXTRA_ROWS",
     "ENERGY_OBSERVABLE",
     "MACEOutputs",
@@ -64,10 +65,15 @@ def fixed_charge_dipole(
 #: shift, and the two-reduction structure.
 ENERGY_OBSERVABLE = "energy"
 
-#: What each quantity the energy head adds to ``extras`` has a row for.
-ENERGY_EXTRA_ROWS: dict[str, str] = {
-    "interaction_energy": "graph",
-    "node_interaction_energy": "atom",
+#: Diagnostics share the same declarations as configured output heads.
+ENERGY_EXTRA_OBSERVABLES = (
+    ObservableSpec(name="interaction_energy", irreps="0e", per_atom=False, units="eV"),
+    ObservableSpec(
+        name="node_interaction_energy", irreps="0e", per_atom=True, units="eV"
+    ),
+)
+ENERGY_EXTRA_ROWS = {
+    spec.name: "atom" if spec.per_atom else "graph" for spec in ENERGY_EXTRA_OBSERVABLES
 }
 
 

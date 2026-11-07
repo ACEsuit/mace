@@ -1,0 +1,3 @@
+# The 0.6.2 wheel still scripts two helpers at import time. This official
+# revision removes them and fixes triclinic state geometry; no local fork.
+torch-sim-atomistic @ git+https://github.com/TorchSim/torch-sim.git@d6d8e9fc30129e01a05b551c2d71912821c9b68b ; python_version >= "3.12"

@@ -44,7 +44,7 @@ from mace_core.electrostatics import (
 )
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision, widest
-from mace_core.observables import ObservableSpec
+from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
@@ -68,26 +68,6 @@ from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
 
 __all__ = ["POLAR_EXTRA_ROWS", "POLAR_GRAPH_INPUTS", "PolarModel", "PolarSettings"]
 
-#: What each quantity the model adds to ``extras`` has a row for.
-POLAR_EXTRA_ROWS: dict[str, str] = {
-    "electrostatic_energy": "graph",
-    "electron_energy": "graph",
-    "total_charge": "graph",
-    "charges": "atom",
-    "spins": "atom",
-    "density_coefficients": "atom",
-    "spin_density": "atom",
-    "spin_charge_density": "atom",
-    "fukui_functions": "atom",
-    "fermi_level": "graph",
-    "external_field": "graph",
-}
-
-
-#: The per-structure inputs the model reads, which the data stage writes into
-#: every graph it builds for it.
-POLAR_GRAPH_INPUTS: tuple[str, ...] = ("total_charge", "total_spin", "external_field")
-
 
 def _spherical(max_l: int, copies: int = 1) -> str:
     """The spherical harmonics up to ``max_l``, ``copies`` of each, sorted."""
@@ -95,6 +75,45 @@ def _spherical(max_l: int, copies: int = 1) -> str:
         f"{copies}x{degree}{'e' if degree % 2 == 0 else 'o'}"
         for degree in range(max_l + 1)
     )
+
+
+def _polar_extra_observables(max_l: int) -> tuple[ObservableSpec, ...]:
+    density = _spherical(max_l)
+    declarations = (
+        ("electrostatic_energy", "0e", False, "eV"),
+        ("electron_energy", "0e", False, "eV"),
+        ("total_charge", "0e", False, "e"),
+        ("charges", "0e", True, "e"),
+        ("spins", "0e", True, "1"),
+        ("density_coefficients", density, True, "e*Å^l"),
+        ("spin_density", density, True, "e*Å^l"),
+        (
+            "spin_charge_density",
+            _spherical(max_l, 2),
+            True,
+            "e*Å^l",
+        ),
+        ("fukui_functions", "2x0e", True, "1"),
+        ("fermi_level", "0e", False, "eV"),
+        ("external_field", "1o", False, "eV/(e*Å)"),
+    )
+    return tuple(
+        ObservableSpec(name=name, irreps=irreps, per_atom=per_atom, units=units)
+        for name, irreps, per_atom, units in declarations
+    )
+
+
+POLAR_INPUT_SPECS = (
+    InputSpec(name="total_charge", irreps="0e", per_atom=False, units="e"),
+    InputSpec(name="total_spin", irreps="0e", per_atom=False, units="1"),
+    InputSpec(name="external_field", irreps="1o", per_atom=False, units="eV/(e*Å)"),
+)
+POLAR_GRAPH_INPUTS = tuple(spec.name for spec in POLAR_INPUT_SPECS)
+# Compatibility views of the declarations, used by existing calculators.
+POLAR_EXTRA_ROWS = {
+    spec.name: "atom" if spec.per_atom else "graph"
+    for spec in _polar_extra_observables(0)
+}
 
 
 @dataclass(frozen=True)
@@ -383,8 +402,14 @@ class PolarModel(MACEModel):
         return corrected, weights.to(fukui.dtype)
 
     @property
-    def extra_rows(self) -> dict[str, str]:
-        return {**super().extra_rows, **POLAR_EXTRA_ROWS}
+    def input_specs(self) -> tuple[InputSpec, ...]:
+        return super().input_specs + POLAR_INPUT_SPECS
+
+    @property
+    def extra_observables(self) -> tuple[ObservableSpec, ...]:
+        return super().extra_observables + _polar_extra_observables(
+            self.settings.multipole_max_l
+        )
 
     def prepare_model_inputs(self, graph: dict[str, Any], requests=()) -> None:
         """Resolve discrete long-range choices outside the compiled forward.

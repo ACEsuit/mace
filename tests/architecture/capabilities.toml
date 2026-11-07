@@ -229,7 +229,7 @@ burn_step = "RET-6 (#1602)"
 
 [capabilities.torchsim.ci]
 filter = "torchsim"
-paths = ["mace/calculators/**", "tests/extensions/torchsim/**"]
+paths = ["mace/calculators/**", "tests/extensions/torchsim/**", "packages/mace-torch/src/**", "packages/mace-core/src/**", "packages/mace-torch/pyproject.toml", "packages/mace-torch/tests/test_mace_torch_torchsim.py", "requirements/torchsim.txt", "tests/parity/test_torchsim_parity.py"]
 
 [capabilities.schedulefree]
 kind = "probe"

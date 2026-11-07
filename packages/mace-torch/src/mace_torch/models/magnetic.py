@@ -21,13 +21,13 @@ from typing import Any
 import torch
 from mace_core.config.model import ModelConfig
 from mace_core.kernels.precision import Precision
-from mace_core.observables import ObservableSpec
+from mace_core.observables import DEFAULT_CATALOGUE, InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.models.base import _constructed_in
 from mace_torch.models.energy import EnergyOutputHead
-from mace_torch.models.outputs import ENERGY_EXTRA_ROWS, MACEOutputs
+from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.magnetic import MagneticBackbone, OneBodyMomentEnergy
 from mace_torch.nn.radial import ZBLBasis
 
@@ -118,8 +118,19 @@ class MagneticModel(nn.Module):
             )
 
     @property
+    def input_specs(self) -> tuple[InputSpec, ...]:
+        return tuple(DEFAULT_CATALOGUE.input(name) for name in MAGNETIC_GRAPH_INPUTS)
+
+    @property
+    def extra_observables(self) -> tuple[ObservableSpec, ...]:
+        return ENERGY_EXTRA_OBSERVABLES
+
+    @property
     def extra_rows(self) -> dict[str, str]:
-        return dict(ENERGY_EXTRA_ROWS)
+        return {
+            spec.name: "atom" if spec.per_atom else "graph"
+            for spec in self.extra_observables
+        }
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The energy at the moments the graph carries under ``magmom``."""

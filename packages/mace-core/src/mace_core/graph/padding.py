@@ -36,7 +36,7 @@ from typing import Annotated, Any, Literal, overload
 from pydantic import Field, field_validator
 
 from mace_core.config.base import ConfigSection
-from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
+from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue, ObservableSpec
 from mace_core.outputs import CORE_FIELD_NAMES, CORE_FIELD_ROWS, MACEOutput
 
 __all__ = [
@@ -202,6 +202,7 @@ def unpad_outputs(
     info: PaddingInfo,
     *,
     catalogue: ObservableCatalogue = ...,
+    extra_observables: tuple[ObservableSpec, ...] = ...,
 ) -> MACEOutput: ...
 
 
@@ -211,6 +212,7 @@ def unpad_outputs(
     info: PaddingInfo,
     *,
     catalogue: ObservableCatalogue = ...,
+    extra_observables: tuple[ObservableSpec, ...] = ...,
 ) -> dict[str, Any]: ...
 
 
@@ -219,6 +221,7 @@ def unpad_outputs(
     info: PaddingInfo,
     *,
     catalogue: ObservableCatalogue = DEFAULT_CATALOGUE,
+    extra_observables: tuple[ObservableSpec, ...] = (),
 ) -> MACEOutput | dict[str, Any]:
     """The real slots of a padded model's outputs.
 
@@ -233,6 +236,9 @@ def unpad_outputs(
             observable name to tensor. ``None`` values are kept.
         info: What :func:`pad_batch` returned.
         catalogue: The declared observables of the model.
+        extra_observables: Model-owned diagnostic declarations. These may echo
+            an input, such as total charge, without redefining the derivative
+            catalogue or its input/output naming contract.
 
     Returns:
         A new object of the same kind.
@@ -250,17 +256,23 @@ def unpad_outputs(
                 _keep_real(value, CORE_FIELD_ROWS[name] == "atom", info=info),
             )
         unpadded.extras = {
-            name: _keep_real(value, *_layout(name, catalogue), info=info)
+            name: _keep_real(
+                value, *_layout(name, catalogue, extra_observables), info=info
+            )
             for name, value in outputs.extras.items()
         }
         return unpadded
     return {
-        name: _keep_real(value, *_layout(name, catalogue), info=info)
+        name: _keep_real(value, *_layout(name, catalogue, extra_observables), info=info)
         for name, value in outputs.items()
     }
 
 
-def _layout(name: str, catalogue: ObservableCatalogue) -> tuple[bool, int]:
+def _layout(
+    name: str,
+    catalogue: ObservableCatalogue,
+    extra_observables: tuple[ObservableSpec, ...],
+) -> tuple[bool, int]:
     if name in CORE_FIELD_ROWS:
         return CORE_FIELD_ROWS[name] == "atom", 0
     for spec in catalogue.observables:
@@ -270,6 +282,9 @@ def _layout(name: str, catalogue: ObservableCatalogue) -> tuple[bool, int]:
             if spec.derivative_name(request.wrt) == name:
                 derivative = catalogue.derivative(spec.name, request.wrt)
                 return derivative.per_atom, 0 if spec.is_scalar else 1
+    for spec in extra_observables:
+        if spec.name == name:
+            return spec.per_atom, 0
     raise KeyError(
         f"{name!r} is not an observable the catalogue declares, so whether it is "
         f"per atom is unknown. Declare it, or pass the model's catalogue."

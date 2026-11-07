@@ -56,6 +56,7 @@ vesin = "mace_torch.neighbors.vesin_backend:VesinBackend"
 les = ["les @ git+https://github.com/ChengUCB/les.git@fadfb0ca3b89ed371e5de6b383f4425defabd4a8"]
 fpsample = ["fpsample"]
 schedulefree = ["schedulefree"]
+torchsim = ["torch-sim-atomistic @ git+https://github.com/TorchSim/torch-sim.git@d6d8e9fc30129e01a05b551c2d71912821c9b68b ; python_version >= '3.12'"]
 # Reporting a run to Weights and Biases. Optional in the sense that matters:
 # the import happens inside the tracker's constructor, so a run with tracking
 # off never touches the package.

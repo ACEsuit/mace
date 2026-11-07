@@ -10,9 +10,9 @@ implementations. It is not another model checkpoint.
 | LAMMPS native | Python-free torch.export/AOTInductor, reference/cuEq, changing neighbours and MPI migration on one/two GPUs | Performance results are recorded separately from correctness |
 | ML-IAP | Direct callback, reference/cuEq, eager/compiled regions, one/two MPI ranks | Python callback is required by this compatibility interface |
 | OpenMM | Direct PyTorch callback on CPU, molecular/periodic trajectories, changing triclinic cells, energy/force parity with ASE | GPU execution and host-transfer performance are not yet measured |
-| Symmetrix | Consumer source inspected at the revision below | Whole-model JSON translation and benchmark sweep remain pending; a contraction-only export does not load directly |
+| Symmetrix | Public implementations inspected; target is the forthcoming general implementation | Concrete converter and benchmark sweep await its published interface |
 | libmace | Consumer source inspected at the revision below | Its published reader requires TorchScript and cannot load V1's neutral or full-basis files; no V1 numerical verification is claimed |
-| torch-sim | DEP-4 pending | Adapter, compiled bucket reuse and trajectory parity |
+| torch-sim | CPU trajectory and legacy E/F/polar parity; static compile reuse; cuEq on H200 and RTX PRO 6000 Blackwell in float32/float64 | Host graph assembly remains; end-to-end throughput is not yet measured |
 
 ## OpenMM direct PyTorch interface
 
@@ -84,6 +84,27 @@ because the weight export exists.
 
 ## External consumer findings
 
+The intended Symmetrix target is the forthcoming general implementation
+identified by the user on 2026-11-07, with
+[`wcwitt/symmetrix-polar`](https://github.com/wcwitt/symmetrix-polar/tree/f8a23ea0f15dd036375dbaeae2e8542d85d964fc)
+as a reference, rather than a Polar-only converter or Symmetrix-XL. The latter
+is a separate project and was inspected before this clarification. No target
+schema or compatibility promise is inferred for the unpublished general version.
+V1 retains its canonical checkpoint and the component/full-basis export above;
+the concrete consumer adapter and performance sweep remain pending the general
+implementation's published interface. No Polar-specific architecture restrictions
+are added to the V1 export contract. Symmetrix remains an optional external
+runtime; MACE owns the export and parity checks.
+
+The inspected Polar branch identifies itself as 0.1.0, with model format 1.
+Its LAMMPS implementation supports fully periodic cells, charge and spin,
+direct sums or a particle-mesh solver, with a specialized CUDA model shape.
+Its own correctness report excludes stress, and per-atom virials are explicitly
+refused. These are observations about that branch, not requirements for the
+forthcoming general interface or evidence of V1 compatibility.
+
+The earlier inspection below concerns the original public implementation:
+
 Symmetrix revision `2aae0987ef63cc775f99f75b4fb45d8d0035a3ff` consumes an entire
 model JSON: radial splines, embeddings, contractions, residuals and readouts.
 Its supplied extractor reads a legacy model and imposes architecture limits,
@@ -101,3 +122,60 @@ with an explicitly verified ABI, before adding a passing `bin_libmace` claim.
 Sources: [OpenMM-Torch](https://github.com/openmm/openmm-torch/tree/b6532900ad825cb3d12193817a1e34a7f46ae6a3),
 [Symmetrix](https://github.com/wcwitt/symmetrix/tree/2aae0987ef63cc775f99f75b4fb45d8d0035a3ff),
 [libmace](https://github.com/stenczelt/libmace/tree/e3413ae658530654894b6bac6a62a764a74c5115).
+
+
+## TorchSim deployment
+
+The V1 optional extra and `requirements/torchsim.txt` pin official TorchSim
+revision `d6d8e9fc30129e01a05b551c2d71912821c9b68b` (package version 0.6.2).
+The released 0.6.2 wheel still scripts two helpers during import; the pinned
+revision removes them and fixes triclinic geometry. A fresh-process test blocks
+`torch.jit.script`, `trace`, `load` and `save` before importing TorchSim, then
+loads a V1 model and runs an NVE step. It also verifies that legacy `mace` was
+not imported. No local dependency patch is applied.
+
+```python
+from mace_torch.deploy.torchsim import MaceTorchSimModel
+
+model = MaceTorchSimModel(
+    "model-bundle", device="cuda", backend="cueq", compile_mode="reduce-overhead"
+)
+result = model(state)
+```
+
+Import the adapter from `mace_torch.deploy.torchsim`: TorchSim's historical
+`torch_sim.models.mace` wrapper still imports the legacy package. The adapter
+uses the shared neutral loader, selects the head once, and resolves the kernel
+and neighbour providers at construction. Runtime precision can be supplied as
+V1's `PrecisionConfig`; a bundle's explicit pins still apply.
+
+State cells are transposed from TorchSim's column vectors to MACE's row vectors.
+Input features use their declarations and V1 names, including `total_charge`,
+`total_spin` and `external_field`; `input_names` can map a declared name to an
+older state attribute. An optional `displacement` is passed through shared
+padding unchanged. When absent, only the derivative engine creates strain.
+All outputs are detached and unpadded from their core or observable declarations.
+Model diagnostics have their own declarations, so an output that echoes an input
+can coexist with derivatives of that input without changing the catalogue's
+naming rules.
+
+Compilation uses the existing whole-model `dynamic=False` path. The default
+compiled policy selects power-of-two atom, edge and system capacities, with a
+dummy atom and system. `FixedPadding` can set explicit budgets; it follows the
+shared overflow policy. Edge requirements are materialized by the engine after
+padding. Changing a real count within the same capacities reuses the graph;
+changing a capacity or another compiler guard can compile another graph.
+
+The adapter currently uses the common host `Configuration`/graph builder.
+GPU evaluation therefore does not imply an entirely device-resident MD step:
+state metadata/positions are copied to the host during graph assembly. End-to-end
+TorchSim throughput has not yet been measured. The CPU tests cover a real NVE
+trajectory against ASE, both committed energy anchors, and eight polar comparisons
+with the frozen model (molecules, a charged field-driven system, crystal and slab,
+one and two systems). Polar stress uses V1 ASE's established strain convention;
+the previously reconciled frozen legacy stress bug is not reintroduced.
+
+The cuEq path passes eager-versus-Inductor checks on Dais H200 and RTX PRO 6000
+Blackwell GPUs, for energy and Polar models in both float32 and float64 while
+the real atom count changes. These are correctness checks, not throughput
+measurements. See [DEP-4 evidence](gate3/2026-11-07/dep4-torchsim.md).

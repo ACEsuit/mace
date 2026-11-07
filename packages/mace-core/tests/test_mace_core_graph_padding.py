@@ -58,3 +58,49 @@ def test_a_fixed_budget_can_refuse_to_grow():
     )
     with pytest.raises(PaddingOverflowError, match="needs 6, 8 and 3"):
         padding_budget(policy, n_nodes=5, n_edges=7, n_graphs=2)
+
+
+def test_unpadding_diagnostics_can_echo_a_differentiable_input():
+    import numpy as np
+    from mace_core.graph import PaddingInfo, unpad_outputs
+    from mace_core.observables import InputSpec, ObservableCatalogue, ObservableSpec
+    from mace_core.outputs import MACEOutput
+
+    catalogue = ObservableCatalogue(
+        inputs=(
+            InputSpec(
+                name="external_field",
+                irreps="1o",
+                per_atom=False,
+                units="eV/(e*Å)",
+                differentiable=True,
+            ),
+        ),
+        observables=(
+            ObservableSpec(
+                name="energy",
+                irreps="0e",
+                per_atom=False,
+                units="eV",
+                derivatives=("external_field",),
+            ),
+        ),
+    )
+    diagnostics = (
+        ObservableSpec(
+            name="external_field", irreps="1o", per_atom=False, units="eV/(e*Å)"
+        ),
+    )
+    values = np.arange(9).reshape(3, 3)
+    result = unpad_outputs(
+        MACEOutput(
+            extras={"external_field": values, "d_energy_d_external_field": values + 1}
+        ),
+        PaddingInfo(n_real_nodes=2, n_real_edges=2, n_real_graphs=1),
+        catalogue=catalogue,
+        extra_observables=diagnostics,
+    )
+    np.testing.assert_array_equal(result.extras["external_field"], values[:1])
+    np.testing.assert_array_equal(
+        result.extras["d_energy_d_external_field"], values[:1] + 1
+    )

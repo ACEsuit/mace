@@ -201,14 +201,8 @@ class LatentEwaldModel(MACEModel):
             )
 
     @property
-    def extra_rows(self):
-        return {
-            **super().extra_rows,
-            **{
-                name: "atom" if spec.per_atom else "graph"
-                for name, spec in self.produced_observables.items()
-            },
-        }
+    def extra_observables(self) -> tuple[ObservableSpec, ...]:
+        return super().extra_observables + tuple(self.produced_observables.values())
 
     def transform_outputs(self, graph, layers, output: MACEOutput[Tensor]):
         settings = self.settings

@@ -109,6 +109,12 @@ jobs:
               - *shared
               - 'mace/calculators/**'
               - 'tests/extensions/torchsim/**'
+              - 'packages/mace-torch/src/**'
+              - 'packages/mace-core/src/**'
+              - 'packages/mace-torch/pyproject.toml'
+              - 'packages/mace-torch/tests/test_mace_torch_torchsim.py'
+              - 'requirements/torchsim.txt'
+              - 'tests/parity/test_torchsim_parity.py'
             schedulefree:
               - *shared
               - 'tests/extensions/schedulefree/**'
@@ -232,10 +238,12 @@ jobs:
           extras: dev, torchsim
           # graph_longrange so the torchsim×polar tests run (they never did
           # before: the old job did not install it and they skipped silently).
-          pip-packages: -r requirements/polar.txt
+          pip-packages: -r requirements/polar.txt -r requirements/torchsim.txt
+      - name: Install V1 TorchSim adapter
+        run: python -m pip install -e packages/mace-core -e 'packages/mace-torch[torchsim]'
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/torchsim
+          tests: tests/extensions/torchsim packages/mace-torch/tests/test_mace_torch_torchsim.py tests/parity/test_torchsim_parity.py
           require-caps: torchsim,polar
           allow-network: "true"
 
