@@ -390,7 +390,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/deploy/openmm.py` | OpenMM direct PyTorch callback, shared loader, neighbour provider and explicit unit conversion. |
 | `mace_torch/deploy/torchsim.py` | TorchSim ModelInterface, declared state inputs/outputs, shared graph padding and static compile buckets. |
 | `mace_torch/deploy/grouped_skip.py` | Lower scalar residual connections to fixed-shape per-species matrix products for native export. |
-| `mace_torch/deploy/native.py` | Compile owned site energies, edge gradients and explicit MPI exchanges for the native LAMMPS pair style. |
+| `mace_torch/deploy/native.py` | Compile owned site energies and edge gradients for native LAMMPS and libmace, with explicit halo exchanges. |
 | `mace_torch/deploy/manifest.py` | Deployment schema, selected head and halo exchange contract. |
 | `mace_torch/deploy/mliap.py` | ML-IAP callback, first-order ghost exchange and owned-site edge derivatives. |
 | `mace_torch/deploy/loader.py` | `load_deployed`: a checkpoint rebuilt for evaluation. |

@@ -2,6 +2,7 @@ import importlib.util
 import os
 import resource
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -59,10 +60,27 @@ def _lammps_available() -> bool:
 
 def _openmm_available() -> bool:
     try:
-        from openmmtorch import PythonTorchForce  # pylint: disable=import-outside-toplevel,unused-import
+        from openmmtorch import (
+            PythonTorchForce as PythonTorchForce,  # pylint: disable=import-outside-toplevel,unused-import
+        )
 
         return True
     except (ImportError, OSError):
+        return False
+
+
+def _libmace_available() -> bool:
+    driver = os.environ.get("MACE_LIBMACE_DRIVER")
+    if not driver:
+        return False
+    try:
+        result = subprocess.run(
+            [driver, "--version"], capture_output=True, text=True, timeout=10
+        )
+        return (
+            result.returncode == 0 and result.stdout.strip() == "mace-libmace-aoti-v1"
+        )
+    except (OSError, subprocess.TimeoutExpired):
         return False
 
 
@@ -78,6 +96,7 @@ CAPABILITY_PROBES = {
     "wandb": lambda: _module_available("wandb"),
     "bin_lammps": _lammps_available,
     "bin_openmm": _openmm_available,
+    "bin_libmace": _libmace_available,
     # Never autodetected: network access is an explicit opt-in so that PR jobs
     # stay deterministic and downloads live only in jobs that chose them.
     "network": lambda: os.environ.get("MACE_CI_ALLOW_NETWORK", "") == "1",

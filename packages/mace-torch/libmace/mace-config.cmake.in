@@ -1,0 +1,7 @@
+@PACKAGE_INIT@
+include(CMakeFindDependencyMacro)
+get_property(mace_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
+if(@MACE_WITH_FORTRAN@ AND "Fortran" IN_LIST mace_languages)
+  find_dependency(MPI REQUIRED COMPONENTS Fortran)
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/mace-targets.cmake")

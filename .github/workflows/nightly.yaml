@@ -364,6 +364,43 @@ jobs:
           numprocs: "0"
           timeout: "600"
 
+  libmace-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.11"
+          extras: dev
+      - run: python -m pip install -e packages/mace-core -e packages/mace-torch
+      - run: sudo apt-get update && sudo apt-get install -y gfortran libopenmpi-dev openmpi-bin
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: stenczelt/libmace
+          ref: e3413ae658530654894b6bac6a62a764a74c5115
+          path: .libmace-build/source
+      - name: Build the native libmace runtime and Fortran module
+        run: |
+          cmake -S packages/mace-torch/libmace -B .libmace-build/native \
+            -D CMAKE_BUILD_TYPE=Release -D Python3_EXECUTABLE="$(command -v python)" \
+            -D LIBMACE_SOURCE_DIR="$PWD/.libmace-build/source" \
+            -D CMAKE_INSTALL_PREFIX="$PWD/.libmace-build/install"
+          cmake --build .libmace-build/native -j 2
+          cmake --install .libmace-build/native
+          cmake -S tests/integrations/libmace/consumer -B .libmace-build/consumer \
+            -D CMAKE_PREFIX_PATH="$PWD/.libmace-build/install"
+          cmake --build .libmace-build/consumer -j 2
+          echo "MACE_LIBMACE_DRIVER=$PWD/.libmace-build/consumer/mace_libmace_driver" >> "$GITHUB_ENV"
+          echo "MACE_LIBMACE_FORTRAN=$PWD/.libmace-build/consumer/mace_libmace_fortran" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/integrations/libmace tests/parity/test_libmace.py
+          markers: not gpu
+          require-caps: bin_libmace
+          numprocs: "0"
+          timeout: "600"
+
   packages-coexistence:
     # The v1 package suites with BOTH stacks installed in one environment.
     #

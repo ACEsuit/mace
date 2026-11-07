@@ -1,6 +1,7 @@
 # Deployment integration support
 
-Every V1 runtime loads canonical safetensors/JSON through `load_deployed`.
+V1 runtimes load canonical safetensors/JSON through `load_deployed`; native
+runtimes execute AOTInductor artifacts compiled from those same models.
 The full-basis weights export is a derived artifact for external contraction
 implementations. It is not another model checkpoint.
 
@@ -11,7 +12,7 @@ implementations. It is not another model checkpoint.
 | ML-IAP | Direct callback, reference/cuEq, eager/compiled regions, one/two MPI ranks | Python callback is required by this compatibility interface |
 | OpenMM | Direct PyTorch callback on CPU, molecular/periodic trajectories, changing triclinic cells, energy/force parity with ASE | GPU execution and host-transfer performance are not yet measured |
 | Symmetrix | Public implementations inspected; target is the forthcoming general implementation | Concrete converter and benchmark sweep await its published interface |
-| libmace | Consumer source inspected at the revision below | Its published reader requires TorchScript and cannot load V1's neutral or full-basis files; no V1 numerical verification is claimed |
+| libmace | Native AOTInductor C/C++, Fortran on two MPI ranks, changing geometry, legacy E/F/virial parity; installed clients with cuEq float32/float64 on Blackwell | Full-structure root evaluation; distributed GPU scaling and MD throughput are not claimed |
 | torch-sim | CPU trajectory and legacy E/F/polar parity; static compile reuse; cuEq on H200 and RTX PRO 6000 Blackwell in float32/float64 | Host graph assembly remains; end-to-end throughput is not yet measured |
 
 ## OpenMM direct PyTorch interface
@@ -115,9 +116,26 @@ that translation, including spline approximation, on the same model.
 libmace revision `e3413ae658530654894b6bac6a62a764a74c5115` loads
 `torch::jit::Module` in `src/mace.cpp`; its Fortran interface wraps that runtime.
 This differs from DEP-3's description of an independent full-basis contraction
-reader. It cannot consume the proposed safetensors export. Supporting that
-interface under V1's no-TorchScript requirement needs an AOT/native reader,
-with an explicitly verified ABI, before adding a passing `bin_libmace` claim.
+reader. V1 now supplies a compatible C/C++ runtime in
+`packages/mace-torch/libmace`, consuming the existing `native.pt2` artifact.
+Its compiled weights retain the canonical reduced basis. The upstream scripted
+reader is not linked, and the published upstream binary is not claimed to load V1.
+
+The public C ABI and Fortran geometry/units convention are preserved; C++
+applications rebuild against the framework-free header. The pinned neighbour
+builder remains unchanged. The Fortran module retains its API and root-only
+evaluation with MPI broadcasts. Its derived build source corrects an uninitialized
+non-root pointer and a factor-of-1000 error in the barrier's sleep interval.
+These change neither the model nor numerical results. MPI here does not mean
+spatial domain decomposition or GPU scaling.
+
+Build/export instructions are in
+[the libmace integration guide](../../tests/integrations/libmace/README.md),
+with measured scope in [the native runtime evidence](gate3/2026-11-07/dep3-libmace.md).
+Installed clients use `find_package(mace CONFIG REQUIRED)` with `mace::mace`
+or `mace::fortran`. The runtime needs matching libtorch/backend shared libraries,
+but neither Python nor a scripted model. Fixed capacities are checked on every
+call; changed counts and neighbours within those budgets reuse the exported graph.
 
 Sources: [OpenMM-Torch](https://github.com/openmm/openmm-torch/tree/b6532900ad825cb3d12193817a1e34a7f46ae6a3),
 [Symmetrix](https://github.com/wcwitt/symmetrix/tree/2aae0987ef63cc775f99f75b4fb45d8d0035a3ff),

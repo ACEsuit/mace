@@ -201,6 +201,7 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
         "mace_edges": str(edges),
         "mace_cutoff": str(manifest.r_max),
         "mace_species": " ".join(chemical_symbols[z] for z in manifest.species),
+        "mace_atomic_numbers": " ".join(str(z) for z in manifest.species),
         "mace_device": device,
         "mace_dtype": manifest.dtype,
         "mace_backend": backend,
