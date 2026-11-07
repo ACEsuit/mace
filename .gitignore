@@ -20,6 +20,7 @@ build/
 .idea/
 .vscode/
 *.txt
+!packages/mace-torch/lammps/CMakeLists.txt
 !requirements/*.txt
 *.log
 
