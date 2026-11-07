@@ -609,7 +609,10 @@ class DerivativeEngine(nn.Module):
                 outputs=[energy],
                 inputs=targets,
                 grad_outputs=[torch.ones_like(energy)],
-                retain_graph=training or need_hessian or len(targets) > 1,
+                # All targets share this single backward traversal. Retain only
+                # for subsequent derivatives, including force training. AOT
+                # first-order backward can donate buffers when this is false.
+                retain_graph=training or need_hessian,
                 create_graph=training or need_hessian,
                 allow_unused=True,
             )

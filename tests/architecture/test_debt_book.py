@@ -255,25 +255,20 @@ def test_debt_no_best_effort_compiled_artifact():
 # ---------------------------------------------------------------------------
 
 
-@debt.open_debt("DEBT-V1-NO-DEPLOYMENT")
 def test_debt_v1_has_no_deployment_path():
-    """`mace_torch` ships a deployment surface of its own.
-
-    The only row that is a hole in v1 rather than a leftover of legacy. v1
-    blocks are born without `@compile_mode`, so the legacy `e3nn.util.jit`
-    export cannot script them, and the `--engine v1` opt-in therefore excludes
-    LAMMPS export and the compiled checkpoint for as long as this is open.
-    """
+    """V1 ships its bundle exporter and both ML-IAP and native runtimes."""
     deploy = REPO_ROOT / "packages" / "mace-torch" / "src" / "mace_torch" / "deploy"
     assert deploy.is_dir(), "packages/mace-torch/src/mace_torch/deploy/ does not exist"
-    # The export entry point by name. The package also holds the weights
-    # format and the legacy converter, which move weights in and out and
-    # deploy nothing, so a module count would call the row burned early.
-    export = deploy / "export.py"
-    assert export.is_file(), (
-        f"{export.relative_to(REPO_ROOT)} does not exist, so there is still no "
-        f"export entry point"
-    )
+    for file, symbol in (
+        ("bundle.py", "export_lammps"),
+        ("mliap.py", "MACEMLIAPUnified"),
+        ("native.py", "compile_native"),
+    ):
+        tree = ast.parse((deploy / file).read_text())
+        assert any(
+            isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name == symbol
+            for node in tree.body
+        ), f"{file} must define {symbol}"
 
 
 # ---------------------------------------------------------------------------

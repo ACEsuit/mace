@@ -97,3 +97,68 @@ Ranks select devices by their node-local MPI rank modulo the number of visible
 GPUs. The current plugin uses host buffers for LAMMPS neighbor data, feature
 exchange and force writeback. The wheel includes the plugin sources in
 `mace_torch/deploy/lammps/` for builds outside a source checkout.
+
+## ML-IAP compatibility
+
+The ML-IAP adapter loads the three-file neutral bundle and runs through
+LAMMPS's Python callback interface. The native `mace/native` deployment above
+provides the Python-free MD loop. Both targets use the canonical checkpoint
+and the exported head and precision. V1 excludes TorchScript exports.
+
+```bash
+mace --engine v1 export lammps model.safetensors --halo-exchange --backend cueq
+```
+
+Activate the coupling and register the object before setting the pair style.
+The CUDA KOKKOS coupling also needs CuPy to expose its device arrays. Install
+the CuPy distribution matching the CUDA major used by LAMMPS and PyTorch.
+Multi-rank CUDA execution requires a CUDA-aware MPI build with this LAMMPS
+revision.
+For a CUDA KOKKOS build, the setup in a Python driver is
+
+```python
+from lammps import lammps
+from lammps.mliap import activate_mliappy_kokkos, load_unified_kokkos
+from mace_torch.deploy.mliap import MACEMLIAPUnified
+
+lmp = lammps(
+    cmdargs=(
+        "-k on g 1 -sf kk -pk kokkos newton on neigh half comm device gpu/aware on"
+    ).split()
+)
+activate_mliappy_kokkos(lmp)
+load_unified_kokkos(MACEMLIAPUnified("model.mace-deploy"))
+# Create the box and atoms, then configure the interactions.
+lmp.command("pair_style mliap/kk unified EXISTS 0")
+lmp.command("pair_coeff * * H C O")
+```
+
+ML-IAP requests its full neighbor list internally. The KOKKOS package setting
+`neigh half` permits the required `newton on` force reduction.
+After the simulation, a standalone driver that owns MPI closes LAMMPS with
+`lmp.close()`, then calls `lmp.lib.lammps_kokkos_finalize()` and
+`lmp.lib.lammps_mpi_finalize()`. Python retains ownership of its interpreter.
+The element names follow LAMMPS atom-type order. For a plain CPU ML-IAP build,
+use `activate_mliappy`, `load_unified` and `pair_style mliap unified EXISTS 0`.
+Single-layer models work with that interface. Multiple layers with
+`halo_exchange=True` require KOKKOS forward and reverse ghost-feature exchange.
+The adapter reports a missing exchange interface before model evaluation.
+
+`--no-halo-exchange` selects evaluation over the complete receptive field.
+Use `pair_style mliap unified EXISTS 1` so LAMMPS builds neighbors for ghosts.
+The adapter requests the cutoff `r_max * num_interactions`. This mode needs
+a coupling that accumulates forces for every supplied pair, including pairs
+centered on ghosts. Validation uses LAMMPS `stable_22Jul2025_update4`, commit
+`611ca3b7f8525ba802373b04f9e3d632d515f7e3`. An older local 22Jul2025 library
+discarded those contributions and produced incorrect multi-layer forces.
+
+The default `compile_regions=True` compiles interaction and product forwards
+while communication stays between regions. `--no-compile-regions` selects
+eager execution. The manifest's optional padding budget is applied before
+the backend edge-order plan, and pair forces return in LAMMPS's original order.
+
+Runtime controls retain their legacy names. `MACE_TIME` logs step duration.
+`MACE_PROFILE` starts profiling at `MACE_PROFILE_START` (default 5) and stops
+and exits at `MACE_PROFILE_END` (default 10). `MACE_ALLOW_CPU` permits a KOKKOS
+callback carrying CPU tensors. `MACE_FORCE_CPU` selects CPU model evaluation.
+Boolean values accept `true`, `1`, `t` and `yes`, case-insensitively.

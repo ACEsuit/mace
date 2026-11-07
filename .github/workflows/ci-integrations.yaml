@@ -43,6 +43,7 @@ jobs:
               - 'mace/cli/select_head.py'
               - 'mace/calculators/lammps_*.py'
               - 'tests/integrations/**'
+              - 'tests/parity/test_mliap.py'
               - 'packages/mace-core/**'
               - 'packages/mace-torch/**'
               - 'packages/mace-jax/tests/fixtures/tiny.*'
@@ -73,3 +74,4 @@ jobs:
           MACE_REQUIRE_CAPS: cueq
         run: |
           pytest -v tests/integrations -m "not bin_lammps" --timeout=600
+          pytest -v tests/parity/test_mliap.py -m "not bin_lammps and not gpu" --timeout=600
