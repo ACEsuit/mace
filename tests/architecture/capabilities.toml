@@ -277,6 +277,13 @@ summary = "The native libmace C++ driver loads its AOT runtime dependencies; For
 owned_by = "energy"
 burn_step = "DEP-3 (#1595), new V1 integration without a legacy implementation"
 
+[capabilities.bin_openmm_native]
+kind = "probe"
+state = "v1-default"
+summary = "Standalone OpenMM C++ driver over the native V1 libmace runtime, without Python."
+owned_by = "energy"
+burn_step = "DEP-3 (#1595), native implementation requested alongside the direct callback"
+
 [capabilities.bin_gromacs]
 kind = "probe"
 state = "v1-default"

@@ -42,8 +42,8 @@ The GROMACS build uses double precision for the parity checks. `GMX_GPU=OFF`
 refers to GROMACS's own classical kernels; a CUDA native MACE artifact still
 executes on the GPU through libmace. Its device/backend/precision are pinned
 at export time. The main rank uses the first visible GPU. Set
-`CUDA_VISIBLE_DEVICES` accordingly. This does not claim GPU-resident
-neighbour construction or end-to-end throughput.
+`CUDA_VISIBLE_DEVICES` accordingly. Neighbour construction uses the host;
+complete-step measurements are recorded in the deployment evidence.
 
 ## Input
 
@@ -74,6 +74,12 @@ are rebuilt using the model's own cutoff. `grompp` checks the input contract;
 the native artifact is loaded and validated by `mdrun`, so CUDA is not needed
 merely to preprocess the topology.
 
+Full periodicity and XY slabs are verified. GROMACS's Verlet scheme requires
+two walls for `pbc=xy`; the parity test uses zero wall interactions so that the
+MACE energy is compared independently. Fully nonperiodic `pbc=no` is refused
+by this GROMACS version before model evaluation. This restriction does not
+apply to libmace or native OpenMM, which both support isolated molecules.
+
 Positions and box vectors convert from nm to Å, energy from eV to kJ/mol,
 and forces to kJ/mol/nm. GROMACS's own SI constants define that conversion.
 The adapter supplies the direct virial contribution `Xi=-W/2`, where
@@ -102,3 +108,7 @@ verify them separately. Loader traces check that the real simulation process
 loads libmace/libtorch and no Python library. Reference files and tolerance
 rows are unchanged. There is no in-tree legacy GROMACS adapter; the numerical
 oracle is the frozen legacy model evaluated at the GROMACS geometries.
+
+[Boundary validation and performance evidence](../../../docs/reforge/gate3/2026-11-07/deployment-completion.md)
+record XY slabs, the nonperiodic restriction, the neighbour-radius correction,
+and complete-step/host/MPI timings at 512 and 4096 atoms on Dais B200.

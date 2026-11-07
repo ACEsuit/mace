@@ -124,8 +124,10 @@ MACE::calculate(const std::array<std::array<double, 3>, 3> &cell,
     for (double value : positions[atom])
       TORCH_CHECK(std::isfinite(value), "positions contain a nonfinite value");
   }
+  // The upstream API takes an atomic radius and sums the two radii for a
+  // pair. Half the model cutoff selects exactly the required neighbourhood.
   const auto neighbors =
-      calc_mace_neighbour_list(cell, pbc, positions, model.cutoff);
+      calc_mace_neighbour_list(cell, pbc, positions, 0.5 * model.cutoff);
   auto index = at::full({2, model.edges}, model.nodes - 1, at::kLong);
   auto vectors = at::zeros({model.edges, 3}, at::kDouble);
   vectors.select(1, 0).fill_(2 * model.cutoff);
@@ -144,8 +146,7 @@ MACE::calculate(const std::array<std::array<double, 3>, 3> &cell,
                               neighbors.extended_cell[lattice][axis];
       squared += displacement[axis] * displacement[axis];
     }
-    // Upstream interprets cutoffs as atomic radii and returns up to 2*r_max.
-    // The model's edge capacity counts only the actual radial neighbourhood.
+    // Keep the radial boundary explicit when rebuilding the edge vectors.
     if (squared >= model.cutoff * model.cutoff)
       continue;
     TORCH_CHECK(live_edges < model.edges, "libmace exceeds ", model.edges,

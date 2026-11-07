@@ -421,7 +421,7 @@ jobs:
           repository: gromacs/gromacs
           ref: 121090014570a53a17ea391bcddae45e5ea05eb4
           path: .gromacs-build/source
-      - name: Build the native runtime and GROMACS adapter
+      - name: Build the native runtime and MD adapters
         run: |
           root="$PWD/.gromacs-build"
           cmake -S packages/mace-torch/libmace -B "$root/native" \
@@ -440,11 +440,22 @@ jobs:
             -D GMX_USE_PLUMED=OFF -D GMX_USE_COLVARS=NONE -D GMX_VERSION_STRING_OF_FORK=MACE-V1-AOT
           cmake --build "$root/build" -j 2
           echo "MACE_GROMACS_BINARY=$root/build/bin/gmx_d" >> "$GITHUB_ENV"
+          python -m pip install openmm==8.6.1
+          openmm_prefix="$(python -c 'import openmm, pathlib; print(pathlib.Path(openmm.__file__).parent.parent / "OpenMM.libs")')"
+          cmake -S packages/mace-torch/openmm -B "$root/openmm" \
+            -D CMAKE_BUILD_TYPE=Release -D CMAKE_PREFIX_PATH="$root/install;$openmm_prefix" \
+            -D CMAKE_INSTALL_PREFIX="$root/install"
+          cmake --build "$root/openmm" -j 2
+          cmake --install "$root/openmm"
+          cmake -S tests/integrations/openmm/consumer -B "$root/openmm-client" \
+            -D CMAKE_PREFIX_PATH="$root/install"
+          cmake --build "$root/openmm-client" -j 2
+          echo "MACE_OPENMM_DRIVER=$root/openmm-client/mace_openmm_driver" >> "$GITHUB_ENV"
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/integrations/gromacs tests/parity/test_gromacs.py
+          tests: tests/integrations/gromacs tests/parity/test_gromacs.py tests/integrations/openmm/test_native_contract.py tests/parity/test_openmm_native.py
           markers: not gpu
-          require-caps: bin_gromacs
+          require-caps: bin_gromacs,bin_openmm_native
           numprocs: "0"
           timeout: "600"
 

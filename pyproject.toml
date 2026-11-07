@@ -33,6 +33,7 @@ markers = [
     "benchmark: performance measurement; never part of correctness gates",
     "bin_lammps: requires an external LAMMPS installation",
     "bin_openmm: requires OpenMM-Torch with the direct PythonTorchForce interface",
+    "bin_openmm_native: requires the native OpenMM/libmace driver",
     "bin_libmace: requires the native libmace driver (MACE_LIBMACE_DRIVER)",
     "bin_gromacs: requires the GROMACS native MACE build",
     "timeout: per-test timeout (provided by pytest-timeout; registered here so collection works without the plugin)",

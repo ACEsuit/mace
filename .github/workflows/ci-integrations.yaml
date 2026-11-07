@@ -55,6 +55,7 @@ jobs:
               - 'packages/mace-torch/**'
               - 'packages/mace-jax/tests/fixtures/tiny.*'
               - 'tests/integrations/openmm/**'
+              - 'tests/parity/test_openmm_native.py'
               - 'tests/conftest.py'
               - '.github/workflows/ci-integrations.yaml'
             lammps:

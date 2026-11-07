@@ -1028,6 +1028,7 @@ listed explicitly below.
 | `marker.wandb` | `@pytest.mark.wandb` | `pyproject.toml:32` | KEEP — a capability probe in `tests/conftest.py`; the `wandb` extra, needed for the `--wandb` flags of §3.11 | `tests/conftest.py::CAPABILITY_PROBES[wandb]` |
 | `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:34` | KEEP — a capability probe in `tests/conftest.py` (an external binary rather than an import) | `tests/conftest.py::CAPABILITY_PROBES[bin_lammps]` |
 | `marker.bin_openmm` | `@pytest.mark.bin_openmm` | `pyproject.toml` | KEEP — DEP-3 adds a real import probe for OpenMM-Torch's direct PyTorch interface | `tests/conftest.py::CAPABILITY_PROBES[bin_openmm]` |
+| `marker.bin_openmm_native` | `@pytest.mark.bin_openmm_native` | `pyproject.toml` | KEEP | `tests/conftest.py::CAPABILITY_PROBES[bin_openmm_native]` (Native OpenMM executable over libmace) |
 | `marker.bin_libmace` | `@pytest.mark.bin_libmace` | `pyproject.toml` | KEEP | `tests/conftest.py::CAPABILITY_PROBES[bin_libmace]` (The native libmace runtime is checked with a subprocess probe) |
 | `marker.bin_gromacs` | `@pytest.mark.bin_gromacs` | `pyproject.toml` | KEEP | `tests/conftest.py::CAPABILITY_PROBES[bin_gromacs]` (The native GROMACS build is checked with a subprocess probe) |
 | `marker.network` | `@pytest.mark.network` | `pyproject.toml:24` | KEEP — a capability probe in `tests/conftest.py`; never autodetected, opt-in via `MACE_CI_ALLOW_NETWORK=1` | `tests/conftest.py::CAPABILITY_PROBES[network]` |
@@ -1114,7 +1115,7 @@ them and nothing here is pinned by a test that imports one.
 | `doc.hessians` | Analytical Hessians | mace-docs | KEEP — maps to `get_hessian` (§16) | `tests/foundations/test_hessian.py` |
 | `doc.dipoles` | Dipole Moments and Polarizabilities | mace-docs | KEEP — maps to §6 and §11 | the docs, reviewed not tested |
 | `doc.cuda` | CUDA Acceleration (cuEquivariance) | mace-docs | KEEP — rewritten: v1 dispatches instead of converting, so the page's central instruction (convert your model) disappears | `tests/golden/test_backend_parity_golden.py::test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed` |
-| `doc.openmm` | OpenMM Interface | mace-docs | KEEP — V1's direct PyTorch interface and verified scope are documented in `docs/reforge/integration_support.md`; the runtime is covered by `packages/mace-torch/tests/test_mace_torch_openmm_integration.py` | the docs, reviewed not tested |
+| `doc.openmm` | OpenMM Interface | mace-docs | KEEP — V1's direct callback and native C++ interface are documented in `docs/reforge/integration_support.md`; covered by `packages/mace-torch/tests/test_mace_torch_openmm_integration.py` and `tests/parity/test_openmm_native.py` | the docs, reviewed not tested |
 | `doc.lammps` | MACE in LAMMPS / MACE in LAMMPS with ML-IAP | mace-docs | KEEP — documents ML-IAP compatibility and Python-free native execution | `tests/parity/test_mliap.py` + `packages/mace-torch/README.md` |
 | `doc.foundation_models` | Foundation models | mace-docs | KEEP — maps to §9.2 | `tests/golden/test_foundation_goldens.py::test_the_registry_url_is_still_the_package_url` |
 | `doc.electrostatics` | Electrostatic MACE | mace-docs | KEEP — maps to §3.3 and PolarMACE (§6) | `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |

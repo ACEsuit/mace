@@ -143,3 +143,7 @@ packages = ["src/mace_torch"]
 "gromacs/macemodel.cpp" = "mace_torch/deploy/gromacs/macemodel.cpp"
 "gromacs/apply.cmake" = "mace_torch/deploy/gromacs/apply.cmake"
 "gromacs/gromacs-2026.3.patch" = "mace_torch/deploy/gromacs/gromacs-2026.3.patch"
+"openmm/MaceForce.h" = "mace_torch/deploy/openmm-native/MaceForce.h"
+"openmm/MaceForce.cpp" = "mace_torch/deploy/openmm-native/MaceForce.cpp"
+"openmm/CMakeLists.txt" = "mace_torch/deploy/openmm-native/CMakeLists.txt"
+"openmm/mace-openmm-config.cmake.in" = "mace_torch/deploy/openmm-native/mace-openmm-config.cmake.in"

@@ -10,11 +10,34 @@ implementations. It is not another model checkpoint.
 | ASE | Energy, response and magnetic models, units, padding and compiled execution | See the per-family parity records |
 | LAMMPS native | Python-free torch.export/AOTInductor, reference/cuEq, changing neighbours and MPI migration on one/two GPUs | Performance results are recorded separately from correctness |
 | ML-IAP | Direct callback, reference/cuEq, eager/compiled regions, one/two MPI ranks | Python callback is required by this compatibility interface |
-| OpenMM | Direct PyTorch callback on CPU, molecular/periodic trajectories, changing triclinic cells, energy/force parity with ASE | GPU execution and host-transfer performance are not yet measured |
+| OpenMM | Native C++/AOTInductor on CPU and CUDA/cuEq float32/float64; molecular and periodic trajectories, current triclinic cells, frozen legacy energy/force parity | Whole-System energy models; host transfers remain. The direct Python callback also supports declared inputs |
 | Symmetrix | Public implementations inspected; target is the forthcoming general implementation | Concrete converter and benchmark sweep await its published interface |
-| libmace | Native AOTInductor C/C++, Fortran on two MPI ranks, changing geometry, legacy E/F/virial parity; installed clients with cuEq float32/float64 on Blackwell | Full-structure root evaluation; distributed GPU scaling and MD throughput are not claimed |
-| GROMACS native | Pinned 2026.3 NNPot adapter over libmace; CPU and B200 cuEq float32/float64 E/F/virial parity, changing cells/neighbours and two MPI domains | Whole-system model on the main rank; hybrid embedding, throughput and model scaling across GPUs are not claimed |
-| torch-sim | CPU trajectory and legacy E/F/polar parity; static compile reuse; cuEq on H200 and RTX PRO 6000 Blackwell in float32/float64 | Host graph assembly remains; end-to-end throughput is not yet measured |
+| libmace | Native AOTInductor C/C++, Fortran on two MPI ranks, changing geometry, legacy E/F/virial parity; installed clients with cuEq float32/float64 on Blackwell | Full-structure root evaluation; spatial decomposition and model scaling across GPUs remain outside this adapter |
+| GROMACS native | Pinned 2026.3 NNPot adapter over libmace; CPU and B200 cuEq float32/float64 E/F/virial parity, changing cells/neighbours, two MPI domains, XY slabs | Whole-system model on the main rank; `pbc=no` is rejected by upstream Verlet. Hybrid embedding and model scaling across GPUs remain outside this adapter |
+| torch-sim | CPU trajectory and legacy E/F/polar parity; static compile reuse; cuEq on H200 and RTX PRO 6000 Blackwell in float32/float64; measured B200 MD throughput | Host graph assembly remains; the complete step includes Python and host transfers |
+
+[Deployment measurements and final validation](gate3/2026-11-07/deployment-completion.md)
+record the 512/4096-atom B200 results, the libmace neighbour-radius correction,
+native OpenMM checks, and the remaining host/MPI costs. Symmetrix's general
+adapter awaits its published interface and external schema agreement. The
+two Polar float32 rows retain their existing open status and precision contract.
+
+## Native OpenMM
+
+The C++ `mace::MaceForce` uses OpenMM 8.6.1's `CustomCPPForceImpl` and the
+same libmace `native.pt2` artifact as GROMACS. Its simulation process loads
+neither Python nor TorchScript. The native force accepts all System particles,
+reads the current Context box, and converts OpenMM nm/kJ/mol to the existing
+MACE units. Both isolated molecules and periodic triclinic cells are verified.
+OpenMM handles force groups and platform-specific accumulation. CUDA/cuEq
+float32 and float64 use the precision selected at export.
+
+[Build and CMake client instructions](../../tests/integrations/openmm/native.md)
+cover installation, the required CUDA plugin and the whole-System scope.
+Geometry and forces pass through host arrays in this public C++ interface.
+The measured deployment results separate this cost from GPU evaluation and
+include complete MD steps. Additional charge/field inputs remain available
+through the direct callback below.
 
 ## OpenMM direct PyTorch interface
 
@@ -46,7 +69,7 @@ allows direct calls with updated declared inputs.
 This path executes Python. It uses neither a scripted model nor a serialized
 Python model. OpenMM's optional callback pickling is refused: after restoring
 simulation state, recreate the callback from the same neutral bundle and
-attach the force. The native LAMMPS runtime remains the Python-free route.
+attach the force. The native force above provides the Python-free energy route.
 The current graph builder prepares host metadata and transfers positions for
 neighbour preparation; this implementation makes no claim of zero host-copy
 overhead on GPU.
@@ -187,8 +210,9 @@ changing a capacity or another compiler guard can compile another graph.
 
 The adapter currently uses the common host `Configuration`/graph builder.
 GPU evaluation therefore does not imply an entirely device-resident MD step:
-state metadata/positions are copied to the host during graph assembly. End-to-end
-TorchSim throughput has not yet been measured. The CPU tests cover a real NVE
+state metadata/positions are copied to the host during graph assembly. The B200
+throughput campaign measures complete NVE steps, host graph preparation and
+isolated compiled evaluation separately. The CPU tests cover a real NVE
 trajectory against ASE, both committed energy anchors, and eight polar comparisons
 with the frozen model (molecules, a charged field-driven system, crystal and slab,
 one and two systems). Polar stress uses V1 ASE's established strain convention;

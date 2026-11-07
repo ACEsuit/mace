@@ -17,6 +17,7 @@ pytestmark = pytest.mark.bin_gromacs
         ("nnpot-modelfile = legacy.model", "existing native.pt2"),
         ("nnpot-input-group = Subset", "requires the whole System group"),
         ("nnpot-embedding = electrostatic-model", "requires the whole System group"),
+        ("pbc = no", "only full pbc or pbc=xy with walls is supported"),
     ],
 )
 def test_invalid_configuration_rejected(tmp_path, setting, message):

@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.20)
+project(mace_openmm_consumer LANGUAGES CXX)
+find_package(mace-openmm CONFIG REQUIRED)
+add_executable(mace_openmm_driver ../driver.cpp)
+target_link_libraries(mace_openmm_driver PRIVATE mace::openmm)

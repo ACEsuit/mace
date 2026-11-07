@@ -100,6 +100,19 @@ def _gromacs_available() -> bool:
         return False
 
 
+def _native_openmm_available() -> bool:
+    binary = os.environ.get("MACE_OPENMM_DRIVER")
+    if not binary:
+        return False
+    try:
+        result = subprocess.run(
+            [binary, "--version"], capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0 and result.stdout.strip() == "mace-openmm-native-v1"
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 CAPABILITY_PROBES = {
     "gpu": _gpu_available,
     "cueq": lambda: _module_available("cuequivariance"),
@@ -112,6 +125,7 @@ CAPABILITY_PROBES = {
     "wandb": lambda: _module_available("wandb"),
     "bin_lammps": _lammps_available,
     "bin_openmm": _openmm_available,
+    "bin_openmm_native": _native_openmm_available,
     "bin_libmace": _libmace_available,
     "bin_gromacs": _gromacs_available,
     # Never autodetected: network access is an explicit opt-in so that PR jobs

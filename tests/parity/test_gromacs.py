@@ -92,6 +92,23 @@ def test_native_gromacs_two_rank_migration(native_package, tmp_path, fp64, isola
     compare(result, frames, name)
 
 
+def test_native_gromacs_xy_slab(native_package, tmp_path, fp64, isolated):
+    name, _, package = native_package
+    atoms = read(FIXTURES / "water_cluster.xyz")
+    atoms.set_cell([20, 20, 20])
+    atoms.center()
+    atoms.pbc = [True, True, False]
+    prepare(tmp_path, atoms, package)
+    path = tmp_path / "run.mdp"
+    # GROMACS Verlet requires two walls for XY. Zero LJ parameters in the
+    # test topology make these walls inert; the model sees the actual XY PBC.
+    path.write_text(
+        path.read_text().replace("pbc = xyz", "pbc = xy")
+        + "nwall = 2\nwall-type = 9-3\nwall-atomtype = H H\nwall-density = 1 1\n"
+    )
+    compare(run(tmp_path), [atoms] * 5, name)
+
+
 @pytest.mark.gpu
 @pytest.mark.cueq
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
