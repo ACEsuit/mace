@@ -262,3 +262,10 @@ state = "legacy"
 summary = "Outbound network access, for the foundation-model downloads. Never autodetected: an explicit opt-in via MACE_CI_ALLOW_NETWORK=1, so PR jobs stay deterministic."
 owned_by = "training"
 burn_step = "RET-6 (#1602)"
+
+[capabilities.bin_openmm]
+kind = "probe"
+state = "v1-default"
+summary = "OpenMM-Torch PythonTorchForce for the V1 energy-model callback. Real import checks the extension and its shared libraries."
+owned_by = "energy"
+burn_step = "DEP-3 (#1595), new V1 integration without a legacy implementation"

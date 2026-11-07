@@ -100,6 +100,7 @@ eval = "mace_torch.cli.commands:EVAL"
 "plot.training" = "mace_torch.cli.commands:PLOT"
 "md.active-learning" = "mace_torch.cli.commands:MD"
 "export.lammps" = "mace_torch.cli.commands:EXPORT_LAMMPS"
+"export.full-basis-weights" = "mace_torch.cli.commands:EXPORT_FULL_BASIS"
 "model.migrate" = "mace_torch.cli.commands:MIGRATE"
 
 [project.urls]

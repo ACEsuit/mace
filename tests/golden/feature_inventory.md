@@ -1008,7 +1008,7 @@ set:
 | `stdenv.TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` | `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` — set by `mace/__init__.py` so pickled checkpoints load under newer torch defaults | `mace/__init__.py` | DROP — v1 checkpoints are neutral-format (safetensors + manifest), so nothing needs the unsafe-pickle escape hatch; the legacy loader keeps it until the converter is the only reader | `tests/unit/test_scale_shift_dtype.py::test_a_full_pickle_round_trip_preserves_every_buffer_bit_for_bit` |
 | `stdenv.MASTER_PORT` | `MASTER_ADDR` / `MASTER_PORT` / `RANK` / `WORLD_SIZE` / `LOCAL_RANK` / `SLURM_*` / `OMPI_*` — standard DDP and launcher plumbing | `mace/tools/slurm_distributed.py`, `mace/tools/distributed_tools.py` | KEEP — the launcher contract is torch's and SLURM's, not MACE's, so v1 reads the same variables | `tests/workflows/test_distributed.py` |
 
-## 14. Registered pytest markers (15)
+## 14. Registered pytest markers (16)
 
 The capability model of the suite: locally a test whose capability is missing skips, and in CI a
 job that exports `MACE_REQUIRE_CAPS` fails instead. CI generates its capabilities manifest from
@@ -1027,6 +1027,7 @@ listed explicitly below.
 | `marker.schedulefree` | `@pytest.mark.schedulefree` | `pyproject.toml:31` | KEEP — a capability probe in `tests/conftest.py` | `tests/conftest.py::CAPABILITY_PROBES[schedulefree]` |
 | `marker.wandb` | `@pytest.mark.wandb` | `pyproject.toml:32` | KEEP — a capability probe in `tests/conftest.py`; the `wandb` extra, needed for the `--wandb` flags of §3.11 | `tests/conftest.py::CAPABILITY_PROBES[wandb]` |
 | `marker.bin_lammps` | `@pytest.mark.bin_lammps` | `pyproject.toml:34` | KEEP — a capability probe in `tests/conftest.py` (an external binary rather than an import) | `tests/conftest.py::CAPABILITY_PROBES[bin_lammps]` |
+| `marker.bin_openmm` | `@pytest.mark.bin_openmm` | `pyproject.toml` | KEEP — DEP-3 adds a real import probe for OpenMM-Torch's direct PyTorch interface | `tests/conftest.py::CAPABILITY_PROBES[bin_openmm]` |
 | `marker.network` | `@pytest.mark.network` | `pyproject.toml:24` | KEEP — a capability probe in `tests/conftest.py`; never autodetected, opt-in via `MACE_CI_ALLOW_NETWORK=1` | `tests/conftest.py::CAPABILITY_PROBES[network]` |
 | `marker.slow` | `@pytest.mark.slow` | `pyproject.toml:22` | KEEP — a cost marker, not a capability: applied by directory to `tests/workflows` | `tests/conftest.py::pytest_collection_modifyitems` |
 | `marker.nightly` | `@pytest.mark.nightly` | `pyproject.toml:36` | KEEP — PAR-2 cost marker: the heavy campaign runs in its own nightly job, excluded from per-PR parity, coverage and durations refresh | `tests/parity/test_fuzz_parity.py::test_nightly_upload_keeps_hidden_replays_and_other_jobs_exclude_campaign` |
@@ -1111,7 +1112,7 @@ them and nothing here is pinned by a test that imports one.
 | `doc.hessians` | Analytical Hessians | mace-docs | KEEP — maps to `get_hessian` (§16) | `tests/foundations/test_hessian.py` |
 | `doc.dipoles` | Dipole Moments and Polarizabilities | mace-docs | KEEP — maps to §6 and §11 | the docs, reviewed not tested |
 | `doc.cuda` | CUDA Acceleration (cuEquivariance) | mace-docs | KEEP — rewritten: v1 dispatches instead of converting, so the page's central instruction (convert your model) disappears | `tests/golden/test_backend_parity_golden.py::test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed` |
-| `doc.openmm` | OpenMM Interface | mace-docs | KEEP — and the interface has no in-tree coverage at all, which is separate from the page: a test would need OpenMM installed | the docs, reviewed not tested |
+| `doc.openmm` | OpenMM Interface | mace-docs | KEEP — V1's direct PyTorch interface and verified scope are documented in `docs/reforge/integration_support.md`; the runtime is covered by `packages/mace-torch/tests/test_mace_torch_openmm_integration.py` | the docs, reviewed not tested |
 | `doc.lammps` | MACE in LAMMPS / MACE in LAMMPS with ML-IAP | mace-docs | KEEP — documents ML-IAP compatibility and Python-free native execution | `tests/parity/test_mliap.py` + `packages/mace-torch/README.md` |
 | `doc.foundation_models` | Foundation models | mace-docs | KEEP — maps to §9.2 | `tests/golden/test_foundation_goldens.py::test_the_registry_url_is_still_the_package_url` |
 | `doc.electrostatics` | Electrostatic MACE | mace-docs | KEEP — maps to §3.3 and PolarMACE (§6) | `tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy` |

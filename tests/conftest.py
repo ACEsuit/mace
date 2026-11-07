@@ -57,6 +57,15 @@ def _lammps_available() -> bool:
         return False
 
 
+def _openmm_available() -> bool:
+    try:
+        from openmmtorch import PythonTorchForce  # pylint: disable=import-outside-toplevel,unused-import
+
+        return True
+    except (ImportError, OSError):
+        return False
+
+
 CAPABILITY_PROBES = {
     "gpu": _gpu_available,
     "cueq": lambda: _module_available("cuequivariance"),
@@ -68,6 +77,7 @@ CAPABILITY_PROBES = {
     "schedulefree": lambda: _module_available("schedulefree"),
     "wandb": lambda: _module_available("wandb"),
     "bin_lammps": _lammps_available,
+    "bin_openmm": _openmm_available,
     # Never autodetected: network access is an explicit opt-in so that PR jobs
     # stay deterministic and downloads live only in jobs that chose them.
     "network": lambda: os.environ.get("MACE_CI_ALLOW_NETWORK", "") == "1",

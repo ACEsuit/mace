@@ -328,6 +328,42 @@ jobs:
           export MPIEXEC=mpiexec.mpich TORCHINDUCTOR_COMPILE_THREADS=1 OMP_NUM_THREADS=1
           pytest -q tests/parity/test_native_lammps.py -m 'not gpu' --timeout=600
 
+  openmm-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.11"
+          extras: dev
+      - run: python -m pip install -e packages/mace-core -e packages/mace-torch -r requirements/openmm.txt
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: openmm/openmm-torch
+          ref: b6532900ad825cb3d12193817a1e34a7f46ae6a3
+          path: .openmm-build/source
+      - name: Build the direct PyTorch interface
+        run: |
+          openmm_prefix="$(python -c 'import openmm, pathlib; print(pathlib.Path(openmm.__file__).parent.parent / "OpenMM.libs")')"
+          torch_prefix="$(python -c 'import torch, pathlib; print(pathlib.Path(torch.__file__).parent)')"
+          cmake -S .openmm-build/source -B .openmm-build/build \
+            -D CMAKE_POLICY_VERSION_MINIMUM=3.5 -D CMAKE_BUILD_TYPE=Release \
+            -D OPENMM_DIR="$openmm_prefix" -D PYTORCH_DIR="$torch_prefix" \
+            -D CMAKE_INSTALL_PREFIX="$openmm_prefix" \
+            -D PYTHON_EXECUTABLE="$(command -v python)" \
+            -D NN_BUILD_OPENCL_LIB=OFF -D NN_BUILD_CUDA_LIB=OFF -D NN_BUILD_HIP_LIB=OFF
+          cmake --build .openmm-build/build --target OpenMMTorch OpenMMTorchReference -j 2
+          cmake --install .openmm-build/build
+          cmake --build .openmm-build/build --target PythonInstall
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: packages/mace-torch/tests/test_mace_torch_openmm_integration.py
+          markers: bin_openmm
+          require-caps: bin_openmm
+          numprocs: "0"
+          timeout: "600"
+
   packages-coexistence:
     # The v1 package suites with BOTH stacks installed in one environment.
     #

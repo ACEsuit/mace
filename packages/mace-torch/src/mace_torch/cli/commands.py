@@ -297,6 +297,25 @@ EXPORT_LAMMPS = Command(
 )
 
 
+def _full_basis_arguments(parser):
+    parser.add_argument("bundle", type=Path)
+    parser.add_argument("--output", type=Path)
+
+
+def _full_basis(args):
+    from mace_torch.deploy.full_basis import export_full_basis_weights
+
+    print(export_full_basis_weights(args.bundle, args.output))
+    return 0
+
+
+EXPORT_FULL_BASIS = Command(
+    help="Export minimum-norm full-basis contraction weights for external readers.",
+    arguments=_full_basis_arguments,
+    run=_full_basis,
+)
+
+
 def _select_data(args):
     from mace_torch.finetune.stages import select_structures
 

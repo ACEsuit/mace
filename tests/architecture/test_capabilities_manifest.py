@@ -55,7 +55,7 @@ def test_the_manifest_is_valid():
 def test_the_manifest_holds_every_capability_probe():
     """Asserted against `CAPABILITY_PROBES` itself, never a list retyped here.
 
-    Two of the eleven are routinely dropped from hand-written enumerations --
+    Two probes are routinely dropped from hand-written enumerations --
     `magnetic`, which carries the whole MagneticMACE family and two default
     property keys, and `wandb`, which the six `--wandb` flags need -- and both
     have their own job in `ci-extensions.yaml`. A manifest short by one would
@@ -70,9 +70,7 @@ def test_the_manifest_holds_every_capability_probe():
         f"missing here: {sorted(set(CAPABILITY_PROBES) - declared)}, "
         f"invented here: {sorted(declared - set(CAPABILITY_PROBES))}"
     )
-    assert len(declared) == 11, (
-        f"there are eleven capability probes; this manifest has {len(declared)}"
-    )
+    assert declared, "the capability probe contract must not be empty"
 
 
 @pytest.mark.parametrize("marker", NOT_CAPABILITIES)

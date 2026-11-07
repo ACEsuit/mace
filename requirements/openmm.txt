@@ -1,0 +1,5 @@
+# DEP-3 CPU reference engine. The direct PyTorch plugin is built separately:
+# openmm/openmm-torch @ b6532900ad825cb3d12193817a1e34a7f46ae6a3.
+# PyPI openmmtorch 1.5 does not expose PythonTorchForce; do not substitute it.
+openmm==8.6.1
+swig==4.5.1
