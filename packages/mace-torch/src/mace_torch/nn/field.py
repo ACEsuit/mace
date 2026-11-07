@@ -159,8 +159,11 @@ class InvariantProducts(nn.Module):
             same multiplicity: the channel count.
     """
 
-    def __init__(self, irreps: str) -> None:
+    def __init__(
+        self, irreps: str, *, feature_layout: layout.Layout = layout.CANONICAL
+    ) -> None:
         super().__init__()
+        self.layout = feature_layout
         self.block_terms = layout.terms(irreps)
         terms = Irreps.parse(irreps).terms
         channels = {mul for mul, _ in terms}
@@ -195,8 +198,8 @@ class InvariantProducts(nn.Module):
     def forward(self, left: Tensor, right: Tensor) -> Tensor:
         """``[n, dim]`` twice in, ``[n, channels]`` out."""
         out = left.new_zeros((left.shape[0], self.channels))
-        left_blocks = layout.blocks(left, self.block_terms)
-        right_blocks = layout.blocks(right, self.block_terms)
+        left_blocks = self.layout.blocks(left, self.block_terms)
+        right_blocks = self.layout.blocks(right, self.block_terms)
         for index, (first, second, _, _, dimension) in enumerate(self.paths):
             pair = torch.einsum(
                 "nud,nvd->nuv", left_blocks[first], right_blocks[second]
@@ -233,8 +236,15 @@ class ScalarModulation(nn.Module):
         num_scalars: How many scalars mix into each channel.
     """
 
-    def __init__(self, irreps: str, num_scalars: int) -> None:
+    def __init__(
+        self,
+        irreps: str,
+        num_scalars: int,
+        *,
+        feature_layout: layout.Layout = layout.CANONICAL,
+    ) -> None:
         super().__init__()
+        self.layout = feature_layout
         self.block_terms = layout.terms(irreps)
         self.terms = Irreps.parse(irreps).terms
         self.num_scalars = num_scalars
@@ -246,7 +256,7 @@ class ScalarModulation(nn.Module):
     def forward(self, features: Tensor, scalars: Tensor) -> Tensor:
         """``[n, dim]`` and ``[n, num_scalars]`` in, ``[n, dim]`` out."""
         pieces, weight_offset = [], 0
-        blocks = layout.blocks(features, self.block_terms)
+        blocks = self.layout.blocks(features, self.block_terms)
         for block, (mul, dimension) in zip(blocks, self.spans, strict=True):
             weight = self.weight[
                 weight_offset : weight_offset + mul * self.num_scalars
@@ -254,7 +264,7 @@ class ScalarModulation(nn.Module):
             mixed = scalars @ weight.T
             pieces.append(block * mixed.unsqueeze(-1) / math.sqrt(dimension))
             weight_offset += mul * self.num_scalars
-        return layout.join(pieces)
+        return self.layout.join(pieces)
 
     def to_canonical(self) -> dict[str, Tensor]:
         """Term major, each ``[channel, scalar]``."""
@@ -278,8 +288,16 @@ class _GatedActivation(nn.Module):
     gated channel, then the gated channels; the gates are spent.
     """
 
-    def __init__(self, num_scalars: int, gated: str, gate: str = "silu") -> None:
+    def __init__(
+        self,
+        num_scalars: int,
+        gated: str,
+        gate: str = "silu",
+        *,
+        feature_layout: layout.Layout = layout.CANONICAL,
+    ) -> None:
         super().__init__()
+        self.layout = feature_layout
         self.scalar_activation = ScalarActivation(gate)
         self.num_scalars = num_scalars
         self.gated_terms = layout.terms(gated) if gated else ()
@@ -295,11 +313,11 @@ class _GatedActivation(nn.Module):
             features[..., self.num_scalars : split]
         )
         pieces, offset = [], 0
-        blocks = layout.blocks(features[..., split:], self.gated_terms)
+        blocks = self.layout.blocks(features[..., split:], self.gated_terms)
         for block, copies in zip(blocks, self.copies, strict=True):
             pieces.append(block * gates[:, offset : offset + copies, None])
             offset += copies
-        return torch.cat([scalars, layout.join(pieces)], dim=-1)
+        return torch.cat([scalars, self.layout.join(pieces)], dim=-1)
 
 
 class BiasReadout(nn.Module):
@@ -341,7 +359,9 @@ class BiasReadout(nn.Module):
             if ir.degree > 0 and ir in out_irreps
         )
         num_gates = sum(mul for mul, _ in Irreps.parse(gated).terms) if gated else 0
-        self.activation = _GatedActivation(num_scalars, gated, gate=gate)
+        self.activation = _GatedActivation(
+            num_scalars, gated, gate=gate, feature_layout=layout.layout_of(backend)
+        )
         gate_in = f"{num_scalars + num_gates}x0e" + (f"+{gated}" if gated else "")
         middle = f"{num_scalars}x0e" + (f"+{gated}" if gated else "")
         self.first = backend.make_linear(
@@ -420,10 +440,16 @@ class ChargeUpdate(nn.Module):
         self.from_potential = linear(potential_irreps, node_irreps)
         self.from_features = linear(node_irreps, node_irreps)
         self.from_density = linear(density_irreps, node_irreps)
+        self.layout = layout.layout_of(backend)
+        self.potential_terms = layout.terms(potential_irreps)
+        self.density_terms = layout.terms(density_irreps)
+        self.output_terms = layout.terms(f"{density_irreps}+2x0e")
         self.element_embedding = linear(f"{num_elements}x0e", invariants)
-        self.products = InvariantProducts(node_irreps)
+        self.products = InvariantProducts(node_irreps, feature_layout=self.layout)
         self.mlp = LayerNormMLP([2 * channels, 64, 64, 64, channels], accumulate)
-        self.modulation = ScalarModulation(node_irreps, channels)
+        self.modulation = ScalarModulation(
+            node_irreps, channels, feature_layout=self.layout
+        )
         density_max_l = max(ir.degree for _, ir in Irreps.parse(density_irreps).terms)
         readout_hidden = "+".join(
             f"32x{degree}{'e' if degree % 2 == 0 else 'o'}"
@@ -454,6 +480,8 @@ class ChargeUpdate(nn.Module):
                 canonical, as the solver writes it.
             density: ``[n, density_dim]``, the current density, both spins.
         """
+        potential = self.layout.from_canonical(potential, self.potential_terms)
+        density = self.layout.from_canonical(density, self.density_terms)
         mixed = (
             self.from_potential(potential)
             + self.from_features(node_features)
@@ -467,7 +495,7 @@ class ChargeUpdate(nn.Module):
             dim=-1,
         )
         scaled = self.modulation(node_features, self.mlp(invariants))
-        return self.readout(scaled)
+        return self.layout.to_canonical(self.readout(scaled), self.output_terms)
 
     def canonical_components(self) -> dict[str, nn.Module | None]:
         """Stable checkpoint roles, independent of implementation attributes."""
@@ -522,8 +550,15 @@ class ElectronEnergyReadout(nn.Module):
 
         self.from_density = biased(density_irreps)
         self.from_potential = biased(potential_irreps)
-        self.density_products = InvariantProducts(node_irreps)
-        self.potential_products = InvariantProducts(node_irreps)
+        self.layout = layout.layout_of(backend)
+        self.potential_terms = layout.terms(potential_irreps)
+        self.density_terms = layout.terms(density_irreps)
+        self.density_products = InvariantProducts(
+            node_irreps, feature_layout=self.layout
+        )
+        self.potential_products = InvariantProducts(
+            node_irreps, feature_layout=self.layout
+        )
         self.mlp = LayerNormMLP([2 * channels, 128, 128, 128, 1], accumulate)
 
     def forward(
@@ -538,6 +573,8 @@ class ElectronEnergyReadout(nn.Module):
             density: ``[n, density_dim]``, the converged density plus the
                 density it started from, both spins.
         """
+        potential = self.layout.from_canonical(potential, self.potential_terms)
+        density = self.layout.from_canonical(density, self.density_terms)
         invariants = torch.cat(
             [
                 self.density_products(node_features, self.from_density(density)),

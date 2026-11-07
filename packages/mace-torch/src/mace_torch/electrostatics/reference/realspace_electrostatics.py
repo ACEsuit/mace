@@ -14,7 +14,10 @@ from .utils import FIELD_CONSTANT, scatter_sum
 
 @torch.no_grad()
 def batch_complete_graph_excluding_self_duplicates_vector(
-    batch: torch.Tensor, N: int
+    batch: torch.Tensor,
+    N: int,
+    sizes: tuple[int, ...] | None = None,
+    dense: bool = False,
 ) -> torch.Tensor:
     """
     Duplicate each node N times, then for each graph build directed
@@ -24,41 +27,66 @@ def batch_complete_graph_excluding_self_duplicates_vector(
     Args:
         batch (LongTensor): shape [M], graph ID of each original node.
         N (int): number of duplicates per node.
+        sizes: the atoms of each graph, as host integers, when the caller has
+            them. Then nothing is read off the device and every size the
+            graph has is known when it is traced.
+        dense: join every duplicate of the batch to every duplicate of
+            another node, across graphs too, so the edges depend on the node
+            count alone. A sum over them masks the pairs of two graphs.
 
     Returns:
         edge_index (LongTensor[2, E])
+
+    The edges are ordered by graph, then by sender duplicate, then by receiver
+    duplicate, each in ascending node order. Built without a loop over graphs,
+    so without ``sizes`` the host waits on the device once, for the graph sizes.
     """
+    device = batch.device
     batch = batch.long()
-    orig = torch.arange(batch.size(0), device=batch.device)
-    # duplicated per-node graph ID and original-ID
-    batch2 = batch.repeat_interleave(N)  # [M*N]
-    orig2 = orig.repeat_interleave(N)  # [M*N]
+    num_nodes = batch.size(0)
+    if num_nodes == 0:
+        return torch.empty((2, 0), dtype=torch.long, device=device)
+    if dense:
+        return batch_complete_graph_excluding_self_duplicates_vector(
+            torch.zeros_like(batch), N, (num_nodes,)
+        )
+    if sizes is None:
+        sizes = tuple(torch.bincount(batch).tolist())
+    graph_sizes = list(sizes)
+    while graph_sizes and graph_sizes[-1] == 0:
+        graph_sizes.pop()
+    # D duplicates in a graph, each keeping every duplicate of another node.
+    duplicates = [size * N for size in graph_sizes]
+    widths = [count - N for count in duplicates]
+    per_graph = [count * width for count, width in zip(duplicates, widths, strict=True)]
+    num_edges = sum(per_graph)
+    if num_edges == 0:
+        return torch.empty((2, 0), dtype=torch.long, device=device)
 
-    G = int(batch2.max().item()) + 1
-    edges = []
-
-    for g in range(G):
-        # pick out all duplicates in graph g
-        mask = batch2 == g
-        nodes = mask.nonzero(as_tuple=False).view(-1)  # [D]
-        if nodes.numel() <= 1:
-            continue
-
-        # 1 big mesh of every pair in this graph
-        D = nodes.size(0)
-        row = nodes.view(-1, 1).expand(-1, D).reshape(-1)
-        col = nodes.view(1, -1).expand(D, -1).reshape(-1)
-
-        # mask out pairs where orig2 is the same
-        orig_row = orig2[mask].view(-1, 1).expand(-1, D).reshape(-1)
-        orig_col = orig2[mask].view(1, -1).expand(D, -1).reshape(-1)
-        keep = orig_row != orig_col
-
-        edges.append(torch.stack([row[keep], col[keep]], dim=0))
-
-    if not edges:
-        return torch.empty((2, 0), dtype=torch.long, device=batch.device)
-    return torch.cat(edges, dim=1)
+    # The duplicates of graph g in ascending order are a contiguous run of
+    # this permutation, starting at its graph's offset.
+    order = torch.argsort(batch.repeat_interleave(N), stable=True)
+    graph_starts = torch.tensor(
+        [0, *duplicates[:-1]], dtype=torch.long, device=device
+    ).cumsum(0)
+    edge_starts = torch.tensor(
+        [0, *per_graph[:-1]], dtype=torch.long, device=device
+    ).cumsum(0)
+    width = torch.tensor(widths, dtype=torch.long, device=device)
+    graph = torch.repeat_interleave(
+        torch.arange(len(graph_sizes), device=device),
+        torch.tensor(per_graph, dtype=torch.long, device=device),
+        output_size=num_edges,
+    )
+    local = torch.arange(num_edges, device=device) - edge_starts[graph]
+    edge_width = width[graph]
+    sender = local // edge_width
+    kept = local % edge_width
+    # The k-th kept receiver skips the N duplicates of the sender's own node.
+    own = (sender // N) * N
+    receiver = kept + N * (kept >= own)
+    start = graph_starts[graph]
+    return torch.stack([order[start + sender], order[start + receiver]], dim=0)
 
 
 def charges_energy_from_graph(
@@ -67,10 +95,14 @@ def charges_energy_from_graph(
     edge_index,
     batch,
     density_smearing_width,
+    num_graphs: int | None = None,
+    same_graph_only: bool = False,
 ):
     """
     Computes the energy of a collection of charges considering only specifed edges.
-    normalization of the charges is multipoles.
+    normalization of the charges is multipoles. ``num_graphs`` sizes the result
+    when the caller knows it, rather than reading it off ``batch``, and
+    ``same_graph_only`` drops the edges joining two graphs.
     """
     sender, receiver = edge_index
 
@@ -89,15 +121,21 @@ def charges_energy_from_graph(
         * charges[receiver]
         / (4 * pi)
     )
+    if same_graph_only:
+        edge_energy = edge_energy * (batch[sender] == batch[receiver])
     # handle the case with no edges
     if edge_energy.numel() == 0:
         return torch.zeros(
-            (batch.max() + 1,), dtype=charges.dtype, device=charges.device
+            (batch.max() + 1 if num_graphs is None else num_graphs,),
+            dtype=charges.dtype,
+            device=charges.device,
         )
     node_energies = scatter_sum(
         src=edge_energy.squeeze(-1), index=receiver, dim=-1, dim_size=charges.shape[0]
     )
-    return scatter_sum(src=node_energies, index=batch, dim=-1)  # [n_graphs]
+    return scatter_sum(
+        src=node_energies, index=batch, dim=-1, dim_size=num_graphs
+    )  # [n_graphs]
 
 
 class RealSpaceFiniteDiffereneEnergy(torch.nn.Module):
@@ -146,9 +184,14 @@ class RealSpaceFiniteDiffereneEnergy(torch.nn.Module):
         source_feats: torch.Tensor,  # [n_node, (max_l_s+1)**2]
         positions: torch.Tensor,  # [n_node, 3]
         batch: torch.Tensor,  # [n_node]
+        sizes: tuple[int, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
 
-        edge_index = batch_complete_graph_excluding_self_duplicates_vector(batch, 1)
+        edge_index = batch_complete_graph_excluding_self_duplicates_vector(
+            batch, 1, sizes, dense_pairs
+        )
+        num_graphs = None if sizes is None else len(sizes)
 
         energy = charges_energy_from_graph(
             source_feats.squeeze(-1),
@@ -156,13 +199,17 @@ class RealSpaceFiniteDiffereneEnergy(torch.nn.Module):
             edge_index,
             batch,
             density_smearing_width=self.density_smearing_width,
+            num_graphs=num_graphs,
+            same_graph_only=dense_pairs,
         )
 
         # self interaction
         if self.include_self_interaction:
             self_fields = self.self_interaction(source_feats)  # [n_node, (l+1)^2]
             node_energies = torch.einsum("nb,nb->n", source_feats, self_fields)
-            self_energy = scatter_sum(src=node_energies, index=batch, dim=-1)
+            self_energy = scatter_sum(
+                src=node_energies, index=batch, dim=-1, dim_size=num_graphs
+            )
             energy += self_energy * 0.5
 
         return energy
@@ -172,6 +219,8 @@ class RealSpaceFiniteDiffereneEnergy(torch.nn.Module):
         source_feats: torch.Tensor,  # [n_node, (max_l_s+1)**2]
         positions: torch.Tensor,  # [n_node, 3]
         batch: torch.Tensor,  # [n_node]
+        sizes: tuple[int, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         extended_positions = positions.repeat_interleave(4, dim=0)
         extended_positions[1::4] += self.x
@@ -188,7 +237,10 @@ class RealSpaceFiniteDiffereneEnergy(torch.nn.Module):
             charges[1::4] + charges[2::4] + charges[3::4]
         )
 
-        edge_index = batch_complete_graph_excluding_self_duplicates_vector(batch, 4)
+        edge_index = batch_complete_graph_excluding_self_duplicates_vector(
+            batch, 4, sizes, dense_pairs
+        )
+        num_graphs = None if sizes is None else len(sizes)
 
         energy = charges_energy_from_graph(
             charges,
@@ -196,13 +248,17 @@ class RealSpaceFiniteDiffereneEnergy(torch.nn.Module):
             edge_index,
             extended_batch,
             density_smearing_width=self.density_smearing_width,
+            num_graphs=num_graphs,
+            same_graph_only=dense_pairs,
         )
 
         # self interaction
         if self.include_self_interaction:
             self_fields = self.self_interaction(source_feats)  # [n_node, (l+1)^2]
             node_energies = torch.einsum("nb,nb->n", source_feats, self_fields)
-            self_energy = scatter_sum(src=node_energies, index=batch, dim=-1)
+            self_energy = scatter_sum(
+                src=node_energies, index=batch, dim=-1, dim_size=num_graphs
+            )
             energy += self_energy * 0.5
 
         return energy
@@ -212,11 +268,13 @@ class RealSpaceFiniteDiffereneEnergy(torch.nn.Module):
         source_feats: torch.Tensor,  # [n_node, (max_l_s+1)**2]
         positions: torch.Tensor,
         batch: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         if self.density_max_l == 0:
-            return self.energy_l0(source_feats, positions, batch)
+            return self.energy_l0(source_feats, positions, batch, sizes, dense_pairs)
         else:
-            return self.energy_l1(source_feats, positions, batch)
+            return self.energy_l1(source_feats, positions, batch, sizes, dense_pairs)
 
 
 def charges_features_from_graph(
@@ -225,10 +283,12 @@ def charges_features_from_graph(
     edge_index,
     batch,
     total_width_factors,  # [1, n_radial]
+    same_graph_only: bool = False,
 ):
     """
     Computes the features from a collection of charges, on set of scalar features,
-    considering only specified edges.
+    considering only specified edges, or only those within one graph with
+    ``same_graph_only``.
     normalization of the charges is multipoles.
     """
     num_nodes = positions.shape[0]
@@ -236,6 +296,10 @@ def charges_features_from_graph(
     R_ij = positions[sender] - positions[receiver]  # [N_edges,3]
     d_ij = torch.norm(R_ij, dim=-1, keepdim=True)  # [N_edges,1]
     smooth_reciprocal = torch.erf(0.5 * d_ij / total_width_factors) / (d_ij + 1e-6)
+    if same_graph_only:
+        smooth_reciprocal = smooth_reciprocal * (
+            batch[sender] == batch[receiver]
+        ).unsqueeze(-1)
 
     features = scatter_sum(
         charges[sender].unsqueeze(-1) * smooth_reciprocal,
@@ -333,9 +397,11 @@ class RealSpaceFiniteDifferenceElectrostaticFeatures(torch.nn.Module):
         source_feats: torch.Tensor,  # [n_nodes, (max_l_s+1)**2]
         positions: torch.Tensor,
         batch: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         edge_long_index = batch_complete_graph_excluding_self_duplicates_vector(
-            batch, 1
+            batch, 1, sizes, dense_pairs
         )
         feats = charges_features_from_graph(
             charges=source_feats[:, 0],
@@ -343,6 +409,7 @@ class RealSpaceFiniteDifferenceElectrostaticFeatures(torch.nn.Module):
             edge_index=edge_long_index,
             batch=batch,
             total_width_factors=self.total_width_factors.unsqueeze(0),
+            same_graph_only=dense_pairs,
         )  # [n_atoms, n_radial]
         return self.l0_factors * feats
 
@@ -351,6 +418,8 @@ class RealSpaceFiniteDifferenceElectrostaticFeatures(torch.nn.Module):
         source_feats: torch.Tensor,  # [n_nodes, (max_l_s+1)**2]
         positions: torch.Tensor,
         batch: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         extended_positions = positions.repeat_interleave(4, dim=0)
         extended_positions[1::4] += self.x
@@ -367,7 +436,9 @@ class RealSpaceFiniteDifferenceElectrostaticFeatures(torch.nn.Module):
             charges[1::4] + charges[2::4] + charges[3::4]
         )
 
-        edge_index = batch_complete_graph_excluding_self_duplicates_vector(batch, 4)
+        edge_index = batch_complete_graph_excluding_self_duplicates_vector(
+            batch, 4, sizes, dense_pairs
+        )
 
         scalar_features = charges_features_from_graph(
             charges=charges,
@@ -375,6 +446,7 @@ class RealSpaceFiniteDifferenceElectrostaticFeatures(torch.nn.Module):
             edge_index=edge_index,
             batch=extended_batch,
             total_width_factors=self.total_width_factors.unsqueeze(0),
+            same_graph_only=dense_pairs,
         )  # [all_nodes, num_radial]
 
         all_features = source_feats.new_zeros((batch.size(0), 4 * self.num_radial))
@@ -397,11 +469,17 @@ class RealSpaceFiniteDifferenceElectrostaticFeatures(torch.nn.Module):
         source_feats: torch.Tensor,  # [n_nodes, (max_l_s+1)**2]
         node_positions: torch.Tensor,
         batch: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, None]:
         if self.density_max_l == 0 and self.projection_max_l == 0:
-            features = self.call_density_0_feats_0(source_feats, node_positions, batch)
+            features = self.call_density_0_feats_0(
+                source_feats, node_positions, batch, sizes, dense_pairs
+            )
         elif self.density_max_l == 1 and self.projection_max_l == 0:
-            all_feats = self.call_density_1_feats_1(source_feats, node_positions, batch)
+            all_feats = self.call_density_1_feats_1(
+                source_feats, node_positions, batch, sizes, dense_pairs
+            )
             features = all_feats[:, : self.num_radial]
         elif self.density_max_l == 0 and self.projection_max_l == 1:
             padded_source_feats = torch.zeros(
@@ -412,10 +490,12 @@ class RealSpaceFiniteDifferenceElectrostaticFeatures(torch.nn.Module):
             )
             padded_source_feats[:, 0] = source_feats[:, 0]
             features = self.call_density_1_feats_1(
-                padded_source_feats, node_positions, batch
+                padded_source_feats, node_positions, batch, sizes, dense_pairs
             )
         else:
-            features = self.call_density_1_feats_1(source_feats, node_positions, batch)
+            features = self.call_density_1_feats_1(
+                source_feats, node_positions, batch, sizes, dense_pairs
+            )
 
         self_interaction_terms = self.self_interaction(source_feats)
         if self.include_self_interaction:

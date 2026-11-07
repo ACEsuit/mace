@@ -13,9 +13,11 @@ from __future__ import annotations
 
 from typing import Literal, get_args
 
-__all__ = ["PRECISIONS", "Precision", "widest"]
+__all__ = ["PRECISIONS", "PRODUCTS", "Precision", "Product", "widest"]
 
 Precision = Literal["float64", "float32", "bfloat16"]
+Product = Literal["ieee", "tf32"]
+PRODUCTS: tuple[str, ...] = get_args(Product)
 
 #: The accepted names, for error messages and for callers that enumerate them.
 PRECISIONS: tuple[str, ...] = get_args(Precision)

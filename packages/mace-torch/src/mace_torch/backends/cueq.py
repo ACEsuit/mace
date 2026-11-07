@@ -104,7 +104,7 @@ def _uniform(irreps: str) -> bool:
 
 def _layout(descriptor: Descriptor) -> Any:
     """cuEquivariance's name for the descriptor's feature layout."""
-    return cue.mul_ir
+    return cue.ir_mul if descriptor.layout == "ir_mul" else cue.mul_ir
 
 
 def _method(descriptor: Descriptor) -> str | None:
@@ -506,6 +506,8 @@ class CuEqBackend:
             devices=frozenset({"cuda"} if self.compiled else {"cpu"}),
             dtypes=frozenset({"float64", "float32"}),
             layouts=frozenset({"mul_ir"}),
+            activation_layouts=frozenset({"mul_ir", "ir_mul"}),
+            native_layout="ir_mul",
             bases=frozenset({"reduced"}),
             supports_double_backward=True,
             wide_accumulation=True,

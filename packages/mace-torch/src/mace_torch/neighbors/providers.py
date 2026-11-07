@@ -22,6 +22,7 @@ from mace_core.edges import (
     plan_edges,
 )
 from mace_core.neighbors import (
+    NeighborBackendNotAvailableError,
     NeighborList,
     NeighborListConfig,
     SearchGeometry,
@@ -33,6 +34,7 @@ from mace_core.neighbors.neighborhood import _neighborhood
 
 logger = logging.getLogger(__name__)
 DEFAULT_NEIGHBOR_BACKEND = "vesin"
+CUDA_NEIGHBOR_BACKEND = "nvalchemiops"
 
 
 class TorchNeighborListBackend(Protocol):
@@ -175,22 +177,41 @@ def resolve_neighbor_provider(
     *,
     required_features: frozenset[EdgeFeature] = frozenset(),
     device: torch.device | str = "cpu",
-    default: str = DEFAULT_NEIGHBOR_BACKEND,
+    default: str | None = None,
 ) -> ResolvedNeighborProvider:
     """Resolve one name from both groups, with its plan and a once-per-build warning.
 
     ``required_features`` is the configured kernel backend's edge_features.
     Host providers search on CPU and their output is transferred once; torch
-    providers must support the requested device. A default never warns.
+    providers must support the requested device. On NVIDIA CUDA, the registered
+    ``nvalchemiops`` provider is preferred when available. Otherwise vesin is
+    used. Explicit names and caller-provided defaults always resolve strictly.
     """
     config = config or NeighborListConfig()
-    name = config.kind or default
     registered = _registered("torch")
-    backend = get_neighbor_backend(name, config.settings, framework="torch")
+    device = torch.device(device)
+    name = config.kind or default
+    backend = None
+    if name is None:
+        name = DEFAULT_NEIGHBOR_BACKEND
+        if (
+            device.type == "cuda"
+            and not torch.version.hip
+            and CUDA_NEIGHBOR_BACKEND in registered
+        ):
+            try:
+                backend = get_neighbor_backend(CUDA_NEIGHBOR_BACKEND, framework="torch")
+            except NeighborBackendNotAvailableError as error:
+                logger.info(
+                    "CUDA neighbour default unavailable, using vesin: %s", error
+                )
+            else:
+                name = CUDA_NEIGHBOR_BACKEND
+    if backend is None:
+        backend = get_neighbor_backend(name, config.settings, framework="torch")
     group = registered[name].group
     framework = None if group == NEIGHBOR_BACKEND_GROUP else "torch"
     capabilities = neighbor_capabilities(backend, name)
-    device = torch.device(device)
     if device.type == "cuda" and device.index is None:
         device = torch.device("cuda", torch.cuda.current_device())
     if framework is not None and device.type not in capabilities.devices:

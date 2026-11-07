@@ -17,6 +17,8 @@ from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import SILU_SECOND_MOMENT_SCALE
 from torch import Tensor, nn
 
+from mace_torch.backends import layout
+
 __all__ = [
     "SIGMOID_SECOND_MOMENT_SCALE",
     "Gate",
@@ -85,8 +87,11 @@ class Gate(nn.Module):
             only be even: an odd scalar through a SiLU is not odd any more.
     """
 
-    def __init__(self, irreps_out: str) -> None:
+    def __init__(
+        self, irreps_out: str, *, feature_layout: layout.Layout = layout.CANONICAL
+    ) -> None:
         super().__init__()
+        self.layout = feature_layout
         terms = Irreps.parse(irreps_out).terms
         for mul, ir in terms:
             if ir.degree == 0 and ir.parity != 1:
@@ -109,15 +114,9 @@ class Gate(nn.Module):
         gates = SIGMOID_SECOND_MOMENT_SCALE * torch.sigmoid(
             features[:, self.num_scalars : split]
         )
-        pieces = [scalars]
-        start, gate = split, 0
-        for copies, dimension in self.gated:
-            block = features[:, start : start + copies * dimension]
-            scaled = (
-                block.reshape(-1, copies, dimension)
-                * gates[:, gate : gate + copies, None]
-            )
-            pieces.append(scaled.reshape(-1, copies * dimension))
-            start += copies * dimension
+        pieces, gate = [], 0
+        blocks = self.layout.blocks(features[:, split:], tuple(self.gated))
+        for block, (copies, _) in zip(blocks, self.gated, strict=True):
+            pieces.append(block * gates[:, gate : gate + copies, None])
             gate += copies
-        return torch.cat(pieces, dim=-1)
+        return torch.cat([scalars, self.layout.join(pieces)], dim=-1)

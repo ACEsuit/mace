@@ -12,15 +12,17 @@ op, and the descriptor is never consulted again: nothing resolves in ``forward``
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import ClassVar, Literal, get_args
 
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.canonical import CANONICAL_LAYOUT
+from mace_core.kernels.canonical import CANONICAL_LAYOUT, LAYER_NORM_EPSILON
 from mace_core.kernels.paths import ConvolutionPath, channelwise_paths, path_irreps
-from mace_core.kernels.precision import PRECISIONS, WIDTH, Precision
+from mace_core.kernels.precision import PRECISIONS, PRODUCTS, WIDTH, Precision, Product
 
 __all__ = [
     "CLEBSCH_GORDAN_BASES",
+    "ActivationLayout",
     "ChannelwiseTPConvDescriptor",
     "Descriptor",
     "DistanceTransformDescriptor",
@@ -35,6 +37,7 @@ __all__ = [
 
 
 ClebschGordanBasis = Literal["reduced", "full"]
+ActivationLayout = Literal["mul_ir", "ir_mul"]
 
 #: The Clebsch-Gordan bases a symmetric contraction can be written against.
 CLEBSCH_GORDAN_BASES: tuple[str, ...] = get_args(ClebschGordanBasis)
@@ -72,21 +75,30 @@ class Descriptor:
         op: The factory this descriptor is for, as
             :attr:`~mace_core.kernels.capabilities.BackendCapabilities.ops`
             lists it. A class constant, not a field.
-        layout: The layout of the features and weights the op reads and
-            writes, or ``None`` for an op with no irreps semantics.
-            A span stamps every member with the chain's ``mul_ir``;
-            standalone scalar ops may leave it as ``None``.
+        layout: The activation layout read and written by this op. Weights
+            always use canonical mul_ir. Scalar ops may leave this as None.
+        product: Matrix-product arithmetic for float32 linear maps and fully
+            connected tensor products, resolved when the model is built.
     """
 
     op: ClassVar[str] = ""
-    layout: str | None = field(default=None, kw_only=True)
+    layout: ActivationLayout | None = field(default=None, kw_only=True)
+    product: Product = field(default="ieee", kw_only=True)
 
     precision: Precision = "float64"
     accumulate: Precision | None = None
 
     def __post_init__(self) -> None:
-        _require_member("layout", self.layout, (None, CANONICAL_LAYOUT))
+        _require_member("layout", self.layout, (None, *get_args(ActivationLayout)))
         _require_member("precision", self.precision, PRECISIONS)
+        _require_member("product", self.product, PRODUCTS)
+        if self.product == "tf32" and (
+            self.precision != "float32"
+            or self.op not in {"linear", "fully_connected_tp"}
+        ):
+            raise ValueError(
+                "tf32 products require a float32 linear or fully_connected_tp"
+            )
         if self.accumulate is not None:
             _require_member("accumulate", self.accumulate, PRECISIONS)
             if WIDTH[self.accumulate] < WIDTH[self.precision]:
@@ -130,7 +142,7 @@ class LinearDescriptor(Descriptor):
     """
 
     op: ClassVar[str] = "linear"
-    layout: str | None = field(default=CANONICAL_LAYOUT, kw_only=True)
+    layout: ActivationLayout | None = field(default=CANONICAL_LAYOUT, kw_only=True)
 
     irreps_in: str = "0e"
     irreps_out: str = "0e"
@@ -199,7 +211,7 @@ class ChannelwiseTPConvDescriptor(Descriptor):
     """
 
     op: ClassVar[str] = "channelwise_tp_conv"
-    layout: str | None = field(default=CANONICAL_LAYOUT, kw_only=True)
+    layout: ActivationLayout | None = field(default=CANONICAL_LAYOUT, kw_only=True)
 
     irreps_node: str = "0e"
     irreps_edge: str = "0e"
@@ -267,7 +279,7 @@ class SymmetricContractionDescriptor(Descriptor):
     """
 
     op: ClassVar[str] = "symmetric_contraction"
-    layout: str | None = field(default=CANONICAL_LAYOUT, kw_only=True)
+    layout: ActivationLayout | None = field(default=CANONICAL_LAYOUT, kw_only=True)
 
     irreps_in: str = "0e"
     irreps_out: str = "0e"
@@ -332,7 +344,7 @@ class FullyConnectedTPDescriptor(Descriptor):
     """
 
     op: ClassVar[str] = "fully_connected_tp"
-    layout: str | None = field(default=CANONICAL_LAYOUT, kw_only=True)
+    layout: ActivationLayout | None = field(default=CANONICAL_LAYOUT, kw_only=True)
 
     irreps_in1: str = "0e"
     irreps_in2: str = "0e"
@@ -495,16 +507,32 @@ class RadialMLPDescriptor(Descriptor):
             between them. ``"layer_norm_silu"`` is the nonlinear residual
             block's: biased layers with a layer norm and a SiLU between them.
             :mod:`~mace_core.kernels.canonical` states both exactly.
+        num_elements: Size of the element table for a conditioned span, or zero.
+        element_embedding_width: Width of each sender/receiver embedding. Both
+            are included in ``channels[0]``. The embedding tables remain owned
+            by the interaction and are supplied separately to the span.
+        layer_norm_epsilon: Numerical regularizer for ``layer_norm_silu``.
     """
 
     op: ClassVar[str] = "radial_mlp"
 
     channels: tuple[int, ...] = (8, 64, 64, 64)
     kind: RadialMLPKind = "normalized_silu"
+    num_elements: int = 0
+    element_embedding_width: int = 0
+    layer_norm_epsilon: float = LAYER_NORM_EPSILON
 
     def __post_init__(self) -> None:
         super().__post_init__()
         _require_member("kind", self.kind, get_args(RadialMLPKind))
+        for name in ("num_elements", "element_embedding_width"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a nonnegative integer.")
+        if bool(self.num_elements) != bool(self.element_embedding_width):
+            raise ValueError("element conditioning needs both a table size and width.")
+        if not isfinite(self.layer_norm_epsilon) or self.layer_norm_epsilon <= 0:
+            raise ValueError("layer_norm_epsilon must be finite and positive.")
         # A list from a configuration file would make the descriptor
         # unhashable, and a descriptor is a cache key.
         object.__setattr__(self, "channels", tuple(self.channels))
@@ -518,6 +546,8 @@ class RadialMLPDescriptor(Descriptor):
                 f"channels={self.channels!r} has a width that is not a positive "
                 f"integer."
             )
+        if self.channels[0] <= 2 * self.element_embedding_width:
+            raise ValueError("channels[0] must include radial and element features.")
 
     @property
     def weight_numel(self) -> int:

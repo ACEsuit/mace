@@ -1,6 +1,7 @@
 """Accepted spans change execution, never member weights or checkpoints."""
 
 import itertools
+from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
@@ -34,6 +35,68 @@ from mace_torch_engine_fixtures import (
     molecule,
 )
 from mace_torch_span_fixtures import SpanBackend
+
+
+@pytest.mark.parametrize("interaction", ["density", "density_residual", "nonlinear"])
+@pytest.mark.parametrize("layout", ["mul_ir", "ir_mul"])
+def test_conditioned_and_density_spans_preserve_live_weights(
+    interaction, layout, dtype
+):
+    class NativeSpanBackend(SpanBackend):
+        def capabilities(self):
+            return replace(super().capabilities(), native_layout=layout)
+
+    source = NativeSpanBackend()
+    backend = CompositeBackend(source, ReferenceBackend())
+    config = ModelConfig(
+        interaction_first=interaction,
+        interaction=interaction,
+        num_interactions=2,
+        num_channels=2,
+        max_ell=1,
+        correlation=2,
+        hidden_irreps="0e+1o",
+        radial_mlp=(4,),
+    )
+    precision = "float64" if dtype == torch.float64 else "float32"
+    offered = MACEBackbone(backend, config, ATOMIC_NUMBERS, precision=precision)
+    plain = MACEBackbone(
+        ReferenceBackend(), config, ATOMIC_NUMBERS, precision=precision
+    )
+    for model in (offered, plain):
+        initialize_model_weights(model, 27)
+    assert len(source.spans) == 2
+    assert canonical_metadata(offered) == canonical_metadata(plain)
+    calls = count_span_calls(source)
+    graph = {
+        name: value.to(dtype)
+        if isinstance(value, torch.Tensor) and value.is_floating_point()
+        else value
+        for name, value in build_graph(*molecule()).items()
+    }
+    outputs = []
+    gradients = []
+    for model in (offered, plain):
+        positions = graph["positions"].clone().requires_grad_(True)
+        features = model(
+            {**graph, "positions": positions, "differentiated_twice": True}
+        )
+        output = model.descriptors(features, invariants_only=False)
+        force = torch.autograd.grad(output.sum(), positions, create_graph=True)[0]
+        (output.square().sum() + force.square().sum()).backward()
+        outputs.append(output.detach())
+        gradients.append(
+            {name: parameter.grad for name, parameter in model.named_parameters()}
+        )
+    assert all(call.call_count == 1 for call in calls)
+    assert_close(outputs[0], outputs[1])
+    assert gradients[0].keys() == gradients[1].keys()
+    for name, actual in gradients[0].items():
+        expected = gradients[1][name]
+        assert (actual is None) == (expected is None), name
+        if actual is not None:
+            assert expected is not None
+            assert_close(actual, expected.detach(), name)
 
 
 def count_span_calls(backend):
@@ -185,6 +248,26 @@ def test_declared_runs_reach_the_span_without_host_work(features, monkeypatch):
 
         monkeypatch.setattr(span, "forward", checked)
     model(graph)
+
+
+def test_engine_builds_runs_before_compilation_and_restores_edge_force_order():
+    backend = SpanBackend()
+    backend.edge_features = frozenset(
+        {"sorted_by_sender", "receiver_runs", "sender_runs"}
+    )
+    model, reference = build_engine(seed=3, backend=backend), build_engine(seed=3)
+    graph = build_graph(*molecule())
+    order = torch.arange(graph["edge_index"].shape[1] - 1, -1, -1)
+    graph["edge_index"] = graph["edge_index"][:, order]
+    for key in ("shifts", "unit_shifts"):
+        graph[key] = graph[key][order]
+    expected = reference(graph, compute=("forces", "edge_forces"))
+    model.compile_model(backend="aot_eager")
+    actual = model(graph, compute=("forces", "edge_forces"))
+    assert_close(actual.total_energy, expected.total_energy.detach())
+    assert_close(actual.forces, expected.forces.detach())
+    assert_close(actual.extras["edge_forces"], expected.extras["edge_forces"].detach())
+    assert "receiver_counts" not in graph and "sender_counts" not in graph
 
 
 @pytest.mark.parametrize(

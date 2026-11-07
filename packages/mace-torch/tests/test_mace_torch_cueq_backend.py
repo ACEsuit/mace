@@ -44,7 +44,7 @@ if DEVICES == ["cuda"] and not torch.cuda.is_available():
     pytest.skip("the compiled operations need a GPU", allow_module_level=True)
 
 
-@pytest.mark.parametrize("layout", ["mul_ir"])
+@pytest.mark.parametrize("layout", ["mul_ir", "ir_mul"])
 @pytest.mark.parametrize("device", DEVICES)
 def test_cueq_passes_the_conformance_harness(dtype, device, layout):
     """In its native layout, which is what a model on cueq is built in, and in
@@ -128,7 +128,7 @@ def test_the_model_on_cueq_is_the_reference_model(caplog, device):
     caplog.set_level("INFO", logger="mace_torch.train.model_stage")
     accelerated = engine("cueq", device=device)
     assert "channelwise_tp_conv: 2 by cueq" in caplog.text
-    assert "every op in mul_ir" in caplog.text
+    assert "Every op uses ir_mul activations" in caplog.text
     load_canonical_state(accelerated, canonical_state(reference))
 
     expected = reference(graph(device), compute=("forces", "stress"), training=False)

@@ -51,9 +51,11 @@ from torch import Tensor, nn
 from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.precision import cast_at_boundary
 from mace_torch.electrostatics import (
+    LONG_RANGE_PLAN,
     build_long_range,
     build_long_range_features,
     long_range_geometry,
+    long_range_plan,
 )
 from mace_torch.electrostatics.reference.gto_utils import (
     DisplacedGTOExternalFieldBlock,
@@ -383,6 +385,20 @@ class PolarModel(MACEModel):
     @property
     def extra_rows(self) -> dict[str, str]:
         return {**super().extra_rows, **POLAR_EXTRA_ROWS}
+
+    def prepare_model_inputs(self, graph: dict[str, Any], requests=()) -> None:
+        """Resolve discrete long-range choices outside the compiled forward.
+
+        Runtimes may supply a reusable plan while cells, periodicity and atom
+        counts stay fixed. Otherwise each call plans the current geometry.
+        """
+        if LONG_RANGE_PLAN not in graph:
+            graph[LONG_RANGE_PLAN] = long_range_plan(
+                graph,
+                self.descriptor,
+                (self.projection, self.coulomb),
+                dense_pairs=any(graph.get("structure_padding", ())),
+            )
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The energy, its parts, and the density it came from.

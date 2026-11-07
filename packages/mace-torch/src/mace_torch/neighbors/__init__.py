@@ -1,10 +1,8 @@
 """The neighbour-list backend this framework builds graphs with by default.
 
-A ``neighbor_list`` config section that names no backend gets vesin, the
-fastest backend on the CPU. This package requires vesin and registers its
-backend (:mod:`mace_torch.neighbors.vesin_backend`), so the default is
-installed wherever this package is. Any other backend is used only when the
-section names it.
+Host graph builders use vesin. Device-aware builders prefer the registered
+``nvalchemiops`` provider on NVIDIA CUDA when available, with vesin otherwise.
+Explicit backend names are resolved strictly through the provider registry.
 """
 
 from __future__ import annotations

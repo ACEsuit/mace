@@ -51,7 +51,7 @@ from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec
 from torch import Tensor, nn
 
-from mace_torch.backends.layout import expanded_irreps
+from mace_torch.backends.layout import expanded_irreps, layout_of, terms
 from mace_torch.backends.reference import TORCH_DTYPES, ReferenceBackend
 from mace_torch.graph.edges import EdgeRuns
 from mace_torch.nn.edges import EdgeInputs
@@ -123,12 +123,14 @@ class NodeFeatures:
     """Every layer's node features, the backbone's whole output.
 
     Attributes:
-        layers: One ``[n_nodes, dim_layer]`` tensor per interaction, grouped
-            by irrep in the canonical ``mul_ir``. The last layer carries only
-            scalars. Under a :class:`LocalityInfo`, the local nodes only.
+        layers: One ``[n_nodes, dim_layer]`` tensor per interaction in ``layout``.
+            Under a :class:`LocalityInfo`, the local nodes only.
+        layout: The internal activation layout. ``descriptors`` returns public
+            features in canonical mul_ir.
     """
 
     layers: tuple[Tensor, ...]
+    layout: Literal["mul_ir", "ir_mul"] = "mul_ir"
 
 
 #: How :func:`aggregate_descriptors` reduces per structure.
@@ -266,14 +268,17 @@ class MACEBackbone(nn.Module):
             if names.count(spec.name) > 1:
                 raise ValueError(f"node input {spec.name!r} is declared twice.")
         self.config = config
+        self.layout = layout_of(backend)
         self.edge_axes = edge_axes
         self.atomic_numbers = tuple(atomic_numbers)
         self.precision = precision
         self.between_layers = between_layers
         self.node_input_names = tuple(spec.name for spec in node_inputs)
+        self.node_input_terms = tuple(terms(spec.irreps) for spec in node_inputs)
         num_elements = len(self.atomic_numbers)
         num_features = config.num_channels
         self.num_features = num_features
+        self.edge_features = backend.capabilities().edge_features
         self.receiver_runs = "receiver_runs" in backend.capabilities().edge_features
         self.sender_runs = "sender_runs" in backend.capabilities().edge_features
 
@@ -380,6 +385,7 @@ class MACEBackbone(nn.Module):
         self.products = nn.ModuleList(products)
         #: Each layer's output declaration, grouped.
         self.layer_irreps = tuple(layer_irreps)
+        self.layer_terms = tuple(terms(irreps) for irreps in self.layer_irreps)
 
     def _interaction(
         self,
@@ -487,6 +493,7 @@ class MACEBackbone(nn.Module):
             - positions.index_select(0, sender)
             + graph["shifts"]
         )
+        node_elements = node_attrs.argmax(dim=-1)
         edges = EdgeInputs(
             vectors[:, self.edge_axes],
             graph["node_atomic_numbers"],
@@ -500,11 +507,12 @@ class MACEBackbone(nn.Module):
             sender_runs=EdgeRuns.from_graph(graph, "sender")
             if self.sender_runs
             else None,
+            node_elements=node_elements,
         )
         element = (
             torch.zeros_like(node_attrs[:, 0], dtype=torch.int64)
             if self.use_agnostic_product
-            else node_attrs.argmax(dim=-1)
+            else node_elements
         )
 
         features = self.embedding(graph)
@@ -528,15 +536,20 @@ class MACEBackbone(nn.Module):
                 layer_element = element[: locality.n_local]
             features = product(message, layer_element, carried)
             layers.append(features)
-        return NodeFeatures(layers=tuple(layers))
+        return NodeFeatures(layers=tuple(layers), layout=self.layout.name)
 
     def embedding(self, graph: Mapping[str, Tensor]) -> Tensor:
-        """Node features before the first interaction, in canonical layout."""
+        """Node features before the first interaction, in the chain layout."""
         features = self.node_embedding(graph["node_attrs"])
-        for name, mapping in zip(
-            self.node_input_names, self.node_input_maps, strict=True
+        for name, mapping, declaration in zip(
+            self.node_input_names,
+            self.node_input_maps,
+            self.node_input_terms,
+            strict=True,
         ):
-            features = features + mapping(graph[name])
+            features = features + mapping(
+                self.layout.from_canonical(graph[name], declaration)
+            )
 
         if self.graph_embedding is not None:
             features = self.graph_embedding(graph, features)
@@ -572,11 +585,11 @@ class MACEBackbone(nn.Module):
                 f"it is -1 or between 1 and {len(features.layers)}."
             )
         pieces = []
-        for layer, irreps in zip(
-            features.layers[:count], self.layer_irreps, strict=False
+        for layer, irreps, declaration in zip(
+            features.layers[:count], self.layer_irreps, self.layer_terms, strict=False
         ):
             if not invariants_only:
-                pieces.append(layer)
+                pieces.append(self.layout.to_canonical(layer, declaration))
                 continue
             multiplicity, irrep = Irreps.parse(irreps).terms[0]
             assert irrep.degree == 0 and irrep.parity == 1, irreps

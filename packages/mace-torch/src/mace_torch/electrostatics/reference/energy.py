@@ -12,6 +12,12 @@
 from collections.abc import Callable
 from typing import Literal
 
+###########################################################################################
+# Functions for computing electrostatic energy from from atomic multipoles
+# and gaussian type orbitals
+# Authors: Will Baldwin
+# This program is distributed under the MIT License (see MIT.md)
+###########################################################################################
 import torch
 from scipy.constants import pi
 
@@ -23,6 +29,7 @@ from .features import (
 from .gto_utils import GTOBasis, GTOSelfInteractionBlock
 from .realspace_electrostatics import RealSpaceFiniteDiffereneEnergy
 from .slabs import MonopoleDipoleCorrectionBlock, slab_dipole_correction_energy
+from .utils import any_periodic, open_atoms
 
 PBCHandling = Literal[
     "realspace",
@@ -122,7 +129,17 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
+        """The energy of each structure.
+
+        ``sizes`` and ``periodic`` are each structure's atom count and whether
+        it is periodic along any axis, as host values, when the caller has
+        them: then no count or branch is read off the device, which is what
+        lets a compiled model trace this at static shapes.
+        """
         return self._forward_impl(
             k_vectors=k_vectors,
             k_norm2=k_norm2,
@@ -133,6 +150,9 @@ class GTOElectrostaticEnergy(torch.nn.Module):
             batch=batch,
             volume=volume,
             pbc=pbc,
+            sizes=sizes,
+            periodic=periodic,
+            dense_pairs=dense_pairs,
         )
 
     def _realspace_energy(
@@ -140,11 +160,15 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         source_feats: torch.Tensor,
         node_positions: torch.Tensor,
         batch: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         return self.realspace_energy(
             source_feats=source_feats,
             positions=node_positions,
             batch=batch,
+            sizes=sizes,
+            dense_pairs=dense_pairs,
         )
 
     def _subtract_self_interaction_if_needed(
@@ -227,11 +251,16 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         return self._realspace_energy(
             source_feats=source_feats,
             node_positions=node_positions,
             batch=batch,
+            sizes=sizes,
+            dense_pairs=dense_pairs,
         )
 
     def _forward_pbc(
@@ -245,6 +274,9 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         return self._compute_kspace_energy_common(
             k_vectors=k_vectors,
@@ -268,6 +300,9 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         energy = self._compute_kspace_energy_common(
             k_vectors=k_vectors,
@@ -298,6 +333,9 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         energy = self._compute_kspace_energy_common(
             k_vectors=k_vectors,
@@ -328,6 +366,9 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         energy = self._compute_kspace_energy_common(
             k_vectors=k_vectors,
@@ -373,9 +414,25 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         """Each open structure's energy in real space, every other one's
-        periodic, independent of the batch."""
+        periodic, independent of the batch. A batch with no periodic
+        structure runs no reciprocal sum at all."""
+        if not any_periodic(pbc, periodic):
+            exact = self._realspace_energy(
+                source_feats=source_feats,
+                node_positions=node_positions,
+                batch=batch,
+                sizes=sizes,
+                dense_pairs=dense_pairs,
+            )
+            # Summed per structure up to the last one, so padded to them all.
+            num_graphs = volume.reshape(-1).shape[0]
+            exact = torch.cat([exact, exact.new_zeros(num_graphs - exact.shape[0])])
+            return exact.to(torch.promote_types(source_feats.dtype, volume.dtype))
         energy = self._forward_mixed_periodic(
             k_vectors=k_vectors,
             k_norm2=k_norm2,
@@ -386,15 +443,26 @@ class GTOElectrostaticEnergy(torch.nn.Module):
             batch=batch,
             volume=volume,
             pbc=pbc,
+            sizes=sizes,
+            periodic=periodic,
+            dense_pairs=dense_pairs,
         )
         open_graphs = torch.all(torch.logical_not(pbc), dim=1)
-        index = torch.nonzero(open_graphs[batch]).reshape(-1)
-        if index.numel() == 0:
-            return energy
+        open_sizes = None
+        if sizes is not None and periodic is not None:
+            index, open_sizes = open_atoms(sizes, periodic, batch.device)
+            if index is None:
+                return energy
+        else:
+            index = torch.nonzero(open_graphs[batch]).reshape(-1)
+            if index.numel() == 0:
+                return energy
         exact = self._realspace_energy(
             source_feats=source_feats[index],
             node_positions=node_positions[index],
             batch=batch[index],
+            sizes=open_sizes,
+            dense_pairs=dense_pairs,
         )
         # Summed per structure up to the last open one, so padded to them all.
         exact = torch.cat([exact, exact.new_zeros(energy.shape[0] - exact.shape[0])])
@@ -411,8 +479,11 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
-        if torch.any(pbc):
+        if any_periodic(pbc, periodic):
             return self._forward_mixed_periodic(
                 k_vectors=k_vectors,
                 k_norm2=k_norm2,
@@ -434,4 +505,7 @@ class GTOElectrostaticEnergy(torch.nn.Module):
             batch=batch,
             volume=volume,
             pbc=pbc,
+            sizes=sizes,
+            periodic=periodic,
+            dense_pairs=dense_pairs,
         )

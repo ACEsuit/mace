@@ -43,9 +43,12 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 import torch
+from mace_core.edges import plan_edges
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
+
+from mace_torch.graph.edges import apply_edge_plan
 
 __all__ = [
     "ENGINE_EXTRA_ROWS",
@@ -357,6 +360,10 @@ class DerivativeEngine(nn.Module):
         # both. The engine brackets a model; that the model came in two pieces
         # was an assumption, and a model with a pair repulsion in it does not.
         self.backbone = backbone
+        required_edges = frozenset().union(
+            *(getattr(module, "edge_features", ()) for module in backbone.modules())
+        )
+        self.edge_plan = plan_edges(required_edges, frozenset())
         self.model_requests = frozenset(getattr(backbone, "requestable_outputs", ()))
         self.model_needs_position_grad = getattr(
             backbone, "requires_position_grad", False
@@ -530,6 +537,11 @@ class DerivativeEngine(nn.Module):
                     f"input whose value is zero."
                 )
 
+        original_edge_order = None
+        if any(step.name == "sort_by_sender" for step in self.edge_plan.adapters):
+            original_edge_order = torch.argsort(graph["edge_index"][0], stable=True)
+        if self.edge_plan.adapters:
+            graph = apply_edge_plan(graph, self.edge_plan)
         prepared, positions, displacement = prepare_inputs(
             graph,
             need_forces=need_forces
@@ -665,7 +677,13 @@ class DerivativeEngine(nn.Module):
                 torch.zeros_like(prepared["shifts"]) if gradient is None else gradient
             )
             if "edge_forces" in wanted:
-                output.extras["edge_forces"] = edge_forces
+                output.extras["edge_forces"] = (
+                    edge_forces
+                    if original_edge_order is None
+                    else torch.empty_like(edge_forces).index_copy(
+                        0, original_edge_order, edge_forces
+                    )
+                )
             if wanted & per_atom_strain:
                 virials, stresses = atomic_virials_and_stresses(
                     edge_forces,

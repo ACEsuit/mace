@@ -80,6 +80,30 @@ def evaluate(calculator, atoms: Atoms) -> dict:
     return dict(calculator.results)
 
 
+@fp64_only
+def test_calculator_uses_registered_batched_neighbor_provider(
+    checkpoints, tmp_path, monkeypatch
+):
+    from mace_core.neighbors import NeighborListConfig
+    from mace_torch_neighbor_fixtures import register
+
+    register(
+        tmp_path, monkeypatch, "batch", "mace_torch_neighbor_fixtures:BatchProvider"
+    )
+    calculator = MACECalculator(
+        model_paths=checkpoints["a"], neighbor_list=NeighborListConfig(kind="batch")
+    )
+    reference = MACECalculator(model_paths=checkpoints["a"])
+    for periodic in (False, True):
+        actual = evaluate(calculator, water(periodic))
+        expected = evaluate(reference, water(periodic))
+        for name in ("energy", "energies", "forces", "stress"):
+            np.testing.assert_allclose(
+                actual[name], expected[name], rtol=1e-12, atol=1e-12
+            )
+    assert calculator.neighbor_provider.backend.batch_calls == 2
+
+
 # ---------------------------------------------------------------------------
 # One model
 # ---------------------------------------------------------------------------
@@ -578,16 +602,18 @@ def test_a_calculator_with_no_model_is_refused():
 @fp64_only
 @pytest.mark.parametrize("padded", [False, True])
 def test_the_calculator_collates_once_before_padding(checkpoints, monkeypatch, padded):
-    from mace_torch.calculators import ase_calculator
+    import importlib
 
-    original = ase_calculator.collate
+    from mace_torch.graph import collate as collate_graph
+
+    graph_module = importlib.import_module("mace_torch.graph.collate")
     calls = []
 
     def collate_once(*args, **kwargs):
         calls.append(1)
-        return original(*args, **kwargs)
+        return collate_graph(*args, **kwargs)
 
-    monkeypatch.setattr(ase_calculator, "collate", collate_once)
+    monkeypatch.setattr(graph_module, "collate", collate_once)
     calc = MACECalculator(
         checkpoints["a"], padding=PaddingPolicy(mode="auto" if padded else "none")
     )

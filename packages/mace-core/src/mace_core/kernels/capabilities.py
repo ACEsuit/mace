@@ -17,13 +17,17 @@ declares is an error with both sides named.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import get_args
 
 from mace_core.edges import EdgeFeature, edge_features
+from mace_core.kernels.canonical import CANONICAL_LAYOUT
 from mace_core.kernels.descriptors import (
+    ActivationLayout,
     Descriptor,
     RadialBasisDescriptor,
     SymmetricContractionDescriptor,
 )
+from mace_core.kernels.precision import PRODUCTS, Product
 
 __all__ = ["BackendCapabilities", "UnsupportedDescriptorError"]
 
@@ -49,6 +53,9 @@ class BackendCapabilities:
         layouts: Which weight layouts it can consume. Every backend must accept
             ``"mul_ir"``, since that is the canonical one and the only one a
             checkpoint is written in.
+        activation_layouts: Layouts supported for input and output features.
+        native_layout: Preferred layout for the complete activation chain.
+        products: Supported float32 matrix-product arithmetic.
         bases: Which Clebsch-Gordan bases it can consume.
         supports_double_backward: Whether its ops are differentiable twice.
             Training on forces or stress needs the second derivative, so a
@@ -69,6 +76,13 @@ class BackendCapabilities:
     dtypes: frozenset[str] = field(default_factory=lambda: frozenset({"float64"}))
     max_lmax: int = 0
     layouts: frozenset[str] = field(default_factory=lambda: frozenset({"mul_ir"}))
+    activation_layouts: frozenset[ActivationLayout] = field(
+        default_factory=lambda: frozenset({"mul_ir"}), kw_only=True
+    )
+    native_layout: ActivationLayout = field(default="mul_ir", kw_only=True)
+    products: frozenset[Product] = field(
+        default_factory=lambda: frozenset({"ieee"}), kw_only=True
+    )
     bases: frozenset[str] = field(default_factory=lambda: frozenset({"reduced"}))
     supports_double_backward: bool = False
     wide_accumulation: bool = False
@@ -77,6 +91,16 @@ class BackendCapabilities:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "edge_features", edge_features(self.edge_features))
+        object.__setattr__(
+            self, "activation_layouts", frozenset(self.activation_layouts)
+        )
+        object.__setattr__(self, "products", frozenset(self.products))
+        if not self.activation_layouts <= set(get_args(ActivationLayout)):
+            raise ValueError("activation_layouts must use mul_ir or ir_mul")
+        if self.native_layout not in self.activation_layouts:
+            raise ValueError("native_layout must be a supported activation layout")
+        if not self.products or not self.products <= set(PRODUCTS):
+            raise ValueError("products must declare ieee or tf32")
 
     def supports(self, descriptor: Descriptor) -> bool:
         """Whether this backend can build exactly this op.
@@ -108,11 +132,18 @@ class BackendCapabilities:
                 f"it does not compute in {descriptor.precision!r}; its "
                 f"precisions are {sorted(self.dtypes)}"
             )
-        if descriptor.layout is not None and descriptor.layout not in self.layouts:
+        if CANONICAL_LAYOUT not in self.layouts and descriptor.weight_numel:
+            return "it does not accept canonical mul_ir weights"
+        if (
+            descriptor.layout is not None
+            and descriptor.layout not in self.activation_layouts
+        ):
             return (
-                f"it does not consume the {descriptor.layout!r} layout this op "
-                f"works in; its layouts are {sorted(self.layouts)}"
+                f"it does not consume activation layout {descriptor.layout!r}. "
+                f"Supported layouts are {sorted(self.activation_layouts)}"
             )
+        if descriptor.product not in self.products:
+            return f"it does not support {descriptor.product!r} matrix products"
         if self.max_lmax and descriptor.highest_degree > self.max_lmax:
             return (
                 f"the op reaches l = {descriptor.highest_degree}, beyond its "

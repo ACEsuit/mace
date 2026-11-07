@@ -7,29 +7,35 @@ group, the way any other solver is. A model asks for its long-range op with
 """
 
 from mace_torch.electrostatics.solver import (
+    LONG_RANGE_PLAN,
     PBC_HANDLING,
     ElectrostaticsSolver,
     LongRangeEnergy,
     LongRangeFeatures,
     LongRangeGeometry,
+    LongRangePlan,
     ReferenceSolver,
     build_long_range,
     build_long_range_features,
     build_scf_solve,
     long_range_geometry,
+    long_range_plan,
     reciprocal_cell_and_volume,
 )
 
 __all__ = [
+    "LONG_RANGE_PLAN",
     "PBC_HANDLING",
     "ElectrostaticsSolver",
     "LongRangeEnergy",
     "LongRangeFeatures",
     "LongRangeGeometry",
+    "LongRangePlan",
     "ReferenceSolver",
     "build_long_range",
     "build_long_range_features",
     "build_scf_solve",
     "long_range_geometry",
+    "long_range_plan",
     "reciprocal_cell_and_volume",
 ]

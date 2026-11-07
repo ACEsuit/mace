@@ -122,3 +122,36 @@ def scatter_mean(
     else:
         out.div_(count, rounding_mode="floor")
     return out
+
+
+def any_periodic(pbc: torch.Tensor, periodic: tuple[bool, ...] | None) -> bool:
+    """Whether any structure of the batch is periodic along any axis.
+
+    From ``periodic``, the host's own answer per structure, when the caller
+    has it, and otherwise read off ``pbc``, which waits on the device.
+    """
+    if periodic is not None:
+        return any(periodic)
+    return bool(torch.any(pbc))
+
+
+def open_atoms(
+    sizes: tuple[int, ...], periodic: tuple[bool, ...], device: torch.device
+) -> tuple[torch.Tensor | None, tuple[int, ...]]:
+    """The atoms of the structures periodic along no axis, from host counts.
+
+    Returns:
+        Their rows in the batch, or ``None`` when there are none, and every
+        structure's count of them: its size when it is open, zero otherwise.
+    """
+    counts = tuple(
+        0 if flag else int(size) for size, flag in zip(sizes, periodic, strict=True)
+    )
+    ranges, start = [], 0
+    for size, count in zip(sizes, counts, strict=True):
+        if count:
+            ranges.append(torch.arange(start, start + count, device=device))
+        start += int(size)
+    if not ranges:
+        return None, counts
+    return torch.cat(ranges), counts

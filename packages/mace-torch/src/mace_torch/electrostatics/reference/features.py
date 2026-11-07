@@ -26,7 +26,7 @@ from .slabs import (
     _get_total_dipole_z,
     slab_dipole_correction_node_fields,
 )
-from .utils import FIELD_CONSTANT
+from .utils import FIELD_CONSTANT, any_periodic, open_atoms
 
 FeaturePBCHandling = Literal[
     "realspace",
@@ -411,6 +411,9 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> torch.Tensor:
         cache = self._precompute_geometry_impl(
             k_vectors=k_vectors,
@@ -421,6 +424,9 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             batch=batch,
             volume=volume,
             pbc=pbc,
+            sizes=sizes,
+            periodic=periodic,
+            dense_pairs=dense_pairs,
         )
         return self._forward_dynamic_impl(
             source_feats=source_feats,
@@ -437,7 +443,16 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> dict:
+        """Everything the projection needs that the density does not change.
+
+        ``sizes`` and ``periodic`` are each structure's atom count and whether
+        it is periodic along any axis, as host values, when the caller has
+        them; see :meth:`GTOElectrostaticEnergy.forward`.
+        """
         cache = self._precompute_geometry_impl(
             k_vectors=k_vectors,
             k_norm2=k_norm2,
@@ -447,6 +462,9 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             batch=batch,
             volume=volume,
             pbc=pbc,
+            sizes=sizes,
+            periodic=periodic,
+            dense_pairs=dense_pairs,
         )
         return cache
 
@@ -470,11 +488,16 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> dict:
         return {
             "mode": "realspace",
             "node_positions": node_positions,
             "batch": batch,
+            "sizes": sizes,
+            "dense_pairs": dense_pairs,
         }
 
     def _precompute_geometry_periodic_common(
@@ -487,6 +510,9 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> dict:
         inner_products = torch.matmul(
             k_vectors, node_positions.t()
@@ -502,8 +528,9 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         volume_per_k = volume.reshape(-1)[k_vector_batch]
         k0_mask_bool = k0_mask > 0.0
         k_factor_coulomb = compute_coulomb_factor(k_norm2, k0_mask)
-        k_factor_proj = torch.ones_like(k_norm2)
-        k_factor_proj[k0_mask_bool] = 0.5
+        k_factor_proj = torch.where(
+            k0_mask_bool, torch.full_like(k_norm2, 0.5), torch.ones_like(k_norm2)
+        )
 
         return {
             "mode": "pbc",
@@ -533,6 +560,9 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> dict:
         cache = self._precompute_geometry_periodic_common(
             k_vectors=k_vectors,
@@ -564,8 +594,11 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> dict:
-        if torch.any(pbc):
+        if any_periodic(pbc, periodic):
             return self._precompute_geometry_mixed_periodic(
                 k_vectors=k_vectors,
                 k_norm2=k_norm2,
@@ -585,6 +618,9 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             batch=batch,
             volume=volume,
             pbc=pbc,
+            sizes=sizes,
+            periodic=periodic,
+            dense_pairs=dense_pairs,
         )
 
     def _precompute_geometry_per_structure(
@@ -597,6 +633,9 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         batch: torch.Tensor,
         volume: torch.Tensor,
         pbc: torch.Tensor,
+        sizes: tuple[int, ...] | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        dense_pairs: bool = False,
     ) -> dict:
         """Each open structure in real space, every other one periodic.
 
@@ -604,8 +643,18 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         and the atoms of the structures periodic along no axis are then
         summed again in real space, on their own, which is the exact answer
         for an isolated system. So an open structure's value does not depend
-        on what else is in its batch, nor on the box around it.
+        on what else is in its batch, nor on the box around it. A batch with
+        no periodic structure runs no reciprocal sum at all, since every one
+        of its values is the real-space one.
         """
+        if not any_periodic(pbc, periodic):
+            return {
+                "mode": "per_structure_open",
+                "node_positions": node_positions,
+                "batch": batch,
+                "sizes": sizes,
+                "dense_pairs": dense_pairs,
+            }
         cache = self._precompute_geometry_mixed_periodic(
             k_vectors=k_vectors,
             k_norm2=k_norm2,
@@ -615,27 +664,50 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             batch=batch,
             volume=volume,
             pbc=pbc,
+            sizes=sizes,
+            periodic=periodic,
+            dense_pairs=dense_pairs,
         )
-        open_nodes = cache["correction_node_masks"]["is_molecule_node"]
-        index = torch.nonzero(open_nodes).reshape(-1)
+        open_sizes = None
+        if sizes is not None and periodic is not None:
+            index, open_sizes = open_atoms(sizes, periodic, batch.device)
+        else:
+            open_nodes = cache["correction_node_masks"]["is_molecule_node"]
+            index = torch.nonzero(open_nodes).reshape(-1)
+            if index.numel() == 0:
+                index = None
         cache["open_index"] = index
-        cache["open_positions"] = node_positions[index]
-        cache["open_batch"] = batch[index]
+        cache["open_sizes"] = open_sizes
+        cache["dense_pairs"] = dense_pairs
+        if index is not None:
+            cache["open_positions"] = node_positions[index]
+            cache["open_batch"] = batch[index]
         return cache
 
     def _forward_dynamic_per_structure(
         self, source_feats: torch.Tensor, cache: dict
     ) -> torch.Tensor:
+        if cache["mode"] == "per_structure_open":
+            exact, _, _ = self.realspace_features(
+                source_feats=source_feats,
+                node_positions=cache["node_positions"],
+                batch=cache["batch"],
+                sizes=cache["sizes"],
+                dense_pairs=cache["dense_pairs"],
+            )
+            return exact
         features = self._forward_dynamic_mixed_periodic(
             source_feats=source_feats, cache=cache
         )
         index = cache["open_index"]
-        if index.numel() == 0:
+        if index is None:
             return features
         exact, _, _ = self.realspace_features(
             source_feats=source_feats[index],
             node_positions=cache["open_positions"],
             batch=cache["open_batch"],
+            sizes=cache["open_sizes"],
+            dense_pairs=cache["dense_pairs"],
         )
         return features.index_copy(0, index, exact.to(features.dtype))
 
@@ -715,6 +787,8 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             source_feats=source_feats,
             node_positions=cache["node_positions"],
             batch=cache["batch"],
+            sizes=cache["sizes"],
+            dense_pairs=cache["dense_pairs"],
         )
         return features
 

@@ -19,14 +19,16 @@ def backend(tmp_path, monkeypatch):
     return "test_span"
 
 
-def test_the_reference_span_passes_the_public_suite(backend, dtype):
+@pytest.mark.parametrize("layout", ["mul_ir", "ir_mul"])
+def test_the_reference_span_passes_the_public_suite(backend, dtype, layout):
     results = run_span_conformance(
         backend,
         precision="float64" if dtype == torch.float64 else "float32",
         training=True,
         compile_spans=True,
+        layout=layout,
     )
-    assert len(results) == 5
+    assert len(results) == 8
     for result in results:
         assert result.built
         assert {
@@ -81,18 +83,31 @@ def test_the_suite_catches_wrong_values_and_detached_member_weights(
         )
 
 
-@pytest.mark.parametrize("runs", ["sender_runs", "receiver_runs"])
+@pytest.mark.parametrize(
+    "runs",
+    [
+        frozenset({"sender_runs"}),
+        frozenset({"receiver_runs"}),
+        frozenset({"sender_runs", "receiver_runs"}),
+    ],
+)
 def test_conformance_supplies_the_declared_runs(backend, dtype, monkeypatch, runs):
-    monkeypatch.setattr(SpanBackend, "edge_features", frozenset({runs}))
+    monkeypatch.setattr(SpanBackend, "edge_features", runs)
     original = ReferenceSpan.forward
 
     def checked(
         self, nodes, edges, sender, receiver, num_nodes, member_weights, edge_runs
     ):
         assert edge_runs is not None
-        index = sender if runs == "sender_runs" else receiver
+        index = receiver if "receiver_runs" in runs else sender
         assert torch.equal(edge_runs.order, torch.argsort(index, stable=True))
         assert edge_runs.offsets[-1] == len(sender)
+        for name, index in (("sender_runs", sender), ("receiver_runs", receiver)):
+            view = getattr(edges, name)
+            assert (view is not None) == (name in runs)
+            if view is not None:
+                assert torch.equal(view.order, torch.argsort(index, stable=True))
+                assert view.offsets[-1] == len(index)
         return original(
             self, nodes, edges, sender, receiver, num_nodes, member_weights, edge_runs
         )

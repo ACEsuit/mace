@@ -41,6 +41,21 @@ class Composition(nn.Module):
             radial.basis, build_distance_transform(transform), radial.cutoff
         )
         self.network = backend.make_radial_mlp(shape.radial_network)
+        self.density = (
+            None if shape.density is None else backend.make_radial_mlp(shape.density)
+        )
+        self.tables = nn.ParameterList()
+        if shape.radial_network.num_elements:
+            for _ in range(2):
+                self.tables.append(
+                    nn.Parameter(
+                        torch.zeros(
+                            shape.radial_network.num_elements,
+                            shape.radial_network.element_embedding_width,
+                            dtype=getattr(torch, shape.radial_network.precision),
+                        )
+                    )
+                )
         self.harmonics = backend.make_spherical_harmonics(shape.spherical_harmonics)
         self.convolution = backend.make_channelwise_tp_conv(shape.convolution)
         self.num_paths = len(shape.convolution.paths)
@@ -52,10 +67,24 @@ class Composition(nn.Module):
             edges.node_atomic_numbers,
             edges.edge_index,
         )
+        if self.tables:
+            radial = torch.cat(
+                (
+                    radial,
+                    self.tables[0].index_select(0, edges.node_elements[sender]),
+                    self.tables[1].index_select(0, edges.node_elements[receiver]),
+                ),
+                dim=-1,
+            )
         weights = self.network(radial).reshape(-1, self.num_paths, self.num_features)
-        return self.convolution(
+        message = self.convolution(
             nodes, self.harmonics(edges.vectors), weights, sender, receiver, num_nodes
         )
+        if self.density is None:
+            return message
+        density = radial.new_zeros((num_nodes, 1))
+        density = density.index_add(0, receiver, torch.tanh(self.density(radial) ** 2))
+        return message, density
 
 
 class ReferenceSpan(nn.Module):
@@ -65,7 +94,14 @@ class ReferenceSpan(nn.Module):
         super().__init__()
         self.template = Composition(shape)
         tensors = (
-            self.template.radial.span_weights() + self.template.network.span_weights()
+            self.template.radial.span_weights()
+            + self.template.network.span_weights()
+            + (
+                ()
+                if self.template.density is None
+                else self.template.density.span_weights()
+            )
+            + tuple(self.template.tables)
         )
         live = {id(value): index for index, value in enumerate(tensors)}
         self.weight_names = []

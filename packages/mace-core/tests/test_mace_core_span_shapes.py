@@ -15,6 +15,56 @@ from mace_core.kernels.descriptors import (
 from mace_core.kernels.spans import EdgeConvolutionSpan, supports_span_contract
 
 
+@pytest.mark.parametrize("conditioned", [False, True])
+@pytest.mark.parametrize("with_density", [False, True])
+def test_extended_shapes_keep_network_order_and_embedding_dimensions(
+    conditioned, with_density
+):
+    from dataclasses import replace
+
+    network = RadialMLPDescriptor(
+        channels=(12 if conditioned else 8, 4, 16),
+        num_elements=3 if conditioned else 0,
+        element_embedding_width=2 if conditioned else 0,
+        layer_norm_epsilon=1e-4,
+    )
+    density = (
+        replace(network, channels=(network.channels[0], 3, 1)) if with_density else None
+    )
+    shape = EdgeConvolutionSpan(
+        RadialBasisDescriptor(),
+        SphericalHarmonicsDescriptor(),
+        network,
+        ChannelwiseTPConvDescriptor(),
+        density=density,
+    )
+    assert EdgeConvolutionSpan.from_descriptors(shape.descriptors) == shape
+    assert hash(shape)
+    if density is not None:
+        assert shape.descriptors[-3:] == (network, density, shape.convolution)
+        with pytest.raises(ValueError, match="one scalar"):
+            replace(shape, density=network)
+        reordered = (*shape.descriptors[:2], density, network, shape.convolution)
+        assert EdgeConvolutionSpan.from_descriptors(reordered) is None
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"num_elements": 2},
+        {"element_embedding_width": 3},
+        {"num_elements": -1},
+        {"num_elements": True},
+        {"num_elements": 2, "element_embedding_width": 4},
+        {"layer_norm_epsilon": 0},
+        {"layer_norm_epsilon": float("nan")},
+    ],
+)
+def test_invalid_conditioning_is_rejected_before_build(settings):
+    with pytest.raises(ValueError):
+        RadialMLPDescriptor(**settings)
+
+
 @pytest.mark.parametrize("transform", [None, DistanceTransformDescriptor()])
 def test_only_the_exact_shape_round_trips(transform):
     shape = EdgeConvolutionSpan(

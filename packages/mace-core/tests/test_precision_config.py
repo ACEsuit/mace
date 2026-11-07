@@ -5,9 +5,16 @@ from __future__ import annotations
 import inspect
 import subprocess
 import sys
+from dataclasses import replace
 
 import pytest
-from mace_core.config.precision import OP_KINDS, PrecisionConfig, PrecisionPolicy
+from mace_core.config.precision import (
+    OP_KINDS,
+    PRODUCT_KINDS,
+    PrecisionConfig,
+    PrecisionPolicy,
+)
+from mace_core.config.resolved import ResolvedConfig
 from mace_core.kernels import descriptors
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
@@ -142,3 +149,39 @@ def test_the_module_imports_no_framework():
         [sys.executable, "-c", probe], capture_output=True, text=True, check=True
     ).stdout.strip()
     assert loaded == "[]"
+
+
+def test_tf32_is_per_operation_and_roundtrips_through_configuration():
+    config = PrecisionConfig.tf32()
+    assert config.model == "float32" and config.accumulate == "float64"
+    for kind in ALL_DESCRIPTORS:
+        descriptor = kind()
+        expected = "tf32" if descriptor.op in PRODUCT_KINDS else "ieee"
+        assert config.policy_for(descriptor).product == expected
+    model = ResolvedConfig.model_validate({"precision": config})
+    assert (
+        ResolvedConfig.model_validate_json(model.model_dump_json()).precision == config
+    )
+    assert config.for_device(False)[0].ops == config.ops
+    assert PrecisionConfig().policy_for(LinearDescriptor()).product == "ieee"
+
+
+def test_invalid_product_policies_fail_at_construction():
+    with pytest.raises(ValueError, match="float32"):
+        PrecisionPolicy("float64", "float64", "float64", product="tf32")
+    with pytest.raises(ValueError, match="apply to"):
+        PrecisionConfig(
+            ops=(
+                (
+                    "radial_basis",
+                    PrecisionPolicy("float32", "float32", "float32", "tf32"),
+                ),
+            )
+        )
+    with pytest.raises(ValueError, match="unknown matrix product"):
+        replace(PrecisionPolicy.uniform("float32"), product="unknown")
+    with pytest.raises(ValueError, match="tf32 products require"):
+        LinearDescriptor(product="tf32")
+    with pytest.raises(ValueError, match="tf32 products require"):
+        RadialBasisDescriptor(precision="float32", product="tf32")
+    assert LinearDescriptor(precision="float32", product="tf32").product == "tf32"

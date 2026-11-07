@@ -74,6 +74,7 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from mace_core.config import FixedPointSpec
 from mace_core.config.precision import PrecisionConfig
 from mace_core.data.configuration import Configuration
+from mace_core.neighbors import NeighborListConfig
 from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
 
@@ -85,10 +86,10 @@ from mace_torch.calculators.padding import (
     resolve_budget,
     unpad_outputs,
 )
-from mace_torch.data.graphs import graph_from_configuration
 from mace_torch.deploy.loader import DeployedModel, load_deployed
-from mace_torch.graph import collate, pad_batch
+from mace_torch.graph import build_batch, pad_batch
 from mace_torch.models.outputs import ENERGY_OBSERVABLE
+from mace_torch.neighbors import resolve_neighbor_provider
 from mace_torch.nn import MACEBackbone
 from mace_torch.physics import DerivativeEngine
 from mace_torch.physics.fixed_point import FixedPointDriver
@@ -283,6 +284,7 @@ class MACECalculator(Calculator):
         fixed_point: FixedPointSpec | None = None,
         precision: PrecisionConfig | None = None,
         default_dtype: str | None = None,
+        neighbor_list: NeighborListConfig | None = None,
         **kwargs: Any,
     ) -> None:
         if "model_path" in kwargs:
@@ -312,6 +314,7 @@ class MACECalculator(Calculator):
         )
         self.device = device
         self.models = _committee(model_paths, models, device, precision)
+        self.neighbor_provider = resolve_neighbor_provider(neighbor_list, device=device)
         cutoffs = [model.r_max for model in self.models]
         if len(set(cutoffs)) != 1:
             raise ValueError(
@@ -712,18 +715,22 @@ class MACECalculator(Calculator):
             cell=np.asarray(atoms.get_cell().array, dtype=np.float64),
             pbc=(bool(periodic[0]), bool(periodic[1]), bool(periodic[2])),
             properties=properties,
+            head=self.head,
         )
-        structure = graph_from_configuration(
-            configuration,
+        dtype = interface_dtype(self.models[0].engine)
+        graph = build_batch(
+            [configuration],
             cutoff=self.r_max,
-            z_table=self.z_table,
-            head=self.heads.index(self.head),
-            graph_inputs=self.graph_inputs,
+            atomic_number_table=self.z_table,
+            heads=self.heads,
             features=self.features,
+            neighbor_backend=self.neighbor_provider,
+            dtype=dtype,
+            device=self.device,
         )
         if padded:
             nodes = len(atoms)
-            edges = int(structure["edge_index"].shape[1])
+            edges = int(graph["edge_index"].shape[1])
             policy, _ = resolve_budget(self.padding, nodes, edges)
             before = (self.padding.nodes_budget, self.padding.edges_budget)
             after = (policy.nodes_budget, policy.edges_budget)
@@ -742,8 +749,6 @@ class MACECalculator(Calculator):
                     policy.edges_budget,
                 )
             self.padding = policy
-        dtype = interface_dtype(self.models[0].engine)
-        graph = collate([structure], dtype=dtype, features=self.features)
         if padded:
             graph, info = pad_batch(
                 graph,
@@ -766,7 +771,7 @@ class MACECalculator(Calculator):
         else:
             info = PaddingInfo(
                 n_real_nodes=len(atoms),
-                n_real_edges=int(structure["edge_index"].shape[1]),
+                n_real_edges=int(graph["edge_index"].shape[1]),
                 n_real_graphs=1,
             )
         graph = {

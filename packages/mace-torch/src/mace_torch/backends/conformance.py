@@ -39,7 +39,7 @@ them. A change to them is its own reviewed change.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
@@ -48,6 +48,7 @@ from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.clebsch_gordan.real_basis import wigner_d_real
 from mace_core.kernels.capabilities import UnsupportedDescriptorError
 from mace_core.kernels.descriptors import (
+    ActivationLayout,
     ChannelwiseTPConvDescriptor,
     FullyConnectedTPDescriptor,
     LinearDescriptor,
@@ -59,10 +60,10 @@ from mace_core.kernels.precision import Precision
 from mace_core.kernels.protocol import InternalWeights
 from mace_core.kernels.registry import get_backend
 from mace_core.kernels.reorder import decompose
-from torch import Tensor
+from torch import Tensor, nn
 
 from mace_torch.backends.composite import CompositeBackend
-from mace_torch.backends.layout import expanded_irreps
+from mace_torch.backends.layout import Layout, Terms, expanded_irreps
 from mace_torch.backends.reference import ReferenceBackend
 
 __all__ = [
@@ -275,6 +276,61 @@ def _inputs(descriptor: Any, dtype: torch.dtype, device: str, seed: int) -> _Inp
     raise TypeError(f"no conformance inputs for {type(descriptor).__name__}")
 
 
+# Layout-aware conformance adapts reforge/perf-integration (8dee319d).
+def _layout_terms(descriptor: Any) -> tuple[dict[int, Terms], Terms]:
+    """Which arguments of an op carry features, and the terms of each and of
+    the output, so that a value can be moved between layouts."""
+    terms = Layout.terms
+    if isinstance(descriptor, LinearDescriptor):
+        return {0: terms(descriptor.irreps_in)}, terms(descriptor.irreps_out)
+    if isinstance(descriptor, ChannelwiseTPConvDescriptor):
+        features = descriptor.num_features
+        paths = channelwise_paths(
+            descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
+        )
+        node = terms(expanded_irreps(descriptor.irreps_node, features))
+        edge = terms(descriptor.irreps_edge)
+        return {0: node, 1: edge}, tuple(
+            (features, path.irrep.dimension) for path in paths
+        )
+    if isinstance(descriptor, SymmetricContractionDescriptor):
+        features = descriptor.num_features
+        return (
+            {0: terms(expanded_irreps(descriptor.irreps_in, features))},
+            terms(expanded_irreps(descriptor.irreps_out, features)),
+        )
+    if isinstance(descriptor, FullyConnectedTPDescriptor):
+        return (
+            {0: terms(descriptor.irreps_in1), 1: terms(descriptor.irreps_in2)},
+            terms(descriptor.irreps_out),
+        )
+    return {}, ()
+
+
+class _InLayout(nn.Module):
+    """An op built in another layout, fed and read in the canonical one.
+
+    What lets every check compare it with the reference in ``mul_ir``: the
+    inputs are moved into the op's layout and its output back, so a value, a
+    gradient or a rotation that disagrees is the op's and not the layout's.
+    """
+
+    def __init__(self, op: Any, descriptor: Any) -> None:
+        super().__init__()
+        self.op = op
+        self.layout = Layout(descriptor.layout)
+        self.inputs, self.output = _layout_terms(descriptor)
+
+    def forward(self, *arguments: Any) -> Tensor:
+        moved = [
+            self.layout.from_canonical(value, self.inputs[index])
+            if index in self.inputs
+            else value
+            for index, value in enumerate(arguments)
+        ]
+        return self.layout.to_canonical(self.op(*moved), self.output)
+
+
 def _canonical_to(state: Any, like: Tensor) -> Any:
     if isinstance(state, Tensor):
         return (
@@ -310,7 +366,7 @@ def run_backend_conformance(
     seed: int = 0,
     compile_ops: bool = False,
     cuda_graphs: bool = False,
-    layout: str = "mul_ir",
+    layout: ActivationLayout = "mul_ir",
     max_block: int = 3,
 ) -> list[ConformanceResult]:
     """Check every case against the reference. Raises on the first failure.
@@ -326,7 +382,7 @@ def run_backend_conformance(
         compile_ops: Also compile each op with ``fullgraph=True``, and check
             that one compilation serves inputs of three sizes.
         cuda_graphs: Also capture each op in a CUDA graph and replay it.
-        layout: Must be ``mul_ir``, the agreed activation contract.
+        layout: The activation layout to test against canonical reference values.
         max_block: The largest block an op's canonical to internal weight map
             may have. Three is the largest measured on the production grid.
 
@@ -342,11 +398,11 @@ def run_backend_conformance(
     reference = ReferenceBackend()
     capabilities = backend.capabilities()
     _check_chain_layout(backend, capabilities)
-    if layout != "mul_ir":
-        raise ValueError("the backend contract uses canonical mul_ir features")
+    Layout(layout)  # Validate before iterating, including a declined layout.
     results = []
     given = cases or conformance_cases(precision)
     for number, descriptor in enumerate(given):
+        descriptor = replace(descriptor, layout=layout)
         op = _OPS[type(descriptor)]
         make = getattr(backend, f"make_{op}", None)
         if op not in capabilities.ops or not capabilities.supports(descriptor):
@@ -369,10 +425,9 @@ def run_backend_conformance(
         result = ConformanceResult(op, descriptor, True, ["layout"])
         where = f"{backend.name} {op} {descriptor}"
         candidate = make(descriptor).to(device)
-        canonical = descriptor
+        canonical = replace(descriptor, layout="mul_ir", product="ieee")
         expected_op = getattr(reference, f"make_{op}")(canonical).to(device)
-        # Every operator reads and writes the canonical activation layout.
-        runner = candidate
+        runner = candidate if layout == "mul_ir" else _InLayout(candidate, descriptor)
 
         if isinstance(expected_op, InternalWeights):
             if not isinstance(candidate, InternalWeights):
@@ -670,14 +725,31 @@ def _check_weight_gradients(
 
 
 def _check_chain_layout(backend: Any, capabilities: Any) -> None:
-    """Every backend in a composite chain accepts the agreed grouped layout."""
+    """The chain of ops runs in one layout, and it is one the backend declares.
+
+    What a model is built in is decided once, when the backend is resolved
+    next to the reference: the backend's native layout if the reference can
+    follow it, the canonical one if not. Either way every op of the chain
+    reads and writes that one layout, so no op transposes its features at its
+    boundary, and that only holds if the backend really builds its ops in the
+    layout it calls native.
+    """
     if "mul_ir" not in capabilities.layouts:
+        raise AssertionError(f"{backend.name} cannot load canonical mul_ir weights")
+    native = capabilities.native_layout
+    if native not in capabilities.activation_layouts:
         raise AssertionError(
-            f"{backend.name} does not accept the canonical mul_ir layout"
+            f"{backend.name} calls {native!r} its native layout and declares "
+            f"only {sorted(capabilities.activation_layouts)}: the chain would "
+            f"be built in a layout its own ops decline."
         )
-    assert (
-        "mul_ir" in CompositeBackend(backend, ReferenceBackend()).capabilities().layouts
-    )
+    chain = CompositeBackend(backend, ReferenceBackend()).layout.name
+    if chain not in capabilities.activation_layouts:
+        raise AssertionError(
+            f"{backend.name} next to the reference resolves the chain to "
+            f"{chain!r}, a layout its ops decline, so every op would transpose "
+            f"at its boundary."
+        )
 
 
 def _tiled(descriptor: Any, arguments: list[Any], copies: int) -> list[Any]:

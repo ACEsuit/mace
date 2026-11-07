@@ -21,7 +21,7 @@ from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec
 from torch import Tensor, nn
 
-from mace_torch.backends.layout import expanded_irreps
+from mace_torch.backends.layout import expanded_irreps, layout_of, terms
 
 __all__ = ["NodeInputEmbedding"]
 
@@ -62,6 +62,8 @@ class NodeInputEmbedding(nn.Module):
                 f"by the graph-feature embedding."
             )
         self.specs = list(specs)
+        self.layout = layout_of(backend)
+        self.input_terms = {spec.name: terms(spec.irreps) for spec in specs}
         grouped = expanded_irreps(hidden_irreps, num_features)
         self.maps = nn.ModuleDict(
             {
@@ -95,6 +97,7 @@ class NodeInputEmbedding(nn.Module):
                     f"zero."
                 )
             stream = graph[spec.name].to(features.dtype)
+            stream = self.layout.from_canonical(stream, self.input_terms[spec.name])
             mapped = self.maps[spec.name](stream)
             total = mapped if total is None else total + mapped
         assert total is not None

@@ -15,6 +15,7 @@ ops are the wrapped backend's own, unchanged.
 from __future__ import annotations
 
 import dataclasses
+import logging
 from typing import Any
 
 import torch
@@ -40,6 +41,7 @@ _TORCH_DTYPE = {
     "float32": torch.float32,
     "bfloat16": torch.bfloat16,
 }
+logger = logging.getLogger(__name__)
 
 #: The factories whose ops this wrapper stamps. Anything else the wrapped
 #: backend offers is passed through as it is.
@@ -90,13 +92,19 @@ class PrecisionBackend:
 
     def build_report(self) -> str | None:
         """What was lowered at build time, if anything."""
-        return degradation_report(self.config_requested, self.supports_float64)
+        reports = [degradation_report(self.config_requested, self.supports_float64)]
+        products = [item for item in self.degraded if item.endswith(" products")]
+        if products:
+            reports.append(
+                f"backend {self.name!r} uses IEEE for {', '.join(products)}."
+            )
+        return " ".join(report for report in reports if report) or None
 
     def _stamping(self, factory: str) -> Any:
         make = getattr(self.backend, factory)
 
         def build(descriptor: Any) -> Any:
-            stamped = self._stamp(descriptor)
+            stamped = self.op_descriptor(descriptor)
             op = make(stamped)
             if op is not None and stamped.precision != self._interface:
                 cast_at_boundary(op, stamped.precision, self._interface)
@@ -126,11 +134,17 @@ class PrecisionBackend:
             return ()
         policy = self.config.policy_for(descriptors)
         return tuple(
-            self._stamp(dataclasses.replace(member, layout=CANONICAL_LAYOUT), policy)
+            self.op_descriptor(
+                dataclasses.replace(member, layout=member.layout or CANONICAL_LAYOUT),
+                policy,
+            )
             for member in descriptors
         )
 
-    def _stamp(self, descriptor: Any, policy: PrecisionPolicy | None = None) -> Any:
+    def op_descriptor(
+        self, descriptor: Any, policy: PrecisionPolicy | None = None
+    ) -> Any:
+        """The effective descriptor, including recorded precision degradations."""
         if policy is None:
             policy = self.config.policy_for(descriptor)
         if policy.param_dtype != policy.compute_dtype:
@@ -140,20 +154,30 @@ class PrecisionBackend:
                 f"The {self.name!r} backend holds an op's weights in the dtype "
                 f"it computes in; set param_dtype equal to compute_dtype."
             )
-        if policy.accumulate_dtype == policy.compute_dtype:
-            return dataclasses.replace(
-                descriptor, precision=policy.compute_dtype, accumulate=None
-            )
-        if self.capabilities().wide_accumulation:
-            return dataclasses.replace(
-                descriptor,
-                precision=policy.compute_dtype,
-                accumulate=policy.accumulate_dtype,
-            )
-        # A plain-torch op has no accumulator of its own, so it meets a floor
-        # wider than its compute dtype by computing in the floor.
+        capabilities = self.capabilities()
+        compute = policy.compute_dtype
+        accumulate = None
+        if policy.accumulate_dtype != compute:
+            if capabilities.wide_accumulation:
+                accumulate = policy.accumulate_dtype
+            else:
+                compute = policy.accumulate_dtype
+        product = policy.product
+        if product == "tf32" and (
+            product not in capabilities.products or compute != "float32"
+        ):
+            what = f"{type(descriptor).__name__} tf32 products"
+            if what not in self.degraded:
+                self.degraded.append(what)
+                logger.warning(
+                    "backend %r uses IEEE products for %s at %s precision",
+                    self.name,
+                    type(descriptor).__name__,
+                    compute,
+                )
+            product = "ieee"
         return dataclasses.replace(
-            descriptor, precision=policy.accumulate_dtype, accumulate=None
+            descriptor, precision=compute, accumulate=accumulate, product=product
         )
 
 

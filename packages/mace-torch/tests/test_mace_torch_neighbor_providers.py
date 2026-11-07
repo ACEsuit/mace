@@ -238,6 +238,45 @@ def test_import_failure_is_recorded_and_named_resolution_raises(tmp_path, monkey
         resolve_neighbor_provider(NeighborListConfig(kind="missing_device"))
 
 
+def test_default_provider_is_selected_per_device_with_explicit_names_preserved(
+    tmp_path, monkeypatch
+):
+    register(
+        tmp_path,
+        monkeypatch,
+        "nvalchemiops",
+        "mace_torch_neighbor_fixtures:DeviceProvider",
+    )
+    monkeypatch.setattr(torch.version, "hip", None)
+    assert resolve_neighbor_provider(device="cpu").name == "vesin"
+    provider = resolve_neighbor_provider(device="cuda:0")
+    assert provider.name == "nvalchemiops"
+    assert "sorted_by_sender" in provider.capabilities.features
+    assert (
+        resolve_neighbor_provider(
+            NeighborListConfig(kind="vesin"), device="cuda:0"
+        ).name
+        == "vesin"
+    )
+    assert resolve_neighbor_provider(device="cuda:0", default="vesin").name == "vesin"
+    monkeypatch.setattr(torch.version, "hip", "7.0")
+    assert resolve_neighbor_provider(device="cuda:0").name == "vesin"
+
+
+def test_unavailable_cuda_default_is_reported_and_explicit_request_fails(
+    tmp_path, monkeypatch, caplog
+):
+    register(tmp_path, monkeypatch, "nvalchemiops", "no_such_neighbor_module:Backend")
+    monkeypatch.setattr(torch.version, "hip", None)
+    with caplog.at_level(logging.INFO):
+        assert resolve_neighbor_provider(device="cuda:0").name == "vesin"
+    assert "CUDA neighbour default unavailable" in caplog.text
+    with pytest.raises(NeighborBackendNotAvailableError, match="nvalchemiops"):
+        resolve_neighbor_provider(
+            NeighborListConfig(kind="nvalchemiops"), device="cuda:0"
+        )
+
+
 @pytest.mark.parametrize("field", ["edge_index", "unit_shifts", "cell", "shifts"])
 def test_bad_provider_results_are_refused(providers, monkeypatch, field):
     provider = resolve_neighbor_provider(NeighborListConfig(kind="device"))

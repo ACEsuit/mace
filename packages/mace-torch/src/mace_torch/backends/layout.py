@@ -1,28 +1,34 @@
-"""The two arrangements of channelled node features, and the moves between them.
+"""Activation views in the layout selected once for the complete model chain.
 
-Between ops the node features are **grouped**: the canonical ``mul_ir`` over the
-declaration expanded to ``num_features`` channels, one contiguous block per
-term. That is the layout a checkpoint holds and a user is handed, and the one
-every op of the model reads and writes.
-
-The reference kernels compute **channel by channel**, ``[n, num_features,
-dim]`` with one channel's whole declaration along the last axis. They move
-between the two here, at the backend boundary, which is the only place a
-layout move is allowed: the model never permutes its features.
-
-Within one term of multiplicity ``m``, copy ``k`` of channel ``c`` is copy
-``c * m + k`` of the grouped term.
+Within each irrep, mul_ir stores [multiplicity, components] and ir_mul stores
+[components, multiplicity]. Checkpoint weights and public feature outputs use
+mul_ir. Operators consume and produce the chain's negotiated activation layout.
 """
+
+# Layout views and negotiation follow reforge/perf-integration (8dee319d).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import cache
+from typing import Any
 
+import numpy as np
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.kernels.descriptors import ActivationLayout
 from torch import Tensor
 
-__all__ = ["expanded_irreps", "grouped", "per_channel", "term_widths"]
+__all__ = [
+    "CANONICAL",
+    "Layout",
+    "Terms",
+    "expanded_irreps",
+    "grouped",
+    "layout_of",
+    "per_channel",
+    "term_widths",
+]
 
 
 def term_widths(irreps: str) -> tuple[int, ...]:
@@ -86,24 +92,113 @@ def terms(irreps: str) -> Terms:
 
 def blocks(features: Tensor, declaration: Terms) -> list[Tensor]:
     """Canonical ``[nodes, dim]`` as ``[nodes, multiplicity, components]`` views."""
-    nodes = features.shape[0]
-    pieces, offset = [], 0
-    for mul, dimension in declaration:
-        pieces.append(
-            features[:, offset : offset + mul * dimension].reshape(
-                nodes, mul, dimension
-            )
-        )
-        offset += mul * dimension
-    return pieces
+    return CANONICAL.blocks(features, declaration)
 
 
 def join(pieces: list[Tensor]) -> Tensor:
     """Canonical blocks flattened and joined, preserving channel order."""
-    return torch.cat(
-        [
-            block.reshape(block.shape[0], block.shape[1] * block.shape[2])
-            for block in pieces
-        ],
-        dim=-1,
-    )
+    return CANONICAL.join(pieces)
+
+
+@dataclass(frozen=True)
+class Layout:
+    """An immutable activation layout and its term-wise views."""
+
+    name: ActivationLayout
+
+    def __post_init__(self):
+        if self.name not in {"mul_ir", "ir_mul"}:
+            raise ValueError(f"unknown activation layout {self.name!r}")
+
+    @property
+    def is_canonical(self) -> bool:
+        return self.name == "mul_ir"
+
+    @staticmethod
+    def terms(irreps: str) -> Terms:
+        return terms(irreps)
+
+    def blocks(self, features: Tensor, declaration: Terms) -> list[Tensor]:
+        """Views [nodes, multiplicity, components], with shared storage."""
+        pieces, offset = [], 0
+        for mul, dimension in declaration:
+            block = features[:, offset : offset + mul * dimension]
+            if self.is_canonical:
+                block = block.reshape(features.shape[0], mul, dimension)
+            else:
+                block = block.reshape(features.shape[0], dimension, mul).transpose(1, 2)
+            pieces.append(block)
+            offset += mul * dimension
+        return pieces
+
+    def join(self, pieces: list[Tensor]) -> Tensor:
+        """Flatten term-wise [nodes, multiplicity, components] in this layout."""
+        if not self.is_canonical:
+            pieces = [piece.transpose(1, 2) for piece in pieces]
+        return _join(
+            [
+                piece.reshape(piece.shape[0], piece.shape[1] * piece.shape[2])
+                for piece in pieces
+            ]
+        )
+
+    def channel_major(
+        self, features: Tensor, declaration: Terms, channels: int
+    ) -> Tensor:
+        """Return [nodes, channels, single_channel_dimension] for reference math."""
+        expanded = tuple((channels * mul, dimension) for mul, dimension in declaration)
+        return _join(
+            [
+                block.reshape(features.shape[0], channels, mul * dimension)
+                for block, (mul, dimension) in zip(
+                    self.blocks(features, expanded), declaration, strict=True
+                )
+            ]
+        )
+
+    def grouped(self, features: Tensor, declaration: Terms) -> Tensor:
+        """Return flat chain-layout features from channel-major reference math."""
+        widths = [mul * dimension for mul, dimension in declaration]
+        pieces = features.split(widths, dim=-1)
+        return self.join(
+            [
+                piece.reshape(features.shape[0], features.shape[1] * mul, dimension)
+                for piece, (mul, dimension) in zip(pieces, declaration, strict=True)
+            ]
+        )
+
+    def positions(self, irreps: str) -> np.ndarray:
+        """Index of each canonical component in this layout, resolved at build."""
+        return _positions(irreps, self.name)
+
+    def from_canonical(self, features: Tensor, declaration: Terms) -> Tensor:
+        if self.is_canonical or all(mul == 1 or dim == 1 for mul, dim in declaration):
+            return features
+        return self.join(CANONICAL.blocks(features, declaration))
+
+    def to_canonical(self, features: Tensor, declaration: Terms) -> Tensor:
+        if self.is_canonical or all(mul == 1 or dim == 1 for mul, dim in declaration):
+            return features
+        return CANONICAL.join(self.blocks(features, declaration))
+
+
+@cache
+def _positions(irreps: str, name: ActivationLayout) -> np.ndarray:
+    result, offset = [], 0
+    for mul, dimension in terms(irreps):
+        indices = np.arange(mul * dimension)
+        if name == "ir_mul":
+            indices = indices.reshape(dimension, mul).T.reshape(-1)
+        result.extend(offset + indices)
+        offset += mul * dimension
+    positions = np.asarray(result, dtype=np.int64)
+    positions.flags.writeable = False
+    return positions
+
+
+CANONICAL = Layout("mul_ir")
+
+
+def layout_of(backend: Any) -> Layout:
+    """The layout resolved by the chain builder, canonical for standalone ops."""
+    return getattr(backend, "layout", CANONICAL)

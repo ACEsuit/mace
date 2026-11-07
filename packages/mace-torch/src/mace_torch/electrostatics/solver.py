@@ -24,8 +24,10 @@ prepares a cache of its own does so from this, once, in its ``prepare``.
 
 from __future__ import annotations
 
+# Discrete long-range planning adapts reforge/perf-integration (8dee319d).
+# V1 retains its reference Fourier algebra and widened electrostatics precision.
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from types import NotImplementedType
 from typing import Any, Protocol
 
@@ -38,16 +40,19 @@ from mace_core.electrostatics import (
 from torch import Tensor, nn
 
 __all__ = [
+    "LONG_RANGE_PLAN",
     "PBC_HANDLING",
     "ElectrostaticsSolver",
     "LongRangeEnergy",
     "LongRangeFeatures",
     "LongRangeGeometry",
+    "LongRangePlan",
     "ReferenceSolver",
     "build_long_range",
     "build_long_range_features",
     "build_scf_solve",
     "long_range_geometry",
+    "long_range_plan",
     "reciprocal_cell_and_volume",
 ]
 
@@ -124,6 +129,20 @@ class LongRangeGeometry:
         k_norm2: ``[n_k]``.
         k_vector_batch: ``[n_k]``, which structure each belongs to.
         k0_mask: ``[n_k]``.
+        sizes: Each structure's atom count, as host integers, when the batch
+            carries them as ``structure_sizes``.
+        periodic: Whether each structure is periodic along any axis, as host
+            booleans, when the batch carries them as ``structure_periodic``.
+            With both, no count and no branch of the long-range solve is read
+            off the device, so a compiled model traces it at static shapes.
+        dense_pairs: Whether a real-space sum runs over every pair of atoms of
+            the batch, masked to the pairs within one structure, so its shapes
+            depend on the atom count alone.
+        prepared: What a solver derives from the rest once and every op of
+            the same forward reads, by the solver's own key.
+        plans: What a solver derived from the cells and the atom counts alone,
+            outside the model, by the solver's own key: the ``solvers`` of the
+            batch's :class:`LongRangePlan`, empty without one.
     """
 
     positions: Tensor
@@ -136,6 +155,134 @@ class LongRangeGeometry:
     k_norm2: Tensor
     k_vector_batch: Tensor
     k0_mask: Tensor
+    sizes: tuple[int, ...] | None = None
+    periodic: tuple[bool, ...] | None = None
+    dense_pairs: bool = False
+    prepared: dict[str, Any] = field(default_factory=dict)
+    plans: Mapping[str, Any] = field(default_factory=dict)
+
+
+#: The graph key a batch's :class:`LongRangePlan` is carried under.
+LONG_RANGE_PLAN = "long_range_plan"
+
+
+@dataclass(frozen=True)
+class LongRangePlan:
+    """What a batch's long-range solve reads that its cells, its periodicity
+    and its atom counts fix.
+
+    Built by :func:`long_range_plan` outside the model, where the host may
+    wait on the device, and carried in the graph under
+    :data:`LONG_RANGE_PLAN`. With it a forward reads nothing off the device
+    for the solve, so a compiled model traces it at static shapes; and since
+    nothing in it depends on the positions, a caller whose cells do not change
+    builds it once.
+
+    Attributes:
+        kspace_cutoff: The cutoff the k-vectors were chosen with.
+        sizes: Each structure's atom count.
+        periodic: Whether each structure is solved as periodic: when it is
+            periodic along any axis, and also when it pads a batch that has
+            a periodic structure. A padding structure's values are thrown
+            away, so it is solved with the periodic ones rather than summed
+            exactly in real space, which for the padding atoms, all stacked
+            at one point, is the largest sum of the batch.
+        coefficients: ``[n_kvec, 3]``, the candidate k-vectors' integer
+            coefficients, or ``None`` when the solve sums no k-vectors.
+        kept: ``[n_k]``, the candidates inside the cutoff, as
+            :func:`~mace_torch.electrostatics.reference.kspace.k_vector_selection`
+            returns them, or ``None`` with ``coefficients``.
+        dense_pairs: Whether a real-space sum runs over every pair of the
+            batch's atoms, masked to each structure, rather than over the
+            pairs of each structure: what a compiled model fed batches of
+            one size needs, since the pairs of each structure change with the
+            atom counts.
+        solvers: What each solver derives from these alone, by its own key.
+    """
+
+    kspace_cutoff: float
+    sizes: tuple[int, ...]
+    periodic: tuple[bool, ...]
+    coefficients: Tensor | None = None
+    kept: Tensor | None = None
+    dense_pairs: bool = False
+    solvers: Mapping[str, Any] = field(default_factory=dict)
+
+
+def _sums_k_vectors(
+    descriptor: ElectrostaticsSolverDescriptor, periodic: tuple[bool, ...] | None
+) -> bool:
+    """Whether a solve reads k-vectors: not when it sums in real space, nor
+    for a batch the host knows has no periodic structure under a profile that
+    sums such a batch in real space."""
+    handling = PBC_HANDLING[descriptor.periodicity_profile]
+    open_batch = periodic is not None and not any(periodic)
+    return not (
+        handling == "realspace"
+        or (open_batch and handling in ("per_structure", "auto"))
+    )
+
+
+@torch.no_grad()
+def long_range_plan(
+    graph: Mapping[str, Any],
+    descriptor: ElectrostaticsSolverDescriptor,
+    ops: tuple[Any, ...] = (),
+    dense_pairs: bool = False,
+) -> LongRangePlan:
+    """The plan of one batch's solve, with each op's own part of it.
+
+    Reads the device. An op contributes through a ``plan(geometry)`` method
+    returning its entries by its solver's key; an op without one plans
+    nothing.
+
+    Args:
+        graph: The current batch. Selection uses detached cell values; the
+            forward evaluates reciprocal vectors from the differentiable cell.
+        descriptor: The solve.
+        ops: The model's long-range ops.
+        dense_pairs: Plan the real-space sums over every pair of the batch.
+    """
+    from mace_torch.electrostatics.reference.kspace import k_vector_selection
+
+    batch = graph["batch"]
+    cell = (
+        graph["cell"].detach().to(getattr(torch, descriptor.precision)).view(-1, 3, 3)
+    )
+    num_graphs = cell.shape[0]
+    sizes = graph.get("structure_sizes")
+    if sizes is None:
+        sizes = torch.bincount(batch, minlength=num_graphs).tolist()
+    periodic = graph.get("structure_periodic")
+    if periodic is None:
+        periodic = graph["pbc"].view(-1, 3).any(dim=1).tolist()
+    padding = graph.get("structure_padding")
+    if padding is not None and any(
+        flag and not pad for flag, pad in zip(periodic, padding, strict=True)
+    ):
+        periodic = [flag or pad for flag, pad in zip(periodic, padding, strict=True)]
+    coefficients = kept = None
+    if _sums_k_vectors(descriptor, tuple(periodic)):
+        rcell, _ = reciprocal_cell_and_volume(cell)
+        coefficients, kept = k_vector_selection(
+            float(descriptor.kspace_cutoff), cell, rcell
+        )
+    plan = LongRangePlan(
+        kspace_cutoff=float(descriptor.kspace_cutoff),
+        sizes=tuple(int(size) for size in sizes),
+        periodic=tuple(bool(flag) for flag in periodic),
+        coefficients=coefficients,
+        kept=kept,
+        dense_pairs=dense_pairs,
+    )
+    planners = [op.plan for op in ops if hasattr(op, "plan")]
+    if not planners:
+        return plan
+    geometry = long_range_geometry({**graph, LONG_RANGE_PLAN: plan}, descriptor)
+    solvers: dict[str, Any] = {}
+    for planner in planners:
+        solvers.update(planner(geometry))
+    return replace(plan, solvers=solvers)
 
 
 def long_range_geometry(
@@ -143,15 +290,41 @@ def long_range_geometry(
 ) -> LongRangeGeometry:
     """The shared geometry of one batch, for one solve.
 
-    A solve summed in real space reads no k-vectors, so none are built for it.
+    A solve summed in real space reads no k-vectors, so none are built for it,
+    and neither for a batch the host knows has no periodic structure under a
+    profile that sums such a batch in real space. With the batch's
+    :class:`LongRangePlan` the k-vectors are its selection, evaluated on the
+    graph's cell, and nothing is read off the device.
+
+    Raises:
+        ValueError: If the plan was made for another k-space cutoff.
     """
-    from mace_torch.electrostatics.reference.kspace import compute_k_vectors_flat
+    from mace_torch.electrostatics.reference.kspace import (
+        compute_k_vectors_flat,
+        k_vectors_from_selection,
+    )
 
     dtype = getattr(torch, descriptor.precision)
     positions = graph["positions"].to(dtype)
     cell = graph["cell"].to(dtype).view(-1, 3, 3)
     rcell, volume = reciprocal_cell_and_volume(cell)
-    if PBC_HANDLING[descriptor.periodicity_profile] == "realspace":
+    plan: LongRangePlan | None = graph.get(LONG_RANGE_PLAN)
+    sizes = periodic = None
+    if plan is not None:
+        if plan.kspace_cutoff != float(descriptor.kspace_cutoff):
+            raise ValueError(
+                f"the batch's long-range plan was made for a k-space cutoff "
+                f"of {plan.kspace_cutoff}, and this solve's is "
+                f"{float(descriptor.kspace_cutoff)}. Plan the batch for the "
+                f"model it is evaluated with."
+            )
+        sizes, periodic = plan.sizes, plan.periodic
+    if plan is not None and plan.coefficients is not None:
+        assert plan.kept is not None
+        k_vectors, k_norm2, k_vector_batch, k0_mask = k_vectors_from_selection(
+            plan.coefficients, plan.kept, rcell
+        )
+    elif plan is not None or not _sums_k_vectors(descriptor, periodic):
         k_vectors = positions.new_empty((0, 3))
         k_norm2 = positions.new_empty((0,))
         k_vector_batch = graph["batch"].new_empty((0,))
@@ -171,6 +344,10 @@ def long_range_geometry(
         k_norm2=k_norm2,
         k_vector_batch=k_vector_batch,
         k0_mask=k0_mask,
+        sizes=None if sizes is None else tuple(sizes),
+        periodic=None if periodic is None else tuple(periodic),
+        dense_pairs=plan is not None and plan.dense_pairs,
+        plans={} if plan is None else plan.solvers,
     )
 
 
@@ -226,6 +403,9 @@ class LongRangeEnergy(nn.Module):
             batch=geometry.batch,
             volume=geometry.volume,
             pbc=geometry.pbc,
+            sizes=geometry.sizes,
+            periodic=geometry.periodic,
+            dense_pairs=geometry.dense_pairs,
         )
 
 
@@ -280,6 +460,9 @@ class LongRangeFeatures(nn.Module):
             batch=geometry.batch,
             volume=geometry.volume,
             pbc=geometry.pbc,
+            sizes=geometry.sizes,
+            periodic=geometry.periodic,
+            dense_pairs=geometry.dense_pairs,
         )
 
     def forward(self, cache: dict[str, Any], source_feats: Tensor) -> Tensor:

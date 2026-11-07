@@ -238,10 +238,16 @@ class _Gate(nn.Module):
     """
 
     def __init__(
-        self, irreps_scalars: str, irreps_gated: str, gate: str = "silu"
+        self,
+        irreps_scalars: str,
+        irreps_gated: str,
+        gate: str = "silu",
+        *,
+        feature_layout: layout.Layout = layout.CANONICAL,
     ) -> None:
         super().__init__()
         self.activation = ScalarActivation(gate)
+        self.layout = feature_layout
         self.scalars = Irreps.parse(irreps_scalars)
         # An empty string, not an empty `Irreps`: a scalar output has nothing
         # to gate, and the declaration grammar has no spelling for "nothing".
@@ -277,13 +283,13 @@ class _Gate(nn.Module):
             features[..., self.scalar_dim : self.scalar_dim + self.num_gates]
         )
         pieces, offset = [], 0
-        blocks = layout.blocks(
+        blocks = self.layout.blocks(
             features[..., self.scalar_dim + self.num_gates :], self.gated_terms
         )
         for block, copies in zip(blocks, self.copies, strict=True):
             pieces.append(block * gates[:, offset : offset + copies, None])
             offset += copies
-        return torch.cat([scalars, layout.join(pieces)], dim=-1)
+        return torch.cat([scalars, self.layout.join(pieces)], dim=-1)
 
 
 class ObservableHead(nn.Module):
@@ -340,10 +346,18 @@ class ObservableHead(nn.Module):
         self.per_atom = spec.per_atom
         self.dimension = spec.dimension
         self.num_heads = num_heads
-        # Select each head directly from the canonical mul_ir columns.
+        self.layout = layout.layout_of(backend)
+        # Gather canonical observable components directly from native readouts.
+        columns = head_columns(spec.irreps, num_heads)
+        native_positions = self.layout.positions(
+            per_head_irreps(spec.irreps, num_heads)
+        )
+        self.reorder_single_head = not np.array_equal(
+            native_positions, np.arange(len(native_positions))
+        )
         self.register_buffer(
             "columns",
-            torch.tensor(head_columns(spec.irreps, num_heads)),
+            torch.tensor(native_positions[columns]),
             persistent=False,
         )
         self.layer_irreps = list(layer_irreps)
@@ -435,6 +449,8 @@ class ObservableHead(nn.Module):
             if self.num_heads > 1:
                 assert node_head is not None
                 value = value.gather(1, self.columns[node_head])
+            elif self.reorder_single_head:
+                value = value.index_select(1, self.columns[0])
             values.append(value)
         return values
 
@@ -571,7 +587,7 @@ class ObservableHead(nn.Module):
 
         Args:
             layers: One ``[n_atoms, channels * width]`` tensor per layer, grouped
-                by irrep in canonical mul_ir layout.
+                by irrep in the negotiated activation layout.
             node_head: ``[n_atoms]``, required with more than one head.
 
         Returns:
@@ -668,6 +684,7 @@ class _GatedReadout(nn.Module):
             f"{num_heads * hidden_scalars}x0e",
             per_head_irreps(gated, num_heads) if gated else "",
             gate=gate,
+            feature_layout=layout.layout_of(backend),
         )
         self.first = backend.make_linear(
             LinearDescriptor(
@@ -696,10 +713,13 @@ class _GatedReadout(nn.Module):
                 precision=precision,
             )
         )
-        # Canonical mul_ir already orders the gate's copies by head.
+        positions = layout.layout_of(backend).positions(
+            per_head_irreps(middle, num_heads)
+        )
+        owners = component_heads(middle, num_heads)[np.argsort(positions)]
         self.register_buffer(
             "hidden_heads",
-            torch.tensor(component_heads(middle, num_heads)),
+            torch.tensor(owners),
             persistent=False,
         )
 

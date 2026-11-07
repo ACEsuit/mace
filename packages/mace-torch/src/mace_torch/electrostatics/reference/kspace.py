@@ -12,7 +12,32 @@ def compute_k_vectors_flat(
     r_cell_vectors: torch.Tensor,  # [n_graphs, 3, 3]
 ):
     """
-    Given a batch of cells, computes graph-grouped flattened k-vectors.
+    Given a batch of cells, computes graph-grouped flattened k-vectors: the
+    selection of :func:`k_vector_selection` evaluated by
+    :func:`k_vectors_from_selection`.
+
+    returns:
+        - kvectors
+            flattened tensor [n_k_total, 3], grouped by graph id
+        - k_vectors_normed_squared
+            flattened tensor [n_k_total] of squared norms
+        - kvector_batch
+            tensor [n_k_total] (long) giving graph id for each k-vector
+        - k0_mask
+            float tensor [n_k_total], 1.0 where k=(0,0,0), else 0.0
+    """
+    coefficients, kept = k_vector_selection(cutoff, cell_vectors, r_cell_vectors)
+    return k_vectors_from_selection(coefficients, kept, r_cell_vectors)
+
+
+@torch.no_grad()
+def k_vector_selection(
+    cutoff: float,
+    cell_vectors: torch.Tensor,  # [n_graphs, 3, 3]
+    r_cell_vectors: torch.Tensor,  # [n_graphs, 3, 3]
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Which k-vectors of a batch of cells are inside the cutoff.
     The search-space heuristic follows the previous implementation.
 
     note that this function is meant to run on gpu, so it cannot do the matrix
@@ -25,14 +50,16 @@ def compute_k_vectors_flat(
             vectors, and the -1 index is the spatial dimension.
 
     returns:
-        - kvectors
-            flattened tensor [n_k_total, 3], grouped by graph id
-        - k_vectors_normed_squared
-            flattened tensor [n_k_total] of squared norms
-        - kvector_batch
-            tensor [n_k_total] (long) giving graph id for each k-vector
-        - k0_mask
-            float tensor [n_k_total], 1.0 where k=(0,0,0), else 0.0
+        - coefficients
+            [n_kvec, 3], in the dtype of the reciprocal cell: the integer
+            coefficients of every candidate, a superset shared by all graphs
+            whose first row is k = 0
+        - kept
+            long tensor [n_k_total]: the rows, in the graph-major flattening
+            of [n_graphs, n_kvec], of the candidates inside the cutoff
+
+    Both depend on the cells alone, and the host waits on the device for
+    them, so a caller with a fixed cell computes them once.
     """
     device = cell_vectors.device
 
@@ -47,9 +74,7 @@ def compute_k_vectors_flat(
     max_ns = torch.ceil(max_ns).type(torch.int64)
 
     max_max_ns = torch.max(max_ns, dim=0).values  # [3]
-    n1max = int(max_max_ns[0])
-    n2max = int(max_max_ns[1])
-    n3max = int(max_max_ns[2])
+    n1max, n2max, n3max = max_max_ns.tolist()
 
     # make a single superset of all coeficients
     origin = torch.cartesian_prod(
@@ -92,38 +117,36 @@ def compute_k_vectors_flat(
     )  # [n_graphs, n_kvec]
     mask = k_vectors_normed_squared.le(cutoff * cutoff)  # [n_graphs, n_kvec]
 
-    # Keep only valid vectors per graph and flatten as [n_k_total, ...], grouped
-    # by graph.
-    # This also acts on the old TODO by dropping vectors excluded in each graph.
-    k_vectors_flat = []
-    k_norm2_flat = []
-    k_batch_flat = []
-    k0_mask_flat = []
+    # One mask over the graph-major flattening keeps the vectors grouped by
+    # graph.
+    return kvecs, mask.reshape(-1).nonzero().squeeze(-1)
 
-    for graph_i in range(k_vectors.size(0)):
-        graph_mask = mask[graph_i]
 
-        graph_k = k_vectors[graph_i][graph_mask]
-        graph_k_norm2 = k_vectors_normed_squared[graph_i][graph_mask]
-        graph_k0_mask = torch.zeros_like(graph_k_norm2)
-        graph_k0_mask[0] = 1.0
+def k_vectors_from_selection(
+    coefficients: torch.Tensor,  # [n_kvec, 3]
+    kept: torch.Tensor,  # [n_k_total]
+    r_cell_vectors: torch.Tensor,  # [n_graphs, 3, 3]
+):
+    """
+    The k-vectors :func:`k_vector_selection` chose, from the reciprocal cells.
 
-        k_vectors_flat.append(graph_k)
-        k_norm2_flat.append(graph_k_norm2)
-        k_batch_flat.append(
-            torch.full(
-                (graph_k.size(0),),
-                graph_i,
-                dtype=torch.long,
-                device=device,
-            )
-        )
-        k0_mask_flat.append(graph_k0_mask)
-
-    k_vectors_flat = torch.cat(k_vectors_flat, dim=0)  # [n_k_total, 3]
-    k_norm2_flat = torch.cat(k_norm2_flat, dim=0)  # [n_k_total]
-    k_batch_flat = torch.cat(k_batch_flat, dim=0)  # [n_k_total]
-    k0_mask_flat = torch.cat(k0_mask_flat, dim=0)  # [n_k_total]
+    Differentiable in the cells, and with every shape fixed by the selection,
+    so nothing here is read off the device. Returns what
+    :func:`compute_k_vectors_flat` does.
+    """
+    k_vectors = torch.einsum(
+        "ni,bij->bnj", coefficients, r_cell_vectors
+    )  # [n_graphs, n_kvec, 3]
+    k_vectors_normed_squared = torch.einsum(
+        "bni,bni->bn", k_vectors, k_vectors
+    )  # [n_graphs, n_kvec]
+    # k = 0 is always kept and is each graph's first vector, so the k0 mask
+    # marks the kept vectors at local index 0.
+    num_kvec = coefficients.shape[0]
+    k_vectors_flat = k_vectors.reshape(-1, 3)[kept]  # [n_k_total, 3]
+    k_norm2_flat = k_vectors_normed_squared.reshape(-1)[kept]  # [n_k_total]
+    k_batch_flat = kept // num_kvec  # [n_k_total]
+    k0_mask_flat = (kept % num_kvec == 0).to(k_norm2_flat.dtype)  # [n_k_total]
     return k_vectors_flat, k_norm2_flat, k_batch_flat, k0_mask_flat
 
 

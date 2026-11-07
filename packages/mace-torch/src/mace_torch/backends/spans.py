@@ -8,6 +8,12 @@ SiLU network supplies its matrices in layer order; a layer-norm SiLU network
 supplies matrix/bias pairs, then norm-weight/norm-bias pairs. These are live
 views, never detached checkpoint tensors.
 
+When present, the density network's tensors follow the radial network's in
+the same format. Element-conditioned spans then receive sender and receiver
+tables, each ``[num_elements, element_embedding_width]``, including the element
+linear maps' normalization. ``edges.node_elements`` indexes these tables.
+They are differentiable views of the model's parameters.
+
 ``edge_runs`` groups receivers if requested, otherwise senders if requested,
 and is None without either requirement. Both views are available on ``edges``
 when a backend declares both. No span sorts or resolves a backend in forward.
@@ -48,8 +54,13 @@ class InteractionSpan(Protocol):
         num_nodes: int,
         member_weights: tuple[Tensor, ...],
         edge_runs: EdgeRuns | None,
-    ) -> Tensor:
-        """Node-level convolution, after summing receivers, in the chain layout."""
+    ) -> Tensor | tuple[Tensor, Tensor]:
+        """Receiver-summed convolution in the chain layout.
+
+        With a density member, return ``(message, density)``. Density has shape
+        ``[num_nodes, 1]`` and sums ``tanh(network(input)**2)`` over receivers.
+        Its normalization is applied by the interaction outside the span.
+        """
         ...
 
 

@@ -42,6 +42,8 @@ class EdgeInputs:
             training or a Hessian; independent of the module's training mode.
         receiver_runs: The receiver grouping requested by the backend, if any.
         sender_runs: The sender grouping requested by the backend, if any.
+        node_elements: Indices into the model's element table for conditioned
+            spans. These are independent of the product basis's element sharing.
     """
 
     def __init__(
@@ -55,6 +57,7 @@ class EdgeInputs:
         differentiated_twice: bool = False,
         receiver_runs: EdgeRuns | None = None,
         sender_runs: EdgeRuns | None = None,
+        node_elements: Tensor | None = None,
     ) -> None:
         self.vectors = vectors
         self.node_atomic_numbers = node_atomic_numbers
@@ -64,6 +67,7 @@ class EdgeInputs:
         self.differentiated_twice = differentiated_twice
         self.receiver_runs = receiver_runs
         self.sender_runs = sender_runs
+        self.node_elements = node_elements
         self._lengths: Tensor | None = None
         self._attributes: Tensor | None = None
         self._radial: Tensor | None = None
@@ -80,6 +84,7 @@ class EdgeInputs:
             differentiated_twice=self.differentiated_twice,
             receiver_runs=self.receiver_runs,
             sender_runs=self.sender_runs,
+            node_elements=self.node_elements,
         )
 
     def span_weights(self) -> tuple[Tensor, ...]:

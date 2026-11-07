@@ -7,9 +7,9 @@ Three rules of the flat graph contract that only a whole-tree scan can hold:
   a ``forward`` names either, and the modules that do name them are listed
   here, so a new caller is a reviewed edit;
 * the host tuples ``structure_sizes``, ``structure_periodic`` and
-  ``structure_padding`` are read outside compiled regions only, so no module
-  that defines a ``forward`` names them. A compiled frame would guard on their
-  values and recompile per batch.
+  ``structure_padding`` are read outside compiled regions only. Modules with
+  a ``forward`` may name them only in the explicit preparation boundaries
+  below. A compiled frame would guard on their values and recompile per batch.
 
 The scan is over syntax trees, so docstrings do not count.
 """
@@ -24,6 +24,15 @@ PACKAGES = REPO_ROOT / "packages"
 
 BOUNDARY_ONLY = frozenset({"validate_graph", "GraphView"})
 HOST_KEYS = frozenset({"structure_sizes", "structure_periodic", "structure_padding"})
+
+# Called before the compiled model by DerivativeEngine; the prepared plan is
+# tested with a whole-model compile counter and CUDA graph replay.
+PREPARATION_BOUNDARIES = {
+    "packages/mace-torch/src/mace_torch/electrostatics/solver.py": {"long_range_plan"},
+    "packages/mace-torch/src/mace_torch/models/electrostatics.py": {
+        "prepare_model_inputs"
+    },
+}
 
 #: The modules allowed to name the validator: the graph contract itself and the
 #: collation that produces a graph.
@@ -107,7 +116,12 @@ def test_no_forward_reads_the_host_keys():
     offenders = []
     for path in _sources():
         source = path.read_text(encoding="utf-8")
-        hits = names_used(source) & HOST_KEYS
+        tree = ast.parse(source)
+        allowed = PREPARATION_BOUNDARIES.get(str(path.relative_to(REPO_ROOT)), set())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name in allowed:
+                node.body = [ast.Pass()]
+        hits = names_used(ast.unparse(tree)) & HOST_KEYS
         if _defines_forward(ast.parse(source)) and hits:
             offenders.append(f"{path.relative_to(REPO_ROOT)}: {sorted(hits)}")
     assert not offenders, (

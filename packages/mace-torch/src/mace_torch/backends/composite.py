@@ -9,8 +9,8 @@ here, once, at build time, from the backend's own answer to
 convert, fail and reconvert (``mace/calculators/mace_torchsim.py:123-137``) has
 no counterpart.
 
-Every op reads and writes the agreed canonical ``mul_ir`` features, so an
-op-by-op fallback needs no activation conversion.
+Every op reads and writes the negotiated activation layout. The reference
+follows the primary backend's native layout throughout the chain.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from mace_core.kernels.protocol import REFERENCE_ONLY_OPS
 from mace_core.kernels.registry import get_backend
 from mace_core.kernels.spans import supports_span_contract
 
+from mace_torch.backends.layout import CANONICAL, Layout
 from mace_torch.backends.precision import PrecisionBackend
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.backends.spans import validate_span
@@ -74,6 +75,12 @@ class CompositeBackend:
         self._primary_capabilities: BackendCapabilities = primary.capabilities()
         self.decisions: list[BuildDecision] = []
         self._span_requests = 0
+        native = self._primary_capabilities.native_layout
+        self.layout = (
+            Layout(native)
+            if native in fallback.capabilities().activation_layouts
+            else CANONICAL
+        )
 
     def capabilities(self) -> BackendCapabilities:
         """What the pair can build: everything the reference can.
@@ -89,6 +96,9 @@ class CompositeBackend:
             dtypes=fallback.dtypes,
             max_lmax=fallback.max_lmax,
             layouts=fallback.layouts,
+            activation_layouts=frozenset({self.layout.name}),
+            native_layout=self.layout.name,
+            products=primary.products | fallback.products,
             bases=fallback.bases,
             supports_double_backward=primary.supports_double_backward
             and fallback.supports_double_backward,
@@ -97,18 +107,31 @@ class CompositeBackend:
         )
 
     def _build(self, op: str, descriptor: Any) -> Any:
+        descriptor = replace(descriptor, layout=self.layout.name)
         capabilities = self._primary_capabilities
+        effective = (
+            self.primary.op_descriptor(descriptor)
+            if op in capabilities.ops and isinstance(self.primary, PrecisionBackend)
+            else descriptor
+        )
         if op not in capabilities.ops:
             reason = f"{self.primary.name} does not implement {op}"
-        elif not capabilities.supports(descriptor):
+        elif not capabilities.supports(effective):
             reason = f"{self.primary.name} declines this descriptor"
         else:
             built = getattr(self.primary, f"make_{op}")(descriptor)
             if built is not None:
-                self.decisions.append(BuildDecision(op, descriptor, self.primary.name))
+                self.decisions.append(BuildDecision(op, effective, self.primary.name))
                 return built
             reason = f"{self.primary.name} leaves {op} to the reference"
-        self.decisions.append(BuildDecision(op, descriptor, self.fallback.name, reason))
+        fallback_descriptor = (
+            self.fallback.op_descriptor(descriptor)
+            if isinstance(self.fallback, PrecisionBackend)
+            else descriptor
+        )
+        self.decisions.append(
+            BuildDecision(op, fallback_descriptor, self.fallback.name, reason)
+        )
         if op not in REFERENCE_ONLY_OPS and op in capabilities.ops:
             logger.warning("%s is built by the reference: %s", descriptor, reason)
         return getattr(self.fallback, f"make_{op}")(descriptor)
@@ -143,7 +166,7 @@ class CompositeBackend:
     def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> Any | None:
         """One layout for the span; precision is stamped by PrecisionBackend."""
         members = tuple(
-            replace(member, layout=CANONICAL_LAYOUT) for member in descriptors
+            replace(member, layout=self.layout.name) for member in descriptors
         )
         if isinstance(self.primary, PrecisionBackend):
             members = self.primary.span_descriptors(members)
@@ -196,7 +219,7 @@ class CompositeBackend:
                 reasons.setdefault(decision.op, set()).add(decision.reason)
         lines = [
             f"backend {self.primary.name}, with {self.fallback.name} for the ops "
-            "it does not build; every op in mul_ir"
+            f"it does not build. Every op uses {self.layout.name} activations"
         ]
         for op in sorted({d.op for d in ops}):
             built = ", ".join(
@@ -212,6 +235,11 @@ class CompositeBackend:
                     f"  layer {decision.layer} span: {decision.backend}"
                     + (f"; op by op ({decision.reason})" if decision.reason else "")
                 )
+        for member in (self.primary, self.fallback):
+            if isinstance(member, PrecisionBackend) and (
+                report := member.build_report()
+            ):
+                lines.append(report)
         return "\n".join(lines)
 
 
@@ -240,7 +268,10 @@ def resolve_backend(
             return member
         return PrecisionBackend(member, precision, supports_float64)
 
-    if isinstance(backend, ReferenceBackend):
+    if (
+        isinstance(backend, ReferenceBackend)
+        and backend.capabilities().native_layout == CANONICAL_LAYOUT
+    ):
         return at_precision(backend)
     return CompositeBackend(at_precision(backend), at_precision(ReferenceBackend()))
 

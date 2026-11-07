@@ -12,7 +12,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from conftest import fp64_only
+import torch
+from conftest import assert_close, fp64_only
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
     UnsupportedDescriptorError,
@@ -65,9 +66,12 @@ class PartialBackend:
         return None
 
 
-def test_the_reference_passes_its_own_conformance(dtype):
+@pytest.mark.parametrize("layout", ["mul_ir", "ir_mul"])
+def test_the_reference_passes_its_own_conformance(dtype, layout):
     precision = "float64" if str(dtype).endswith("float64") else "float32"
-    results = run_backend_conformance(ReferenceBackend(), precision=precision)
+    results = run_backend_conformance(
+        ReferenceBackend(), precision=precision, layout=layout
+    )
     assert all(result.built for result in results)
     checked = {check for result in results for check in result.checks}
     assert {"weights", "values", "gradients", "equivariance"} <= checked
@@ -76,7 +80,7 @@ def test_the_reference_passes_its_own_conformance(dtype):
 
 
 @fp64_only
-@pytest.mark.parametrize("layout", ["mul_ir"])
+@pytest.mark.parametrize("layout", ["mul_ir", "ir_mul"])
 def test_backend_reorder_is_block_diagonal(layout):
     """Every op with weights maps canonical weights onto its own through
     independent, invertible blocks within the bound, and back exactly. The
@@ -150,7 +154,7 @@ def test_the_composite_builds_each_op_where_it_is_supported(caplog):
     report = composite.report()
     assert "linear: 2 by partial, 1 by reference" in report
     assert "channelwise_tp_conv: 1 by reference" in report
-    assert "every op in mul_ir" in report
+    assert "Every op uses mul_ir activations" in report
     assert composite.served_by_primary()
 
 
@@ -182,6 +186,111 @@ def test_a_backend_without_double_backward_is_refused_for_force_training(
 
 def test_the_conv_descriptor_carries_the_channel_count():
     assert ChannelwiseTPConvDescriptor(num_features=8).num_features == 8
+
+
+class NativePartialBackend(PartialBackend):
+    def capabilities(self):
+        return replace(
+            super().capabilities(),
+            activation_layouts=frozenset({"mul_ir", "ir_mul"}),
+            native_layout="ir_mul",
+        )
+
+
+@fp64_only
+@pytest.mark.parametrize("family", ["energy", "polar", "magnetic"])
+def test_native_chain_preserves_model_outputs_and_force_gradients(family):
+    from mace_torch.serialization import canonical_state, load_canonical_state
+    from mace_torch_engine_fixtures import build_engine, build_graph, molecule
+
+    backend = CompositeBackend(NativePartialBackend(), ReferenceBackend())
+    if family == "energy":
+        make, graph = build_engine, build_graph(*molecule())
+    elif family == "polar":
+        from mace_torch.physics import DerivativeEngine
+        from test_mace_torch_polar_model import WITH_STRESS, build_model, polar_graph
+
+        def make(backend=None):
+            return DerivativeEngine(build_model(backend=backend), WITH_STRESS, None)
+
+        graph = polar_graph(*molecule())
+    else:
+        from test_mace_torch_magnetic_model import engine, moments
+        from test_mace_torch_magnetic_model import graph as magnetic_graph
+
+        make, graph = engine, magnetic_graph(molecule()[0], moments())
+    native, canonical = make(backend=backend), make()
+    load_canonical_state(native, canonical_state(canonical))
+    actual = native(graph, compute=("forces",), training=True)
+    expected = canonical(graph, compute=("forces",), training=True)
+    assert_close(actual.total_energy, expected.total_energy.detach())
+    assert_close(actual.forces, expected.forces.detach())
+    if expected.dipole is not None:
+        assert_close(actual.dipole, expected.dipole.detach())
+    for output in (actual, expected):
+        (output.total_energy.sum() + output.forces.square().sum()).backward()
+    for (name, mine), (_, theirs) in zip(
+        native.named_parameters(), canonical.named_parameters(), strict=True
+    ):
+        assert (mine.grad is None) == (theirs.grad is None), name
+        if mine.grad is not None:
+            assert theirs.grad is not None
+            assert_close(mine.grad, theirs.grad.detach(), name)
+    assert backend.decisions and {
+        d.descriptor.layout for d in backend.decisions if d.layer is None
+    } == {"ir_mul"}
+    if family == "energy":
+        from mace_torch.nn.backbone import MACEBackbone
+
+        assert isinstance(native.backbone, MACEBackbone)
+        assert isinstance(canonical.backbone, MACEBackbone)
+        mine, theirs = native.backbone(graph), canonical.backbone(graph)
+        assert mine.layout == "ir_mul"
+        assert_close(
+            native.backbone.descriptors(mine, invariants_only=False),
+            canonical.backbone.descriptors(theirs, invariants_only=False).detach(),
+        )
+
+
+@pytest.mark.parametrize("heads", [1, 2])
+def test_native_readouts_return_canonical_components_per_head(heads, dtype):
+    from mace_core.observables import ObservableSpec
+    from mace_torch.backends.layout import Layout
+    from mace_torch.kernels import initialize_model_weights
+    from mace_torch.models.heads import ObservableHead
+    from mace_torch.serialization import canonical_state, load_canonical_state
+
+    declaration = "3x0e+3x1o+3x2e"
+    backend = CompositeBackend(NativePartialBackend(), ReferenceBackend())
+    spec = ObservableSpec(name="test", irreps="2x1o+2x2e", per_atom=True, units="1")
+
+    def make(backend):
+        return ObservableHead(
+            backend,
+            spec,
+            ["0e+1o+2e"] * 2,
+            3,
+            nonlinear=True,
+            readout_irreps="3x0e+2x1o+2x2e",
+            num_heads=heads,
+            precision="float64" if dtype == torch.float64 else "float32",
+        )
+
+    native, canonical = make(backend), make(ReferenceBackend())
+    initialize_model_weights(canonical, 31)
+    load_canonical_state(native, canonical_state(canonical))
+    features = [torch.randn(4, 27, requires_grad=True) for _ in range(2)]
+    selected = torch.arange(4) % heads
+    layout = Layout("ir_mul")
+    moved = [
+        layout.from_canonical(value, layout.terms(declaration)) for value in features
+    ]
+    actual, expected = native(moved, selected), canonical(features, selected)
+    assert_close(actual, expected.detach())
+    mine = torch.autograd.grad(actual.square().sum(), features, retain_graph=True)
+    theirs = torch.autograd.grad(expected.square().sum(), features)
+    for value, wanted in zip(mine, theirs, strict=True):
+        assert_close(value, wanted.detach())
 
 
 def test_no_model_code_permutes_the_layout():

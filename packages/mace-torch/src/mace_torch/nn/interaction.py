@@ -26,8 +26,8 @@ convolution keeps its paths apart**, and the linear after it mixes them with
 independent weights. **The normalization comes after that linear**, and it is
 the average itself, not its square root.
 
-Features are grouped by irrep between ops, the canonical ``mul_ir`` over the
-declaration expanded to the channel count.
+Features use the backend's negotiated layout over the declaration expanded to
+the channel count.
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ from typing import Any, cast
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.canonical import CANONICAL_LAYOUT
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
     Descriptor,
@@ -51,7 +50,7 @@ from mace_core.kernels.precision import Precision
 from mace_core.kernels.spans import EdgeConvolutionSpan, supports_span_contract
 from torch import Tensor, nn
 
-from mace_torch.backends.layout import expanded_irreps
+from mace_torch.backends.layout import expanded_irreps, layout_of
 from mace_torch.backends.reference import TORCH_DTYPES, ReferenceBackend
 from mace_torch.backends.spans import InteractionSpan, validate_span
 from mace_torch.nn.edges import EdgeInputs
@@ -107,7 +106,9 @@ def _ask_for_span(
         return None
     if not supports_span_contract(backend.capabilities().spec_version):
         return None
-    members = tuple(replace(member, layout=CANONICAL_LAYOUT) for member in members)
+    members = tuple(
+        replace(member, layout=layout_of(backend).name) for member in members
+    )
     span = backend.make_interaction_layer(members)
     if span is not None:
         validate_span(span, backend.name)
@@ -199,8 +200,9 @@ class _Convolution(nn.Module):
         members = (
             None
             if edge_members is None
-            else (*edge_members, weights, convolution)
+            else (*edge_members, weights)
             + (() if density is None else (density,))
+            + (convolution,)
         )
         self.span_members = members
         self.span = _ask_for_span(backend, members)
@@ -231,15 +233,24 @@ class _Convolution(nn.Module):
                 if self.span_uses_receivers
                 else (edges.sender_runs if self.span_uses_senders else None)
             )
-            message = self.span(
+            member_weights = edges.span_weights() + self.radial_mlp.span_weights()
+            if self.density_mlp is not None:
+                member_weights += self.density_mlp.span_weights()
+            result = self.span(
                 mapped,
                 edges,
                 sender,
                 receiver,
                 num_nodes,
-                edges.span_weights() + self.radial_mlp.span_weights(),
+                member_weights,
                 runs,
             )
+            if self.density_mlp is None:
+                assert isinstance(result, Tensor)
+                message = result
+            else:
+                assert isinstance(result, tuple)
+                message, density = result
         else:
             weights = self.radial_mlp(edges.radial)
             if self.envelope_outside:
@@ -252,12 +263,13 @@ class _Convolution(nn.Module):
                 receiver,
                 num_nodes,
             )
+            if self.density_mlp is not None:
+                edge_density = torch.tanh(self.density_mlp(edges.radial) ** 2)
+                if self.envelope_outside:
+                    edge_density = edge_density * edges.envelope
+                density = self.reduce(edge_density, receiver, num_nodes)
         if self.density_mlp is None:
             return self.linear(message) / self.neighbours
-        edge_density = torch.tanh(self.density_mlp(edges.radial) ** 2)
-        if self.envelope_outside:
-            edge_density = edge_density * edges.envelope
-        density = self.reduce(edge_density, receiver, num_nodes)
         return self.linear(message) / (density + 1.0)
 
     def to_canonical(self) -> dict[str, Tensor]:
@@ -542,6 +554,11 @@ class NonLinearInteractionBlock(nn.Module):
         self.linear_residual = backend.make_linear(linear(up_flat, nonlinear_flat))
         self.sender_embedding = backend.make_linear(embedding)
         self.receiver_embedding = backend.make_linear(embedding)
+        self.register_buffer(
+            "element_basis",
+            torch.eye(num_elements, dtype=TORCH_DTYPES[precision]),
+            persistent=False,
+        )
         self.convolution = backend.make_channelwise_tp_conv(convolution)
         conditioned = num_radial + 2 * element_scalars
         kind: RadialMLPKind = "layer_norm_silu"
@@ -549,11 +566,15 @@ class NonLinearInteractionBlock(nn.Module):
             channels=(conditioned, *radial_hidden, self.num_paths * num_up_features),
             kind=kind,
             precision=precision,
+            num_elements=num_elements,
+            element_embedding_width=element_scalars,
         )
         density = RadialMLPDescriptor(
             channels=(conditioned, *_NONLINEAR_DENSITY_HIDDEN, 1),
             kind=kind,
             precision=precision,
+            num_elements=num_elements,
+            element_embedding_width=element_scalars,
         )
         self.radial_mlp = _radial_network(backend, weights)
         self.density_mlp = _radial_network(backend, density)
@@ -568,7 +589,7 @@ class NonLinearInteractionBlock(nn.Module):
                 nonlinear_flat,
             )
         )
-        self.gate = Gate(target_flat)
+        self.gate = Gate(target_flat, feature_layout=layout_of(backend))
         self.linear_out = backend.make_linear(linear(target_flat, target_flat))
         dtype = TORCH_DTYPES[precision]
         self.alpha = nn.Parameter(torch.tensor(_INITIAL_ALPHA, dtype=dtype))
@@ -576,10 +597,15 @@ class NonLinearInteractionBlock(nn.Module):
         members = (
             None
             if edge_members is None
-            else (*edge_members, embedding, embedding, weights, density, convolution)
+            else (*edge_members, weights, density, convolution)
         )
         self.span_members = members
         self.span = _ask_for_span(backend, members)
+
+        self.span_uses_receivers = (
+            "receiver_runs" in backend.capabilities().edge_features
+        )
+        self.span_uses_senders = "sender_runs" in backend.capabilities().edge_features
 
     def forward(
         self,
@@ -594,28 +620,61 @@ class NonLinearInteractionBlock(nn.Module):
         carried = self.skip(node_features)
         up = self.linear_up(node_features)
         residual = self.linear_residual(up)
-        conditioned = torch.cat(
-            [
-                edges.radial,
-                self.sender_embedding(node_attrs).index_select(0, sender),
-                self.receiver_embedding(node_attrs).index_select(0, receiver),
-            ],
-            dim=-1,
-        )
-        weights = self.radial_mlp(conditioned)
-        edge_density = torch.tanh(self.density_mlp(conditioned) ** 2)
-        if self.envelope_outside:
-            weights = weights * edges.envelope
-            edge_density = edge_density * edges.envelope
-        density = self.reduce(edge_density, receiver, num_nodes)
-        message = self.convolution(
-            up,
-            edges.attributes,
-            weights.reshape(-1, self.num_paths, self.num_up_features),
-            sender,
-            receiver,
-            num_nodes,
-        )
+        if (
+            self.span is not None
+            and (
+                not edges.differentiated_twice or self.span.capabilities.double_backward
+            )
+            and (not self.training or self.span.capabilities.weight_gradients)
+        ):
+            runs = (
+                edges.receiver_runs
+                if self.span_uses_receivers
+                else (edges.sender_runs if self.span_uses_senders else None)
+            )
+            # Evaluate the element maps to preserve their canonical normalization
+            # and keep both tables connected to the live parameters.
+            tables = (
+                self.sender_embedding(self.element_basis),
+                self.receiver_embedding(self.element_basis),
+            )
+            result = self.span(
+                up,
+                edges,
+                sender,
+                receiver,
+                num_nodes,
+                edges.span_weights()
+                + self.radial_mlp.span_weights()
+                + self.density_mlp.span_weights()
+                + tables,
+                runs,
+            )
+            assert isinstance(result, tuple)
+            message, density = result
+        else:
+            conditioned = torch.cat(
+                [
+                    edges.radial,
+                    self.sender_embedding(node_attrs).index_select(0, sender),
+                    self.receiver_embedding(node_attrs).index_select(0, receiver),
+                ],
+                dim=-1,
+            )
+            weights = self.radial_mlp(conditioned)
+            edge_density = torch.tanh(self.density_mlp(conditioned) ** 2)
+            if self.envelope_outside:
+                weights = weights * edges.envelope
+                edge_density = edge_density * edges.envelope
+            density = self.reduce(edge_density, receiver, num_nodes)
+            message = self.convolution(
+                up,
+                edges.attributes,
+                weights.reshape(-1, self.num_paths, self.num_up_features),
+                sender,
+                receiver,
+                num_nodes,
+            )
         message = self.linear_mix(message) / (density * self.beta + self.alpha)
         return self.linear_out(self.gate(message + residual)), carried
 

@@ -24,9 +24,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from mace_core.kernels.precision import WIDTH, Precision, widest
+from mace_core.kernels.precision import PRODUCTS, WIDTH, Precision, Product, widest
 
-__all__ = ["OP_KINDS", "PrecisionConfig", "PrecisionPolicy"]
+__all__ = ["OP_KINDS", "PRODUCT_KINDS", "PrecisionConfig", "PrecisionPolicy"]
 
 #: The op kind of each descriptor class, by name. By name so this module need
 #: not import the descriptors, which import it.
@@ -44,6 +44,7 @@ _KIND_OF = {
 
 #: The op kinds a policy can be given for.
 OP_KINDS: tuple[str, ...] = tuple(_KIND_OF.values())
+PRODUCT_KINDS: tuple[str, ...] = ("linear", "fully_connected_tp")
 
 
 @dataclass(frozen=True)
@@ -57,13 +58,19 @@ class PrecisionPolicy:
             wide as ``compute_dtype``; a backend without a separate
             accumulator meets it by computing in it.
         param_dtype: What the op's weights are held in.
+        product: IEEE or TF32 products, independently of the storage dtype.
     """
 
     compute_dtype: Precision
     accumulate_dtype: Precision
     param_dtype: Precision
+    product: Product = "ieee"
 
     def __post_init__(self) -> None:
+        if self.product not in PRODUCTS:
+            raise ValueError(f"unknown matrix product {self.product!r}")
+        if self.product == "tf32" and self.compute_dtype != "float32":
+            raise ValueError("tf32 products require float32 compute_dtype")
         if WIDTH[self.accumulate_dtype] < WIDTH[self.compute_dtype]:
             raise ValueError(
                 f"an accumulation floor of {self.accumulate_dtype} is narrower "
@@ -103,6 +110,15 @@ class PrecisionConfig:
                 f"{unknown} are not op kinds; a policy can be given for "
                 f"{list(OP_KINDS)}."
             )
+        invalid_products = [
+            kind
+            for kind, policy in self.ops
+            if policy.product == "tf32" and kind not in PRODUCT_KINDS
+        ]
+        if invalid_products:
+            raise ValueError(
+                f"tf32 products apply to {PRODUCT_KINDS}, received {invalid_products}"
+            )
 
     @property
     def interface_dtype(self) -> Precision:
@@ -128,6 +144,9 @@ class PrecisionConfig:
                 compute_dtype=widest(*(p.compute_dtype for p in policies)),
                 accumulate_dtype=widest(*(p.accumulate_dtype for p in policies)),
                 param_dtype=widest(*(p.param_dtype for p in policies)),
+                product="tf32"
+                if all(p.product == "tf32" for p in policies)
+                else "ieee",
             )
         kind = _KIND_OF.get(type(descriptor).__name__)
         overrides = dict(self.ops)
@@ -169,6 +188,7 @@ class PrecisionConfig:
                     lower(policy.compute_dtype, f"{kind} compute"),
                     lower(policy.accumulate_dtype, f"{kind} accumulate"),
                     lower(policy.param_dtype, f"{kind} parameters"),
+                    policy.product,
                 ),
             )
             for kind, policy in self.ops
@@ -185,6 +205,16 @@ class PrecisionConfig:
     def float32(cls) -> PrecisionConfig:
         """The ops in float32 and model-level reductions in float64."""
         return cls(model="float32", accumulate="float64")
+
+    @classmethod
+    def tf32(cls) -> PrecisionConfig:
+        """Float32 with TF32 products in linear maps and fully connected skips."""
+        policy = PrecisionPolicy("float32", "float32", "float32", product="tf32")
+        return cls(
+            model="float32",
+            accumulate="float64",
+            ops=tuple((kind, policy) for kind in PRODUCT_KINDS),
+        )
 
     @classmethod
     def mixed(cls) -> PrecisionConfig:

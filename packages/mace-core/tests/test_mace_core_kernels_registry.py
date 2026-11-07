@@ -46,6 +46,22 @@ from mace_core.kernels import (
 )
 from mace_core.kernels import registry as registry_module
 
+
+def test_new_capabilities_preserve_existing_positional_arguments():
+    capabilities = BackendCapabilities(
+        frozenset({"linear"}),
+        frozenset({"cpu"}),
+        frozenset({"float64"}),
+        2,
+        frozenset({"mul_ir"}),
+        frozenset({"full", "reduced"}),
+        True,
+    )
+    assert capabilities.bases == frozenset({"full", "reduced"})
+    assert capabilities.supports_double_backward
+    assert capabilities.activation_layouts == frozenset({"mul_ir"})
+
+
 #: Every op the contract names, for a capability under test that should be
 #: refused for some other reason than not declaring the op.
 EVERY_OP = DISPATCHED_OPS | REFERENCE_ONLY_OPS
@@ -237,6 +253,22 @@ def test_a_layout_the_backend_did_not_declare_is_refused_for_ops_with_irreps():
     assert not capabilities.supports(SymmetricContractionDescriptor())
     assert capabilities.supports(SegmentReduceDescriptor())
     assert capabilities.supports(RadialBasisDescriptor())
+
+
+def test_activation_layouts_are_separate_from_canonical_weights():
+    capabilities = BackendCapabilities(
+        ops=EVERY_OP,
+        activation_layouts=frozenset({"mul_ir", "ir_mul"}),
+        native_layout="ir_mul",
+    )
+    assert capabilities.layouts == frozenset({"mul_ir"})
+    assert capabilities.supports(LinearDescriptor(layout="ir_mul"))
+    assert not BackendCapabilities(ops=EVERY_OP).supports(
+        LinearDescriptor(layout="ir_mul")
+    )
+    assert capabilities.supports(SegmentReduceDescriptor(layout=None))
+    with pytest.raises(ValueError, match="native_layout"):
+        BackendCapabilities(native_layout="ir_mul")
 
 
 def test_an_lmax_beyond_the_declared_one_is_refused():

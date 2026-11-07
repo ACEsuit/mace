@@ -161,22 +161,27 @@ class CorrectivePotentialBlock(torch.nn.Module):
         self.include_quadrupole_corrections = quadrupole_feature_corrections
 
     def forward(self, charge_coefficients, positions, volumes, batch):
-        # get charge, dipole, quadrupole
-        total_charge = scatter_sum(src=charge_coefficients[:, 0], index=batch, dim=-1)
+        # get charge, dipole, quadrupole, one row per graph
+        n_graphs = volumes.numel()
+        total_charge = scatter_sum(
+            src=charge_coefficients[:, 0], index=batch, dim=-1, dim_size=n_graphs
+        )
         q_r = positions * charge_coefficients[:, 0].unsqueeze(-1)  # [N_atoms,3]
-        total_dipole = scatter_sum(src=q_r, index=batch, dim=0)
+        total_dipole = scatter_sum(src=q_r, index=batch, dim=0, dim_size=n_graphs)
         r_squared = torch.sum(torch.square(positions), dim=-1)
         q_rr = r_squared * charge_coefficients[:, 0]
-        quadrupole = scatter_sum(src=q_rr, index=batch, dim=0)
+        quadrupole = scatter_sum(src=q_rr, index=batch, dim=0, dim_size=n_graphs)
 
         # extra if L>0
         if self.density_max_l > 0:
             local_dipoles_cartesian = charge_coefficients[..., [3, 1, 2]]
             total_dipole += scatter_sum(
-                src=local_dipoles_cartesian, index=batch, dim=-2
+                src=local_dipoles_cartesian, index=batch, dim=-2, dim_size=n_graphs
             )
             p_dot_r = torch.einsum("bi,bi->b", positions, local_dipoles_cartesian)
-            quadrupole += 2 * scatter_sum(src=p_dot_r, index=batch, dim=0)
+            quadrupole += 2 * scatter_sum(
+                src=p_dot_r, index=batch, dim=0, dim_size=n_graphs
+            )
 
         spread_dipoles = torch.index_select(total_dipole, 0, batch)
         spread_total_charge = torch.index_select(total_charge, 0, batch)

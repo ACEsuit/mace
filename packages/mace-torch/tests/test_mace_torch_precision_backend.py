@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pickle
+from dataclasses import replace
 
 import pytest
 import torch
@@ -19,6 +20,7 @@ from mace_core.kernels.descriptors import (
     SymmetricContractionDescriptor,
 )
 from mace_core.observables import DEFAULT_CATALOGUE
+from mace_torch.backends.composite import CompositeBackend
 from mace_torch.backends.precision import PrecisionBackend, boundary_precision
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.train.model_stage import build_model
@@ -224,6 +226,57 @@ def test_without_float64_the_wider_ops_degrade_and_the_report_names_them():
     assert report is not None
     assert "symmetric_contraction accumulate" in report
     assert PrecisionBackend(Recording(), PrecisionConfig.mixed()).build_report() is None
+
+
+def test_tf32_degradation_is_recorded_without_global_math_switches(caplog):
+    inner = Recording()
+    backend = PrecisionBackend(inner, PrecisionConfig.tf32())
+    previous = torch.get_float32_matmul_precision()
+    backend.make_linear(LinearDescriptor())
+    backend.make_linear(LinearDescriptor())
+    assert inner.seen[0].product == "ieee" and inner.seen[0].precision == "float32"
+    assert backend.degraded == ["LinearDescriptor tf32 products"]
+    report = backend.build_report()
+    assert report is not None and "LinearDescriptor tf32 products" in report
+    assert "uses IEEE products" in caplog.text
+    assert torch.get_float32_matmul_precision() == previous
+
+
+def test_dispatch_checks_the_effective_precision_and_product():
+    class TensorCoreRecording(Recording):
+        def capabilities(self):
+            return replace(
+                super().capabilities(),
+                ops=frozenset({"linear"}),
+                dtypes=frozenset({"float32"}),
+                products=frozenset({"ieee", "tf32"}),
+            )
+
+    inner = TensorCoreRecording()
+    primary = PrecisionBackend(inner, PrecisionConfig.tf32())
+    fallback = PrecisionBackend(ReferenceBackend(), PrecisionConfig.tf32())
+    backend = CompositeBackend(primary, fallback)
+    backend.make_linear(LinearDescriptor())
+    assert inner.seen[0].product == "tf32"
+    assert inner.seen[0].precision == "float32"
+    assert backend.decisions[-1].descriptor == inner.seen[0]
+    assert backend.decisions[-1].backend == inner.name
+    assert primary.build_report() is None
+    assert backend.capabilities().products == frozenset({"ieee", "tf32"})
+
+
+def test_widening_the_compute_dtype_also_resolves_tf32():
+    policy = PrecisionConfig(
+        model="float32",
+        ops=(("linear", PrecisionPolicy("float32", "float64", "float32", "tf32")),),
+    )
+    inner = Recording()
+    backend = PrecisionBackend(inner, policy)
+    backend.make_linear(LinearDescriptor())
+    assert inner.seen[0].precision == "float64"
+    assert inner.seen[0].product == "ieee"
+    report = backend.build_report()
+    assert report is not None and "tf32 products" in report
 
 
 def test_what_it_does_not_stamp_is_the_wrapped_backends():
