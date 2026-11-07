@@ -139,3 +139,7 @@ packages = ["src/mace_torch"]
 "libmace/mace.cpp" = "mace_torch/deploy/libmace/mace.cpp"
 "libmace/c_api.cpp" = "mace_torch/deploy/libmace/c_api.cpp"
 "libmace/mace-config.cmake.in" = "mace_torch/deploy/libmace/mace-config.cmake.in"
+"gromacs/macemodel.h" = "mace_torch/deploy/gromacs/macemodel.h"
+"gromacs/macemodel.cpp" = "mace_torch/deploy/gromacs/macemodel.cpp"
+"gromacs/apply.cmake" = "mace_torch/deploy/gromacs/apply.cmake"
+"gromacs/gromacs-2026.3.patch" = "mace_torch/deploy/gromacs/gromacs-2026.3.patch"

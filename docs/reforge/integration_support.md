@@ -13,6 +13,7 @@ implementations. It is not another model checkpoint.
 | OpenMM | Direct PyTorch callback on CPU, molecular/periodic trajectories, changing triclinic cells, energy/force parity with ASE | GPU execution and host-transfer performance are not yet measured |
 | Symmetrix | Public implementations inspected; target is the forthcoming general implementation | Concrete converter and benchmark sweep await its published interface |
 | libmace | Native AOTInductor C/C++, Fortran on two MPI ranks, changing geometry, legacy E/F/virial parity; installed clients with cuEq float32/float64 on Blackwell | Full-structure root evaluation; distributed GPU scaling and MD throughput are not claimed |
+| GROMACS native | Pinned 2026.3 NNPot adapter over libmace; CPU and B200 cuEq float32/float64 E/F/virial parity, changing cells/neighbours and two MPI domains | Whole-system model on the main rank; hybrid embedding, throughput and model scaling across GPUs are not claimed |
 | torch-sim | CPU trajectory and legacy E/F/polar parity; static compile reuse; cuEq on H200 and RTX PRO 6000 Blackwell in float32/float64 | Host graph assembly remains; end-to-end throughput is not yet measured |
 
 ## OpenMM direct PyTorch interface
@@ -197,3 +198,22 @@ The cuEq path passes eager-versus-Inductor checks on Dais H200 and RTX PRO 6000
 Blackwell GPUs, for energy and Polar models in both float32 and float64 while
 the real atom count changes. These are correctness checks, not throughput
 measurements. See [DEP-4 evidence](gate3/2026-11-07/dep4-torchsim.md).
+
+## GROMACS native integration
+
+The user-authorized GROMACS work is additional to the original DEP-3 scope.
+It uses GROMACS 2026.3 at `121090014570a53a17ea391bcddae45e5ea05eb4`, with a
+small source patch selecting a `MACE` NNPot implementation and linking the
+existing V1 native libmace runtime. The stock GROMACS TorchScript reader and
+its Python dependency are excluded from this build path. No checkpoint,
+weight layout or model implementation is added.
+
+[Build and input instructions](../../tests/integrations/gromacs/README.md)
+define the supported whole-system scope, units and restrictions. GROMACS
+collects the full model input on its main rank and distributes forces to the
+owning domains. The direct virial is included once with GROMACS's `-W/2`
+convention. CPU and cuEq float32/float64 MD and rerun cases compare against
+the frozen legacy model. The full Dais B200 selection passed all 17 tests
+using external MPI; macOS additionally verifies thread-MPI. There is no
+existing in-tree GROMACS legacy wrapper. See the [measured results and
+scope](gate3/2026-11-07/gromacs-native.md).

@@ -84,6 +84,22 @@ def _libmace_available() -> bool:
         return False
 
 
+def _gromacs_available() -> bool:
+    binary = os.environ.get("MACE_GROMACS_BINARY")
+    if not binary:
+        return False
+    try:
+        result = subprocess.run(
+            [binary, "--version"], capture_output=True, text=True, timeout=10
+        )
+        return (
+            result.returncode == 0
+            and "MACE AOTInductor v1" in result.stdout + result.stderr
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 CAPABILITY_PROBES = {
     "gpu": _gpu_available,
     "cueq": lambda: _module_available("cuequivariance"),
@@ -97,6 +113,7 @@ CAPABILITY_PROBES = {
     "bin_lammps": _lammps_available,
     "bin_openmm": _openmm_available,
     "bin_libmace": _libmace_available,
+    "bin_gromacs": _gromacs_available,
     # Never autodetected: network access is an explicit opt-in so that PR jobs
     # stay deterministic and downloads live only in jobs that chose them.
     "network": lambda: os.environ.get("MACE_CI_ALLOW_NETWORK", "") == "1",

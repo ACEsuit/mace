@@ -1,0 +1,98 @@
+diff --git a/cmake/gmxManageNNPot.cmake b/cmake/gmxManageNNPot.cmake
+index 2302180..a70b0b4 100644
+--- a/cmake/gmxManageNNPot.cmake
++++ b/cmake/gmxManageNNPot.cmake
+@@ -38 +38 @@ gmx_option_multichoice(GMX_NNPOT
+-    AUTO TORCH OFF
++    AUTO TORCH MACE OFF
+@@ -46 +46,8 @@ set(GMX_TORCH OFF)
+-if(NOT GMX_NNPOT STREQUAL "OFF")
++set(GMX_MACE OFF)
++if(GMX_NNPOT STREQUAL "MACE")
++    find_package(mace CONFIG REQUIRED)
++    if(NOT EXISTS "${MACE_GROMACS_SOURCE_DIR}/macemodel.cpp")
++        message(FATAL_ERROR "Set MACE_GROMACS_SOURCE_DIR to V1 packages/mace-torch/gromacs")
++    endif()
++    set(GMX_MACE ON)
++elseif(NOT GMX_NNPOT STREQUAL "OFF")
+diff --git a/src/config.h.cmakein b/src/config.h.cmakein
+index 5f46046..e05af4a 100644
+--- a/src/config.h.cmakein
++++ b/src/config.h.cmakein
+@@ -483,0 +484 @@
++#cmakedefine01 GMX_MACE
+diff --git a/src/gromacs/applied_forces/nnpot/CMakeLists.txt b/src/gromacs/applied_forces/nnpot/CMakeLists.txt
+index e2160f7..dab6139 100644
+--- a/src/gromacs/applied_forces/nnpot/CMakeLists.txt
++++ b/src/gromacs/applied_forces/nnpot/CMakeLists.txt
+@@ -42 +42,5 @@ gmx_add_libgromacs_sources(
+-if (GMX_TORCH)
++if(GMX_MACE)
++    gmx_add_libgromacs_sources(nnpotforceprovider.cpp "${MACE_GROMACS_SOURCE_DIR}/macemodel.cpp")
++    target_include_directories(applied_forces INTERFACE "${MACE_GROMACS_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
++    target_link_libraries(applied_forces INTERFACE mace::mace)
++elseif (GMX_TORCH)
+diff --git a/src/gromacs/applied_forces/nnpot/binary_information.cpp b/src/gromacs/applied_forces/nnpot/binary_information.cpp
+index 5ee75b6..34a1110 100644
+--- a/src/gromacs/applied_forces/nnpot/binary_information.cpp
++++ b/src/gromacs/applied_forces/nnpot/binary_information.cpp
+@@ -57 +57,3 @@ std::string torchDescription()
+-#if GMX_TORCH
++#if GMX_MACE
++    return "MACE AOTInductor v1 (native.pt2)";
++#elif GMX_TORCH
+diff --git a/src/gromacs/applied_forces/nnpot/nnpotforceprovider.cpp b/src/gromacs/applied_forces/nnpot/nnpotforceprovider.cpp
+index 460712f..22ea736 100644
+--- a/src/gromacs/applied_forces/nnpot/nnpotforceprovider.cpp
++++ b/src/gromacs/applied_forces/nnpot/nnpotforceprovider.cpp
+@@ -61,0 +62,3 @@
++#if GMX_MACE
++#include "macemodel.h"
++#else
+@@ -62,0 +66 @@
++#endif
+@@ -151,0 +156,6 @@ NNPotForceProvider::NNPotForceProvider(const NNPotParameters& nnpotParameters,
++    #if GMX_MACE
++    else if (modelPath.extension() == ".pt2")
++    {
++        model_ = std::make_shared<NativeMaceModel>(params_, mpiComm_);
++    }
++#else
+@@ -156,0 +167 @@ NNPotForceProvider::NNPotForceProvider(const NNPotParameters& nnpotParameters,
++    #endif
+@@ -208,0 +220,4 @@ void NNPotForceProvider::calculateForces(const ForceProviderInput& fInput, Force
++#if GMX_MACE
++    fOutput->forceWithVirial_.addVirialContribution(
++            static_cast<NativeMaceModel*>(model_.get())->virial());
++#endif
+diff --git a/src/gromacs/applied_forces/nnpot/nnpotoptions.cpp b/src/gromacs/applied_forces/nnpot/nnpotoptions.cpp
+index f8c7f51..4fcc146 100644
+--- a/src/gromacs/applied_forces/nnpot/nnpotoptions.cpp
++++ b/src/gromacs/applied_forces/nnpot/nnpotoptions.cpp
+@@ -65 +65,3 @@
+-#if GMX_TORCH
++#if GMX_MACE
++#    include "macemodel.h"
++#elif GMX_TORCH
+@@ -548 +550 @@ void NNPotOptions::setWarninp(WarningHandler* wi)
+-#if !GMX_TORCH
++#if !GMX_TORCH && !GMX_MACE
+@@ -553 +555,3 @@ void NNPotOptions::checkNNPotModel()
+-#if GMX_TORCH
++#if GMX_MACE
++    validateMaceParameters(params_);
++#elif GMX_TORCH
+diff --git a/src/gromacs/applied_forces/nnpot/nnpotoptions.h b/src/gromacs/applied_forces/nnpot/nnpotoptions.h
+index 9182227..0bbae6c 100644
+--- a/src/gromacs/applied_forces/nnpot/nnpotoptions.h
++++ b/src/gromacs/applied_forces/nnpot/nnpotoptions.h
+@@ -194 +194 @@ private:
+-#if !GMX_TORCH
++#if !GMX_TORCH && !GMX_MACE
+diff --git a/src/gromacs/mdrun/runner.cpp b/src/gromacs/mdrun/runner.cpp
+index f6d5491..a255beb 100644
+--- a/src/gromacs/mdrun/runner.cpp
++++ b/src/gromacs/mdrun/runner.cpp
+@@ -2489 +2489 @@ int Mdrunner::mdrunner()
+-        if (GMX_GPU && !GMX_TORCH)
++        if (GMX_GPU && !GMX_TORCH && !GMX_MACE)

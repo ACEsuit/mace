@@ -401,6 +401,53 @@ jobs:
           numprocs: "0"
           timeout: "600"
 
+  gromacs-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.11"
+          extras: dev
+      - run: python -m pip install -e packages/mace-core -e packages/mace-torch
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: stenczelt/libmace
+          ref: e3413ae658530654894b6bac6a62a764a74c5115
+          path: .gromacs-build/libmace-source
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: gromacs/gromacs
+          ref: 121090014570a53a17ea391bcddae45e5ea05eb4
+          path: .gromacs-build/source
+      - name: Build the native runtime and GROMACS adapter
+        run: |
+          root="$PWD/.gromacs-build"
+          cmake -S packages/mace-torch/libmace -B "$root/native" \
+            -D CMAKE_BUILD_TYPE=Release -D Python3_EXECUTABLE="$(command -v python)" \
+            -D LIBMACE_SOURCE_DIR="$root/libmace-source" -D MACE_WITH_FORTRAN=OFF \
+            -D CMAKE_INSTALL_PREFIX="$root/install"
+          cmake --build "$root/native" -j 2
+          cmake --install "$root/native"
+          cmake -D GROMACS_SOURCE_DIR="$root/source" -P packages/mace-torch/gromacs/apply.cmake
+          cmake -S "$root/source" -B "$root/build" \
+            -D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_STANDARD=20 -D GMX_NNPOT=MACE \
+            -D CMAKE_PREFIX_PATH="$root/install" \
+            -D MACE_GROMACS_SOURCE_DIR="$PWD/packages/mace-torch/gromacs" \
+            -D GMX_FFT_LIBRARY=fftpack -D GMX_SIMD=NONE -D GMX_OPENMP=OFF -D GMX_GPU=OFF \
+            -D BUILD_TESTING=OFF -D GMX_DOUBLE=ON -D GMXAPI=OFF -D GMX_INSTALL_NBLIB_API=OFF \
+            -D GMX_USE_PLUMED=OFF -D GMX_USE_COLVARS=NONE -D GMX_VERSION_STRING_OF_FORK=MACE-V1-AOT
+          cmake --build "$root/build" -j 2
+          echo "MACE_GROMACS_BINARY=$root/build/bin/gmx_d" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/integrations/gromacs tests/parity/test_gromacs.py
+          markers: not gpu
+          require-caps: bin_gromacs
+          numprocs: "0"
+          timeout: "600"
+
   packages-coexistence:
     # The v1 package suites with BOTH stacks installed in one environment.
     #
