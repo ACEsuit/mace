@@ -91,7 +91,7 @@ class LatentEwaldModel(MACEModel):
             scalar_names.append("latent_alphas")
         channels = {str(ir) for _, ir in Irreps.parse(config.node_irreps)}
         has_dipoles = settings.use_dipole or settings.use_induced_dipole
-        self.produced_observables = {}
+        self._physical_observables = {}
         for name, irreps, per_atom, units, active in (
             ("les_energy", "0e", False, "eV", True),
             ("latent_charges", "0e", True, "e", True),
@@ -122,7 +122,7 @@ class LatentEwaldModel(MACEModel):
             ),
         ):
             if active:
-                self.produced_observables[name] = ObservableSpec(
+                self._physical_observables[name] = ObservableSpec(
                     name=name, irreps=irreps, per_atom=per_atom, units=units
                 )
         declarations = [
@@ -130,7 +130,7 @@ class LatentEwaldModel(MACEModel):
                 name=name,
                 irreps="0e",
                 per_atom=True,
-                units=self.produced_observables[name].units,
+                units=self._physical_observables[name].units,
             )
             for name in scalar_names
         ]
@@ -142,7 +142,7 @@ class LatentEwaldModel(MACEModel):
                 *(
                     spec
                     for spec in observables
-                    if spec.name not in self.produced_observables
+                    if spec.name not in self._physical_observables
                 ),
                 *declarations,
             ],
@@ -203,7 +203,7 @@ class LatentEwaldModel(MACEModel):
 
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:
-        return super().extra_observables + tuple(self.produced_observables.values())
+        return super().extra_observables + tuple(self._physical_observables.values())
 
     def transform_outputs(self, graph, layers, output: MACEOutput[Tensor]):
         settings = self.settings

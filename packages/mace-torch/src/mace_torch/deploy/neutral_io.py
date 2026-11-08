@@ -1145,6 +1145,7 @@ def import_neutral(
         )
     artifact = source if isinstance(source, NeutralArtifact) else read_neutral(source)
     config = resolved_config(artifact)
+    config = config.model_copy(update={"precision": precision or DEFAULT_PRECISION})
     heads = tuple(artifact.sidecar.heads)
     numbers = [int(z) for z in artifact.sidecar.config["atomic_numbers"]]
     e0s = isolated_atom_energies(artifact)
@@ -1179,7 +1180,6 @@ def import_neutral(
             mean=float(np.asarray(shift).reshape(-1)[0]),
             std=float(np.asarray(scale).reshape(-1)[0]),
         ),
-        precision=precision or DEFAULT_PRECISION,
         initialize=False,
     )
     if artifact.sidecar.family == "les":

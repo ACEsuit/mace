@@ -151,7 +151,6 @@ def extend_elements(
         heads=parent.heads,
         e0s=ResolvedE0s(energies),
         statistics=DatasetStatistics(avg_num_neighbors=1.0),
-        precision=parent.config.precision,
         initialize=True,
     )
     model = engine.get_submodule("backbone")

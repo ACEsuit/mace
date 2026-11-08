@@ -519,10 +519,12 @@ class ModelConfig(ConfigSection):
     def _local_source_kind_matches(self):
         if self.local_sources is not None and self.local_sources.kind != self.model:
             raise ValueError("model.local_sources.kind must match model.model")
-        if self.fixed_point_scf is not None and self.fixed_point_scf.kind != self.model:
-            raise ValueError("model.fixed_point_scf.kind must match model.model")
-        if self.qeq is not None and self.qeq.kind != self.model:
-            raise ValueError("model.qeq.kind must match model.model")
+        if self.fixed_point_scf is not None and self.model != "fixed_point_scf":
+            raise ValueError(
+                "model.fixed_point_scf requires model.model='fixed_point_scf'"
+            )
+        if self.qeq is not None and self.model != "qeq":
+            raise ValueError("model.qeq requires model.model='qeq'")
         if self.qeq is not None:
             for spec in self.graph_features:
                 if spec.name in self.qeq.atomic_inputs and (

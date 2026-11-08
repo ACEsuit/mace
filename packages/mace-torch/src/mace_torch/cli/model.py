@@ -40,7 +40,6 @@ def _rebuild(source, config, heads):
         heads=heads,
         e0s=ResolvedE0s({name: source.e0s[name] for name in heads}),
         statistics=DatasetStatistics(),
-        precision=config.precision,
         initialize=False,
     )[0]
 

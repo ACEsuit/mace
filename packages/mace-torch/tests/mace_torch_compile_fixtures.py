@@ -38,6 +38,7 @@ def deployed(
                 "hidden_irreps": "0e+1o",
             },
             "runtime": {"seed": seed},
+            "precision": precision,
         }
     )
     engine, outputs = build_model(
@@ -47,7 +48,6 @@ def deployed(
         heads=("default",),
         e0s=ResolvedE0s(E0S),
         statistics=DatasetStatistics(avg_num_neighbors=3.0),
-        precision=precision,
     )
     return DeployedModel(
         engine=engine.eval(),

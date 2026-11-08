@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from typing import Any
 
 import torch
-from mace_core.config.precision import PrecisionConfig, PrecisionPolicy
+from mace_core.config.precision import OP_KINDS, PrecisionConfig, PrecisionPolicy
 from mace_core.kernels.canonical import CANONICAL_LAYOUT
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.precision import Precision
@@ -47,17 +47,7 @@ logger = logging.getLogger(__name__)
 
 #: The factories whose ops this wrapper stamps. Anything else the wrapped
 #: backend offers is passed through as it is.
-_FACTORIES = (
-    "make_linear",
-    "make_channelwise_tp_conv",
-    "make_symmetric_contraction",
-    "make_fully_connected_tp",
-    "make_segment_reduce",
-    "make_spherical_harmonics",
-    "make_radial_basis",
-    "make_radial_mlp",
-    "make_distance_transform",
-)
+_FACTORIES = tuple(f"make_{kind}" for kind in OP_KINDS)
 
 
 class PrecisionBackend:

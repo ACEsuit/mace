@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Literal, cast
 
 from mace_core.graph import AutoPadding, FixedPadding, NoPadding, PaddingPolicy
-from mace_core.observables import RequestedOutputs
+from mace_core.observables import ObservableSpec, RequestedOutputs
 from mace_core.outputs import CORE_FIELD_ROWS, FIELD_BY_OBSERVABLE
 
 from mace_torch.physics.outputs import ENGINE_EXTRA_ROWS
@@ -41,7 +41,7 @@ def requested_padding(
 
 
 def output_rows(
-    requested: RequestedOutputs, extra_rows: Mapping[str, str]
+    requested: RequestedOutputs, extra_observables: Sequence[ObservableSpec]
 ) -> dict[str, Row]:
     """What every quantity a model can return has a row for.
 
@@ -54,7 +54,7 @@ def output_rows(
     and they are taken on a batch with no padding, as the Hessian is.
     """
     rows: dict[str, Row] = dict(CORE_FIELD_ROWS)
-    for spec in requested.observables:
+    for spec in (*requested.observables, *extra_observables):
         rows.setdefault(
             FIELD_BY_OBSERVABLE.get(spec.name, spec.name),
             "atom" if spec.per_atom else "graph",
@@ -64,6 +64,6 @@ def output_rows(
                 spec.derivative_name(request.wrt),
                 "atom" if requested.per_atom_derivative(request.wrt, spec) else "graph",
             )
-    for name, row in {**extra_rows, **ENGINE_EXTRA_ROWS}.items():
+    for name, row in ENGINE_EXTRA_ROWS.items():
         rows.setdefault(name, cast(Row, row))
     return rows

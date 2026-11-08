@@ -15,7 +15,6 @@ class QEqConfig(ConfigSection):
     positivity transform or diagonal regularizer changes the reference model.
     """
 
-    kind: Literal["qeq"] = "qeq"
     multipole_width: float = Field(default=1.0, gt=0, allow_inf_nan=False)
     cutoff_widths: tuple[Annotated[float, Field(gt=0, allow_inf_nan=False)], ...] = (
         1.0,

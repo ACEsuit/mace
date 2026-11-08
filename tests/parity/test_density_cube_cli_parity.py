@@ -2,7 +2,6 @@
 
 import json
 import sys
-from dataclasses import asdict
 
 import ase.io
 import numpy as np
@@ -20,7 +19,6 @@ pytestmark = pytest.mark.polar
 def checkpoints(tmp_path_factory):
     """A parity-only conversion; both public loaders must rebuild their model."""
     from ase.data import chemical_symbols
-    from mace_core.config.model import PolarConfig
     from mace_core.config.resolved import ResolvedConfig
     from mace_core.metadata import (
         ConfigRecord,
@@ -43,11 +41,6 @@ def checkpoints(tmp_path_factory):
         legacy_path = directory / "legacy.model"
         torch.save(legacy, legacy_path)
         model, settings = convert(legacy, "per_structure", None)
-        polar = {
-            key: value
-            for key, value in asdict(model.settings).items()
-            if key in PolarConfig.model_fields
-        }
         values, _, _ = energy_constants_to_canonical(legacy)
         config = ResolvedConfig.model_validate(
             {
@@ -62,12 +55,11 @@ def checkpoints(tmp_path_factory):
                 "model": {
                     **model.config.model_dump(),
                     "model": "polar",
-                    "polar": polar,
                 },
                 "electrostatics": {
                     "enabled": True,
                     "periodicity_profile": "per_structure",
-                    "kspace_cutoff_factor": model.settings.kspace_cutoff_factor,
+                    "kspace_cutoff_factor": float(legacy.kspace_cutoff_factor),
                 },
             }
         )

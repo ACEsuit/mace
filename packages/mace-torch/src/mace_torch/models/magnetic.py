@@ -125,13 +125,6 @@ class MagneticModel(nn.Module):
     def extra_observables(self) -> tuple[ObservableSpec, ...]:
         return ENERGY_EXTRA_OBSERVABLES
 
-    @property
-    def extra_rows(self) -> dict[str, str]:
-        return {
-            spec.name: "atom" if spec.per_atom else "graph"
-            for spec in self.extra_observables
-        }
-
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The energy at the moments the graph carries under ``magmom``."""
         mode = self.config.magnetic.time_reversal

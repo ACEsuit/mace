@@ -246,4 +246,36 @@ def test_the_heads_are_implementation_and_not_catalogue_names():
     heads = {spec.name for spec in PREDICTED.heads}
     assert heads == {"charges", "atomic_dipoles", "polarizability_sh"}
     assert all(isinstance(spec, ObservableSpec) for spec in PREDICTED.heads)
-    assert set(DipoleModel.PRODUCED) == {"dipole", "polarizability"}
+    assert {spec.name for spec in PREDICTED.extra_observables} == {
+        "charges",
+        "atomic_dipoles",
+        "polarizability_sh",
+        "dipole",
+        "polarizability",
+    }
+
+
+@fp64_only
+@pytest.mark.parametrize("settings", [FIXED, PREDICTED])
+def test_declared_outputs_unpad_every_response(settings):
+    from mace_core.elements import AtomicNumberTable
+    from mace_core.graph import FixedPadding, unpad_outputs
+    from mace_torch.graph import pad_batch
+
+    model = build_model(settings)
+    graph = graph_of(*molecule())
+    padded, info = pad_batch(
+        graph,
+        FixedPadding(
+            nodes_budget=len(graph["positions"]) + 1, edges_budget=64, graphs_budget=2
+        ),
+        5.0,
+        atomic_number_table=AtomicNumberTable([1, 8]),
+    )
+    expected = evaluate(model, graph)
+    actual = unpad_outputs(
+        evaluate(model, padded), info, extra_observables=model.extra_observables
+    )
+    assert set(expected.extras) <= {spec.name for spec in model.extra_observables}
+    for name in expected.names():
+        torch.testing.assert_close(actual.get(name), expected.get(name))

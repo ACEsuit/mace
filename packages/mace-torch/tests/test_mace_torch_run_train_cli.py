@@ -346,5 +346,5 @@ def test_mace_train_trains_and_export_config_gives_back_its_configuration(
 def test_export_config_names_a_file_that_is_not_a_model(tmp_path):
     stray = tmp_path / "stray.safetensors"
     stray.write_bytes(b"")
-    with pytest.raises(SystemExit, match="no sidecar"):
+    with pytest.raises(SystemExit, match="no readable sidecar"):
         cli.main(["model", "export-config", str(stray), "--output", "out.yaml"])

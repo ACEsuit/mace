@@ -22,9 +22,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any
 
+from mace_core.kernels.descriptors import Descriptor, DistanceTransformDescriptor
 from mace_core.kernels.precision import PRODUCTS, WIDTH, Precision, Product, widest
+from mace_core.kernels.protocol import DISPATCHED_OPS, REFERENCE_ONLY_OPS
 
 __all__ = [
     "DEFAULT_PRECISION",
@@ -34,22 +35,10 @@ __all__ = [
     "PrecisionPolicy",
 ]
 
-#: The op kind of each descriptor class, by name. By name so this module need
-#: not import the descriptors, which import it.
-_KIND_OF = {
-    "LinearDescriptor": "linear",
-    "ChannelwiseTPConvDescriptor": "channelwise_tp_conv",
-    "SymmetricContractionDescriptor": "symmetric_contraction",
-    "FullyConnectedTPDescriptor": "fully_connected_tp",
-    "SegmentReduceDescriptor": "segment_reduce",
-    "SphericalHarmonicsDescriptor": "spherical_harmonics",
-    "RadialBasisDescriptor": "radial_basis",
-    "RadialMLPDescriptor": "radial_mlp",
-    "DistanceTransformDescriptor": "distance_transform",
-}
-
 #: The op kinds a policy can be given for.
-OP_KINDS: tuple[str, ...] = tuple(_KIND_OF.values())
+OP_KINDS: tuple[str, ...] = tuple(
+    sorted(DISPATCHED_OPS | REFERENCE_ONLY_OPS | {DistanceTransformDescriptor.op})
+)
 PRODUCT_KINDS: tuple[str, ...] = ("linear", "fully_connected_tp")
 
 
@@ -131,7 +120,9 @@ class PrecisionConfig:
         """The dtype of tensors crossing an op boundary."""
         return self.model
 
-    def policy_for(self, descriptor: Any | Sequence[Any]) -> PrecisionPolicy:
+    def policy_for(
+        self, descriptor: Descriptor | Sequence[Descriptor]
+    ) -> PrecisionPolicy:
         """The policy for this dispatched op, or for this fused span.
 
         Authoritative: a backend reads the policy stamped from here and never
@@ -142,7 +133,7 @@ class PrecisionConfig:
         Args:
             descriptor: One op descriptor, or the descriptors of a span.
         """
-        if isinstance(descriptor, Sequence) and not isinstance(descriptor, str):
+        if isinstance(descriptor, Sequence):
             policies = [self.policy_for(member) for member in descriptor]
             if not policies:
                 raise ValueError("a span has at least one op")
@@ -154,11 +145,8 @@ class PrecisionConfig:
                 if all(p.product == "tf32" for p in policies)
                 else "ieee",
             )
-        kind = _KIND_OF.get(type(descriptor).__name__)
         overrides = dict(self.ops)
-        if kind is not None and kind in overrides:
-            return overrides[kind]
-        return PrecisionPolicy.uniform(self.model)
+        return overrides.get(descriptor.op, PrecisionPolicy.uniform(self.model))
 
     def resolved_accumulate(self, supports_float64: bool) -> Precision:
         """The model-level accumulation type this device can actually give.

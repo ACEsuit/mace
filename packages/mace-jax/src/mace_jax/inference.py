@@ -11,7 +11,6 @@ from mace_core.graph import (
     AutoPadding,
     FixedPadding,
     NoPadding,
-    PaddingBudget,
     padding_budget,
 )
 from mace_core.outputs import MACEOutput
@@ -82,38 +81,25 @@ class JITPipeline:
 
     def prepare(self, graph):
         """Pad a rebuilt neighbour list to the retained capacity."""
-        policy = self.policy
         previous = self.capacity
-        if previous is not None:
-            fixed = FixedPadding(
-                nodes_budget=previous.nodes,
-                edges_budget=previous.edges,
-                graphs_budget=previous.graphs,
-                on_overflow=policy.on_overflow,
-            )
-            sizes = dict(
-                n_nodes=graph["positions"].shape[0],
-                n_edges=graph["edge_index"].shape[1],
-                n_graphs=graph["ptr"].shape[0] - 1,
-            )
-            needed = padding_budget(fixed, **sizes)
-            if needed != previous and isinstance(policy, AutoPadding):
-                target = padding_budget(policy, **sizes)
-                assert target is not None and needed is not None
-                fixed = FixedPadding(
-                    nodes_budget=max(needed.nodes, target.nodes),
-                    edges_budget=max(needed.edges, target.edges),
-                    graphs_budget=max(needed.graphs, target.graphs),
-                )
-            policy = fixed
+        budget = padding_budget(
+            self.policy,
+            n_nodes=graph["positions"].shape[0],
+            n_edges=graph["edge_index"].shape[1],
+            n_graphs=graph["ptr"].shape[0] - 1,
+            previous=previous,
+        )
+        assert budget is not None
+        policy = FixedPadding(
+            nodes_budget=budget.nodes,
+            edges_budget=budget.edges,
+            graphs_budget=budget.graphs,
+            on_overflow="error",
+        )
         padded, info = pad_batch(
             graph, policy, self.r_max, atomic_number_table=self.elements
         )
-        self.capacity = PaddingBudget(
-            padded["positions"].shape[0],
-            padded["edge_index"].shape[1],
-            padded["ptr"].shape[0] - 1,
-        )
+        self.capacity = budget
         if previous is not None and self.capacity != previous:
             logger.info(
                 "JAX inference padding grew from %s to %s", previous, self.capacity

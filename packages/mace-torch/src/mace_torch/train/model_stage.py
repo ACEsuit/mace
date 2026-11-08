@@ -91,7 +91,6 @@ def run_model_stage(
         e0s=data.e0s,
         statistics=data.statistics,
         normalization=data.normalization if foundation is None else None,
-        precision=precision,
         supports_float64=supports_float64,
         initialize=initialize,
     )

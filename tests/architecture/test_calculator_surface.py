@@ -21,8 +21,8 @@ from mace_torch.calculators.ase_calculator import (
     produced_outputs,
 )
 from mace_torch.models.dipoles import DipoleSettings
-from mace_torch.models.electrostatics import PolarModel, _polar_extra_observables
-from mace_torch.models.outputs import ENERGY_EXTRA_ROWS
+from mace_torch.models.electrostatics import _polar_extra_observables
+from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES
 
 #: The keys whose model v1 does not build yet, and who builds it. LES reads
 #: its applied field through the Born charges it predicts, and the calculator
@@ -44,33 +44,24 @@ PREDICTED = DipoleSettings(charges="predicted", polarizability=True)
 #: Each v1 model family, as the outputs a calculator reads from it.
 FAMILIES = {
     "energy": produced_outputs(
-        ("energy", "forces"), ENERGY_EXTRA_ROWS, atomic_stresses=True
+        ("energy", "forces"), ENERGY_EXTRA_OBSERVABLES, atomic_stresses=True
     ),
     "charge-aware": produced_outputs(
         ("energy", "forces"),
-        {
-            **ENERGY_EXTRA_ROWS,
-            **{
-                spec.name: "atom" if spec.per_atom else "graph"
-                for spec in _polar_extra_observables(1)
-            },
-        },
+        ENERGY_EXTRA_OBSERVABLES + _polar_extra_observables(1),
         atomic_stresses=True,
-        produced=sorted(PolarModel.PRODUCED),
     ),
-    "dipole": produced_outputs(("dipole",), FIXED.extra_rows, produced=FIXED.produced),
+    "dipole": produced_outputs(("dipole",), FIXED.extra_observables),
     "dielectric": produced_outputs(
         ("dipole", "polarizability"),
-        PREDICTED.extra_rows,
-        produced=PREDICTED.produced,
+        PREDICTED.extra_observables,
     ),
     "magnetic": produced_outputs(
         ("energy", "forces", "magforces"),
-        ENERGY_EXTRA_ROWS,
+        ENERGY_EXTRA_OBSERVABLES,
         atomic_stresses=True,
-        produced=["converged_magmom"],
         derivatives=["magforces"],
-    ),
+    ) | {"converged_magmom"},
 }
 
 

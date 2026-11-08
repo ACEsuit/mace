@@ -66,7 +66,7 @@ def configuration(**options):
     document.update(
         model="fixed_point_scf",
         local_sources=None,
-        fixed_point_scf={"kind": "fixed_point_scf", **options},
+        fixed_point_scf=options,
     )
     if options.get("update") == "many_body" or options.get(
         "electron_energy", ""

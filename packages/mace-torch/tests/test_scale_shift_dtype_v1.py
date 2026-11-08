@@ -47,13 +47,14 @@ def evaluate(family: str, model: Precision, supports_float64: bool = True):
         }
     )
     engine, _ = build_model(
-        config,
+        config.model_copy(
+            update={"precision": PrecisionConfig(model=model, accumulate="float64")}
+        ),
         DEFAULT_CATALOGUE,
         z_table=AtomicNumberTable(ATOMIC_NUMBERS),
         heads=("default",),
         e0s=ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
         statistics=DatasetStatistics(avg_num_neighbors=3.0),
-        precision=PrecisionConfig(model=model, accumulate="float64"),
         supports_float64=supports_float64,
     )
     dtype = _TORCH[model]

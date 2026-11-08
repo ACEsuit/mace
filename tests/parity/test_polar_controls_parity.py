@@ -140,10 +140,10 @@ def test_polar_controls_and_outputs_match_legacy(device, name, variant):
     close(extras["spins"], extras["spin_density"][:, 0], EXACT)
     close(extras["external_field"], new["external_field"], EXACT)
     close(extras["fermi_level"], torch.zeros(2, device=device), EXACT)
-    assert model.extra_rows["spin_density"] == "atom"
-    assert (
-        model.extra_rows["external_field"] == model.extra_rows["fermi_level"] == "graph"
-    )
+    declared = {spec.name: spec for spec in model.extra_observables}
+    assert declared["spin_density"].per_atom
+    assert not declared["external_field"].per_atom
+    assert not declared["fermi_level"].per_atom
     close(extras["total_charge"], new["total_charge"], CLOSED_FORM_FP64)
     # Shared nonuniform cotangents include the force path's double backward.
     objectives = [0, 0]

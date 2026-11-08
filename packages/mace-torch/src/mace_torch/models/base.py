@@ -154,18 +154,6 @@ class MACEModel(nn.Module):
             )
         return tuple(specs)
 
-    @property
-    def extra_rows(self) -> dict[str, str]:
-        """What each quantity the model adds to ``extras`` has a row for.
-
-        Declared by the model that adds it, so whatever cuts a padded batch
-        back reads it here rather than keeping a list of every model's.
-        """
-        return {
-            spec.name: "atom" if spec.per_atom else "graph"
-            for spec in self.extra_observables
-        }
-
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The declared observables. The graph is read and never written to."""
         features = list(self.backbone(graph).layers)

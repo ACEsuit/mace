@@ -96,6 +96,15 @@ def test_a_span_of_one_is_its_member():
     assert config.policy_for([member]) == config.policy_for(member)
 
 
+def test_a_descriptor_subclass_keeps_its_operation_policy():
+    class SpecializedLinear(LinearDescriptor):
+        pass
+
+    policy = PrecisionPolicy.uniform("float64")
+    config = PrecisionConfig(model="float32", ops=(("linear", policy),))
+    assert config.policy_for(SpecializedLinear()) == policy
+
+
 def test_an_empty_span_is_refused():
     with pytest.raises(ValueError, match="at least one op"):
         PrecisionConfig().policy_for(())

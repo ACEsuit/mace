@@ -42,7 +42,7 @@ import torch
 from mace_core.clebsch_gordan import symmetric_matrix_basis
 from mace_core.config.model import ModelConfig
 from mace_core.kernels.precision import Precision
-from mace_core.observables import ObservableSpec
+from mace_core.observables import DEFAULT_CATALOGUE, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor
 
@@ -52,20 +52,11 @@ from mace_torch.models.outputs import E_ANGSTROM_PER_DEBYE as E_ANGSTROM_PER_DEB
 from mace_torch.models.outputs import fixed_charge_dipole
 
 __all__ = [
-    "DIPOLE_EXTRA_ROWS",
     "DIPOLE_GRAPH_INPUTS",
     "DIPOLE_HEADS",
     "DipoleModel",
     "DipoleSettings",
 ]
-
-#: What each quantity the model adds to ``extras`` has a row for.
-DIPOLE_EXTRA_ROWS: dict[str, str] = {
-    "atomic_dipoles": "atom",
-    "charges": "atom",
-    "polarizability": "graph",
-    "polarizability_sh": "graph",
-}
 
 #: The inputs each of the two models reads, which the data stage writes into
 #: every graph it builds for it: the fixed charges per atom, or the total charge
@@ -122,19 +113,10 @@ class DipoleSettings:
             )
 
     @property
-    def produced(self) -> frozenset[str]:
-        """What the model computes from its readouts."""
-        return frozenset(
-            {"dipole", *(("polarizability",) if self.polarizability else ())}
-        )
-
-    @property
-    def extra_rows(self) -> dict[str, str]:
-        """The rows of what the model adds to ``extras``."""
-        names = {head.name for head in self.heads}
-        if self.polarizability:
-            names.add("polarizability")
-        return {name: row for name, row in DIPOLE_EXTRA_ROWS.items() if name in names}
+    def extra_observables(self) -> tuple[ObservableSpec, ...]:
+        """Internal readouts and the physical responses computed from them."""
+        names = ("dipole", "polarizability") if self.polarizability else ("dipole",)
+        return self.heads + tuple(DEFAULT_CATALOGUE.observable(name) for name in names)
 
     @property
     def heads(self) -> tuple[ObservableSpec, ...]:
@@ -161,11 +143,6 @@ class DipoleModel(MACEModel):
         The rest are :class:`MACEModel`'s. There is no energy, no energy head
         and no repulsion.
     """
-
-    #: What the model computes from its readouts rather than reads out: the
-    #: dipole always, and the polarizability for the dielectric model. Set per
-    #: model from its settings; this is every name either can produce.
-    PRODUCED: frozenset[str] = frozenset({"dipole", "polarizability"})
 
     polarizability_basis: Tensor
 
@@ -200,7 +177,6 @@ class DipoleModel(MACEModel):
             last_layer_irreps=last_layer_irreps,
         )
         self.settings = settings
-        self.PRODUCED = settings.produced
         self.register_buffer(
             "polarizability_basis",
             torch.tensor(symmetric_matrix_basis(), dtype=getattr(torch, precision)),
@@ -208,8 +184,8 @@ class DipoleModel(MACEModel):
         )
 
     @property
-    def extra_rows(self) -> dict[str, str]:
-        return self.settings.extra_rows
+    def extra_observables(self) -> tuple[ObservableSpec, ...]:
+        return self.settings.extra_observables
 
     def forward(self, graph: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The dipole, and the polarizability when there is one."""

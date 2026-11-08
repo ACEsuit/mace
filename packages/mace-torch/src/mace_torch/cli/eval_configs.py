@@ -80,6 +80,7 @@ def run(args: argparse.Namespace) -> int:
     import torch
     from ase.io import read, write
     from mace_core.config.precision import PrecisionConfig
+    from mace_core.config.resolved import ResolvedConfig
     from mace_core.data.xyz import configuration_from_atoms
 
     from mace_torch.calculators.ase_calculator import produced_outputs
@@ -105,18 +106,20 @@ def run(args: argparse.Namespace) -> int:
         device=args.device,
         precision=PrecisionConfig(model=args.default_dtype),
     )
-    if args.default_dtype != deployed.config.precision.model:
+    recorded_dtype = ResolvedConfig.from_dict(
+        deployed.metadata.config.resolved
+    ).precision.model
+    if args.default_dtype != recorded_dtype:
         logging.getLogger(__name__).warning(
             "Requested dtype %s does not match model dtype %s; evaluating with %s.",
             args.default_dtype,
-            deployed.config.precision.model,
+            recorded_dtype,
             args.default_dtype,
         )
     head = deployed.select_head(args.head)
     available = produced_outputs(
         [spec.name for spec in deployed.outputs.observables],
-        getattr(deployed.model, "extra_rows", {}),
-        produced=getattr(deployed.model, "produced_observables", ()),
+        deployed.model.extra_observables,
         derivatives=deployed.outputs.derivatives,
     )
     compute = [name for name in ("forces",) if name in available]

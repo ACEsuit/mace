@@ -22,6 +22,15 @@ from mace_core.config import (
 from pydantic import ValidationError
 
 
+@pytest.mark.parametrize("family", ["qeq", "fixed_point_scf"])
+def test_single_variant_settings_need_no_kind(family):
+    config = ModelConfig.model_validate({"model": family, family: {}})
+    assert "kind" not in config.model_dump()[family]
+    assert ModelConfig.model_validate_json(config.model_dump_json()) == config
+    with pytest.raises(ValidationError, match=f"model.{family} requires"):
+        ModelConfig.model_validate({"model": "scale_shift", family: {}})
+
+
 @pytest.mark.parametrize("gate", ["silu", "tanh", "abs", "None"])
 def test_readout_activation_round_trips(gate):
     config = ModelConfig(readout={"gate": gate})

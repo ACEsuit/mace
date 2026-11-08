@@ -21,7 +21,11 @@ from mace_core.kernels.descriptors import (
 )
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.composite import CompositeBackend
-from mace_torch.backends.precision import PrecisionBackend, boundary_precision
+from mace_torch.backends.precision import (
+    PrecisionBackend,
+    boundary_precision,
+    interface_dtype,
+)
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models.build import build_model
 from mace_torch_engine_fixtures import ATOMIC_NUMBERS, build_graph, molecule
@@ -43,13 +47,12 @@ CONFIG = ResolvedConfig.model_validate(
 
 def engine(precision: PrecisionConfig):
     built, _ = build_model(
-        CONFIG,
+        CONFIG.model_copy(update={"precision": precision}),
         DEFAULT_CATALOGUE,
         z_table=AtomicNumberTable(ATOMIC_NUMBERS),
         heads=("default",),
         e0s=ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
         statistics=DatasetStatistics(avg_num_neighbors=3.0),
-        precision=precision,
     )
     return built
 
@@ -73,7 +76,9 @@ def cast_ops(model: nn.Module) -> dict[str, tuple[str, str]]:
 
 @pytest.mark.parametrize("preset", ["float64", "float32"])
 def test_a_uniform_preset_casts_nothing(preset):
-    assert cast_ops(engine(getattr(PrecisionConfig, preset)())) == {}
+    model = engine(getattr(PrecisionConfig, preset)())
+    assert interface_dtype(model) == getattr(torch, preset)
+    assert cast_ops(model) == {}
 
 
 def test_mixed_casts_exactly_the_ops_it_holds_wider():

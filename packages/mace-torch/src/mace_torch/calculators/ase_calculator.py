@@ -83,7 +83,7 @@ from mace_core.graph import (
     unpad_outputs,
 )
 from mace_core.neighbors import NeighborListConfig
-from mace_core.observables import ObservableCatalogue
+from mace_core.observables import ObservableCatalogue, ObservableSpec
 from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
 
@@ -176,24 +176,22 @@ RELAXED_MAGMOM_KEY = "MACE_magmoms"
 
 def produced_outputs(
     observables: Sequence[str],
-    extra_rows: Mapping[str, str],
+    extra_observables: Sequence[ObservableSpec],
     *,
     atomic_stresses: bool = False,
-    produced: Sequence[str] = (),
     derivatives: Sequence[str] = (),
 ) -> set[str]:
     """The model outputs a calculator reads from a model so declared.
 
     Args:
         observables: The declared observables, by name.
-        extra_rows: What the model says it adds to its output.
+        extra_observables: Additional outputs declared by the model.
         atomic_stresses: Whether per-atom stresses are asked for.
-        produced: What the model computes itself rather than reads out.
         derivatives: The energy derivatives asked of it beyond the forces and
             the stress, ``magforces`` for a model that reads moments.
     """
     names = {FIELD_BY_OBSERVABLE.get(name, name) for name in observables}
-    names |= set(extra_rows) | set(produced) | set(derivatives)
+    names |= {spec.name for spec in extra_observables} | set(derivatives)
     if ENERGY_OBSERVABLE in observables:
         # Forces and stress are always taken for an energy model, as the frozen
         # tree takes them, whatever derivatives it was trained against.
@@ -428,18 +426,16 @@ class MACECalculator(Calculator):
         self._catalogue = ObservableCatalogue(
             inputs=first.outputs.inputs, observables=first.outputs.observables
         )
-        extra_rows = _extra_rows(first)
-        self._rows = output_rows(first.outputs, extra_rows)
+        extra_observables = first.model.extra_observables
+        self._rows = output_rows(first.outputs, extra_observables)
         self._outputs = produced_outputs(
             self.observables,
-            extra_rows,
+            extra_observables,
             atomic_stresses=compute_atomic_stresses,
-            produced=[
-                *sorted(getattr(first.model, "PRODUCED", ())),
-                *([f"converged_{fixed_point.variable}"] if fixed_point else []),
-            ],
             derivatives=[MAGNETIC_DERIVATIVE] if self.reads_moments else [],
         )
+        if fixed_point is not None:
+            self._outputs.add(f"converged_{fixed_point.variable}")
         if not compute_bec:
             self._outputs.discard("BEC")
         elif self.external_field is not None:
@@ -880,11 +876,6 @@ _PER_STRUCTURE = ("interaction_energy", "electrostatic_energy", "electron_energy
 def _declared(model: DeployedModel) -> list[str]:
     """The observables a model was built to read out, by name."""
     return [spec.name for spec in model.outputs.observables]
-
-
-def _extra_rows(model: DeployedModel) -> dict[str, str]:
-    """What the model says it adds to its output, and the row of each."""
-    return dict(getattr(model.model, "extra_rows", {}))
 
 
 def _compiled(engine: nn.Module, mode: str) -> DerivativeEngine:

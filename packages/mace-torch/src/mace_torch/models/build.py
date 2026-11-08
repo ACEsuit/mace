@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import torch
-from mace_core.config.precision import DEFAULT_PRECISION, PrecisionConfig
+from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.data.normalization import NormalizationValues
@@ -33,7 +33,7 @@ from mace_torch.backends.precision import PrecisionBackend, degradation_report
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.models.dipoles import DipoleModel, DipoleSettings
-from mace_torch.models.electrostatics import PolarModel
+from mace_torch.models.electrostatics import POLAR_DIPOLE, PolarModel
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.models.normalization import ObservableNormalization
 from mace_torch.models.registry import ElectrostaticModelFactory, model_family
@@ -66,7 +66,6 @@ def build_model(
     e0s: ResolvedE0s,
     statistics: DatasetStatistics,
     normalization: Mapping[str, Mapping[str, NormalizationValues]] | None = None,
-    precision: PrecisionConfig = DEFAULT_PRECISION,
     supports_float64: bool = True,
     initialize: bool = True,
 ) -> tuple[DerivativeEngine, RequestedOutputs]:
@@ -78,6 +77,7 @@ def build_model(
     Returns:
         The model wrapped in its derivative engine, and what it reads out.
     """
+    precision = config.precision
     if config.catalogue is not None and catalogue != config.catalogue:
         raise ModelBuildError("catalogue disagrees with config.catalogue")
     requested = resolve_requested(config.model.observables, catalogue)
@@ -277,9 +277,7 @@ def _polar_model(
         config=config.model,
         atomic_numbers=list(z_table.zs),
         observables=[
-            spec
-            for spec in requested.observables
-            if spec.name not in PolarModel.PRODUCED
+            spec for spec in requested.observables if spec.name != POLAR_DIPOLE.name
         ],
         energy_head=energy_head,
         electrostatics=config.electrostatics,

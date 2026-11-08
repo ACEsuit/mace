@@ -45,7 +45,12 @@ from mace_core.electrostatics import (
 )
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision, widest
-from mace_core.observables import InputSpec, ObservableSpec, irreps_dimension
+from mace_core.observables import (
+    DEFAULT_CATALOGUE,
+    InputSpec,
+    ObservableSpec,
+    irreps_dimension,
+)
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
@@ -91,6 +96,9 @@ def _spherical(max_l: int, copies: int = 1) -> str:
     )
 
 
+POLAR_DIPOLE = DEFAULT_CATALOGUE.observable("dipole")
+
+
 def _polar_extra_observables(max_l: int) -> tuple[ObservableSpec, ...]:
     density = _spherical(max_l)
     declarations = (
@@ -111,9 +119,12 @@ def _polar_extra_observables(max_l: int) -> tuple[ObservableSpec, ...]:
         ("fermi_level", "0e", False, "eV"),
         ("external_field", "1o", False, "eV/(e*Å)"),
     )
-    return tuple(
-        ObservableSpec(name=name, irreps=irreps, per_atom=per_atom, units=units)
-        for name, irreps, per_atom, units in declarations
+    return (
+        POLAR_DIPOLE,
+        *(
+            ObservableSpec(name=name, irreps=irreps, per_atom=per_atom, units=units)
+            for name, irreps, per_atom, units in declarations
+        ),
     )
 
 
@@ -177,9 +188,6 @@ class PolarModel(MACEModel):
         dipoles are read off the last layer in the solver's component order.
     """
 
-    #: What the model computes itself, from its density, so it has no head.
-    PRODUCED: frozenset[str] = frozenset({"dipole"})
-
     field_norms: Tensor
     #: Whichever solver built it: ``prepare(geometry)`` once per forward, then
     #: called once per density. A module, typed loosely because a solver's own
@@ -202,7 +210,7 @@ class PolarModel(MACEModel):
         num_heads: int = 1,
     ) -> None:
         produced = sorted(
-            spec.name for spec in observables if spec.name in self.PRODUCED
+            spec.name for spec in observables if spec.name == POLAR_DIPOLE.name
         )
         if produced:
             raise ValueError(
@@ -521,7 +529,7 @@ class PolarModel(MACEModel):
 class _ChargeAwareModel(MACEModel):
     """Shared input, solver-metadata and planning contracts for source models."""
 
-    produced_observables: dict[str, ObservableSpec]
+    _physical_observables: dict[str, ObservableSpec]
     descriptor: ElectrostaticsSolverDescriptor
     solver: str
 
@@ -547,9 +555,7 @@ class _ChargeAwareModel(MACEModel):
 
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:
-        return super().extra_observables + tuple(
-            spec for name, spec in self.produced_observables.items() if name != "dipole"
-        )
+        return super().extra_observables + tuple(self._physical_observables.values())
 
     def prepare_model_inputs(self, graph: dict[str, Any], requests=()) -> None:
         if LONG_RANGE_PLAN not in graph:
@@ -622,7 +628,7 @@ class LocalChargeModel(_ChargeAwareModel):
             raise ValueError(f"{self.kind} requires an energy observable")
         if sources.multipole_max_l > config.max_L:
             raise ValueError("local_sources.multipole_max_l exceeds model.max_L")
-        self.produced_observables = {
+        self._physical_observables = {
             spec.name: spec
             for spec in (
                 ObservableSpec(name="dipole", irreps="1o", per_atom=False, units="e*Å"),
@@ -645,7 +651,7 @@ class LocalChargeModel(_ChargeAwareModel):
             )
         }
         if isinstance(sources, LocalSplitChargeConfig) and sources.polarizability:
-            self.produced_observables["polarizability"] = ObservableSpec(
+            self._physical_observables["polarizability"] = ObservableSpec(
                 name="polarizability", irreps="0e+2e", per_atom=False, units="Å^3"
             )
         super().__init__(
@@ -655,7 +661,7 @@ class LocalChargeModel(_ChargeAwareModel):
             [
                 spec
                 for spec in observables
-                if spec.name not in self.produced_observables
+                if spec.name not in self._physical_observables
             ],
             energy_head,
             avg_num_neighbors=avg_num_neighbors,
@@ -1022,7 +1028,7 @@ class QEqModel(_ChargeAwareModel):
             raise ValueError("QEq requires model.qeq and model.model='qeq'")
         if energy_head is None:
             raise ValueError("QEq requires an energy observable")
-        self.produced_observables = {
+        self._physical_observables = {
             name: ObservableSpec(
                 name=name, irreps=irreps, per_atom=per_atom, units=units
             )
@@ -1044,7 +1050,7 @@ class QEqModel(_ChargeAwareModel):
             [
                 spec
                 for spec in observables
-                if spec.name not in self.produced_observables
+                if spec.name not in self._physical_observables
             ],
             energy_head,
             avg_num_neighbors=avg_num_neighbors,
@@ -1062,7 +1068,7 @@ class QEqModel(_ChargeAwareModel):
                 {
                     name: ObservableHead(
                         backend,
-                        self.produced_observables[name],
+                        self._physical_observables[name],
                         [config.node_irreps] * config.num_interactions,
                         config.num_channels,
                         nonlinear=True,
@@ -1284,7 +1290,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
         self.potential_irreps = _spherical(
             options.feature_max_l, len(options.feature_widths)
         )
-        self.produced_observables = {
+        self._physical_observables = {
             name: ObservableSpec(
                 name=name, irreps=irreps, per_atom=per_atom, units=units
             )
@@ -1312,7 +1318,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
             [
                 spec
                 for spec in observables
-                if spec.name not in self.produced_observables
+                if spec.name not in self._physical_observables
             ],
             energy_head,
             avg_num_neighbors=avg_num_neighbors,

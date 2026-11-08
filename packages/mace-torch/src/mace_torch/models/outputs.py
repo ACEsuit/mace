@@ -31,7 +31,6 @@ from mace_torch.models.heads import ObservableHead, per_head_irreps
 
 __all__ = [
     "ENERGY_EXTRA_OBSERVABLES",
-    "ENERGY_EXTRA_ROWS",
     "ENERGY_OBSERVABLE",
     "MACEOutputs",
     "fixed_charge_dipole",
@@ -72,9 +71,6 @@ ENERGY_EXTRA_OBSERVABLES = (
         name="node_interaction_energy", irreps="0e", per_atom=True, units="eV"
     ),
 )
-ENERGY_EXTRA_ROWS = {
-    spec.name: "atom" if spec.per_atom else "graph" for spec in ENERGY_EXTRA_OBSERVABLES
-}
 
 
 class MACEOutputs(nn.Module):

@@ -73,7 +73,6 @@ def extend_readouts(
         heads=parent.heads,
         e0s=ResolvedE0s(parent.e0s),
         statistics=DatasetStatistics(),
-        precision=config.precision,
         initialize=True,
     )
     original_layout = canonical_metadata(parent.derivative_engine)

@@ -531,7 +531,7 @@ def test_les_precision_rows(converted_les, device, backend, dtype, row, fp64, is
             }
         )
         engine, _ = build_model(
-            config,
+            config.model_copy(update={"precision": precision}),
             DEFAULT_CATALOGUE,
             z_table=imported.z_table,
             heads=imported.heads,
@@ -539,7 +539,6 @@ def test_les_precision_rows(converted_les, device, backend, dtype, row, fp64, is
                 {h: {z: 0.0 for z in imported.z_table.zs} for h in imported.heads}
             ),
             statistics=DatasetStatistics(),
-            precision=precision,
             initialize=False,
         )
         load_canonical_state(engine, canonical_state(imported.engine))

@@ -12,6 +12,30 @@ from mace_jax.inference import JITPipeline
 from tests.golden import harness
 
 
+@pytest.mark.parametrize("overflow", ["grow", "error"])
+def test_reused_fixed_capacity_keeps_a_padding_atom(overflow):
+    apply, params = load_model(TINY)
+    surface = ModelSurface(apply, params)
+    pipeline = JITPipeline(
+        apply,
+        params,
+        FixedPadding(
+            nodes_budget=2, edges_budget=0, graphs_budget=2, on_overflow=overflow
+        ),
+    )
+    pipeline.prepare(surface.graph(Atoms("H", positions=[[0, 0, 0]])))
+    graph = surface.graph(Atoms("HH", positions=[[0, 0, 0], [20, 0, 0]]))
+    if overflow == "error":
+        with pytest.raises(PaddingOverflowError, match="does not fit"):
+            pipeline.prepare(graph)
+        assert pipeline.capacity.nodes == 2
+    else:
+        padded, info = pipeline.prepare(graph)
+        assert pipeline.capacity.nodes == 3
+        assert padded["positions"].shape == (3, 3)
+        assert info.n_real_nodes == 2
+
+
 def test_fixed_bucket_energy_rebuilds_and_depends_on_explicit_positions_and_cell():
     apply, params = load_model(TINY)
     surface = ModelSurface(apply, params)

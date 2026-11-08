@@ -16,7 +16,6 @@ class FixedPointSCFConfig(ConfigSection):
     the residual equation, then differentiate it implicitly through second order.
     """
 
-    kind: Literal["fixed_point_scf"] = "fixed_point_scf"
     multipole_max_l: Literal[0, 1] = 0
     multipole_width: Positive = 1.0
     feature_max_l: Literal[0, 1] = 0

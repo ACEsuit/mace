@@ -35,7 +35,7 @@ def qeq_model(
 ):
     local = model_for("lc_mace", degree=0, profile=profile)
     document = local.config.model_dump(mode="json")
-    document.update(model="qeq", local_sources=None, qeq={"kind": "qeq", **options})
+    document.update(model="qeq", local_sources=None, qeq=options)
     config = ModelConfig.model_validate(document)
     precision = cast(Precision, str(torch.get_default_dtype()).removeprefix("torch."))
     model = QEqModel(

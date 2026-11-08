@@ -564,6 +564,9 @@ def test_calculator_precision_is_instance_local(checkpoints, source, setting, de
     ):
         assert next(converted.model.parameters()).dtype == torch.float32
         assert next(original.model.parameters()).dtype == torch.float64
+        assert converted.config.precision.model == "float32"
+        assert original.config.precision.model == "float64"
+        assert converted.metadata.config == original.metadata.config
         after = canonical_state(original.engine)
         for path, tensors in state.items():
             for name, value in tensors.items():

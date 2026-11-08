@@ -32,6 +32,7 @@ def engine(
     config = ResolvedConfig.model_validate(
         {
             "runtime": {"seed": seed},
+            "precision": precision or PrecisionConfig(),
             "data": {"heads": {name: {"train_file": "x.xyz"} for name in heads}},
             "model": {
                 "backend": backend,
@@ -53,7 +54,6 @@ def engine(
         heads=heads,
         e0s=ResolvedE0s({name: {6: -1.0, 14: -2.0} for name in heads}),
         statistics=DatasetStatistics(avg_num_neighbors=8.0, std=1.0),
-        **({"precision": precision} if precision is not None else {}),
     )
     return built.to(device)
 

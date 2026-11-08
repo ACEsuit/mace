@@ -447,7 +447,7 @@ def test_the_radial_frequencies_are_carried(converted, tmp_path):
     radial = import_neutral(changed, CATALOGUE).engine.get_submodule(
         "backbone.backbone.radial_embedding"
     )
-    assert np.array_equal(radial.basis.frequencies.detach().numpy(), written)
+    assert np.array_equal(radial.radial.basis.frequencies.detach().numpy(), written)
 
 
 def test_the_repulsion_constants_are_carried(converted, tmp_path):

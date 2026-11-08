@@ -84,14 +84,13 @@ def load_foundation(
             f"{family} requires {sorted(expected)}; checkpoint declares "
             f"{loaded.config.model.model!r}"
         )
-    config = loaded.config.model_copy(update={"precision": policy})
     loaded = replace(
         loaded,
-        config=config,
         metadata=loaded.metadata.model_copy(
             update={
                 "config": ConfigRecord(
-                    user=loaded.metadata.config.user, resolved=config.to_resolved_dict()
+                    user=loaded.metadata.config.user,
+                    resolved=loaded.config.to_resolved_dict(),
                 ),
             }
         ),

@@ -17,7 +17,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
@@ -33,6 +33,10 @@ from torch import Tensor, nn
 
 from mace_torch.deploy.manifest import DeployManifest
 
+if TYPE_CHECKING:
+    from mace_torch.models.base import MACEModel
+    from mace_torch.models.magnetic import MagneticModel
+
 __all__ = ["DeployError", "DeployedModel", "load_deployed"]
 
 
@@ -47,7 +51,7 @@ class DeployedModel:
     Attributes:
         engine: The model inside its derivative engine, which is what computes
             forces and stress around it.
-        config: The configuration it was trained with.
+        config: The effective configuration, including deployment overrides.
         metadata: The checkpoint's record.
         z_table: Its element table.
         heads: Its heads, in the order the model indexes them.
@@ -83,9 +87,12 @@ class DeployedModel:
         return float(self.config.model.r_max)
 
     @property
-    def model(self) -> nn.Module:
+    def model(self) -> MACEModel | MagneticModel:
         """The model inside the engine, where the canonical state lives."""
-        return self.derivative_engine.get_submodule("backbone")
+        return cast(
+            "MACEModel | MagneticModel",
+            self.derivative_engine.get_submodule("backbone"),
+        )
 
     @property
     def derivative_engine(self):
@@ -122,20 +129,21 @@ class DeployedModel:
         from mace_torch.models.build import build_model
         from mace_torch.serialization import canonical_state, load_canonical_state
 
+        config = self.config.model_copy(update={"precision": precision})
         engine, outputs = build_model(
-            self.config,
+            config,
             self.config.catalogue or DEFAULT_CATALOGUE,
             z_table=self.z_table,
             heads=self.heads,
             e0s=ResolvedE0s(self.e0s),
             statistics=DatasetStatistics(),
-            precision=precision,
             initialize=False,
         )
         load_canonical_state(engine, canonical_state(self.derivative_engine))
         return replace(
             self,
-            engine=_with_fixed_point(engine.to(device).eval(), self.config),
+            engine=_with_fixed_point(engine.to(device).eval(), config),
+            config=config,
             outputs=outputs,
         )
 
@@ -204,7 +212,7 @@ def load_deployed(
         device: Where the model is put.
         catalogue: The observables it may declare. The default catalogue
             unless a model declares others.
-        precision: What it computes in. The default precision unless given.
+        precision: What it computes in. Uses the checkpoint's precision unless given.
         backend: Runtime kernel backend. An explicit bundle pin must agree.
         solver: The electrostatics solver to rebuild a long-range model with,
             when it is not the one it recorded. Allowed only between two
@@ -246,6 +254,8 @@ def load_deployed(
         )
     if manifest is not None and precision is None:
         precision = replace(config.precision, model=manifest.dtype)
+    if precision is not None:
+        config = config.model_copy(update={"precision": precision})
     catalogue = catalogue or config.catalogue or DEFAULT_CATALOGUE
     config = _with_solver(config, metadata, solver, path)
     heads = tuple(config.data.heads)
@@ -287,7 +297,6 @@ def load_deployed(
         heads=heads,
         e0s=ResolvedE0s(e0s),
         statistics=DatasetStatistics(),
-        precision=precision or config.precision,
         initialize=False,
     )
     load_checkpoint(source, engine, manifest=document, tensors_path=tensors_path)

@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def configuration(**options):
     document = local_configuration("lc_mace", 0).model_dump(mode="json")
-    document.update(model="qeq", local_sources=None, qeq={"kind": "qeq", **options})
+    document.update(model="qeq", local_sources=None, qeq=options)
     return ModelConfig.model_validate(document)
 
 
