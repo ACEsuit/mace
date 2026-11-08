@@ -405,6 +405,16 @@ def key_specification(
                     "model.graph_features"
                 )
     spec.add_embedding_features(embedding_specs)
+    if model is not None:
+        from mace_torch.models.registry import registered_models
+
+        declared_inputs = getattr(
+            registered_models().get(model.model), "declared_inputs", None
+        )
+        if callable(declared_inputs):
+            for item in declared_inputs(model):
+                keys = spec.atom_keys if item.per_atom else spec.graph_keys
+                keys.setdefault(item.name, item.name)
     if requested is not None:
         # Existing labels retain their agreed keys. New properties are read
         # by their declared name, in the declared per-atom/per-graph storage.

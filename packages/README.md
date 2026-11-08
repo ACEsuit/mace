@@ -268,6 +268,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/config/loss.py` | Loss kinds and per-observable weights. |
 | `mace_core/config/local_sources.py` | LC/LSC local multipoles and the exclusive formal-charge input/table contract. |
 | `mace_core/config/qeq.py` | Quadratic charge equilibration and optional atomic input contracts. |
+| `mace_core/config/fixed_point_scf.py` | Affine SCF architecture, charge/Fermi boundary and field-readout contracts. |
 | `mace_core/config/model.py` | Architecture, declared observables, readouts, and the polar section. |
 | `mace_core/config/precision.py` | Which dtype each op kind computes and accumulates in, the presets, and degradation on a device without float64. |
 | `mace_core/config/provenance.py` | Turning what a run asked for into what its model records. |
@@ -430,7 +431,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/models/__init__.py` | The model and its output layer, re-exported. |
 | `mace_torch/models/base.py` | `MACEModel`: backbone, repulsion and output layer; the class models subclass. |
 | `mace_torch/models/dipoles.py` | `DipoleModel`: a dipole, or a dipole and a polarizability, read off per-atom responses. |
-| `mace_torch/models/electrostatics.py` | Polar density refinement and LC/LSC local sources, sharing solver dispatch and physical derivatives. |
+| `mace_torch/models/electrostatics.py` | Polar refinement, LC/LSC sources, QEq and affine SCF, sharing solver dispatch and physical derivatives. |
 | `mace_torch/models/registry.py` | Model registration used by data declarations and assembly, outside the forward path. |
 | `mace_torch/models/energy.py` | The energy head: E0s, scale and shift, and the two reductions. |
 | `mace_torch/models/heads.py` | One readout head per declared observable, per head of theory. |
@@ -444,6 +445,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/nn/les.py` | Linear and nonlinear Cartesian tensor readouts for LES multipoles. |
 | `mace_torch/nn/charge_transfer.py` | Canonical equivariant bond transfers and higher-multipole sources for LSC-MACE. |
 | `mace_torch/nn/field.py` | The charge-aware blocks: density update, electron-energy readout, channel-pair products. |
+| `mace_torch/nn/fixed_point_scf.py` | Affine field response and scalar electron-energy contractions. |
 | `mace_torch/nn/graph_features.py` | Declared graph or atomic inputs embedded into scalar node channels. |
 | `mace_torch/nn/interaction.py` | The interaction blocks: convolution, linear, skip. |
 | `mace_torch/nn/magnetic.py` | The moment-reading blocks: moment features, interaction and product couplings with the moment. |
@@ -453,6 +455,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/nn/radial_mlp.py` | The radial MLP that produces the convolution's path weights. |
 | `mace_torch/physics/__init__.py` | The derivative engine, re-exported. |
 | `mace_torch/physics/charge_equilibration.py` | Constrained charge solving with implicit linear derivatives and a dispatched potential. |
+| `mace_torch/physics/affine_fixed_point.py` | Exact density/Fermi solving with implicit first and second derivatives. |
 | `mace_torch/physics/fixed_point.py` | Relaxing a declared input to a fixed point around the engine. |
 | `mace_torch/physics/outputs.py` | `DerivativeEngine`: strain, forces, stress, virials, Hessian. |
 | `mace_torch/serialization.py` | Checkpoints as canonical tensors and a JSON sidecar, no pickle. |

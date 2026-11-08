@@ -73,11 +73,13 @@ from mace_torch.models.registry import register_model
 from mace_torch.nn.charge_transfer import SplitChargeSource
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
+from mace_torch.nn.fixed_point_scf import AffineFieldUpdate, FixedPointEnergy
 from mace_torch.physics.charge_equilibration import ChargeEquilibration
 
 __all__ = [
     "POLAR_EXTRA_ROWS",
     "POLAR_GRAPH_INPUTS",
+    "FixedPointSCFModel",
     "LocalChargeModel",
     "LocalSplitChargeModel",
     "PolarModel",
@@ -1174,3 +1176,385 @@ class QEqModel(_ChargeAwareModel):
 
     def canonical_components(self) -> dict[str, nn.Module | None]:
         return {**super().canonical_components(), "source_maps": self.source_maps}
+
+
+@register_model("fixed_point_scf")
+class FixedPointSCFModel(_ChargeAwareModel):
+    """FixedPointSCF with the reference's affine one-body field update.
+
+    Architecture follows ACEsuit/mace-scf FixedPointCore (MIT), revision
+    784a510339aacc4412b61b6926ef1a92bca387c0. Solving the affine fixed-point
+    equation directly preserves its root and includes its implicit derivatives.
+    """
+
+    projection: Any
+
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        settings = config.fixed_point_scf
+        assert settings is not None
+        constraint = (
+            POLAR_INPUT_SPECS[0]
+            if settings.constant_charge
+            else InputSpec(name="fermi_level", irreps="0e", per_atom=False, units="eV")
+        )
+        return (constraint, POLAR_INPUT_SPECS[2])
+
+    @staticmethod
+    def solver_descriptor(
+        config: ModelConfig, electrostatics: ElectrostaticsConfig, precision: Precision
+    ) -> ElectrostaticsSolverDescriptor:
+        settings = config.fixed_point_scf
+        if settings is None:
+            raise ValueError("model.fixed_point_scf is required")
+        return ElectrostaticsSolverDescriptor(
+            periodicity_profile=electrostatics.periodicity_profile,
+            slab_normal=electrostatics.slab_normal,
+            multipole_max_l=settings.multipole_max_l,
+            smearing_width=settings.multipole_width,
+            kspace_cutoff=float(
+                electrostatics.kspace_cutoff_factor
+                * gto_basis_kspace_cutoff(
+                    [settings.multipole_width, *settings.feature_widths],
+                    max(settings.multipole_max_l, settings.feature_max_l),
+                )
+            ),
+            external_field_flags=frozenset({"include_self_interaction"})
+            if settings.energy_self_interaction
+            else frozenset(),
+            features=FeatureProjection(
+                settings.feature_max_l,
+                settings.feature_widths,
+                include_self_interaction=settings.feature_self_interaction,
+                quadrupole_corrections=settings.quadrupole_corrections,
+            ),
+            scf_spec=ScfSpec(
+                method="affine_fixed_charge"
+                if settings.constant_charge
+                else "affine_fixed_fermi"
+            ),
+            precision=precision,
+        )
+
+    def __init__(
+        self,
+        backend,
+        config: ModelConfig,
+        atomic_numbers: Sequence[int],
+        observables: Sequence[ObservableSpec],
+        energy_head: EnergyOutputHead | None,
+        *,
+        settings: ElectrostaticsSolverDescriptor,
+        solver: str = "reference",
+        trains_derivatives: bool = False,
+        avg_num_neighbors: float = 1.0,
+        precision: Precision = "float64",
+        num_heads: int = 1,
+        radial_precision: Precision | None = None,
+    ):
+        from mace_torch.backends import layout
+        from mace_torch.physics.affine_fixed_point import AffineFixedPoint
+
+        options = config.fixed_point_scf
+        if options is None or config.model != "fixed_point_scf":
+            raise ValueError("FixedPointSCF requires model.fixed_point_scf")
+        if num_heads != 1:
+            raise ValueError(
+                "FixedPointSCF supports one head, as the reference architecture"
+            )
+        if energy_head is None:
+            raise ValueError("FixedPointSCF requires an energy observable")
+        if max(options.multipole_max_l, options.feature_max_l) > config.max_L:
+            raise ValueError("FixedPointSCF density/field degree exceeds model.max_L")
+        self.density_irreps = _spherical(options.multipole_max_l)
+        self.potential_irreps = _spherical(
+            options.feature_max_l, len(options.feature_widths)
+        )
+        self.produced_observables = {
+            name: ObservableSpec(
+                name=name, irreps=irreps, per_atom=per_atom, units=units
+            )
+            for name, irreps, per_atom, units in (
+                ("dipole", "1o", False, "e*Å"),
+                ("charges", "0e", True, "e"),
+                ("total_charge", "0e", False, "e"),
+                ("density_coefficients", self.density_irreps, True, "e*Å^l"),
+                (
+                    "field_independent_charge_density",
+                    self.density_irreps,
+                    True,
+                    "e*Å^l",
+                ),
+                ("fermi_level", "0e", False, "eV"),
+                ("electrostatic_features", self.potential_irreps, True, "eV/e"),
+                ("electrostatic_energy", "0e", False, "eV"),
+                ("electron_energy", "0e", False, "eV"),
+            )
+        }
+        super().__init__(
+            backend,
+            config,
+            atomic_numbers,
+            [
+                spec
+                for spec in observables
+                if spec.name not in self.produced_observables
+            ],
+            energy_head,
+            avg_num_neighbors=avg_num_neighbors,
+            precision=precision,
+            num_heads=num_heads,
+            radial_precision=radial_precision,
+            last_layer_irreps=config.node_irreps,
+            edge_axes=(1, 2, 0),
+        )
+        self.settings, self.descriptor, self.solver = options, settings, solver
+        self.solve_dtype, self.model_dtype = (
+            getattr(torch, settings.precision),
+            getattr(torch, precision),
+        )
+        self.layout, self.density_terms = (
+            layout.layout_of(backend),
+            layout.terms(self.density_irreps),
+        )
+        # The backbone exposes its expanded layer declaration in backend layout.
+        node_irreps = self.backbone.layer_irreps[0]
+        with _constructed_in(precision):
+
+            def linear(source, target):
+                return backend.make_linear(
+                    LinearDescriptor(
+                        irreps_in=source, irreps_out=target, precision=precision
+                    )
+                )
+
+            self.source_maps = nn.ModuleList(
+                [
+                    linear(node_irreps, self.density_irreps)
+                    if options.local_source == "linear"
+                    else BiasReadout(
+                        backend,
+                        node_irreps,
+                        config.readout.mlp_irreps,
+                        self.density_irreps,
+                        precision,
+                        has_bias=False,
+                        gate=config.readout.gate,
+                    )
+                    for _ in range(config.num_interactions)
+                ]
+            )
+            self.layer_mixer = nn.ModuleList(
+                [
+                    linear(node_irreps, node_irreps)
+                    for _ in range(config.num_interactions)
+                ]
+            )
+            self.updates = nn.ModuleList(
+                [
+                    AffineFieldUpdate(
+                        backend,
+                        node_irreps,
+                        self.potential_irreps,
+                        self.density_irreps,
+                        len(atomic_numbers),
+                        precision,
+                        biased=options.potential_embedding == "biased_linear",
+                    )
+                ]
+            )
+            self.electron_energy = (
+                FixedPointEnergy(
+                    backend,
+                    options.electron_energy,
+                    node_irreps,
+                    self.potential_irreps,
+                    self.density_irreps,
+                    precision,
+                )
+                if options.electron_energy != "none"
+                else None
+            )
+        scales = options.density_scales or (1.0,) * len(atomic_numbers)
+        if len(scales) != len(atomic_numbers):
+            raise ValueError(
+                "fixed_point_scf.density_scales needs one value per atomic number"
+            )
+        self.register_buffer(
+            "density_scales",
+            torch.tensor(scales, dtype=self.model_dtype),
+            persistent=False,
+        )
+        norms = options.feature_norms or (1.0,) * (
+            len(options.feature_widths) * (options.feature_max_l + 1)
+        )
+        expanded = [
+            norms[degree * len(options.feature_widths) + width]
+            for degree in range(options.feature_max_l + 1)
+            for width in range(len(options.feature_widths))
+            for _ in range(2 * degree + 1)
+        ]
+        self.register_buffer(
+            "field_norms",
+            torch.tensor(expanded, dtype=self.solve_dtype),
+            persistent=False,
+        )
+        with _constructed_in(settings.precision):
+            self.projection = build_long_range_features(
+                settings, solver=solver, trains_derivatives=trains_derivatives
+            )
+            self.coulomb = build_long_range(
+                settings, solver=solver, trains_derivatives=trains_derivatives
+            )
+            self.applied_potential = DisplacedGTOExternalFieldBlock(
+                options.feature_max_l, list(options.feature_widths), "receiver"
+            )
+        span = build_scf_solve(settings, solver=solver)
+        self.fixed_point_solve = (
+            span if span is not None else AffineFixedPoint(options.constant_charge)
+        )
+
+    def transform_outputs(self, graph, layers, output):
+        """Add the converged electrostatic and local electron energies, in eV."""
+        count = graph["ptr"].shape[0] - 1
+        batch = graph["batch"]
+        positions = graph["positions"].to(self.solve_dtype)
+        geometry = long_range_geometry(graph, self.descriptor)
+        cache = self.projection.prepare(geometry)
+        local = sum(
+            self.layout.to_canonical(cast(Any, source)(layer), self.density_terms)
+            for source, layer in zip(self.source_maps, layers, strict=True)
+        )
+        if self.settings.local_source == "linear":
+            local = local * (graph["node_attrs"] @ self.density_scales)[:, None]
+        mixed = sum(
+            mixer(layer) for mixer, layer in zip(self.layer_mixer, layers, strict=True)
+        )
+        local = cast(Tensor, local).to(self.solve_dtype)
+        membership = torch.nn.functional.one_hot(batch, num_classes=count).to(
+            self.solve_dtype
+        )
+        fermi = (
+            positions.new_zeros((count,))
+            if self.settings.constant_charge
+            else graph["fermi_level"].reshape(-1).to(self.solve_dtype)
+        )
+        applied = torch.cat(
+            (
+                (fermi - self.settings.fermi_level_offset)[:, None],
+                graph["external_field"].to(self.solve_dtype),
+            ),
+            dim=-1,
+        )
+        external = self.applied_potential(batch, positions, applied)
+        one_hot = graph["node_attrs"]
+        # Assemble the affine map from its linear response; keep the learned
+        # offset separate so column construction never subtracts large biases.
+        update = cast(AffineFieldUpdate, self.updates[0])
+        independent = update(
+            mixed, one_hot, (external / self.field_norms).to(self.model_dtype)
+        ).to(self.solve_dtype)
+        basis = torch.eye(
+            local.numel(), dtype=self.solve_dtype, device=positions.device
+        )
+        response = torch.stack(
+            [
+                update.response(
+                    mixed,
+                    one_hot,
+                    (
+                        self.projection(cache, column.reshape_as(local))
+                        / self.field_norms
+                    ).to(self.model_dtype),
+                )
+                .to(self.solve_dtype)
+                .reshape(-1)
+                for column in basis.unbind()
+            ],
+            dim=1,
+        )
+        fermi_columns = []
+        for column in torch.eye(
+            count, dtype=self.solve_dtype, device=positions.device
+        ).unbind():
+            potential = torch.cat(
+                (column[:, None], positions.new_zeros((count, 3))), dim=-1
+            )
+            fields = self.applied_potential(batch, positions, potential)
+            fermi_columns.append(
+                update.response(
+                    mixed, one_hot, (fields / self.field_norms).to(self.model_dtype)
+                )
+                .to(self.solve_dtype)
+                .reshape(-1)
+            )
+        fermi_response = torch.stack(fermi_columns, dim=1)
+        total_charge = (
+            graph["total_charge"].to(self.solve_dtype)
+            if self.settings.constant_charge
+            else fermi.new_zeros(fermi.shape)
+        )
+        density, fermi = self.fixed_point_solve(
+            response,
+            local + independent,
+            fermi_response,
+            membership,
+            total_charge,
+            fermi,
+        )
+        final_applied = torch.cat(
+            (
+                (fermi - self.settings.fermi_level_offset)[:, None],
+                graph["external_field"].to(self.solve_dtype),
+            ),
+            dim=-1,
+        )
+        fields = (
+            self.projection(cache, density)
+            + self.applied_potential(batch, positions, final_applied)
+        ) / self.field_norms
+        electron = (
+            segment_sum(
+                self.electron_energy(
+                    layers[-1],
+                    fields.to(self.model_dtype),
+                    local.to(self.model_dtype),
+                    density.to(self.model_dtype),
+                ).to(self.solve_dtype),
+                batch,
+                count,
+            )
+            if self.electron_energy is not None
+            else fermi.new_zeros(fermi.shape)
+        )
+        coulomb = self.coulomb(graph, density, geometry)
+        dipole = segment_sum(positions * density[:, :1], batch, count)
+        if self.settings.multipole_max_l == 1:
+            dipole = dipole + segment_sum(density[:, 1:4], batch, count)[:, [2, 0, 1]]
+        output.total_energy = (
+            output.total_energy
+            + electron
+            + coulomb
+            + (graph["external_field"].to(self.solve_dtype) * dipole).sum(-1)
+        )
+        output.dipole = dipole
+        output.extras.update(
+            density_coefficients=density,
+            charges=density[:, 0],
+            total_charge=segment_sum(density[:, 0], batch, count),
+            fermi_level=fermi,
+            electrostatic_features=fields,
+            electrostatic_energy=coulomb,
+            electron_energy=electron,
+            field_independent_charge_density=local,
+        )
+        return output
+
+    def canonical_components(self):
+        return {
+            **super().canonical_components(),
+            "source_maps": self.source_maps,
+            "layer_mixer": self.layer_mixer,
+            "updates": self.updates,
+            "electron_energy": self.electron_energy,
+        }

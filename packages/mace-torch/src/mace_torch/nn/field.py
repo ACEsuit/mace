@@ -334,6 +334,8 @@ class BiasReadout(nn.Module):
         hidden: The middle's declaration, grouped.
         irreps_out: The output declaration, in the order it is returned.
         precision: The dtype every op is built at.
+        has_bias: Biases in the last two maps; False matches the unbiased
+            local-source readout of FixedPointSCF.
     """
 
     def __init__(
@@ -344,6 +346,8 @@ class BiasReadout(nn.Module):
         irreps_out: str,
         precision: Precision = "float64",
         gate: str = "silu",
+        *,
+        has_bias: bool = True,
     ) -> None:
         super().__init__()
         out_irreps = {ir for _, ir in Irreps.parse(irreps_out).terms}
@@ -371,14 +375,17 @@ class BiasReadout(nn.Module):
         )
         self.middle = backend.make_linear(
             LinearDescriptor(
-                irreps_in=middle, irreps_out=gate_in, has_bias=True, precision=precision
+                irreps_in=middle,
+                irreps_out=gate_in,
+                has_bias=has_bias,
+                precision=precision,
             )
         )
         self.last = backend.make_linear(
             LinearDescriptor(
                 irreps_in=middle,
                 irreps_out=irreps_out,
-                has_bias=True,
+                has_bias=has_bias,
                 precision=precision,
             )
         )

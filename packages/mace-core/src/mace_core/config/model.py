@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 
 from mace_core.config.base import ConfigSection
+from mace_core.config.fixed_point_scf import FixedPointSCFConfig
 from mace_core.config.local_sources import LocalSourcesConfig
 from mace_core.config.qeq import QEqConfig
 from mace_core.elements.default_keys import Storage
@@ -453,6 +454,7 @@ class ModelConfig(ConfigSection):
     les: LESConfig | None = None
     local_sources: LocalSourcesConfig | None = None
     qeq: QEqConfig | None = None
+    fixed_point_scf: FixedPointSCFConfig | None = None
     polar: PolarConfig = PolarConfig()
     magnetic: MagneticConfig = MagneticConfig()
 
@@ -528,6 +530,8 @@ class ModelConfig(ConfigSection):
     def _local_source_kind_matches(self):
         if self.local_sources is not None and self.local_sources.kind != self.model:
             raise ValueError("model.local_sources.kind must match model.model")
+        if self.fixed_point_scf is not None and self.fixed_point_scf.kind != self.model:
+            raise ValueError("model.fixed_point_scf.kind must match model.model")
         if self.qeq is not None and self.qeq.kind != self.model:
             raise ValueError("model.qeq.kind must match model.model")
         if self.qeq is not None:
