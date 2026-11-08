@@ -14,14 +14,19 @@ directory and is tested in **two tiers**:
    is absent and *fails* in the CI job that guarantees it
    (`MACE_REQUIRE_CAPS`, see `tests/conftest.py`). Runs in `nightly.yaml`.
 
-What the real tier can cover is bounded by the binary CI can install, and for
-LAMMPS that bound is sharp: conda-forge builds every CPU variant with
-`PKG_KOKKOS=OFF`, and `forward_exchange` — the ghost node-feature exchange
-every interaction layer past the first needs — exists **only** in the KOKKOS
-ML-IAP coupling. So the real tier runs a *single-layer* model, the multi-layer
-path stays in the contract tier (`lammps/test_mliap_exchange.py`, which also
-pins the actionable error the non-KOKKOS case now raises), and no bump of the
-`lammps` package will change that.
+The LAMMPS real tier builds `stable_22Jul2025_update4`, commit
+`611ca3b7f8525ba802373b04f9e3d632d515f7e3`, with ML-IAP and Python support.
+Legacy's ML-IAP wrapper needs KOKKOS `forward_exchange` for multiple layers,
+so its CPU real tier uses a single layer. V1 also supports multiple layers
+without feature exchange: `halo_exchange=False` and `EXISTS 1` supply the
+complete receptive field, including neighbors centered on ghost atoms.
+
+That V1 path requires LAMMPS to accumulate every returned pair force. An older
+22Jul2025 build silently dropped forces from ghost-centered edges while still
+reporting the correct energy. Both builds report the same version date, so CI
+pins the source commit. A writeback probe in `tests/parity/test_mliap.py` tests
+this library contract without a MACE model. The real model tests compare
+energy, forces and stress with the frozen oracle in float32 and float64.
 
 `forward_exchange` is not the only KOKKOS-only call, and the second one is
 worse because it lands *after* the model has run: the writeback in

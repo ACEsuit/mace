@@ -37,6 +37,70 @@ class DeviceData(SimpleNamespace):
         self.pair_forces = forces.detach().cpu().numpy().copy()
 
 
+@pytest.mark.bin_lammps
+def test_real_mliap_accumulates_ghost_centered_pair_forces():
+    """Pin the external writeback ABI independently of the model's derivatives."""
+    from lammps import lammps
+    from lammps.mliap import activate_mliappy, load_unified
+    from lammps.mliap.mliap_unified_abc import MLIAPUnified
+
+    class PairForceProbe(MLIAPUnified):
+        def __init__(self):
+            super().__init__(element_types=["H"], ndescriptors=1, nparams=1, rcutfac=1.0)
+
+        def compute_gradients(self, data):
+            pass
+
+        def compute_descriptors(self, data):
+            pass
+
+        def compute_forces(self, data):
+            centers, neighbors = np.asarray(data.pair_i), np.asarray(data.pair_j)
+            edges = np.flatnonzero((centers >= data.nlocal) & (neighbors < data.nlocal))
+            assert len(edges), "the probe needs a ghost-centered edge to a local atom"
+            pair_forces = np.zeros((data.npairs, 3))
+            pair_forces[edges[0]] = [0.5, -0.25, 0.75]
+            self.forces = np.zeros((data.ntotal, 3))
+            np.add.at(self.forces, centers, pair_forces)
+            np.add.at(self.forces, neighbors, -pair_forces)
+            data.eatoms = np.zeros(data.nlocal)
+            data.energy = 0.0
+            data.update_pair_forces(pair_forces)
+
+    probe = PairForceProbe()
+    with lammps(cmdargs=["-log", "none", "-screen", "none"]) as lmp:
+        activate_mliappy(lmp)
+        load_unified(probe)
+        for command in (
+            "units metal",
+            "atom_style atomic",
+            "boundary p p p",
+            "atom_modify map array",
+            "region box block 0 4 0 4 0 4",
+            "create_box 1 box",
+            "mass 1 1.008",
+            "create_atoms 1 single 0.25 2 2",
+            "create_atoms 1 single 3.5 2 2",
+            "pair_style mliap unified EXISTS 1",
+            "pair_coeff * * H",
+            "run 0",
+        ):
+            lmp.command(command)
+        tags = lmp.numpy.extract_atom("id")[: len(probe.forces)]
+        expected = np.zeros((2, 3))
+        np.add.at(expected, tags - 1, probe.forces)
+        order = np.argsort(tags[:2])
+        np.testing.assert_array_equal(
+            lmp.numpy.extract_atom("f")[:2][order],
+            expected,
+            err_msg=(
+                "LAMMPS dropped ghost-centered pair forces. Rebuild with "
+                "stable_22Jul2025_update4 (611ca3b7f8525ba802373b04f9e3d632d515f7e3); "
+                "the version date alone does not identify the corrected coupling."
+            ),
+        )
+
+
 def _bundle(model, directory, **options):
     imported, _ = converted(model, directory)
     checkpoint = write_model(directory / "v1", imported.engine, imported.metadata)
