@@ -156,7 +156,13 @@ class KernelBackend(Protocol):
         ...
 
     def make_radial_basis(self, descriptor: RadialBasisDescriptor) -> Any | None:
-        """The radial embedding, or ``None`` to leave it to the reference."""
+        """The radial embedding, or ``None`` to leave it to the reference.
+
+        The op evaluates lengths with an optional precomputed ``envelope``;
+        this keeps a distance transform from changing the cutoff's argument.
+        Torch ops expose ``descriptor``, ``cutoff``, ``canonical_components``
+        and ``span_weights`` for composition and canonical checkpoint roles.
+        """
         ...
 
     def make_radial_mlp(self, descriptor: RadialMLPDescriptor) -> Any | None:

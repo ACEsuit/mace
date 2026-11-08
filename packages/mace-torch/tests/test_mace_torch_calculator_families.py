@@ -22,10 +22,10 @@ from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
+from mace_core.graph import FixedPadding
 from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.calculators import MACECalculator
-from mace_torch.calculators.padding import PaddingPolicy
 from mace_torch.deploy.loader import DeployedModel
 from mace_torch.models.build import build_model
 
@@ -188,7 +188,8 @@ def test_padding_changes_no_result(family):
     plain = evaluate(MACECalculator(models=model), atoms)
     padded = evaluate(
         MACECalculator(
-            models=model, padding=PaddingPolicy.requested(16, 256, environ={})
+            models=model,
+            padding=FixedPadding(nodes_budget=17, edges_budget=256, graphs_budget=2),
         ),
         atoms,
     )

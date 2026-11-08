@@ -25,10 +25,11 @@ from mace_torch.models.electrostatics import LocalChargeModel
 from mace_torch.models.registry import registered_models
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.physics import DerivativeEngine
-from mace_torch.serialization import load_checkpoint, save_checkpoint
+from mace_torch.serialization import save_checkpoint
 from scipy.spatial.transform import Rotation
 
 from tests.golden.targets.elec3 import PINS
+from tests.parity.anchors import load_anchor_weights
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = {
@@ -180,7 +181,7 @@ def reference_path(kind):
 
 def load_model(kind, degree, profile, dtype=torch.float64, backend="reference"):
     model = build_model(kind, degree, profile, dtype, backend)
-    load_checkpoint(anchor_path(kind, degree), lambda _: model)
+    load_anchor_weights(anchor_path(kind, degree), model)
     return model
 
 

@@ -13,9 +13,9 @@ import pytest
 import torch
 from ase import Atoms
 from conftest import fp64_only
+from mace_core.graph import FixedPadding
 from mace_torch.calculators import MACECalculator
 from mace_torch.calculators.ase_calculator import POLAR_RESULTS
-from mace_torch.calculators.padding import PaddingPolicy
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.train import run_train_stage
 from test_mace_torch_polar_training import built, polar_configuration
@@ -175,7 +175,8 @@ def test_padding_leaves_every_result_unchanged(checkpoints):
     plain = evaluate(MACECalculator(checkpoints[0]), dimer(charge=-1.0, spin=2.0))
     padded = evaluate(
         MACECalculator(
-            checkpoints[0], padding=PaddingPolicy.requested(16, 256, environ={})
+            checkpoints[0],
+            padding=FixedPadding(nodes_budget=17, edges_budget=256, graphs_budget=2),
         ),
         dimer(charge=-1.0, spin=2.0),
     )
@@ -201,7 +202,7 @@ def test_padding_is_clean_where_the_fake_structure_is_summed_in_k_space(
     padded = evaluate(
         MACECalculator(
             tmp_path / "polar.json",
-            padding=PaddingPolicy.requested(16, 256, environ={}),
+            padding=FixedPadding(nodes_budget=17, edges_budget=256, graphs_budget=2),
         ),
         atoms,
     )

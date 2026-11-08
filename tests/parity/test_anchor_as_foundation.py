@@ -106,6 +106,7 @@ def write_anchor_checkpoint(legacy, directory: Path) -> Path:
     )
     transfer_weights(legacy, engine.get_submodule("backbone"), built["correlation"])
     metadata = ModelMetadata(
+        elements=built["atomic_numbers"],
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
         provenance=Provenance(versions={"mace-torch-v1": "anchor"}),
         heads={

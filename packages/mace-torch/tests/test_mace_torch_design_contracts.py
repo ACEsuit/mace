@@ -305,7 +305,7 @@ def test_checkpoint_survives_an_implementation_wrapper_and_a_renamed_attribute(
         is convolution.linear_up.renamed_implementation
     )
     save_checkpoint(tmp_path / "wrapped", model, dict(SETTINGS))
-    restored = load_checkpoint(tmp_path / "wrapped", rebuild)
+    restored = load_checkpoint(tmp_path / "wrapped", rebuild(dict(SETTINGS)))
     for expected, actual in zip(before, restored(graph).layers, strict=True):
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
@@ -318,48 +318,6 @@ def test_a_component_cannot_silently_omit_canonical_state():
     model.canonical_components = lambda: {}
     with pytest.raises(ValueError, match="omit"):
         canonical_modules(model)
-
-
-@fp64_only
-@pytest.mark.parametrize(
-    "family", ["backbone", "energy", "dipole", "dielectric", "polar", "magnetic"]
-)
-def test_logical_identities_preserve_existing_format_three_tensors(tmp_path, family):
-    """The old named-module writer and the logical writer agree before a rename."""
-    from mace_torch.serialization import canonical_metadata
-    from test_mace_torch_dipole_model import FIXED, PREDICTED
-    from test_mace_torch_dipole_model import build_model as dipole
-    from test_mace_torch_magnetic_model import engine as magnetic
-    from test_mace_torch_polar_model import build_model as polar
-    from test_mace_torch_serialization import trained
-    from test_mace_torch_training_pipeline import configuration
-
-    factories = {
-        "backbone": trained,
-        "energy": lambda: build(configuration(tmp_path)).model,
-        "dipole": lambda: dipole(FIXED),
-        "dielectric": lambda: dipole(PREDICTED),
-        "polar": polar,
-        "magnetic": magnetic,
-    }
-    model = factories[family]()
-    previous = {
-        path: module.to_canonical()
-        for path, module in model.named_modules()
-        if callable(getattr(module, "to_canonical", None))
-    }
-    current = canonical_state(model)
-    assert current.keys() == previous.keys()
-    for path, tensors in previous.items():
-        assert current[path].keys() == tensors.keys()
-        for name, value in tensors.items():
-            torch.testing.assert_close(current[path][name], value, atol=0, rtol=0)
-    previous_metadata = {
-        path: module.canonical_metadata()
-        for path, module in model.named_modules()
-        if callable(getattr(module, "canonical_metadata", None))
-    }
-    assert canonical_metadata(model) == previous_metadata
 
 
 @fp64_only

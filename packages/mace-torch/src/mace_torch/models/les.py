@@ -18,7 +18,8 @@ from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 from torch.overrides import TorchFunctionMode
 
-from mace_torch.models.base import MACEModel, _constructed_in
+from mace_torch.backends.precision import constructed_in
+from mace_torch.models.base import MACEModel
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.nn.les import TensorReadout
 
@@ -152,7 +153,7 @@ class LatentEwaldModel(MACEModel):
             num_heads=num_heads,
             radial_precision=radial_precision,
         )
-        with _constructed_in(precision):
+        with constructed_in(precision):
             self.solver = solver_class(settings.model_dump(mode="json"))
         layer_irreps = (
             self.backbone.layer_irreps[-1:]
@@ -168,7 +169,7 @@ class LatentEwaldModel(MACEModel):
             ("alpha_tensor", anisotropic and "1o" in channels and "1o" in alphas, None),
         ):
             if condition:
-                with _constructed_in(precision):
+                with constructed_in(precision):
                     readouts[name] = nn.ModuleList(
                         backend.make_linear(
                             LinearDescriptor(

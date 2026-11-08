@@ -120,7 +120,7 @@ def test_norm_tanh_canonical_cueq_and_derivative_parity(tmp_path, dtype):
         checkpoint, reference, {"model": reference.config.model_dump(mode="json")}
     )
     accelerated = build_model("full_periodic", dtype, "cueq", **options)
-    load_checkpoint(checkpoint, lambda _: accelerated)
+    load_checkpoint(checkpoint, accelerated)
     reference.to("cuda")
     accelerated.to("cuda")
     graph = {

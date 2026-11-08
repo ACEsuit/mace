@@ -16,9 +16,10 @@ from mace_torch.backends import resolve_backend
 from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.models.electrostatics import QEqModel
 from mace_torch.physics import DerivativeEngine
-from mace_torch.serialization import load_checkpoint, save_checkpoint
+from mace_torch.serialization import save_checkpoint
 
 from tests.golden.targets.elec3 import PINS
+from tests.parity.anchors import load_anchor_weights
 from tests.parity.elec3 import ENERGY, PROFILES
 from tests.parity.elec3 import configuration as local_configuration
 from tests.parity.elec3 import graph_for as local_graph
@@ -229,7 +230,7 @@ def reference_path():
 
 def load_model(variant, profile, dtype=torch.float64, backend="reference"):
     model = build_model(profile, dtype, backend, **VARIANTS[variant])
-    load_checkpoint(anchor_path(variant), lambda _: model)
+    load_anchor_weights(anchor_path(variant), model)
     return model
 
 

@@ -198,6 +198,7 @@ def test_joint_checkpoint_and_calculator_match_legacy(fp64, tmp_path, backend):
         update={"model": config.model.model_copy(update={"backend": backend})}
     )
     metadata = ModelMetadata(
+        elements=[1, 8],
         config=ConfigRecord.from_config(config),
         provenance=Provenance(versions={"mace-torch-v1": "parity"}),
         heads={

@@ -168,3 +168,33 @@ def test_native_export_rejects_unsupported_runtime_choices(
         kwargs: dict[str, Any] = {"halo_exchange": True, **options}
         export_lammps(artifact, target, **kwargs)
     assert not target.exists()
+
+
+@fp64_only
+@pytest.mark.parametrize("missing", ["schema_version", "elements"])
+def test_native_checkpoint_requires_version_and_element_table(
+    artifact, tmp_path, missing
+):
+    raw = json.loads(artifact.read_text())
+    raw["config"].pop(missing)
+    broken = tmp_path / "missing.json"
+    broken.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match=missing):
+        load_deployed(broken)
+
+
+@fp64_only
+def test_deployment_reads_the_checkpoint_manifest_once(artifact, monkeypatch):
+    from pathlib import Path
+
+    original = Path.read_text
+    reads = []
+
+    def read_text(path, *args, **kwargs):
+        if path == artifact:
+            reads.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    load_deployed(artifact)
+    assert len(reads) == 1

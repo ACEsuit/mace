@@ -323,7 +323,7 @@ def test_a_lora_fine_tune_ends_with_the_shapes_of_one_never_adapted(foundation_p
         path: {name: value.shape for name, value in tensors.items()}
         for path, tensors in canonical_state(plain).items()
     }
-    reloaded = load_checkpoint(trained.checkpoint_path, lambda _: plain)
+    reloaded = load_checkpoint(trained.checkpoint_path, plain)
     assert {
         path: {name: value.shape for name, value in tensors.items()}
         for path, tensors in canonical_state(reloaded).items()

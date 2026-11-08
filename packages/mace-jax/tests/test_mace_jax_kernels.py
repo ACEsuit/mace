@@ -167,3 +167,16 @@ def test_radial_origin_and_cutoff_have_finite_derivatives(backend):
     assert np.isfinite(function(0.0)) and np.isfinite(jax.grad(function)(0.0))
     np.testing.assert_array_equal(function(5.0), 0)
     np.testing.assert_allclose(jax.grad(function)(5.0), 0, atol=1e-12)
+
+
+@pytest.mark.parametrize("apply_cutoff", [True, False])
+def test_radial_accepts_the_raw_distance_envelope(backend, apply_cutoff):
+    from dataclasses import replace
+
+    descriptor = RadialBasisDescriptor(num_basis=4, cutoff=5.0, apply_cutoff=False)
+    lengths = jnp.asarray([[0.7], [1.2]])
+    envelope = jnp.asarray([[0.3], [0.8]])
+    bare = backend.make_radial_basis(descriptor)(lengths)
+    radial = backend.make_radial_basis(replace(descriptor, apply_cutoff=apply_cutoff))
+    actual = radial(lengths, envelope=envelope)
+    np.testing.assert_array_equal(actual, bare * envelope if apply_cutoff else bare)

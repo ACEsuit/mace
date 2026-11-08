@@ -27,8 +27,7 @@ reaches every edge quantity.
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -53,14 +52,11 @@ from mace_core.observables import InputSpec
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps, layout_of, terms
-from mace_torch.backends.reference import TORCH_DTYPES, ReferenceBackend
+from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.graph.edges import EdgeRuns
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.embedding import (
-    RadialEmbeddingBlock,
-    build_cutoff,
-    build_distance_transform,
-    build_radial_basis,
+    build_radial_embedding,
 )
 from mace_torch.nn.graph_features import GraphFeatureEmbedding
 from mace_torch.nn.interaction import (
@@ -136,24 +132,6 @@ class NodeFeatures:
 
 #: How :func:`aggregate_descriptors` reduces per structure.
 Aggregation = Literal["mean", "per_element_mean"] | None
-
-
-@contextlib.contextmanager
-def _default_dtype(dtype: torch.dtype) -> Iterator[None]:
-    """Build modules that take their dtype from the process default in ``dtype``.
-
-    The radial embedding's constants, the Bessel frequencies and the covalent
-    radii among them, are computed at construction in the default dtype. A
-    float64 model built under a float32 default would compute them in float32
-    and cast them, which is a different model from the first digit that
-    matters.
-    """
-    previous = torch.get_default_dtype()
-    torch.set_default_dtype(dtype)
-    try:
-        yield
-    finally:
-        torch.set_default_dtype(previous)
 
 
 def _natural_irreps(lmax: int) -> str:
@@ -292,13 +270,12 @@ class MACEBackbone(nn.Module):
             if built is not None
             else ReferenceBackend().make_spherical_harmonics(harmonics)
         )
+        from mace_torch.backends.precision import constructed_in
+
         radial_precision = radial_precision or precision
-        with _default_dtype(TORCH_DTYPES[radial_precision]):
-            self.radial_embedding = RadialEmbeddingBlock(
-                build_radial_basis(config.radial_basis, config.r_max),
-                build_distance_transform(config.distance_transform),
-                build_cutoff(config.cutoff, config.r_max),
-                apply_cutoff=config.apply_cutoff,
+        with constructed_in(radial_precision):
+            self.radial_embedding = build_radial_embedding(
+                backend, config, radial_precision
             )
         if radial_precision != precision:
             from mace_torch.backends.precision import cast_at_boundary

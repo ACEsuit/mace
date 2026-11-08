@@ -29,8 +29,8 @@ __all__ = [
 #: Only this schema is read and written while V1 is under development.
 SCHEMA_VERSION: Final = "1.0"
 
-#: Validation context key set by `ModelMetadata.from_json`, the route that
-#: reads a record rather than builds one, and so requires its version.
+#: Validation context for from_dict/from_json: persisted records must declare
+#: their version, while new records receive the current schema by default.
 _READING: Final = "mace_core.metadata.reading"
 
 
@@ -305,6 +305,11 @@ class ModelMetadata(_Record):
                 "on the way back) or NaN (never equal to itself)"
             )
         return text
+
+    @classmethod
+    def from_dict(cls, record: dict[str, Any]) -> ModelMetadata:
+        """Read persisted metadata, requiring its schema version."""
+        return cls.model_validate(record, context={_READING: True})
 
     @classmethod
     def from_json(cls, text: str) -> ModelMetadata:

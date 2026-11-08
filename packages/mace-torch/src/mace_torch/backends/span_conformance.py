@@ -114,9 +114,7 @@ class _ReferenceConvolution(nn.Module):
             if shape.distance_transform.kind == "agnesi"
             else SoftTransformConfig()
         )
-        self.radial = RadialEmbeddingBlock(
-            basis.basis, build_distance_transform(transform), basis.cutoff
-        )
+        self.radial = RadialEmbeddingBlock(basis, build_distance_transform(transform))
         self.harmonics = backend.make_spherical_harmonics(shape.spherical_harmonics)
         self.network = backend.make_radial_mlp(shape.radial_network)
         self.network.initialize_weights(321)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -147,7 +146,7 @@ def load_model(
         document = read_checkpoint_manifest(sidecar)
     except CheckpointError as error:
         raise ModelLoadError(str(error)) from error
-    metadata = ModelMetadata.from_json(json.dumps(document.config))
+    metadata = ModelMetadata.from_dict(document.config)
     config = ResolvedConfig.model_validate(metadata.config.resolved)
     _architecture(config)
     if str(path_or_id) in SUPPORTED_MODELS:

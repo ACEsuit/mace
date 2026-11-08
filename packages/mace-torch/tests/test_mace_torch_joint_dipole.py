@@ -143,6 +143,7 @@ def test_scalar_final_layer_checkpoint_is_refused(tmp_path):
         responses=[DEFAULT_CATALOGUE.observable("dipole")],
     )
     metadata = ModelMetadata(
+        elements=[1],
         config=ConfigRecord.from_config(config),
         provenance=Provenance(versions={"mace-torch-v1": "before-joint-fix"}),
         heads={

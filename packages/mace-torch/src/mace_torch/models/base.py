@@ -18,11 +18,9 @@ features and nothing else.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Mapping, Sequence
 from typing import Any
 
-import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.model import ModelConfig
 from mace_core.kernels.precision import Precision
@@ -30,31 +28,13 @@ from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
+from mace_torch.backends.precision import constructed_in
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
 from mace_torch.nn.radial import ZBLBasis
 
 __all__ = ["MACEModel"]
-
-
-@contextmanager
-def _constructed_in(precision: Precision) -> Iterator[None]:
-    """Build under ``precision`` as the process default, then restore it.
-
-    The radial basis, the cutoff envelope and the repulsion create their
-    constants in the process default at construction. Left to the process, a
-    float64 model built in a fresh interpreter, whose default is float32,
-    holds those constants rounded to float32 and computes other numbers than
-    the same checkpoint built elsewhere: measured, 9.6e-7 eV on a two-atom
-    fixture.
-    """
-    previous = torch.get_default_dtype()
-    torch.set_default_dtype(getattr(torch, precision))
-    try:
-        yield
-    finally:
-        torch.set_default_dtype(previous)
 
 
 class MACEModel(nn.Module):
@@ -101,7 +81,7 @@ class MACEModel(nn.Module):
                     if irrep in required
                 )
         self.config = config
-        with _constructed_in(precision):
+        with constructed_in(precision):
             self.backbone = MACEBackbone(
                 backend,
                 config,

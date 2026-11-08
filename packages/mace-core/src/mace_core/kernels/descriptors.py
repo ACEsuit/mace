@@ -443,6 +443,9 @@ class RadialBasisDescriptor(Descriptor):
             default is the envelope's own module default, not a model's: the
             legacy command line defaults ``--num_cutoff_basis`` to 5, so a
             model always passes the order it was configured with.
+        trainable: Optimize the Bessel frequencies or Gaussian centres.
+        include_constant: Include order zero in a Chebyshev basis.
+        apply_cutoff: Multiply the basis by the polynomial envelope.
     """
 
     op: ClassVar[str] = "radial_basis"
@@ -451,6 +454,9 @@ class RadialBasisDescriptor(Descriptor):
     num_basis: int = 8
     cutoff: float = 5.0
     cutoff_order: int = 6
+    trainable: bool = False
+    include_constant: bool = False
+    apply_cutoff: bool = True
 
     def __post_init__(self) -> None:
         super().__post_init__()

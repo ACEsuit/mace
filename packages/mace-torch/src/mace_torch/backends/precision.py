@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import torch
@@ -31,6 +33,7 @@ __all__ = [
     "PrecisionBackend",
     "boundary_precision",
     "cast_at_boundary",
+    "constructed_in",
     "degradation_report",
     "interface_dtype",
 ]
@@ -176,6 +179,20 @@ class PrecisionBackend:
         return dataclasses.replace(
             descriptor, precision=compute, accumulate=accumulate, product=product
         )
+
+
+@contextmanager
+def constructed_in(precision: Precision) -> Iterator[None]:
+    """Initialize constants at their intended precision, restoring the default.
+
+    Constructing in float32 and widening afterwards loses digits permanently.
+    """
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(_TORCH_DTYPE[precision])
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(previous)
 
 
 def degradation_report(config: PrecisionConfig, supports_float64: bool) -> str | None:

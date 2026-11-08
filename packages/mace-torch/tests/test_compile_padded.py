@@ -17,8 +17,8 @@ import pytest
 import torch
 from conftest import fp64_only
 from mace_core.config.precision import PrecisionConfig
+from mace_core.graph import FixedPadding, PaddingOverflowError
 from mace_torch.calculators import MACECalculator, ase_calculator
-from mace_torch.calculators.padding import PaddingOverflowError, PaddingPolicy
 from mace_torch.physics.outputs import DerivativeEngine
 from mace_torch_compile_fixtures import cluster, deployed
 from torch._dynamo.testing import CompileCounter
@@ -70,7 +70,7 @@ def test_a_structure_over_the_budget_recompiles_exactly_once(counter, caplog):
     with caplog.at_level("WARNING", logger=ase_calculator.__name__):
         evaluate(calculator, cluster(4))
     assert counter.frame_count == 2
-    assert any("over the padding budget" in r.getMessage() for r in caplog.records)
+    assert any("changes the batch shape once" in r.getMessage() for r in caplog.records)
     for molecules in (4, 3, 1):
         evaluate(calculator, cluster(molecules, seed=molecules))
     assert counter.frame_count == 2
@@ -79,8 +79,8 @@ def test_a_structure_over_the_budget_recompiles_exactly_once(counter, caplog):
 def test_a_fixed_budget_that_refuses_to_grow_raises():
     calculator = MACECalculator(
         models=deployed(),
-        padding=PaddingPolicy(
-            mode="fixed", nodes_budget=3, edges_budget=64, on_overflow="error"
+        padding=FixedPadding(
+            nodes_budget=4, edges_budget=64, graphs_budget=2, on_overflow="error"
         ),
     )
     with pytest.raises(PaddingOverflowError, match="Raise the budget"):

@@ -152,8 +152,12 @@ def padding_budget(
     n_nodes: int,
     n_edges: int,
     n_graphs: int,
+    previous: PaddingBudget | None = None,
 ) -> PaddingBudget | None:
     """The padded sizes for a batch of these real sizes, or ``None`` for none.
+
+    ``previous`` retains a caller's capacity until it overflows, including
+    edge headroom when an automatic budget grows.
 
     A budget always fits: it is at least the real sizes, it has a padding
     structure whenever it has a padding atom or edge, and a padding atom
@@ -169,14 +173,45 @@ def padding_budget(
         wanted = int(n_edges * policy.headroom)
         multiple = policy.edge_multiple
         edges = (wanted + multiple - 1) // multiple * multiple
-        return PaddingBudget(nodes=n_nodes + 1, edges=edges, graphs=n_graphs + 1)
+        proposed = PaddingBudget(nodes=n_nodes + 1, edges=edges, graphs=n_graphs + 1)
+        if previous is None:
+            return proposed
+        fitting = padding_budget(
+            FixedPadding(
+                nodes_budget=previous.nodes,
+                edges_budget=previous.edges,
+                graphs_budget=previous.graphs,
+                on_overflow=policy.on_overflow,
+            ),
+            n_nodes=n_nodes,
+            n_edges=n_edges,
+            n_graphs=n_graphs,
+        )
+        if fitting == previous:
+            return previous
+        return PaddingBudget(
+            max(previous.nodes, proposed.nodes),
+            max(previous.edges, proposed.edges),
+            max(previous.graphs, proposed.graphs),
+        )
+
+    if previous is not None:
+        policy = policy.model_copy(
+            update={
+                "nodes_budget": max(policy.nodes_budget, previous.nodes),
+                "edges_budget": max(policy.edges_budget, previous.edges),
+                "graphs_budget": max(policy.graphs_budget, previous.graphs),
+            }
+        )
 
     nodes = max(policy.nodes_budget, n_nodes)
     edges = max(policy.edges_budget, n_edges)
     graphs = max(policy.graphs_budget, n_graphs)
     if (nodes > n_nodes or edges > n_edges) and graphs == n_graphs:
         graphs += 1
-    if edges > n_edges and nodes == n_nodes:
+    if nodes == n_nodes and (
+        edges > n_edges or (previous is not None and graphs > n_graphs)
+    ):
         nodes += 1
     grown = PaddingBudget(nodes=nodes, edges=edges, graphs=graphs)
     asked = PaddingBudget(
@@ -203,6 +238,7 @@ def unpad_outputs(
     *,
     catalogue: ObservableCatalogue = ...,
     extra_observables: tuple[ObservableSpec, ...] = ...,
+    extra_rows: Mapping[str, str] = ...,
 ) -> MACEOutput: ...
 
 
@@ -213,6 +249,7 @@ def unpad_outputs(
     *,
     catalogue: ObservableCatalogue = ...,
     extra_observables: tuple[ObservableSpec, ...] = ...,
+    extra_rows: Mapping[str, str] = ...,
 ) -> dict[str, Any]: ...
 
 
@@ -222,6 +259,7 @@ def unpad_outputs(
     *,
     catalogue: ObservableCatalogue = DEFAULT_CATALOGUE,
     extra_observables: tuple[ObservableSpec, ...] = (),
+    extra_rows: Mapping[str, str] | None = None,
 ) -> MACEOutput | dict[str, Any]:
     """The real slots of a padded model's outputs.
 
@@ -239,6 +277,8 @@ def unpad_outputs(
         extra_observables: Model-owned diagnostic declarations. These may echo
             an input, such as total charge, without redefining the derivative
             catalogue or its input/output naming contract.
+        extra_rows: Engine diagnostics outside the observable catalogue, with
+            one row per "atom", "graph", or "edge".
 
     Returns:
         A new object of the same kind.
@@ -253,17 +293,23 @@ def unpad_outputs(
             setattr(
                 unpadded,
                 name,
-                _keep_real(value, CORE_FIELD_ROWS[name] == "atom", info=info),
+                _keep_real(value, CORE_FIELD_ROWS[name], info=info),
             )
         unpadded.extras = {
             name: _keep_real(
-                value, *_layout(name, catalogue, extra_observables), info=info
+                value,
+                *_layout(name, catalogue, extra_observables, extra_rows or {}),
+                info=info,
             )
             for name, value in outputs.extras.items()
         }
         return unpadded
     return {
-        name: _keep_real(value, *_layout(name, catalogue, extra_observables), info=info)
+        name: _keep_real(
+            value,
+            *_layout(name, catalogue, extra_observables, extra_rows or {}),
+            info=info,
+        )
         for name, value in outputs.items()
     }
 
@@ -272,27 +318,37 @@ def _layout(
     name: str,
     catalogue: ObservableCatalogue,
     extra_observables: tuple[ObservableSpec, ...],
-) -> tuple[bool, int]:
+    extra_rows: Mapping[str, str],
+) -> tuple[str, int]:
     if name in CORE_FIELD_ROWS:
-        return CORE_FIELD_ROWS[name] == "atom", 0
+        return CORE_FIELD_ROWS[name], 0
     for spec in catalogue.observables:
         if spec.name == name:
-            return spec.per_atom, 0
+            return "atom" if spec.per_atom else "graph", 0
         for request in spec.derivatives:
             if spec.derivative_name(request.wrt) == name:
                 derivative = catalogue.derivative(spec.name, request.wrt)
-                return derivative.per_atom, 0 if spec.is_scalar else 1
+                return (
+                    "atom" if derivative.per_atom else "graph",
+                    0 if spec.is_scalar else 1,
+                )
     for spec in extra_observables:
         if spec.name == name:
-            return spec.per_atom, 0
+            return "atom" if spec.per_atom else "graph", 0
+    if name in extra_rows:
+        return extra_rows[name], 0
     raise KeyError(
         f"{name!r} is not an observable the catalogue declares, so whether it is "
         f"per atom is unknown. Declare it, or pass the model's catalogue."
     )
 
 
-def _keep_real(value: Any, per_atom: bool, axis: int = 0, *, info: PaddingInfo) -> Any:
+def _keep_real(value: Any, row: str, axis: int = 0, *, info: PaddingInfo) -> Any:
     if value is None:
         return None
-    count = info.n_real_nodes if per_atom else info.n_real_graphs
+    count = {
+        "atom": info.n_real_nodes,
+        "graph": info.n_real_graphs,
+        "edge": info.n_real_edges,
+    }[row]
     return value[:count] if axis == 0 else value[:, :count]

@@ -50,7 +50,7 @@ from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
-from mace_torch.backends.precision import cast_at_boundary
+from mace_torch.backends.precision import cast_at_boundary, constructed_in
 from mace_torch.electrostatics import (
     LONG_RANGE_PLAN,
     build_long_range,
@@ -64,7 +64,7 @@ from mace_torch.electrostatics.reference.gto_utils import (
     gto_basis_kspace_cutoff,
 )
 from mace_torch.kernels import segment_sum
-from mace_torch.models.base import MACEModel, _constructed_in
+from mace_torch.models.base import MACEModel
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.heads import ObservableHead
 from mace_torch.nn.charge_transfer import SplitChargeSource
@@ -244,7 +244,7 @@ class PolarModel(MACEModel):
         field = _spherical(settings.feature_max_l, len(settings.feature_widths))
         self.potential_irreps = f"{field}+{field}"
 
-        with _constructed_in(precision):
+        with constructed_in(precision):
 
             def linear(irreps_in: str, irreps_out: str):
                 return backend.make_linear(
@@ -302,7 +302,7 @@ class PolarModel(MACEModel):
             self.register_buffer(
                 "field_norms", torch.tensor(expanded, dtype=getattr(torch, precision))
             )
-        with _constructed_in(self.descriptor.precision):
+        with constructed_in(self.descriptor.precision):
             self.projection = build_long_range_features(
                 self.descriptor, solver=solver, trains_derivatives=trains_derivatives
             )
@@ -669,12 +669,12 @@ class LocalChargeModel(_ChargeAwareModel):
         self.total_dtype = getattr(torch, energy_head.accumulate)
         density_irreps = _spherical(sources.multipole_max_l)
         self.descriptor = settings
-        with _constructed_in(precision):
+        with constructed_in(precision):
             self.source_maps = nn.ModuleList(
                 self._make_source(backend, config, layer, density_irreps, precision)
                 for layer in self.backbone.layer_irreps
             )
-        with _constructed_in(self.descriptor.precision):
+        with constructed_in(self.descriptor.precision):
             self.coulomb = build_long_range(
                 self.descriptor,
                 solver=solver,
@@ -841,7 +841,7 @@ class LocalSplitChargeModel(LocalChargeModel):
             OxidationGraphEmbedding,
         )
 
-        with _constructed_in(precision):
+        with constructed_in(precision):
             if sources.oxidation_mixer != "none":
                 self.backbone.graph_embedding = OxidationGraphEmbedding(
                     backend,
@@ -1057,7 +1057,7 @@ class QEqModel(_ChargeAwareModel):
         self.settings = config.qeq
         self.descriptor, self.solver = settings, solver
         self.solve_dtype = getattr(torch, settings.precision)
-        with _constructed_in(precision):
+        with constructed_in(precision):
             self.source_maps = nn.ModuleDict(
                 {
                     name: ObservableHead(
@@ -1078,7 +1078,7 @@ class QEqModel(_ChargeAwareModel):
                     )
                 }
             )
-        with _constructed_in(settings.precision):
+        with constructed_in(settings.precision):
             self.coulomb = build_long_range(
                 settings, solver=solver, trains_derivatives=trains_derivatives
             )
@@ -1333,7 +1333,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
         )
         # The backbone exposes its expanded layer declaration in backend layout.
         node_irreps = self.backbone.layer_irreps[0]
-        with _constructed_in(precision):
+        with constructed_in(precision):
 
             def linear(source, target):
                 return backend.make_linear(
@@ -1443,7 +1443,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
             torch.tensor(expanded, dtype=self.solve_dtype),
             persistent=False,
         )
-        with _constructed_in(settings.precision):
+        with constructed_in(settings.precision):
             self.projection = build_long_range_features(
                 settings, solver=solver, trains_derivatives=trains_derivatives
             )

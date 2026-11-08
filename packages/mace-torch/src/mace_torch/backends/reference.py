@@ -678,11 +678,11 @@ class ReferenceSphericalHarmonics(nn.Module):
 
 
 class ReferenceRadialBasis(nn.Module):
-    """The radial embedding, with the cutoff envelope already applied.
+    """The radial embedding and its optional cutoff envelope.
 
     Built and computed in the descriptor's precision, never in the process
-    default dtype, and enveloped by a polynomial cutoff of the descriptor's
-    ``cutoff_order``.
+    default dtype. ``apply_cutoff`` multiplies by a polynomial envelope of
+    the descriptor's ``cutoff_order``.
     """
 
     def __init__(self, descriptor: RadialBasisDescriptor) -> None:
@@ -691,14 +691,22 @@ class ReferenceRadialBasis(nn.Module):
         self.dtype = TORCH_DTYPES[descriptor.precision]
         if descriptor.kind == "bessel":
             self.basis = BesselBasis(
-                descriptor.cutoff, descriptor.num_basis, dtype=self.dtype
+                descriptor.cutoff,
+                descriptor.num_basis,
+                trainable=descriptor.trainable,
+                dtype=self.dtype,
             )
         elif descriptor.kind == "gaussian":
             self.basis = GaussianBasis(
-                descriptor.cutoff, descriptor.num_basis, dtype=self.dtype
+                descriptor.cutoff,
+                descriptor.num_basis,
+                trainable=descriptor.trainable,
+                dtype=self.dtype,
             )
         elif descriptor.kind == "chebyshev":
-            self.basis = ChebyshevBasis(descriptor.num_basis)
+            self.basis = ChebyshevBasis(
+                descriptor.num_basis, include_constant=descriptor.include_constant
+            )
         else:
             raise ValueError(
                 f"{descriptor.kind!r} is not a radial basis this backend builds. "
@@ -708,10 +716,25 @@ class ReferenceRadialBasis(nn.Module):
             descriptor.cutoff, descriptor.cutoff_order, dtype=self.dtype
         )
 
-    def forward(self, lengths: Tensor) -> Tensor:
-        """``[n_edges, 1]`` lengths in Angstrom -> ``[n_edges, num_basis]``."""
+    def forward(self, lengths: Tensor, envelope: Tensor | None = None) -> Tensor:
+        """``[n_edges, 1]`` lengths in Angstrom -> ``[n_edges, num_basis]``.
+
+        ``envelope``, when supplied, is the cutoff on the raw distances,
+        before a distance transform. It has shape ``[n_edges, 1]``.
+        """
         lengths = lengths.to(self.dtype)
-        return self.basis(lengths) * self.cutoff(lengths)
+        features = self.basis(lengths)
+        if self.descriptor.apply_cutoff:
+            features = features * (
+                self.cutoff(lengths) if envelope is None else envelope
+            )
+        return features
+
+    def canonical_components(self) -> dict[str, nn.Module]:
+        return {"basis": self.basis, "cutoff": self.cutoff}
+
+    def span_weights(self) -> tuple[Tensor, ...]:
+        return (self.cutoff.r_max, *self.basis.span_weights())
 
 
 def _layer_widths(descriptor: RadialMLPDescriptor) -> list[tuple[int, int]]:

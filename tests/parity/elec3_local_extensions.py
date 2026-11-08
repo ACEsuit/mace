@@ -4,10 +4,10 @@ import json
 
 import torch
 
+from tests.golden.targets._electrostatics_oracle import PINS
 from tests.parity import elec3
 from tests.parity.elec3_scf_nonlinear import linear, sparse
 from tests.parity.fm00_convert import fully_connected_tp_weights_to_canonical
-from tests.golden.targets._electrostatics_oracle import PINS
 
 VARIANTS = {
     "sum": {"oxidation_mixer": "sum"},
@@ -101,7 +101,7 @@ def carry_weights(old, new):
                 columns = [
                     i
                     for span, (_, ir) in zip(
-                        source.tp.irreps_out.slices(), source.tp.irreps_out
+                        source.tp.irreps_out.slices(), source.tp.irreps_out, strict=True
                     )
                     if ir.l in (0, 2)
                     for i in range(span.start, span.stop)
@@ -197,7 +197,7 @@ def reference_path():
 
 def load_model(variant, degree, profile, dtype=torch.float64, backend="reference"):
     model = build_model(variant, degree, profile, dtype, backend)
-    elec3.load_checkpoint(anchor_path(variant, degree), lambda _: model)
+    elec3.load_anchor_weights(anchor_path(variant, degree), model)
     return model
 
 

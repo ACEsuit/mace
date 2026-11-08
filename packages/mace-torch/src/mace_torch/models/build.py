@@ -155,7 +155,6 @@ def build_model(
                 z_table=z_table,
                 heads=heads,
                 precision=precision,
-                supports_float64=supports_float64,
             )
         elif config.model.model == "polar":
             assert energy_head is not None
@@ -345,7 +344,6 @@ def _magnetic_model(
     z_table: AtomicNumberTable,
     heads: tuple[str, ...],
     precision: PrecisionConfig,
-    supports_float64: bool = True,
 ) -> MagneticModel:
     """The magnetic model, which reads out an energy and nothing else."""
     others = [spec.name for spec in requested.observables if spec.name != "energy"]

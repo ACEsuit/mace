@@ -16,9 +16,9 @@ import numpy as np
 import pytest
 import torch
 from conftest import TOLERANCES, fp64_only
+from mace_core.graph import FixedPadding
 from mace_core.kernels.precision import Precision
 from mace_torch.calculators import MACECalculator, ase_calculator
-from mace_torch.calculators.padding import PaddingPolicy
 from mace_torch_compile_fixtures import cluster, deployed
 
 #: The model's dtype is the axis here, so the process default is held at one.
@@ -27,7 +27,7 @@ pytestmark = fp64_only
 SIZES = (3, 1, 2)
 BUDGETS = {
     "auto": None,
-    "fixed": PaddingPolicy(mode="fixed", nodes_budget=12, edges_budget=1024),
+    "fixed": FixedPadding(nodes_budget=13, edges_budget=1024, graphs_budget=2),
 }
 _TORCH = {"float64": torch.float64, "float32": torch.float32}
 

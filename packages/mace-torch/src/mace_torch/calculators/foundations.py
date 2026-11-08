@@ -6,7 +6,6 @@ configuration determines its architecture; no legacy class is imported or built.
 
 from __future__ import annotations
 
-import json
 import warnings
 from dataclasses import replace
 from pathlib import Path
@@ -17,14 +16,13 @@ from ase import units
 from ase.calculators.mixing import SumCalculator
 from mace_core.artifacts import ArtifactRef, resolve_checkpoint
 from mace_core.config.precision import PrecisionConfig
-from mace_core.metadata import ConfigRecord, ModelMetadata
+from mace_core.metadata import ConfigRecord
 from mace_core.model_registry import (
     Family,
     family_default_dtype,
     published_reference,
     resolve_model,
 )
-from mace_core.weights.checkpoint import read_checkpoint_manifest
 
 from mace_torch.calculators.ase_calculator import MACECalculator
 from mace_torch.deploy.loader import DeployedModel, load_deployed
@@ -72,8 +70,6 @@ def load_foundation(
     if entry is not None and (notice := entry.license.notice()) is not None:
         print(notice)
     files = resolve_checkpoint(reference)
-    document = read_checkpoint_manifest(files.metadata)
-    ModelMetadata.from_json(json.dumps(document.config))
     loaded = load_deployed(
         files.metadata,
         tensors_path=files.tensors,

@@ -17,6 +17,7 @@ from mace_core.config import (
     BesselBasisConfig,
     ChebyshevBasisConfig,
     GaussianBasisConfig,
+    ModelConfig,
     NoDistanceTransformConfig,
     PolynomialCutoffConfig,
     SoftTransformConfig,
@@ -31,9 +32,8 @@ from mace_torch.backends.radial import (
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.embedding import (
     RadialEmbeddingBlock,
-    build_cutoff,
     build_distance_transform,
-    build_radial_basis,
+    build_radial_embedding,
 )
 from mace_torch.nn.radial import (
     AgnesiTransform,
@@ -65,15 +65,16 @@ def _block(
     distance_transform: str = "none",
     apply_cutoff: bool = True,
 ) -> RadialEmbeddingBlock:
-    return RadialEmbeddingBlock(
-        radial_basis=build_radial_basis(RADIAL_BASES[radial_basis], EMBEDDING_R_MAX),
-        distance_transform=build_distance_transform(
-            DISTANCE_TRANSFORMS[distance_transform]
+    return build_radial_embedding(
+        ReferenceBackend(),
+        ModelConfig(
+            r_max=EMBEDDING_R_MAX,
+            radial_basis=RADIAL_BASES[radial_basis],
+            distance_transform=DISTANCE_TRANSFORMS[distance_transform],
+            cutoff=PolynomialCutoffConfig(polynomial_order=6),
+            apply_cutoff=apply_cutoff,
         ),
-        cutoff=build_cutoff(
-            PolynomialCutoffConfig(polynomial_order=6), EMBEDDING_R_MAX
-        ),
-        apply_cutoff=apply_cutoff,
+        str(torch.get_default_dtype()).removeprefix("torch."),
     )
 
 
@@ -136,7 +137,7 @@ def test_apply_cutoff_decides_whether_the_features_carry_the_envelope(
     (the CLI default) pre-multiplies; the other mode hands the bare basis over
     and the consumer's product is bit-for-bit the default."""
     lengths, node_atomic_numbers, edge_index = _embedding_inputs()
-    assert _block().apply_cutoff is True
+    assert _block().radial.descriptor.apply_cutoff is True
     applying = _block(radial_basis, distance_transform)
     deferring = _block(radial_basis, distance_transform, apply_cutoff=False)
     applied, applied_cutoff = applying(lengths, node_atomic_numbers, edge_index)
@@ -150,7 +151,7 @@ def test_apply_cutoff_decides_whether_the_features_carry_the_envelope(
         assert envelope.shape == (3, 1)
         assert features.dtype == envelope.dtype == dtype
         assert block.num_basis == 4
-        assert torch.equal(envelope, block.cutoff(lengths))
+        assert torch.equal(envelope, block.radial.cutoff(lengths))
 
     assert torch.equal(applied, bare * cutoff)
     # the envelope is not all ones inside the cutoff
@@ -223,7 +224,11 @@ def test_a_basis_config_builds_the_module_it_names(config, expected_module):
     """Every field reaches the module: same class, same buffers and parameters,
     same numbers. The expected module is a factory so that it is built under
     the test's default dtype, not at collection."""
-    built = build_radial_basis(config, EMBEDDING_R_MAX)
+    built = build_radial_embedding(
+        ReferenceBackend(),
+        ModelConfig(r_max=EMBEDDING_R_MAX, radial_basis=config),
+        str(torch.get_default_dtype()).removeprefix("torch."),
+    ).radial.basis
     _assert_same_module(built, expected_module())
 
 
@@ -256,7 +261,11 @@ def test_the_kind_none_builds_no_transform():
 
 
 def test_the_cutoff_config_builds_the_envelope_at_the_given_radius():
-    built = build_cutoff(PolynomialCutoffConfig(polynomial_order=3), r_max=4.0)
+    built = build_radial_embedding(
+        ReferenceBackend(),
+        ModelConfig(r_max=4.0, cutoff=PolynomialCutoffConfig(polynomial_order=3)),
+        str(torch.get_default_dtype()).removeprefix("torch."),
+    ).radial.cutoff
     _assert_same_module(built, PolynomialCutoff(r_max=4.0, polynomial_order=3))
 
 
@@ -287,3 +296,37 @@ def test_radial_embedding_passes_gradgradcheck(radial_basis, distance_transform)
 
     assert torch.autograd.gradcheck(function, (lengths,))
     assert torch.autograd.gradgradcheck(function, (lengths,))
+
+
+@pytest.mark.parametrize("apply_cutoff", [True, False])
+def test_backbone_builds_and_evaluates_the_backend_radial_operator(apply_cutoff):
+    from mace_torch.nn.backbone import MACEBackbone
+
+    class RecordingBackend(ReferenceBackend):
+        def make_radial_basis(self, descriptor):
+            self.descriptor = descriptor
+            radial = super().make_radial_basis(descriptor)
+            self.calls = []
+            radial.register_forward_hook(
+                lambda module, inputs, output: self.calls.append(output)
+            )
+            return radial
+
+    backend = RecordingBackend()
+    config = ModelConfig(
+        num_channels=4,
+        max_ell=1,
+        correlation=2,
+        radial_basis=BesselBasisConfig(trainable=True),
+        distance_transform=AgnesiTransformConfig(),
+        apply_cutoff=apply_cutoff,
+    )
+    backbone = MACEBackbone(backend, config=config, atomic_numbers=[1, 6])
+    features, envelope = backbone.radial_embedding(*_embedding_inputs())
+    assert backend.descriptor.trainable
+    assert backend.descriptor.apply_cutoff == apply_cutoff
+    assert len(backend.calls) == 1
+    assert torch.equal(features, backend.calls[0])
+    assert envelope.shape == (3, 1)
+    features.sum().backward()
+    assert backbone.radial_embedding.radial.basis.frequencies.grad is not None

@@ -180,7 +180,7 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
             **model_arguments(stored),
         )
 
-    restored = load_checkpoint(tmp_path / "converted", rebuild)
+    restored = load_checkpoint(tmp_path / "converted", rebuild(config))
 
     atoms = ase.io.read(GOLDEN / "fixtures/tiny_train.xyz", index=3)
     reference = legacy(

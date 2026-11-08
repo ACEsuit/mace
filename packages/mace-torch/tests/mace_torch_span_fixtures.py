@@ -37,9 +37,7 @@ class Composition(nn.Module):
             if shape.distance_transform.kind == "agnesi"
             else SoftTransformConfig()
         )
-        self.radial = RadialEmbeddingBlock(
-            radial.basis, build_distance_transform(transform), radial.cutoff
-        )
+        self.radial = RadialEmbeddingBlock(radial, build_distance_transform(transform))
         self.network = backend.make_radial_mlp(shape.radial_network)
         self.density = (
             None if shape.density is None else backend.make_radial_mlp(shape.density)

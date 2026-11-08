@@ -12,6 +12,7 @@ from mace_core.config import (
     BesselBasisConfig,
     ChebyshevBasisConfig,
     GaussianBasisConfig,
+    ModelConfig,
     NoDistanceTransformConfig,
     PolynomialCutoffConfig,
     SoftTransformConfig,
@@ -20,10 +21,7 @@ from mace_core.kernels.descriptors import LinearDescriptor
 from mace_torch.backends.radial import ChebyshevBasis
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.embedding import (
-    RadialEmbeddingBlock,
-    build_cutoff,
-    build_distance_transform,
-    build_radial_basis,
+    build_radial_embedding,
 )
 from mace_torch.nn.radial import ZBLBasis
 
@@ -93,15 +91,16 @@ def test_radial_embedding_block_parity(
         distance_transform=LEGACY_TRANSFORM_NAME[distance_transform],
         apply_cutoff=apply_cutoff,
     )
-    v1 = RadialEmbeddingBlock(
-        radial_basis=build_radial_basis(
-            V1_BASIS_CONFIG[radial_basis](num_basis=6), R_MAX
+    v1 = build_radial_embedding(
+        ReferenceBackend(),
+        ModelConfig(
+            r_max=R_MAX,
+            radial_basis=V1_BASIS_CONFIG[radial_basis](num_basis=6),
+            distance_transform=V1_TRANSFORM_CONFIG[distance_transform](),
+            cutoff=PolynomialCutoffConfig(polynomial_order=5),
+            apply_cutoff=apply_cutoff,
         ),
-        distance_transform=build_distance_transform(
-            V1_TRANSFORM_CONFIG[distance_transform]()
-        ),
-        cutoff=build_cutoff(PolynomialCutoffConfig(polynomial_order=5), R_MAX),
-        apply_cutoff=apply_cutoff,
+        str(torch.get_default_dtype()).removeprefix("torch."),
     )
     legacy_radial, legacy_cutoff = legacy(lengths, node_attrs, edge_index, SPECIES)
     v1_radial, v1_cutoff = v1(lengths, node_atomic_numbers, edge_index)

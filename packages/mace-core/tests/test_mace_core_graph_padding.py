@@ -104,3 +104,58 @@ def test_unpadding_diagnostics_can_echo_a_differentiable_input():
     np.testing.assert_array_equal(
         result.extras["d_energy_d_external_field"], values[:1] + 1
     )
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [AutoPadding(), FixedPadding(nodes_budget=41, edges_budget=128, graphs_budget=2)],
+)
+def test_retained_budget_grows_once_and_never_shrinks(policy):
+    previous = None
+    budgets = []
+    for nodes, edges in ((40, 100), (40, 90), (80, 500), (80, 450), (40, 90)):
+        previous = padding_budget(
+            policy, n_nodes=nodes, n_edges=edges, n_graphs=1, previous=previous
+        )
+        budgets.append(previous)
+    assert budgets[0] == budgets[1]
+    assert budgets[1] != budgets[2]
+    assert budgets[2] == budgets[3] == budgets[4]
+    if isinstance(policy, AutoPadding):
+        assert budgets[2].edges == 640
+
+
+def test_retained_auto_budget_can_refuse_growth_even_from_zero_edges():
+    policy = AutoPadding(on_overflow="error")
+    first = padding_budget(policy, n_nodes=1, n_edges=0, n_graphs=1)
+    with pytest.raises(PaddingOverflowError):
+        padding_budget(policy, n_nodes=2, n_edges=2, n_graphs=1, previous=first)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"kind": "typo"},
+        {"kind": "auto", "edge_multiple": 0},
+        {"kind": "auto", "headroom": 0.5},
+    ],
+)
+def test_invalid_padding_policies_fail_at_construction(raw):
+    with pytest.raises(ValidationError):
+        TypeAdapter(PaddingPolicy).validate_python(raw)
+
+
+def test_unpadding_engine_edges_uses_the_edge_count():
+    import numpy as np
+    from mace_core.graph import PaddingInfo, unpad_outputs
+    from mace_core.outputs import MACEOutput
+
+    values = np.arange(30).reshape(10, 3)
+    output = unpad_outputs(
+        MACEOutput(extras={"edge_forces": values}),
+        PaddingInfo(2, 5, 1),
+        extra_rows={"edge_forces": "edge"},
+    )
+    np.testing.assert_array_equal(output.extras["edge_forces"], values[:5])
+    with pytest.raises(KeyError):
+        unpad_outputs(MACEOutput(extras={"undeclared": values}), PaddingInfo(2, 5, 1))

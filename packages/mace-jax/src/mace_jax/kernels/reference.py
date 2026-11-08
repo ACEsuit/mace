@@ -80,6 +80,7 @@ class SphericalHarmonics(nnx.Module):
 class RadialBasis(CanonicalOp):
     def __init__(self, descriptor):
         self.cutoff, self.order = descriptor.cutoff, descriptor.cutoff_order
+        self.apply_cutoff = descriptor.apply_cutoff
         super().__init__(
             {
                 "frequencies": jnp.arange(
@@ -92,10 +93,15 @@ class RadialBasis(CanonicalOp):
             }
         )
 
-    def __call__(self, lengths):
-        return bessel(
-            lengths, self.tensor("frequencies"), self.tensor("prefactor")
-        ) * polynomial_envelope(lengths, self.cutoff, self.order)
+    def __call__(self, lengths, envelope=None):
+        features = bessel(lengths, self.tensor("frequencies"), self.tensor("prefactor"))
+        if self.apply_cutoff:
+            features = features * (
+                polynomial_envelope(lengths, self.cutoff, self.order)
+                if envelope is None
+                else envelope
+            )
+        return features
 
 
 class SegmentReduce(nnx.Module):

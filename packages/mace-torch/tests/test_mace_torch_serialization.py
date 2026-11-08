@@ -79,7 +79,7 @@ def test_a_model_survives_the_round_trip(tmp_path):
 
     model = trained()
     save_checkpoint(tmp_path / "anchor", model, dict(SETTINGS))
-    restored = load_checkpoint(tmp_path / "anchor", build)
+    restored = load_checkpoint(tmp_path / "anchor", build(dict(SETTINGS)))
 
     positions = np.array([[0.0, 0.0, 0.0], [0.95, 0.0, 0.0], [-0.24, 0.93, 0.0]])
     neighborhood = get_neighborhood(
@@ -114,7 +114,7 @@ def test_the_neighbour_normalization_travels_with_the_weights(tmp_path):
     model = trained()
     save_checkpoint(tmp_path / "anchor", model, dict(SETTINGS))
     restored = load_checkpoint(
-        tmp_path / "anchor", lambda config: build({**config, "avg_num_neighbors": 1.0})
+        tmp_path / "anchor", build({**SETTINGS, "avg_num_neighbors": 1.0})
     )
     positions = np.array([[0.0, 0.0, 0.0], [0.95, 0.0, 0.0], [-0.24, 0.93, 0.0]])
     neighborhood = get_neighborhood(
@@ -161,7 +161,7 @@ def test_a_pickled_checkpoint_is_refused_by_name(tmp_path):
     """Reading one executes whatever it holds, so it is not read at all."""
     (tmp_path / "old.pt").write_bytes(b"not really a pickle")
     with pytest.raises(CheckpointError, match="executes whatever"):
-        load_checkpoint(tmp_path / "old.pt", build)
+        load_checkpoint(tmp_path / "old.pt", build(dict(SETTINGS)))
 
 
 @fp64_only
@@ -170,7 +170,7 @@ def test_a_missing_sidecar_is_refused(tmp_path):
     save_checkpoint(tmp_path / "anchor", model, dict(SETTINGS))
     (tmp_path / "anchor.json").unlink()
     with pytest.raises(CheckpointError, match="two files"):
-        load_checkpoint(tmp_path / "anchor", build)
+        load_checkpoint(tmp_path / "anchor", build(dict(SETTINGS)))
 
 
 @fp64_only
@@ -187,7 +187,7 @@ def test_a_file_from_elsewhere_is_refused(tmp_path, field, value, message):
     sidecar.write_text(json.dumps(document))
 
     with pytest.raises(CheckpointError, match=message):
-        load_checkpoint(tmp_path / "anchor", build)
+        load_checkpoint(tmp_path / "anchor", build(dict(SETTINGS)))
 
 
 @fp64_only
@@ -200,7 +200,7 @@ def test_tensors_the_sidecar_did_not_declare_are_refused(tmp_path):
     sidecar.write_text(json.dumps(document))
 
     with pytest.raises(CheckpointError, match="Undeclared"):
-        load_checkpoint(tmp_path / "anchor", build)
+        load_checkpoint(tmp_path / "anchor", build(dict(SETTINGS)))
 
 
 @fp64_only
@@ -224,7 +224,7 @@ def test_manifest_corruption_is_refused_before_weights_are_loaded(tmp_path, faul
         next(iter(document["layout"].values()))["unknown"] = True
     sidecar.write_text(json.dumps(document))
     with pytest.raises(CheckpointError):
-        load_checkpoint(sidecar, build)
+        load_checkpoint(sidecar, build(dict(SETTINGS)))
 
 
 @fp64_only
@@ -246,7 +246,7 @@ def test_a_model_of_a_different_shape_is_refused(tmp_path):
         return build(deeper)
 
     with pytest.raises(CheckpointError, match="layout"):
-        load_checkpoint(tmp_path / "anchor", build_deeper)
+        load_checkpoint(tmp_path / "anchor", build_deeper(dict(SETTINGS)))
 
 
 @fp64_only
@@ -269,7 +269,7 @@ def test_a_file_missing_an_operator_entirely_is_refused(tmp_path):
     save_file(tensors, str(tmp_path / "anchor.safetensors"))
 
     with pytest.raises(CheckpointError, match=r"products\.1\.contraction"):
-        load_checkpoint(tmp_path / "anchor", build)
+        load_checkpoint(tmp_path / "anchor", build(dict(SETTINGS)))
 
 
 def energy_head(precision: Precision) -> EnergyOutputHead:
@@ -291,7 +291,7 @@ def test_the_isolated_atom_table_stays_float64_through_the_file(tmp_path):
     """
     head = energy_head("float32")
     save_checkpoint(tmp_path / "head", head, {})
-    restored = load_checkpoint(tmp_path / "head", lambda _: energy_head("float32"))
+    restored = load_checkpoint(tmp_path / "head", energy_head("float32"))
 
     assert restored.e0_table.dtype == torch.float64
     assert torch.equal(restored.e0_table, head.e0_table)

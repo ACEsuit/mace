@@ -25,7 +25,7 @@ from mace_core.observables import DEFAULT_CATALOGUE, InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
-from mace_torch.models.base import _constructed_in
+from mace_torch.backends.precision import constructed_in
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.magnetic import MagneticBackbone, OneBodyMomentEnergy
@@ -77,7 +77,7 @@ class MagneticModel(nn.Module):
         one_body_basis = (
             config.magnetic.one_body_basis if config.magnetic.one_body else 0
         )
-        with _constructed_in(precision):
+        with constructed_in(precision):
             self.backbone = MagneticBackbone(
                 backend,
                 atomic_numbers=atomic_numbers,

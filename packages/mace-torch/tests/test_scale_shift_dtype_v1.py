@@ -90,7 +90,7 @@ def test_without_float64_the_widening_degrades_to_the_model_dtype_and_says_so(
 ):
     """What ``safe_double`` does on a device with no float64: the tensor's
     own dtype, rather than an error at the first cast. The build logs it."""
-    with caplog.at_level("WARNING", logger="mace_torch.train.model_stage"):
+    with caplog.at_level("WARNING", logger="mace_torch.models.build"):
         engine, out = evaluate("scale_shift", "float32", supports_float64=False)
     assert any("no float64" in record.getMessage() for record in caplog.records)
     assert out.node_energies.dtype is torch.float32

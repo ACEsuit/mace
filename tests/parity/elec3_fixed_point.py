@@ -17,11 +17,13 @@ from mace_torch.backends import resolve_backend
 from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.models.electrostatics import FixedPointSCFModel
 from mace_torch.physics import DerivativeEngine
-from mace_torch.serialization import load_checkpoint, save_checkpoint
+from mace_torch.serialization import save_checkpoint
 
-from tests.parity.elec3 import ENERGY, PROFILES, configuration as local_configuration
-from tests.parity.elec3_qeq import graph_for as charge_graph
 from tests.golden.targets._electrostatics_oracle import PINS
+from tests.parity.anchors import load_anchor_weights
+from tests.parity.elec3 import ENERGY, PROFILES
+from tests.parity.elec3 import configuration as local_configuration
+from tests.parity.elec3_qeq import graph_for as charge_graph
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUTS = (
@@ -147,8 +149,9 @@ def outputs(model, graph):
 
 def reference_model(profile="molecular", **options):
     from e3nn import o3
-    from mace_scf.electrostatics.fixed_point_core import FixedPointCore
     from mace_scf.electrostatics import field_blocks as blocks
+    from mace_scf.electrostatics.fixed_point_core import FixedPointCore
+
     from mace.modules import interaction_classes
 
     torch.manual_seed(123)
@@ -256,8 +259,8 @@ def reference_model(profile="molecular", **options):
 def carry_weights(old, new):
     from tests.parity.fm00_convert import (
         copy_linear,
-        transfer_weights,
         fully_connected_tp_weights_to_canonical,
+        transfer_weights,
     )
 
     transfer_weights(old, new, 2)
@@ -436,7 +439,7 @@ def reference_path():
 
 def load_model(variant, profile, dtype=torch.float64, backend="reference"):
     model = build_model(profile, dtype, backend, **VARIANTS[variant])
-    load_checkpoint(anchor_path(variant), lambda _: model)
+    load_anchor_weights(anchor_path(variant), model)
     return model
 
 

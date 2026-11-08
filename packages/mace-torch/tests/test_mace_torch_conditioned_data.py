@@ -13,7 +13,7 @@ from mace_core.config.pseudolabels import PseudolabelConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.xyz import configuration_from_atoms
 from mace_core.observables import DEFAULT_CATALOGUE
-from mace_torch.calculators import MACECalculator, PaddingPolicy
+from mace_torch.calculators import FixedPadding, MACECalculator
 from mace_torch.cli.run_train import run
 from mace_torch.data import GraphDataset, make_loader
 from mace_torch.data.inputs import key_specification
@@ -188,7 +188,7 @@ def test_conditioned_checkpoint_cli_calculator_padding_and_cache(
     padded = MACECalculator(
         model_paths=path,
         device=device,
-        padding=PaddingPolicy(mode="fixed", nodes_budget=8, edges_budget=64),
+        padding=FixedPadding(nodes_budget=9, edges_budget=64, graphs_budget=2),
     )
     offset = 0
     for index, original in enumerate(frames):
@@ -243,7 +243,7 @@ def test_conditioned_checkpoint_cli_calculator_padding_and_cache(
         atoms.calc = MACECalculator(
             models=members,
             device=device,
-            padding=PaddingPolicy(mode="fixed", nodes_budget=8, edges_budget=64),
+            padding=FixedPadding(nodes_budget=9, edges_budget=64, graphs_budget=2),
         )
         close(atoms.get_potential_energy(), energy)
         close(atoms.get_forces(), forces)

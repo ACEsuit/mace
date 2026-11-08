@@ -74,17 +74,23 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from mace_core.config import FixedPointSpec
 from mace_core.config.precision import PrecisionConfig
 from mace_core.data.configuration import Configuration
+from mace_core.graph import (
+    FixedPadding,
+    PaddingBudget,
+    PaddingInfo,
+    PaddingPolicy,
+    padding_budget,
+    unpad_outputs,
+)
 from mace_core.neighbors import NeighborListConfig
+from mace_core.observables import ObservableCatalogue
 from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.backends.precision import interface_dtype
 from mace_torch.calculators.padding import (
-    PaddingInfo,
-    PaddingPolicy,
     output_rows,
-    resolve_budget,
-    unpad_outputs,
+    requested_padding,
 )
 from mace_torch.data.inputs import graph_inputs_of, key_specification
 from mace_torch.deploy.loader import DeployedModel, load_deployed
@@ -233,11 +239,13 @@ class MACECalculator(Calculator):
         arrays_keys: Graph field to ``atoms.arrays`` key, likewise.
         head: The head to evaluate, by name. Required when the model has
             several and none is called ``default``.
-        pad_num_atoms: A fixed atom budget. Read from
+        pad_num_atoms: A fixed real-atom budget. Read from
             ``MACE_ASE_PAD_NUM_ATOMS`` when zero.
         pad_num_edges: A fixed edge budget. Read from
             ``MACE_ASE_PAD_NUM_EDGES`` when zero.
-        padding: A padding policy, instead of the two budgets.
+        padding: Core NoPadding, AutoPadding or FixedPadding, instead of
+            the two budgets. FixedPadding counts padding slots in its node,
+            edge and graph budgets.
         compile_mode: Compile each model with static shapes in this
             ``torch.compile`` mode, which pads automatically unless a budget
             was given.
@@ -413,8 +421,12 @@ class MACECalculator(Calculator):
             )
             target.setdefault(name, declared_keys[name])
         self.compute_atomic_stresses = compute_atomic_stresses
-        self.padding = padding or PaddingPolicy.requested(
+        self.padding = padding or requested_padding(
             pad_num_atoms, pad_num_edges, compiled=compile_mode is not None
+        )
+        self._padding_budget: PaddingBudget | None = None
+        self._catalogue = ObservableCatalogue(
+            inputs=first.outputs.inputs, observables=first.outputs.observables
         )
         extra_rows = _extra_rows(first)
         self._rows = output_rows(first.outputs, extra_rows)
@@ -527,7 +539,8 @@ class MACECalculator(Calculator):
                 unpad_outputs(
                     engine(dict(graph), compute=tuple(compute), training=False),
                     info,
-                    self._rows,
+                    catalogue=self._catalogue,
+                    extra_rows=self._rows,
                 )
                 for engine in self._engines
             ]
@@ -731,28 +744,34 @@ class MACECalculator(Calculator):
         if padded:
             nodes = len(atoms)
             edges = int(graph["edge_index"].shape[1])
-            policy, _ = resolve_budget(self.padding, nodes, edges)
-            before = (self.padding.nodes_budget, self.padding.edges_budget)
-            after = (policy.nodes_budget, policy.edges_budget)
-            if any(
-                then and now != then for then, now in zip(before, after, strict=True)
-            ):
+            budget = padding_budget(
+                self.padding,
+                n_nodes=nodes,
+                n_edges=edges,
+                n_graphs=1,
+                previous=self._padding_budget,
+            )
+            if self._padding_budget is not None and budget != self._padding_budget:
                 logger.warning(
-                    "The structure has %d atoms and %d edges, over the padding "
-                    "budget of %d and %d; the budget is now %d and %d, which "
-                    "changes the batch shape once",
-                    nodes,
-                    edges,
-                    self.padding.nodes_budget,
-                    self.padding.edges_budget,
-                    policy.nodes_budget,
-                    policy.edges_budget,
+                    "Padding budget grew from %s to %s, "
+                    "which changes the batch shape once",
+                    self._padding_budget,
+                    budget,
                 )
-            self.padding = policy
-        if padded:
+            self._padding_budget = budget
+            policy = (
+                self.padding
+                if budget is None
+                else FixedPadding(
+                    nodes_budget=budget.nodes,
+                    edges_budget=budget.edges,
+                    graphs_budget=budget.graphs,
+                    on_overflow="error",
+                )
+            )
             graph, info = pad_batch(
                 graph,
-                self.padding.graph_policy(),
+                policy,
                 self.r_max,
                 atomic_number_table=self.z_table,
                 features=self.features,

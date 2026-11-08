@@ -238,7 +238,7 @@ def load_deployed(
         backend = manifest.backend or backend or "reference"
         source = source / "model.json"
     document = read_checkpoint_manifest(source)
-    metadata = ModelMetadata.model_validate(document.config)
+    metadata = ModelMetadata.from_dict(document.config)
     config = ResolvedConfig.model_validate(metadata.config.resolved)
     if backend is not None:
         config = config.model_copy(
@@ -265,18 +265,9 @@ def load_deployed(
                 details.values if details is not None else {}
             ).items()
         }
-    if metadata.elements:
-        # The table as the record states it, which a model with no energies
-        # has no other place for.
-        z_table = AtomicNumberTable(metadata.elements)
-    else:
-        tables = {tuple(sorted(values)) for values in e0s.values()}
-        if len(tables) != 1:
-            raise DeployError(
-                f"{path} records energies over different elements per head: "
-                f"{sorted(tables)}. One model has one element table."
-            )
-        z_table = AtomicNumberTable(list(tables.pop()))
+    if not metadata.elements:
+        raise DeployError(f"{path} records no elements; the element table is required.")
+    z_table = AtomicNumberTable(metadata.elements)
 
     if manifest is not None:
         choose_head(heads, manifest.head)
@@ -289,23 +280,18 @@ def load_deployed(
                 raise DeployError(
                     f"deploy {name} disagrees with {source}: expected {expected}"
                 )
-    built: list[RequestedOutputs] = []
-
-    def build(_: object) -> nn.Module:
-        engine, outputs = build_model(
-            config,
-            catalogue,
-            z_table=z_table,
-            heads=heads,
-            e0s=ResolvedE0s(e0s),
-            statistics=DatasetStatistics(),
-            precision=precision or config.precision,
-            initialize=False,
-        )
-        built.append(outputs)
-        return engine
-
-    engine = load_checkpoint(source, build, tensors_path=tensors_path).to(device)
+    engine, outputs = build_model(
+        config,
+        catalogue,
+        z_table=z_table,
+        heads=heads,
+        e0s=ResolvedE0s(e0s),
+        statistics=DatasetStatistics(),
+        precision=precision or config.precision,
+        initialize=False,
+    )
+    load_checkpoint(source, engine, manifest=document, tensors_path=tensors_path)
+    engine.to(device)
     engine.eval()
     metadata = _check_recorded_solve(engine.get_submodule("backbone"), metadata, path)
     return DeployedModel(
@@ -315,7 +301,7 @@ def load_deployed(
         z_table=z_table,
         heads=heads,
         e0s=e0s,
-        outputs=built[0],
+        outputs=outputs,
         path=Path(path),
         manifest=manifest,
     )

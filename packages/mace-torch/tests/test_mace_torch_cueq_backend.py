@@ -125,7 +125,7 @@ def test_discovery_records_a_missing_cuequivariance_rather_than_raising():
 @pytest.mark.parametrize("device", DEVICES)
 def test_the_model_on_cueq_is_the_reference_model(caplog, device):
     reference = engine("reference", device=device)
-    caplog.set_level("INFO", logger="mace_torch.train.model_stage")
+    caplog.set_level("INFO", logger="mace_torch.models.build")
     accelerated = engine("cueq", device=device)
     assert "channelwise_tp_conv: 2 by cueq" in caplog.text
     assert "Every op uses ir_mul activations" in caplog.text

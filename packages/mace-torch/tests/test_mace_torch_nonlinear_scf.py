@@ -143,7 +143,7 @@ def test_solver_compiles_and_reads_changed_membership(compiler_cache):
         charge = torch.tensor([0.2, -0.1])
         actual = compiled(*args, membership, charge)
         expected = call(*args, membership, charge)
-        for a, b in zip(actual, expected):
+        for a, b in zip(actual, expected, strict=True):
             torch.testing.assert_close(a, b)
         torch.testing.assert_close(membership.T @ actual[0][:, 0], charge)
 
@@ -497,7 +497,7 @@ def test_nonlinear_options_reject_invalid_or_unused_values(options):
 
 @fp64_only
 def test_norm_tanh_feasible_fixed_charge_training_and_reload(tmp_path):
-    from mace_torch.serialization import save_checkpoint, load_checkpoint
+    from mace_torch.serialization import load_checkpoint, save_checkpoint
 
     options = {
         "potential_embedding": "norm_tanh",
@@ -547,7 +547,7 @@ def test_norm_tanh_feasible_fixed_charge_training_and_reload(tmp_path):
         path, constrained, {"model": constrained.config.model_dump(mode="json")}
     )
     loaded = fixed_model("full_periodic", constant_charge=True, **options)
-    load_checkpoint(path, lambda _: loaded)
+    load_checkpoint(path, loaded)
     torch.testing.assert_close(
         loaded(graph).total_energy, after.total_energy, atol=0, rtol=0
     )

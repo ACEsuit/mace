@@ -131,7 +131,7 @@ def _export_config(arguments: argparse.Namespace) -> int:
         document = read_checkpoint_manifest(arguments.model)
     except CheckpointError as error:
         raise SystemExit(f"mace model export-config: {error}") from error
-    metadata = ModelMetadata.model_validate(document.config)
+    metadata = ModelMetadata.from_dict(document.config)
     resolved = ResolvedConfig.from_dict(metadata.config.resolved).to_resolved_dict()
     arguments.output.write_text(writer(resolved))
     return 0

@@ -274,12 +274,11 @@ def case_graph(variant, profile="molecular", dtype=torch.float64):
 
 
 def load_model(variant, profile, dtype=torch.float64, backend="reference"):
-    from mace_torch.serialization import load_checkpoint
-
+    from tests.parity.anchors import load_anchor_weights
     from tests.parity.elec3_fixed_point import build_model
 
     model = build_model(profile, dtype, backend, **VARIANTS[variant])
-    load_checkpoint(anchor_path(variant), lambda _: model)
+    load_anchor_weights(anchor_path(variant), model)
     return model
 
 
@@ -418,7 +417,7 @@ def block_outputs(model, legacy=False):
     )
     gradient = tuple(
         torch.zeros_like(value) if grad is None else grad
-        for grad, value in zip(gradient, variables)
+        for grad, value in zip(gradient, variables, strict=True)
     )
     second = torch.autograd.grad(
         sum(grad.sum() for grad in gradient),
@@ -428,7 +427,7 @@ def block_outputs(model, legacy=False):
     )
     second = tuple(
         torch.zeros_like(value) if grad is None else grad
-        for grad, value in zip(second, variables)
+        for grad, value in zip(second, variables, strict=True)
     )
     return {
         "update": delta,

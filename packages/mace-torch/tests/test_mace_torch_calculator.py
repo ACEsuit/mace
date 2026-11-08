@@ -20,7 +20,7 @@ from ase import Atoms
 from ase.stress import full_3x3_to_voigt_6_stress
 from conftest import fp64_only
 from mace_core.config.precision import PrecisionConfig
-from mace_torch.calculators import MACECalculator, PaddingPolicy
+from mace_torch.calculators import AutoPadding, FixedPadding, MACECalculator, NoPadding
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.train import run_train_stage
 from test_mace_torch_full_batch import built_task
@@ -280,14 +280,14 @@ def test_every_key_a_single_model_writes_is_declared(checkpoints):
 def test_a_calculator_pads_nothing_by_default(checkpoints, monkeypatch):
     monkeypatch.delenv("MACE_ASE_PAD_NUM_ATOMS", raising=False)
     monkeypatch.delenv("MACE_ASE_PAD_NUM_EDGES", raising=False)
-    assert MACECalculator(model_paths=checkpoints["a"]).padding.mode == "none"
+    assert MACECalculator(model_paths=checkpoints["a"]).padding.kind == "none"
 
 
 def test_the_environment_selects_a_fixed_budget(checkpoints, monkeypatch):
     monkeypatch.setenv("MACE_ASE_PAD_NUM_ATOMS", "8")
     monkeypatch.setenv("MACE_ASE_PAD_NUM_EDGES", "256")
     policy = MACECalculator(model_paths=checkpoints["a"]).padding
-    assert (policy.mode, policy.nodes_budget, policy.edges_budget) == ("fixed", 8, 256)
+    assert (policy.kind, policy.nodes_budget, policy.edges_budget) == ("fixed", 9, 256)
 
 
 def test_a_compiled_calculator_pads_automatically(checkpoints, monkeypatch):
@@ -298,7 +298,7 @@ def test_a_compiled_calculator_pads_automatically(checkpoints, monkeypatch):
         torch, "compile", lambda model, **settings: compiled.append(settings) or model
     )
     calculator = MACECalculator(model_paths=checkpoints["a"], compile_mode="default")
-    assert calculator.padding.mode == "auto"
+    assert calculator.padding.kind == "auto"
     assert compiled == [
         {"mode": "default", "backend": "inductor", "fullgraph": True, "dynamic": False}
     ]
@@ -332,9 +332,9 @@ def test_padding_leaves_the_real_structure_s_results_as_they_were(
     )
     padded = evaluate(calculator, water(periodic))
     if route == "overflow":
-        assert calculator.padding.edges_budget > 1
+        assert calculator._padding_budget.edges > 1
     else:
-        expected = (9, 3100) if route == "environment" else (8, 3000)
+        expected = (10, 3100) if route == "environment" else (9, 3000)
         assert (
             calculator.padding.nodes_budget,
             calculator.padding.edges_budget,
@@ -364,9 +364,7 @@ class _Shapes:
 def test_a_growing_structure_changes_the_batch_shape_once_per_growth(
     checkpoints, caplog
 ):
-    calculator = MACECalculator(
-        model_paths=checkpoints["a"], padding=PaddingPolicy(mode="auto")
-    )
+    calculator = MACECalculator(model_paths=checkpoints["a"], padding=AutoPadding())
     recorder = _Shapes(calculator._engines[0])
     calculator._engines = [recorder]
     small = water(True)
@@ -457,7 +455,7 @@ def test_declared_temperature_uses_recorded_key_without_replacing_aliases(
 def test_passed_through_entries_reach_the_graph(checkpoints):
     calculator = MACECalculator(
         model_paths=checkpoints["a"],
-        padding=PaddingPolicy(mode="fixed", nodes_budget=6, edges_budget=512),
+        padding=FixedPadding(nodes_budget=7, edges_budget=512, graphs_budget=2),
     )
     atoms = water()
     atoms.info["charge"] = 1.0
@@ -615,7 +613,7 @@ def test_the_calculator_collates_once_before_padding(checkpoints, monkeypatch, p
 
     monkeypatch.setattr(graph_module, "collate", collate_once)
     calc = MACECalculator(
-        checkpoints["a"], padding=PaddingPolicy(mode="auto" if padded else "none")
+        checkpoints["a"], padding=AutoPadding() if padded else NoPadding()
     )
     evaluate(calc, water())
     assert len(calls) == 1
