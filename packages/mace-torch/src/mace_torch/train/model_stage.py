@@ -27,6 +27,7 @@ from mace_core.data.backend import DatasetStatistics
 from mace_core.data.normalization import NormalizationValues
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.descriptors import RadialBasisDescriptor
+from mace_core.kernels.precision import widest
 from mace_core.metadata import (
     ConfigRecord,
     E0Details,
@@ -60,6 +61,7 @@ from mace_torch.models.electrostatics import PolarModel, PolarSettings
 from mace_torch.models.les import LatentEwaldModel
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.models.normalization import ObservableNormalization
+from mace_torch.models.registry import MODEL_REGISTRY
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
 from mace_torch.train.data_stage import DEFAULT_PRECISION
@@ -203,9 +205,10 @@ def run_model_stage(
         config = config.model_copy(update={"catalogue": catalogue})
     metadata = _metadata(config, data)
     model = engine.get_submodule("backbone")
-    if isinstance(model, PolarModel):
+    solver_record = getattr(model, "solver_record", None)
+    if callable(solver_record):
         metadata = metadata.model_copy(
-            update={"electrostatics": ElectrostaticsRecord(**model.solver_record())}
+            update={"electrostatics": ElectrostaticsRecord(**solver_record())}
         )
     if foundation is not None:
         transfer_foundation(
@@ -376,10 +379,12 @@ def build_model(
             "the configuration declares no observable, so the model would "
             "read out nothing. Declare at least one under `model.observables`."
         )
-    if config.model.model not in _MODELS:
+    registered = MODEL_REGISTRY.get(config.model.model)
+    if config.model.model not in _MODELS and registered is None:
         raise ModelStageError(
             f"{config.model.model!r} is not a registered model. The choices are "
-            f"{sorted(_MODELS)}: the two energy models differ in where the "
+            f"{sorted(_MODELS | MODEL_REGISTRY.keys())}: the two energy models "
+            f"differ in where the "
             f"short-range repulsion is added, `polar` carries a "
             f"self-consistent density and a long-range term, `magnetic` reads a "
             f"moment on every atom, and `dipole` and `dielectric` read out a "
@@ -423,6 +428,7 @@ def build_model(
     energy_head = None
     if energy is None and (
         config.model.model in {"les", "polar", "magnetic"}
+        or registered is not None
         or config.model.pair_repulsion
     ):
         raise ModelStageError(
@@ -435,9 +441,17 @@ def build_model(
             z_table,
             _scale_shift(config, statistics, len(heads)),
             precision,
-            zbl_in_scale_shift=_ZBL_INSIDE.get(config.model.model, True),
+            zbl_in_scale_shift=getattr(
+                registered,
+                "zbl_in_scale_shift",
+                _ZBL_INSIDE.get(config.model.model, True),
+            ),
             supports_float64=supports_float64,
-            widen_node_energy=_WIDENS_NODE_ENERGY[config.model.model],
+            widen_node_energy=getattr(
+                registered,
+                "widen_node_energy",
+                _WIDENS_NODE_ENERGY.get(config.model.model, True),
+            ),
         )
         if (report := energy_head.build_report()) is not None:
             logger.warning(report)
@@ -477,7 +491,23 @@ def build_model(
         if initialize:
             initialize_model_weights(model, config.runtime.seed)
         return DerivativeEngine(model, energy, None, inputs=catalogue.inputs), requested
-    model_type = LatentEwaldModel if config.model.model == "les" else MACEModel
+    model_type = registered or (
+        LatentEwaldModel if config.model.model == "les" else MACEModel
+    )
+    model_options: dict[str, Any] = {}
+    if getattr(model_type, "requires_electrostatics", False):
+        assert energy_head is not None
+        solver_descriptor = getattr(model_type, "solver_descriptor", None)
+        assert callable(solver_descriptor), "electrostatic models declare their solve"
+        model_options.update(
+            settings=solver_descriptor(
+                config.model,
+                config.electrostatics,
+                widest(precision.model, energy_head.accumulate),
+            ),
+            solver=config.electrostatics.solver,
+            trains_derivatives=initialize and bool(requested.derivatives),
+        )
     model = model_type(
         backend,
         config=config.model,
@@ -490,6 +520,7 @@ def build_model(
         .accumulate_dtype,
         precision=precision.model,
         num_heads=len(heads),
+        **model_options,
     )
     _configure_normalization(model, config, heads, normalization, precision)
     _report_backend(backend)
@@ -797,7 +828,9 @@ def _check_electrostatics(config: ResolvedConfig) -> None:
             solver and its systems unsaid.
     """
     settings = config.electrostatics
-    polar = config.model.model == "polar"
+    polar = config.model.model == "polar" or getattr(
+        MODEL_REGISTRY.get(config.model.model), "requires_electrostatics", False
+    )
     if settings.enabled:
         from mace_core.electrostatics import get_solver
 
@@ -806,12 +839,13 @@ def _check_electrostatics(config: ResolvedConfig) -> None:
         raise ModelStageError(
             f"electrostatics.enabled is set and model.model is "
             f"{config.model.model!r}, which carries no long-range term, so the "
-            f"run would train one without it. Use the `polar` model, or leave "
+            f"run would train one without it. Use a model with electrostatics, "
+            f"or leave "
             f"the section out."
         )
     if polar and not settings.enabled:
         raise ModelStageError(
-            "model.model is `polar`, whose long-range term is computed by the "
+            f"model.model is {config.model.model!r}, whose long-range term uses "
             "solver the electrostatics section names. Set "
             "electrostatics.enabled, with the solver and the systems it is set "
             "up for."

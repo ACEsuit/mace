@@ -32,9 +32,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import torch
+from mace_core.config.electrostatics import ElectrostaticsConfig
+from mace_core.config.local_sources import LocalSplitChargeConfig
 from mace_core.config.model import ModelConfig
 from mace_core.electrostatics import (
     ElectrostaticsSolverDescriptor,
@@ -64,9 +66,19 @@ from mace_torch.electrostatics.reference.gto_utils import (
 from mace_torch.kernels import segment_sum
 from mace_torch.models.base import MACEModel, _constructed_in
 from mace_torch.models.energy import EnergyOutputHead
+from mace_torch.models.registry import register_model
+from mace_torch.nn.charge_transfer import SplitChargeSource
+from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
 
-__all__ = ["POLAR_EXTRA_ROWS", "POLAR_GRAPH_INPUTS", "PolarModel", "PolarSettings"]
+__all__ = [
+    "POLAR_EXTRA_ROWS",
+    "POLAR_GRAPH_INPUTS",
+    "LocalChargeModel",
+    "LocalSplitChargeModel",
+    "PolarModel",
+    "PolarSettings",
+]
 
 
 def _spherical(max_l: int, copies: int = 1) -> str:
@@ -564,3 +576,367 @@ class PolarModel(MACEModel):
             "updates": self.updates,
             "electron_energy": self.electron_energy,
         }
+
+
+@register_model("lc_mace")
+class LocalChargeModel(MACEModel):
+    """Local multipoles followed by one dispatched Coulomb evaluation.
+
+    Based on the LocalCharges architecture in ACEsuit/mace-scf at
+    784a510339aacc4412b61b6926ef1a92bca387c0 (MIT). This is a new model,
+    with V1's canonical weights and derivative engine; no SCF or total-charge
+    projection is applied. Dipole coefficients use the solver's (y,z,x) axes.
+    """
+
+    requires_electrostatics = True
+    widen_node_energy = False
+    zbl_in_scale_shift = False
+    kind = "lc_mace"
+
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        return (POLAR_INPUT_SPECS[2],)
+
+    @staticmethod
+    def solver_descriptor(
+        config: ModelConfig,
+        electrostatics: ElectrostaticsConfig,
+        precision: Precision,
+    ) -> ElectrostaticsSolverDescriptor:
+        """Resolve model physics and solver settings once at the build boundary."""
+        settings = config.local_sources
+        if settings is None:
+            raise ValueError("model.local_sources is required")
+        return ElectrostaticsSolverDescriptor(
+            periodicity_profile=electrostatics.periodicity_profile,
+            slab_normal=electrostatics.slab_normal,
+            multipole_max_l=settings.multipole_max_l,
+            smearing_width=settings.multipole_width,
+            kspace_cutoff=float(
+                electrostatics.kspace_cutoff_factor
+                * gto_basis_kspace_cutoff(
+                    [settings.multipole_width],
+                    settings.multipole_max_l,
+                )
+            ),
+            external_field_flags=frozenset({"include_self_interaction"})
+            if settings.energy_self_interaction
+            else frozenset(),
+            precision=precision,
+        )
+
+    def __init__(
+        self,
+        backend,
+        config: ModelConfig,
+        atomic_numbers: Sequence[int],
+        observables: Sequence[ObservableSpec],
+        energy_head: EnergyOutputHead | None,
+        *,
+        settings: ElectrostaticsSolverDescriptor,
+        solver: str = "reference",
+        trains_derivatives: bool = False,
+        avg_num_neighbors: float = 1.0,
+        precision: Precision = "float64",
+        num_heads: int = 1,
+        radial_precision: Precision | None = None,
+    ) -> None:
+        sources = config.local_sources
+        if sources is None or sources.kind != self.kind:
+            raise ValueError(f"model.local_sources.kind must be {self.kind!r}")
+        if energy_head is None:
+            raise ValueError(f"{self.kind} requires an energy observable")
+        if sources.multipole_max_l > config.max_L:
+            raise ValueError("local_sources.multipole_max_l exceeds model.max_L")
+        self.produced_observables = {
+            spec.name: spec
+            for spec in (
+                ObservableSpec(name="dipole", irreps="1o", per_atom=False, units="e*Å"),
+                ObservableSpec(
+                    name="density_coefficients",
+                    irreps=_spherical(sources.multipole_max_l),
+                    per_atom=True,
+                    units="e*Å^l",
+                ),
+                ObservableSpec(name="charges", irreps="0e", per_atom=True, units="e"),
+                ObservableSpec(
+                    name="total_charge", irreps="0e", per_atom=False, units="e"
+                ),
+                ObservableSpec(
+                    name="electrostatic_energy", irreps="0e", per_atom=False, units="eV"
+                ),
+                ObservableSpec(
+                    name="field_energy", irreps="0e", per_atom=False, units="eV"
+                ),
+            )
+        }
+        super().__init__(
+            backend,
+            config,
+            atomic_numbers,
+            [
+                spec
+                for spec in observables
+                if spec.name not in self.produced_observables
+            ],
+            energy_head,
+            avg_num_neighbors=avg_num_neighbors,
+            precision=precision,
+            num_heads=num_heads,
+            radial_precision=radial_precision,
+            last_layer_irreps=config.node_irreps,
+            edge_axes=(1, 2, 0),
+        )
+        self.settings = sources
+        self.total_dtype = getattr(torch, energy_head.accumulate)
+        density_irreps = _spherical(sources.multipole_max_l)
+        self.descriptor = settings
+        with _constructed_in(precision):
+            self.source_maps = nn.ModuleList(
+                self._make_source(backend, config, layer, density_irreps, precision)
+                for layer in self.backbone.layer_irreps
+            )
+        with _constructed_in(self.descriptor.precision):
+            self.coulomb = build_long_range(
+                self.descriptor,
+                solver=solver,
+                trains_derivatives=trains_derivatives,
+            )
+        if self.descriptor.precision != precision:
+            cast_at_boundary(self.coulomb, self.descriptor.precision, precision)
+        self.solver = solver
+
+    def _make_source(self, backend, config, layer, density_irreps, precision):
+        return backend.make_linear(
+            LinearDescriptor(
+                irreps_in=layer,
+                irreps_out=density_irreps,
+                precision=precision,
+            )
+        )
+
+    def solver_record(self) -> dict[str, Any]:
+        """Persist solver identity through the existing artifact contract."""
+        from mace_core.electrostatics import descriptor_record, get_solver
+
+        return {
+            "solver": self.solver,
+            "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
+            "descriptor": descriptor_record(self.descriptor),
+        }
+
+    @property
+    def input_specs(self) -> tuple[InputSpec, ...]:
+        specs = {spec.name: spec for spec in super().input_specs}
+        specs.update({spec.name: spec for spec in self.declared_inputs(self.config)})
+        return tuple(specs.values())
+
+    @property
+    def extra_observables(self) -> tuple[ObservableSpec, ...]:
+        return super().extra_observables + tuple(
+            spec for name, spec in self.produced_observables.items() if name != "dipole"
+        )
+
+    def prepare_model_inputs(self, graph: dict[str, Any], requests=()) -> None:
+        if LONG_RANGE_PLAN not in graph:
+            graph[LONG_RANGE_PLAN] = long_range_plan(graph, self.descriptor)
+
+    def density_and_dipole(self, graph, layers) -> tuple[Tensor, Tensor]:
+        density = torch.stack(
+            [
+                source(layer)
+                for source, layer in zip(self.source_maps, layers, strict=True)
+            ]
+        ).sum(0)
+        dipole = segment_sum(
+            graph["positions"].to(self.total_dtype)
+            * density[:, :1].to(self.total_dtype),
+            graph["batch"],
+            graph["ptr"].shape[0] - 1,
+        )
+        return density, dipole
+
+    def transform_outputs(self, graph, layers, output) -> MACEOutput[Tensor]:
+        """Add Coulomb and +field·dipole energies (eV) before differentiation.
+
+        Site energies retain their short-range meaning, as in the reference.
+        The shared solver and graph builder own periodic/aperiodic boundaries.
+        """
+        density, dipole = self.density_and_dipole(graph, layers)
+        batch, count = graph["batch"], graph["ptr"].shape[0] - 1
+        if self.settings.multipole_max_l:
+            dipole = (
+                dipole
+                + segment_sum(
+                    density[:, 1:4].to(self.total_dtype),
+                    batch,
+                    count,
+                )[:, [2, 0, 1]]
+            )
+        field = graph["external_field"].reshape(count, 3).to(self.total_dtype)
+        field_energy = (field * dipole).sum(-1)
+        electrostatic_energy = self.coulomb(graph, density)
+        assert output.total_energy is not None
+        output.total_energy = output.total_energy + electrostatic_energy + field_energy
+        output.dipole = dipole
+        output.extras.update(
+            {
+                "density_coefficients": density,
+                "charges": density[:, 0],
+                "total_charge": segment_sum(
+                    density[:, 0].to(self.total_dtype), batch, count
+                ),
+                "electrostatic_energy": electrostatic_energy,
+                "field_energy": field_energy,
+            }
+        )
+        return output
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        return {**super().canonical_components(), "source_maps": self.source_maps}
+
+
+@register_model("lsc_mace")
+class LocalSplitChargeModel(LocalChargeModel):
+    """Conservative local transfers and multipoles around formal charges.
+
+    The charge-flow and periodic polarization conventions follow LocalSplitCharges
+    in the same pinned mace-scf reference. Each directed transfer is added to
+    its receiver and subtracted from its sender, including periodic self-images.
+    """
+
+    kind = "lsc_mace"
+    formal_charges: Tensor
+
+    def _make_source(self, backend, config, layer, density_irreps, precision):
+        return SplitChargeSource(
+            backend,
+            config,
+            config.local_sources.multipole_max_l,
+            precision,
+        )
+
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        settings = config.local_sources
+        inputs = LocalChargeModel.declared_inputs(config)
+        if (
+            isinstance(settings, LocalSplitChargeConfig)
+            and settings.formal_charge_input
+        ):
+            inputs += (
+                InputSpec(
+                    name=settings.formal_charge_input,
+                    irreps="0e",
+                    per_atom=True,
+                    units="e",
+                ),
+            )
+        return inputs
+
+    def __init__(
+        self,
+        backend,
+        config: ModelConfig,
+        atomic_numbers: Sequence[int],
+        observables: Sequence[ObservableSpec],
+        energy_head: EnergyOutputHead | None,
+        *,
+        settings: ElectrostaticsSolverDescriptor,
+        solver: str = "reference",
+        trains_derivatives: bool = False,
+        avg_num_neighbors: float = 1.0,
+        precision: Precision = "float64",
+        num_heads: int = 1,
+        radial_precision: Precision | None = None,
+    ):
+        super().__init__(
+            backend,
+            config,
+            atomic_numbers,
+            observables,
+            energy_head,
+            settings=settings,
+            solver=solver,
+            trains_derivatives=trains_derivatives,
+            avg_num_neighbors=avg_num_neighbors,
+            precision=precision,
+            num_heads=num_heads,
+            radial_precision=radial_precision,
+        )
+        sources = self.settings
+        assert isinstance(sources, LocalSplitChargeConfig)
+        if sources.formal_charges is not None and set(sources.formal_charges) != set(
+            atomic_numbers
+        ):
+            raise ValueError(
+                "local_sources.formal_charges must cover exactly "
+                "the model's atomic_numbers"
+            )
+        # A fixed species table belongs to resolved config; this is a derived buffer.
+        self.register_buffer(
+            "formal_charges",
+            torch.tensor(
+                [
+                    (sources.formal_charges or {}).get(number, 0.0)
+                    for number in atomic_numbers
+                ],
+                dtype=getattr(torch, precision),
+            ),
+            persistent=False,
+        )
+
+    def density_and_dipole(self, graph, layers) -> tuple[Tensor, Tensor]:
+        settings = self.settings
+        assert isinstance(settings, LocalSplitChargeConfig)
+        formal = (
+            graph[settings.formal_charge_input].reshape(-1)
+            if settings.formal_charge_input
+            else graph["node_attrs"] @ self.formal_charges
+        ).to(self.total_dtype)
+        positions, batch = graph["positions"], graph["batch"]
+        sender, receiver = graph["edge_index"]
+        vectors = positions[receiver] - positions[sender] + graph["shifts"]
+        edges = EdgeInputs(
+            vectors[:, self.backbone.edge_axes],
+            graph["node_atomic_numbers"],
+            graph["edge_index"],
+            self.backbone.spherical_harmonics,
+            self.backbone.radial_embedding,
+        )
+        flux = (
+            torch.stack(
+                [
+                    cast(SplitChargeSource, source).transfer(
+                        layer, edges.attributes, edges.radial, graph["edge_index"]
+                    )
+                    for source, layer in zip(self.source_maps, layers, strict=True)
+                ]
+            )
+            .to(self.total_dtype)
+            .sum(0)
+        )
+        charges = (
+            formal
+            + segment_sum(flux, receiver, positions.shape[0])
+            - segment_sum(flux, sender, positions.shape[0])
+        )
+        multipoles = torch.stack(
+            [
+                source(layer)
+                for source, layer in zip(self.source_maps, layers, strict=True)
+            ]
+        ).sum(0)
+        density = torch.cat(
+            (charges[:, None].to(multipoles.dtype), multipoles[:, 1:]), dim=-1
+        )
+        count = graph["ptr"].shape[0] - 1
+        dipole = segment_sum(
+            positions.to(self.total_dtype) * formal[:, None], batch, count
+        )
+        # Use image-aware bond vectors, not charge*wrapped_position: the latter
+        # loses the polarization branch when a neighbour crosses the boundary.
+        dipole = dipole + segment_sum(
+            flux[:, None] * vectors.to(self.total_dtype), batch[sender], count
+        )
+        return density, dipole

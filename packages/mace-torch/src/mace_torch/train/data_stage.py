@@ -342,7 +342,13 @@ def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
     from their defaults.
     """
     inputs: tuple[str, ...] = ()
-    if model.model == "les":
+    from mace_torch.models.registry import registered_models
+
+    registered = registered_models().get(model.model)
+    declared_inputs = getattr(registered, "declared_inputs", None)
+    if callable(declared_inputs):
+        inputs = tuple(spec.name for spec in declared_inputs(model))
+    elif model.model == "les":
         inputs = ("external_field",)
     elif model.model == "polar":
         from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS

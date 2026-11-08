@@ -266,6 +266,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/config/fixed_point.py` | Describing a self-consistent relaxation loop. |
 | `mace_core/config/legacy.py` | Every legacy training flag and what became of it, plus the translator. |
 | `mace_core/config/loss.py` | Loss kinds and per-observable weights. |
+| `mace_core/config/local_sources.py` | LC/LSC local multipoles and the exclusive formal-charge input/table contract. |
 | `mace_core/config/model.py` | Architecture, declared observables, readouts, and the polar section. |
 | `mace_core/config/precision.py` | Which dtype each op kind computes and accumulates in, the presets, and degradation on a device without float64. |
 | `mace_core/config/provenance.py` | Turning what a run asked for into what its model records. |
@@ -427,7 +428,8 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/models/__init__.py` | The model and its output layer, re-exported. |
 | `mace_torch/models/base.py` | `MACEModel`: backbone, repulsion and output layer; the class models subclass. |
 | `mace_torch/models/dipoles.py` | `DipoleModel`: a dipole, or a dipole and a polarizability, read off per-atom responses. |
-| `mace_torch/models/electrostatics.py` | `PolarModel`: the charge-aware model, its refined density of multipoles and long-range energy. |
+| `mace_torch/models/electrostatics.py` | Polar density refinement and LC/LSC local sources, sharing solver dispatch and physical derivatives. |
+| `mace_torch/models/registry.py` | Model registration used by data declarations and assembly, outside the forward path. |
 | `mace_torch/models/energy.py` | The energy head: E0s, scale and shift, and the two reductions. |
 | `mace_torch/models/heads.py` | One readout head per declared observable, per head of theory. |
 | `mace_torch/models/les.py` | Long-range LES coupling, latent quantities, Born charges and their applied-field force. |
@@ -438,6 +440,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/nn/backbone.py` | `MACEBackbone`: embeddings, interactions and products, features out. |
 | `mace_torch/nn/embedding.py` | Element and radial embeddings. |
 | `mace_torch/nn/les.py` | Linear and nonlinear Cartesian tensor readouts for LES multipoles. |
+| `mace_torch/nn/charge_transfer.py` | Canonical equivariant bond transfers and higher-multipole sources for LSC-MACE. |
 | `mace_torch/nn/field.py` | The charge-aware blocks: density update, electron-energy readout, channel-pair products. |
 | `mace_torch/nn/graph_features.py` | Declared graph or atomic inputs embedded into scalar node channels. |
 | `mace_torch/nn/interaction.py` | The interaction blocks: convolution, linear, skip. |

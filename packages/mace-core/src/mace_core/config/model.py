@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 
 from mace_core.config.base import ConfigSection
+from mace_core.config.local_sources import LocalSourcesConfig
 from mace_core.elements.default_keys import Storage
 
 __all__ = [
@@ -449,6 +450,7 @@ class ModelConfig(ConfigSection):
     graph_features: tuple[GraphFeatureConfig, ...] = ()
     backend: str = "reference"
     les: LESConfig | None = None
+    local_sources: LocalSourcesConfig | None = None
     polar: PolarConfig = PolarConfig()
     magnetic: MagneticConfig = MagneticConfig()
 
@@ -498,11 +500,15 @@ class ModelConfig(ConfigSection):
         """
         from mace_core.graph import INPUT_KEYS
 
-        return {
+        storages: dict[str, Storage] = {
             spec.name: spec.per
             for spec in self.graph_features
             if spec.name not in INPUT_KEYS
         }
+        charge_input = getattr(self.local_sources, "formal_charge_input", None)
+        if charge_input:
+            storages[charge_input] = "atom"
+        return storages
 
     @field_validator("graph_features")
     @classmethod
@@ -513,6 +519,20 @@ class ModelConfig(ConfigSection):
         if len(set(names)) != len(names):
             raise ValueError("model.graph_features repeats an input name")
         return specs
+
+    @model_validator(mode="after")
+    def _local_source_kind_matches(self):
+        if self.local_sources is not None and self.local_sources.kind != self.model:
+            raise ValueError("model.local_sources.kind must match model.model")
+        charge_input = getattr(self.local_sources, "formal_charge_input", None)
+        for spec in self.graph_features:
+            if spec.name == charge_input and (
+                spec.per != "atom" or spec.input_dim != 1
+            ):
+                raise ValueError(
+                    "formal_charge_input must be a scalar per-atom feature"
+                )
+        return self
 
     def normalization_for_heads(
         self, sources: Mapping[str, str]

@@ -9,6 +9,7 @@ from mace_torch.models.energy import (
 )
 from mace_torch.models.heads import ObservableHead
 from mace_torch.models.outputs import ENERGY_OBSERVABLE, MACEOutputs
+from mace_torch.models.registry import register_model
 
 __all__ = [
     "ENERGY_OBSERVABLE",
@@ -19,4 +20,5 @@ __all__ = [
     "ObservableHead",
     "ScaleShiftSpec",
     "ScalingMethod",
+    "register_model",
 ]
