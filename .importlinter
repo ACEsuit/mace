@@ -115,3 +115,15 @@ forbidden_modules =
     torch
     e3nn
     e3nn_jax
+
+[importlinter:contract:inference-does-not-import-training]
+name = Model construction and inference do not import training
+type = forbidden
+source_modules =
+    mace_torch.models.build
+    mace_torch.data.inputs
+    mace_torch.calculators
+    mace_torch.deploy
+    mace_torch.serialization
+forbidden_modules =
+    mace_torch.train

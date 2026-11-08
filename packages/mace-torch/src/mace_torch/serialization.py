@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import torch
+from mace_core.metadata import ModelMetadata
 from safetensors.torch import load_file, save_file
 from torch import Tensor, nn
 
@@ -59,6 +60,7 @@ __all__ = [
     "load_checkpoint",
     "read_canonical_state",
     "save_checkpoint",
+    "write_model",
 ]
 
 #: What the sidecar says it is, so a reader can refuse someone else's file
@@ -361,3 +363,27 @@ def read_canonical_state(
             )
         state.setdefault(entry["module"], {})[entry["name"]] = value
     return state
+
+
+def write_model(path: str | Path, model: nn.Module, metadata: ModelMetadata) -> Path:
+    """The weights and the record, as one checkpoint.
+
+    The whole resolved configuration goes in the sidecar, because a checkpoint
+    that carried only weights would need its run's command line to be rebuilt
+    and that is the thing least likely to still exist.
+    """
+    from mace_torch.physics.fixed_point import FixedPointDriver
+
+    if isinstance(model, FixedPointDriver):
+        if metadata.config.resolved.get("fixed_point") != model.spec.model_dump(
+            mode="json"
+        ):
+            raise ValueError(
+                "the checkpoint configuration must record "
+                "the fixed-point driver being saved"
+            )
+        underlying = model.engine
+        if not isinstance(underlying, nn.Module):
+            raise TypeError("a saved fixed-point engine must be a torch module")
+        model = underlying
+    return save_checkpoint(path, model, metadata.model_dump(mode="json"))

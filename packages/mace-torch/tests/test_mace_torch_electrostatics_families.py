@@ -36,6 +36,21 @@ ENERGY_STRESS = ENERGY.model_copy(
 )
 
 
+@fp64_only
+def test_registration_refuses_an_electrostatic_family_without_a_solver(monkeypatch):
+    from mace_torch.models import registry
+    from mace_torch.models.base import MACEModel
+
+    monkeypatch.setattr(registry, "MODEL_REGISTRY", {})
+
+    class MissingSolver(MACEModel):
+        requires_electrostatics = True
+
+    with pytest.raises(TypeError, match="must define solver_descriptor"):
+        registry.register_model("missing_solver")(MissingSolver)
+    assert "missing_solver" not in registry.MODEL_REGISTRY
+
+
 def model_for(
     kind,
     *,

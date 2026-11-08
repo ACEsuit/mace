@@ -120,8 +120,8 @@ class DeployedModel:
         from mace_core.data.backend import DatasetStatistics
         from mace_core.elements import ResolvedE0s
 
+        from mace_torch.models.build import build_model
         from mace_torch.serialization import canonical_state, load_canonical_state
-        from mace_torch.train.model_stage import build_model
 
         engine, outputs = build_model(
             self.config,
@@ -225,8 +225,8 @@ def load_deployed(
     from mace_core.data.backend import DatasetStatistics
     from mace_core.elements import ResolvedE0s
 
+    from mace_torch.models.build import build_model
     from mace_torch.serialization import load_checkpoint, read_sidecar
-    from mace_torch.train.model_stage import build_model
 
     source = Path(path)
     manifest = None

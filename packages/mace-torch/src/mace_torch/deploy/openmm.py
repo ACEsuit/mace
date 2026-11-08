@@ -18,10 +18,10 @@ from mace_core.data.configuration import Configuration
 from mace_core.neighbors import NeighborListConfig
 
 from mace_torch.backends.precision import interface_dtype
+from mace_torch.data.inputs import graph_inputs_of
 from mace_torch.deploy.loader import DeployError, load_deployed
 from mace_torch.graph import build_batch
 from mace_torch.neighbors import resolve_neighbor_provider
-from mace_torch.train.data_stage import graph_inputs_of
 
 EV_TO_KJ_MOL = units.mol / units.kJ
 NM_TO_ANGSTROM = 10.0

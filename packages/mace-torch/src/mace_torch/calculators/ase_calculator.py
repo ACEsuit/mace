@@ -86,6 +86,7 @@ from mace_torch.calculators.padding import (
     resolve_budget,
     unpad_outputs,
 )
+from mace_torch.data.inputs import graph_inputs_of, key_specification
 from mace_torch.deploy.loader import DeployedModel, load_deployed
 from mace_torch.graph import build_batch, pad_batch
 from mace_torch.models.outputs import ENERGY_OBSERVABLE
@@ -94,7 +95,6 @@ from mace_torch.nn import MACEBackbone
 from mace_torch.physics import DerivativeEngine
 from mace_torch.physics.fixed_point import FixedPointDriver
 from mace_torch.serialization import FORMAT as CHECKPOINT_FORMAT
-from mace_torch.train.data_stage import graph_inputs_of, key_specification
 
 __all__ = [
     "ENSEMBLE_KEYS",

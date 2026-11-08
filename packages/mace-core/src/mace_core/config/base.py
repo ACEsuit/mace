@@ -11,12 +11,61 @@ import tomllib
 from collections.abc import Iterator, Mapping
 from collections.abc import Set as AbstractSet
 from pathlib import Path
-from typing import Any, Self, get_args, get_origin
+from typing import Any, Never, Self, get_args, get_origin
 
 import yaml
 from pydantic import BaseModel, ConfigDict
 
 __all__ = ["BaseConfig", "ConfigError", "ConfigSection", "read_config_file"]
+
+
+def _immutable(*args: Any, **kwargs: Any) -> Never:
+    raise TypeError(
+        "configuration containers are immutable; use model_copy(update=...)"
+    )
+
+
+class _FrozenDict(dict):
+    """A JSON-compatible mapping whose ordinary mutation operations are refused."""
+
+    __setitem__ = __delitem__ = __ior__ = _immutable
+    clear = pop = popitem = setdefault = update = _immutable
+
+    def __copy__(self) -> Self:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        return self
+
+    def __reduce__(self):
+        # DataLoader workers may receive a configuration through spawn.
+        return type(self), (dict(self),)
+
+
+class _FrozenList(list):
+    """Keep list serialization and equality while refusing in-place changes."""
+
+    __setitem__ = __delitem__ = __iadd__ = __imul__ = _immutable
+    append = clear = extend = insert = pop = remove = reverse = sort = _immutable
+
+    def __copy__(self) -> Self:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        return self
+
+    def __reduce__(self):
+        return type(self), (list(self),)
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, dict):
+        return _FrozenDict((key, _freeze(item)) for key, item in value.items())
+    if isinstance(value, list):
+        return _FrozenList(_freeze(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze(item) for item in value)
+    return value
 
 
 class ConfigError(ValueError):
@@ -61,9 +110,11 @@ def read_config_file(path: str | os.PathLike[str]) -> dict[str, Any]:
 
 
 class ConfigSection(BaseModel):
-    """A node of a config tree: unknown keys are errors, and its attributes
-    cannot be reassigned (a list or dict it holds is not protected). A change
-    is a new validation, `from_dict` on an edited dict.
+    """A validated config node with immutable attributes and nested containers.
+
+    Unknown keys are errors. ``model_copy(update=...)`` validates the updated
+    section, including its cross-field constraints. Dumps remain ordinary
+    editable dictionaries and lists.
 
     Subclasses declare fields only. A subclass that would undo either rule, or
     hold what does not load back from the export (a set, an alias, an excluded
@@ -76,6 +127,32 @@ class ConfigSection(BaseModel):
     # inf/nan as the JSON constants Infinity and NaN, not pydantic's default
     # null, which would turn a value into a different one.
     model_config = ConfigDict(extra="forbid", frozen=True, ser_json_inf_nan="constants")
+
+    def model_post_init(self, context: Any) -> None:
+        for name in type(self).model_fields:
+            object.__setattr__(self, name, _freeze(getattr(self, name)))
+
+    def model_copy(
+        self, *, update: Mapping[str, Any] | None = None, deep: bool = False
+    ) -> Self:
+        """Copy with validated changes, retaining which fields the user supplied.
+
+        Pydantic's default copy trusts updates. A config copy is another public
+        construction path and must enforce the same constraints as its constructor.
+        Existing nested sections retain their own explicit-field provenance.
+        """
+        if not update:
+            return super().model_copy(deep=deep)
+        source = super().model_copy(deep=True) if deep else self
+        values = {name: getattr(source, name) for name in type(self).model_fields}
+        values.update(update)
+        result = type(self).model_validate(_validation_input(values))
+        for name in type(self).model_fields:
+            _preserve_explicit_fields(getattr(result, name), values[name])
+        object.__setattr__(
+            result, "__pydantic_fields_set__", self.model_fields_set | update.keys()
+        )
+        return result
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -95,6 +172,33 @@ class ConfigSection(BaseModel):
         # `_check_schema` checks the section on load instead.
         if cls.__pydantic_complete__:
             _check_section_fields(cls)
+
+
+def _validation_input(value: Any) -> Any:
+    """Before-validators receive the same plain values as a config file."""
+    if isinstance(value, ConfigSection):
+        return value.model_dump(mode="python")
+    if isinstance(value, Mapping):
+        return {key: _validation_input(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_validation_input(item) for item in value)
+    return value
+
+
+def _preserve_explicit_fields(value: Any, original: Any) -> None:
+    """Keep nested user/default provenance when a resolved section is copied."""
+    if isinstance(value, ConfigSection) and isinstance(original, ConfigSection):
+        object.__setattr__(
+            value, "__pydantic_fields_set__", original.model_fields_set.copy()
+        )
+        for name in type(value).model_fields:
+            _preserve_explicit_fields(getattr(value, name), getattr(original, name))
+    elif isinstance(value, Mapping) and isinstance(original, Mapping):
+        for key in value.keys() & original.keys():
+            _preserve_explicit_fields(value[key], original[key])
+    elif isinstance(value, (list, tuple)) and isinstance(original, (list, tuple)):
+        for item, source in zip(value, original, strict=False):
+            _preserve_explicit_fields(item, source)
 
 
 def _types_in(annotation: Any) -> Iterator[type]:

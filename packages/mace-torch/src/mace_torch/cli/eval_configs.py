@@ -85,10 +85,10 @@ def run(args: argparse.Namespace) -> int:
     from mace_torch.calculators.ase_calculator import produced_outputs
     from mace_torch.cli.reporting import print_citations
     from mace_torch.data.graphs import graph_from_configuration
+    from mace_torch.data.inputs import graph_inputs_of, key_specification
     from mace_torch.deploy.loader import load_deployed
     from mace_torch.graph import collate
     from mace_torch.nn import MACEBackbone
-    from mace_torch.train.data_stage import graph_inputs_of, key_specification
 
     for name in ("configs", "model", "output"):
         if getattr(args, name) is None:

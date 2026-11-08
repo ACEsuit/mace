@@ -222,8 +222,8 @@ def convert_legacy(
         VerificationError: If the converted model does not reproduce the
             reference. Nothing is written in that case.
     """
-    from mace_torch.train.checkpoint import write_model
-    from mace_torch.train.data_stage import graph_inputs_of
+    from mace_torch.data.inputs import graph_inputs_of
+    from mace_torch.serialization import write_model
 
     target = Path(output)
     neutral = extract(source, target.with_name(target.name + "-neutral"), python=python)

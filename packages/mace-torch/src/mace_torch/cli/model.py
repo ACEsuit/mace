@@ -31,7 +31,7 @@ def _rebuild(source, config, heads):
     from mace_core.elements import ResolvedE0s
     from mace_core.observables import DEFAULT_CATALOGUE
 
-    from mace_torch.train.model_stage import build_model
+    from mace_torch.models.build import build_model
 
     return build_model(
         config,
@@ -51,7 +51,7 @@ def select_head(args: argparse.Namespace) -> int:
 
     from mace_torch.deploy.loader import load_deployed
     from mace_torch.finetune.transfer import transfer_foundation
-    from mace_torch.train.checkpoint import write_model
+    from mace_torch.serialization import write_model
 
     source_path = args.model or args.model_file
     if source_path is None:
@@ -124,8 +124,11 @@ def convert(args: argparse.Namespace) -> int:
     from mace_torch.canonical import canonical_modules
     from mace_torch.deploy.loader import load_deployed
     from mace_torch.deploy.reference import verify_against_reference
-    from mace_torch.serialization import canonical_state, load_canonical_state
-    from mace_torch.train.checkpoint import write_model
+    from mace_torch.serialization import (
+        canonical_state,
+        load_canonical_state,
+        write_model,
+    )
 
     if args.to_basis == "full":
         raise ValueError(

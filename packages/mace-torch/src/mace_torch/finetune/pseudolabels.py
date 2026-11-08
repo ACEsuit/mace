@@ -536,7 +536,7 @@ def relabelling(
     spec = config.finetune.pseudolabels
     if device is None:
         device = str(next(foundation.engine.parameters()).device)
-    from mace_torch.train.data_stage import graph_inputs_of
+    from mace_torch.data.inputs import graph_inputs_of
 
     fingerprint = foundation_fingerprint(foundation.name)
     inputs = graph_inputs_of(foundation.config.model)

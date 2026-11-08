@@ -67,6 +67,10 @@ class MACEModel(nn.Module):
     model family; the standard energy model keeps scalars in Cartesian order.
     """
 
+    requires_electrostatics: bool = False
+    zbl_in_scale_shift: bool = True
+    widen_node_energy: bool = True
+
     def __init__(
         self,
         backend,

@@ -26,7 +26,13 @@ from typing import Any
 
 from mace_core.kernels.precision import PRODUCTS, WIDTH, Precision, Product, widest
 
-__all__ = ["OP_KINDS", "PRODUCT_KINDS", "PrecisionConfig", "PrecisionPolicy"]
+__all__ = [
+    "DEFAULT_PRECISION",
+    "OP_KINDS",
+    "PRODUCT_KINDS",
+    "PrecisionConfig",
+    "PrecisionPolicy",
+]
 
 #: The op kind of each descriptor class, by name. By name so this module need
 #: not import the descriptors, which import it.
@@ -233,3 +239,7 @@ class PrecisionConfig:
                 ),
             ),
         )
+
+
+#: Shared default for construction and artifact conversion.
+DEFAULT_PRECISION = PrecisionConfig()

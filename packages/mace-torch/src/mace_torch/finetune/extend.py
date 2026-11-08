@@ -123,8 +123,8 @@ def extend_elements(
             or a per-element tensor has no rule here.
     """
     from mace_torch.deploy.loader import DeployedModel, load_deployed
-    from mace_torch.train.checkpoint import write_model
-    from mace_torch.train.model_stage import build_model
+    from mace_torch.models.build import build_model
+    from mace_torch.serialization import write_model
 
     init = init or NewSpeciesInit()
     parent = (

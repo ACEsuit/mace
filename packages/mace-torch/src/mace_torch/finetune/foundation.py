@@ -136,10 +136,10 @@ class Foundation:
         elements far apart.
         """
         from mace_torch.data import GraphDataset, collate_training
+        from mace_torch.data.inputs import graph_inputs_of
         from mace_torch.finetune.subselect import ABSENT
         from mace_torch.nn import MACEBackbone
         from mace_torch.nn.backbone import aggregate_descriptors
-        from mace_torch.train.data_stage import graph_inputs_of
 
         backbone = self.model.get_submodule("backbone")
         assert isinstance(backbone, MACEBackbone)

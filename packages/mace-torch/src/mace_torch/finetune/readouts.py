@@ -36,8 +36,8 @@ def extend_readouts(
     tensors, E0s and normalization are copied without modification. Predictions
     of new heads require training, and descendants inherit no support badge.
     """
-    from mace_torch.train.checkpoint import write_model
-    from mace_torch.train.model_stage import build_model
+    from mace_torch.models.build import build_model
+    from mace_torch.serialization import write_model
 
     if not observables:
         raise ValueError("give at least one new observable")

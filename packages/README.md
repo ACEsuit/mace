@@ -91,6 +91,11 @@ head counts and measured neighbour statistics are runtime inputs. Feature
 tensors use the agreed `mul_ir` layout throughout. The calculator collates a
 structure once and uses the same tensor padding as training.
 
+Configuration sections and their nested dictionaries and lists are immutable.
+Use `model_copy(update={...})` for a validated change; invalid values and unknown
+keys are rejected there as they are during initial construction. Exported
+dictionaries remain editable, and copies preserve which fields the user supplied.
+
 Custom properties are declared in the optional `catalogue` section of the
 training configuration, using `ObservableCatalogue` and `ObservableSpec`.
 List the desired names in `model.observables` and their weights in `loss.weights`.
@@ -202,8 +207,9 @@ packages/
 `mace train` (`mace_core/cli/`, with the command in
 `mace_torch/cli/commands.py`) reads the file and flags into
 `mace_core/config/resolved.py`; `mace_torch/train/data_stage.py` reads the data
-and resolves the E0s and statistics; `mace_torch/train/model_stage.py` builds
-the model; `mace_torch/train/loop.py` trains it and
+and resolves the E0s and statistics; `mace_torch/train/model_stage.py` calls
+the shared `mace_torch/models/build.py` factory and records the training metadata;
+`mace_torch/train/loop.py` trains it and
 `mace_torch/train/checkpoint.py` writes it down.
 
 **A forward pass**, from graph to forces: `mace_torch/data/graphs.py` builds
@@ -275,7 +281,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/config/pseudolabels.py` | Replay labels from the foundation model: their settings and the record of what they were made from. |
 | `mace_core/config/resolved.py` | The whole configuration and the rules that span its sections. |
 | `mace_core/config/runtime.py` | Run name, output directory, seed, device, distribution, logging, plots. |
-| `mace_core/config/section.py` | A section that is immutable once validated. |
+| `mace_core/config/section.py` | Compatibility name for the immutable configuration base. |
 | `mace_core/config/tracking.py` | Experiment tracking settings. |
 | `mace_core/config/training.py` | Optimizers, learning-rate schedules and the training stages. |
 | `mace_core/data/__init__.py` | The data layer's boundary objects, re-exported. |
@@ -385,6 +391,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/data/batch.py` | `TrainingBatch`, collation, the lazy graph dataset and its loader. |
 | `mace_torch/data/distributed_sampler.py` | Splitting an epoch across the processes of a distributed run. |
 | `mace_torch/data/graphs.py` | One structure into a graph and its training targets. |
+| `mace_torch/data/inputs.py` | Model input declarations and property keys shared by training and inference. |
 | `mace_torch/data/transforms.py` | Registered transforms of what a run trains against. |
 | `mace_torch/deploy/__init__.py` | Loading and converting models, re-exported. |
 | `mace_torch/deploy/legacy.py` | Legacy conversion: extract in the legacy venv, import here. |
@@ -430,6 +437,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/legacy-extractor/extract_legacy.py` | Run by the pinned legacy venv to extract a pickle into the neutral format. |
 | `mace_torch/models/__init__.py` | The model and its output layer, re-exported. |
 | `mace_torch/models/base.py` | `MACEModel`: backbone, repulsion and output layer; the class models subclass. |
+| `mace_torch/models/build.py` | Shared model construction, normalization and initialization for training and inference. |
 | `mace_torch/models/dipoles.py` | `DipoleModel`: a dipole, or a dipole and a polarizability, read off per-atom responses. |
 | `mace_torch/models/electrostatics.py` | Polar refinement, LC/LSC sources, QEq and affine SCF, sharing solver dispatch and physical derivatives. |
 | `mace_torch/models/registry.py` | Model registration used by data declarations and assembly, outside the forward path. |
@@ -476,7 +484,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/train/loop.py` | The training loop and stage schedule. |
 | `mace_torch/train/loss.py` | The loss generated from the declared observables. |
 | `mace_torch/train/metrics.py` | Per-head, per-quantity error metrics. |
-| `mace_torch/train/model_stage.py` | Stage two: configuration and data in, model out. |
+| `mace_torch/train/model_stage.py` | Stage two: shared construction, foundation weight transfer and training metadata. |
 | `mace_torch/train/optimizers.py` | Optimizers, parameter groups and schedules. |
 | `mace_torch/train/slurm.py` | Reading a process's place in a SLURM job. |
 | `mace_torch/train/tracking.py` | Reporting to an experiment tracker. |

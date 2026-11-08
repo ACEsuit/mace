@@ -21,8 +21,7 @@ from collections.abc import Callable, Mapping, Sequence
 
 from mace_core.config.data import DataConfig, DatasetSource, HeadDataConfig
 from mace_core.config.e0s import E0sTable
-from mace_core.config.model import ModelConfig
-from mace_core.config.precision import PrecisionConfig
+from mace_core.config.precision import DEFAULT_PRECISION, PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data import (
     Configuration,
@@ -40,7 +39,6 @@ from mace_core.data.xyz import ISOLATED_ATOM_CONFIG_TYPE
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import (
     ObservableCatalogue,
-    RequestedOutputs,
     resolve_requested,
 )
 from mace_core.stages import DataBundle
@@ -48,6 +46,7 @@ from torch.utils.data import DataLoader
 
 from mace_torch.data import GraphDataset, make_loader, target_specs
 from mace_torch.data.augmentation import build_augmentations
+from mace_torch.data.inputs import graph_inputs_of, key_specification
 from mace_torch.data.transforms import apply_transforms
 from mace_torch.finetune.foundation import FoundationContext, FoundationError
 from mace_torch.finetune.ratio import RatioGuardError, repeat_count
@@ -71,11 +70,6 @@ __all__ = [
     "selected_structures",
     "validation_structures",
 ]
-
-#: What a run computes in until a precision section exists to say otherwise.
-#: It is frozen, so one instance serves as every caller's default.
-DEFAULT_PRECISION = PrecisionConfig()
-
 
 logger = logging.getLogger(__name__)
 
@@ -334,45 +328,6 @@ def run_data_stage(
     )
 
 
-def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
-    """The inputs a model reads, per structure or per atom.
-
-    The charge-aware, dipole and magnetic models', and the ones declared as
-    embedded features. Written into every graph built for it, from the file or
-    from their defaults.
-    """
-    inputs: tuple[str, ...] = ()
-    from mace_torch.models.registry import registered_models
-
-    registered = registered_models().get(model.model)
-    declared_inputs = getattr(registered, "declared_inputs", None)
-    if callable(declared_inputs):
-        inputs = tuple(spec.name for spec in declared_inputs(model))
-    elif model.model == "les":
-        inputs = ("external_field",)
-    elif model.model == "polar":
-        from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS
-
-        inputs = POLAR_GRAPH_INPUTS
-    elif model.model in ("dipole", "dielectric"):
-        from mace_torch.models.dipoles import DIPOLE_GRAPH_INPUTS
-
-        inputs = DIPOLE_GRAPH_INPUTS[
-            "fixed" if model.model == "dipole" else "predicted"
-        ]
-    elif model.model == "magnetic":
-        from mace_torch.models.magnetic import MAGNETIC_GRAPH_INPUTS
-
-        inputs = MAGNETIC_GRAPH_INPUTS
-    elif "dipole" in model.observables:
-        # Declared joint energy/dipole readouts need the same fixed charges as
-        # the dipole-only model, through every data and deployment consumer.
-        inputs = ("charges",)
-    return inputs + tuple(
-        feature.name for feature in model.graph_features if feature.name not in inputs
-    )
-
-
 def _of_head(items: Sequence[Configuration], head: str) -> list[Configuration]:
     return [item for item in items if item.head == head]
 
@@ -385,65 +340,6 @@ def _heads(data: DataConfig) -> dict[str, HeadDataConfig]:
             "single-dataset run still has one head; give it a `train_file`."
         )
     return dict(data.heads)
-
-
-def key_specification(
-    data: DataConfig,
-    requested: RequestedOutputs | None = None,
-    *,
-    model: ModelConfig | None = None,
-) -> KeySpecification:
-    """The default property keys, plus the graph inputs this run renamed."""
-    spec = KeySpecification.from_defaults()
-    embedding_specs = dict(data.embedding_specs)
-    if model is not None:
-        for name, storage in model.feature_storages.items():
-            declared = embedding_specs.setdefault(name, {"per": storage})
-            if declared.get("per") != storage:
-                raise ValueError(
-                    f"data.embedding_specs.{name}.per disagrees with "
-                    "model.graph_features"
-                )
-    spec.add_embedding_features(embedding_specs)
-    if model is not None:
-        from mace_torch.models.registry import registered_models
-
-        declared_inputs = getattr(
-            registered_models().get(model.model), "declared_inputs", None
-        )
-        if callable(declared_inputs):
-            for item in declared_inputs(model):
-                keys = spec.atom_keys if item.per_atom else spec.graph_keys
-                keys.setdefault(item.name, item.name)
-    if requested is not None:
-        # Existing labels retain their agreed keys. New properties are read
-        # by their declared name, in the declared per-atom/per-graph storage.
-        known = set(spec.graph_keys) | set(spec.atom_keys)
-        custom = [
-            target for target in target_specs(requested) if target.name not in known
-        ]
-        spec.update(
-            graph_keys={
-                target.name: target.name for target in custom if not target.per_atom
-            },
-            atom_keys={
-                target.name: target.name for target in custom if target.per_atom
-            },
-        )
-        if custom:
-            spec = dataclasses.replace(
-                spec,
-                label_names=tuple(target.name for target in target_specs(requested)),
-            )
-    keys = data.graph_input_keys
-    return spec.update(
-        graph_keys={
-            "elec_temp": keys.elec_temp,
-            "total_spin": keys.total_spin,
-            "total_charge": keys.total_charge,
-            "external_field": keys.external_field,
-        }
-    )
 
 
 def _read_head(

@@ -1133,7 +1133,9 @@ def import_neutral(
         NeutralImportError: If the artifact records a model v1 cannot build,
             constants v1 would not use, or weights that do not fit.
     """
-    from mace_torch.train.model_stage import DEFAULT_PRECISION, build_model
+    from mace_core.config.precision import DEFAULT_PRECISION
+
+    from mace_torch.models.build import build_model
 
     if basis != "reduced":
         raise NeutralImportError(

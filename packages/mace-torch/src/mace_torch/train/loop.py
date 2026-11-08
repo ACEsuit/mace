@@ -264,49 +264,24 @@ def run_train_stage(
         schedule = config.schedule()
         stage = ""
         if resume:
-            if checkpoint_path is None:
-                raise ValueError(
-                    "a resume was asked for and no checkpoint path was given, so "
-                    "there is nothing to resume from."
-                )
-            directory, name = Path(checkpoint_path).parent, Path(checkpoint_path).name
-            latest = latest_run_checkpoint(directory, name)
-            if latest is None:
-                raise FileNotFoundError(
-                    f"no run checkpoint for {name!r} in {directory}, so there is no "
-                    f"run to continue. Starting from scratch instead would report "
-                    f"the first epoch as if it carried on from somewhere."
-                )
-            state = read_run_state(latest)
-            # Every stage up to the one the checkpoint trained in, entered in
-            # order, as the run that wrote it entered them: a stage that names its
-            # own optimizer builds a new one, and restoring into the first stage's
-            # optimizer would have that replace what was restored.
-            for entered in schedule:
-                if stage == state.stage:
-                    break
-                stage = entered.name
-                loss, optimizer, scheduler = _enter_stage(
-                    entered, config, built, model, optimizer, scheduler
-                )
-            if stage != state.stage:
-                raise CheckpointError(
-                    f"{latest} was written in the stage {state.stage!r}, and this "
-                    f"configuration's stages are {[s.name for s in schedule]}. "
-                    f"Resuming in another stage would train with a schedule the "
-                    f"run never had."
-                )
-            resumed = read_run_checkpoint(
-                latest, model=model, optimizer=optimizer, scheduler=scheduler, ema=ema
+            restored = _resume_training(
+                checkpoint_path,
+                config=config,
+                built=built,
+                model=model,
+                schedule=schedule,
+                loss=loss,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                ema=ema,
             )
-            logger.info("Resuming from %s at epoch %d", latest, state.epoch)
-            if resumed.optimizer_state == "reinitialized":
-                logger.warning("Resumed with a new optimizer: %s", resumed.reason)
-            # The best epoch so far belongs to the run that wrote it. Taken from
-            # its model file, so a resumed run that never improves still ends on
-            # it.
-            if Path(checkpoint_path).with_suffix(".safetensors").is_file():
-                best_state = read_canonical_state(checkpoint_path)
+            state, best_state = restored.state, restored.best_state
+            loss, optimizer, scheduler = (
+                restored.loss,
+                restored.optimizer,
+                restored.scheduler,
+            )
+            stage = state.stage
 
         if config.training.dry_run:
             # Before any epoch and before any file: the point of the flag is to
@@ -522,30 +497,9 @@ def run_train_stage(
             epoch = following
 
         set_optimizer_training(optimizer, training=False)
-        if best_state is None and ema is not None:
-            # The run's model is the averaged one. Leaving the stepped weights in
-            # place would return a model that differs from the checkpoint beside
-            # it and from every number the run reported. Before any merge, while
-            # what trains is still what the average was kept over.
-            with torch.no_grad():
-                for parameter, shadow in zip(
-                    (p for p in model.parameters() if p.requires_grad),
-                    ema.shadow,
-                    strict=True,
-                ):
-                    parameter.copy_(shadow)
-        if config.finetune.lora.enabled:
-            # Folded in before anything is read back or reported: a merged model
-            # has the shapes of one never adapted, which is what the checkpoint
-            # already holds, since a checkpoint reads each weight as adapted.
-            merge_lora(model)
-        if best_state is not None:
-            # The run ends on its best epoch, as the frozen tree does by loading
-            # its last checkpoint, which it writes only on an improvement. Ending
-            # on the last epoch instead returns a model that is not the one on
-            # disk, and every number reported after training describes the
-            # wrong one of the two.
-            load_canonical_state(model, best_state)
+        _restore_best_model(
+            model, best_state, ema, merge_adapters=config.finetune.lora.enabled
+        )
 
         if checkpoint_path is not None and processes.is_main:
             # The model the run delivers, written once more at its end: the best
@@ -576,6 +530,111 @@ def run_train_stage(
         raise
     finally:
         tracker.finish(exit_code=exit_code)
+
+
+@dataclass(frozen=True)
+class _ResumedTraining:
+    state: RunState
+    loss: nn.Module
+    optimizer: Optimizer
+    scheduler: LRScheduler | None
+    best_state: dict[str, dict[str, Tensor]] | None
+
+
+def _resume_training(
+    checkpoint_path: str | Path | None,
+    *,
+    config: ResolvedConfig,
+    built: TorchBuiltModel,
+    model: nn.Module,
+    schedule: Sequence[StageConfig],
+    loss: nn.Module,
+    optimizer: Optimizer,
+    scheduler: LRScheduler | None,
+    ema: ExponentialMovingAverage | None,
+) -> _ResumedTraining:
+    """Restore stage-specific optimizer state and the best evaluated weights."""
+    stage = ""
+    best_state = None
+    if checkpoint_path is None:
+        raise ValueError(
+            "a resume was asked for and no checkpoint path was given, so "
+            "there is nothing to resume from."
+        )
+    directory, name = Path(checkpoint_path).parent, Path(checkpoint_path).name
+    latest = latest_run_checkpoint(directory, name)
+    if latest is None:
+        raise FileNotFoundError(
+            f"no run checkpoint for {name!r} in {directory}, so there is no "
+            f"run to continue. Starting from scratch instead would report "
+            f"the first epoch as if it carried on from somewhere."
+        )
+    state = read_run_state(latest)
+    # Every stage up to the one the checkpoint trained in, entered in
+    # order, as the run that wrote it entered them: a stage that names its
+    # own optimizer builds a new one, and restoring into the first stage's
+    # optimizer would have that replace what was restored.
+    for entered in schedule:
+        if stage == state.stage:
+            break
+        stage = entered.name
+        loss, optimizer, scheduler = _enter_stage(
+            entered, config, built, model, optimizer, scheduler
+        )
+    if stage != state.stage:
+        raise CheckpointError(
+            f"{latest} was written in the stage {state.stage!r}, and this "
+            f"configuration's stages are {[s.name for s in schedule]}. "
+            f"Resuming in another stage would train with a schedule the "
+            f"run never had."
+        )
+    resumed = read_run_checkpoint(
+        latest, model=model, optimizer=optimizer, scheduler=scheduler, ema=ema
+    )
+    logger.info("Resuming from %s at epoch %d", latest, state.epoch)
+    if resumed.optimizer_state == "reinitialized":
+        logger.warning("Resumed with a new optimizer: %s", resumed.reason)
+    # The best epoch so far belongs to the run that wrote it. Taken from
+    # its model file, so a resumed run that never improves still ends on
+    # it.
+    if Path(checkpoint_path).with_suffix(".safetensors").is_file():
+        best_state = read_canonical_state(checkpoint_path)
+
+    return _ResumedTraining(state, loss, optimizer, scheduler, best_state)
+
+
+def _restore_best_model(
+    model: nn.Module,
+    best_state: dict[str, dict[str, Tensor]] | None,
+    ema: ExponentialMovingAverage | None,
+    *,
+    merge_adapters: bool,
+) -> None:
+    """Install the evaluated weights, preserving the EMA/LoRA restoration order."""
+    if best_state is None and ema is not None:
+        # The run's model is the averaged one. Leaving the stepped weights in
+        # place would return a model that differs from the checkpoint beside
+        # it and from every number the run reported. Before any merge, while
+        # what trains is still what the average was kept over.
+        with torch.no_grad():
+            for parameter, shadow in zip(
+                (p for p in model.parameters() if p.requires_grad),
+                ema.shadow,
+                strict=True,
+            ):
+                parameter.copy_(shadow)
+    if merge_adapters:
+        # Folded in before anything is read back or reported: a merged model
+        # has the shapes of one never adapted, which is what the checkpoint
+        # already holds, since a checkpoint reads each weight as adapted.
+        merge_lora(model)
+    if best_state is not None:
+        # The run ends on its best epoch, as the frozen tree does by loading
+        # its last checkpoint, which it writes only on an improvement. Ending
+        # on the last epoch instead returns a model that is not the one on
+        # disk, and every number reported after training describes the
+        # wrong one of the two.
+        load_canonical_state(model, best_state)
 
 
 def report_errors(
