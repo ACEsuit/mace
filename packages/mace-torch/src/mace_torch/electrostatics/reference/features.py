@@ -349,6 +349,8 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             ),
         )
 
+        # Store the function itself: Dynamo guards its identity. Cached bound
+        # methods otherwise allow a compiled crystal to be reused for a slab.
         self._precompute_geometry_impl = self._select_precompute_geometry_impl()
         self._forward_dynamic_impl = self._select_forward_dynamic_impl()
 
@@ -367,32 +369,32 @@ class GTOElectrostaticFeatures(torch.nn.Module):
 
     def _select_precompute_geometry_impl(self) -> Callable:
         if self.pbc_handling == "realspace":
-            return self._precompute_geometry_realspace
+            return GTOElectrostaticFeatures._precompute_geometry_realspace
         if self.pbc_handling in ("pbc", "slab", "molecule_in_box"):
-            return self._precompute_geometry_periodic_common
+            return GTOElectrostaticFeatures._precompute_geometry_periodic_common
         if self.pbc_handling == "mixed_periodic":
-            return self._precompute_geometry_mixed_periodic
+            return GTOElectrostaticFeatures._precompute_geometry_mixed_periodic
         if self.pbc_handling == "auto":
-            return self._precompute_geometry_auto
+            return GTOElectrostaticFeatures._precompute_geometry_auto
         if self.pbc_handling == "per_structure":
-            return self._precompute_geometry_per_structure
+            return GTOElectrostaticFeatures._precompute_geometry_per_structure
         raise ValueError(f"Unsupported pbc_handling: {self.pbc_handling}")
 
     def _select_forward_dynamic_impl(self) -> Callable:
         if self.pbc_handling == "realspace":
-            return self._forward_dynamic_realspace
+            return GTOElectrostaticFeatures._forward_dynamic_realspace
         if self.pbc_handling == "pbc":
-            return self._forward_dynamic_pbc
+            return GTOElectrostaticFeatures._forward_dynamic_pbc
         if self.pbc_handling == "slab":
-            return self._forward_dynamic_slab
+            return GTOElectrostaticFeatures._forward_dynamic_slab
         if self.pbc_handling == "molecule_in_box":
-            return self._forward_dynamic_molecule_in_box
+            return GTOElectrostaticFeatures._forward_dynamic_molecule_in_box
         if self.pbc_handling == "mixed_periodic":
-            return self._forward_dynamic_mixed_periodic
+            return GTOElectrostaticFeatures._forward_dynamic_mixed_periodic
         if self.pbc_handling == "auto":
-            return self._forward_dynamic_auto
+            return GTOElectrostaticFeatures._forward_dynamic_auto
         if self.pbc_handling == "per_structure":
-            return self._forward_dynamic_per_structure
+            return GTOElectrostaticFeatures._forward_dynamic_per_structure
         raise ValueError(f"Unsupported pbc_handling: {self.pbc_handling}")
 
     def set_pbc_handling(self, pbc_handling: FeaturePBCHandling) -> None:
@@ -416,6 +418,7 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         dense_pairs: bool = False,
     ) -> torch.Tensor:
         cache = self._precompute_geometry_impl(
+            self,
             k_vectors=k_vectors,
             k_norm2=k_norm2,
             k_vector_batch=k_vector_batch,
@@ -429,6 +432,7 @@ class GTOElectrostaticFeatures(torch.nn.Module):
             dense_pairs=dense_pairs,
         )
         return self._forward_dynamic_impl(
+            self,
             source_feats=source_feats,
             cache=cache,
         )
@@ -454,6 +458,7 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         them; see :meth:`GTOElectrostaticEnergy.forward`.
         """
         cache = self._precompute_geometry_impl(
+            self,
             k_vectors=k_vectors,
             k_norm2=k_norm2,
             k_vector_batch=k_vector_batch,
@@ -474,6 +479,7 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         source_feats: torch.Tensor,
     ) -> torch.Tensor:
         return self._forward_dynamic_impl(
+            self,
             source_feats=source_feats,
             cache=cache,
         )

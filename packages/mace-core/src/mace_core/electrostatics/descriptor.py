@@ -108,13 +108,18 @@ class ScfSpec:
         max_iters: The iteration limit.
         tolerance: The change below which the loop has converged.
         mixing: The fraction of the new iterate taken at each step.
+        method: The equation a fused span must solve. QEq is an exact
+            constrained linear solve; the iteration controls do not apply.
     """
 
     max_iters: int = 50
     tolerance: float = 1e-6
     mixing: float = 1.0
+    method: Literal["fixed_point", "qeq", "qeq_nonperiodic"] = "fixed_point"
 
     def __post_init__(self) -> None:
+        if self.method not in ("fixed_point", "qeq", "qeq_nonperiodic"):
+            raise ValueError(f"unknown self-consistent solve method {self.method!r}")
         if self.max_iters < 1:
             raise ValueError(f"max_iters is {self.max_iters}; at least one is needed.")
         if self.tolerance <= 0:

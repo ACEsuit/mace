@@ -509,6 +509,13 @@ class ReferenceSolver:
     def long_range_features(
         self, descriptor: ElectrostaticsSolverDescriptor
     ) -> nn.Module:
+        if (
+            descriptor.scf_spec is not None
+            and descriptor.scf_spec.method == "qeq_nonperiodic"
+        ):
+            from .reference.qeq import NonperiodicQEqPotential
+
+            return NonperiodicQEqPotential(descriptor.smearing_width)
         return LongRangeFeatures(descriptor, self.name)
 
     def make_scf_solve(

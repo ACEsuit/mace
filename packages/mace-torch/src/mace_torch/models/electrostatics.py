@@ -43,6 +43,7 @@ from mace_core.electrostatics import (
     FeatureProjection,
     PeriodicityProfile,
     RealspaceMethod,
+    ScfSpec,
 )
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision, widest
@@ -56,6 +57,7 @@ from mace_torch.electrostatics import (
     LONG_RANGE_PLAN,
     build_long_range,
     build_long_range_features,
+    build_scf_solve,
     long_range_geometry,
     long_range_plan,
 )
@@ -66,10 +68,12 @@ from mace_torch.electrostatics.reference.gto_utils import (
 from mace_torch.kernels import segment_sum
 from mace_torch.models.base import MACEModel, _constructed_in
 from mace_torch.models.energy import EnergyOutputHead
+from mace_torch.models.heads import ObservableHead
 from mace_torch.models.registry import register_model
 from mace_torch.nn.charge_transfer import SplitChargeSource
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
+from mace_torch.physics.charge_equilibration import ChargeEquilibration
 
 __all__ = [
     "POLAR_EXTRA_ROWS",
@@ -78,6 +82,7 @@ __all__ = [
     "LocalSplitChargeModel",
     "PolarModel",
     "PolarSettings",
+    "QEqModel",
 ]
 
 
@@ -578,8 +583,49 @@ class PolarModel(MACEModel):
         }
 
 
+class _ChargeAwareModel(MACEModel):
+    """Shared input, solver-metadata and planning contracts for source models."""
+
+    requires_electrostatics = True
+    widen_node_energy = False
+    zbl_in_scale_shift = False
+    produced_observables: dict[str, ObservableSpec]
+    descriptor: ElectrostaticsSolverDescriptor
+    solver: str
+
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        return ()
+
+    def solver_record(self) -> dict[str, Any]:
+        """Persist solver identity through the existing artifact contract."""
+        from mace_core.electrostatics import descriptor_record, get_solver
+
+        return {
+            "solver": self.solver,
+            "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
+            "descriptor": descriptor_record(self.descriptor),
+        }
+
+    @property
+    def input_specs(self) -> tuple[InputSpec, ...]:
+        specs = {spec.name: spec for spec in super().input_specs}
+        specs.update({spec.name: spec for spec in self.declared_inputs(self.config)})
+        return tuple(specs.values())
+
+    @property
+    def extra_observables(self) -> tuple[ObservableSpec, ...]:
+        return super().extra_observables + tuple(
+            spec for name, spec in self.produced_observables.items() if name != "dipole"
+        )
+
+    def prepare_model_inputs(self, graph: dict[str, Any], requests=()) -> None:
+        if LONG_RANGE_PLAN not in graph:
+            graph[LONG_RANGE_PLAN] = long_range_plan(graph, self.descriptor)
+
+
 @register_model("lc_mace")
-class LocalChargeModel(MACEModel):
+class LocalChargeModel(_ChargeAwareModel):
     """Local multipoles followed by one dispatched Coulomb evaluation.
 
     Based on the LocalCharges architecture in ACEsuit/mace-scf at
@@ -588,9 +634,6 @@ class LocalChargeModel(MACEModel):
     projection is applied. Dipole coefficients use the solver's (y,z,x) axes.
     """
 
-    requires_electrostatics = True
-    widen_node_energy = False
-    zbl_in_scale_shift = False
     kind = "lc_mace"
 
     @staticmethod
@@ -714,32 +757,6 @@ class LocalChargeModel(MACEModel):
                 precision=precision,
             )
         )
-
-    def solver_record(self) -> dict[str, Any]:
-        """Persist solver identity through the existing artifact contract."""
-        from mace_core.electrostatics import descriptor_record, get_solver
-
-        return {
-            "solver": self.solver,
-            "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
-            "descriptor": descriptor_record(self.descriptor),
-        }
-
-    @property
-    def input_specs(self) -> tuple[InputSpec, ...]:
-        specs = {spec.name: spec for spec in super().input_specs}
-        specs.update({spec.name: spec for spec in self.declared_inputs(self.config)})
-        return tuple(specs.values())
-
-    @property
-    def extra_observables(self) -> tuple[ObservableSpec, ...]:
-        return super().extra_observables + tuple(
-            spec for name, spec in self.produced_observables.items() if name != "dipole"
-        )
-
-    def prepare_model_inputs(self, graph: dict[str, Any], requests=()) -> None:
-        if LONG_RANGE_PLAN not in graph:
-            graph[LONG_RANGE_PLAN] = long_range_plan(graph, self.descriptor)
 
     def density_and_dipole(self, graph, layers) -> tuple[Tensor, Tensor]:
         density = torch.stack(
@@ -940,3 +957,220 @@ class LocalSplitChargeModel(LocalChargeModel):
             flux[:, None] * vectors.to(self.total_dtype), batch[sender], count
         )
         return density, dipole
+
+
+@register_model("qeq")
+class QEqModel(_ChargeAwareModel):
+    """Quadratic charge equilibration with a fixed total charge per structure.
+
+    Architecture and energy convention follow MACEQEq in ACEsuit/mace-scf at
+    784a510339aacc4412b61b6926ef1a92bca387c0 (MIT). The constrained linear
+    solve supplies its implicit derivatives; no iteration history is detached.
+    """
+
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        settings = config.qeq
+        assert settings is not None
+        return (
+            POLAR_INPUT_SPECS[0],
+            POLAR_INPUT_SPECS[2],
+            *tuple(
+                InputSpec(name=name, irreps="0e", per_atom=True, units=units)
+                for name, units in (
+                    (settings.electronegativity_input, "eV/e"),
+                    (settings.hardness_input, "eV/e^2"),
+                )
+                if name is not None
+            ),
+        )
+
+    @staticmethod
+    def solver_descriptor(
+        config: ModelConfig, electrostatics: ElectrostaticsConfig, precision: Precision
+    ) -> ElectrostaticsSolverDescriptor:
+        settings = config.qeq
+        if settings is None:
+            raise ValueError("model.qeq is required")
+        return ElectrostaticsSolverDescriptor(
+            periodicity_profile=electrostatics.periodicity_profile,
+            slab_normal=electrostatics.slab_normal,
+            multipole_max_l=0,
+            smearing_width=settings.multipole_width,
+            kspace_cutoff=float(
+                electrostatics.kspace_cutoff_factor
+                * gto_basis_kspace_cutoff(
+                    [settings.multipole_width, *settings.cutoff_widths], 0
+                )
+            ),
+            external_field_flags=frozenset({"include_self_interaction"})
+            if settings.energy_self_interaction
+            else frozenset(),
+            features=FeatureProjection(
+                0,
+                (settings.multipole_width,),
+                normalization="multipoles",
+                include_self_interaction=settings.energy_self_interaction,
+                quadrupole_corrections=True,
+            ),
+            scf_spec=ScfSpec(
+                method="qeq"
+                if settings.charge_method == "energy"
+                else "qeq_nonperiodic"
+            ),
+            precision=precision,
+        )
+
+    def __init__(
+        self,
+        backend,
+        config: ModelConfig,
+        atomic_numbers: Sequence[int],
+        observables: Sequence[ObservableSpec],
+        energy_head: EnergyOutputHead | None,
+        *,
+        settings: ElectrostaticsSolverDescriptor,
+        solver: str = "reference",
+        trains_derivatives: bool = False,
+        avg_num_neighbors: float = 1.0,
+        precision: Precision = "float64",
+        num_heads: int = 1,
+        radial_precision: Precision | None = None,
+    ) -> None:
+        if config.qeq is None or config.model != "qeq":
+            raise ValueError("QEq requires model.qeq and model.model='qeq'")
+        if energy_head is None:
+            raise ValueError("QEq requires an energy observable")
+        self.produced_observables = {
+            name: ObservableSpec(
+                name=name, irreps=irreps, per_atom=per_atom, units=units
+            )
+            for name, irreps, per_atom, units in (
+                ("dipole", "1o", False, "e*Å"),
+                ("charges", "0e", True, "e"),
+                ("density_coefficients", "0e", True, "e"),
+                ("total_charge", "0e", False, "e"),
+                ("electronegativity", "0e", True, "eV/e"),
+                ("hardness", "0e", True, "eV/e^2"),
+                ("qeq_energy", "0e", False, "eV"),
+                ("electrostatic_energy", "0e", False, "eV"),
+            )
+        }
+        super().__init__(
+            backend,
+            config,
+            atomic_numbers,
+            [
+                spec
+                for spec in observables
+                if spec.name not in self.produced_observables
+            ],
+            energy_head,
+            avg_num_neighbors=avg_num_neighbors,
+            precision=precision,
+            num_heads=num_heads,
+            radial_precision=radial_precision,
+            last_layer_irreps=config.node_irreps,
+            edge_axes=(1, 2, 0),
+        )
+        self.settings = config.qeq
+        self.descriptor, self.solver = settings, solver
+        self.solve_dtype = getattr(torch, settings.precision)
+        with _constructed_in(precision):
+            self.source_maps = nn.ModuleDict(
+                {
+                    name: ObservableHead(
+                        backend,
+                        self.produced_observables[name],
+                        [config.node_irreps] * config.num_interactions,
+                        config.num_channels,
+                        nonlinear=True,
+                        readout_irreps=config.readout.mlp_irreps,
+                        precision=precision,
+                        num_heads=num_heads,
+                        gate=config.readout.gate,
+                    )
+                    for name in (
+                        ("electronegativity", "hardness")
+                        if self.settings.train_hardness
+                        else ("electronegativity",)
+                    )
+                }
+            )
+        with _constructed_in(settings.precision):
+            self.coulomb = build_long_range(
+                settings, solver=solver, trains_derivatives=trains_derivatives
+            )
+            span = build_scf_solve(settings, solver=solver)
+            if span is None:
+                span = ChargeEquilibration(
+                    build_long_range_features(
+                        settings,
+                        solver=solver,
+                        trains_derivatives=trains_derivatives,
+                    )
+                )
+            self.charge_solve = span
+
+    def transform_outputs(self, graph, layers, output) -> MACEOutput[Tensor]:
+        """Add QEq energy at the constrained solution; emit charges in e.
+
+        Electronegativity includes ``+position·field`` (eV/e); this yields
+        ``+field·dipole`` in the energy and changes the equilibrium charges.
+        Site energies retain the short-range meaning of the shared backbone.
+        """
+        batch, count = graph["batch"], graph["ptr"].shape[0] - 1
+        node_head = graph.get("node_head")
+        if node_head is None and "head" in graph:
+            node_head = graph["head"][batch]
+        electronegativity = (
+            self.source_maps["electronegativity"](layers, node_head)
+            .reshape(-1)
+            .to(self.solve_dtype)
+        )
+        if self.settings.electronegativity_input is not None:
+            electronegativity = electronegativity + graph[
+                self.settings.electronegativity_input
+            ].reshape(-1).to(self.solve_dtype)
+        positions = graph["positions"].to(self.solve_dtype)
+        electronegativity = electronegativity + (
+            positions * graph["external_field"].to(self.solve_dtype)[batch]
+        ).sum(-1)
+        hardness = (
+            graph[self.settings.hardness_input].reshape(-1).to(self.solve_dtype)
+            if self.settings.hardness_input is not None
+            else torch.full_like(electronegativity, self.settings.default_hardness)
+        )
+        if self.settings.train_hardness:
+            hardness = hardness + self.source_maps["hardness"](
+                layers, node_head
+            ).reshape(-1).to(self.solve_dtype)
+        geometry = long_range_geometry(graph, self.descriptor)
+        charges = self.charge_solve(
+            graph,
+            electronegativity,
+            hardness,
+            graph["total_charge"].to(self.solve_dtype),
+            geometry,
+        )
+        electrostatic_energy = self.coulomb(graph, charges[:, None], geometry)
+        local = charges * electronegativity + 0.5 * hardness * charges.square()
+        qeq_energy = segment_sum(local, batch, count) + electrostatic_energy
+        assert output.total_energy is not None
+        output.total_energy = output.total_energy + qeq_energy
+        output.dipole = segment_sum(positions * charges[:, None], batch, count)
+        output.extras.update(
+            {
+                "charges": charges,
+                "density_coefficients": charges[:, None],
+                "total_charge": segment_sum(charges, batch, count),
+                "electronegativity": electronegativity,
+                "hardness": hardness,
+                "qeq_energy": qeq_energy,
+                "electrostatic_energy": electrostatic_energy,
+            }
+        )
+        return output
+
+    def canonical_components(self) -> dict[str, nn.Module | None]:
+        return {**super().canonical_components(), "source_maps": self.source_maps}

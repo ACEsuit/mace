@@ -13,7 +13,7 @@ The oracle runs unmodified, in a child process with three clean checkouts:
 | `elec3-legacy` | [ACEsuit/mace](https://github.com/ACEsuit/mace) | `9e223a1dd2e20eacd8e6bd551775adc7bd3a0682` (v0.3.14) |
 | `elec3-longrange` | [WillBaldwin0/graph_electrostatics](https://github.com/WillBaldwin0/graph_electrostatics) | `e0eb8945c21e203656f4e0bbece5d1da488b6753` |
 
-The pins live in `targets/elec3.py`. The external version assertion remains
+The pins live in `targets/_electrostatics_oracle.py`. The external version assertion remains
 intact, and the repository's frozen `mace/` is untouched. The test-only bridge
 projects backbone weights into the agreed reduced basis and copies the source
 readouts. LSC omits the unused monopole readout and tensor-product paths that
@@ -57,6 +57,7 @@ MACE_REQUIRE_CAPS=gpu,cueq python -m pytest \
 ```
 
 The default source directory is the ignored repository `scripts/` directory.
-QEq, FixedPointSCF and EnergyFunctionalSCF have no goldens from this target yet.
+QEq has a [separate capture target](elec3_qeq.md). FixedPointSCF and
+EnergyFunctionalSCF remain pending.
 The [implementation record](../../../docs/reforge/gate3/2026-11-08/elec3-local-sources.md)
 lists supported options and the remaining ELEC-3 scope.

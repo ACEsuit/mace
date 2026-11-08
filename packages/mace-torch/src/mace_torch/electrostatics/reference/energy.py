@@ -95,23 +95,25 @@ class GTOElectrostaticEnergy(torch.nn.Module):
             include_self_interaction=include_self_interaction,
         )
         self.monopole_dipole_correction = MonopoleDipoleCorrectionBlock(density_max_l)
+        # Store the function itself: Dynamo guards its identity. Cached bound
+        # methods otherwise allow a compiled crystal to be reused for a slab.
         self._forward_impl = self._select_forward_impl()
 
     def _select_forward_impl(self) -> Callable:
         if self.pbc_handling == "realspace":
-            return self._forward_realspace
+            return GTOElectrostaticEnergy._forward_realspace
         if self.pbc_handling == "pbc":
-            return self._forward_pbc
+            return GTOElectrostaticEnergy._forward_pbc
         if self.pbc_handling == "slab":
-            return self._forward_slab
+            return GTOElectrostaticEnergy._forward_slab
         if self.pbc_handling == "molecule_in_box":
-            return self._forward_molecule_in_box
+            return GTOElectrostaticEnergy._forward_molecule_in_box
         if self.pbc_handling == "mixed_periodic":
-            return self._forward_mixed_periodic
+            return GTOElectrostaticEnergy._forward_mixed_periodic
         if self.pbc_handling == "auto":
-            return self._forward_auto
+            return GTOElectrostaticEnergy._forward_auto
         if self.pbc_handling == "per_structure":
-            return self._forward_per_structure
+            return GTOElectrostaticEnergy._forward_per_structure
         raise ValueError(f"Unsupported pbc_handling: {self.pbc_handling}")
 
     def set_pbc_handling(self, pbc_handling: PBCHandling) -> None:
@@ -141,6 +143,7 @@ class GTOElectrostaticEnergy(torch.nn.Module):
         lets a compiled model trace this at static shapes.
         """
         return self._forward_impl(
+            self,
             k_vectors=k_vectors,
             k_norm2=k_norm2,
             k_vector_batch=k_vector_batch,

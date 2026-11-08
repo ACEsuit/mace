@@ -7,6 +7,9 @@ https://github.com/WillBaldwin0/graph_electrostatics at commit
 MIT License, whose text is in ``LICENSE.md`` beside them, and they keep their
 authorship.
 
+The additional ``qeq.py`` implements the separate analytic equation from
+ACEsuit/mace-scf; its pinned attribution is in that file.
+
 Only the part the long-range energy and the electrostatic features need is
 here: the energy, the features, the Gaussian basis, the k-vectors, the
 real-space sum, the slab and molecule corrections, and the helpers. What was

@@ -267,6 +267,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/config/legacy.py` | Every legacy training flag and what became of it, plus the translator. |
 | `mace_core/config/loss.py` | Loss kinds and per-observable weights. |
 | `mace_core/config/local_sources.py` | LC/LSC local multipoles and the exclusive formal-charge input/table contract. |
+| `mace_core/config/qeq.py` | Quadratic charge equilibration and optional atomic input contracts. |
 | `mace_core/config/model.py` | Architecture, declared observables, readouts, and the polar section. |
 | `mace_core/config/precision.py` | Which dtype each op kind computes and accumulates in, the presets, and degradation on a device without float64. |
 | `mace_core/config/provenance.py` | Turning what a run asked for into what its model records. |
@@ -405,6 +406,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/electrostatics/reference/features.py` | `GTOElectrostaticFeatures`: the potential projected onto each atom. |
 | `mace_torch/electrostatics/reference/gto_utils.py` | Gaussian basis, normalizations, self-interaction and applied-field blocks. |
 | `mace_torch/electrostatics/reference/kspace.py` | Reciprocal-space vectors and Fourier series. |
+| `mace_torch/electrostatics/reference/qeq.py` | The analytic Gaussian potential for the alternate nonperiodic QEq equation. |
 | `mace_torch/electrostatics/reference/realspace_electrostatics.py` | The open-system sum by displaced charges, over complete pair lists. |
 | `mace_torch/electrostatics/reference/slabs.py` | The slab dipole correction and the molecule-in-box corrections. |
 | `mace_torch/electrostatics/reference/utils.py` | Scatter and dense-batch helpers. |
@@ -450,6 +452,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/nn/radial.py` | Radial bases, cutoffs, distance transforms and the ZBL repulsion. |
 | `mace_torch/nn/radial_mlp.py` | The radial MLP that produces the convolution's path weights. |
 | `mace_torch/physics/__init__.py` | The derivative engine, re-exported. |
+| `mace_torch/physics/charge_equilibration.py` | Constrained charge solving with implicit linear derivatives and a dispatched potential. |
 | `mace_torch/physics/fixed_point.py` | Relaxing a declared input to a fixed point around the engine. |
 | `mace_torch/physics/outputs.py` | `DerivativeEngine`: strain, forces, stress, virials, Hessian. |
 | `mace_torch/serialization.py` | Checkpoints as canonical tensors and a JSON sidecar, no pickle. |

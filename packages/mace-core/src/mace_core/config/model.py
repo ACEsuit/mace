@@ -24,6 +24,7 @@ from pydantic import Field, field_validator, model_validator
 
 from mace_core.config.base import ConfigSection
 from mace_core.config.local_sources import LocalSourcesConfig
+from mace_core.config.qeq import QEqConfig
 from mace_core.elements.default_keys import Storage
 
 __all__ = [
@@ -451,6 +452,7 @@ class ModelConfig(ConfigSection):
     backend: str = "reference"
     les: LESConfig | None = None
     local_sources: LocalSourcesConfig | None = None
+    qeq: QEqConfig | None = None
     polar: PolarConfig = PolarConfig()
     magnetic: MagneticConfig = MagneticConfig()
 
@@ -508,6 +510,8 @@ class ModelConfig(ConfigSection):
         charge_input = getattr(self.local_sources, "formal_charge_input", None)
         if charge_input:
             storages[charge_input] = "atom"
+        if self.qeq is not None:
+            storages.update(dict.fromkeys(self.qeq.atomic_inputs, "atom"))
         return storages
 
     @field_validator("graph_features")
@@ -524,6 +528,16 @@ class ModelConfig(ConfigSection):
     def _local_source_kind_matches(self):
         if self.local_sources is not None and self.local_sources.kind != self.model:
             raise ValueError("model.local_sources.kind must match model.model")
+        if self.qeq is not None and self.qeq.kind != self.model:
+            raise ValueError("model.qeq.kind must match model.model")
+        if self.qeq is not None:
+            for spec in self.graph_features:
+                if spec.name in self.qeq.atomic_inputs and (
+                    spec.per != "atom" or spec.input_dim != 1
+                ):
+                    raise ValueError(
+                        "QEq atomic inputs must be scalar per-atom features"
+                    )
         charge_input = getattr(self.local_sources, "formal_charge_input", None)
         for spec in self.graph_features:
             if spec.name == charge_input and (
