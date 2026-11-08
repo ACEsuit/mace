@@ -80,6 +80,25 @@ def requested_for(catalogue):
     return resolve_requested(("q", name), catalogue), name
 
 
+def test_missing_atomic_scalar_labels_keep_scalar_shape():
+    catalogue = ObservableCatalogue(
+        inputs=(),
+        observables=(
+            ObservableSpec(
+                name="atomic_scalar", irreps="0e", per_atom=True, units="eV"
+            ),
+        ),
+    )
+    specs = target_specs(resolve_requested(("atomic_scalar",), catalogue))
+    configuration = Configuration(
+        atomic_numbers=np.ones(3, dtype=int), positions=np.zeros((3, 3))
+    )
+    targets, weights = targets_from_configuration(configuration, specs, 3)
+    assert targets["atomic_scalar"].shape == (3,)
+    assert np.array_equal(targets["atomic_scalar"], np.zeros(3))
+    assert weights["atomic_scalar"] == 0.0
+
+
 @pytest.mark.parametrize(
     "irreps,per_atom,wrt,input_irreps,input_per_atom,shape,atom,axis",
     [
@@ -142,7 +161,7 @@ def labelled_batch(catalogue):
         requested,
         name,
         layout,
-        collate_training([dataset[0], dataset[1]], z_table=AtomicNumberTable([1])),
+        collate_training([dataset[0], dataset[1]]),
     )
 
 

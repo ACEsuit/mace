@@ -45,7 +45,7 @@ from torch.utils.data import DataLoader
 
 from mace_torch.data import GraphDataset, make_loader, target_specs
 from mace_torch.data.augmentation import build_augmentations
-from mace_torch.data.inputs import graph_inputs_of, key_specification
+from mace_torch.data.inputs import key_specification
 from mace_torch.data.transforms import apply_transforms
 from mace_torch.finetune.foundation import FoundationContext, FoundationError
 from mace_torch.finetune.ratio import RatioGuardError, repeat_count
@@ -63,8 +63,6 @@ from mace_torch.train.loaders import build_training_loader
 __all__ = [
     "DEFAULT_PRECISION",
     "DataStageError",
-    "graph_inputs_of",
-    "key_specification",
     "run_data_stage",
     "selected_structures",
     "validation_structures",
@@ -267,7 +265,6 @@ def run_data_stage(
 
     specs = target_specs(requested)
     head_names = tuple(heads)
-    graph_inputs = graph_inputs_of(config.model)
 
     augmentations = build_augmentations(
         [(spec.name, spec.settings) for spec in config.data.augmentations]
@@ -280,7 +277,6 @@ def run_data_stage(
             z_table=z_table,
             targets=specs,
             heads=head_names,
-            graph_inputs=graph_inputs,
             features=config.model.feature_storages,
             augmentations=augmentations if augment else (),
         )
@@ -293,7 +289,6 @@ def run_data_stage(
     train_loader = build_training_loader(
         {name: build(_of_head(train, name), augment=True) for name in head_names},
         mode=config.training.head_balancing,
-        z_table=z_table,
         batch_size=config.training.batch_size,
         seed=config.runtime.seed,
         float_dtype=precision.model,

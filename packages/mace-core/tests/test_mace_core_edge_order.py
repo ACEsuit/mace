@@ -122,11 +122,12 @@ def test_optional_host_batch_search_is_used_and_preserves_order():
 
 def test_stateful_provider_cannot_advertise_batch_search():
     from mace_core.neighbors import (
+        AllPairsBackend,
         NeighborBackendNotAvailableError,
         neighbor_capabilities,
     )
 
-    class Invalid:
+    class Invalid(AllPairsBackend):
         def capabilities(self):
             return NeighborListCapabilities("invalid", stateful=True)
 

@@ -155,7 +155,6 @@ def run(args: argparse.Namespace) -> int:
                 cutoff=deployed.r_max,
                 z_table=deployed.z_table,
                 head=deployed.heads.index(head),
-                graph_inputs=inputs,
                 features=features,
             )
             for atoms in batch_atoms

@@ -126,7 +126,7 @@ def checkpoint(tmp_path_factory, request):
 
 def water_graph(z_table, head=0):
     configuration = run_water(z_table)
-    batch = collate_training([configuration], z_table=z_table)
+    batch = collate_training([configuration])
     batch.graph["head"] = torch.tensor([head])
     return batch.graph
 
@@ -364,7 +364,7 @@ def test_an_element_outside_the_foundation_is_refused(checkpoint):
 
 
 def test_a_checkpoint_recording_no_heads_is_refused(tmp_path):
-    """One written before the record carried them cannot say its elements."""
+    """A native checkpoint must record each head's element energies."""
     import json
 
     from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
@@ -380,18 +380,19 @@ def test_a_checkpoint_recording_no_heads_is_refused(tmp_path):
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
         provenance=Provenance(versions={"mace-torch-v1": "0"}),
     )
-    (tmp_path / "old.json").write_text(
+    (tmp_path / "missing_heads.json").write_text(
         json.dumps(
             {
                 "format": "mace-v1-checkpoint",
                 "version": VERSION,
                 "config": record.model_dump(mode="json"),
+                "layout": {},
                 "tensors": [],
             }
         )
     )
     with pytest.raises(FoundationError, match="records no isolated-atom energies"):
-        read_foundation(tmp_path / "old.safetensors", CATALOGUE)
+        read_foundation(tmp_path / "missing_heads.safetensors", CATALOGUE)
 
 
 # ---------------------------------------------------------------------------

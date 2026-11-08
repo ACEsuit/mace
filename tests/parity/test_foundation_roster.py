@@ -36,9 +36,9 @@ from mace_core.data.configuration import Configuration
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
+from mace_torch.data.inputs import graph_inputs_of
 from mace_torch.deploy.neutral_io import import_neutral
 from mace_torch.deploy.reference import verify_against_reference
-from mace_torch.train.data_stage import graph_inputs_of
 
 from tests.golden import foundation_artifacts as fa
 from tests.golden.harness import load_fixtures, tolerance
@@ -237,12 +237,9 @@ def v1_outputs(
         cutoff=float(imported.config.model.r_max),
         z_table=imported.z_table,
         head=head,
-        graph_inputs=inputs,
     )
     float_dtype = str(next(imported.engine.parameters()).dtype).removeprefix("torch.")
-    batch = collate_training(
-        [(graph, {}, {})], z_table=imported.z_table, float_dtype=float_dtype
-    )
+    batch = collate_training([(graph, {}, {})], float_dtype=float_dtype)
     flat = {
         key: value.to(device) if isinstance(value, torch.Tensor) else value
         for key, value in batch.graph.items()

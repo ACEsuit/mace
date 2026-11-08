@@ -136,7 +136,6 @@ class Foundation:
         elements far apart.
         """
         from mace_torch.data import GraphDataset, collate_training
-        from mace_torch.data.inputs import graph_inputs_of
         from mace_torch.finetune.subselect import ABSENT
         from mace_torch.nn import MACEBackbone
         from mace_torch.nn.backbone import aggregate_descriptors
@@ -149,7 +148,6 @@ class Foundation:
             z_table=self.z_table,
             targets=(),
             heads=self.heads,
-            graph_inputs=graph_inputs_of(self.config.model),
             features=self.config.model.feature_storages,
         )
         parameter = next(backbone.parameters())
@@ -159,7 +157,6 @@ class Foundation:
             for index in range(len(dataset)):
                 batch = collate_training(
                     [dataset[index]],
-                    z_table=self.z_table,
                     float_dtype=dtype,
                     features=dataset.features,
                 ).to(parameter.device)
@@ -200,9 +197,8 @@ def read_foundation(
     guessed, so the model is built with placeholders and then loaded.
 
     Raises:
-        FoundationError: If the record carries no heads, which is a checkpoint
-            written before heads were recorded, or heads that disagree about
-            the elements.
+        FoundationError: If the record lacks head energies or its heads
+            disagree about the elements.
     """
     from mace_torch.deploy.loader import DeployError, load_deployed
 

@@ -78,7 +78,7 @@ def graph_from_builder(positions, cell, pbc, cutoff: float = 5.0) -> dict:
         pbc=pbc,
     )
     item = graph_from_configuration(configuration, cutoff=cutoff, z_table=TABLE)
-    return dict(collate_training([(item, {}, {})], z_table=TABLE).graph)
+    return dict(collate_training([(item, {}, {})]).graph)
 
 
 #: A neutral water's multipoles, charges then dipoles, in the component order.

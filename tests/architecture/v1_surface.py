@@ -173,16 +173,17 @@ def config_construction_violations(source: str, path: str) -> list[str]:
         ]
         keyword_only = list(arguments.kwonlyargs)
         parameters = positional + keyword_only
-        configs = [
-            argument for argument in parameters
-            if any(name.endswith("Config") for name in _annotation_names(argument.annotation))
-        ]
         runtime = {
             "backend", "atomic_numbers", "observables", "energy_head",
             "avg_num_neighbors", "precision", "radial_precision", "node_inputs",
             "num_heads", "last_layer_irreps", "edge_axes", "settings", "solver",
-            "trains_derivatives", "saturation",
+            "trains_derivatives", "saturation", "electrostatics",
         }
+        configs = [
+            argument for argument in parameters
+            if argument.arg not in runtime
+            and any(name.endswith("Config") for name in _annotation_names(argument.annotation))
+        ]
         extra = [
             argument.arg for argument in parameters
             if argument not in configs and argument.arg not in runtime

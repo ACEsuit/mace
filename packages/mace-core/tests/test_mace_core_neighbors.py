@@ -416,8 +416,9 @@ def test_a_backend_registered_through_an_entry_point_is_discovered(
         textwrap.dedent(
             """
             import numpy as np
+            from mace_core.neighbors import AllPairsBackend
 
-            class DummyBackend:
+            class DummyBackend(AllPairsBackend):
                 def search(self, positions, cutoff, geometry):
                     return np.zeros((2, 0), np.int64), np.zeros((0, 3), np.int64)
             """
@@ -445,7 +446,7 @@ def test_a_backend_registered_through_an_entry_point_is_discovered(
 
 
 def test_a_backend_returning_malformed_edges_is_refused():
-    class Broken:
+    class Broken(AllPairsBackend):
         def search(self, positions, cutoff, geometry):
             return np.zeros((3, 1), np.int64), np.zeros((1, 3), np.int64)
 
@@ -479,6 +480,23 @@ def test_resolving_a_name_imports_only_that_backend(tmp_path, monkeypatch):
     assert "sets up a device" in listed["heavy"].reason
 
 
+def test_a_provider_without_capabilities_is_refused(tmp_path, monkeypatch):
+    _register_module(
+        tmp_path,
+        monkeypatch,
+        "undeclared",
+        """
+        class Backend:
+            def search(self, positions, cutoff, geometry):
+                raise AssertionError("must be refused before searching")
+        """,
+    )
+    with pytest.raises(
+        NeighborBackendNotAvailableError, match=r"undeclared.*capabilities"
+    ):
+        get_neighbor_backend("undeclared")
+
+
 def test_the_settings_reach_the_backend_factory(tmp_path, monkeypatch):
     _register_module(
         tmp_path,
@@ -487,12 +505,13 @@ def test_the_settings_reach_the_backend_factory(tmp_path, monkeypatch):
         """
         import numpy as np
         from mace_core.config import ConfigSection
+        from mace_core.neighbors import AllPairsBackend
         from pydantic import Field
 
         class Settings(ConfigSection):
             skin: float = Field(default=0.0, ge=0)
 
-        class Backend:
+        class Backend(AllPairsBackend):
             settings_section = Settings
 
             def __init__(self, settings=None):

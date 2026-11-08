@@ -66,7 +66,6 @@ def test_missing_labels_preserve_loss_and_every_mapped_gradient(anchor, stress):
     )
     batch = collate_training(
         [dataset[i] for i in range(len(dataset))],
-        z_table=AtomicNumberTable(numbers),
         float_dtype="float64",
     )
     legacy_output = legacy(

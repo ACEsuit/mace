@@ -80,13 +80,12 @@ registered only through its entry point, and it exists to be checked: CI runs
 the whole conformance suite over it on every change, and nothing in the other
 four packages may name it. Its README is the template for writing a backend.
 
-## Checkpoints across the agreed backbone integration
+## Checkpoints
 
-The integrated V1 tree writes checkpoint format **3**, with raw linear and skip
-weights and the reviewed component identities. Pre-integration V1 checkpoints
-in format 2 are refused explicitly; their folded normalizations cannot be read
-as raw weights. Keep the old V1 environment for those checkpoints. Legacy pickle
-models can be extracted and converted again with the current converter.
+V1 writes checkpoint format **1.0**, with raw linear and skip weights and the
+canonical component identities. Unpublished V1 formats have no compatibility
+layer or migration path. Legacy pickle models enter through the explicit
+converter.
 
 Model settings now use `radial_basis.num_basis` and `cutoff.polynomial_order`;
 interactions are named `plain`, `residual`, `density`, `density_residual` or
@@ -434,7 +433,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/finetune/foundation.py` | What a run reads from its foundation model. |
 | `mace_torch/finetune/freeze.py` | Freezing parameter groups up to a level. |
 | `mace_torch/finetune/lora.py` | Low-rank adapters in place of the weights they adapt. |
-| `mace_torch/finetune/pseudolabels.py` | Generating replay labels once per run, writing them exactly, and checking a reuse. |
+| `mace_torch/finetune/pseudolabels.py` | Generate replay labels, store them as a core HDF5 dataset with provenance, and validate reuse. |
 | `mace_torch/finetune/ratio.py` | Repeating the other heads when one head dominates. |
 | `mace_torch/finetune/replay.py` | The published replay datasets. |
 | `mace_torch/finetune/subselect.py` | Keeping a representative subset of a dataset. |
@@ -469,7 +468,6 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/nn/graph_features.py` | Declared graph or atomic inputs embedded into scalar node channels. |
 | `mace_torch/nn/interaction.py` | The interaction blocks: convolution, linear, skip. |
 | `mace_torch/nn/magnetic.py` | The moment-reading blocks: moment features, interaction and product couplings with the moment. |
-| `mace_torch/nn/node_inputs.py` | Declared per-node inputs mixed into the features. |
 | `mace_torch/nn/product_basis.py` | The many-body product on the backend's contraction. |
 | `mace_torch/nn/radial.py` | Radial bases, cutoffs, distance transforms and the ZBL repulsion. |
 | `mace_torch/physics/__init__.py` | The derivative engine, re-exported. |

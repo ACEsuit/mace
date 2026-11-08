@@ -53,15 +53,14 @@ class TargetSpec:
             per-graph quantity concatenated per node gives an array of the
             right dtype and the wrong length.
         value_shape: Shape of one atom's or structure's value. Missing labels
-            use the same shape with zero weight. ``None`` retains the legacy
-            scalar-per-graph or vector-per-atom fallback for manual specs.
+            use the same shape with zero weight. A scalar has shape ``()``.
         output_row_axis: The model output's atom/graph axis. Training labels
             always put rows first; tensor responses from the engine put them second.
     """
 
     name: str
     per_atom: bool
-    value_shape: tuple[int, ...] | None = None
+    value_shape: tuple[int, ...]
     output_row_axis: int = 0
 
 
@@ -132,7 +131,6 @@ def graph_from_configuration(
     z_table: AtomicNumberTable,
     head: int = 0,
     weight: float = 1.0,
-    graph_inputs: Sequence[str] = (),
     features: Mapping[str, Storage] | None = None,
     neighbor_backend: NeighborListBackend | None = None,
 ) -> dict[str, np.ndarray]:
@@ -147,10 +145,6 @@ def graph_from_configuration(
         head: Which head this structure belongs to, as a position in the
             model's head list.
         weight: Its weight in the loss.
-        graph_inputs: The inputs the model reads, by name, per structure or per
-            atom. Each is taken from the structure's properties, or from
-            :data:`~mace_core.graph.GRAPH_INPUT_DEFAULTS` or
-            :data:`~mace_core.graph.NODE_INPUT_DEFAULTS` when it has none.
         features: Custom input storage. A declared input missing from the
             structure is refused; it has no schema default.
 
@@ -199,30 +193,20 @@ def targets_from_configuration(
     properties: Mapping[str, object] = configuration.properties
     for spec in specs:
         value = properties.get(spec.name)
+        shape = (num_atoms if spec.per_atom else 1, *spec.value_shape)
         if value is None:
-            shape = spec.value_shape
-            if shape is None:
-                shape = (3,) if spec.per_atom else ()
-            values[spec.name] = np.zeros(
-                (num_atoms if spec.per_atom else 1, *shape), dtype=float
-            )
+            values[spec.name] = np.zeros(shape, dtype=float)
             weights[spec.name] = 0.0
             continue
         array = np.asarray(value, dtype=float)
-        if spec.value_shape is None:
-            values[spec.name] = (
-                array if spec.per_atom else array.reshape(1, *array.shape)
+        if array.size != prod(shape) or (
+            spec.per_atom and (array.ndim == 0 or array.shape[0] != num_atoms)
+        ):
+            raise ValueError(
+                f"target {spec.name!r} has shape {array.shape}; expected "
+                f"{shape} with atom/graph rows first "
+                "(trailing axes may be flattened)"
             )
-        else:
-            shape = (num_atoms if spec.per_atom else 1, *spec.value_shape)
-            if array.size != prod(shape) or (
-                spec.per_atom and (array.ndim == 0 or array.shape[0] != num_atoms)
-            ):
-                raise ValueError(
-                    f"target {spec.name!r} has shape {array.shape}; expected "
-                    f"{shape} with atom/graph rows first "
-                    "(trailing axes may be flattened)"
-                )
-            values[spec.name] = array.reshape(shape)
+        values[spec.name] = array.reshape(shape)
         weights[spec.name] = float(configuration.property_weights.get(spec.name, 1.0))
     return values, weights

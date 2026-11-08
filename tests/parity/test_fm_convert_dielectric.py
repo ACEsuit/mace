@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 import torch
 from mace_core.observables import DEFAULT_CATALOGUE
+from mace_torch.data.inputs import graph_inputs_of
 from mace_torch.deploy.legacy import convert_legacy
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.deploy.reference import VerificationError, verify_against_reference
 from mace_torch.serialization import canonical_state
-from mace_torch.train.data_stage import graph_inputs_of
 
 from tests.golden import harness
 from tests.golden.build_dielectric_anchor import MODEL_PATH

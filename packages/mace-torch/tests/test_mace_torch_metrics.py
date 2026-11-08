@@ -73,9 +73,7 @@ def batch_of(*configurations):
     dataset = GraphDataset(
         list(configurations), cutoff=0.5, z_table=Z_TABLE, targets=SPECS
     )
-    return collate_training(
-        [dataset[index] for index in range(len(configurations))], z_table=Z_TABLE
-    )
+    return collate_training([dataset[index] for index in range(len(configurations))])
 
 
 def measured(batch, energies, forces) -> dict[str, float]:

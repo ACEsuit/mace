@@ -9,12 +9,12 @@ import pytest
 import torch
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_core.weights.neutral_format import read_neutral, write_neutral
+from mace_torch.data.inputs import graph_inputs_of
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.deploy.neutral_io import import_neutral
 from mace_torch.deploy.reference import verify_against_reference
 from mace_torch.serialization import canonical_state
 from mace_torch.train import write_model
-from mace_torch.train.data_stage import graph_inputs_of
 
 from tests.golden.harness import FP64_CPU_REFERENCE as ROW
 from tests.parity.test_dipole_parity import (

@@ -95,7 +95,10 @@ def test_there_is_one_statistics_object_and_the_model_reads_the_bundle_s():
     """Recomputing is what this identity check exists to forbid."""
     data = bundle()
     built = BuiltModel(
-        model=nn.Identity(), outputs=RequestedOutputs(), data=data, metadata=metadata()
+        model=nn.Identity(),
+        outputs=RequestedOutputs(observables=(), derivatives=(), inputs=()),
+        data=data,
+        metadata=metadata(),
     )
     assert built.statistics is data.statistics
 
@@ -105,7 +108,7 @@ def test_the_bundle_travels_with_the_model_rather_than_beside_it():
     the model was not built from."""
     built = BuiltModel(
         model=nn.Identity(),
-        outputs=RequestedOutputs(),
+        outputs=RequestedOutputs(observables=(), derivatives=(), inputs=()),
         data=bundle(),
         metadata=metadata(),
     )

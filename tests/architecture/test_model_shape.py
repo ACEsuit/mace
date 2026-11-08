@@ -354,9 +354,25 @@ def test_config_construction_accepts_explicit_runtime_dependencies():
     source = (
         "class ExampleMACE(Module):\n"
         "    def __init__(self, config: ModelConfig, *, backend, "
-        "atomic_numbers, avg_num_neighbors=1.0): pass\n"
+        "atomic_numbers, electrostatics: ElectrostaticsConfig, "
+        "avg_num_neighbors=1.0): pass\n"
     )
     assert not v1_surface.config_construction_violations(source, "clean.py")
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        "electrostatics: ElectrostaticsConfig",
+        "config: ModelConfig, second: ModelConfig",
+    ],
+)
+def test_config_construction_requires_exactly_one_architecture_config(parameters):
+    source = (
+        "class ExampleMACE(Module):\n"
+        f"    def __init__(self, {parameters}): pass\n"
+    )
+    assert v1_surface.config_construction_violations(source, "offender.py")
 
 
 @pytest.mark.parametrize("catch_all", ["*args", "**kwargs"])

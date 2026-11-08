@@ -70,5 +70,5 @@ def graph(device: str = "cpu"):
     )
     table = AtomicNumberTable([6, 14])
     dataset = GraphDataset([item], cutoff=3.0, z_table=table, targets=())
-    collated = collate_training([dataset[0]], z_table=table, float_dtype="float64")
+    collated = collate_training([dataset[0]], float_dtype="float64")
     return dict(collated.to(device).graph)

@@ -93,7 +93,6 @@ Item = tuple[Mapping[str, np.ndarray], Mapping[str, np.ndarray], Mapping[str, fl
 def collate_training(
     items: Iterable[Item],
     *,
-    z_table: AtomicNumberTable,
     float_dtype: str = "float64",
     features: Mapping[str, Storage] | None = None,
 ) -> TrainingBatch:
@@ -102,7 +101,6 @@ def collate_training(
     Args:
         items: Triples of graph, targets and per-property weights, as
             :mod:`mace_torch.data.graphs` builds them.
-        z_table: The model's element table, used for the element index.
         float_dtype: What the floating fields are bound at.
         features: Custom input names and their declared atom/graph storage.
     """
@@ -147,7 +145,6 @@ class GraphDataset(Dataset):
         z_table: AtomicNumberTable,
         targets: Sequence[TargetSpec],
         heads: Sequence[str] = ("default",),
-        graph_inputs: Sequence[str] = (),
         features: Mapping[str, Storage] | None = None,
         augmentations: Sequence[Callable[[Configuration], Configuration]] = (),
     ) -> None:
@@ -155,7 +152,6 @@ class GraphDataset(Dataset):
         # Drawn again on every read. A dataset that is evaluated is built
         # without them.
         self.augmentations = tuple(augmentations)
-        self.graph_inputs = tuple(graph_inputs)
         self.features = dict(features or {})
         self.neighbor_backend = resolve_neighbor_backend()
         self.cutoff = cutoff
@@ -177,7 +173,6 @@ class GraphDataset(Dataset):
             z_table=self.z_table,
             head=head,
             weight=float(configuration.weight),
-            graph_inputs=self.graph_inputs,
             features=self.features,
             neighbor_backend=self.neighbor_backend,
         )
@@ -188,22 +183,14 @@ class GraphDataset(Dataset):
 
 
 def make_collate(
-    z_table: AtomicNumberTable,
     float_dtype: str = "float64",
     *,
     features: Mapping[str, Storage] | None = None,
 ) -> Callable[[Iterable[Item]], TrainingBatch]:
-    """The collate function a loader over this element table needs.
-
-    Separate from :func:`make_loader` because a loader over several heads\'
-    datasets has no single dataset to read the table off, and the table is the
-    model\'s rather than any one dataset\'s.
-    """
+    """Bind dtype and feature storage for single- or multi-head loaders."""
 
     # A module-level callable survives spawn/forkserver worker serialization.
-    return partial(
-        collate_training, z_table=z_table, float_dtype=float_dtype, features=features
-    )
+    return partial(collate_training, float_dtype=float_dtype, features=features)
 
 
 def make_loader(
@@ -227,9 +214,7 @@ def make_loader(
         # frozen tree seeds its training loader the same way
         # (`mace/cli/run_train.py:778`).
         generator=torch.Generator().manual_seed(seed) if seed is not None else None,
-        collate_fn=make_collate(
-            dataset.z_table, float_dtype, features=dataset.features
-        ),
+        collate_fn=make_collate(float_dtype, features=dataset.features),
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,

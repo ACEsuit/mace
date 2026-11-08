@@ -65,6 +65,10 @@ class NeighborListBackend(Protocol):
     and accepts no settings.
     """
 
+    def capabilities(self) -> NeighborListCapabilities:
+        """Declare supported devices, edge ordering and statefulness."""
+        ...
+
     def search(
         self, positions: np.ndarray, cutoff: float, geometry: SearchGeometry
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -106,10 +110,15 @@ class BatchedNeighborListBackend(Protocol):
     ) -> Sequence[tuple[np.ndarray, np.ndarray]]: ...
 
 
-def neighbor_capabilities(backend: Any, name: str) -> NeighborListCapabilities:
-    """Read a provider's declaration; old host providers guarantee no ordering."""
-    method = getattr(backend, "capabilities", None)
-    capabilities = method() if method is not None else NeighborListCapabilities(name)
+def neighbor_capabilities(
+    backend: NeighborListBackend, name: str
+) -> NeighborListCapabilities:
+    """Read and validate the provider's required capability declaration."""
+    if not isinstance(backend, NeighborListBackend):
+        raise NeighborBackendNotAvailableError(
+            f"neighbour provider {name!r} must define capabilities() and search()"
+        )
+    capabilities = backend.capabilities()
     if not isinstance(capabilities, NeighborListCapabilities):
         raise NeighborBackendNotAvailableError(
             f"neighbour provider {name!r} must declare NeighborListCapabilities."
@@ -283,11 +292,6 @@ def get_neighbor_backend(
             f"substituted."
         )
     backend = _build(name, discovered.factory, dict(settings or {}))
-    if not isinstance(backend, NeighborListBackend):
-        raise NeighborBackendNotAvailableError(
-            f"the entry point {name!r} built a {type(backend).__name__}, which "
-            f"has no search(positions, cutoff, geometry) method."
-        )
     neighbor_capabilities(backend, name)
     return backend
 

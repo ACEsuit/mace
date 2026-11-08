@@ -125,7 +125,7 @@ def test_a_batch_joins_the_labels_the_way_it_joins_the_nodes():
     dataset = GraphDataset(
         [water(0), water(1)], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
     )
-    batch = collate_training([dataset[0], dataset[1]], z_table=Z_TABLE)
+    batch = collate_training([dataset[0], dataset[1]])
     assert batch.property_weights["energy"].tolist() == [1.0, 1.0]
     assert batch.targets["energy"].shape == (2,)
     assert batch.targets["forces"].shape == (6, 3)
@@ -139,7 +139,7 @@ def test_the_labels_stay_with_their_own_structure():
     dataset = GraphDataset(
         [first, second], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
     )
-    batch = collate_training([dataset[0], dataset[1]], z_table=Z_TABLE)
+    batch = collate_training([dataset[0], dataset[1]])
     assert batch.targets["energy"][0].item() == pytest.approx(
         first.properties["energy"]
     )
@@ -151,7 +151,7 @@ def test_the_labels_stay_with_their_own_structure():
 
 def test_the_element_index_is_the_position_in_the_model_s_table():
     dataset = GraphDataset([water()], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS)
-    batch = collate_training([dataset[0]], z_table=Z_TABLE)
+    batch = collate_training([dataset[0]])
     assert field(batch, "node_attrs").argmax(-1).tolist() == [1, 0, 0]
 
 
@@ -163,7 +163,7 @@ def test_a_head_name_becomes_its_position_in_the_model_s_head_list():
         targets=SPECS,
         heads=("dft", "ccsd"),
     )
-    batch = collate_training([dataset[0], dataset[1]], z_table=Z_TABLE)
+    batch = collate_training([dataset[0], dataset[1]])
     assert field(batch, "head").tolist() == [0, 1]
 
 
@@ -172,7 +172,7 @@ def test_the_graph_count_comes_from_ptr_and_is_a_plain_int():
     dataset = GraphDataset(
         [water(0), water(1), water(2)], cutoff=CUTOFF, z_table=Z_TABLE, targets=SPECS
     )
-    batch = collate_training([dataset[i] for i in range(3)], z_table=Z_TABLE)
+    batch = collate_training([dataset[i] for i in range(3)])
     assert isinstance((batch.graph["ptr"].shape[0] - 1), int)
     assert (batch.graph["ptr"].shape[0] - 1) == 3
 

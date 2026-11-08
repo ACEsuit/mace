@@ -85,7 +85,7 @@ def _graph(deployed, repeat: int, dtype: str, device: str) -> dict:
         [item], cutoff=deployed.r_max, z_table=deployed.z_table, targets=()
     )
     collated = collate_training(
-        [dataset[0]], z_table=deployed.z_table, float_dtype=dtype
+        [dataset[0]], float_dtype=dtype
     )
     return dict(collated.to(device).graph)
 

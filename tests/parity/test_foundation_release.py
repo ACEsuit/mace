@@ -13,12 +13,12 @@ import torch
 from mace_core.foundation_roster import ROSTER as PUBLISHED_ROSTER
 from mace_core.metadata import SCHEMA_VERSION
 from mace_torch.calculators.ase_calculator import MACECalculator
+from mace_torch.data.inputs import graph_inputs_of
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.deploy.neutral_io import import_neutral
 from mace_torch.deploy.reference import _evaluate
 from mace_torch.serialization import canonical_state
 from mace_torch.train import write_model
-from mace_torch.train.data_stage import graph_inputs_of
 
 from tests.golden import foundation_artifacts as fa
 from tests.golden import harness, routes

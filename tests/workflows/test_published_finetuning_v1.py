@@ -41,7 +41,7 @@ def test_published_foundation_replay_starts_at_zero_error(tmp_path, monkeypatch,
     from mace_torch.deploy.loader import load_deployed
     from mace_torch.deploy.reference import verify_against_reference
     from mace_torch.finetune.pseudolabels import load_pseudolabel_artifact
-    from mace_torch.train.data_stage import graph_inputs_of
+    from mace_torch.data.inputs import graph_inputs_of
 
     artifact = ARTIFACTS[name]
     source = resolve_artifact(artifact.origin)
@@ -140,7 +140,7 @@ def test_published_foundation_trains_updates_weights_and_reloads(tmp_path, monke
     from mace_torch.deploy.loader import load_deployed
     from mace_torch.deploy.reference import verify_against_reference
     from mace_torch.finetune.stages import build
-    from mace_torch.train.data_stage import graph_inputs_of
+    from mace_torch.data.inputs import graph_inputs_of
 
     artifact = ARTIFACTS[name]
     source = resolve_artifact(artifact.origin)

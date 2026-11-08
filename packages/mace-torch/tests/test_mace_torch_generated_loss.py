@@ -62,9 +62,7 @@ def batch_of(*configurations):
     dataset = GraphDataset(
         list(configurations), cutoff=0.5, z_table=Z_TABLE, targets=SPECS
     )
-    return collate_training(
-        [dataset[i] for i in range(len(configurations))], z_table=Z_TABLE
-    )
+    return collate_training([dataset[i] for i in range(len(configurations))])
 
 
 def prediction(batch, *, energy_off: float = 0.0, force_off: float = 0.0):
@@ -295,7 +293,7 @@ def extended_batch(**properties):
         z_table=Z_TABLE,
         targets=target_specs(requested),
     )
-    return requested, collate_training([dataset[0]], z_table=Z_TABLE)
+    return requested, collate_training([dataset[0]])
 
 
 @fp64_only
@@ -395,7 +393,7 @@ def test_dipole_weight_policy_preserves_other_terms_and_label_masks(
     dataset = GraphDataset(
         configurations, cutoff=0.5, z_table=Z_TABLE, targets=target_specs(requested)
     )
-    batch = collate_training([dataset[i] for i in range(3)], z_table=Z_TABLE)
+    batch = collate_training([dataset[i] for i in range(3)])
     assert batch.property_weights["dipole"].tolist() == [2.0, 0.0, 0.0]
     dipole = torch.full((3, 3), 2.0, requires_grad=True)
     output = MACEOutput(
@@ -527,7 +525,7 @@ def test_the_universal_loss_bands_the_forces_and_not_the_magnetic_forces():
     dataset = GraphDataset(
         [configuration], cutoff=0.5, z_table=Z_TABLE, targets=target_specs(requested)
     )
-    batch = collate_training([dataset[0]], z_table=Z_TABLE)
+    batch = collate_training([dataset[0]])
     magforces = batch.targets["magforces"].clone()
     magforces[0, 0] = magforces[0, 0] + 1.0
     output = MACEOutput(

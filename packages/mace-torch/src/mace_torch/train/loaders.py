@@ -39,7 +39,6 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from functools import cached_property
 
 import torch
-from mace_core.elements import AtomicNumberTable
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from mace_torch.data import GraphDataset, Item, TrainingBatch, make_collate
@@ -104,7 +103,6 @@ class TrainingLoader:
         self,
         datasets: Mapping[str, GraphDataset],
         *,
-        z_table: AtomicNumberTable,
         batch_size: int,
         seed: int = 0,
         float_dtype: str = "float64",
@@ -133,7 +131,7 @@ class TrainingLoader:
             raise ValueError(
                 "all training heads must declare the same input feature storage"
             )
-        self._collate = make_collate(z_table, float_dtype, features=features)
+        self._collate = make_collate(float_dtype, features=features)
         self._num_workers = num_workers
         self._pin_memory = pin_memory
 
@@ -256,7 +254,6 @@ def build_training_loader(
     datasets: Mapping[str, GraphDataset],
     *,
     mode: str,
-    z_table: AtomicNumberTable,
     batch_size: int,
     seed: int = 0,
     float_dtype: str = "float64",
@@ -280,7 +277,6 @@ def build_training_loader(
         )
     return kinds[mode](
         datasets,
-        z_table=z_table,
         batch_size=batch_size,
         seed=seed,
         float_dtype=float_dtype,

@@ -122,7 +122,7 @@ def test_element_scope_survives_finetuning_and_reload(replay_foundation, tmp_pat
     expected_dataset = GraphDataset(structures, cutoff=parent.config.model.r_max,
                                    z_table=parent.z_table, heads=("default",), targets=())
     parent_batch = collate_training([expected_dataset[i] for i in range(len(expected_dataset))],
-                                   z_table=parent.z_table, float_dtype="float64")
+                                   float_dtype="float64")
     expected = parent.engine(parent_batch.graph, compute=("forces",))
     for name, loader in built.data.valid_loaders.items():
         batch = next(iter(loader))

@@ -65,7 +65,7 @@ class _DielectricSurface:
 
     def golden_outputs(self, atoms):
         from mace_torch.deploy.reference import _evaluate
-        from mace_torch.train.data_stage import graph_inputs_of
+        from mace_torch.data.inputs import graph_inputs_of
 
         from tests.golden.targets.dielectric import QUANTITIES
 

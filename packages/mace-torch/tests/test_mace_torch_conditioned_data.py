@@ -16,11 +16,11 @@ from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.calculators import MACECalculator, PaddingPolicy
 from mace_torch.cli.run_train import run
 from mace_torch.data import GraphDataset, make_loader
+from mace_torch.data.inputs import key_specification
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.foundation import read_foundation
 from mace_torch.finetune.pseudolabels import generate_pseudolabels
 from mace_torch.nn.graph_features import GraphFeatureEmbedding
-from mace_torch.train.data_stage import key_specification
 
 from tests.golden.harness import CLOSED_FORM_FP64
 

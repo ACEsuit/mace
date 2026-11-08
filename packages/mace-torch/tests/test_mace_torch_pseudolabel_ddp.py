@@ -23,7 +23,7 @@ from test_mace_torch_extend_elements import water_foundation
 from test_mace_torch_pseudolabels import fine_tune
 
 TIMEOUT = 180
-FILES = ("labels.safetensors", "manifest.json", "provenance.json")
+FILES = ("labels_0.h5", "dataset.json", "provenance.json")
 
 
 def _free_port() -> int:

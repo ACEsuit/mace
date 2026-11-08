@@ -266,7 +266,7 @@ def test_missing_labels_keep_zero_gradient_without_mutating_the_batch(preset):
     dataset = GraphDataset(
         configurations, cutoff=0.5, z_table=table, targets=target_specs(requested)
     )
-    batch = collate_training([dataset[i] for i in range(3)], z_table=table)
+    batch = collate_training([dataset[i] for i in range(3)])
     targets_before = {name: value.clone() for name, value in batch.targets.items()}
     weights_before = {
         name: value.clone() for name, value in batch.property_weights.items()

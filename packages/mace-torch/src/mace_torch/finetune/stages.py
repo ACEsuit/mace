@@ -47,7 +47,6 @@ from mace_torch.finetune.pseudolabels import generate_pseudolabels, relabelling
 from mace_torch.train.contracts import BuiltModel, TrainedModel
 from mace_torch.train.data_stage import (
     DataStageError,
-    graph_inputs_of,
     key_specification,
     run_data_stage,
     selected_structures,
@@ -264,7 +263,6 @@ def _foundation_energies(
         z_table=foundation.z_table,
         cutoff=foundation.config.model.r_max,
         head_index=foundation.heads.index(source),
-        graph_inputs=graph_inputs_of(foundation.config.model),
         features=foundation.config.model.feature_storages,
         batch_size=config.training.valid_batch_size,
         device=str(next(foundation.engine.parameters()).device),

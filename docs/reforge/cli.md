@@ -78,7 +78,7 @@ Basis conversion verifies every basis projection. With `--reference` and
 `--fixtures`, it also checks energy, forces and stress before writing either
 artifact file. Metadata schema 1.0 records the source/target bases, projection
 verification and golden-check result. Without reference files that result is
-null; it does not claim a golden check. Older metadata remains readable.
+null; it does not claim a golden check. Only metadata schema 1.0 is accepted.
 Reduced-to-full export is underdetermined and belongs to DEP-3.
 
 Prepared data uses V1 shards and manifests. Isolated-atom reference structures
@@ -87,6 +87,11 @@ statistics are written only with `--compute_statistics`; `e0s.json` records the
 resolved references. Selection and pseudolabelling call the same FT-2 functions
 used during training. Training writes per-head JSON-lines metrics; plotting
 runs on rank zero and is shared with the standalone command.
+
+Pseudolabels use the core dataset format: `dataset.json`, an HDF5 shard and
+`provenance.json` under each head's directory. Properties retain their values
+and dtypes. The provenance records the head and foundation model used to
+generate the labels; reuse checks that record against the requested run.
 
 Distributed mini-batch training repeats samples as needed to give each process
 the same number of samples. Each process must still have enough samples for its

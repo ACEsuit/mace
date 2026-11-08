@@ -27,30 +27,33 @@ process, and on a GPU two processes can disagree about a label.
 and they are refused if the foundation model's weights or the structures differ
 from what the record says they were made from.
 
-The artifact is tensors in safetensors, with a manifest and the record beside
-them as JSON: exact float64, and nothing executable.
+The artifact uses the core HDF5 dataset format, with its provenance beside it
+as JSON. Property values and dtypes are preserved by the shared data serializer.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import hashlib
-import json
 import logging
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import numpy as np
 import torch
 from mace_core.config import PseudolabelConfig, PseudolabelProvenance
 from mace_core.config.resolved import ResolvedConfig
+from mace_core.data.backend import DataBackendError
+from mace_core.data.backends.hdf5 import HDF5Backend
 from mace_core.data.configuration import Configuration, structures_fingerprint
+from mace_core.data.keys import KeySpecification
+from mace_core.data_spec.shard_format import MANIFEST_NAME, read_manifest, write_shards
 from mace_core.elements import AtomicNumberTable
 from mace_core.elements.default_keys import Storage
-from safetensors.numpy import load_file, save_file
 from torch import nn
 from torch.func import functional_call
 
@@ -58,7 +61,6 @@ from mace_torch.data import collate_training
 from mace_torch.data.batch import GraphDataset
 
 __all__ = [
-    "ARTIFACT_FORMAT",
     "PseudolabelError",
     "foundation_fingerprint",
     "generate_pseudolabels",
@@ -71,10 +73,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-#: What the manifest says it is, so a directory of something else is refused.
-ARTIFACT_FORMAT = "mace-v1-pseudolabels"
-_LABELS = "labels.safetensors"
-_MANIFEST = "manifest.json"
 _PROVENANCE = "provenance.json"
 
 #: The per-atom labels among the ones a foundation model gives.
@@ -119,7 +117,6 @@ def generate_pseudolabels(
     z_table: AtomicNumberTable,
     cutoff: float,
     head_index: int,
-    graph_inputs: Sequence[str] = (),
     features: Mapping[str, Storage] | None = None,
     batch_size: int = 10,
     device: str = "cpu",
@@ -135,7 +132,6 @@ def generate_pseudolabels(
         z_table: The model's element table.
         cutoff: Its cutoff, in Angstrom.
         head_index: Which of its heads labels them.
-        graph_inputs: The inputs it reads beside the geometry.
         features: Custom input storage, retained through graph collation.
         batch_size: How many are evaluated at once.
         device: Where.
@@ -156,7 +152,6 @@ def generate_pseudolabels(
         cutoff=cutoff,
         z_table=z_table,
         targets=(),
-        graph_inputs=graph_inputs,
         features=features,
     )
     labelled: list[Configuration] = []
@@ -166,7 +161,6 @@ def generate_pseudolabels(
         try:
             batch = collate_training(
                 [dataset[index] for index in range(start, start + len(chunk))],
-                z_table=z_table,
                 float_dtype="float64" if dtype == torch.float64 else "float32",
                 features=features,
             ).to(device)
@@ -248,32 +242,44 @@ def write_pseudolabel_artifact(
     configurations: Sequence[Configuration],
     provenance: PseudolabelProvenance,
 ) -> Path:
-    """Write labelled structures and their record, exactly.
+    """Write one head's labelled structures as a core dataset and provenance.
 
-    Returns:
-        The directory.
+    The provenance supplies the head when the dataset is reopened. Every
+    structure must therefore belong to that head, and the recorded count must
+    agree. Repeated generation replaces the run's previously written files.
     """
+    if len(configurations) != provenance.n_configs or any(
+        item.head != provenance.head for item in configurations
+    ):
+        raise PseudolabelError(
+            "pseudolabel provenance head or n_configs disagrees with the structures"
+        )
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    tensors, manifest = _encode(configurations)
-    save_file(tensors, str(directory / _LABELS))
-    (directory / _MANIFEST).write_text(json.dumps(manifest, indent=1, sort_keys=True))
-    (directory / _PROVENANCE).write_text(provenance.model_dump_json(indent=1))
+    # The core writer requires an empty dataset directory. Stage a complete
+    # replacement so a failed encode leaves the previous labels intact.
+    with TemporaryDirectory(dir=directory) as staging:
+        manifest = write_shards(
+            configurations,
+            staging,
+            shard_size=max(len(configurations), 1),
+            key_spec=KeySpecification(),
+            prefix="labels",
+        )
+        (Path(staging) / _PROVENANCE).write_text(provenance.model_dump_json(indent=1))
+        for name in (*manifest.shards, _PROVENANCE, MANIFEST_NAME):
+            (Path(staging) / name).replace(directory / name)
     return directory
 
 
 def load_pseudolabel_artifact(
     directory: str | Path,
 ) -> tuple[list[Configuration], PseudolabelProvenance]:
-    """Read back what :func:`write_pseudolabel_artifact` wrote.
-
-    Raises:
-        PseudolabelError: If the directory holds no such artifact.
-    """
+    """Read a core dataset with the head recorded in its pseudolabel provenance."""
     directory = Path(directory)
     missing = [
         name
-        for name in (_LABELS, _MANIFEST, _PROVENANCE)
+        for name in (MANIFEST_NAME, _PROVENANCE)
         if not (directory / name).is_file()
     ]
     if missing:
@@ -281,175 +287,25 @@ def load_pseudolabel_artifact(
             f"{directory} is not a pseudolabel artifact: it lacks {missing}. A "
             f"run writes one per head under <work_dir>/pseudolabels/<head>/."
         )
-    manifest = json.loads((directory / _MANIFEST).read_text())
-    if manifest.get("format") != ARTIFACT_FORMAT:
+    try:
+        provenance = PseudolabelProvenance.model_validate_json(
+            (directory / _PROVENANCE).read_text()
+        )
+        dataset = HDF5Backend.open(
+            directory, key_spec=KeySpecification(), head=provenance.head
+        )
+        try:
+            if len(dataset) != provenance.n_configs:
+                raise PseudolabelError(
+                    f"{directory}: dataset count disagrees with provenance.n_configs"
+                )
+            return list(dataset.iter_range()), provenance
+        finally:
+            dataset.close()
+    except (DataBackendError, OSError, ValueError) as error:
         raise PseudolabelError(
-            f"{directory / _MANIFEST} is a {manifest.get('format')!r}, not a "
-            f"{ARTIFACT_FORMAT!r}."
-        )
-    provenance = PseudolabelProvenance.model_validate_json(
-        (directory / _PROVENANCE).read_text()
-    )
-    return _decode(load_file(str(directory / _LABELS)), manifest), provenance
-
-
-def _encode(
-    configurations: Sequence[Configuration],
-) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
-    """Structures as concatenated arrays and a manifest of what is where.
-
-    Every numeric property is one flat array over the structures that carry
-    it, with a mask of which do and each one's shape in the manifest. A
-    property that is not numeric, the head's name say, is kept in the manifest
-    as it is.
-    """
-    counts = np.asarray([len(item.atomic_numbers) for item in configurations])
-    tensors: dict[str, np.ndarray] = {
-        "n_atoms": counts.astype(np.int64),
-        "atomic_numbers": np.concatenate(
-            [np.asarray(item.atomic_numbers, dtype=np.int64) for item in configurations]
-        ),
-        "positions": np.concatenate(
-            [np.asarray(item.positions, dtype=np.float64) for item in configurations]
-        ).reshape(-1, 3),
-        "weight": np.asarray(
-            [item.weight for item in configurations], dtype=np.float64
-        ),
-        "has_cell": np.asarray(
-            [item.cell is not None for item in configurations], dtype=np.uint8
-        ),
-        "cell": np.stack(
-            [
-                np.zeros((3, 3))
-                if item.cell is None
-                else np.asarray(item.cell, dtype=np.float64)
-                for item in configurations
-            ]
-        ),
-        "has_pbc": np.asarray(
-            [item.pbc is not None for item in configurations], dtype=np.uint8
-        ),
-        "pbc": np.asarray(
-            [item.pbc or (False, False, False) for item in configurations],
-            dtype=np.uint8,
-        ),
-    }
-    names = sorted(
-        {name for item in configurations for name in item.properties}
-        | {name for item in configurations for name in item.property_weights}
-    )
-    properties: dict[str, Any] = {}
-    for name in names:
-        values = [item.properties.get(name) for item in configurations]
-        # Whether the key is there at all, which is not whether it has a value:
-        # a declared property the file lacked is present as None.
-        keyed = [name in item.properties for item in configurations]
-        if any(isinstance(value, str) for value in values):
-            properties[name] = {"kind": "text", "values": values, "keyed": keyed}
-            continue
-        present = [value is not None for value in values]
-        shapes = [
-            list(np.shape(value)) if value is not None else None for value in values
-        ]
-        flat = [
-            np.asarray(value, dtype=np.float64).reshape(-1)
-            for value in values
-            if value is not None
-        ]
-        tensors[f"property/{name}"] = (
-            np.concatenate(flat) if flat else np.zeros(0, dtype=np.float64)
-        )
-        tensors[f"present/{name}"] = np.asarray(present, dtype=np.uint8)
-        tensors[f"weight/{name}"] = np.asarray(
-            [item.property_weights.get(name, np.nan) for item in configurations],
-            dtype=np.float64,
-        )
-        properties[name] = {
-            "kind": "numeric",
-            "keyed": keyed,
-            "shapes": shapes,
-            "scalar": [
-                value is not None
-                and np.ndim(value) == 0
-                and not isinstance(value, np.ndarray)
-                for value in values
-            ],
-        }
-    manifest = {
-        "format": ARTIFACT_FORMAT,
-        "n_configs": len(configurations),
-        "config_types": [item.config_type for item in configurations],
-        "heads": [item.head for item in configurations],
-        "properties": properties,
-    }
-    return tensors, manifest
-
-
-def _decode(
-    tensors: dict[str, np.ndarray], manifest: dict[str, Any]
-) -> list[Configuration]:
-    counts = tensors["n_atoms"]
-    atom_offsets = np.concatenate([[0], np.cumsum(counts)])
-    readers: dict[str, Any] = {}
-    for name, entry in manifest["properties"].items():
-        if entry["kind"] == "text":
-            readers[name] = ("text", entry)
-            continue
-        present = tensors[f"present/{name}"].astype(bool)
-        sizes = [
-            int(np.prod(shape)) if shape is not None else 0 for shape in entry["shapes"]
-        ]
-        value_offsets = np.concatenate([[0], np.cumsum(sizes)])
-        readers[name] = ("numeric", entry, present, value_offsets)
-    structures = []
-    for index in range(int(manifest["n_configs"])):
-        atoms = slice(int(atom_offsets[index]), int(atom_offsets[index + 1]))
-        properties: dict[str, Any] = {}
-        weights: dict[str, float] = {}
-        for name, reader in readers.items():
-            if reader[0] == "text":
-                if reader[1]["keyed"][index]:
-                    properties[name] = reader[1]["values"][index]
-                continue
-            _, entry, present, value_offsets = reader
-            weight = float(tensors[f"weight/{name}"][index])
-            if not np.isnan(weight):
-                weights[name] = weight
-            if not entry["keyed"][index]:
-                continue
-            if not present[index]:
-                properties[name] = None
-                continue
-            flat = tensors[f"property/{name}"][
-                int(value_offsets[index]) : int(value_offsets[index + 1])
-            ]
-            value = flat.reshape(entry["shapes"][index])
-            properties[name] = float(value) if entry["scalar"][index] else value.copy()
-        structures.append(
-            Configuration(
-                atomic_numbers=tensors["atomic_numbers"][atoms].copy(),
-                positions=tensors["positions"][atoms].copy(),
-                properties=properties,
-                property_weights=weights,
-                cell=tensors["cell"][index].copy()
-                if tensors["has_cell"][index]
-                else None,
-                pbc=_pbc(tensors["pbc"][index]) if tensors["has_pbc"][index] else None,
-                weight=float(tensors["weight"][index]),
-                config_type=manifest["config_types"][index],
-                head=manifest["heads"][index],
-            )
-        )
-    return structures
-
-
-def _pbc(flags: np.ndarray) -> tuple[bool, bool, bool]:
-    return (bool(flags[0]), bool(flags[1]), bool(flags[2]))
-
-
-# ---------------------------------------------------------------------------
-# Reusing them
-# ---------------------------------------------------------------------------
+            f"cannot read pseudolabel artifact {directory}: {error}"
+        ) from error
 
 
 def validate_pseudolabel_reuse(
@@ -583,7 +439,6 @@ def relabelling(
                 z_table=foundation.z_table,
                 cutoff=foundation.config.model.r_max,
                 head_index=foundation.heads.index(labels_head),
-                graph_inputs=inputs,
                 features=foundation.config.model.feature_storages,
                 batch_size=spec.batch_size or config.training.batch_size,
                 device=device,
@@ -648,7 +503,11 @@ def _share(directory: Path, context) -> None:
         return
     import torch.distributed as dist
 
-    names = (_LABELS, _MANIFEST, _PROVENANCE)
+    names = (
+        (MANIFEST_NAME, _PROVENANCE, *read_manifest(directory).shards)
+        if context.is_main
+        else ()
+    )
     payload: list[Any] = [
         {name: (directory / name).read_bytes() for name in names}
         if context.is_main

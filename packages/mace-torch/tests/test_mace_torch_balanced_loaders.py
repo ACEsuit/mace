@@ -66,9 +66,7 @@ def datasets() -> dict:
 
 
 def loader(datasets, mode: str, *, batch_size: int = 1, seed: int = 0):
-    return build_training_loader(
-        datasets, mode=mode, z_table=Z_TABLE, batch_size=batch_size, seed=seed
-    )
+    return build_training_loader(datasets, mode=mode, batch_size=batch_size, seed=seed)
 
 
 def visited(loader, epoch: int, *, drop_last: bool = False) -> list[tuple[int, float]]:
@@ -245,7 +243,6 @@ def test_a_sharder_narrows_each_head_without_changing_the_balancing(datasets):
     heads stay balanced against each other."""
     built = BalancedLoader(
         datasets,
-        z_table=Z_TABLE,
         batch_size=1,
         seed=5,
         shard=lambda indices: list(indices)[0::2],
@@ -255,11 +252,10 @@ def test_a_sharder_narrows_each_head_without_changing_the_balancing(datasets):
 
 
 def test_the_two_shards_together_are_the_unsharded_epoch(datasets):
-    whole = BalancedLoader(datasets, z_table=Z_TABLE, batch_size=1, seed=5)
+    whole = BalancedLoader(datasets, batch_size=1, seed=5)
     shards = [
         BalancedLoader(
             datasets,
-            z_table=Z_TABLE,
             batch_size=1,
             seed=5,
             shard=lambda indices, rank=rank: list(indices)[rank::2],
@@ -283,18 +279,18 @@ def test_an_unknown_mode_is_refused(datasets):
 
 def test_a_loader_over_no_heads_is_refused():
     with pytest.raises(ValueError, match="no heads"):
-        ProportionalLoader({}, z_table=Z_TABLE, batch_size=1)
+        ProportionalLoader({}, batch_size=1)
 
 
 def test_a_head_with_no_structures_is_refused(datasets):
     empty = {**datasets, "empty": dataset(0, "empty")}
     with pytest.raises(ValueError, match="no training structures"):
-        BalancedLoader(empty, z_table=Z_TABLE, batch_size=1)
+        BalancedLoader(empty, batch_size=1)
 
 
 @pytest.mark.parametrize("kind", [BalancedLoader, ProportionalLoader])
 def test_an_empty_shard_is_not_blamed_on_the_batch_size(datasets, kind):
-    built = kind(datasets, z_table=Z_TABLE, batch_size=1, shard=lambda indices: [])
+    built = kind(datasets, batch_size=1, shard=lambda indices: [])
     with pytest.raises(ValueError, match=r"sampler.*no training data") as error:
         list(built.batches(0, drop_last=True))
     assert "--batch_size" not in str(error.value)

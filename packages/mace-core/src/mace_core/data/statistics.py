@@ -6,19 +6,17 @@ use the same E0 values stored in the model.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 
 from mace_core.config.model import ScalingMethod
 from mace_core.data.backend import DataBackend, DatasetStatistics
-from mace_core.data.configuration import Configuration
 from mace_core.neighbors import AllPairsBackend, get_neighborhood
 
 __all__ = [
     "compute_statistics",
     "count_neighbours",
-    "least_squares_atomic_energies",
 ]
 
 Scaling = ScalingMethod
@@ -53,44 +51,6 @@ def count_neighbours(
         positions, cutoff, pbc=pbc, cell=cell, backend=AllPairsBackend()
     )
     return neighbors.edge_index.shape[1]
-
-
-def least_squares_atomic_energies(
-    configurations: Iterable[Configuration],
-    atomic_numbers: Sequence[int],
-    energy_key: str = "energy",
-) -> dict[int, float]:
-    """Fit isolated-atom energies by least squares over the dataset.
-
-    Solves ``counts @ e0 = energies`` for the per-element reference, where
-    ``counts[i, z]`` is how many atoms of element ``z`` structure ``i`` has.
-    One of the ways a caller may produce the energies this module's statistics
-    are then taken against; it is deliberately not the only one.
-
-    Raises:
-        ValueError: If no structure carries an energy, since the fit would
-            otherwise return zeros that look like a result.
-    """
-    order = list(atomic_numbers)
-    index = {number: position for position, number in enumerate(order)}
-    rows, targets = [], []
-    for configuration in configurations:
-        energy = configuration.properties.get(energy_key)
-        if energy is None:
-            continue
-        row = np.zeros(len(order))
-        for number in configuration.atomic_numbers:
-            row[index[int(number)]] += 1.0
-        rows.append(row)
-        targets.append(float(energy))
-    if not rows:
-        raise ValueError(
-            f"no configuration carries a {energy_key!r}, so the isolated-atom "
-            f"energies cannot be fitted. Supply them, or read them from "
-            f"isolated-atom structures."
-        )
-    solution, *_ = np.linalg.lstsq(np.stack(rows), np.asarray(targets), rcond=None)
-    return {number: float(value) for number, value in zip(order, solution, strict=True)}
 
 
 def compute_statistics(

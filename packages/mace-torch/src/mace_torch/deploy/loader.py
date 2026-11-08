@@ -212,8 +212,7 @@ def load_deployed(
 
     Raises:
         DeployError: If the record carries no isolated-atom energies for its
-            heads, which is a checkpoint written before heads were recorded,
-            or heads that disagree about the elements.
+            heads, or heads that disagree about the elements.
         CheckpointError: If the files are not a v1 checkpoint, or the weights
             and the record disagree, or the rebuilt model's long-range solve is
             not the one recorded.

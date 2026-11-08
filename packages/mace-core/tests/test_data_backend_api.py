@@ -29,7 +29,6 @@ from mace_core.data import (
     compute_statistics,
     count_neighbours,
     data_backend_conformance,
-    least_squares_atomic_energies,
     open_dataset,
 )
 from mace_core.data import registry as registry_module
@@ -291,36 +290,6 @@ def test_an_unknown_scaling_names_the_ones_there_are(dataset, key_spec):
     unknown: Any = "minmax"
     with pytest.raises(ValueError, match="'rms_forces'"):
         compute_statistics(backend, [1], 3.0, {1: -1.0}, scaling=unknown)
-
-
-def test_the_least_squares_fit_recovers_an_exact_reference(key_spec):
-    """Built so the answer is known: every structure's energy is exactly the
-    sum of its per-element references."""
-    from mace_core.data.configuration import Configuration
-
-    truth = {1: -0.5, 8: -4.0}
-    configurations = []
-    for hydrogens, oxygens in ((2, 1), (4, 2), (1, 3)):
-        numbers = np.array([1] * hydrogens + [8] * oxygens)
-        energy = hydrogens * truth[1] + oxygens * truth[8]
-        configurations.append(
-            Configuration(
-                atomic_numbers=numbers,
-                positions=np.zeros((numbers.size, 3)),
-                properties={"energy": energy},
-            )
-        )
-    fitted = least_squares_atomic_energies(configurations, [1, 8])
-    assert fitted[1] == pytest.approx(truth[1])
-    assert fitted[8] == pytest.approx(truth[8])
-
-
-def test_the_fit_refuses_a_dataset_with_no_energies():
-    from mace_core.data.configuration import Configuration
-
-    bare = [Configuration(atomic_numbers=np.array([1]), positions=np.zeros((1, 3)))]
-    with pytest.raises(ValueError, match="cannot be fitted"):
-        least_squares_atomic_energies(bare, [1])
 
 
 # ---------------------------------------------------------------------------

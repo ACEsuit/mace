@@ -123,7 +123,6 @@ def test_it_is_drawn_on_every_read_of_a_training_structure_and_of_no_other():
             cutoff=3.0,
             z_table=AtomicNumberTable([26]),
             targets=specs,
-            graph_inputs=("magmom",),
             augmentations=augmentations,
         )
 

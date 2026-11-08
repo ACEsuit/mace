@@ -163,9 +163,7 @@ def test_the_labels_are_the_foundation_model_s_own(loaded):
     dataset = GraphDataset(
         items, cutoff=loaded.config.model.r_max, z_table=loaded.z_table, targets=()
     )
-    batch = collate_training(
-        [dataset[i] for i in range(len(items))], z_table=loaded.z_table
-    )
+    batch = collate_training([dataset[i] for i in range(len(items))])
     direct = loaded.engine(dict(batch.graph), compute=("forces",))
     energies = np.array([item.properties["energy"] for item in labelled])
     forces = np.concatenate([item.properties["forces"] for item in labelled])
@@ -212,7 +210,7 @@ def test_the_weights_are_constants_while_labelling(loaded):
     dataset = GraphDataset(
         items, cutoff=loaded.config.model.r_max, z_table=loaded.z_table, targets=()
     )
-    graph = dict(collate_training([dataset[0]], z_table=loaded.z_table).graph)
+    graph = dict(collate_training([dataset[0]]).graph)
 
     def direct():
         loaded.engine(dict(graph), compute=("forces",), training=False)
@@ -322,6 +320,13 @@ def provenance(loaded, items, **overrides):
 def test_the_artifact_reads_back_exactly(loaded, tmp_path):
     spec = SPEC.model_copy(update={"properties": ("energy", "forces", "stress")})
     labelled = label(loaded, configurations(stress_weight=0.3), spec)
+    labelled[0].properties.update(
+        identifier=np.array([2**53 + 1], dtype=np.int64),
+        mask=np.array([True, False, True]),
+        feature=np.array([0.25, 0.5], dtype=np.float32),
+        source="replay",
+    )
+    labelled[0].property_weights["source"] = 0.5
     labelled[1] = Configuration(
         atomic_numbers=labelled[1].atomic_numbers,
         positions=labelled[1].positions,
@@ -355,6 +360,33 @@ def test_the_artifact_reads_back_exactly(loaded, tmp_path):
             else:
                 assert np.array_equal(np.asarray(value), np.asarray(other)), name
                 assert type(value) is type(other) or isinstance(other, np.ndarray)
+                if isinstance(value, np.ndarray):
+                    assert other.dtype == value.dtype, name
+
+
+@pytest.mark.parametrize("override", [{"head": "other"}, {"n_configs": 100}])
+def test_the_artifact_refuses_provenance_for_other_structures(
+    loaded, tmp_path, override
+):
+    items = configurations()
+    with pytest.raises(PseudolabelError, match="head or n_configs"):
+        write_pseudolabel_artifact(
+            tmp_path / "replay", items, provenance(loaded, items, **override)
+        )
+    assert not (tmp_path / "replay").exists()
+
+
+def test_regenerating_labels_replaces_the_dataset_and_provenance(loaded, tmp_path):
+    first = configurations(count=4)
+    write_pseudolabel_artifact(tmp_path, first, provenance(loaded, first))
+    second = configurations(count=2)
+    second[0].properties["energy"] = -12.5
+    record = provenance(loaded, second)
+    write_pseudolabel_artifact(tmp_path, second, record)
+    restored, restored_record = load_pseudolabel_artifact(tmp_path)
+    assert len(restored) == 2
+    assert restored[0].properties["energy"] == -12.5
+    assert restored_record == record
 
 
 def test_a_directory_that_is_not_an_artifact_is_refused(tmp_path):
@@ -460,8 +492,8 @@ def test_the_standalone_step_writes_what_a_run_writes(foundation, tmp_path):
         tmp_path / "run" / "pseudolabels" / "replay"
     )
     assert alone_record.dataset_fingerprint == run_record.dataset_fingerprint
-    assert json.loads((written / "replay" / "manifest.json").read_text()) == json.loads(
-        (tmp_path / "run" / "pseudolabels" / "replay" / "manifest.json").read_text()
+    assert json.loads((written / "replay" / "dataset.json").read_text()) == json.loads(
+        (tmp_path / "run" / "pseudolabels" / "replay" / "dataset.json").read_text()
     )
     for one, two in zip(alone, in_run, strict=True):
         assert one.properties["energy"] == two.properties["energy"]
@@ -615,7 +647,6 @@ def test_the_labels_live_nowhere_but_the_run(foundation, tmp_path):
     config = fine_tune(tmp_path / "run", foundation)
     build(config)
     written = sorted(
-        str(path.relative_to(tmp_path))
-        for path in Path(tmp_path).rglob("*.safetensors")
+        str(path.relative_to(tmp_path)) for path in Path(tmp_path).rglob("*.h5")
     )
-    assert "run/pseudolabels/replay/labels.safetensors" in written
+    assert "run/pseudolabels/replay/labels_0.h5" in written

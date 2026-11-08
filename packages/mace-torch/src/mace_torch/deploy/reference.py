@@ -217,11 +217,8 @@ def _evaluate(
         cutoff=cutoff,
         z_table=z_table,
         head=head,
-        graph_inputs=graph_inputs,
     )
-    batch = collate_training(
-        [(graph, {}, {})], z_table=z_table, float_dtype=_float_dtype_of(engine)
-    )
+    batch = collate_training([(graph, {}, {})], float_dtype=_float_dtype_of(engine))
     flat = {
         key: value.to(device) if isinstance(value, torch.Tensor) else value
         for key, value in batch.graph.items()

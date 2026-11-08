@@ -74,9 +74,7 @@ def structures(count: int, labelled: int) -> list[Configuration]:
 
 def v1_batch(configurations):
     dataset = GraphDataset(configurations, cutoff=0.5, z_table=Z_TABLE, targets=SPECS)
-    return collate_training(
-        [dataset[index] for index in range(len(configurations))], z_table=Z_TABLE
-    )
+    return collate_training([dataset[index] for index in range(len(configurations))])
 
 
 def predictions(batch):

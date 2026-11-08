@@ -48,7 +48,6 @@ from mace_core.data.splitting import group_by_config_type, random_train_valid_sp
 from mace_core.data.statistics import (
     compute_statistics,
     count_neighbours,
-    least_squares_atomic_energies,
 )
 from mace_core.data.xyz import (
     ISOLATED_ATOM_CONFIG_TYPE,
@@ -94,7 +93,6 @@ __all__ = [
     "count_neighbours",
     "data_backend_conformance",
     "group_by_config_type",
-    "least_squares_atomic_energies",
     "open_dataset",
     "random_train_valid_split",
     "read_configurations",
