@@ -31,9 +31,27 @@ class LocalSplitChargeConfig(ConfigSection):
     formal_charges: dict[int, Annotated[float, Field(allow_inf_nan=False)]] | None = (
         None
     )
+    transfer: Literal["plain", "oxidation_dependent"] = "plain"
+    oxidation_mixer: Literal["none", "sum", "product"] = "none"
+    oxidation_range: tuple[
+        Annotated[float, Field(allow_inf_nan=False)],
+        Annotated[float, Field(allow_inf_nan=False)],
+    ] = (-4.0, 4.0)
+    polarizability: bool = False
 
     @model_validator(mode="after")
     def _one_charge_source(self):
+        if self.oxidation_range[0] >= self.oxidation_range[1]:
+            raise ValueError("local_sources.oxidation_range requires lower < upper")
+        if (
+            self.transfer == "plain"
+            and self.oxidation_mixer == "none"
+            and self.oxidation_range != (-4.0, 4.0)
+        ):
+            raise ValueError(
+                "local_sources.oxidation_range requires an oxidation mixer "
+                "or transfer='oxidation_dependent'"
+            )
         if (self.formal_charge_input is None) == (self.formal_charges is None):
             raise ValueError(
                 "local_sources requires exactly one of formal_charge_input "

@@ -266,7 +266,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/config/fixed_point.py` | Describing a self-consistent relaxation loop. |
 | `mace_core/config/legacy.py` | Every legacy training flag and what became of it, plus the translator. |
 | `mace_core/config/loss.py` | Loss kinds and per-observable weights. |
-| `mace_core/config/local_sources.py` | LC/LSC local multipoles and the exclusive formal-charge input/table contract. |
+| `mace_core/config/local_sources.py` | LC/LSC multipoles, formal-charge sources, oxidation conditioning and optional direct polarizability. |
 | `mace_core/config/qeq.py` | Quadratic charge equilibration and optional atomic input contracts. |
 | `mace_core/config/fixed_point_scf.py` | Affine/nonlinear SCF architecture, charge/Fermi boundary and readout contracts. |
 | `mace_core/config/model.py` | Architecture, declared observables, readouts, and the polar section. |
@@ -444,6 +444,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/nn/embedding.py` | Element and radial embeddings. |
 | `mace_torch/nn/les.py` | Linear and nonlinear Cartesian tensor readouts for LES multipoles. |
 | `mace_torch/nn/charge_transfer.py` | Canonical equivariant bond transfers and higher-multipole sources for LSC-MACE. |
+| `mace_torch/nn/local_sources.py` | Oxidation embeddings/mixers and the canonical symmetric local polarizability readout. |
 | `mace_torch/nn/field.py` | The charge-aware blocks: density update, electron-energy readout, channel-pair products. |
 | `mace_torch/nn/fixed_point_scf.py` | Affine field response and scalar electron-energy contractions. |
 | `mace_torch/nn/scf_nonlinear.py` | Nonlinear local/many-body responses, invariant activations and electron readouts. |

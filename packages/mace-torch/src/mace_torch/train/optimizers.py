@@ -58,7 +58,7 @@ GROUP_MARKERS: dict[str, tuple[str, ...]] = {
     "embedding": ("node_embedding", "graph_embedding"),
     "interactions": (".interactions.",),
     "products": (".products.",),
-    "readouts": (".readouts.", ".multipoles."),
+    "readouts": (".readouts.", ".multipoles.", ".polarizability_readouts."),
 }
 
 #: The blocks a charge-aware model adds around its density, one group without

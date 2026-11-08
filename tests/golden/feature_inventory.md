@@ -1173,11 +1173,11 @@ that MACE tag, `mace-scf` and `graph_electrostatics`; no version assertion is
 patched. Ordinary parity tests use the committed artifacts and need none of
 those external packages. See [the capture recipe](docs/elec3.md).
 
-The LC/LSC pins below cover the initial monopole/dipole models and LSC's default
-conservative transfer. The optional oxidation-dependent transfer/mixers and
-direct polarizability readout still need implementation and separate evidence;
-these family rows do not claim every upstream option. QEq and the affine
-FixedPointSCF default and nonlinear variants now have evidence.
+The LC/LSC pins cover the monopole/dipole models and LSC's conservative transfer,
+oxidation-dependent transfer, additive/product oxidation mixers and optional
+direct polarizability readout. The [extension record](../../docs/reforge/gate3/2026-11-08/elec3-local-extensions.md)
+defines their separate evidence and retained limits. QEq and the affine
+FixedPointSCF default and nonlinear variants also have evidence.
 EnergyFunctionalSCF remains a gap: the accepted architecture's executable
 reference is absent from the published source and deposit checked on 2026-11-08.
 The [reference search](../../docs/reforge/gate3/2026-11-08/elec3-energy-functional-reference.md)
@@ -1188,7 +1188,7 @@ records the physical and precision scope.
 | id | feature | source | disposition | pinned by |
 |---|---|---|---|---|
 | `scf.lc_mace` | LC-MACE — local charge: multipole moments read out from descriptors; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement; the cheapest of the five, no implicit-diff hook needed | `tests/parity/test_elec3_goldens.py` (external CPU/GPU reference, initial LC/LSC scope) + `packages/mace-torch/tests/test_mace_torch_electrostatics_families.py` (conservation, derivatives, training and checkpoints) |
-| `scf.lsc_mace` | LSC-MACE — local split charge: charge + multipoles conserving local charge flow; non-SCF | `ACEsuit/mace-scf` | KEEP — reimplement | `tests/parity/test_elec3_goldens.py` (external CPU/GPU reference, initial LC/LSC scope) + `packages/mace-torch/tests/test_mace_torch_electrostatics_families.py` (conservation, derivatives, training and checkpoints) |
+| `scf.lsc_mace` | LSC-MACE — local split charge: charge + multipoles conserving local charge flow; non-SCF | `ACEsuit/mace-scf` | KEEP — base and oxidation/polarizability extensions implemented | `tests/parity/test_elec3_goldens.py` + `tests/parity/test_elec3_local_extensions_goldens.py` (external CPU/GPU outputs and training gradients) + `packages/mace-torch/tests/test_mace_torch_electrostatics_families.py` + `packages/mace-torch/tests/test_mace_torch_local_extensions.py` (conservation, symmetry, derivatives, training and checkpoints) |
 | `scf.qeq` | MACE-QEq — charge equilibration, solved self-consistently with implicit differentiation | `ACEsuit/mace-scf` | KEEP — reimplement; the load-bearing test case for the SCF hook | `tests/parity/test_elec3_qeq_goldens.py` (external outputs and force-loss gradients, CPU/GPU) + `packages/mace-torch/tests/test_mace_torch_scf_implicit_diff.py` (implicit derivatives, training and solver-preserving checkpoints) |
 | `scf.fixedpoint` | FixedPointSCF — Kohn–Sham-like SCF cycles for multipole moments | `ACEsuit/mace-scf` | KEEP — affine/nonlinear responses and electron readouts implemented | `tests/parity/test_elec3_fixed_point_goldens.py` + `packages/mace-torch/tests/test_mace_torch_fixed_point_scf.py` and `tests/parity/test_elec3_scf_nonlinear_goldens.py` + `packages/mace-torch/tests/test_mace_torch_nonlinear_scf.py` (converged roots, implicit derivatives, readouts, training and checkpoints); optional diagnostics/direct modes remain outside the agreed root contract, see [scope](../../docs/reforge/gate3/2026-11-08/elec3-fixed-point-nonlinear.md) |
 | `scf.energy_functional` | EnergyFunctionalSCF — an alternative functional; upstream marks it experimental | `ACEsuit/mace-scf` | KEEP — accepted for reimplementation; awaiting executable upstream reference | ⚠️ gap (reference unavailable in checked publications; implementation and parity pending, see [search record](../../docs/reforge/gate3/2026-11-08/elec3-energy-functional-reference.md)) |

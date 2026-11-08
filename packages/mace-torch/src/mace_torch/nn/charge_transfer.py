@@ -1,11 +1,16 @@
 """Directed scalar transfers from equivariant bond features.
 
 The architecture and 1/40 normalization follow ACEsuit/mace-scf's
-NoFieldSymmetricPredictionSourceBlock at 784a510339aacc4412b61b6926ef1a92bca387c0
+NoFieldSymmetricPredictionSourceBlock and
+OxidationDependentSymmetricPredictionSourceBlock at
+784a510339aacc4412b61b6926ef1a92bca387c0
 (MIT). Operators here use V1's canonical backend contract, not e3nn.
 """
 
+import math
+
 import torch
+from mace_core.config.local_sources import LocalSplitChargeConfig
 from mace_core.config.model import ModelConfig
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
@@ -15,16 +20,21 @@ from mace_core.kernels.descriptors import (
 from mace_core.kernels.precision import Precision
 from torch import Tensor, nn
 
-from mace_torch.backends.layout import expanded_irreps
+from mace_torch.backends.layout import expanded_irreps, layout_of
+from mace_torch.nn.field import ScalarModulation
 from mace_torch.nn.interaction import _radial_network
+from mace_torch.nn.local_sources import OxidationEmbedding
 
 
 class ChargeTransfer(nn.Module):
     """One directed transfer, in e, per edge; no reduction over atoms yet."""
 
-    def __init__(self, backend, config: ModelConfig, precision: Precision):
+    def __init__(
+        self, backend, config: ModelConfig, precision: Precision, *, compressed=False
+    ):
         super().__init__()
         self.channels = config.num_channels
+        self.compressed = compressed
         node_irreps = expanded_irreps(config.node_irreps, self.channels)
         edge_irreps = "+".join(
             f"{degree}{'e' if degree % 2 == 0 else 'o'}"
@@ -51,9 +61,9 @@ class ChargeTransfer(nn.Module):
             RadialMLPDescriptor(
                 channels=(
                     config.radial_basis.num_basis,
-                    64,
-                    64,
-                    64,
+                    32 if compressed else 64,
+                    32 if compressed else 64,
+                    32 if compressed else 64,
                     self.paths * self.channels,
                 ),
                 kind="normalized_silu",
@@ -62,7 +72,9 @@ class ChargeTransfer(nn.Module):
         )
         self.readout = backend.make_linear(
             LinearDescriptor(
-                irreps_in=expanded_irreps(descriptor.irreps_paths, self.channels),
+                irreps_in=f"{self.channels}x0e"
+                if compressed
+                else expanded_irreps(descriptor.irreps_paths, self.channels),
                 irreps_out="0e",
                 precision=precision,
             )
@@ -83,6 +95,10 @@ class ChargeTransfer(nn.Module):
             edge_ids,
             sender.shape[0],
         )
+        if self.compressed:
+            messages = messages.reshape(-1, self.paths, self.channels).sum(
+                1
+            ) / math.sqrt(self.paths)
         return self.readout(messages).squeeze(-1) / 40.0
 
 
@@ -91,7 +107,28 @@ class SplitChargeSource(nn.Module):
 
     def __init__(self, backend, config: ModelConfig, degree: int, precision: Precision):
         super().__init__()
-        self.transfer = ChargeTransfer(backend, config, precision)
+        options = config.local_sources
+        assert isinstance(options, LocalSplitChargeConfig)
+        conditioned = options.transfer == "oxidation_dependent"
+        self.transfer = ChargeTransfer(
+            backend, config, precision, compressed=conditioned
+        )
+        self.oxidation = (
+            OxidationEmbedding(
+                backend, config.num_channels, options.oxidation_range, precision
+            )
+            if conditioned
+            else None
+        )
+        self.modulation = (
+            ScalarModulation(
+                expanded_irreps(config.node_irreps, config.num_channels),
+                config.num_channels,
+                feature_layout=layout_of(backend),
+            )
+            if conditioned
+            else None
+        )
         self.density_map = (
             backend.make_linear(
                 LinearDescriptor(
@@ -106,6 +143,12 @@ class SplitChargeSource(nn.Module):
             if degree
             else None
         )
+
+    def condition(self, features: Tensor, formal: Tensor) -> Tensor:
+        if self.oxidation is None:
+            return features
+        assert self.modulation is not None
+        return self.modulation(features, self.oxidation(formal.to(features.dtype)))
 
     def forward(self, features: Tensor) -> Tensor:
         """``[n_atoms, (lmax+1)^2]`` coefficients, with a zero monopole slot."""

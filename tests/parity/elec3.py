@@ -42,13 +42,14 @@ PROFILES = {
 ENERGY = DEFAULT_CATALOGUE.observable("energy")
 
 
-def configuration(kind, degree):
+def configuration(kind, degree, **options):
     return ModelConfig(
         model=kind,
         local_sources={
             "kind": kind,
             "multipole_max_l": degree,
             **({"formal_charges": {1: 1.0, 8: -2.0}} if kind == "lsc_mace" else {}),
+            **options,
         },
         num_channels=2,
         num_interactions=2,
@@ -63,7 +64,9 @@ def configuration(kind, degree):
     )
 
 
-def build_model(kind, degree, profile, dtype=torch.float64, backend="reference"):
+def build_model(
+    kind, degree, profile, dtype=torch.float64, backend="reference", **options
+):
     precision = str(dtype).removeprefix("torch.")
     head = EnergyOutputHead(
         ResolvedE0s({"default": {1: -0.2, 8: -0.7}}),
@@ -73,7 +76,7 @@ def build_model(kind, degree, profile, dtype=torch.float64, backend="reference")
         PrecisionConfig(model=precision),
         widen_node_energy=False,
     )
-    config = configuration(kind, degree)
+    config = configuration(kind, degree, **options)
     return registered_models()[kind](
         resolve_backend(backend),
         config,
@@ -181,7 +184,7 @@ def load_model(kind, degree, profile, dtype=torch.float64, backend="reference"):
     return model
 
 
-def reference_model(kind, degree, profile):
+def reference_model(kind, degree, profile, **options):
     from e3nn import o3
     from mace_scf.electrostatics.localsources import LocalCharges, LocalSplitCharges
 
@@ -208,14 +211,17 @@ def reference_model(kind, degree, profile):
         radial_MLP=[8],
         atomic_multipoles_max_l=degree,
         pbc_handling=PROFILES[profile],
-        **(
-            {
-                "formal_charges_from_data": False,
-                "atomic_formal_charges": np.array([1.0, -2.0]),
-            }
-            if kind == "lsc_mace"
-            else {}
-        ),
+        **{
+            **(
+                {
+                    "formal_charges_from_data": False,
+                    "atomic_formal_charges": np.array([1.0, -2.0]),
+                }
+                if kind == "lsc_mace"
+                else {}
+            ),
+            **options,
+        },
     )
 
 

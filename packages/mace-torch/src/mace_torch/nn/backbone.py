@@ -335,7 +335,7 @@ class MACEBackbone(nn.Module):
         )
 
         self.embedding_irreps = embedding_irreps
-        self.graph_embedding = (
+        self.graph_embedding: nn.Module | None = (
             GraphFeatureEmbedding(
                 graph_features, num_features, num_scalars=1, precision=precision
             )

@@ -716,6 +716,10 @@ class LocalChargeModel(_ChargeAwareModel):
                 ),
             )
         }
+        if isinstance(sources, LocalSplitChargeConfig) and sources.polarizability:
+            self.produced_observables["polarizability"] = ObservableSpec(
+                name="polarizability", irreps="0e+2e", per_atom=False, units="Å^3"
+            )
         super().__init__(
             backend,
             config,
@@ -905,6 +909,28 @@ class LocalSplitChargeModel(LocalChargeModel):
             ),
             persistent=False,
         )
+        from mace_torch.nn.local_sources import (
+            LocalPolarizability,
+            OxidationGraphEmbedding,
+        )
+
+        with _constructed_in(precision):
+            if sources.oxidation_mixer != "none":
+                self.backbone.graph_embedding = OxidationGraphEmbedding(
+                    backend,
+                    config,
+                    atomic_numbers,
+                    precision,
+                    self.backbone.graph_embedding,
+                )
+            self.polarizability_readouts = (
+                nn.ModuleList(
+                    LocalPolarizability(backend, layer, precision)
+                    for layer in self.backbone.layer_irreps
+                )
+                if sources.polarizability
+                else None
+            )
 
     def density_and_dipole(self, graph, layers) -> tuple[Tensor, Tensor]:
         settings = self.settings
@@ -924,6 +950,10 @@ class LocalSplitChargeModel(LocalChargeModel):
             self.backbone.spherical_harmonics,
             self.backbone.radial_embedding,
         )
+        layers = [
+            cast(SplitChargeSource, source).condition(layer, formal)
+            for source, layer in zip(self.source_maps, layers, strict=True)
+        ]
         flux = (
             torch.stack(
                 [
@@ -960,6 +990,28 @@ class LocalSplitChargeModel(LocalChargeModel):
             flux[:, None] * vectors.to(self.total_dtype), batch[sender], count
         )
         return density, dipole
+
+    def transform_outputs(self, graph, layers, output):
+        output = super().transform_outputs(graph, layers, output)
+        if self.polarizability_readouts is not None:
+            atomic = torch.stack(
+                [
+                    readout(layer).to(self.total_dtype)
+                    for readout, layer in zip(
+                        self.polarizability_readouts, layers, strict=True
+                    )
+                ]
+            ).sum(0)
+            output.extras["polarizability"] = segment_sum(
+                atomic, graph["batch"], graph["ptr"].shape[0] - 1
+            )
+        return output
+
+    def canonical_components(self):
+        components = super().canonical_components()
+        if self.polarizability_readouts is not None:
+            components["polarizability_readouts"] = self.polarizability_readouts
+        return components
 
 
 @register_model("qeq")

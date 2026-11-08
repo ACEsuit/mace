@@ -45,6 +45,7 @@ def model_for(
     backend=None,
     solver="reference",
     trains_derivatives=False,
+    options=None,
 ):
     precision = cast(Precision, str(torch.get_default_dtype()).removeprefix("torch."))
     sources = {"kind": kind, "multipole_max_l": degree}
@@ -54,6 +55,7 @@ def model_for(
             if per_atom
             else {"formal_charges": {1: 1.0, 8: -2.0}}
         )
+    sources.update(options or {})
     config = ModelConfig(
         model=kind,
         local_sources=sources,
