@@ -513,11 +513,16 @@ def test_every_field_is_translation_invariant():
 def test_graph_features_reach_the_scalars_and_leave_the_rest_alone():
     """Adding to a higher irrep would break equivariance: the added value does
     not rotate, and the thing it is added to does."""
-    from mace_torch.nn import FeatureSpec, GraphFeatureEmbedding
+    from mace_core.config.model import GraphFeatureConfig
+    from mace_torch.nn import GraphFeatureEmbedding
 
     embedding = randomize(
         GraphFeatureEmbedding(
-            [FeatureSpec("total_charge", "continuous", embedding_dim=8)],
+            [
+                GraphFeatureConfig(
+                    name="total_charge", kind="continuous", embedding_dim=8
+                )
+            ],
             num_features=4,
             num_scalars=1,
         )
@@ -534,11 +539,19 @@ def test_graph_features_reach_the_scalars_and_leave_the_rest_alone():
 
 @fp64_only
 def test_a_per_structure_feature_reaches_every_atom_of_that_structure():
-    from mace_torch.nn import FeatureSpec, GraphFeatureEmbedding
+    from mace_core.config.model import GraphFeatureConfig
+    from mace_torch.nn import GraphFeatureEmbedding
 
     embedding = randomize(
         GraphFeatureEmbedding(
-            [FeatureSpec("total_spin", "categorical", embedding_dim=4, num_classes=3)],
+            [
+                GraphFeatureConfig(
+                    name="total_spin",
+                    kind="categorical",
+                    embedding_dim=4,
+                    num_classes=3,
+                )
+            ],
             num_features=2,
             num_scalars=1,
         )
@@ -559,10 +572,11 @@ def test_a_per_structure_feature_reaches_every_atom_of_that_structure():
 
 @fp64_only
 def test_a_declared_feature_with_no_key_is_an_error_naming_it():
-    from mace_torch.nn import FeatureSpec, GraphFeatureEmbedding
+    from mace_core.config.model import GraphFeatureConfig
+    from mace_torch.nn import GraphFeatureEmbedding
 
     embedding = GraphFeatureEmbedding(
-        [FeatureSpec("elec_temp", "continuous", embedding_dim=4)],
+        [GraphFeatureConfig(name="elec_temp", kind="continuous", embedding_dim=4)],
         num_features=2,
         num_scalars=1,
     )
@@ -572,10 +586,10 @@ def test_a_declared_feature_with_no_key_is_an_error_naming_it():
 
 @fp64_only
 def test_a_categorical_feature_without_classes_is_refused():
-    from mace_torch.nn import FeatureSpec
+    from mace_core.config.model import GraphFeatureConfig
 
     with pytest.raises(ValueError, match="num_classes"):
-        FeatureSpec("total_spin", "categorical", embedding_dim=4)
+        GraphFeatureConfig(name="total_spin", kind="categorical", embedding_dim=4)
 
 
 @fp64_only

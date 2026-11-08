@@ -188,7 +188,7 @@ def test_published_foundation_trains_updates_weights_and_reloads(tmp_path, monke
         }}, 'valid_fraction': 0.1, 'pin_memory': False},
         'model': {'observables': ['energy', 'forces']},
         'training': {'max_num_epochs': 2, 'batch_size': 2, 'valid_batch_size': 2,
-                     'lr': 0.001, 'scheduler': {'kind': {'kind': 'constant'}}},
+                     'lr': 0.001, 'scheduler': {'kind': 'constant'}},
         'loss': {'weights': {'energy': 1.0, 'forces': 100.0}},
     }
 

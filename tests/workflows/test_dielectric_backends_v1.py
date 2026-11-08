@@ -42,7 +42,7 @@ def test_gated_dielectric_training_and_backend_reload(tmp_path, fitting_configs,
                   'hidden_irreps': '0e+1o+2e', 'max_ell': 2, 'correlation': 3,
                   'readout': {'mlp_irreps': '16x0e+16x1o+16x2e'}},
         'training': {'max_num_epochs': 2, 'batch_size': 5, 'valid_batch_size': 2,
-                     'lr': 0.001, 'scheduler': {'kind': {'kind': 'constant'}}},
+                     'lr': 0.001, 'scheduler': {'kind': 'constant'}},
         'loss': {'weights': {'dipole': 1.0, 'polarizability': 1.0}},
     }
     launch(tmp_path, document, 'trained')

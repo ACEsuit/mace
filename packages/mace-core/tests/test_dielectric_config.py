@@ -43,7 +43,7 @@ def test_a_written_error_table_is_kept():
 
 def test_the_universal_loss_is_refused_without_an_energy():
     with pytest.raises(ValueError, match="universal"):
-        config(["dipole", "polarizability"], loss={"kind": {"kind": "universal"}})
+        config(["dipole", "polarizability"], loss={"kind": "universal"})
 
 
 def test_the_resolved_configuration_reads_back_as_itself():

@@ -65,7 +65,7 @@ def replay_document(root, *, multihead=True, element_table="foundation"):
         "data": {"heads": heads, "pin_memory": False},
         "model": {"observables": ["energy", "forces"]},
         "training": {"max_num_epochs": 2, "batch_size": 2, "valid_batch_size": 2,
-                     "lr": 0.002, "scheduler": {"kind": {"kind": "constant"}}},
+                     "lr": 0.002, "scheduler": {"kind": "constant"}},
         "loss": {"weights": {"energy": 1.0, "forces": 10.0}},
     }
 

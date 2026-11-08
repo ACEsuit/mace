@@ -13,7 +13,6 @@ consumer never adds them back.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -401,31 +400,6 @@ def _check_recorded_solve(
             for key in set(rebuilt) | set(record.descriptor)
             if rebuilt.get(key) != record.descriptor.get(key)
         )
-        precision = metadata.config.resolved.get("precision", {})
-        if (
-            differing == ["precision"]
-            and record.bit_parity
-            and record.descriptor["precision"] == "float32"
-            and rebuilt["precision"] == "float64"
-            and precision.get("model") == "float32"
-            and precision.get("accumulate", "float64") == "float64"
-        ):
-            # Earlier V1 builds ignored the configured reduction floor in
-            # Polar's solve. Preserve the weights and migrate only that bug;
-            # every other descriptor mismatch remains an error below.
-            warnings.warn(
-                f"{path}: applying the configured float64 reduction floor to "
-                "the Polar electrostatics; earlier V1 versions incorrectly "
-                "computed this solve in float32. Stored model weights are "
-                "unchanged.",
-                UserWarning,
-                stacklevel=2,
-            )
-            return metadata.model_copy(
-                update={
-                    "electrostatics": record.model_copy(update={"descriptor": rebuilt})
-                }
-            )
         raise CheckpointError(
             f"{path} was trained with the long-range solve "
             f"{record.descriptor} and rebuilds as {rebuilt}; they differ in "

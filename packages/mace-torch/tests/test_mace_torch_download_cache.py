@@ -12,6 +12,7 @@ from mace_torch.cli.run_train import parse
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.replay import fetch
 from mace_torch.train.checkpoint import latest_run_checkpoint, read_run_state
+from test_mace_torch_cli_commands import migrate_config
 from test_mace_torch_full_batch import configuration
 from test_mace_torch_replay import Downloads
 
@@ -34,13 +35,16 @@ def test_explicit_download_directory_is_refused_before_creating_outputs(
             word for key, value in values.items() for word in (f"--{key}", str(value))
         ]
     with pytest.raises(LegacyFlagError, match=r"downloads_dir.*XDG cache") as error:
-        parse(arguments)
+        if source == "yaml":
+            migrate_config(path)
+        else:
+            parse(arguments)
     assert "XDG_CACHE_HOME" in str(error.value) and "--work_dir" in str(error.value)
     assert not cache.exists() and not work.exists()
     values["downloads_dir"] = None
     path = tmp_path / "defaults.yaml"
     path.write_text(yaml.safe_dump(values))
-    assert parse(["--config", str(path)]).runtime.work_dir == work
+    assert parse(["--config", str(migrate_config(path))]).runtime.work_dir == work
 
 
 @fp64_only

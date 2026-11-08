@@ -3,7 +3,6 @@ made, stored as JSON beside the weights."""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from typing import Annotated, Any, Final, Literal
 
@@ -27,13 +26,8 @@ __all__ = [
     "format_citations",
 ]
 
-#: The schema version this code writes, `"<major>.<minor>"`. A minor bump only
-#: adds fields, each with a default; renaming or removing a field, or changing
-#: what one means, is a major bump. A record is read when it has this major and
-#: this minor or an older one.
+#: Only this schema is read and written while V1 is under development.
 SCHEMA_VERSION: Final = "1.2"
-
-_SCHEMA_VERSION_PATTERN: Final = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 #: Validation context key set by `ModelMetadata.from_json`, the route that
 #: reads a record rather than builds one, and so requires its version.
@@ -44,53 +38,16 @@ class MetadataSchemaError(ValueError):
     """Metadata that would not read back from its JSON as the same record."""
 
 
-def _parse_schema_version(version: object) -> tuple[int, int] | None:
-    """`(major, minor)` of a version string, or None when it is not one."""
-    if not isinstance(version, str):
-        return None
-    match = _SCHEMA_VERSION_PATTERN.fullmatch(version)
-    if match is None:
-        return None
-    return int(match[1]), int(match[2])
-
-
 def _check_schema_version(version: object, *, present: bool = True) -> None:
-    """Raise `ValueError` unless this code reads a record of `version`.
-
-    `present` is False when the record has no `schema_version` key at all.
-    Every message names the record's version, the version this code writes and
-    the installed mace-core release."""
-    # Here rather than at the top: `mace_core` imports this module.
+    """Require the current schema before validating the rest of a record."""
     from mace_core import __version__
 
-    major, minor = (int(part) for part in SCHEMA_VERSION.split("."))
-    reads = (
-        f"mace-core {__version__} reads schema_version {SCHEMA_VERSION} and the "
-        f"older minors of major {major}"
-    )
+    reads = f"mace-core {__version__} reads schema_version {SCHEMA_VERSION}"
     if not present:
+        raise ValueError(f"model metadata has no schema_version; {reads}")
+    if version != SCHEMA_VERSION:
         raise ValueError(
-            f"model metadata has no schema_version; {reads}. A record written "
-            "by to_json always carries one, so this one was not written by "
-            "mace-core or was edited"
-        )
-    record = _parse_schema_version(version)
-    if record is None:
-        raise ValueError(
-            f"model metadata has schema_version {version!r}, which is not a "
-            f"'<major>.<minor>' string; {reads}"
-        )
-    if record[0] < major:
-        raise ValueError(
-            f"model metadata has schema_version {version!r}, of an older major "
-            f"than this code; {reads}. Records are not migrated across majors: "
-            "reconvert the model with this mace-core"
-        )
-    if record[0] > major or record[1] > minor:
-        raise ValueError(
-            f"model metadata has schema_version {version!r}, newer than this "
-            f"code; {reads}. Upgrade mace-core to a release that reads "
-            f"schema_version {version}"
+            f"model metadata has unsupported schema_version {version!r}; {reads}"
         )
 
 
@@ -281,8 +238,6 @@ class BasisConversionRecord(_Record):
 class ModelMetadata(_Record):
     """How a model was made: its config, the code, the data and what to cite."""
 
-    #: Always `SCHEMA_VERSION` once read: a record of an older minor is read
-    #: into this schema, its missing fields set to their defaults.
     schema_version: str = SCHEMA_VERSION
     config: ConfigRecord
     provenance: Provenance
@@ -313,7 +268,6 @@ class ModelMetadata(_Record):
             present = "schema_version" in data
             if present or reading:
                 _check_schema_version(data.get("schema_version"), present=present)
-            data = {**data, "schema_version": SCHEMA_VERSION}
         return data
 
     @model_validator(mode="after")

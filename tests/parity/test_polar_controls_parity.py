@@ -1,5 +1,6 @@
 """Polar controls, full multipoles and graph inputs through both model stacks."""
 
+import argparse
 import json
 from dataclasses import asdict
 
@@ -9,6 +10,7 @@ import torch
 from ase.io import write
 from mace_core.config.legacy import LegacyFlagError
 from mace_core.observables import DEFAULT_CATALOGUE
+from mace_torch.cli import migrate
 from mace_torch.cli.run_train import parse
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.physics import DerivativeEngine
@@ -307,6 +309,7 @@ def test_invalid_polar_block_settings_are_not_discarded(
 ):
     path = config_file(tmp_path)
     if route == "yaml":
+        path = tmp_path / "legacy.yaml"
         path.write_text(
             json.dumps(
                 {
@@ -320,7 +323,12 @@ def test_invalid_polar_block_settings_are_not_discarded(
     else:
         args = ["--" + flag, repr(value)]
     with pytest.raises(LegacyFlagError, match=match):
-        parse(["--config", str(path), *args])
+        if route == "yaml":
+            migrate.run(
+                argparse.Namespace(command=[str(path)], output=tmp_path / "v1.yaml")
+            )
+        else:
+            parse(["--config", str(path), *args])
 
 
 def test_the_legacy_nonlinearity_selector_is_inert(tmp_path):
@@ -364,6 +372,8 @@ def test_the_legacy_nonlinearity_selector_is_inert(tmp_path):
 def test_legacy_yaml_translates_all_polar_controls(tmp_path):
     path = tmp_path / "legacy.yaml"
     path.write_text(json.dumps({"model": "polar", "train_file": "unused.xyz", **FLAGS}))
-    config = parse(["--config", str(path)])
+    converted = tmp_path / "v1.yaml"
+    migrate.run(argparse.Namespace(command=[str(path)], output=converted))
+    config = parse(["--config", str(converted)])
     assert config.model.polar.model_dump() == EXPECTED
     assert config.electrostatics.kspace_cutoff_factor == 0.85

@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 import torch.distributed as dist
+from mace_core.cli import format_error
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import DEFAULT_CATALOGUE
-from mace_core.stages import TrainedModel
 
 from mace_torch.finetune.stages import build
 from mace_torch.train import (
@@ -32,6 +33,7 @@ from mace_torch.train import (
     run_train_stage,
     setup_logging,
 )
+from mace_torch.train.contracts import TrainedModel
 from mace_torch.train.ddp import init_distributed
 
 __all__ = ["NOT_MIGRATED", "main", "parse", "run", "train"]
@@ -150,4 +152,9 @@ def train(config: ResolvedConfig) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """The console entry point. Returns a process exit status."""
-    return train(parse(argv))
+    try:
+        config = parse(argv)
+    except (ValueError, OSError) as error:
+        print(f"mace train: {format_error(error)}", file=sys.stderr)
+        return 2
+    return train(config)

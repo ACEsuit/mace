@@ -1,12 +1,9 @@
 """`ModelMetadata`: JSON round trip, schema versioning, the training group,
 citation rendering."""
 
-import itertools
 import json
-import re
 import subprocess
 import sys
-from typing import get_args, get_origin
 
 import mace_core
 import mace_core.metadata
@@ -27,7 +24,7 @@ from mace_core.metadata import (
     TrainingSummary,
     format_citations,
 )
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 MACE_PAPER = Citation(
     title="MACE: Higher Order Equivariant Message Passing Neural Networks "
@@ -160,94 +157,20 @@ READ_ROUTES = pytest.mark.parametrize(
 
 @READ_ROUTES
 @pytest.mark.parametrize(
-    ("version", "reason"),
-    [
-        ("1.3", "newer than this code"),
-        ("2.0", "newer than this code"),
-        ("0.9", "older major"),
-        ("0.0", "older major"),
-        (1, "not a '<major>.<minor>' string"),
-        ("1", "not a '<major>.<minor>' string"),
-        ("1.0.0", "not a '<major>.<minor>' string"),
-        ("01.0", "not a '<major>.<minor>' string"),
-        ("v1.0", "not a '<major>.<minor>' string"),
-    ],
+    "version",
+    ["1.0", "1.1", "1.3", "2.0", "0.9", 1, "1", "1.0.0", "01.2", "v1.2", None],
 )
-def test_an_unreadable_schema_version_is_refused_on_every_route(read, version, reason):
+def test_an_unreadable_schema_version_is_refused_on_every_route(read, version):
     document = as_document(minimal_record())
     document["schema_version"] = version
     document["a_field_of_another_version"] = 1
     with pytest.raises(ValidationError) as excinfo:
         read(document)
-    assert excinfo.value.error_count() == 1  # the version, not the unknown field
+    assert excinfo.value.error_count() == 1
     message = str(excinfo.value)
-    assert reason in message
-    assert f"schema_version {version!r}" in message  # the record's
-    assert f"reads schema_version {SCHEMA_VERSION}" in message  # the reader's
+    assert f"schema_version {version!r}" in message
+    assert f"reads schema_version {SCHEMA_VERSION}" in message
     assert f"mace-core {mace_core.__version__}" in message
-
-
-@READ_ROUTES
-@pytest.mark.parametrize(
-    ("version", "advice"),
-    [
-        ("1.3", "Upgrade mace-core to a release that reads schema_version 1.3"),
-        ("2.0", "Upgrade mace-core to a release that reads schema_version 2.0"),
-        ("0.9", "reconvert the model"),
-    ],
-)
-def test_a_refusal_says_what_to_do(read, version, advice):
-    document = as_document(minimal_record())
-    document["schema_version"] = version
-    with pytest.raises(ValidationError, match=re.escape(advice)):
-        read(document)
-
-
-class NextMinorMetadata(ModelMetadata):
-    """What `ModelMetadata` would be after a minor bump that adds one field."""
-
-    added_in_the_next_minor: str = "its default"
-
-
-@pytest.fixture
-def next_minor_reader(monkeypatch):
-    """The schema one minor on, with a field the current one lacks."""
-    monkeypatch.setattr(mace_core.metadata, "SCHEMA_VERSION", "1.1")
-    return NextMinorMetadata
-
-
-@pytest.mark.parametrize(
-    "read",
-    ["model_validate", "from_json", "construction"],
-)
-def test_an_older_minor_loads_with_defaults_for_what_it_lacks(next_minor_reader, read):
-    # What a 1.0 writer produced: the 1.0 fields, under its own version.
-    document = {**as_document(full_record()), "schema_version": "1.0"}
-    readers = {
-        "model_validate": next_minor_reader.model_validate,
-        "from_json": lambda d: next_minor_reader.from_json(json.dumps(d)),
-        "construction": lambda d: next_minor_reader(**d),
-    }
-    record = readers[read](document)
-    assert record.added_in_the_next_minor == "its default"
-    # Read into the newer schema, so it is written back as the newer version.
-    assert record.schema_version == "1.1"
-    assert json.loads(record.to_json())["schema_version"] == "1.1"
-    assert record.training == full_record().training
-
-
-def test_the_newer_reader_still_refuses_a_newer_minor(next_minor_reader):
-    document = as_document(minimal_record())
-    document["schema_version"] = "1.2"
-    with pytest.raises(ValidationError, match=re.escape("reads schema_version 1.1")):
-        next_minor_reader.model_validate(document)
-
-
-def test_an_older_minor_with_an_unknown_key_is_still_refused(next_minor_reader):
-    document = as_document(minimal_record())
-    document["notse"] = "a typo of notes"
-    with pytest.raises(ValidationError, match="extra_forbidden"):
-        next_minor_reader.model_validate(document)
 
 
 def test_a_record_lacking_the_optional_fields_takes_their_defaults():
@@ -356,159 +279,6 @@ def test_config_record_is_built_from_a_config():
     assert record.resolved == {"seed": 1, "model": {"cutoff": 4.0}}
     # The embedded form is the fixed point: resolving it again changes nothing.
     assert Config.model_validate(record.resolved).to_resolved_dict() == record.resolved
-
-
-# ---------------------------------------------------------------------------
-# Fields per schema version
-
-#: Every record class and its fields, per released schema version. A minor bump
-#: adds an entry; the newest one is what the code must hold.
-SCHEMA_FIELDS = {
-    "1.0": {
-        "Citation": {"authors", "doi", "title", "url", "venue", "year"},
-        "ConfigRecord": {"resolved", "user"},
-        "DataSourceSummary": {
-            "elements",
-            "name",
-            "num_atoms",
-            "num_configurations",
-            "reference_keys",
-        },
-        "DataSummary": {"sources"},
-        "HeadSummary": {"sources"},
-        "ModelMetadata": {
-            "citations",
-            "config",
-            "data",
-            "doi",
-            "heads",
-            "notes",
-            "provenance",
-            "schema_version",
-            "training",
-        },
-        "ObservableErrors": {"mae", "rmse"},
-        "Provenance": {"git_commit", "versions"},
-        "StageSummary": {"epochs", "name", "stop_reason"},
-        "TrainingSummary": {"stages", "validation_errors"},
-    },
-}
-
-
-SCHEMA_FIELDS["1.1"] = {
-    **SCHEMA_FIELDS["1.0"],
-    "ModelMetadata": SCHEMA_FIELDS["1.0"]["ModelMetadata"]
-    | {"parents", "electrostatics", "element_extension", "elements"},
-    "HeadSummary": {"sources", "e0"},
-    "E0Details": {"source", "method", "parameters", "values"},
-    "ElectrostaticsRecord": {"solver", "bit_parity", "descriptor"},
-    "ElementExtensionRecord": {"added", "initialization", "seed", "donors"},
-    "ParentModel": {"role", "name", "metadata"},
-}
-
-
-SCHEMA_FIELDS["1.2"] = {
-    **SCHEMA_FIELDS["1.1"],
-    "ModelMetadata": SCHEMA_FIELDS["1.1"]["ModelMetadata"] | {"conversion"},
-    "BasisConversionRecord": {
-        "from_basis",
-        "to_basis",
-        "projection_verified",
-        "reference",
-        "golden_gate_passed",
-    },
-}
-
-
-def _version_key(version: str) -> tuple[int, int]:
-    major, minor = version.split(".")
-    return int(major), int(minor)
-
-
-def _record_classes(root: type[BaseModel]) -> dict[str, type[BaseModel]]:
-    """Every record class reachable from `root`, by name."""
-
-    def classes_in(annotation):
-        outer = get_origin(annotation) or annotation
-        if isinstance(outer, type) and issubclass(outer, BaseModel):
-            yield outer
-        for argument in get_args(annotation):
-            yield from classes_in(argument)
-
-    found, to_visit = {}, [root]
-    while to_visit:
-        record = to_visit.pop()
-        if record.__name__ not in found:
-            found[record.__name__] = record
-            for field in record.model_fields.values():
-                to_visit.extend(classes_in(field.annotation))
-    return found
-
-
-def _fields_added_without_default(root: type[BaseModel], baseline: dict) -> list[str]:
-    """Fields a record of `baseline` lacks and that have no default to fill
-    them with.
-
-    A class the baseline does not have is reached only through a field it
-    lacks, so that class's own fields are free to be required."""
-    missing = []
-    for name, record in _record_classes(root).items():
-        for field_name, field in record.model_fields.items():
-            added = name in baseline and field_name not in baseline[name]
-            if added and field.is_required():
-                missing.append(f"{name}.{field_name}")
-    return missing
-
-
-def test_the_newest_field_list_is_the_code():
-    """Adding a field without a minor bump fails here, since a reader of the
-    old minor would refuse the new field as unknown rather than name a version.
-    """
-    fields = {
-        name: set(record.model_fields)
-        for name, record in _record_classes(ModelMetadata).items()
-    }
-    assert max(SCHEMA_FIELDS, key=_version_key) == SCHEMA_VERSION
-    assert fields == SCHEMA_FIELDS[SCHEMA_VERSION]
-
-
-def test_a_minor_only_adds_fields():
-    versions = sorted(SCHEMA_FIELDS, key=_version_key)
-    assert all(version.startswith("1.") for version in versions)
-    for older, newer in itertools.pairwise(versions):
-        for name, fields in SCHEMA_FIELDS[older].items():
-            assert name in SCHEMA_FIELDS[newer], f"{name} removed in {newer}"
-            removed = fields - SCHEMA_FIELDS[newer][name]
-            assert not removed, f"{name} lost {removed} in {newer}"
-
-
-def test_every_field_added_after_1_0_has_a_default():
-    assert _fields_added_without_default(ModelMetadata, SCHEMA_FIELDS["1.0"]) == []
-
-
-class WithRequiredAddition(ModelMetadata):
-    added_without_default: int
-
-
-class WithOptionalAddition(ModelMetadata):
-    added_with_default: int = 0
-
-
-@pytest.mark.parametrize(
-    ("record", "expected"),
-    [
-        (WithRequiredAddition, ["WithRequiredAddition.added_without_default"]),
-        (WithOptionalAddition, []),
-    ],
-)
-def test_the_default_check_catches_a_required_addition(record, expected):
-    # Each subclass stands in for a later ModelMetadata, so it is compared
-    # against ModelMetadata's 1.0 fields.
-    baseline = {
-        **SCHEMA_FIELDS["1.0"],
-        record.__name__: SCHEMA_FIELDS["1.0"]["ModelMetadata"],
-    }
-    assert _fields_added_without_default(record, baseline) == expected
 
 
 # ---------------------------------------------------------------------------

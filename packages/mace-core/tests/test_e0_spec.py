@@ -7,9 +7,9 @@ keep a run going on silently wrong energies are gone.
 """
 
 import pytest
-from mace_core.cli import set_value
 from mace_core.config import read_config_file
-from mace_core.config.base import BaseConfig
+from mace_core.config.base import BaseConfig, ConfigSection
+from mace_core.config.cli import set_value
 from mace_core.config.e0s import (
     FOUNDATION_E0_KINDS,
     E0sAverage,
@@ -19,7 +19,6 @@ from mace_core.config.e0s import (
     E0Spec,
     E0sTable,
 )
-from mace_core.config.section import FrozenSection
 from pydantic import ValidationError
 
 
@@ -32,7 +31,7 @@ def loaded(schema, path=None, settings=None):
     return schema.from_dict(document)
 
 
-class Head(FrozenSection):
+class Head(ConfigSection):
     e0s: E0Spec = E0sIsolatedAtoms()
 
 

@@ -51,7 +51,7 @@ def test_recipe_training_and_resume(tmp_path, fitting_configs, request, recipe, 
                   "correlation": 3, "readout": {"mlp_irreps": "4x0e+4x1o+4x2e"}},
         "training": {"max_num_epochs": 2, "batch_size": 5, "valid_batch_size": 5,
                      "lr": 0.001, "ema": {"enabled": True, "decay": 0.99},
-                     "scheduler": {"kind": {"kind": "exponential", "gamma": 0.9}}},
+                     "scheduler": {"kind": "exponential", "gamma": 0.9}},
         "loss": {"weights": {name: 1.0 for name in observables}},
     }
     if recipe in ("dipole", "dielectric"):

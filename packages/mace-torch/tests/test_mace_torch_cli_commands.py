@@ -30,6 +30,14 @@ from tests.golden.harness import FP32, FP64_CPU_REFERENCE
 from tests.helpers import REPO_ROOT, cli_command
 
 
+def migrate_config(path):
+    from mace_torch.cli.migrate import run
+
+    output = path.with_name("migrated.yaml")
+    run(argparse.Namespace(command=[str(path)], output=output))
+    return output
+
+
 def close(actual, expected):
     np.testing.assert_allclose(
         actual, expected, atol=FP64_CPU_REFERENCE.atol, rtol=FP64_CPU_REFERENCE.rtol
@@ -79,7 +87,9 @@ def test_native_and_legacy_configuration_precedence(tmp_path):
     path.write_text(
         "name: old\nr_max: 4.0\nnum_channels: 8\nmax_num_epochs: 2\nplot: false\n"
     )
-    config = parse(["--config", str(path), "--name", "new", "--r_max", "3.0"])
+    config = parse(
+        ["--config", str(migrate_config(path)), "--name", "new", "--r_max", "3.0"]
+    )
     assert config.runtime.name == "new"
     assert config.model.r_max == 3.0 and config.model.num_channels == 8
     assert config.training.max_num_epochs == 2 and not config.runtime.plot
@@ -187,8 +197,10 @@ def test_backend_flags_select_one_dispatch_policy(tmp_path, source, enabled, exp
         ]
     if expected is None:
         with pytest.raises(LegacyFlagError, match="--enable_oeq"):
-            parse(arguments)
+            parse(arguments) if source == "flags" else migrate_config(path)
     else:
+        if source != "flags":
+            arguments = ["--config", str(migrate_config(path))]
         config = parse(arguments)
         assert config.model.backend == expected
         assert ResolvedConfig.from_dict(config.to_resolved_dict()) == config
@@ -200,7 +212,7 @@ def test_backend_yaml_refuses_invalid_booleans(tmp_path, flag, value):
     path = tmp_path / "legacy.yaml"
     path.write_text(yaml.safe_dump({flag: value}))
     with pytest.raises(LegacyFlagError, match=f"--{flag}.*expected true or false"):
-        parse(["--config", str(path)])
+        migrate_config(path)
 
 
 @pytest.mark.parametrize("backend", ["reference", "cueq", "oeq"])
@@ -736,7 +748,7 @@ def test_retired_attention_is_refused_in_flags_and_legacy_yaml(
         path.write_text(yaml.safe_dump({flag: name}))
         arguments = ["--config", str(path)]
     with pytest.raises(ValueError, match="retired by ARCH-2"):
-        parse(arguments)
+        migrate_config(path) if via_file else parse(arguments)
 
 
 @pytest.mark.parametrize(
@@ -759,7 +771,7 @@ def test_inert_polar_flags_keep_default_compatibility_and_refuse_requests(
         yaml.safe_dump({"model": "polar", flag: yaml.safe_load(nondefault)})
     )
     with pytest.raises(ValueError, match=flag):
-        parse(["--config", str(path)])
+        migrate_config(path)
 
 
 def test_explicit_flags_keep_native_defaults_and_the_named_head(tmp_path):
@@ -837,8 +849,11 @@ def test_dipole_presets_train_from_flags_and_reload(tmp_path, preset, model):
                 "1",
                 "--swa_dipole_weight",
                 "2",
-                "--swa_polarizability_weight",
-                "3",
+                *(
+                    ["--swa_polarizability_weight", "3"]
+                    if preset == "dipole_polar"
+                    else []
+                ),
                 "--batch_size",
                 "2",
                 "--valid_batch_size",
@@ -851,7 +866,7 @@ def test_dipole_presets_train_from_flags_and_reload(tmp_path, preset, model):
     )
     artifact = tmp_path / "dipole.json"
     loaded = load_deployed(artifact)
-    assert loaded.config.loss.kind.kind == "weighted"
+    assert loaded.config.loss.kind == "weighted"
     assert loaded.config.loss.weight("dipole") == (100.0 if preset == "dipole" else 1.0)
     assert loaded.config.loss.use_structure_weights == {
         name: False for name in loaded.config.model.observables
@@ -927,12 +942,17 @@ def test_loss_presets_train_resume_and_preserve_the_resolved_objective(
             "3.5",
             "--swa_energy_weight",
             "2.0",
-            "--swa_stress_weight",
-            "1.7",
-            "--swa_virials_weight",
-            "2.3",
-            "--swa_dipole_weight",
-            "0.8",
+            *(
+                ["--swa_stress_weight", "1.7"]
+                if preset in {"stress", "huber", "universal"}
+                else []
+            ),
+            *(["--swa_virials_weight", "2.3"] if preset == "virials" else []),
+            *(
+                ["--swa_dipole_weight", "0.8"]
+                if preset == "energy_forces_dipole"
+                else []
+            ),
         ]
         if preset in {"huber", "universal"}:
             flags += ["--huber_delta", "0.2"]

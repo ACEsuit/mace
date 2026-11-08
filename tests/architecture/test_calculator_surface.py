@@ -21,7 +21,7 @@ from mace_torch.calculators.ase_calculator import (
     produced_outputs,
 )
 from mace_torch.models.dipoles import DipoleSettings
-from mace_torch.models.electrostatics import POLAR_EXTRA_ROWS, PolarModel
+from mace_torch.models.electrostatics import PolarModel, _polar_extra_observables
 from mace_torch.models.outputs import ENERGY_EXTRA_ROWS
 
 #: The keys whose model v1 does not build yet, and who builds it. LES reads
@@ -48,7 +48,13 @@ FAMILIES = {
     ),
     "charge-aware": produced_outputs(
         ("energy", "forces"),
-        {**ENERGY_EXTRA_ROWS, **POLAR_EXTRA_ROWS},
+        {
+            **ENERGY_EXTRA_ROWS,
+            **{
+                spec.name: "atom" if spec.per_atom else "graph"
+                for spec in _polar_extra_observables(1)
+            },
+        },
         atomic_stresses=True,
         produced=sorted(PolarModel.PRODUCED),
     ),
@@ -97,9 +103,7 @@ def test_every_legacy_key_is_produced_or_belongs_to_another_family():
         ("dielectric", {"dipole", "charges", "polarizability", "polarizability_sh"}),
     ],
 )
-def test_a_response_model_writes_the_frozen_tree_s_keys_and_no_energy(
-    family, expected
-):
+def test_a_response_model_writes_the_frozen_tree_s_keys_and_no_energy(family, expected):
     """The frozen tree's ``DipoleMACE`` and ``DipolePolarizabilityMACE``
     implemented properties, with ``dipole_comm`` and ``dipole_var`` for a
     committee."""

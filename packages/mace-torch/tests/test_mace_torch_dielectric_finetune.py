@@ -25,8 +25,8 @@ from mace_torch.calculators import MACECalculator
 from mace_torch.cli.run_train import run
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.stages import build
+from mace_torch.models.build import ModelBuildError
 from mace_torch.serialization import canonical_state
-from mace_torch.train import ModelStageError
 from test_mace_torch_extend_elements import water_foundation
 
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
@@ -170,7 +170,7 @@ def test_a_foundation_that_reads_out_no_dipole_is_refused(tmp_path):
     """The frozen tree's `--model AtomicDielectricMACE` fine-tune from an energy
     model exits with an error, and so does this."""
     energy_model = water_foundation(tmp_path)
-    with pytest.raises(ModelStageError, match="dipole"):
+    with pytest.raises(ModelBuildError, match="dipole"):
         build(fine_tune(tmp_path / "fine_tune", energy_model))
 
 
@@ -183,5 +183,5 @@ def test_an_energy_fine_tune_of_a_dielectric_model_is_refused(foundation, tmp_pa
             "model": {"observables": ["energy", "forces"]},
         }
     )
-    with pytest.raises(ModelStageError, match="energy"):
+    with pytest.raises(ModelBuildError, match="energy"):
         build(config)

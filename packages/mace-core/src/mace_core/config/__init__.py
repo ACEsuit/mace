@@ -10,7 +10,7 @@ from mace_core.config.base import (
     ConfigSection,
     read_config_file,
 )
-from mace_core.config.cli import apply_overrides, parse_overrides
+from mace_core.config.cli import apply_overrides
 from mace_core.config.data import DataConfig, GraphInputKeys, HeadDataConfig
 from mace_core.config.e0s import (
     E0sAverage,
@@ -43,7 +43,6 @@ from mace_core.config.provenance import E0_METHODS, e0_details
 from mace_core.config.pseudolabels import PseudolabelConfig, PseudolabelProvenance
 from mace_core.config.resolved import FinetuneConfig, ResolvedConfig
 from mace_core.config.runtime import RuntimeConfig
-from mace_core.config.section import FrozenSection
 from mace_core.config.training import (
     EMAConfig,
     SchedulerConfig,
@@ -71,7 +70,6 @@ __all__ = [
     "EMAConfig",
     "FinetuneConfig",
     "FixedPointSpec",
-    "FrozenSection",
     "GaussianBasisConfig",
     "GraphInputKeys",
     "HeadDataConfig",
@@ -97,6 +95,5 @@ __all__ = [
     "apply_overrides",
     "e0_details",
     "from_namespace",
-    "parse_overrides",
     "read_config_file",
 ]

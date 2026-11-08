@@ -17,12 +17,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mace_core.config.section import FrozenSection
+from mace_core.config.base import ConfigSection
 
 __all__ = ["WandbConfig"]
 
 
-class WandbConfig(FrozenSection):
+class WandbConfig(ConfigSection):
     """Reporting to Weights and Biases.
 
     Args:

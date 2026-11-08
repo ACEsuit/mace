@@ -1,15 +1,9 @@
-"""`mace_core.config.cli`: the `--a.b value` grammar to a mapping of dotted
-paths, and that mapping written into a parsed file before one validation. The
-config base knows nothing of either; a command line composes them with
-`read_config_file` and `from_dict`."""
-
-import json
+"""Overrides update documents before one schema validation."""
 
 import pytest
 from mace_core.config import (
     ConfigError,
     apply_overrides,
-    parse_overrides,
     read_config_file,
 )
 from mace_core_demo import FILE_VALUES, DemoConfig, Huber, error_locations, write_config
@@ -18,71 +12,12 @@ from pydantic import ValidationError
 #: A warning the test did not ask for is a failure.
 pytestmark = pytest.mark.filterwarnings("error")
 
-HEADS_JSON = '["a", "b"]'
 
-
-def load(tmp_path, argv, values=FILE_VALUES, root=DemoConfig):
-    """What a command line does with its config file and the tokens after it."""
+def load(tmp_path, overrides, values=FILE_VALUES, root=DemoConfig):
     document = read_config_file(write_config(tmp_path, ".json", values))
-    return root.from_dict(apply_overrides(document, parse_overrides(argv)))
+    return root.from_dict(apply_overrides(document, overrides))
 
 
-# ---------------------------------------------------------------------------
-# parse_overrides: tokens to a mapping of dotted path to value.
-
-
-def test_both_forms_and_the_value_types():
-    argv = ["--seed=9", "--data.train_file", "null", "--data.heads", HEADS_JSON]
-    assert parse_overrides(argv) == {
-        "seed": "9",  # a string: pydantic coerces it, the grammar does not
-        "data.train_file": None,
-        "data.heads": ["a", "b"],
-    }
-    assert parse_overrides(["--model", json.dumps({"num_interactions": 3})]) == {
-        "model": {"num_interactions": 3}
-    }
-    assert parse_overrides([]) == {}
-
-
-def test_paths_keep_their_order_and_a_repeated_path_moves_to_where_it_is_last():
-    overrides = parse_overrides(["--b", "1", "--a", "2", "--b", "3"])
-    assert list(overrides.items()) == [("a", "2"), ("b", "3")]
-    # So a later write under a parent the same command line replaced survives.
-    argv = ["--m.r.c", "4", "--m.r", "null", "--m.r.c", "5"]
-    assert apply_overrides({}, parse_overrides(argv)) == {"m": {"r": {"c": "5"}}}
-
-
-def test_an_empty_inline_value_does_not_hide_the_next_option():
-    assert parse_overrides(["--name=", "--seed", "5"]) == {"name": "", "seed": "5"}
-
-
-def test_a_value_starting_with_dashes_works_in_both_forms():
-    assert parse_overrides(["--name=--odd"]) == {"name": "--odd"}
-    assert parse_overrides(["--name", "--odd"]) == {"name": "--odd"}
-
-
-def test_a_path_missing_its_value_is_a_config_error():
-    with pytest.raises(ConfigError, match="override --seed is missing its value"):
-        parse_overrides(["--seed"])
-
-
-def test_a_value_that_is_not_valid_json_is_a_config_error():
-    with pytest.raises(ConfigError, match="override --model is not valid JSON"):
-        parse_overrides(["--model", "{oops"])
-
-
-@pytest.mark.parametrize("token", ["--", "--=5", "seed=5", "-s"])
-def test_a_token_that_is_not_a_dotted_option_is_a_config_error(token):
-    with pytest.raises(ConfigError, match=rf"unknown config option '{token}'"):
-        parse_overrides([token, "--seed", "5"])
-
-
-def test_tokens_given_as_one_string_are_refused():
-    with pytest.raises(TypeError, match="tokens is a string"):
-        parse_overrides("--seed 5")
-
-
-# ---------------------------------------------------------------------------
 # apply_overrides: a dotted path is written into a copy of the parsed file.
 
 
@@ -106,8 +41,9 @@ def test_the_sections_a_path_passes_through_are_created():
 
 
 @pytest.mark.parametrize("parent", [5, [1, 2], None], ids=["scalar", "list", "null"])
-def test_a_parent_that_is_not_a_mapping_is_replaced(parent):
-    assert apply_overrides({"a": parent}, {"a.b": 2}) == {"a": {"b": 2}}
+def test_a_parent_that_is_not_a_mapping_is_rejected(parent):
+    with pytest.raises(ConfigError, match=r"cannot set a\.b"):
+        apply_overrides({"a": parent}, {"a.b": 2})
 
 
 def test_a_mapping_value_merges_into_a_mapping_but_a_list_replaces():
@@ -131,9 +67,12 @@ def test_a_mapping_value_merges_into_a_mapping_but_a_list_replaces():
 def test_paths_apply_in_order_on_top_of_the_file():
     # A dotted value followed by the whole section keeps both.
     document = {"stage_two": {"energy_weight": 5.0}}
-    argv = ["--stage_two.start_epoch", "5", "--model.radial.cutoff", "4"]
-    argv += ["--model", json.dumps({"num_interactions": 3})]
-    assert apply_overrides(document, parse_overrides(argv)) == {
+    overrides = {
+        "stage_two.start_epoch": "5",
+        "model.radial.cutoff": "4",
+        "model": {"num_interactions": 3},
+    }
+    assert apply_overrides(document, overrides) == {
         "stage_two": {"energy_weight": 5.0, "start_epoch": "5"},
         "model": {"radial": {"cutoff": "4"}, "num_interactions": 3},
     }
@@ -164,23 +103,23 @@ def test_a_yaml_anchor_does_not_share_an_override(tmp_path):
 
 
 def test_an_override_beats_the_file_which_beats_the_defaults(tmp_path):
-    config = load(tmp_path, ["--model.num_interactions", "3"])
+    config = load(tmp_path, {"model.num_interactions": 3})
     assert config.model.num_interactions == 3  # the override beats the file's 4
     assert config.model.radial.cutoff == 4.5  # the file's other values survive
     assert config.model.radial.num_bessel == 8  # defaults fill the rest
-    assert load(tmp_path, []) == DemoConfig.from_dict(FILE_VALUES)
+    assert load(tmp_path, {}) == DemoConfig.from_dict(FILE_VALUES)
     # A section the file left alone is created on the way and validated like
-    # any other; the value stays the string the grammar handed over.
-    assert load(tmp_path, ["--stage_two.start_epoch", "50"]).stage_two.start_epoch == 50
+    # any other section.
+    assert load(tmp_path, {"stage_two.start_epoch": 50}).stage_two.start_epoch == 50
     with pytest.raises(ValidationError) as excinfo:
-        load(tmp_path, ["--stage_two.start", "50"])
+        load(tmp_path, {"stage_two.start": 50})
     assert error_locations(excinfo) == ["stage_two.start"]
 
 
 def test_an_override_writes_into_a_kinds_field(tmp_path):
-    config = load(tmp_path, ["--loss.delta", "2"], {"loss": {"kind": "huber"}})
+    config = load(tmp_path, {"loss.delta": 2}, {"loss": {"kind": "huber"}})
     assert config.loss == Huber(kind="huber", delta=2.0)
-    config = load(tmp_path, ["--loss", json.dumps({"kind": "huber", "delta": 2})], {})
+    config = load(tmp_path, {"loss": {"kind": "huber", "delta": 2}}, {})
     assert config.loss == Huber(kind="huber", delta=2.0)
     assert config.to_user_dict() == {"loss": {"kind": "huber", "delta": 2.0}}
 
@@ -191,5 +130,5 @@ def test_an_override_that_changes_the_kind_leaves_the_old_settings_to_pydantic(
     # The file's `delta` stays in the dict and is an unknown key of the new kind.
     huber = {"loss": {"kind": "huber", "delta": 0.5}}
     with pytest.raises(ValidationError) as excinfo:
-        load(tmp_path, ["--loss.kind", "weighted"], huber)
+        load(tmp_path, {"loss.kind": "weighted"}, huber)
     assert error_locations(excinfo) == ["loss.weighted.delta"]

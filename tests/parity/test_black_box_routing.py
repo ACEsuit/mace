@@ -170,7 +170,14 @@ def test_the_refusal_is_a_skip_whatever_the_caller_asked_for(tmp_path, monkeypat
     if not helpers.launcher_available():
         pytest_module.skip("the launcher is not installed in this environment")
 
-    # DEP-2 is still pending; training flags are supported after CLI-1.
+    # Exercise the launcher's refusal independently of which commands have
+    # already been implemented. LAMMPS export is now a supported command.
+    def refusal(command, **kwargs):
+        return helpers.subprocess.CompletedProcess(
+            command, 2, stdout="", stderr=NOT_MIGRATED
+        )
+
+    monkeypatch.setattr(helpers.subprocess, "run", refusal)
     for capture in (False, True):
         with pytest_module.raises(BaseException) as raised:
             helpers.run_mace_train(

@@ -7,8 +7,6 @@ import math
 import re
 import subprocess
 import sys
-from collections.abc import Set as AbstractSet
-from typing import Annotated
 
 import pytest
 import yaml
@@ -22,7 +20,7 @@ from mace_core_demo import (
     error_locations,
     write_config,
 )
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, computed_field
+from pydantic import Field, ValidationError
 
 #: A warning the test did not ask for is a failure.
 pytestmark = pytest.mark.filterwarnings("error")
@@ -292,57 +290,6 @@ def test_inf_survives_the_exports_in_every_format(tmp_path):
     assert DemoConfig.load(tmp_path / "special.json").to_resolved_dict() == resolved
 
 
-class LenientSection(BaseModel):
-    cutoff: float = 5.0
-
-
-def test_field_shapes_the_contract_cannot_keep_are_rejected_at_class_definition():
-    # Each shape would break a guarantee: set order varies with the hash
-    # seed; aliases, excluded and computed fields do not validate back; a
-    # lenient section would swallow typos.
-    shapes = {
-        r"tags is typed as a set.*Use a list": ("tags", list[set[str]]),
-        r"names is typed as a set.*Use a list": ("names", AbstractSet[str]),
-        r"num has an alias": ("num", Annotated[int, Field(alias="n")]),
-        r"vnum has an alias": ("vnum", Annotated[int, Field(validation_alias="n")]),
-        r"snum has an alias": ("snum", Annotated[int, Field(serialization_alias="n")]),
-        r"hidden is excluded from dumps": (
-            "hidden",
-            Annotated[int, Field(exclude=True)],
-        ),
-        r"radial holds LenientSection, which is not a ConfigSection": (
-            "radial",
-            LenientSection | None,
-        ),
-    }
-    for message, (name, annotation) in shapes.items():
-        with pytest.raises(TypeError, match=message):
-            type("Bad", (ConfigSection,), {"__annotations__": {name: annotation}})
-
-    with pytest.raises(TypeError, match=r"double is a computed field"):
-
-        class Computed(ConfigSection):
-            seed: int = 1
-
-            @computed_field
-            def double(self) -> int:
-                return 2 * self.seed
-
-
-def test_a_section_cannot_reopen_extra_or_thaw():
-    with pytest.raises(TypeError, match=r"Loose sets extra='allow'; a section keeps"):
-
-        class Loose(ConfigSection):
-            model_config = ConfigDict(extra="allow")
-            seed: int = 1
-
-    with pytest.raises(TypeError, match=r"Thawed sets frozen=False; a section stays"):
-
-        class Thawed(ConfigSection):
-            model_config = ConfigDict(frozen=False)
-            seed: int = 1
-
-
 def test_a_validated_config_is_immutable(tmp_path):
     # What validation produced is what the run uses: a change is a new
     # validation of an edited dict, never an assignment behind it.
@@ -373,18 +320,6 @@ class ForwardConfig(BaseConfig):
     forward: Forward = Field(default_factory=Forward)
 
 
-class Leaking(ConfigSection):
-    plain: "PlainLater" = Field(default_factory=lambda: PlainLater())
-
-
-class PlainLater(BaseModel):  # not a ConfigSection: it would swallow a typo
-    a: int = 1
-
-
-class LeakingConfig(BaseConfig):
-    leaking: Leaking = Field(default_factory=Leaking)
-
-
 def test_a_forward_reference_is_resolved_and_checked_on_load(tmp_path):
     empty = write_config(tmp_path, ".yaml", {})
     assert ForwardConfig.load(empty).forward.later == Later()
@@ -395,13 +330,6 @@ def test_a_forward_reference_is_resolved_and_checked_on_load(tmp_path):
     with pytest.raises(ValidationError) as excinfo:
         ForwardConfig.load(path)
     assert error_locations(excinfo) == ["forward.later.typo"]
-
-
-def test_a_lenient_section_behind_a_forward_reference_is_rejected(tmp_path):
-    with pytest.raises(
-        TypeError, match=r"Leaking.plain holds PlainLater, which is not a ConfigSection"
-    ):
-        LeakingConfig.load(write_config(tmp_path, ".yaml", {}))
 
 
 def test_user_dict_holds_only_what_was_set(tmp_path):

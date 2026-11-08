@@ -31,12 +31,13 @@ from mace_torch.cli.run_train import run
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.stages import build
 from mace_torch.kernels import initialize_model_weights
+from mace_torch.models.build import ModelBuildError
 from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn.magnetic import OneBodyMomentEnergy
 from mace_torch.physics import DerivativeEngine
-from mace_torch.train import ModelStageError, run_data_stage
+from mace_torch.train import run_data_stage
 from scipy.spatial.transform import Rotation
 from test_mace_torch_extend_elements import water_foundation
 
@@ -311,7 +312,7 @@ def test_one_body_coefficients_that_are_not_trained_keep_their_values(tmp_path):
 
 
 def test_magnetic_forces_are_refused_for_a_model_that_reads_no_moments(tmp_path):
-    with pytest.raises(ModelStageError, match="magforces"):
+    with pytest.raises(ModelBuildError, match="magforces"):
         build(configuration(tmp_path, model="scale_shift"))
 
 

@@ -326,6 +326,47 @@ class GTOSelfInteractionBlock(torch.nn.Module):
         return features
 
 
+def _field_projection_matrix(
+    l_receive: int, sigmas_receive: list[float], normalize_receive: str
+) -> torch.Tensor:
+    """Project potential and Cartesian field onto the receiving GTO basis.
+
+    Returns ``[(l_receive + 1)**2 * len(sigmas_receive), 4]`` in the
+    construction dtype, with the existing Cartesian component permutation.
+    """
+    projections_dim = (l_receive + 1) ** 2 * len(sigmas_receive)
+    matrix = torch.zeros((projections_dim, 4), dtype=torch.get_default_dtype())
+
+    # potential only affects l=0
+    for i_s, sigma in enumerate(sigmas_receive):
+        matrix[i_s, 0] = (
+            get_Cl_sigma(0, sigma, normalize_receive)
+            * (8 * pi) ** 0.5
+            * scipy.special.gamma(1.5)
+            * sigma**3
+        )
+
+    # field only affects l=1
+    if l_receive >= 1:
+        for i_s, sigma in enumerate(sigmas_receive):
+            magnitude = (
+                get_Cl_sigma(1, sigma, normalize_receive)
+                * (1.5) ** 0.5
+                * sigma**5
+                * 2
+                * pi
+            )
+            for m in range(3):
+                matrix[len(sigmas_receive) + i_s * 3 + m, 1 + m] = magnitude
+
+    permutation_matrix = torch.tensor(
+        [[1, 0, 0, 0], [0, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0]],
+        dtype=torch.get_default_dtype(),
+    )
+    matrix = torch.matmul(matrix, permutation_matrix)
+    return matrix
+
+
 class DisplacedGTOExternalFieldBlock(torch.nn.Module):
     matrix: torch.Tensor
 
@@ -334,37 +375,10 @@ class DisplacedGTOExternalFieldBlock(torch.nn.Module):
     ):
         super().__init__()
         self.projections_dim = (l_receive + 1) ** 2 * len(sigmas_receive)
-
-        matrix = torch.zeros((self.projections_dim, 4), dtype=torch.get_default_dtype())
-
-        # potential only affects l=0
-        for i_s, sigma in enumerate(sigmas_receive):
-            matrix[i_s, 0] = (
-                get_Cl_sigma(0, sigma, normalize_receive)
-                * (8 * pi) ** 0.5
-                * scipy.special.gamma(1.5)
-                * sigma**3
-            )
-
-        # field only affects l=1
-        if l_receive >= 1:
-            for i_s, sigma in enumerate(sigmas_receive):
-                magnitude = (
-                    get_Cl_sigma(1, sigma, normalize_receive)
-                    * (1.5) ** 0.5
-                    * sigma**5
-                    * 2
-                    * pi
-                )
-                for m in range(3):
-                    matrix[len(sigmas_receive) + i_s * 3 + m, 1 + m] = magnitude
-
-        permutation_matrix = torch.tensor(
-            [[1, 0, 0, 0], [0, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0]],
-            dtype=torch.get_default_dtype(),
+        self.register_buffer(
+            "matrix",
+            _field_projection_matrix(l_receive, sigmas_receive, normalize_receive),
         )
-        matrix = torch.matmul(matrix, permutation_matrix)
-        self.register_buffer("matrix", matrix)  # [field_feats_dim, 4]
 
     def forward(
         self,
@@ -395,37 +409,10 @@ class GTOInternalFieldtoFeaturesBlock(torch.nn.Module):
     ):
         super().__init__()
         self.projections_dim = (l_receive + 1) ** 2 * len(sigmas_receive)
-
-        matrix = torch.zeros((self.projections_dim, 4), dtype=torch.get_default_dtype())
-
-        # potential only affects l=0
-        for i_s, sigma in enumerate(sigmas_receive):
-            matrix[i_s, 0] = (
-                get_Cl_sigma(0, sigma, normalize_receive)
-                * (8 * pi) ** 0.5
-                * scipy.special.gamma(1.5)
-                * sigma**3
-            )
-
-        # field only affects l=1
-        if l_receive >= 1:
-            for i_s, sigma in enumerate(sigmas_receive):
-                magnitude = (
-                    get_Cl_sigma(1, sigma, normalize_receive)
-                    * (1.5) ** 0.5
-                    * sigma**5
-                    * 2
-                    * pi
-                )
-                for m in range(3):
-                    matrix[len(sigmas_receive) + i_s * 3 + m, 1 + m] = magnitude
-
-        permutation_matrix = torch.tensor(
-            [[1, 0, 0, 0], [0, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0]],
-            dtype=torch.get_default_dtype(),
+        self.register_buffer(
+            "matrix",
+            _field_projection_matrix(l_receive, sigmas_receive, normalize_receive),
         )
-        matrix = torch.matmul(matrix, permutation_matrix)
-        self.register_buffer("matrix", matrix)  # [field_feats_dim, 4]
 
     def forward(
         self,

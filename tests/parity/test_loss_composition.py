@@ -14,6 +14,7 @@ import torch
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
 from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
+from mace_torch.cli import migrate
 from mace_torch.cli.run_train import parse
 from mace_torch.data import TrainingBatch
 from mace_torch.train import build_loss
@@ -51,13 +52,16 @@ def configuration(preset, stage_two, delta):
         flags += ["--model", "dipole" if preset == "dipole" else "dielectric"]
     if preset == "universal":
         flags += ["--model", "magnetic"]
-    for name, value in WEIGHTS.items():
+    active_weights = {
+        name: value for name, value in WEIGHTS.items() if name in PRESETS[preset]
+    }
+    for name, value in active_weights.items():
         flags += [f"--{name}_weight", str(value)]
     if preset in {"huber", "universal"}:
         flags += ["--huber_delta", str(delta)]
     if stage_two:
         flags += ["--stage_two", "--start_stage_two", "1", "--max_num_epochs", "2"]
-        for name, value in WEIGHTS.items():
+        for name, value in active_weights.items():
             flags += [f"--swa_{name}_weight", str(value * 2.5)]
     return parse(flags)
 
@@ -296,11 +300,14 @@ def test_native_weighting_defaults_remain_linear_in_structure_and_property_weigh
     from dataclasses import replace
 
     from mace_core.config.loss import LossConfig
+    from pydantic import TypeAdapter
 
     kind = "l1l2" if preset == "l1l2energyforces" else preset
     requested = resolve_requested(["energy", "forces", "stress"], DEFAULT_CATALOGUE)
     batch, predictions = fixture_batch("huber", "unit")
-    loss = build_loss(requested, LossConfig(kind={"kind": kind}))
+    loss = build_loss(
+        requested, TypeAdapter(LossConfig).validate_python({"kind": kind})
+    )
     reference = loss(output(predictions), batch)
     weighted = replace(
         batch,
@@ -334,7 +341,9 @@ def test_flags_legacy_yaml_and_resolved_json_select_the_same_objective(
     expected = parse(flags)
     path = tmp_path / "legacy.yaml"
     path.write_text(yaml.safe_dump(values))
-    actual = parse(["--config", str(path)])
+    converted = tmp_path / "v1.yaml"
+    migrate.run(argparse.Namespace(command=[str(path)], output=converted))
+    actual = parse(["--config", str(converted)])
     assert actual == expected
     path = tmp_path / "resolved.json"
     path.write_text(json.dumps(actual.to_resolved_dict()))
@@ -387,6 +396,7 @@ def test_objective_and_all_mapped_model_gradients_match(preset):
         document = config.to_resolved_dict()
         document["model"]["observables"].remove("magforces")
         document["loss"]["use_structure_weights"].pop("magforces")
+        document["loss"]["weights"].pop("magforces")
         config = ResolvedConfig.from_dict(document)
     catalogue = config.catalogue or DEFAULT_CATALOGUE
     requested = resolve_requested(config.model.observables, catalogue)

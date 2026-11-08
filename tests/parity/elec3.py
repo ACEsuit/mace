@@ -77,7 +77,7 @@ def build_model(
         widen_node_energy=False,
     )
     config = configuration(kind, degree, **options)
-    return registered_models()[kind](
+    return registered_models()[kind].model(
         resolve_backend(backend),
         config,
         [1, 8],

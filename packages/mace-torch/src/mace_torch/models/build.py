@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import torch
 from mace_core.config.precision import DEFAULT_PRECISION, PrecisionConfig
@@ -34,10 +34,9 @@ from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
 from mace_torch.models.dipoles import DipoleModel, DipoleSettings
 from mace_torch.models.electrostatics import PolarModel, PolarSettings
-from mace_torch.models.les import LatentEwaldModel
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.models.normalization import ObservableNormalization
-from mace_torch.models.registry import MODEL_REGISTRY, ElectrostaticModelFactory
+from mace_torch.models.registry import ElectrostaticModelFactory, model_family
 from mace_torch.physics import DerivativeEngine
 
 logger = logging.getLogger(__name__)
@@ -49,34 +48,6 @@ __all__ = ["DEFAULT_HIDDEN_IRREPS", "ModelBuildError", "build_model"]
 #: multiplicity per irrep; here the multiplicity is `num_channels` and this is
 #: the shape of one channel.
 DEFAULT_HIDDEN_IRREPS = "0e+1o"
-
-#: Which model spelling puts the short-range repulsion inside the scaled sum.
-#: The two differ by about 77 eV on a probe geometry, so it is a fact about a
-#: trained model rather than a preference.
-_ZBL_INSIDE = {"scale_shift": True, "les": True, "plain": False}
-
-#: Which energy models hand out per-atom energies in the accumulation dtype
-#: rather than their own. The frozen tree widens them in its scale-shift, polar
-#: and LES models and not in its plain and magnetic ones.
-_WIDENS_NODE_ENERGY = {
-    "scale_shift": True,
-    "plain": False,
-    "polar": True,
-    "les": True,
-    "magnetic": False,
-}
-
-#: The two response models, which read out a dipole and no energy: fixed
-#: charges and a dipole alone, or predicted charges, a dipole and a
-#: polarizability.
-_RESPONSE_MODELS = {
-    "dipole": DipoleSettings(charges="fixed"),
-    "dielectric": DipoleSettings(charges="predicted", polarizability=True),
-}
-
-#: Every registered model name. The charge-aware one scales and shifts its
-#: local energy as the scale-shift model does.
-_MODELS = frozenset({*_ZBL_INSIDE, "polar", "magnetic", *_RESPONSE_MODELS})
 
 #: The derivative only a model that reads moments has.
 _MAGNETIC_DERIVATIVE = "magforces"
@@ -136,17 +107,11 @@ def build_model(
             "the configuration declares no observable, so the model would "
             "read out nothing. Declare at least one under `model.observables`."
         )
-    registered = MODEL_REGISTRY.get(config.model.model)
-    if config.model.model not in _MODELS and registered is None:
-        raise ModelBuildError(
-            f"{config.model.model!r} is not a registered model. The choices are "
-            f"{sorted(_MODELS | MODEL_REGISTRY.keys())}: the two energy models "
-            f"differ in where the "
-            f"short-range repulsion is added, `polar` carries a "
-            f"self-consistent density and a long-range term, `magnetic` reads a "
-            f"moment on every atom, and `dipole` and `dielectric` read out a "
-            f"dipole and no energy."
-        )
+    try:
+        family = model_family(config.model.model)
+    except ValueError as error:
+        raise ModelBuildError(str(error)) from error
+    model_type = family.model
     if (
         _MAGNETIC_DERIVATIVE in requested.derivatives
         and config.model.model != "magnetic"
@@ -160,7 +125,7 @@ def build_model(
     _refuse_unbuilt(config)
     _check_electrostatics(config)
     backend = _backend(config, precision, supports_float64)
-    if config.model.model in _RESPONSE_MODELS:
+    if model_type is DipoleModel:
         energy = None
         responses = requested.observables
         model = _response_model(
@@ -178,9 +143,7 @@ def build_model(
         )
         energy_head = None
         if energy is None and (
-            config.model.model in {"les", "polar", "magnetic"}
-            or registered is not None
-            or config.model.pair_repulsion
+            model_type is not MACEModel or config.model.pair_repulsion
         ):
             raise ModelBuildError(
                 "this model's physical energy terms require an `energy` observable"
@@ -192,13 +155,9 @@ def build_model(
                 z_table,
                 _scale_shift(config, statistics, len(heads)),
                 precision,
-                zbl_in_scale_shift=registered.zbl_in_scale_shift
-                if registered is not None
-                else _ZBL_INSIDE.get(config.model.model, True),
+                zbl_in_scale_shift=family.zbl_in_scale_shift,
                 supports_float64=supports_float64,
-                widen_node_energy=registered.widen_node_energy
-                if registered is not None
-                else _WIDENS_NODE_ENERGY.get(config.model.model, True),
+                widen_node_energy=family.widen_node_energy,
             )
             if (report := energy_head.build_report()) is not None:
                 logger.warning(report)
@@ -207,7 +166,7 @@ def build_model(
             if config.model.model in {"magnetic", "polar"}
             else tuple(spec for spec in requested.observables if spec.name != "energy")
         )
-        if config.model.model == "magnetic":
+        if model_type is MagneticModel:
             assert energy_head is not None
             model = _magnetic_model(
                 config,
@@ -234,11 +193,8 @@ def build_model(
                 trains_derivatives=initialize and bool(requested.derivatives),
             )
         else:
-            model_type = registered or (
-                LatentEwaldModel if config.model.model == "les" else MACEModel
-            )
             model_options: dict[str, Any] = {}
-            if model_type.requires_electrostatics:
+            if family.electrostatics:
                 assert energy_head is not None
                 assert isinstance(model_type, ElectrostaticModelFactory)
                 model_options.update(
@@ -250,7 +206,7 @@ def build_model(
                     solver=config.electrostatics.solver,
                     trains_derivatives=initialize and bool(requested.derivatives),
                 )
-            model = model_type(
+            model = cast(type[MACEModel], model_type)(
                 backend,
                 config=config.model,
                 atomic_numbers=list(z_table.zs),
@@ -396,7 +352,10 @@ def _response_model(
         ModelBuildError: If the declared observables are not ones the model
             produces, or leave out the dipole it is built around.
     """
-    settings = _RESPONSE_MODELS[config.model.model]
+    settings = DipoleSettings(
+        charges="predicted" if config.model.model == "dielectric" else "fixed",
+        polarizability=config.model.model == "dielectric",
+    )
     produced = {"dipole", "polarizability"} if settings.polarizability else {"dipole"}
     declared = {spec.name for spec in requested.observables}
     if "dipole" not in declared or not declared <= produced:
@@ -524,7 +483,7 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
         # The frozen tree computes the repulsion of this model and never adds
         # it, so the only faithful build is the one without it.
         built["pair_repulsion"] = (False,)
-    if config.model.model in _RESPONSE_MODELS:
+    if model_family(config.model.model).model is DipoleModel:
         # A response model has no energy to add a repulsion to.
         built["pair_repulsion"] = (False,)
     if config.model.model == "magnetic":
@@ -565,10 +524,7 @@ def _check_electrostatics(config: ResolvedConfig) -> None:
             solver and its systems unsaid.
     """
     settings = config.electrostatics
-    registered = MODEL_REGISTRY.get(config.model.model)
-    polar = config.model.model == "polar" or (
-        registered is not None and registered.requires_electrostatics
-    )
+    polar = model_family(config.model.model).electrostatics
     if settings.enabled:
         from mace_core.electrostatics import get_solver
 

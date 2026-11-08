@@ -23,7 +23,6 @@ from mace_core.observables import (
     ObservableCatalogue,
     resolve_requested,
 )
-from mace_core.stages import BuiltModel
 
 from mace_torch import __version__
 from mace_torch.backends import (
@@ -31,18 +30,12 @@ from mace_torch.backends import (
 )
 from mace_torch.finetune.foundation import Foundation
 from mace_torch.finetune.transfer import readout_sources, transfer_foundation
-from mace_torch.models.build import DEFAULT_HIDDEN_IRREPS, ModelBuildError, build_model
-from mace_torch.train.contracts import TorchBuiltModel, TorchDataBundle
+from mace_torch.models.build import ModelBuildError, build_model
+from mace_torch.train.contracts import BuiltModel, DataBundle
 
 logger = logging.getLogger(__name__)
 
-# Retained for callers of the training-stage API; construction owns the error.
-ModelStageError = ModelBuildError
-
 __all__ = [
-    "DEFAULT_HIDDEN_IRREPS",
-    "ModelStageError",
-    "build_model",
     "run_model_stage",
     "with_foundation_architecture",
 ]
@@ -50,14 +43,14 @@ __all__ = [
 
 def run_model_stage(
     config: ResolvedConfig,
-    data: TorchDataBundle,
+    data: DataBundle,
     catalogue: ObservableCatalogue,
     *,
     precision: PrecisionConfig | None = None,
     supports_float64: bool = True,
     initialize: bool = True,
     foundation: Foundation | None = None,
-) -> TorchBuiltModel:
+) -> BuiltModel:
     """Build the model the configuration describes, scaled by the data.
 
     Args:
@@ -81,7 +74,7 @@ def run_model_stage(
         built from and the record that travels with the weights.
     """
     if config.fixed_point is not None:
-        raise ModelStageError(
+        raise ModelBuildError(
             "fixed_point configures inference relaxation; "
             "train the underlying model at fixed inputs"
         )
@@ -174,7 +167,7 @@ def with_foundation_architecture(
     asked for a cutoff of five and trained at six would never be told.
 
     Raises:
-        ModelStageError: Naming each setting the run set that the foundation
+        ModelBuildError: Naming each setting the run set that the foundation
             model contradicts, and each observable it cannot read out.
     """
     theirs = _saturations_by_element(foundation.config.model, foundation)
@@ -194,7 +187,7 @@ def with_foundation_architecture(
             f"in the foundation model"
             for name in conflicts
         )
-        raise ModelStageError(
+        raise ModelBuildError(
             f"the run sets model settings its foundation model was not built "
             f"with ({details}). A fine-tune takes the foundation's "
             f"architecture, so drop them or start from a model built that way."
@@ -210,7 +203,7 @@ def with_foundation_architecture(
         - {spec.name for spec in available.observables}
     )
     if unread:
-        raise ModelStageError(
+        raise ModelBuildError(
             f"the run reads out {unread}, which the foundation model does not; "
             f"it reads out {list(theirs.observables)}. A new observable needs a "
             f"head nobody trained, which a fine-tune does not start from."
@@ -231,7 +224,7 @@ def with_foundation_architecture(
         "normalization" in ours.model_fields_set
         and ours.normalization != model.normalization
     ):
-        raise ModelStageError(
+        raise ModelBuildError(
             "model.normalization must preserve the foundation head recipes"
         )
     return config.model_copy(update={"model": model})
@@ -255,7 +248,7 @@ def _saturations_by_element(model: ModelConfig, foundation: Foundation) -> Model
     )
 
 
-def _metadata(config: ResolvedConfig, data: TorchDataBundle) -> ModelMetadata:
+def _metadata(config: ResolvedConfig, data: DataBundle) -> ModelMetadata:
     """The record written beside the weights.
 
     The resolved configuration goes in whole. A checkpoint that carried only

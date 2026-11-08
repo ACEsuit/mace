@@ -70,7 +70,6 @@ from mace_torch.kernels import segment_sum
 from mace_torch.models.base import MACEModel, _constructed_in
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.heads import ObservableHead
-from mace_torch.models.registry import register_model
 from mace_torch.nn.charge_transfer import SplitChargeSource
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
@@ -78,7 +77,6 @@ from mace_torch.nn.fixed_point_scf import AffineFieldUpdate, FixedPointEnergy
 from mace_torch.physics.charge_equilibration import ChargeEquilibration
 
 __all__ = [
-    "POLAR_EXTRA_ROWS",
     "POLAR_GRAPH_INPUTS",
     "FixedPointSCFModel",
     "LocalChargeModel",
@@ -129,11 +127,6 @@ POLAR_INPUT_SPECS = (
     InputSpec(name="external_field", irreps="1o", per_atom=False, units="eV/(e*Å)"),
 )
 POLAR_GRAPH_INPUTS = tuple(spec.name for spec in POLAR_INPUT_SPECS)
-# Compatibility views of the declarations, used by existing calculators.
-POLAR_EXTRA_ROWS = {
-    spec.name: "atom" if spec.per_atom else "graph"
-    for spec in _polar_extra_observables(0)
-}
 
 
 @dataclass(frozen=True)
@@ -589,9 +582,6 @@ class PolarModel(MACEModel):
 class _ChargeAwareModel(MACEModel):
     """Shared input, solver-metadata and planning contracts for source models."""
 
-    requires_electrostatics = True
-    widen_node_energy = False
-    zbl_in_scale_shift = False
     produced_observables: dict[str, ObservableSpec]
     descriptor: ElectrostaticsSolverDescriptor
     solver: str
@@ -627,7 +617,6 @@ class _ChargeAwareModel(MACEModel):
             graph[LONG_RANGE_PLAN] = long_range_plan(graph, self.descriptor)
 
 
-@register_model("lc_mace")
 class LocalChargeModel(_ChargeAwareModel):
     """Local multipoles followed by one dispatched Coulomb evaluation.
 
@@ -820,7 +809,6 @@ class LocalChargeModel(_ChargeAwareModel):
         return {**super().canonical_components(), "source_maps": self.source_maps}
 
 
-@register_model("lsc_mace")
 class LocalSplitChargeModel(LocalChargeModel):
     """Conservative local transfers and multipoles around formal charges.
 
@@ -1014,7 +1002,6 @@ class LocalSplitChargeModel(LocalChargeModel):
         return components
 
 
-@register_model("qeq")
 class QEqModel(_ChargeAwareModel):
     """Quadratic charge equilibration with a fixed total charge per structure.
 
@@ -1231,7 +1218,6 @@ class QEqModel(_ChargeAwareModel):
         return {**super().canonical_components(), "source_maps": self.source_maps}
 
 
-@register_model("fixed_point_scf")
 class FixedPointSCFModel(_ChargeAwareModel):
     """FixedPointSCF with affine or nonlinear learned field responses.
 

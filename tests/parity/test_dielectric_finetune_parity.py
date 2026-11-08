@@ -37,8 +37,8 @@ from mace_core.metadata import (
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.calculators import MACECalculator
 from mace_torch.finetune.stages import build
+from mace_torch.models.build import build_model
 from mace_torch.train import write_model
-from mace_torch.train.model_stage import build_model
 
 from tests.parity.dipole_convert import dipole_config, transfer_dipole_weights
 from tests.parity.test_dipole_parity import (

@@ -11,70 +11,13 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import MutableMapping
 from pathlib import Path
-from typing import Any
 
 import yaml
-from mace_core.cli import Command, ConfigFlag, set_value
-from mace_core.config.base import ConfigError
+from mace_core.cli import Command
 from mace_core.config.resolved import ResolvedConfig
 
-__all__ = ["EXPORT_CONFIG", "TRAIN", "TRAIN_FLAGS"]
-
-#: The head a flag's file goes to when the configuration names none. The same
-#: name the legacy translator gives the head it builds from --train_file.
-DEFAULT_HEAD = "default"
-
-
-def _into_the_one_head(key: str):
-    """A writer for a flag that belongs to a head: the only head the file
-    declares, or ``default`` when it declares none."""
-
-    def write(document: MutableMapping[str, Any], value: Any) -> None:
-        data = document.get("data", {})
-        heads = data.get("heads", {}) if isinstance(data, MutableMapping) else {}
-        if isinstance(heads, MutableMapping) and len(heads) > 1:
-            raise ConfigError(
-                f"--{key} sets the file of one head, and the configuration "
-                f"declares {sorted(heads)}. Set {key} under the head it belongs "
-                f"to in the file."
-            )
-        head = next(iter(heads), DEFAULT_HEAD) if heads else DEFAULT_HEAD
-        set_value(document, f"data.heads.{head}.{key}", value)
-
-    return write
-
-
-TRAIN_FLAGS: tuple[ConfigFlag, ...] = (
-    ConfigFlag("--name", "runtime.name", "Name of the run and its files."),
-    ConfigFlag("--seed", "runtime.seed", "Random seed.", type=int),
-    ConfigFlag("--work_dir", "runtime.work_dir", "Where the run writes."),
-    ConfigFlag("--device", "runtime.device", "cpu, cuda, mps or xpu."),
-    ConfigFlag(
-        "--train_file",
-        "data.heads.<head>.train_file",
-        "Training structures, for a configuration with at most one head.",
-        write=_into_the_one_head("train_file"),
-    ),
-    ConfigFlag(
-        "--valid_file",
-        "data.heads.<head>.valid_file",
-        "Validation structures, for a configuration with at most one head.",
-        write=_into_the_one_head("valid_file"),
-    ),
-    ConfigFlag(
-        "--foundation_model",
-        "finetune.foundation_model",
-        "Fine-tune a V1 safetensors checkpoint. Convert legacy artifacts first.",
-    ),
-    ConfigFlag(
-        "--max_num_epochs",
-        "training.max_num_epochs",
-        "Epoch ceiling.",
-        type=int,
-    ),
-)
+__all__ = ["EXPORT_CONFIG", "TRAIN", "VALIDATE_CONFIG"]
 
 
 def _train(arguments: argparse.Namespace) -> int:
@@ -94,6 +37,64 @@ TRAIN = Command(
     help="Train a model from a configuration file.",
     run=_train,
     arguments=_train_arguments,
+)
+
+
+def _validation_arguments(parser: argparse.ArgumentParser) -> None:
+    _train_arguments(parser)
+    parser.add_argument(
+        "--show",
+        choices=("minimal", "resolved"),
+        help="Print explicit settings or the resolved configuration as YAML.",
+    )
+
+
+def _display_config(config: ResolvedConfig, *, minimal: bool) -> dict:
+    def ordered(payload, resolved):
+        if isinstance(payload, dict):
+            # A selected union's discriminator is needed even when the Python
+            # constructor supplied it by default. Put it first for readability.
+            result = {"kind": resolved["kind"]} if "kind" in resolved else {}
+            result.update(
+                {
+                    key: ordered(value, resolved[key])
+                    for key, value in payload.items()
+                    if key != "kind"
+                }
+            )
+            return result
+        if isinstance(payload, list):
+            return [
+                ordered(value, full)
+                for value, full in zip(payload, resolved, strict=True)
+            ]
+        return payload
+
+    resolved = config.to_resolved_dict()
+    return ordered(config.to_user_dict() if minimal else resolved, resolved)
+
+
+def _validate_config(arguments: argparse.Namespace) -> int:
+    from mace_torch.cli.training_config import configuration
+
+    config = configuration(arguments)
+    if arguments.show:
+        print(
+            yaml.safe_dump(
+                _display_config(config, minimal=arguments.show == "minimal"),
+                sort_keys=False,
+            ),
+            end="",
+        )
+    else:
+        print("Configuration is valid.")
+    return 0
+
+
+VALIDATE_CONFIG = Command(
+    help="Validate training settings without reading datasets or building a model.",
+    run=_validate_config,
+    arguments=_validation_arguments,
 )
 
 

@@ -28,7 +28,6 @@ from pathlib import Path
 import torch
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.config.training import InheritOptimizer, StageConfig
-from mace_core.stages import EpochRecord, TrainedModel
 from mace_core.tables import Row, error_table
 from torch import Tensor, nn
 from torch.optim import Optimizer
@@ -54,7 +53,7 @@ from mace_torch.train.checkpoint import (
     write_model,
     write_run_checkpoint,
 )
-from mace_torch.train.contracts import TorchBuiltModel
+from mace_torch.train.contracts import BuiltModel, EpochRecord, TrainedModel
 from mace_torch.train.ddp import DistributedContext, broadcast_decision, wrap_model
 from mace_torch.train.ema import ExponentialMovingAverage
 from mace_torch.train.full_batch import full_batch_step
@@ -204,13 +203,13 @@ def selection_loss(per_head: Mapping[str, dict[str, float]], rule: str) -> float
 
 def run_train_stage(
     config: ResolvedConfig,
-    built: TorchBuiltModel,
+    built: BuiltModel,
     *,
     device: str = "cpu",
     checkpoint_path: str | Path | None = None,
     resume: bool = False,
     distributed: DistributedContext | None = None,
-) -> TrainedModel[nn.Module]:
+) -> TrainedModel:
     """Train the model, and leave behind what the run produced.
 
     Args:
@@ -545,7 +544,7 @@ def _resume_training(
     checkpoint_path: str | Path | None,
     *,
     config: ResolvedConfig,
-    built: TorchBuiltModel,
+    built: BuiltModel,
     model: nn.Module,
     schedule: Sequence[StageConfig],
     loss: nn.Module,
@@ -639,7 +638,7 @@ def _restore_best_model(
 
 def report_errors(
     config: ResolvedConfig,
-    built: TorchBuiltModel,
+    built: BuiltModel,
     model: nn.Module,
     loss: torch.nn.Module,
     specs: Sequence[MetricSpec],
@@ -717,7 +716,7 @@ class _Requested:
     derivatives: tuple[str, ...]
 
 
-def _requested_names(built: TorchBuiltModel) -> _Requested:
+def _requested_names(built: BuiltModel) -> _Requested:
     """What was asked for, read off the built model rather than the config.
 
     The model is the authority here: it was built from the request, and reading
@@ -799,7 +798,7 @@ def _following_epoch(
 def _enter_stage(
     stage: StageConfig,
     config: ResolvedConfig,
-    built: TorchBuiltModel,
+    built: BuiltModel,
     model: nn.Module,
     optimizer: Optimizer,
     scheduler: LRScheduler | None,

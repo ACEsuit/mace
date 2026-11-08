@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 import torch
-from mace_core.config.loss import LossConfig
+from mace_core.config.loss import WeightedLoss
 from mace_core.data import KeySpecification, configuration_from_atoms
 from mace_core.elements import AtomicNumberTable
 from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
@@ -96,7 +96,7 @@ def test_missing_labels_preserve_loss_and_every_mapped_gradient(anchor, stress):
         legacy_batch,
         legacy_output,
     )
-    actual = build_loss(requested, LossConfig(weights=weights))(output, batch)
+    actual = build_loss(requested, WeightedLoss(weights=weights))(output, batch)
     assert actual.item() > 0
     torch.testing.assert_close(
         actual, expected, atol=CLOSED_FORM_FP64.atol, rtol=CLOSED_FORM_FP64.rtol

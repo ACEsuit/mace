@@ -24,7 +24,9 @@ changed on the way in, and nothing else:
 * the two TorchScript decorators are gone, since nothing here is scripted;
 * the k-space search bounds are read as integers, the only thing
   ``torch.arange`` does with them;
-* the style: formatting, unused locals, names and annotations.
+* the style: formatting, unused locals, names and annotations;
+* unused dense k-vector and source-target helpers are omitted, and the two
+  GTO field projection blocks share their matrix construction.
 
 Against the original, with ``e3nn``, energies agree bit for bit in the
 periodic, slab and open cases and to 1.8e-15 in a batch that mixes them, and

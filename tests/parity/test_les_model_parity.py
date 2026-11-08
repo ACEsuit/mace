@@ -518,8 +518,8 @@ def test_les_precision_rows(converted_les, device, backend, dtype, row, fp64, is
     from mace_core.config.precision import PrecisionConfig
     from mace_core.data.backend import DatasetStatistics
     from mace_core.elements import ResolvedE0s
+    from mace_torch.models.build import build_model
     from mace_torch.serialization import load_canonical_state
-    from mace_torch.train.model_stage import build_model
 
     precision = getattr(PrecisionConfig, dtype)()
     imported = import_neutral(converted_les, DEFAULT_CATALOGUE, precision=precision)

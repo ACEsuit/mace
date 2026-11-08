@@ -28,13 +28,13 @@ from mace_torch.finetune.transfer import (
     readout_sources,
     transfer_foundation,
 )
+from mace_torch.models.build import build_model
 from mace_torch.train import (
     run_data_stage,
     run_model_stage,
     run_train_stage,
     write_model,
 )
-from mace_torch.train.model_stage import build_model
 
 CATALOGUE = DEFAULT_CATALOGUE
 HYDROGEN, CARBON, OXYGEN = -13.6, -1030.0, -2040.0
@@ -111,7 +111,7 @@ def checkpoint(tmp_path_factory, request):
                 "max_num_epochs": 2,
                 "batch_size": 4,
                 "valid_batch_size": 4,
-                "scheduler": {"kind": {"kind": "constant"}},
+                "scheduler": {"kind": "constant"},
             },
         }
     )
@@ -434,7 +434,7 @@ def two_head_checkpoint(tmp_path_factory):
                 "max_num_epochs": 2,
                 "batch_size": 4,
                 "valid_batch_size": 4,
-                "scheduler": {"kind": {"kind": "constant"}},
+                "scheduler": {"kind": "constant"},
             },
         }
     )

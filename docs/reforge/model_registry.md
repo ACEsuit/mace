@@ -102,8 +102,8 @@ MP retains `dispersion`, `dispersion_damping`, `dispersion_xc`,
 `damping` alias, which takes precedence. D3 defaults remain `bj`, `pbe` and
 40 Bohr for both cutoffs; explicit cutoff arguments are in Angstrom.
 
-Readers accept metadata of the current major and any supported older minor.
-They reject a newer major/minor with both versions in the error. Cached JSON
+Readers require the current metadata schema. Earlier V1 schemas are not migrated.
+A version mismatch reports both the stored and required versions. Cached JSON
 and tensor files may have different URL-derived stems; both readers receive
 the resolved pair explicitly.
 

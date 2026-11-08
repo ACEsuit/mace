@@ -44,11 +44,21 @@ def test_registration_refuses_an_electrostatic_family_without_a_solver(monkeypat
     monkeypatch.setattr(registry, "MODEL_REGISTRY", {})
 
     class MissingSolver(MACEModel):
-        requires_electrostatics = True
+        pass
 
     with pytest.raises(TypeError, match="must define solver_descriptor"):
-        registry.register_model("missing_solver")(MissingSolver)
+        registry.register_model("missing_solver", electrostatics=True)(MissingSolver)
     assert "missing_solver" not in registry.MODEL_REGISTRY
+
+
+@fp64_only
+def test_builtin_model_names_cannot_be_overwritten():
+    from mace_torch.models.registry import model_family, register_model
+
+    original = model_family("scale_shift")
+    with pytest.raises(ValueError, match="already registered"):
+        register_model("scale_shift")(LocalChargeModel)
+    assert model_family("scale_shift") is original
 
 
 def model_for(
@@ -93,7 +103,7 @@ def model_for(
         PrecisionConfig(model=precision),
         widen_node_energy=False,
     )
-    model = cast(type[LocalChargeModel], registered_models()[kind])(
+    model = cast(type[LocalChargeModel], registered_models()[kind].model)(
         backend or ReferenceBackend(),
         config,
         [1, 8],

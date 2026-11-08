@@ -103,12 +103,9 @@ def test_dipole_cli_presets_preserve_loss_and_gradient(
 
     flags = ["--model", model, "--loss", preset]
     if weight != 1.0:
-        flags += [
-            "--dipole_weight",
-            str(weight),
-            "--polarizability_weight",
-            str(weight),
-        ]
+        flags += ["--dipole_weight", str(weight)]
+        if preset == "dipole_polar":
+            flags += ["--polarizability_weight", str(weight)]
     if stage_two:
         weight *= 2.0
         flags += [
@@ -119,9 +116,9 @@ def test_dipole_cli_presets_preserve_loss_and_gradient(
             "2",
             "--swa_dipole_weight",
             str(weight),
-            "--swa_polarizability_weight",
-            str(weight),
         ]
+        if preset == "dipole_polar":
+            flags += ["--swa_polarizability_weight", str(weight)]
     config = parse(flags)
     requested = resolve_requested(config.model.observables, DEFAULT_CATALOGUE)
     shapes = {"dipole": (2, 3)}

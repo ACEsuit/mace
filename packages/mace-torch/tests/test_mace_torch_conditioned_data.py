@@ -104,7 +104,7 @@ def conditioned(tmp_path, request, device):
                 "max_num_epochs": 1,
                 "batch_size": 4,
                 "valid_batch_size": 2,
-                "scheduler": {"kind": {"kind": "constant"}},
+                "scheduler": {"kind": "constant"},
             },
         }
     )
@@ -229,7 +229,9 @@ def test_conditioned_checkpoint_cli_calculator_padding_and_cache(
         )
         embedding = second.model.get_submodule("backbone.graph_embedding")
         assert isinstance(embedding, GraphFeatureEmbedding)
-        embedding.specs = [replace(spec, offset=-3) for spec in embedding.specs]
+        embedding.specs = [
+            spec.model_copy(update={"offset": -3}) for spec in embedding.specs
+        ]
         atoms = copy.deepcopy(frames[0])
         if storage == "atom":
             atoms.arrays["source_feature"][:] = 3

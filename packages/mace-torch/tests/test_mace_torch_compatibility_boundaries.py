@@ -21,6 +21,7 @@ from mace_torch.deploy.loader import load_deployed
 from mace_torch.train.checkpoint import latest_run_checkpoint, read_run_state
 from safetensors.torch import load_file
 from test_mace_torch_cli_commands import artifact as artifact
+from test_mace_torch_cli_commands import migrate_config
 from test_mace_torch_full_batch import configuration
 
 
@@ -90,7 +91,7 @@ def test_directory_aliases_merge_only_when_their_roots_agree(tmp_path, source):
             ]
         path = tmp_path / "legacy.yaml"
         path.write_text(yaml.safe_dump(values))
-        return ["--config", str(path)]
+        return ["--config", str(migrate_config(path))]
 
     assert parse(arguments()).runtime.work_dir == root
     values["model_dir"] = str(tmp_path / "different")

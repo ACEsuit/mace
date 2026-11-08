@@ -18,6 +18,9 @@ mace --engine v1 migrate --output migrated.yaml -- mace_run_train --train_file t
 
 ## Configuration and migration
 
+See [configuration examples and validation](configuration.md) for the flat
+loss/scheduler format, training recipes and `mace config validate`.
+
 V1 uses explicit flags and structured YAML, JSON or TOML configuration files.
 Unknown options and unknown configuration keys fail. Dotted command-line
 overrides remain unsupported. A configuration exported from a checkpoint

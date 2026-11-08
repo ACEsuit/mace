@@ -14,7 +14,7 @@ from mace_core.kernels.precision import Precision
 from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.deploy.loader import DeployedModel
-from mace_torch.train.model_stage import build_model
+from mace_torch.models.build import build_model
 
 NUMBERS = [1, 8]
 E0S = {"default": {1: -13.6, 8: -2040.0}}

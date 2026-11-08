@@ -55,7 +55,7 @@ training:
   batch_size: 4
   valid_batch_size: 4
   lr: 0.02
-  scheduler: {{kind: {{kind: constant}}}}
+  scheduler: {{kind: constant}}
 loss: {{weights: {{energy: 1.0, forces: 10.0}}}}
 """
 
@@ -94,7 +94,7 @@ def variant(config: Path, settings: dict) -> Path:
     lets a restart find the first run's checkpoints.
     """
     import yaml
-    from mace_core.cli import set_value
+    from mace_core.config.cli import set_value
 
     document = yaml.safe_load(config.read_text())
     for dotted_path, value in settings.items():
@@ -137,7 +137,8 @@ def training_records(directory: Path, name="tiny") -> list[dict]:
 def validation_losses(directory: Path) -> dict[int, float]:
     records = training_records(directory)
     return {
-        record["epoch"]: record["loss"] for record in records
+        record["epoch"]: record["loss"]
+        for record in records
         if record["mode"] == "valid" and record["epoch"] is not None
     }
 
@@ -161,7 +162,11 @@ def test_the_tiny_task_trains_on_the_v1_engine(tmp_path):
     assert len(losses) == 4
     assert losses[3] < losses[0]
     initial = training_records(tmp_path)[0]
-    assert (initial["epoch"], initial["mode"], initial["head"]) == (None, "valid", "default")
+    assert (initial["epoch"], initial["mode"], initial["head"]) == (
+        None,
+        "valid",
+        "default",
+    )
     assert np.isfinite(initial["loss"])
     assert "initial validation, head default" in finished.stderr
     assert optimizer_steps(tmp_path) == {0: 2, 1: 2, 2: 2, 3: 2}
@@ -171,7 +176,9 @@ def test_the_tiny_task_trains_on_the_v1_engine(tmp_path):
 @needs_the_v1_engine
 @pytest.mark.parametrize("balancing", ["balanced", "proportional"])
 @pytest.mark.parametrize("lbfgs", [False, True])
-def test_oversized_batch_is_diagnosed_only_for_minibatch_training(tmp_path, balancing, lbfgs):
+def test_oversized_batch_is_diagnosed_only_for_minibatch_training(
+    tmp_path, balancing, lbfgs
+):
     config = variant(tiny_task(tmp_path), {"training.head_balancing": balancing})
     flags = ["--lbfgs"] if lbfgs else []
     finished = on_v1(
@@ -214,13 +221,36 @@ def test_explicit_training_flags_write_a_readable_v1_artifact(tmp_path):
     """The real launcher accepts legacy flag spellings and writes safetensors."""
     tiny_task(tmp_path)
     finished = on_v1(
-        "--name", "flags", "--results_dir", str(tmp_path),
-        "--train_file", str(tmp_path / "train.xyz"),
-        "--E0s", "isolated", "--num_radial_basis", "6",
-        "--r_max", "5.0", "--num_channels", "4", "--max_L", "1",
-        "--max_ell", "1", "--correlation", "2", "--max_num_epochs", "1",
-        "--batch_size", "4", "--valid_batch_size", "4", "--plot", "false",
-        "--default_dtype", "float32",
+        "--name",
+        "flags",
+        "--results_dir",
+        str(tmp_path),
+        "--train_file",
+        str(tmp_path / "train.xyz"),
+        "--E0s",
+        "isolated",
+        "--num_radial_basis",
+        "6",
+        "--r_max",
+        "5.0",
+        "--num_channels",
+        "4",
+        "--max_L",
+        "1",
+        "--max_ell",
+        "1",
+        "--correlation",
+        "2",
+        "--max_num_epochs",
+        "1",
+        "--batch_size",
+        "4",
+        "--valid_batch_size",
+        "4",
+        "--plot",
+        "false",
+        "--default_dtype",
+        "float32",
     )
     assert finished.returncode == 0, finished.stderr
     from mace_torch.deploy.loader import load_deployed
@@ -260,7 +290,7 @@ training:
   valid_batch_size: 2
   lr: 0.02
   head_balancing: balanced
-  scheduler: {{kind: {{kind: constant}}}}
+  scheduler: {{kind: constant}}
 loss: {{weights: {{energy: 1.0, forces: 10.0}}}}
 """
 
@@ -319,7 +349,14 @@ def test_a_multihead_run_reports_every_head_separately(tmp_path):
     records = training_records(tmp_path)
     assert [
         (row["epoch"], row["head"]) for row in records if row["mode"] == "valid"
-    ] == [(None, "small"), (None, "large"), (0, "small"), (0, "large"), (1, "small"), (1, "large")]
+    ] == [
+        (None, "small"),
+        (None, "large"),
+        (0, "small"),
+        (0, "large"),
+        (1, "small"),
+        (1, "large"),
+    ]
     for head in ("small", "large"):
         assert finished.stderr.count(f", head {head}:") == 3
     assert optimizer_steps(tmp_path) == {0: 12, 1: 12}
@@ -333,7 +370,12 @@ def test_a_multihead_run_prints_an_error_table(tmp_path):
     rows = {}
     for line in finished.stderr.splitlines():
         cells = [cell.strip() for cell in line.split("|")[1:-1]]
-        if cells and cells[0] in {"train_small", "train_large", "valid_small", "valid_large"}:
+        if cells and cells[0] in {
+            "train_small",
+            "train_large",
+            "valid_small",
+            "valid_large",
+        }:
             rows[cells[0]] = cells[1:]
     assert set(rows) == {"train_small", "train_large", "valid_small", "valid_large"}
     for cells in rows.values():
@@ -358,7 +400,7 @@ training:
   batch_size: 2
   valid_batch_size: 2
   lr: 0.01
-  scheduler: {{kind: {{kind: constant}}}}
+  scheduler: {{kind: constant}}
 """
 
 
@@ -401,8 +443,15 @@ def test_a_fine_tune_leaves_the_replay_head_out_of_its_table(tmp_path):
     for split in ("train_replay", "valid_replay"):
         assert f"Skipping evaluation of {split} (head replay)" in finished.stderr
     records = training_records(tmp_path, "tuned")
-    assert [(row["epoch"], row["head"]) for row in records if row["mode"] == "valid"] == [
-        (None, "replay"), (None, "target"), (0, "replay"), (0, "target"), (1, "replay"), (1, "target")
+    assert [
+        (row["epoch"], row["head"]) for row in records if row["mode"] == "valid"
+    ] == [
+        (None, "replay"),
+        (None, "target"),
+        (0, "replay"),
+        (0, "target"),
+        (1, "replay"),
+        (1, "target"),
     ]
     for head in ("replay", "target"):
         assert finished.stderr.count(f", head {head}:") == 3
@@ -442,7 +491,7 @@ def test_restart_latest_continues_the_run(tmp_path):
     after = validation_losses(tmp_path)
     assert after.keys() == {0, 1, 2, 3}
     assert after[2] <= 1.5 * before[1]
-    assert training_records(tmp_path)[:len(original_records)] == original_records
+    assert training_records(tmp_path)[: len(original_records)] == original_records
     assert sum(row["epoch"] is None for row in training_records(tmp_path)) == 1
     assert optimizer_steps(tmp_path) == {0: 2, 1: 2, 2: 2, 3: 2}
 
@@ -459,12 +508,16 @@ def test_restart_latest_with_nothing_to_restart_from_starts_fresh(tmp_path):
 
 
 @needs_the_v1_engine
-@pytest.mark.parametrize("retention", [None, "--keep_checkpoints", "--save_all_checkpoints"])
+@pytest.mark.parametrize(
+    "retention", [None, "--keep_checkpoints", "--save_all_checkpoints"]
+)
 def test_run_checkpoint_retention_flags(tmp_path, retention):
     flags = [] if retention is None else [retention]
     finished = on_v1("--config", str(tiny_task(tmp_path)), *flags)
     assert finished.returncode == 0, finished.stderr
-    epochs = {int(path.stem.split("run-")[1]) for path in tmp_path.glob("tiny.run-*.json")}
+    epochs = {
+        int(path.stem.split("run-")[1]) for path in tmp_path.glob("tiny.run-*.json")
+    }
     if retention is None:
         assert epochs == {4}
     elif retention == "--save_all_checkpoints":

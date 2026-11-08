@@ -10,6 +10,8 @@ import argparse
 import ast
 from typing import Any
 
+from mace_core.config.legacy import LEGACY_TRAIN_DESTS, Dropped, Kept, Merged, Reserved
+
 from mace_torch.cli.eval_configs import boolean
 
 
@@ -294,19 +296,73 @@ FLAGS = tuple(
 DEFAULTS = {dest: default for dest, _, _, default, _, _ in FLAGS}
 
 
+# Flags that directly address the V1 document. Head paths are resolved by
+# the configuration reader; the remaining legacy spellings use the translator.
+DIRECT_FLAGS = {
+    "name": ("runtime.name", "Name of the run and its files."),
+    "seed": ("runtime.seed", "Random seed."),
+    "work_dir": ("runtime.work_dir", "Where the run writes."),
+    "device": ("runtime.device", "cpu, cuda, mps or xpu."),
+    "train_file": ("data.heads.<head>.train_file", "Training structures for one head."),
+    "valid_file": (
+        "data.heads.<head>.valid_file",
+        "Validation structures for one head.",
+    ),
+    "foundation_model": ("finetune.foundation_model", "V1 foundation checkpoint."),
+    "max_num_epochs": ("training.max_num_epochs", "Epoch ceiling."),
+}
+
+
+def _help(dest: str) -> str:
+    if dest in DIRECT_FLAGS:
+        path, description = DIRECT_FLAGS[dest]
+        return f"{description} Configuration: {path}."
+    descriptions = {
+        "batch_size": "Structures per training batch; positive integer.",
+        "valid_batch_size": "Structures per validation batch; positive integer.",
+        "r_max": "Neighbour cutoff radius in Angstrom.",
+        "lr": "Base learning rate; nonnegative finite number.",
+        "eval_interval": "Epochs between evaluations; positive integer.",
+        "huber_delta": (
+            "Positive Huber crossover in the scored quantity's units; "
+            "requires huber or universal."
+        ),
+        "dry_run": (
+            "Build data and model, then stop before training; "
+            "use config validate for validation only."
+        ),
+    }
+    if dest in descriptions:
+        return descriptions[dest]
+    disposition = LEGACY_TRAIN_DESTS.get(dest)
+    if isinstance(disposition, Kept):
+        return f"Set {disposition.path}."
+    if isinstance(disposition, Merged):
+        return f"Configures {disposition.into}: {disposition.note}."
+    if isinstance(disposition, Dropped):
+        return f"Retired on V1: {disposition.reason}."
+    if isinstance(disposition, Reserved):
+        return f"Configures {disposition.section}: {disposition.note}."
+    return f"Legacy compatibility option {dest}; translated to the V1 configuration."
+
+
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--config")
+    parser.add_argument(
+        "--config", help="Training configuration file: YAML, JSON or TOML."
+    )
     parser.add_argument(
         "--foundation_filter_elements",
         dest="foundation_model_readout",
         type=boolean,
         default=argparse.SUPPRESS,
+        help="Copy the foundation readout; alias of --foundation_model_readout.",
     )
     for dest, kind, action, _, nargs, options in FLAGS:
         settings: dict[str, Any] = {
             "dest": dest,
             "action": action,
             "default": argparse.SUPPRESS,
+            "help": _help(dest),
         }
         if action == "store":
             settings.update(type=kind, nargs=nargs)

@@ -224,7 +224,7 @@ def test_named_default_downloads_the_pair_and_reuses_cache(
 @fp64_only
 @pytest.mark.parametrize(
     "version,accepted",
-    [("1.0", True), ("1.1", True), ("1.2", True), ("1.3", False), ("2.0", False)],
+    [("1.0", False), ("1.1", False), ("1.2", True), ("1.3", False), ("2.0", False)],
 )
 def test_loader_checks_metadata_version_before_model_construction(
     foundation, tmp_path, version, accepted

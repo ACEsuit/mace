@@ -17,13 +17,15 @@ their optimizer here, the way a loss's delta lives with its loss.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field, model_validator
 
-from mace_core.config.section import FrozenSection
+from mace_core.config.base import ConfigSection, default_choice
+from mace_core.config.loss import LossWeights
 
 __all__ = [
+    "SCHEDULER_SHARED_FIELDS",
     "AdamOptimizer",
     "AdamWOptimizer",
     "ConstantSchedule",
@@ -34,7 +36,6 @@ __all__ = [
     "OptimizerKind",
     "PlateauSchedule",
     "ScheduleFreeOptimizer",
-    "ScheduleKind",
     "SchedulerConfig",
     "StageConfig",
     "StageOptimizerKind",
@@ -43,7 +44,7 @@ __all__ = [
 ]
 
 
-class AdamOptimizer(FrozenSection):
+class AdamOptimizer(ConfigSection):
     """Adam.
 
     Args:
@@ -52,11 +53,11 @@ class AdamOptimizer(FrozenSection):
     """
 
     kind: Literal["adam"] = "adam"
-    beta: float = 0.9
+    beta: float = Field(default=0.9, ge=0, lt=1, allow_inf_nan=False)
     amsgrad: bool = True
 
 
-class AdamWOptimizer(FrozenSection):
+class AdamWOptimizer(ConfigSection):
     """AdamW: Adam with the decay applied to the weights rather than the grad.
 
     Args:
@@ -65,11 +66,11 @@ class AdamWOptimizer(FrozenSection):
     """
 
     kind: Literal["adamw"] = "adamw"
-    beta: float = 0.9
+    beta: float = Field(default=0.9, ge=0, lt=1, allow_inf_nan=False)
     amsgrad: bool = True
 
 
-class ScheduleFreeOptimizer(FrozenSection):
+class ScheduleFreeOptimizer(ConfigSection):
     """The schedule-free variant, whose tuning surface is its own.
 
     Args:
@@ -79,12 +80,12 @@ class ScheduleFreeOptimizer(FrozenSection):
     """
 
     kind: Literal["schedulefree"] = "schedulefree"
-    beta1: float = 0.9
-    beta2: float = 0.999
-    warmup_steps: int = 0
+    beta1: float = Field(default=0.9, ge=0, lt=1, allow_inf_nan=False)
+    beta2: float = Field(default=0.999, ge=0, lt=1, allow_inf_nan=False)
+    warmup_steps: int = Field(default=0, ge=0)
 
 
-class LBFGSOptimizer(FrozenSection):
+class LBFGSOptimizer(ConfigSection):
     """Full-batch L-BFGS, which steps once per epoch through a closure.
 
     A stage running this is a full-batch stage: every epoch is one optimizer
@@ -105,7 +106,7 @@ class LBFGSOptimizer(FrozenSection):
     """
 
     kind: Literal["lbfgs"] = "lbfgs"
-    lr: float = Field(default=1.0, gt=0)
+    lr: float = Field(default=1.0, gt=0, allow_inf_nan=False)
     history_size: int = Field(default=200, ge=1)
     max_iter: int = Field(default=20, ge=1)
     line_search_fn: Literal["strong_wolfe"] | None = "strong_wolfe"
@@ -118,7 +119,7 @@ OptimizerKind = Annotated[
 ]
 
 
-class InheritOptimizer(FrozenSection):
+class InheritOptimizer(ConfigSection):
     """Keep the optimizer the previous stage was running.
 
     A kind rather than an absent field. `None` under a kinds field cannot say
@@ -140,13 +141,24 @@ StageOptimizerKind = Annotated[
 ]
 
 
-class ConstantSchedule(FrozenSection):
+class _SchedulerSettings(ConfigSection):
+    """Multipliers on the base learning rate, by parameter-group name."""
+
+    group_factors: dict[str, Annotated[float, Field(ge=0, allow_inf_nan=False)]] = (
+        Field(default_factory=dict)
+    )
+
+
+SCHEDULER_SHARED_FIELDS = frozenset(_SchedulerSettings.model_fields)
+
+
+class ConstantSchedule(_SchedulerSettings):
     """No learning-rate schedule at all."""
 
     kind: Literal["constant"] = "constant"
 
 
-class PlateauSchedule(FrozenSection):
+class PlateauSchedule(_SchedulerSettings):
     """Reduce the learning rate when the validation loss stops improving.
 
     Args:
@@ -155,11 +167,11 @@ class PlateauSchedule(FrozenSection):
     """
 
     kind: Literal["plateau"] = "plateau"
-    factor: float = 0.8
-    patience: int = 50
+    factor: float = Field(default=0.8, gt=0, lt=1, allow_inf_nan=False)
+    patience: int = Field(default=50, ge=0)
 
 
-class ExponentialSchedule(FrozenSection):
+class ExponentialSchedule(_SchedulerSettings):
     """Multiply the learning rate by a constant every epoch.
 
     Args:
@@ -167,30 +179,21 @@ class ExponentialSchedule(FrozenSection):
     """
 
     kind: Literal["exponential"] = "exponential"
-    gamma: float = 0.9993
+    gamma: float = Field(default=0.9993, gt=0, allow_inf_nan=False)
 
 
-#: Which learning-rate schedule, with its own settings under it.
-ScheduleKind = Annotated[
+def normalize_scheduler(value: Any) -> Any:
+    return default_choice(value, default="plateau", common=SCHEDULER_SHARED_FIELDS)
+
+
+SchedulerConfig = Annotated[
     ConstantSchedule | PlateauSchedule | ExponentialSchedule,
     Field(discriminator="kind"),
+    BeforeValidator(normalize_scheduler),
 ]
 
 
-class SchedulerConfig(FrozenSection):
-    """The learning-rate schedule and the per-parameter-group factors.
-
-    Args:
-        kind: Which schedule.
-        group_factors: Multipliers on the base rate, by parameter-group name.
-            An unnamed group takes ``1.0``.
-    """
-
-    kind: ScheduleKind = PlateauSchedule()
-    group_factors: dict[str, float] = Field(default_factory=dict)
-
-
-class EMAConfig(FrozenSection):
+class EMAConfig(ConfigSection):
     """The exponential moving average of the weights.
 
     Args:
@@ -199,10 +202,10 @@ class EMAConfig(FrozenSection):
     """
 
     enabled: bool = False
-    decay: float = 0.99
+    decay: float = Field(default=0.99, ge=0, le=1, allow_inf_nan=False)
 
 
-class StageConfig(FrozenSection):
+class StageConfig(ConfigSection):
     """One stage of a run: where it starts and what changes when it does.
 
     A run is a sequence of these. The frozen tree has exactly two, and the
@@ -227,15 +230,15 @@ class StageConfig(FrozenSection):
             that only raises the energy weight says only that.
     """
 
-    name: str = "main"
-    start_epoch: int = 0
-    lr: float | None = None
+    name: str = Field(default="main", min_length=1)
+    start_epoch: int = Field(default=0, ge=0)
+    lr: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     optimizer: StageOptimizerKind = InheritOptimizer()
     scheduler: SchedulerConfig | None = None
-    loss_weights: dict[str, float] = Field(default_factory=dict)
+    loss_weights: LossWeights = Field(default_factory=dict)
 
 
-class StageTwoConfig(FrozenSection):
+class StageTwoConfig(ConfigSection):
     """The second stage, which legacy spells SWA.
 
     Both spellings name one setting in legacy, as option-string aliases of one
@@ -252,12 +255,12 @@ class StageTwoConfig(FrozenSection):
     """
 
     enabled: bool = False
-    start_epoch: int | None = None
-    lr: float = 0.001
+    start_epoch: int | None = Field(default=None, ge=1)
+    lr: float = Field(default=0.001, ge=0, allow_inf_nan=False)
     optimizer: StageOptimizerKind = InheritOptimizer()
 
 
-class TrainingConfig(FrozenSection):
+class TrainingConfig(ConfigSection):
     """The optimizer, the schedule, the stages, and the loop's own limits.
 
     Args:
@@ -291,21 +294,35 @@ class TrainingConfig(FrozenSection):
     """
 
     optimizer: OptimizerKind = AdamOptimizer()
-    lr: float = 0.01
-    weight_decay: float = 5e-7
-    batch_size: int = 10
-    valid_batch_size: int = 10
-    max_num_epochs: int = 2048
-    patience: int = 2048
-    eval_interval: int = 1
-    clip_grad: float | None = 10.0
-    scheduler: SchedulerConfig = SchedulerConfig()
+    lr: float = Field(default=0.01, ge=0, allow_inf_nan=False)
+    weight_decay: float = Field(default=5e-7, ge=0, allow_inf_nan=False)
+    batch_size: int = Field(default=10, ge=1)
+    valid_batch_size: int = Field(default=10, ge=1)
+    max_num_epochs: int = Field(default=2048, ge=0)
+    patience: int = Field(default=2048, ge=0)
+    eval_interval: int = Field(default=1, ge=1)
+    clip_grad: float | None = Field(default=10.0, ge=0, allow_inf_nan=False)
+    scheduler: SchedulerConfig = PlateauSchedule()
     ema: EMAConfig = EMAConfig()
     checkpoint_metric: Literal["mean_over_heads", "last_head"] = "mean_over_heads"
     head_balancing: Literal["balanced", "proportional"] = "balanced"
     stage_two: StageTwoConfig = StageTwoConfig()
     stages: tuple[StageConfig, ...] = ()
     dry_run: bool = False
+
+    @model_validator(mode="after")
+    def _valid_stages(self):
+        if self.stages and self.stage_two.enabled:
+            raise ValueError("choose training.stages or training.stage_two, not both")
+        if self.stage_two.enabled and self.stage_two.start_epoch is None:
+            raise ValueError("training.stage_two.enabled requires start_epoch")
+        names = [stage.name for stage in self.stages]
+        if len(names) != len(set(names)):
+            raise ValueError("training.stages requires a unique name for every stage")
+        starts = [stage.start_epoch for stage in self.stages]
+        if len(starts) != len(set(starts)):
+            raise ValueError("training.stages requires distinct start_epoch values")
+        return self
 
     def schedule(self) -> tuple[StageConfig, ...]:
         """The stages this run goes through, in order, starting at zero.

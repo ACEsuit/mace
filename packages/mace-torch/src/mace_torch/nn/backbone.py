@@ -36,6 +36,7 @@ import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.model import (
     ChebyshevBasisConfig,
+    GraphFeatureConfig,
     InteractionKind,
     ModelConfig,
     NoDistanceTransformConfig,
@@ -61,7 +62,7 @@ from mace_torch.nn.embedding import (
     build_distance_transform,
     build_radial_basis,
 )
-from mace_torch.nn.graph_features import FeatureSpec, GraphFeatureEmbedding
+from mace_torch.nn.graph_features import GraphFeatureEmbedding
 from mace_torch.nn.interaction import (
     InteractionBlock,
     NonLinearInteractionBlock,
@@ -249,7 +250,7 @@ class MACEBackbone(nn.Module):
         *,
         radial_precision: Precision | None = None,
         last_layer_irreps: str = "0e",
-        graph_features: Sequence[FeatureSpec] = (),
+        graph_features: Sequence[GraphFeatureConfig] = (),
         edge_axes: tuple[int, int, int] = (0, 1, 2),
     ) -> None:
         super().__init__()

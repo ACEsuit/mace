@@ -90,6 +90,7 @@ reference = "mace_torch.electrostatics.solver:ReferenceSolver"
 # The mace subcommands this package implements, named by their words with dots
 # between them. mace_core.cli finds them here and names no package itself.
 train = "mace_torch.cli.commands:TRAIN"
+"config.validate" = "mace_torch.cli.commands:VALIDATE_CONFIG"
 "model.export-config" = "mace_torch.cli.commands:EXPORT_CONFIG"
 eval = "mace_torch.cli.commands:EVAL"
 "model.select-head" = "mace_torch.cli.commands:SELECT_HEAD"

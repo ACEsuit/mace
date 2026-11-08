@@ -22,7 +22,7 @@ caller that only wants a unit constant should not pay for a file parser:
 
 Heavier ones still (the Clebsch-Gordan basis, neighbours) follow the same rule.
 The typed output object, the observable declarations, the configuration base,
-the stage-boundary objects and the model metadata are re-exported below,
+and the model metadata are re-exported below,
 because they are the contracts every model and every consumer is written
 against and they cost only pydantic to import.
 """
@@ -39,23 +39,18 @@ from mace_core.observables import (
     ObservableSpec,
 )
 from mace_core.outputs import MACEOutput
-from mace_core.stages import BuiltModel, DataBundle, EpochRecord, TrainedModel
 
 __all__ = [
     "DEFAULT_CATALOGUE",
     "BaseConfig",
-    "BuiltModel",
     "ConfigError",
     "ConfigSection",
-    "DataBundle",
     "DerivativeSpec",
-    "EpochRecord",
     "InputSpec",
     "MACEOutput",
     "ModelMetadata",
     "ObservableCatalogue",
     "ObservableSpec",
-    "TrainedModel",
     "__version__",
     "format_citations",
 ]

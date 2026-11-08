@@ -3,11 +3,8 @@
 import numpy as np
 import pytest
 from mace_core.config.model import (
-    DipoleRMSScaling,
-    ForceRMSScaling,
     ModelConfig,
-    NoScaling,
-    StandardDeviationScaling,
+    ScalingConfig,
 )
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data import Configuration
@@ -28,10 +25,10 @@ def frame(head="a", **properties):
 @pytest.mark.parametrize(
     "recipe,expected",
     [
-        (StandardDeviationScaling(), (1.0, 2.0)),
-        (ForceRMSScaling(), (2.0, 4.0)),
-        (DipoleRMSScaling(), (3.0, 6.0)),
-        (NoScaling(), (1.0, 1.0)),
+        (ScalingConfig(kind="std"), (1.0, 2.0)),
+        (ScalingConfig(kind="rms_forces"), (2.0, 4.0)),
+        (ScalingConfig(kind="rms_dipoles"), (3.0, 6.0)),
+        (ScalingConfig(kind="none"), (1.0, 1.0)),
     ],
 )
 def test_head_statistics_subtract_the_same_e0s_as_the_model(recipe, expected):
@@ -64,7 +61,7 @@ def test_non_scalar_means_are_not_subtracted_and_missing_labels_are_ignored():
             frame("b", q=100 * values[0]),
         ],
         [spec],
-        {"q": {"a": StandardDeviationScaling()}},
+        {"q": {"a": ScalingConfig(kind="std")}},
         ResolvedE0s({}),
     )["q"]["a"]
     assert measured.shift == (2.0, 0.0, 0.0, 0.0, 0.0)
@@ -81,7 +78,7 @@ def test_constant_targets_keep_a_trainable_scale(per_atom):
     measured = compute_normalization(
         [frame(q=np.array([3.0, 3.0]) if per_atom else 6.0)],
         [spec],
-        {"q": {"a": StandardDeviationScaling()}},
+        {"q": {"a": ScalingConfig(kind="std")}},
         ResolvedE0s({}),
     )["q"]["a"]
     assert measured.scale == 1.0
@@ -91,9 +88,9 @@ def test_constant_targets_keep_a_trainable_scale(per_atom):
 @pytest.mark.parametrize(
     "value,recipe,match",
     [
-        (None, StandardDeviationScaling(), "no training labels"),
-        (float("nan"), StandardDeviationScaling(), "nonfinite labels"),
-        (1.0, ForceRMSScaling(), "forces"),
+        (None, ScalingConfig(kind="std"), "no training labels"),
+        (float("nan"), ScalingConfig(kind="std"), "nonfinite labels"),
+        (1.0, ScalingConfig(kind="rms_forces"), "forces"),
     ],
 )
 def test_invalid_statistics_fail_with_the_observable_and_head(value, recipe, match):
@@ -129,10 +126,12 @@ def test_remapped_energy_retains_the_legacy_default_and_other_readouts_keep_iden
             }
         }
     )
-    assert model.normalization_for_heads({"new": "b"}) == {"q": {"new": NoScaling()}}
+    assert model.normalization_for_heads({"new": "b"}) == {
+        "q": {"new": ScalingConfig(kind="none")}
+    }
     assert model.normalization_for_heads({"new": "a"}) == {
-        "energy": {"new": StandardDeviationScaling()},
-        "q": {"new": StandardDeviationScaling()},
+        "energy": {"new": ScalingConfig(kind="std")},
+        "q": {"new": ScalingConfig(kind="std")},
     }
 
 
@@ -141,6 +140,6 @@ def test_rms_rejects_nonfinite_vector_labels_even_when_its_target_is_finite():
         compute_normalization(
             [frame(q=[float("nan"), 0.0, 0.0], forces=np.ones((2, 3)))],
             [ObservableSpec(name="q", irreps="1o", per_atom=False, units="u")],
-            {"q": {"a": ForceRMSScaling()}},
+            {"q": {"a": ScalingConfig(kind="rms_forces")}},
             ResolvedE0s({}),
         )

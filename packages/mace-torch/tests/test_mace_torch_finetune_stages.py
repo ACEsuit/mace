@@ -72,7 +72,7 @@ def fine_tune(directory, foundation):
                 "batch_size": 4,
                 "valid_batch_size": 4,
                 "lr": 0.01,
-                "scheduler": {"kind": {"kind": "constant"}},
+                "scheduler": {"kind": "constant"},
             },
         }
     )

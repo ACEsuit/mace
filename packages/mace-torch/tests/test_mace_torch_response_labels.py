@@ -6,7 +6,7 @@ import torch
 from ase import Atoms
 from ase.io import write
 from conftest import fp64_only
-from mace_core.config.loss import LossConfig
+from mace_core.config.loss import WeightedLoss
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data import Configuration
 from mace_core.elements import AtomicNumberTable
@@ -175,7 +175,7 @@ def test_loss_and_metrics_mask_rows_without_reordering_components(
     values[row_count:] = 1000.0
     response = values.movedim(0, layout.output_row_axis).contiguous().requires_grad_()
     output = MACEOutput(extras={"q": batch.targets["q"], name: response})
-    loss = build_loss(requested, LossConfig(weights={"q": 0.0, name: 1.0}))
+    loss = build_loss(requested, WeightedLoss(weights={"q": 0.0, name: 1.0}))
     # Five components and five atoms: the old reshape silently scrambled them.
     assert loss(output, batch).item() == 0.0
     with torch.no_grad():
@@ -217,7 +217,7 @@ def test_a_batch_without_response_labels_has_zero_gradient_and_no_response_metri
     batch.property_weights[name].zero_()
     response = torch.ones_like(batch.targets[name]).movedim(0, 1).requires_grad_()
     output = MACEOutput(extras={"q": batch.targets["q"], name: response})
-    loss = build_loss(requested, LossConfig(weights={"q": 0.0, name: 1.0}))
+    loss = build_loss(requested, WeightedLoss(weights={"q": 0.0, name: 1.0}))
     value = loss(output, batch)
     assert value.item() == 0
     value.backward()
@@ -236,7 +236,7 @@ def test_loss_refuses_a_reference_with_the_wrong_rows_even_when_numel_matches():
     batch.targets[name] = batch.targets[name].movedim(0, 1)
     output = MACEOutput(extras={"q": batch.targets["q"], name: response})
     with pytest.raises(ValueError, match=r"target.*row-first shape"):
-        build_loss(requested, LossConfig())(output, batch)
+        build_loss(requested, WeightedLoss())(output, batch)
 
 
 @fp64_only
@@ -343,9 +343,9 @@ def test_response_labels_train_evaluate_and_reload(
             "batch_size": 4,
             "valid_batch_size": 4,
             "lr": 0.001,
-            "scheduler": {"kind": {"kind": "constant"}},
+            "scheduler": {"kind": "constant"},
         },
-        "loss": {"weights": {"q": 0.0, response_name: 1.0}},
+        "loss": {"weights": {"q": 0.0}},
     }
     # Produce labels from a seeded model; the later learner sees a 20% changed
     # response. Loss arithmetic and axis ownership are pinned independently above.
@@ -381,6 +381,7 @@ def test_response_labels_train_evaluate_and_reload(
     write(train_file, frames[:4])
     write(valid_file, frames[4:])
     document["model"]["observables"].append(response_name)
+    document["loss"]["weights"][response_name] = 1.0
     config = ResolvedConfig.model_validate(document)
     initial = build(config)
     initial.model.to(device)

@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
-from mace_core.config.loss import LossConfig
+from mace_core.config.loss import WeightedLoss
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
 from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
@@ -80,7 +80,7 @@ def batch_of(*configurations):
 
 def measured(batch, energies, forces) -> dict[str, float]:
     """The metrics of one batch against the given predictions."""
-    loss = build_loss(REQUESTED, LossConfig())
+    loss = build_loss(REQUESTED, WeightedLoss())
     metrics = RunningMetrics(metric_specs(REQUESTED), loss)
     metrics.update(
         MACEOutput(
@@ -258,7 +258,7 @@ def test_the_reported_loss_moves_with_the_batch_size():
 
 
 def test_scoring_nothing_is_refused():
-    loss = build_loss(REQUESTED, LossConfig())
+    loss = build_loss(REQUESTED, WeightedLoss())
     with pytest.raises(ValueError, match="no structure was scored"):
         RunningMetrics(metric_specs(REQUESTED), loss).compute()
 

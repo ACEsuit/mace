@@ -13,10 +13,11 @@ from mace_core.observables import DEFAULT_CATALOGUE
 from mace_core.outputs import MACEOutput
 from mace_torch.calculators import MACECalculator
 from mace_torch.deploy.loader import DeployError, load_deployed
+from mace_torch.models.build import ModelBuildError
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.physics import DerivativeEngine, FixedPointDriver
 from mace_torch.serialization import canonical_state
-from mace_torch.train import ModelStageError, write_model
+from mace_torch.train import write_model
 from test_mace_torch_magnetic_model import (
     CLUSTER,
     configuration,
@@ -283,7 +284,7 @@ def test_nonmagnetic_models_refuse_projection(tmp_path):
             )
         }
     )
-    with pytest.raises(ModelStageError, match=r"magnetic\.time_reversal"):
+    with pytest.raises(ModelBuildError, match=r"magnetic\.time_reversal"):
         build(config)
 
 

@@ -11,13 +11,12 @@ from pathlib import Path
 
 import pytest
 import yaml
-from mace_core.cli import set_value
 from mace_core.config import read_config_file
 from mace_core.config.base import ConfigSection
+from mace_core.config.cli import set_value
 from mace_core.config.e0s import E0sFromFoundation, E0sIsolatedAtoms
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.config.runtime import WORK_DIR_LAYOUT
-from mace_core.config.section import FrozenSection
 from mace_core.config.training import (
     ConstantSchedule,
     LBFGSOptimizer,
@@ -124,7 +123,7 @@ def test_resolving_twice_is_a_fixed_point(tmp_path):
         "model": {"r_max": 4.0, "observables": ["energy", "forces", "stress"]},
         "data": {"heads": {"pbe": {"e0s": {"kind": "table", "values": {1: -13.6}}}}},
         "training": {"optimizer": {"kind": "schedulefree", "warmup_steps": 100}},
-        "loss": {"kind": {"kind": "huber", "delta": 0.05}},
+        "loss": {"kind": "huber", "delta": 0.05},
     }
     once = loaded(ResolvedConfig, write(tmp_path, ".yaml", written)).to_resolved_dict()
     twice = ResolvedConfig.model_validate(once).to_resolved_dict()
@@ -155,7 +154,7 @@ def test_every_section_in_the_tree_is_frozen():
         if issubclass(model, ConfigSection) and not model.model_config.get("frozen")
     )
     assert not mutable, mutable
-    assert FrozenSection.model_config["frozen"] is True
+    assert ConfigSection.model_config["frozen"] is True
 
 
 def test_a_resolved_config_cannot_be_written_to_at_any_depth():
@@ -358,7 +357,7 @@ def test_lbfgs_refuses_an_ema():
             settings={
                 "model.model": "an-architecture",
                 "training.optimizer": {"kind": "lbfgs"},
-                "training.scheduler.kind": {"kind": "constant"},
+                "training.scheduler": {"kind": "constant"},
                 "training.ema.enabled": "true",
             },
         )
@@ -381,11 +380,11 @@ def test_lbfgs_is_accepted_with_a_schedule_that_does_not_watch_steps():
         settings={
             "model.model": "an-architecture",
             "training.optimizer": {"kind": "lbfgs"},
-            "training.scheduler.kind": {"kind": "constant"},
+            "training.scheduler": {"kind": "constant"},
         },
     )
     assert isinstance(config.training.optimizer, LBFGSOptimizer)
-    assert isinstance(config.training.scheduler.kind, ConstantSchedule)
+    assert isinstance(config.training.scheduler, ConstantSchedule)
 
 
 def test_a_second_stage_running_lbfgs_is_checked_too():
@@ -396,7 +395,7 @@ def test_a_second_stage_running_lbfgs_is_checked_too():
             settings={
                 "model.model": "an-architecture",
                 "training.ema.enabled": "true",
-                "training.scheduler.kind": {"kind": "constant"},
+                "training.scheduler": {"kind": "constant"},
                 "training.stage_two": {
                     "enabled": True,
                     "start_epoch": 100,
@@ -441,13 +440,13 @@ def test_a_stage_that_keeps_running_lbfgs_is_checked_against_its_own_schedule():
             ResolvedConfig,
             settings={
                 "model.model": "an-architecture",
-                "training.scheduler.kind": {"kind": "constant"},
+                "training.scheduler": {"kind": "constant"},
                 "training.stages": [
                     {"name": "main", "optimizer": {"kind": "lbfgs"}},
                     {
                         "name": "late",
                         "start_epoch": 5,
-                        "scheduler": {"kind": {"kind": "plateau"}},
+                        "scheduler": {"kind": "plateau"},
                     },
                 ],
             },

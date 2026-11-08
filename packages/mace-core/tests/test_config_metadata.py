@@ -6,8 +6,8 @@ that can fail and a table is already an answer. What is asserted is that the
 whole schema survives the trip, and that the two halves do not get confused.
 """
 
-from mace_core.cli import set_value
 from mace_core.config import read_config_file
+from mace_core.config.cli import set_value
 from mace_core.config.e0s import (
     E0sAverage,
     E0sEstimated,
@@ -34,7 +34,7 @@ SETTINGS = {
     "model.r_max": "4.5",
     "model.observables": ["energy", "forces", "stress"],
     "training.optimizer": {"kind": "schedulefree", "warmup_steps": 100},
-    "loss.kind": {"kind": "huber", "delta": 0.05},
+    "loss": {"kind": "huber", "delta": 0.05},
     "data.heads": {"pbe": {"train_file": "train.xyz"}},
 }
 

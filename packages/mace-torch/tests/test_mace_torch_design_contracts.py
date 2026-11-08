@@ -117,7 +117,7 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
                 "batch_size": 2,
                 "valid_batch_size": 2,
                 "lr": 0.01,
-                "scheduler": {"kind": {"kind": "constant"}},
+                "scheduler": {"kind": "constant"},
             },
         }
     )

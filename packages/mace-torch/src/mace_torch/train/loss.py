@@ -26,7 +26,7 @@ from typing import Any
 
 import torch
 import torch.distributed as dist
-from mace_core.config.loss import LossConfig, RegisteredLoss
+from mace_core.config.loss import LOSS_SHARED_FIELDS, LossConfig, RegisteredLoss
 from mace_core.config.training import StageConfig
 from mace_core.observables import RequestedOutputs
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
@@ -136,12 +136,9 @@ def terms_for(
     """
     overrides = {} if stage is None else stage.loss_weights
     layouts = {spec.name: spec for spec in target_specs(requested)}
-    unknown = config.use_structure_weights.keys() - layouts.keys()
-    if unknown:
-        raise ValueError(
-            f"loss.use_structure_weights has unrequested names {sorted(unknown)}; "
-            f"choose from {sorted(layouts)} or declare them in model.observables"
-        )
+    config.validate_names(set(layouts))
+    if unknown := overrides.keys() - layouts.keys():
+        raise ValueError(f"stage.loss_weights has unrequested names {sorted(unknown)}")
 
     def weight_of(name: str) -> float:
         return overrides.get(name, config.weights.get(name, 1.0))
@@ -277,20 +274,20 @@ def build_loss(
         UnknownLossError: Naming the value and listing what is registered.
     """
     terms = terms_for(requested, config, stage)
-    if isinstance(config.kind, RegisteredLoss):
+    if isinstance(config, RegisteredLoss):
         # The escape from the closed union into the open registry. The kinds
         # the schema names are the ones whose settings it can validate; a loss
         # from another package cannot be, so its settings travel as written and
         # it validates them itself.
-        return _build(config.kind.name, terms, dict(config.kind.settings))
-    if config.kind.kind == "weighted":
+        return _build(config.name, terms, dict(config.settings))
+    if config.kind == "weighted":
         return GeneratedLoss(terms)
     settings = {
         name: value
-        for name, value in config.kind.model_dump().items()
-        if name != "kind"
+        for name, value in config.model_dump().items()
+        if name != "kind" and name not in LOSS_SHARED_FIELDS
     }
-    return _build(config.kind.kind, terms, settings)
+    return _build(config.kind, terms, settings)
 
 
 def _build(

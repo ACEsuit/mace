@@ -11,6 +11,7 @@ from mace_torch.train import loop, optimizers
 from mace_torch.train.checkpoint import latest_run_checkpoint
 from pydantic import ValidationError
 from safetensors.numpy import load_file
+from test_mace_torch_cli_commands import migrate_config
 from test_mace_torch_full_batch import configuration
 from torch import nn
 
@@ -86,7 +87,7 @@ def test_optimizer_cli_training_and_resume_preserve_every_state(
         if next_kind == "lbfgs":
             base["training"]["stages"][1].update(
                 optimizer={"kind": "lbfgs", "max_iter": 2},
-                scheduler={"kind": {"kind": "constant"}},
+                scheduler={"kind": "constant"},
             )
     flags = [
         "--optimizer",
@@ -177,18 +178,20 @@ def test_individual_optimizer_and_scheduler_flags_keep_the_other_settings(
 ):
     flags = ["--beta", "0.73", "--lr_factor", "0.6", "--scheduler_patience", "7"]
     if source != "flags":
-        path = tmp_path / "config.json"
+        path = tmp_path / ("legacy.yaml" if source == "legacy_file" else "config.json")
         document = {"beta": 0.73, "lr_factor": 0.6, "scheduler_patience": 7}
         if source == "structured_file":
             document = {"training": {"optimizer": {"kind": "adamw", "amsgrad": False}}}
         path.write_text(json.dumps(document))
+        if source == "legacy_file":
+            path = migrate_config(path)
         flags = ["--config", str(path), *(flags if source == "structured_file" else [])]
     config = parse(flags).training
     assert config.optimizer.kind == "adam" or config.optimizer.kind == "adamw"
-    assert config.scheduler.kind.kind == "plateau"
+    assert config.scheduler.kind == "plateau"
     assert config.optimizer.beta == 0.73
-    assert config.scheduler.kind.factor == 0.6
-    assert config.scheduler.kind.patience == 7
+    assert config.scheduler.factor == 0.6
+    assert config.scheduler.patience == 7
     if source == "structured_file":
         assert config.optimizer.kind == "adamw"
         assert config.optimizer.amsgrad is False
@@ -200,7 +203,8 @@ def test_schedulefree_and_scheduler_overrides_use_the_file_choice(tmp_path):
         "training": {
             "optimizer": {"kind": "schedulefree", "beta2": 0.91},
             "scheduler": {
-                "kind": {"kind": "exponential", "gamma": 0.8},
+                "kind": "exponential",
+                "gamma": 0.8,
                 "group_factors": {"embedding": 0.5},
             },
         }
@@ -224,8 +228,8 @@ def test_schedulefree_and_scheduler_overrides_use_the_file_choice(tmp_path):
         "beta2": 0.91,
         "warmup_steps": 3,
     }
-    assert config.scheduler.kind.kind == "exponential"
-    assert config.scheduler.kind.gamma == 0.7
+    assert config.scheduler.kind == "exponential"
+    assert config.scheduler.gamma == 0.7
     changed = parse(
         [
             "--config",
@@ -239,8 +243,8 @@ def test_schedulefree_and_scheduler_overrides_use_the_file_choice(tmp_path):
         ]
     ).training
     assert changed.optimizer.kind == "adamw"
-    assert changed.scheduler.kind.kind == "plateau"
-    assert changed.scheduler.kind.factor == 0.6
+    assert changed.scheduler.kind == "plateau"
+    assert changed.scheduler.factor == 0.6
     assert changed.scheduler.group_factors == {"embedding": 0.5}
     document["training"]["optimizer"]["beta"] = 0.8
     path.write_text(json.dumps(document))

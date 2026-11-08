@@ -29,14 +29,10 @@ from mace_core.electrostatics import registry as registry_module
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.electrostatics import ReferenceSolver
+from mace_torch.models.build import ModelBuildError
 from mace_torch.models.electrostatics import PolarModel
 from mace_torch.serialization import CheckpointError
-from mace_torch.train import (
-    ModelStageError,
-    run_data_stage,
-    run_model_stage,
-    run_train_stage,
-)
+from mace_torch.train import run_data_stage, run_model_stage, run_train_stage
 from mace_torch_engine_fixtures import build_graph
 from test_mace_torch_full_batch import configuration
 
@@ -64,7 +60,11 @@ def polar_configuration(tmp_path, profile="molecular", **model) -> ResolvedConfi
                 }
             ),
             "electrostatics": base.electrostatics.model_copy(
-                update={"enabled": True, "periodicity_profile": profile}
+                update={
+                    "enabled": True,
+                    "periodicity_profile": profile,
+                    "slab_normal": 2 if profile == "z_slab" else None,
+                }
             ),
         }
     )
@@ -175,14 +175,14 @@ def test_a_polar_model_needs_its_long_range_section(tmp_path):
             )
         }
     )
-    with pytest.raises(ModelStageError, match=r"electrostatics\.enabled"):
+    with pytest.raises(ModelBuildError, match=r"electrostatics\.enabled"):
         built(config)
 
 
 @fp64_only
 def test_a_polar_model_with_a_repulsion_is_refused(tmp_path):
     """The frozen tree computes this model's repulsion and never adds it."""
-    with pytest.raises(ModelStageError, match="pair_repulsion"):
+    with pytest.raises(ModelBuildError, match="pair_repulsion"):
         built(polar_configuration(tmp_path, pair_repulsion=True))
 
 
@@ -305,7 +305,7 @@ def test_a_solve_that_rebuilds_differently_is_refused(trained):
         load_deployed(trained)
 
 
-def test_an_old_float32_polar_checkpoint_gains_its_configured_reduction_floor(tmp_path):
+def test_a_float32_polar_checkpoint_with_a_mismatched_solve_is_refused(tmp_path):
     from mace_core.config.precision import PrecisionConfig
     from mace_torch.train import write_model
 
@@ -317,25 +317,5 @@ def test_an_old_float32_polar_checkpoint_gains_its_configured_reduction_floor(tm
     document = json.loads(path.read_text())
     document["config"]["electrostatics"]["descriptor"]["precision"] = "float32"
     path.write_text(json.dumps(document))
-    with pytest.warns(UserWarning, match="configured float64 reduction floor"):
-        loaded = load_deployed(path)
-    polar = loaded.model
-    assert isinstance(polar, PolarModel)
-    assert polar.descriptor.precision == "float64"
-    assert loaded.metadata.electrostatics is not None
-    assert loaded.metadata.electrostatics.descriptor["precision"] == "float64"
-    for original, migrated in zip(
-        stage.model.parameters(), loaded.engine.parameters(), strict=True
-    ):
-        assert torch.equal(original, migrated)
-    saved = write_model(tmp_path / "migrated", loaded.engine, loaded.metadata)
-    restored = load_deployed(saved)
-    for original, recovered in zip(
-        loaded.engine.parameters(), restored.engine.parameters(), strict=True
-    ):
-        assert torch.equal(original, recovered)
-    # The compatibility correction must not admit a changed physical solve.
-    document["config"]["electrostatics"]["descriptor"]["smearing_width"] *= 2
-    path.write_text(json.dumps(document))
-    with pytest.raises(CheckpointError, match="smearing_width"):
+    with pytest.raises(CheckpointError, match="precision"):
         load_deployed(path)

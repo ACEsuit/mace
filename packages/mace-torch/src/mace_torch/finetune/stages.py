@@ -40,12 +40,11 @@ from mace_core.data.backends.xyz import SUFFIXES as XYZ_SUFFIXES
 from mace_core.data.configuration import Configuration
 from mace_core.data.xyz import write_configurations
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
-from mace_core.stages import TrainedModel
 
 from mace_torch.finetune.extend import NewSpeciesInit, extend_elements
 from mace_torch.finetune.foundation import Foundation, read_foundation
 from mace_torch.finetune.pseudolabels import generate_pseudolabels, relabelling
-from mace_torch.train.contracts import TorchBuiltModel
+from mace_torch.train.contracts import BuiltModel, TrainedModel
 from mace_torch.train.data_stage import (
     DataStageError,
     graph_inputs_of,
@@ -196,7 +195,7 @@ def build(
     catalogue: ObservableCatalogue | None = None,
     foundation: Foundation | None = None,
     context: DistributedContext | None = None,
-) -> TorchBuiltModel:
+) -> BuiltModel:
     """Read the data and build the fine-tune's model, its weights transferred.
 
     Args:
@@ -275,7 +274,7 @@ def _foundation_energies(
 
 def train(
     config: ResolvedConfig,
-    built: TorchBuiltModel,
+    built: BuiltModel,
     checkpoint_path: str | Path | None = None,
     **options,
 ) -> TrainedModel:

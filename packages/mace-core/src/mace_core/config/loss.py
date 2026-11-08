@@ -1,141 +1,99 @@
-"""What the run is scored on, as weights keyed by observable name.
-
-Legacy has fourteen weight flags, seven for the first stage and seven for the
-second, one pair per property it happens to support. A property it does not
-support has no weight, so adding one means adding two flags and a branch that
-reads them.
-
-Here a weight is an entry keyed by the observable's own name, so declaring a
-property is what gives it a weight, and the second stage is an override map
-rather than a parallel set of flags. A loss's own hyperparameters live in a
-typed ``params`` beside the weights, which is what keeps ``--huber_delta`` and
-anything like it a setting rather than a flag.
-
-Constructing the loss from this is the training ticket's; what lives here is
-the schema.
-"""
+"""Loss variants: one discriminator beside its settings and observable weights."""
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
-from mace_core.config.section import FrozenSection
+from mace_core.config.base import ConfigSection, default_choice
 
 __all__ = [
+    "LOSS_SHARED_FIELDS",
     "HuberLoss",
     "L1L2Loss",
     "LossConfig",
-    "LossKind",
+    "LossWeights",
     "RegisteredLoss",
     "UniversalLoss",
     "WeightedLoss",
+    "normalize_loss",
 ]
 
+LossWeights = dict[str, Annotated[float, Field(ge=0, allow_inf_nan=False)]]
 
-class WeightedLoss(FrozenSection):
+
+class _LossSettings(ConfigSection):
+    """Per-observable weights. Omitted requested quantities have weight one.
+
+    Stage overrides replace only the weights they name. Structure weights are
+    enabled unless explicitly disabled for an observable; label masks always apply.
+    """
+
+    weights: LossWeights = Field(default_factory=dict)
+    stage_two_weights: LossWeights = Field(default_factory=dict)
+    use_structure_weights: dict[str, bool] = Field(default_factory=dict)
+
+    def weight(self, observable: str, *, stage_two: bool = False) -> float:
+        if stage_two and observable in self.stage_two_weights:
+            return self.stage_two_weights[observable]
+        return self.weights.get(observable, 1.0)
+
+    def validate_names(self, names: set[str]) -> None:
+        """Reject misspelled or unrequested quantities before building a loss."""
+        for field in sorted(LOSS_SHARED_FIELDS):
+            unknown = getattr(self, field).keys() - names
+            if unknown:
+                raise ValueError(
+                    f"loss.{field} has unrequested names {sorted(unknown)}; "
+                    f"choose from {sorted(names)} or declare them in model.observables"
+                )
+
+
+LOSS_SHARED_FIELDS = frozenset(_LossSettings.model_fields)
+
+
+class WeightedLoss(_LossSettings):
     """Squared error, weighted per observable. The default."""
 
     kind: Literal["weighted"] = "weighted"
 
 
-class HuberLoss(FrozenSection):
-    """Huber loss.
-
-    Args:
-        delta: The crossover between the quadratic and linear regimes, in the
-            units of whatever it scores.
-    """
+class HuberLoss(_LossSettings):
+    """Huber loss; delta is the crossover in the scored quantity's units."""
 
     kind: Literal["huber"] = "huber"
-    delta: float = 0.01
+    delta: float = Field(default=0.01, gt=0, allow_inf_nan=False)
 
 
-class UniversalLoss(FrozenSection):
-    """The conditional-Huber variant the foundation-model recipes use.
-
-    Args:
-        delta: As :class:`HuberLoss`.
-        weight_residuals: Apply property weights to predictions and references
-            before Huber and force band selection, as in the legacy preset.
-            False retains native weighting of the resulting costs.
-    """
+class UniversalLoss(_LossSettings):
+    """Conditional Huber; optionally weight residuals before band selection."""
 
     kind: Literal["universal"] = "universal"
-    delta: float = 0.01
+    delta: float = Field(default=0.01, gt=0, allow_inf_nan=False)
     weight_residuals: bool = False
 
 
-class L1L2Loss(FrozenSection):
-    """Absolute error on the scalars, vector norm on the per-atom quantities.
-
-    Neither is a squared error, so a force wrong by ``(3, 4, 0)`` costs five
-    rather than twenty-five. It carries no settings of its own.
-    """
+class L1L2Loss(_LossSettings):
+    """Absolute scalar error and vector norm for per-atom quantities."""
 
     kind: Literal["l1l2"] = "l1l2"
 
 
-class RegisteredLoss(FrozenSection):
-    """A loss from the registry, by the name it registered under.
-
-    The escape from a closed union into an open registry. The kinds above are
-    the ones this schema knows the settings of, so they can be validated; a
-    loss from another package cannot be, and naming it with its settings is the
-    honest way to say that.
-
-    Args:
-        name: The registered name.
-        settings: What to pass its constructor. Validated by the loss itself.
-    """
+class RegisteredLoss(_LossSettings):
+    """An extension's loss; its constructor validates its own settings."""
 
     kind: Literal["registered"] = "registered"
-    name: str
+    name: str = Field(min_length=1)
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
-#: The loss and, with it, its own hyperparameters. Written as pydantic's tagged
-#: form, so a file says `kind = "huber"` with `delta` beside it, and a delta
-#: cannot be set on a loss that has none.
-LossKind = Annotated[
+def normalize_loss(value: Any) -> Any:
+    return default_choice(value, default="weighted", common=LOSS_SHARED_FIELDS)
+
+
+LossConfig = Annotated[
     WeightedLoss | HuberLoss | UniversalLoss | L1L2Loss | RegisteredLoss,
     Field(discriminator="kind"),
+    BeforeValidator(normalize_loss),
 ]
-
-
-class LossConfig(FrozenSection):
-    """The loss, its hyperparameters, and the per-observable weights.
-
-    Args:
-        kind: Which loss, with its own settings under it.
-        weights: Observable name to weight. An observable the model declares
-            and this omits takes ``1.0``: a declared property contributing
-            nothing is a thing to ask for, not a default.
-        stage_two_weights: Weights that replace ``weights`` in the second
-            stage. An observable absent from it keeps its first-stage weight,
-            so a stage that only changes the energy says only that.
-        use_structure_weights: Whether each term also uses the structure's
-            global weight. Omitted names use it. Property weights and missing
-            label masks always apply, including when this is false.
-    """
-
-    kind: LossKind = WeightedLoss()
-    weights: dict[str, float] = Field(default_factory=dict)
-    stage_two_weights: dict[str, float] = Field(default_factory=dict)
-    use_structure_weights: dict[str, bool] = Field(default_factory=dict)
-
-    def weight(self, observable: str, *, stage_two: bool = False) -> float:
-        """The weight ``observable`` carries, in the first or the second stage.
-
-        Args:
-            observable: An observable name.
-            stage_two: Read the second stage's overrides.
-
-        Returns:
-            The override if the stage sets one, the first-stage weight if it
-            does not, and ``1.0`` if neither names it.
-        """
-        if stage_two and observable in self.stage_two_weights:
-            return self.stage_two_weights[observable]
-        return self.weights.get(observable, 1.0)

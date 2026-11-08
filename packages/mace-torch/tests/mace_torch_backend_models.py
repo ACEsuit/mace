@@ -17,7 +17,7 @@ from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data import collate_training
 from mace_torch.data.batch import GraphDataset
-from mace_torch.train.model_stage import build_model
+from mace_torch.models.build import build_model
 
 
 def engine(

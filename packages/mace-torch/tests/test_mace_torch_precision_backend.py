@@ -23,7 +23,7 @@ from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.composite import CompositeBackend
 from mace_torch.backends.precision import PrecisionBackend, boundary_precision
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.train.model_stage import build_model
+from mace_torch.models.build import build_model
 from mace_torch_engine_fixtures import ATOMIC_NUMBERS, build_graph, molecule
 from torch import nn
 

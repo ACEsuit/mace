@@ -9,14 +9,16 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from mace_core import cli
-from mace_core.cli import Command, ConfigFlag, discover, main, set_value
+from mace_core.cli import Command, discover, main
 from mace_core.cli import registry as registry_module
 from mace_core.config import BaseConfig, ConfigError, ConfigSection
+from mace_core.config.cli import apply_overrides, set_value
 
 
 class Runtime(ConfigSection):
@@ -42,15 +44,33 @@ def _record(arguments) -> int:
     return 0
 
 
-FIT = Command(
-    help="Fit something.",
-    run=_record,
-    schema=Schema,
-    flags=(
-        ConfigFlag("--seed", "runtime.seed", "Random seed.", type=int),
-        ConfigFlag("--lr", "training.lr", "Learning rate.", type=float),
-    ),
-)
+def _fit_arguments(parser):
+    parser.add_argument("--config", type=Path)
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--lr", type=float)
+
+
+def _fit(arguments):
+    document = {} if arguments.config is None else cli_config(arguments.config)
+    overrides = {
+        path: value
+        for path, value in (
+            ("runtime.seed", arguments.seed),
+            ("training.lr", arguments.lr),
+        )
+        if value is not None
+    }
+    arguments.configuration = Schema.from_dict(apply_overrides(document, overrides))
+    return _record(arguments)
+
+
+def cli_config(path):
+    from mace_core.config import read_config_file
+
+    return read_config_file(path)
+
+
+FIT = Command(help="Fit something.", run=_fit, arguments=_fit_arguments)
 
 SHOW = Command(
     help="Show something.",
@@ -219,21 +239,6 @@ def test_set_value_creates_sections_and_leaves_neighbours():
 def test_set_value_refuses_to_write_through_a_value():
     with pytest.raises(ConfigError, match="training holds float"):
         set_value({"training": 0.1}, "training.lr", 0.2)
-
-
-def test_a_flag_can_place_its_value_itself(installed):
-    def into_runtime_name(document, value):
-        set_value(document, "runtime.name", value.upper())
-
-    placed = Command(
-        help="Fit.",
-        run=_record,
-        schema=Schema,
-        flags=(ConfigFlag("--tag", "runtime.name", "Tag.", write=into_runtime_name),),
-    )
-    installed(FakeEntryPoint("fit", placed, "engine-a"))
-    assert main(["fit", "--tag", "run"]) == 0
-    assert RAN[-1].configuration.runtime.name == "RUN"
 
 
 PROBE = """

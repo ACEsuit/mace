@@ -11,21 +11,21 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
-from mace_core.config.base import BaseConfig
+from mace_core.config.base import BaseConfig, ConfigSection
 from mace_core.config.data import DataConfig
 from mace_core.config.e0s import FOUNDATION_E0_KINDS, E0sIsolatedAtoms
 from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.fixed_point import FixedPointSpec
-from mace_core.config.loss import LossConfig
+from mace_core.config.loss import LossConfig, WeightedLoss
 from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.pseudolabels import PseudolabelConfig
 from mace_core.config.runtime import RuntimeConfig
-from mace_core.config.section import FrozenSection
 from mace_core.config.training import StageConfig, TrainingConfig
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
     ObservableCatalogue,
+    UnknownObservableError,
     irreps_dimension,
     resolve_requested,
 )
@@ -43,7 +43,7 @@ __all__ = [
 ENERGY_OBSERVABLE = "energy"
 
 
-class LoRAConfig(FrozenSection):
+class LoRAConfig(ConfigSection):
     """Low-rank adapters on the linear maps, trained instead of the model.
 
     Args:
@@ -57,7 +57,7 @@ class LoRAConfig(FrozenSection):
     alpha: float = 1.0
 
 
-class FinetuneConfig(FrozenSection):
+class FinetuneConfig(ConfigSection):
     """The foundation model a run starts from, and how much of it moves.
 
     Args:
@@ -154,7 +154,7 @@ class ResolvedConfig(BaseConfig):
     model: ModelConfig = ModelConfig()
     #: Optional complete observable/input declarations, recorded in the checkpoint.
     catalogue: ObservableCatalogue | None = None
-    loss: LossConfig = LossConfig()
+    loss: LossConfig = WeightedLoss()
     training: TrainingConfig = TrainingConfig()
     finetune: FinetuneConfig = FinetuneConfig()
     electrostatics: ElectrostaticsConfig = ElectrostaticsConfig()
@@ -213,6 +213,29 @@ class ResolvedConfig(BaseConfig):
                     )
         return self
 
+    @model_validator(mode="after")
+    def _loss_names_requested_quantities(self) -> ResolvedConfig:
+        names = set(self.model.observables)
+        for name in self.model.observables:
+            try:
+                requested = resolve_requested(
+                    (name,), self.catalogue or DEFAULT_CATALOGUE
+                )
+            except UnknownObservableError:
+                # Library callers may supply their catalogue to the build stage.
+                # An explicitly requested extension output can still own weights.
+                continue
+            names.update(requested.names)
+        self.loss.validate_names(names)
+        for index, stage in enumerate(self.training.stages):
+            unknown = stage.loss_weights.keys() - names
+            if unknown:
+                raise ValueError(
+                    f"training.stages[{index}].loss_weights has unrequested names "
+                    f"{sorted(unknown)}; choose from {sorted(names)}"
+                )
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def _fill_fine_tune_defaults(cls, data: Any) -> Any:
@@ -259,7 +282,10 @@ class ResolvedConfig(BaseConfig):
         if not isinstance(data, dict):
             return data
         finetune = data.get("finetune") or {}
-        heads = (data.get("data") or {}).get("heads") or {}
+        data_section = data.get("data") or {}
+        if not isinstance(data_section, dict):
+            return data
+        heads = data_section.get("heads") or {}
         if not isinstance(finetune, dict) or not isinstance(heads, dict):
             return data
         pseudolabels = finetune.get("pseudolabels") or {}
@@ -296,7 +322,8 @@ class ResolvedConfig(BaseConfig):
         observables = model.get("observables") if isinstance(model, dict) else None
         runtime = data.get("runtime") or {}
         if (
-            observables is None
+            not isinstance(observables, (list, tuple))
+            or not all(isinstance(name, str) for name in observables)
             or {ENERGY_OBSERVABLE, "forces"}.issubset(observables)
             or not isinstance(runtime, dict)
             or "error_table" in runtime
@@ -360,7 +387,7 @@ class ResolvedConfig(BaseConfig):
         """
         if ENERGY_OBSERVABLE in self.model.observables:
             return self
-        if self.loss.kind.kind == "universal":
+        if self.loss.kind == "universal":
             raise ValueError(
                 f"loss.kind is 'universal', which bands the force term, and "
                 f"model.observables {list(self.model.observables)} has no "
@@ -503,7 +530,7 @@ class ResolvedConfig(BaseConfig):
         optimizer: tuple[str, str] = ("training.optimizer", training.optimizer.kind)
         scheduler: tuple[str, str] = (
             "training.scheduler",
-            training.scheduler.kind.kind,
+            training.scheduler.kind,
         )
         stages: list[tuple[tuple[str, str], tuple[str, str]]] = [(optimizer, scheduler)]
         if training.stages:
@@ -516,7 +543,7 @@ class ResolvedConfig(BaseConfig):
                 if stage.optimizer.kind != "inherit":
                     optimizer = (f"{field}.optimizer", stage.optimizer.kind)
                 if stage.scheduler is not None:
-                    scheduler = (f"{field}.scheduler", stage.scheduler.kind.kind)
+                    scheduler = (f"{field}.scheduler", stage.scheduler.kind)
                 stages.append((optimizer, scheduler))
         elif training.stage_two.enabled:
             if training.stage_two.optimizer.kind != "inherit":

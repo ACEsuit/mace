@@ -11,8 +11,9 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
 
+from mace_core.config.base import ConfigSection
 from mace_core.config.e0s import E0sIsolatedAtoms, E0Spec
-from mace_core.config.section import FrozenSection
+from mace_core.config.loss import LossWeights
 
 __all__ = [
     "CURATED_DATASETS",
@@ -40,7 +41,7 @@ CURATED_DATASETS: tuple[str, ...] = ("mp", "omat", "matpes_pbe", "matpes_r2scan"
 DatasetSource = Path | Annotated[tuple[Path, ...], Field(min_length=1)]
 
 
-class GraphInputKeys(FrozenSection):
+class GraphInputKeys(ConfigSection):
     """File keys of the graph-level inputs, when a dataset spells them its way.
 
     Only the inputs. A label's key is the data contract's and is not settable
@@ -60,7 +61,7 @@ class GraphInputKeys(FrozenSection):
     external_field: str = "external_field"
 
 
-class TransformSpec(FrozenSection):
+class TransformSpec(ConfigSection):
     """One data transform, by the name it is registered under.
 
     A name and a settings mapping rather than a kind written as a key, because
@@ -77,7 +78,7 @@ class TransformSpec(FrozenSection):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
-class AugmentationSpec(FrozenSection):
+class AugmentationSpec(ConfigSection):
     """One training-data augmentation, by the name it is registered under.
 
     Drawn afresh every time a training structure is read, where a transform
@@ -92,7 +93,7 @@ class AugmentationSpec(FrozenSection):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
-class SubselectConfig(FrozenSection):
+class SubselectConfig(ConfigSection):
     """Keeping a representative part of a head's structures.
 
     A replay set is large, and training on all of it would make the fine-tune
@@ -150,7 +151,7 @@ class SubselectConfig(FrozenSection):
         return self
 
 
-class RatioGuardConfig(FrozenSection):
+class RatioGuardConfig(ConfigSection):
     """Repeating the other heads when one head outnumbers them all.
 
     The frozen tree's guard for a replay set that dwarfs the fine-tuning data
@@ -170,7 +171,7 @@ class RatioGuardConfig(FrozenSection):
     threshold: float = 0.1
 
 
-class HeadDataConfig(FrozenSection):
+class HeadDataConfig(ConfigSection):
     """One level of theory: its structures, and where its E0s come from.
 
     Args:
@@ -203,11 +204,11 @@ class HeadDataConfig(FrozenSection):
     valid_file: DatasetSource | None = None
     test_file: DatasetSource | None = None
     e0s: E0Spec = E0sIsolatedAtoms()
-    config_type_weights: dict[str, float] = Field(default_factory=dict)
+    config_type_weights: LossWeights = Field(default_factory=dict)
     keep_isolated_atoms: bool = False
     curated: CuratedDataset | None = None
     subselect: SubselectConfig | None = None
-    weight: float = 1.0
+    weight: float = Field(default=1.0, ge=0, allow_inf_nan=False)
     readout_from: str | None = None
 
     @model_validator(mode="after")
@@ -226,7 +227,7 @@ class HeadDataConfig(FrozenSection):
         return self
 
 
-class DataConfig(FrozenSection):
+class DataConfig(ConfigSection):
     """The datasets, the heads, and how they are loaded.
 
     Args:
@@ -262,12 +263,12 @@ class DataConfig(FrozenSection):
     """
 
     heads: dict[str, HeadDataConfig] = Field(default_factory=dict)
-    valid_fraction: float = 0.1
+    valid_fraction: float = Field(default=0.1, ge=0, lt=1, allow_inf_nan=False)
     test_dir: Path | None = None
     statistics_file: Path | None = None
     graph_input_keys: GraphInputKeys = GraphInputKeys()
     embedding_specs: dict[str, dict[str, str]] = Field(default_factory=dict)
-    num_workers: int = 0
+    num_workers: int = Field(default=0, ge=0)
     pin_memory: bool = True
     skip_evaluate_heads: tuple[str, ...] = ()
     transforms: tuple[TransformSpec, ...] = ()

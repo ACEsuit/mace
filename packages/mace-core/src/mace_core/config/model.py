@@ -154,27 +154,12 @@ InteractionKind = Literal[
 ScalingMethod = Literal["none", "std", "rms_forces", "rms_dipoles"]
 
 
-class NoScaling(ConfigSection):
-    kind: Literal["none"] = "none"
+class ScalingConfig(ConfigSection):
+    """A normalization recipe; measured values live in model buffers."""
+
+    kind: ScalingMethod = "none"
 
 
-class StandardDeviationScaling(ConfigSection):
-    kind: Literal["std"] = "std"
-
-
-class ForceRMSScaling(ConfigSection):
-    kind: Literal["rms_forces"] = "rms_forces"
-
-
-class DipoleRMSScaling(ConfigSection):
-    kind: Literal["rms_dipoles"] = "rms_dipoles"
-
-
-# Recipes only: measured values belong to the output layer's buffers.
-ScaleShiftSpec = Annotated[
-    NoScaling | StandardDeviationScaling | ForceRMSScaling | DipoleRMSScaling,
-    Field(discriminator="kind"),
-]
 ClebschGordanBasis = Literal["reduced", "full"]
 
 
@@ -447,7 +432,7 @@ class ModelConfig(ConfigSection):
     scaling: ScalingMethod = "rms_forces"
     #: Observable -> dataset head -> recipe. Unspecified energy heads retain
     #: `scaling`; other unspecified heads use the identity transformation.
-    normalization: dict[str, dict[str, ScaleShiftSpec]] = Field(default_factory=dict)
+    normalization: dict[str, dict[str, ScalingConfig]] = Field(default_factory=dict)
     readout: ReadoutConfig = ReadoutConfig()
     graph_features: tuple[GraphFeatureConfig, ...] = ()
     backend: str = "reference"
@@ -554,12 +539,12 @@ class ModelConfig(ConfigSection):
 
     def normalization_for_heads(
         self, sources: Mapping[str, str]
-    ) -> dict[str, dict[str, ScaleShiftSpec]]:
+    ) -> dict[str, dict[str, ScalingConfig]]:
         """Keep recipes aligned when dataset heads are selected or renamed."""
         result = {}
         for name, recipes in self.normalization.items():
             mapped = {
-                head: recipes.get(source, NoScaling())
+                head: recipes.get(source, ScalingConfig())
                 for head, source in sources.items()
                 if name != "energy" or source in recipes
             }
@@ -605,6 +590,6 @@ __all__ += [
     "MagneticConfig",
     "PolarConfig",
     "ReadoutConfig",
-    "ScaleShiftSpec",
+    "ScalingConfig",
     "ScalingMethod",
 ]

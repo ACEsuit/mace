@@ -51,7 +51,7 @@ from mace_torch.train.loss import (
     terms_for,
 )
 from mace_torch.train.metrics import MetricSpec, RunningMetrics, metric_specs
-from mace_torch.train.model_stage import ModelStageError, run_model_stage
+from mace_torch.train.model_stage import run_model_stage
 from mace_torch.train.optimizers import (
     UnsupportedOptimizerError,
     build_optimizer,
@@ -77,7 +77,6 @@ __all__ = [
     "IndexSharder",
     "LossTerm",
     "MetricSpec",
-    "ModelStageError",
     "NullTracker",
     "ProportionalLoader",
     "ResumeResult",

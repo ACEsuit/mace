@@ -379,7 +379,7 @@ _TRAINING: dict[str, Disposition] = {
         applied=True,
     ),
     **_merged(
-        "training.scheduler.kind",
+        "training.scheduler",
         "a schedule carries its own settings, under the schedule they belong to",
         "scheduler",
         "lr_factor",
@@ -652,6 +652,24 @@ def from_namespace(
         if defaults is not None and value != defaults.get(dest):
             unreachable.append(_unreachable(dest, disposition))
     _collapse(namespace, values)
+    if defaults is not None:
+        # The full legacy namespace includes weights for every model family.
+        # Preserve the active objective; omit only inactive parser defaults.
+        # Explicit non-default weights remain visible to schema validation.
+        requested = set(
+            values.get("model", {}).get("observables", ModelConfig().observables)
+        )
+        loss = values.get("loss", {})
+        for field, prefix in (("weights", ""), ("stage_two_weights", "swa_")):
+            weights = loss.get(field, {})
+            for dest, observable in _WEIGHT_FLAGS.items():
+                flag = prefix + dest
+                if (
+                    observable not in requested
+                    and hasattr(namespace, flag)
+                    and getattr(namespace, flag) == defaults.get(flag)
+                ):
+                    weights.pop(observable, None)
     if unreachable:
         raise LegacyFlagError(
             "this command line sets flags the new configuration cannot carry, "
@@ -875,7 +893,7 @@ def _collapse_loss(namespace: Any, values: dict[str, Any]) -> None:
         }.get(loss, loss)
         if loss == "universal":
             settings["weight_residuals"] = True
-        _set(values, "loss.kind", {"kind": kind, **settings})
+        _set(values, "loss", {"kind": kind, **settings})
         # These frozen terms ignore config_weight. Persist the policy so a
         # reload does not depend on the CLI spelling; property masks still apply.
         names = {
@@ -937,7 +955,7 @@ def _collapse_schedule(namespace: Any, values: dict[str, Any]) -> None:
         for dest, field in _SCHEDULE_SETTINGS.get(kind, {}).items()
         if (value := _read(namespace, dest)) is not None
     }
-    _set(values, "training.scheduler.kind", {"kind": kind, **settings})
+    _set(values, "training.scheduler", {"kind": kind, **settings})
     factors = _group_factors(_read(namespace, "lr_params_factors"))
     if factors:
         _set(values, "training.scheduler.group_factors", factors)

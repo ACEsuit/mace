@@ -20,7 +20,7 @@ from typing import Literal
 
 from pydantic import field_validator
 
-from mace_core.config.section import FrozenSection
+from mace_core.config.base import ConfigSection
 from mace_core.config.tracking import WandbConfig
 from mace_core.tables import OBSERVABLES_TABLE, TABLE_TYPES
 
@@ -42,7 +42,7 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 LOG_LEVELS: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
 
 
-class RuntimeConfig(FrozenSection):
+class RuntimeConfig(ConfigSection):
     """Run identity, output layout, logging and the checkpoint retention.
 
     Args:

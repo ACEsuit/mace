@@ -12,13 +12,11 @@ a run continued at epoch fifty belongs to the stage epoch fifty belongs to.
 from __future__ import annotations
 
 import pytest
-from mace_core.config.base import ConfigError
-from mace_core.config.loss import LossConfig
+from mace_core.config.loss import WeightedLoss
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.config.training import (
     AdamWOptimizer,
     ConstantSchedule,
-    SchedulerConfig,
     StageConfig,
     StageTwoConfig,
     TrainingConfig,
@@ -64,7 +62,7 @@ def test_a_second_stage_that_never_begins_is_refused():
 def test_writing_both_spellings_is_refused():
     """The short one is the long one written short, so both leaves two
     schedules to reconcile and no reading of that is obviously right."""
-    with pytest.raises(ConfigError, match="Keep one"):
+    with pytest.raises(ValidationError, match=r"training.stages.*training.stage_two"):
         resolved(
             stages=(StageConfig(),),
             stage_two=StageTwoConfig(enabled=True, start_epoch=2),
@@ -86,7 +84,9 @@ def test_the_stages_are_ordered_and_the_first_starts_at_zero():
 def test_the_second_stage_takes_its_loss_weights_from_the_loss_section():
     """One thing said in two places, joined where both are visible."""
     config = ResolvedConfig(
-        loss=LossConfig(weights={"energy": 1.0}, stage_two_weights={"energy": 1000.0}),
+        loss=WeightedLoss(
+            weights={"energy": 1.0}, stage_two_weights={"energy": 1000.0}
+        ),
         training=TrainingConfig(stage_two=StageTwoConfig(enabled=True, start_epoch=2)),
     )
     assert config.schedule()[1].loss_weights == {"energy": 1000.0}
@@ -94,7 +94,7 @@ def test_the_second_stage_takes_its_loss_weights_from_the_loss_section():
 
 def test_a_stage_that_names_its_own_weights_keeps_them():
     config = ResolvedConfig(
-        loss=LossConfig(stage_two_weights={"energy": 1000.0}),
+        loss=WeightedLoss(stage_two_weights={"energy": 1000.0}),
         training=TrainingConfig(
             stages=(
                 StageConfig(),
@@ -135,7 +135,7 @@ def test_three_stages_need_no_code():
                 start_epoch=8,
                 lr=0.0001,
                 optimizer=AdamWOptimizer(),
-                scheduler=SchedulerConfig(kind=ConstantSchedule()),
+                scheduler=ConstantSchedule(),
             ),
         )
     ).schedule()

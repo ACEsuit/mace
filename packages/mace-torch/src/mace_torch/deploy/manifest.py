@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
@@ -30,17 +29,11 @@ class DeployManifest:
     receptive_field: Annotated[float, Field(ge=0)] = 0.0
 
     def __post_init__(self):
-        if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", self.schema_version):
-            raise ValueError(f"invalid deploy schema_version {self.schema_version!r}")
-        major, minor = map(int, self.schema_version.split("."))
-        current_major, current_minor = map(int, self.VERSION.split("."))
-        if major != current_major or minor > current_minor:
+        if self.schema_version != self.VERSION:
             raise ValueError(
-                f"unsupported deploy schema_version {self.schema_version!r}. "
-                f"This reader supports {self.VERSION} and earlier minors of that major."
+                f"unsupported deploy schema_version {self.schema_version!r}; "
+                f"expected {self.VERSION!r}"
             )
-        if self.target == "lammps-native" and minor < 1:
-            raise ValueError("lammps-native requires deploy schema_version 1.1")
         if len(set(self.species)) != len(self.species):
             raise ValueError("deploy species must be unique and in element-table order")
         if self.receptive_field != self.num_interactions * self.r_max:

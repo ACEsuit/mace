@@ -41,7 +41,6 @@ from mace_core.observables import (
     ObservableCatalogue,
     resolve_requested,
 )
-from mace_core.stages import DataBundle
 from torch.utils.data import DataLoader
 
 from mace_torch.data import GraphDataset, make_loader, target_specs
@@ -58,7 +57,7 @@ from mace_torch.finetune.subselect import (
     select,
     split_by_filter,
 )
-from mace_torch.train.contracts import TorchDataBundle
+from mace_torch.train.contracts import DataBundle
 from mace_torch.train.loaders import build_training_loader
 
 __all__ = [
@@ -87,7 +86,7 @@ def run_data_stage(
     foundation: FoundationContext | None = None,
     pseudolabel: Callable[[str, list[Configuration]], list[Configuration]]
     | None = None,
-) -> TorchDataBundle:
+) -> DataBundle:
     """Read the data, resolve the E0s once, and measure the dataset.
 
     Args:

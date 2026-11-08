@@ -27,7 +27,7 @@ from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.calculators import MACECalculator
 from mace_torch.calculators.padding import PaddingPolicy
 from mace_torch.deploy.loader import DeployedModel
-from mace_torch.train.model_stage import build_model
+from mace_torch.models.build import build_model
 
 NUMBERS = [1, 6, 8]
 METHANOL = Atoms(

@@ -19,7 +19,7 @@ import torch
 from conftest import fp64_only
 from mace_core.config.loss import HuberLoss as HuberLossConfig
 from mace_core.config.loss import L1L2Loss as L1L2LossConfig
-from mace_core.config.loss import LossConfig, RegisteredLoss
+from mace_core.config.loss import RegisteredLoss, WeightedLoss
 from mace_core.config.loss import UniversalLoss as UniversalLossConfig
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
@@ -77,7 +77,7 @@ def prediction(batch, *, energy_off: float = 0.0, force_off: float = 0.0):
 
 
 def loss_of(batch, output, **weights):
-    config = LossConfig(weights=weights)
+    config = WeightedLoss(weights=weights)
     return float(build_loss(REQUESTED, config)(output, batch))
 
 
@@ -88,7 +88,7 @@ def loss_of(batch, output, **weights):
 
 def test_a_term_reads_its_shape_off_the_declaration():
     """Nothing here is a table of which names are which."""
-    terms = {term.name: term for term in terms_for(REQUESTED, LossConfig())}
+    terms = {term.name: term for term in terms_for(REQUESTED, WeightedLoss())}
     assert terms["energy"].extensive and not terms["energy"].per_atom
     assert terms["forces"].per_atom and not terms["forces"].extensive
 
@@ -313,7 +313,7 @@ def test_a_virial_is_compared_per_atom_and_a_stress_is_not():
         forces=batch.targets["forces"].clone(),
         virials=predicted,
     )
-    loss = build_loss(requested, LossConfig(weights={"virials": 1.0}))
+    loss = build_loss(requested, WeightedLoss(weights={"virials": 1.0}))
     assert float(loss(output, batch)) == pytest.approx(4.0 / 9.0)
 
 
@@ -328,7 +328,7 @@ def test_the_virial_weight_scales_it():
         forces=batch.targets["forces"].clone(),
         virials=predicted,
     )
-    loss = build_loss(requested, LossConfig(weights={"virials": 9.0}))
+    loss = build_loss(requested, WeightedLoss(weights={"virials": 9.0}))
     assert float(loss(output, batch)) == pytest.approx(4.0)
 
 
@@ -347,7 +347,7 @@ def test_a_dipole_is_compared_per_atom():
         forces=batch.targets["forces"].clone(),
         dipole=predicted,
     )
-    loss = build_loss(requested, LossConfig(weights={"dipole": 1.0}))
+    loss = build_loss(requested, WeightedLoss(weights={"dipole": 1.0}))
     assert float(loss(output, batch)) == pytest.approx(1.0 / 3.0)
 
 
@@ -358,7 +358,7 @@ def test_the_hundred_the_frozen_tree_hides_in_its_dipole_loss_is_a_weight():
     It is a weight written where a weight cannot be configured, so asking for
     one hundred reaches the same number and says so. The same term also ignores
     the structure's weight there. Legacy presets record that choice through
-    LossConfig.use_structure_weights; native declarations retain their default.
+    WeightedLoss.use_structure_weights; native declarations retain their default.
     """
     requested, batch = extended_batch(dipole=np.zeros(3))
     predicted = batch.targets["dipole"].clone()
@@ -368,7 +368,7 @@ def test_the_hundred_the_frozen_tree_hides_in_its_dipole_loss_is_a_weight():
         forces=batch.targets["forces"].clone(),
         dipole=predicted,
     )
-    loss = build_loss(requested, LossConfig(weights={"dipole": 100.0}))
+    loss = build_loss(requested, WeightedLoss(weights={"dipole": 100.0}))
     assert float(loss(output, batch)) == pytest.approx(100.0 / 3.0)
 
 
@@ -403,9 +403,9 @@ def test_dipole_weight_policy_preserves_other_terms_and_label_masks(
     )
     # Omitting the policy preserves the native default, including old configs.
     config = (
-        LossConfig()
+        WeightedLoss()
         if use_structure_weight
-        else LossConfig(use_structure_weights={"dipole": False})
+        else WeightedLoss(use_structure_weights={"dipole": False})
     )
     actual = build_loss(requested, config)(output, batch)
     # E and F each cost (0 + 3 + 5)/3; only the first dipole is weighted in.
@@ -420,7 +420,7 @@ def test_dipole_weight_policy_preserves_other_terms_and_label_masks(
 def test_structure_weight_policy_also_applies_to_declared_derivatives():
     batch = batch_of(structure(weight=3.0))
     output = prediction(batch, force_off=1.0)
-    config = LossConfig(
+    config = WeightedLoss(
         weights={"energy": 0.0, "forces": 6.0},
         use_structure_weights={"forces": False},
     )
@@ -428,7 +428,7 @@ def test_structure_weight_policy_also_applies_to_declared_derivatives():
 
 
 def test_structure_weight_policy_refuses_an_unrequested_quantity():
-    config = LossConfig(use_structure_weights={"force": False})
+    config = WeightedLoss(use_structure_weights={"force": False})
     with pytest.raises(ValueError, match=r"loss\.use_structure_weights.*force"):
         build_loss(REQUESTED, config)
 
@@ -438,7 +438,7 @@ def test_a_declared_observable_needs_no_loss_code_at_all():
     """The acceptance criterion, as one assertion: a quantity this package
     ships no term for gets one from its declaration."""
     requested, _ = extended_batch(dipole=np.zeros(3), virials=np.zeros((3, 3)))
-    names = {term.name for term in terms_for(requested, LossConfig())}
+    names = {term.name for term in terms_for(requested, WeightedLoss())}
     assert {"energy", "forces", "dipole", "virials"} <= names
 
 
@@ -448,7 +448,7 @@ def test_a_declared_observable_needs_no_loss_code_at_all():
 
 
 def loss_with(kind, batch, output, **weights):
-    config = LossConfig(kind=kind, weights=weights)
+    config = kind.model_copy(update={"weights": weights})
     return float(build_loss(REQUESTED, config)(output, batch))
 
 
@@ -535,8 +535,8 @@ def test_the_universal_loss_bands_the_forces_and_not_the_magnetic_forces():
         forces=batch.targets["forces"].clone(),
         extras={"magforces": magforces},
     )
-    config = LossConfig(
-        kind=UniversalLossConfig(delta=1.0),
+    config = UniversalLossConfig(
+        delta=1.0,
         weights={"energy": 0.0, "forces": 0.0, "magforces": 1.0},
     )
     assert float(build_loss(requested, config)(output, batch)) == pytest.approx(
@@ -595,15 +595,13 @@ def test_a_loss_from_another_package_is_selectable_without_touching_the_schema(
             return torch.as_tensor(self.scale)
 
     batch = batch_of(structure())
-    config = LossConfig(
-        kind=RegisteredLoss(name="probe_outside", settings={"scale": 7.0})
-    )
+    config = RegisteredLoss(name="probe_outside", settings={"scale": 7.0})
     loss = build_loss(REQUESTED, config)
     assert float(loss(prediction(batch), batch)) == pytest.approx(7.0)
 
 
 @fp64_only
 def test_a_registered_name_nobody_registered_lists_what_there_is():
-    config = LossConfig(kind=RegisteredLoss(name="no_such_loss"))
+    config = RegisteredLoss(name="no_such_loss")
     with pytest.raises(UnknownLossError, match="huber"):
         build_loss(REQUESTED, config)

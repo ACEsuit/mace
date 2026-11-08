@@ -5,10 +5,9 @@ implement them, through the ``mace.commands`` entry point group
 (:mod:`mace_core.cli.registry`); this package declares none of its own, so it
 imports no framework to show ``--help``.
 
-A command that runs from a configuration reads one file and a few explicit
-flags (:mod:`mace_core.cli.command`). An error in either is reported as a
-message and exit status 2, the way argparse reports its own, rather than as a
-traceback.
+Each command declares its arguments and owns its configuration loading
+(:mod:`mace_core.cli.command`). Configuration errors are reported as a message
+and exit status 2, the way argparse reports its own.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from collections.abc import Sequence
 
 from pydantic import ValidationError
 
-from mace_core.cli.command import Command, ConfigFlag, set_value
+from mace_core.cli.command import Command
 from mace_core.cli.registry import (
     ENTRY_POINT_GROUP,
     CommandConflictError,
@@ -32,12 +31,11 @@ __all__ = [
     "ENTRY_POINT_GROUP",
     "Command",
     "CommandConflictError",
-    "ConfigFlag",
     "DiscoveredCommand",
     "build_parser",
     "discover",
+    "format_error",
     "main",
-    "set_value",
 ]
 
 #: Where the chosen command is kept on the parsed arguments.
@@ -79,6 +77,18 @@ def build_parser(
     return parser
 
 
+def format_error(error: Exception) -> str:
+    """Report configuration locations without dumping inputs or library URLs."""
+    if isinstance(error, ValidationError):
+        messages = []
+        for detail in error.errors(include_url=False, include_input=False):
+            location = ".".join(str(part) for part in detail["loc"])
+            message = detail["msg"].removeprefix("Value error, ")
+            messages.append(f"{location}: {message}" if location else message)
+        return "\n  ".join(messages)
+    return str(error)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """The console entry point. Returns a process exit status."""
     try:
@@ -100,14 +110,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     command: Command = chosen.command
-    if command.schema is not None:
-        try:
-            arguments.configuration = command.configuration(arguments)
-        except (ConfigError, ValidationError) as error:
-            print(f"mace {' '.join(chosen.path)}: {error}", file=sys.stderr)
-            return 2
     try:
         return command.run(arguments)
     except (ConfigError, ValidationError, ValueError, OSError) as error:
-        print(f"mace {' '.join(chosen.path)}: {error}", file=sys.stderr)
+        print(f"mace {' '.join(chosen.path)}: {format_error(error)}", file=sys.stderr)
         return 2

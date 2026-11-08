@@ -9,14 +9,18 @@ testing are that the objects are immutable and that the statistics exist once.
 from __future__ import annotations
 
 import dataclasses
+from unittest.mock import Mock
 
 import pytest
-from mace_core import BuiltModel, DataBundle, EpochRecord, TrainedModel
 from mace_core.data.backend import DatasetStatistics
 from mace_core.data.e0_resolution import E0Provenance
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.metadata import ConfigRecord, ModelMetadata, Provenance
 from mace_core.observables import RequestedOutputs
+from mace_torch.train.contracts import BuiltModel, DataBundle, EpochRecord, TrainedModel
+from mace_torch.train.loaders import TrainingLoader
+from torch import nn
+from torch.utils.data import DataLoader
 
 Z_TABLE = AtomicNumberTable([1, 8])
 
@@ -37,16 +41,16 @@ def metadata() -> ModelMetadata:
     )
 
 
-def bundle() -> DataBundle[list[int], list[int]]:
+def bundle() -> DataBundle:
     return DataBundle(
         z_table=Z_TABLE,
         heads=("default",),
         e0s=ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
         e0_provenance={"default": E0Provenance(kind="table")},
         statistics=STATISTICS,
-        train_loader=[1, 2],
-        valid_loaders={"default": [3]},
-        train_eval_loaders={"default": [1, 2]},
+        train_loader=Mock(spec=TrainingLoader),
+        valid_loaders={"default": DataLoader([3])},
+        train_eval_loaders={"default": DataLoader([1, 2])},
     )
 
 
@@ -82,7 +86,7 @@ def test_the_boundary_objects_are_immutable():
         bundle().heads = ("other",)  # ty: ignore[invalid-assignment]
     with pytest.raises(dataclasses.FrozenInstanceError):
         EpochRecord(epoch=0, train_loss=1.0).epoch = 1  # ty: ignore[invalid-assignment]
-    trained = TrainedModel(model=object(), metadata=metadata())
+    trained = TrainedModel(model=nn.Identity(), metadata=metadata())
     with pytest.raises(dataclasses.FrozenInstanceError):
         trained.best_epoch = 3  # ty: ignore[invalid-assignment]
 
@@ -91,7 +95,7 @@ def test_there_is_one_statistics_object_and_the_model_reads_the_bundle_s():
     """Recomputing is what this identity check exists to forbid."""
     data = bundle()
     built = BuiltModel(
-        model=object(), outputs=RequestedOutputs(), data=data, metadata=metadata()
+        model=nn.Identity(), outputs=RequestedOutputs(), data=data, metadata=metadata()
     )
     assert built.statistics is data.statistics
 
@@ -100,7 +104,10 @@ def test_the_bundle_travels_with_the_model_rather_than_beside_it():
     """The training stage takes one argument, so it cannot be given a bundle
     the model was not built from."""
     built = BuiltModel(
-        model=object(), outputs=RequestedOutputs(), data=bundle(), metadata=metadata()
+        model=nn.Identity(),
+        outputs=RequestedOutputs(),
+        data=bundle(),
+        metadata=metadata(),
     )
     assert isinstance(built.data, DataBundle)
 
@@ -122,12 +129,12 @@ def test_the_best_epoch_is_found_by_its_number_not_its_position():
         EpochRecord(epoch=8, train_loss=0.8, valid_loss=0.7),
     )
     trained = TrainedModel(
-        model=object(), metadata=metadata(), history=history, best_epoch=8
+        model=nn.Identity(), metadata=metadata(), history=history, best_epoch=8
     )
     assert trained.best is not None
     assert trained.best.train_loss == 0.8
 
 
 def test_a_run_that_never_evaluated_has_no_best_epoch():
-    trained = TrainedModel(model=object(), metadata=metadata())
+    trained = TrainedModel(model=nn.Identity(), metadata=metadata())
     assert trained.best is None

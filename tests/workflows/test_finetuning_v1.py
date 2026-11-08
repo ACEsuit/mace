@@ -59,7 +59,7 @@ def replay_runs(tmp_path_factory, request):
         }, 'valid_fraction': 0.25, 'pin_memory': False},
         'model': {'observables': ['energy', 'forces']},
         'training': {'max_num_epochs': 1, 'batch_size': 4, 'valid_batch_size': 4,
-                     'lr': 0.002, 'scheduler': {'kind': {'kind': 'constant'}}},
+                     'lr': 0.002, 'scheduler': {'kind': 'constant'}},
         'loss': {'weights': {'energy': 1.0, 'forces': 10.0}},
     }
     launch(tmp, document, 'one-go')

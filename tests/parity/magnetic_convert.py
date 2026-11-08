@@ -193,8 +193,8 @@ def write_magnetic_checkpoint(legacy, directory, train_file) -> Path:
         ModelMetadata,
         Provenance,
     )
+    from mace_torch.models.build import build_model
     from mace_torch.train import write_model
-    from mace_torch.train.model_stage import build_model
 
     settings = magnetic_config(legacy)
     values, scale, shift = energy_constants_to_canonical(legacy)

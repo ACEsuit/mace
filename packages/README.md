@@ -91,6 +91,10 @@ head counts and measured neighbour statistics are runtime inputs. Feature
 tensors use the agreed `mul_ir` layout throughout. The calculator collates a
 structure once and uses the same tensor padding as training.
 
+See [configuration examples](../docs/reforge/configuration.md) for training,
+fine-tuning and configuration-only validation. Loss and scheduler variants put
+one string `kind` beside their parameters.
+
 Configuration sections and their nested dictionaries and lists are immutable.
 Use `model_copy(update={...})` for a validated change; invalid values and unknown
 keys are rejected there as they are during initial construction. Exported
@@ -262,7 +266,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/clebsch_gordan/real_basis.py` | The Wigner 3j table in the real spherical-harmonic basis the models use. |
 | `mace_core/clebsch_gordan/reduced_basis.py` | The reduced symmetric tensor-product basis and its path order. |
 | `mace_core/cli/__init__.py` | The `mace` program: the commands installed packages declare, parsed and run. |
-| `mace_core/cli/command.py` | A command, its explicit flags, and how they write into the configuration file. |
+| `mace_core/cli/command.py` | A command with callbacks for arguments and execution. |
 | `mace_core/cli/registry.py` | Finding commands in the `mace.commands` entry point group, refusing conflicts. |
 | `mace_core/config/__init__.py` | The configuration schemas, re-exported. |
 | `mace_core/config/base.py` | The base schema: one file, one validation, unknown keys as errors. |
@@ -281,7 +285,6 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/config/pseudolabels.py` | Replay labels from the foundation model: their settings and the record of what they were made from. |
 | `mace_core/config/resolved.py` | The whole configuration and the rules that span its sections. |
 | `mace_core/config/runtime.py` | Run name, output directory, seed, device, distribution, logging, plots. |
-| `mace_core/config/section.py` | Compatibility name for the immutable configuration base. |
 | `mace_core/config/tracking.py` | Experiment tracking settings. |
 | `mace_core/config/training.py` | Optimizers, learning-rate schedules and the training stages. |
 | `mace_core/data/__init__.py` | The data layer's boundary objects, re-exported. |
@@ -331,7 +334,6 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/observables/request.py` | Turning configured names into observables and derivatives. |
 | `mace_core/observables/spec.py` | `ObservableSpec`, `InputSpec` and the catalogue. |
 | `mace_core/outputs.py` | `MACEOutput`, the typed result every model returns. |
-| `mace_core/stages.py` | The objects passed between the data, model and training stages. |
 | `mace_core/tables.py` | The error table a finished run prints. |
 | `mace_core/units.py` | Units and sign conventions for the whole stack. |
 | `mace_core/weights/__init__.py` | The neutral weights format, re-exported. |
@@ -340,7 +342,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/artifacts.py` | Artifact directories, sidecars and versioned filenames. |
 | `mace_core/model_registry.py` | Foundation identities, alias warnings, metadata queries and docs export, without frameworks. |
 | `mace_core/model_registry.json` | Canonical roster, licenses, scope, hyperparameters and pending native publication references. |
-| `mace_core/config/cli.py` | Typed command-line overrides for the nested configuration. |
+| `mace_core/config/cli.py` | One override operation for parsed configuration documents. |
 | `mace_core/graph/__init__.py` | Public graph schema, construction, collation and padding API. |
 | `mace_core/graph/build.py` | Build graph samples from configurations and a resolved neighbour backend. |
 | `mace_core/graph/collate.py` | Batch numpy graph samples and preserve host metadata. |
@@ -474,7 +476,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/canonical.py` | Stable logical component identities for canonical checkpoint state. |
 | `mace_torch/train/__init__.py` | The stages and the loop, re-exported. |
 | `mace_torch/train/checkpoint.py` | Run checkpoints for resuming, with optimizer and schedule state. |
-| `mace_torch/train/contracts.py` | The stage objects with their torch types bound. |
+| `mace_torch/train/contracts.py` | Concrete Torch data, model and training results passed between stages. |
 | `mace_torch/train/data_stage.py` | Stage one: configuration in, resolved data and loaders out. |
 | `mace_torch/train/ddp.py` | Distributed data parallel setup and communication. |
 | `mace_torch/train/ema.py` | The exponential moving average of the weights. |

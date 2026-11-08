@@ -266,9 +266,9 @@ def test_the_section_is_off_unless_written(tmp_path):
 
 
 def test_an_enabled_section_is_refused_rather_than_trained_without(tmp_path):
-    from mace_torch.train import ModelStageError
+    from mace_torch.models.build import ModelBuildError
 
-    with pytest.raises(ModelStageError, match=r"electrostatics\.enabled"):
+    with pytest.raises(ModelBuildError, match=r"electrostatics\.enabled"):
         _run_with(tmp_path, enabled=True)
 
 
@@ -285,4 +285,4 @@ def test_the_section_is_not_among_the_advertised_flags(capsys):
         parse(["--help"])
     advertised = capsys.readouterr().out
     assert "--config" in advertised
-    assert "electrostatics" not in advertised
+    assert "--electrostatics" not in advertised

@@ -12,9 +12,9 @@ from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data.graphs import graph_from_configuration
 from mace_torch.graph import collate
+from mace_torch.models.build import build_model
 from mace_torch.models.normalization import ObservableNormalization
 from mace_torch.models.outputs import E_ANGSTROM_PER_DEBYE, fixed_charge_dipole
-from mace_torch.train.model_stage import build_model
 
 from tests.golden.harness import CLOSED_FORM_FP64, FP64_CPU_REFERENCE
 

@@ -20,8 +20,8 @@ from conftest import fp64_only
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.finetune.foundation import read_foundation
+from mace_torch.models.build import ModelBuildError
 from mace_torch.train import (
-    ModelStageError,
     evaluate,
     metric_specs,
     run_data_stage,
@@ -68,7 +68,7 @@ def foundation_path(tmp_path_factory):
                 "batch_size": 4,
                 "valid_batch_size": 4,
                 "lr": 0.02,
-                "scheduler": {"kind": {"kind": "constant"}},
+                "scheduler": {"kind": "constant"},
             },
         }
     )
@@ -136,7 +136,7 @@ def fine_tune_config(directory, foundation, **model):
                 "batch_size": 4,
                 "valid_batch_size": 4,
                 "lr": 0.01,
-                "scheduler": {"kind": {"kind": "constant"}},
+                "scheduler": {"kind": "constant"},
             },
         }
     )
@@ -259,7 +259,7 @@ def test_a_derivative_of_an_untrained_head_is_still_refused(foundation_path):
     path, directory = foundation_path
     foundation = read_foundation(path, CATALOGUE)
     config = fine_tune_config(directory, path, observables=("energy", "dmu_dr"))
-    with pytest.raises(ModelStageError, match="dipole"):
+    with pytest.raises(ModelBuildError, match="dipole"):
         with_foundation_architecture(config, foundation)
 
 
@@ -271,7 +271,7 @@ def test_a_setting_that_contradicts_the_foundation_is_refused(foundation_path):
     foundation = read_foundation(path, CATALOGUE)
     config = fine_tune_config(directory, path, r_max=5.0)
     data = run_data_stage(config, CATALOGUE, foundation=foundation.context())
-    with pytest.raises(ModelStageError, match="r_max"):
+    with pytest.raises(ModelBuildError, match="r_max"):
         run_model_stage(config, data, CATALOGUE, foundation=foundation)
 
 

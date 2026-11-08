@@ -23,18 +23,13 @@ from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data import GraphDataset
 from mace_torch.models import MACEOutputs, ObservableHead
+from mace_torch.models.build import ModelBuildError
 from mace_torch.nn.interaction import (
     InteractionBlock,
     NonLinearInteractionBlock,
     ResidualInteractionBlock,
 )
-from mace_torch.train import (
-    ModelStageError,
-    RunState,
-    run_data_stage,
-    run_model_stage,
-    run_train_stage,
-)
+from mace_torch.train import RunState, run_data_stage, run_model_stage, run_train_stage
 
 CATALOGUE = DEFAULT_CATALOGUE
 
@@ -71,7 +66,7 @@ def configuration(tmp_path, **training):
         "batch_size": 4,
         "valid_batch_size": 4,
         "lr": 0.02,
-        "scheduler": {"kind": {"kind": "constant"}},
+        "scheduler": {"kind": "constant"},
         **training,
     }
     return ResolvedConfig.model_validate(
@@ -443,7 +438,7 @@ def two_head_configuration(tmp_path, **training):
         "batch_size": 2,
         "valid_batch_size": 2,
         "lr": 0.02,
-        "scheduler": {"kind": {"kind": "constant"}},
+        "scheduler": {"kind": "constant"},
         **training,
     }
     return ResolvedConfig.model_validate(
@@ -748,13 +743,13 @@ def build_with(tmp_path, **model):
 def test_a_setting_the_model_cannot_build_is_refused(tmp_path, setting, value):
     """Each of these used to build the default model and train it under the
     name of the one asked for, with the same parameter count."""
-    with pytest.raises((ValueError, ModelStageError), match=setting):
+    with pytest.raises((ValueError, ModelBuildError), match=setting):
         build_with(tmp_path, **{setting: value})
 
 
 @pytest.mark.parametrize("model", ["BOTNet", "ScaleShiftBOTNet"])
 def test_retired_model_choices_are_refused(tmp_path, model):
-    with pytest.raises(ModelStageError, match=model):
+    with pytest.raises(ValueError, match=model):
         build_with(tmp_path, model=model)
 
 

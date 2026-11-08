@@ -13,13 +13,13 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from mace_core.config.section import FrozenSection
+from mace_core.config.base import ConfigSection
 from mace_core.electrostatics.descriptor import PeriodicityProfile
 
 __all__ = ["ElectrostaticsConfig"]
 
 
-class ElectrostaticsConfig(FrozenSection):
+class ElectrostaticsConfig(ConfigSection):
     """Which solver computes the long-range energy, and for which systems.
 
     Args:

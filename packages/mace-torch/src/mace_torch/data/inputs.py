@@ -8,7 +8,7 @@ from mace_core.data import KeySpecification
 from mace_core.observables import RequestedOutputs
 
 from mace_torch.data.graphs import target_specs
-from mace_torch.models.registry import DeclaresModelInputs, registered_models
+from mace_torch.models.registry import DeclaresModelInputs, model_family
 
 __all__ = ["graph_inputs_of", "key_specification"]
 
@@ -21,7 +21,7 @@ def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
     from their defaults.
     """
     inputs: tuple[str, ...] = ()
-    registered = registered_models().get(model.model)
+    registered = model_family(model.model).model
     if isinstance(registered, DeclaresModelInputs):
         inputs = tuple(spec.name for spec in registered.declared_inputs(model))
     elif model.model == "les":
@@ -68,7 +68,7 @@ def key_specification(
                 )
     spec.add_embedding_features(embedding_specs)
     if model is not None:
-        registered = registered_models().get(model.model)
+        registered = model_family(model.model).model
         if isinstance(registered, DeclaresModelInputs):
             for item in registered.declared_inputs(model):
                 keys = spec.atom_keys if item.per_atom else spec.graph_keys

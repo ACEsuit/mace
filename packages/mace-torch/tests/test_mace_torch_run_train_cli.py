@@ -21,16 +21,15 @@ from conftest import fp64_only
 from mace_core import cli
 from mace_core.config.base import ConfigError
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.stages import BuiltModel, DataBundle, TrainedModel
 from mace_torch.cli import run_train
-from mace_torch.cli.commands import TRAIN_FLAGS
+from mace_torch.cli.legacy_flags import DIRECT_FLAGS
 from mace_torch.train import run_data_stage, run_model_stage, run_train_stage
+from mace_torch.train.contracts import BuiltModel, DataBundle, TrainedModel
 
 HYDROGEN, OXYGEN = -13.6, -2040.0
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
 
-#: The file spelling, which is the kinds-as-key one: a kind is the key its
-#: settings sit under, so a setting cannot be given to a kind that has none.
+#: The public file format: each discriminator sits beside its settings.
 CONFIG = """
 runtime: {{work_dir: {work_dir}, name: tiny, seed: 1}}
 data:
@@ -52,7 +51,7 @@ training:
   batch_size: 4
   valid_batch_size: 4
   lr: 0.02
-  scheduler: {{kind: {{kind: constant}}}}
+  scheduler: {{kind: constant}}
 loss: {{weights: {{energy: 1.0, forces: 10.0}}}}
 """
 
@@ -166,7 +165,7 @@ def test_every_stage_takes_the_configuration_and_returns_its_own_object():
         hints = annotations_of(stage)
         parameters = list(inspect.signature(stage).parameters)
         assert hints[parameters[0]] is first, stage.__name__
-        assert typing.get_origin(hints["return"]) is returns, stage.__name__
+        assert hints["return"] is returns, stage.__name__
 
 
 def test_the_orchestrator_takes_a_resolved_config_and_nothing_else():
@@ -196,10 +195,16 @@ def test_legacy_flags_reach_the_typed_configuration():
     assert config.model.r_max == 5.0 and config.model.num_channels == 8
 
 
-def test_a_legacy_yaml_reaches_the_typed_configuration(tmp_path):
+def test_a_legacy_yaml_requires_explicit_migration(tmp_path):
     path = tmp_path / "legacy.yaml"
     path.write_text("num_channels: 8\nr_max: 5.0\nE0s: average\n")
-    config = run_train.parse(["--config", str(path), "--work_dir", str(tmp_path)])
+    from mace_torch.cli.migrate import run as migrate
+
+    with pytest.raises(ValueError):
+        run_train.parse(["--config", str(path)])
+    migrated = tmp_path / "current.yaml"
+    migrate(argparse.Namespace(command=[str(path)], output=migrated))
+    config = run_train.parse(["--config", str(migrated), "--work_dir", str(tmp_path)])
     assert config.model.num_channels == 8
     assert config.data.heads["default"].e0s.kind == "average"
     assert config.runtime.work_dir == tmp_path
@@ -248,7 +253,11 @@ def test_empty_foundation_options_in_legacy_yaml_are_compatibility_only(
 
     path = tmp_path / "legacy.yaml"
     path.write_text(yaml.safe_dump({"name": "fit", "foundation_model_kwargs": empty}))
-    actual = run_train.parse(["--config", str(path)])
+    from mace_torch.cli.migrate import run as migrate
+
+    migrated = tmp_path / "current.yaml"
+    migrate(argparse.Namespace(command=[str(path)], output=migrated))
+    actual = run_train.parse(["--config", str(migrated)])
     expected = run_train.parse(["--name", "fit"])
     assert actual == expected
 
@@ -280,7 +289,7 @@ def test_this_package_declares_train_and_export_config():
 
 def test_the_training_flags_are_the_legacy_spellings_and_few():
     """Every other setting is set in the file."""
-    assert [flag.option for flag in TRAIN_FLAGS] == [
+    assert [f"--{name}" for name in DIRECT_FLAGS] == [
         "--name",
         "--seed",
         "--work_dir",
@@ -305,7 +314,7 @@ def test_a_head_s_file_flag_is_refused_when_the_file_has_several(tmp_path, capsy
     with pytest.raises(ConfigError, match=r"\['pbe', 'r2scan'\]"):
         run_train.parse(["--config", str(path), "--train_file", "train.xyz"])
     assert cli.main(["train", "--config", str(path), "--train_file", "x.xyz"]) == 2
-    assert "Set train_file under the head" in capsys.readouterr().err
+    assert "set each head's file under data.heads" in capsys.readouterr().err
 
 
 @fp64_only

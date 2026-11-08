@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from mace_core.config.section import FrozenSection
+from mace_core.config.base import ConfigSection
 
 __all__ = [
     "PSEUDOLABEL_PROPERTIES",
@@ -47,7 +47,7 @@ PSEUDOLABEL_PROPERTIES: tuple[str, ...] = (
 )
 
 
-class PseudolabelConfig(FrozenSection):
+class PseudolabelConfig(ConfigSection):
     """Replay labels regenerated from the foundation model, or read back.
 
     Args:

@@ -73,7 +73,7 @@ def export_lammps(
                 f"choose float32 or float64 for deployment of {precision!r}"
             )
         manifest = DeployManifest(
-            schema_version="1.0" if native_capacity is None else DeployManifest.VERSION,
+            schema_version=DeployManifest.VERSION,
             target="lammps-mliap" if native_capacity is None else "lammps-native",
             head=model.select_head(head),
             dtype=precision,

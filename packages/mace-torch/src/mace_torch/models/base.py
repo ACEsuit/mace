@@ -33,7 +33,6 @@ from torch import Tensor, nn
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
-from mace_torch.nn.graph_features import FeatureSpec
 from mace_torch.nn.radial import ZBLBasis
 
 __all__ = ["MACEModel"]
@@ -66,10 +65,6 @@ class MACEModel(nn.Module):
     ``last_layer_irreps`` and ``edge_axes`` are the physical conventions of a
     model family; the standard energy model keeps scalars in Cartesian order.
     """
-
-    requires_electrostatics: bool = False
-    zbl_in_scale_shift: bool = True
-    widen_node_energy: bool = True
 
     def __init__(
         self,
@@ -106,19 +101,6 @@ class MACEModel(nn.Module):
                     if irrep in required
                 )
         self.config = config
-        graph_features = tuple(
-            FeatureSpec(
-                name=feature.name,
-                kind=feature.kind,
-                embedding_dim=feature.embedding_dim,
-                num_classes=feature.num_classes,
-                input_dim=feature.input_dim,
-                level="graph" if feature.per == "graph" else "node",
-                offset=feature.offset,
-                use_bias=feature.use_bias,
-            )
-            for feature in config.graph_features
-        )
         with _constructed_in(precision):
             self.backbone = MACEBackbone(
                 backend,
@@ -128,7 +110,7 @@ class MACEModel(nn.Module):
                 precision=precision,
                 node_inputs=node_inputs,
                 last_layer_irreps=last_layer_irreps,
-                graph_features=graph_features,
+                graph_features=config.graph_features,
                 edge_axes=edge_axes,
                 radial_precision=radial_precision,
             )

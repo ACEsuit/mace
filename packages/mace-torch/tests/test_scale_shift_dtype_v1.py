@@ -22,7 +22,7 @@ from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import Precision
 from mace_core.observables import DEFAULT_CATALOGUE
-from mace_torch.train.model_stage import build_model
+from mace_torch.models.build import build_model
 from mace_torch_engine_fixtures import ATOMIC_NUMBERS, build_graph, molecule
 
 #: family -> whether its per-atom energies are widened to the accumulation

@@ -27,6 +27,7 @@ from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.metadata import ConfigRecord, HeadSummary, ModelMetadata, Provenance
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.finetune.foundation import read_foundation
+from mace_torch.models.build import build_model
 from mace_torch.train import (
     evaluate,
     metric_specs,
@@ -36,7 +37,6 @@ from mace_torch.train import (
     write_model,
 )
 from mace_torch.train.loss import build_loss
-from mace_torch.train.model_stage import build_model
 
 from tests.parity.anchors import load_anchor
 from tests.parity.fm00_convert import (
@@ -163,7 +163,7 @@ def fine_tune_config(directory: Path, foundation: Path) -> ResolvedConfig:
                 "batch_size": 4,
                 "valid_batch_size": 4,
                 "lr": 0.01,
-                "scheduler": {"kind": {"kind": "constant"}},
+                "scheduler": {"kind": "constant"},
             },
         }
     )

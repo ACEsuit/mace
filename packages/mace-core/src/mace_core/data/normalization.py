@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from mace_core.config.model import ScaleShiftSpec
+from mace_core.config.model import ScalingConfig
 from mace_core.data.configuration import Configuration
 from mace_core.data.statistics import root_mean_square
 from mace_core.elements import ResolvedE0s
@@ -26,7 +26,7 @@ class NormalizationValues:
 def compute_normalization(
     configurations: Sequence[Configuration],
     observables: Sequence[ObservableSpec],
-    recipes: Mapping[str, Mapping[str, ScaleShiftSpec]],
+    recipes: Mapping[str, Mapping[str, ScalingConfig]],
     e0s: ResolvedE0s,
 ) -> dict[str, dict[str, NormalizationValues]]:
     """Measure only labelled training examples, after splitting and transforms.

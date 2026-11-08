@@ -284,7 +284,7 @@ def build_scheduler(
     """
     if AdamWScheduleFree is not None and isinstance(optimizer, AdamWScheduleFree):
         return None
-    schedule = config.kind
+    schedule = config
     if isinstance(schedule, ConstantSchedule):
         return None
     if isinstance(schedule, ExponentialSchedule):

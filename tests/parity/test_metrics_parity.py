@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
-from mace_core.config.loss import LossConfig
+from mace_core.config.loss import WeightedLoss
 from mace_core.data.configuration import Configuration
 from mace_core.elements import AtomicNumberTable
 from mace_core.observables import DEFAULT_CATALOGUE, resolve_requested
@@ -132,7 +132,7 @@ def legacy_metrics(batch, energies, forces):
 
 def v1_metrics(batch, energies, forces):
     metrics = RunningMetrics(
-        metric_specs(REQUESTED), build_loss(REQUESTED, LossConfig())
+        metric_specs(REQUESTED), build_loss(REQUESTED, WeightedLoss())
     )
     metrics.update(MACEOutput(total_energy=energies, forces=forces), batch)
     return metrics.compute()

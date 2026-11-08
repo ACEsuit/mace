@@ -14,57 +14,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import torch
+from mace_core.config.model import GraphFeatureConfig
 from torch import Tensor, nn
 
-__all__ = ["FeatureSpec", "GraphFeatureEmbedding"]
-
-FeatureKind = Literal["categorical", "continuous"]
-FeatureLevel = Literal["graph", "node"]
-
-
-@dataclass(frozen=True)
-class FeatureSpec:
-    """One graph-level or per-node input feature.
-
-    Attributes:
-        name: The key it is read from.
-        kind: ``categorical`` for a small integer label, ``continuous`` for a
-            real value.
-        embedding_dim: The width it is embedded to.
-        num_classes: How many labels, for a categorical feature.
-        input_dim: How many components, for a continuous feature. An external
-            field has three.
-        level: Whether the value is per structure or already per atom.
-        offset: Added to a categorical value before it is used as a label, so
-            a range that starts below zero indexes from zero: a total charge
-            from -100 to 100 with an offset of 100 takes labels 0 to 200.
-        use_bias: Whether a continuous feature's two linear maps carry biases.
-    """
-
-    name: str
-    kind: FeatureKind
-    embedding_dim: int
-    num_classes: int = 0
-    input_dim: int = 1
-    level: FeatureLevel = "graph"
-    offset: int = 0
-    use_bias: bool = True
-
-    def __post_init__(self) -> None:
-        if self.kind == "categorical" and self.num_classes <= 0:
-            raise ValueError(
-                f"the categorical feature {self.name!r} needs num_classes, and "
-                f"got {self.num_classes}."
-            )
-        if self.kind not in ("categorical", "continuous"):
-            raise ValueError(
-                f"{self.kind!r} is not a feature kind. The kinds are "
-                f"'categorical' and 'continuous'."
-            )
+__all__ = ["GraphFeatureEmbedding"]
 
 
 class GraphFeatureEmbedding(nn.Module):
@@ -87,7 +43,7 @@ class GraphFeatureEmbedding(nn.Module):
 
     def __init__(
         self,
-        specs: Sequence[FeatureSpec],
+        specs: Sequence[GraphFeatureConfig],
         num_features: int,
         num_scalars: int,
         precision: str = "float64",
@@ -154,7 +110,7 @@ class GraphFeatureEmbedding(nn.Module):
                     f"{sorted(graph)}."
                 )
             value = graph[spec.name]
-            rows = batch.shape[0] if spec.level == "node" else graph["ptr"].shape[0] - 1
+            rows = batch.shape[0] if spec.per == "atom" else graph["ptr"].shape[0] - 1
             width = spec.input_dim if spec.kind == "continuous" else 1
             if (
                 value.ndim == 0
@@ -163,7 +119,7 @@ class GraphFeatureEmbedding(nn.Module):
             ):
                 raise ValueError(
                     f"feature {spec.name!r} has shape {tuple(value.shape)}; "
-                    f"expected {rows} {spec.level} rows with {width} component(s)"
+                    f"expected {rows} {spec.per} rows with {width} component(s)"
                 )
             if spec.kind == "categorical":
                 embedded = self.embedders[spec.name](
@@ -173,7 +129,7 @@ class GraphFeatureEmbedding(nn.Module):
                 embedded = self.embedders[spec.name](
                     value.reshape(-1, spec.input_dim).to(dtype)
                 )
-            pieces.append(embedded if spec.level == "node" else embedded[batch])
+            pieces.append(embedded if spec.per == "atom" else embedded[batch])
         return self.project(torch.cat(pieces, dim=-1))
 
     def add_to(self, features: Tensor, addition: Tensor) -> Tensor:

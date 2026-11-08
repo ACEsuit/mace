@@ -12,14 +12,20 @@ from collections.abc import Mapping
 from contextlib import suppress
 from typing import Any
 
-from mace_core.config import read_config_file
-from mace_core.config.cli import apply_overrides
+from mace_core.config import ConfigError, read_config_file
+from mace_core.config.cli import apply_overrides, set_value
 from mace_core.config.legacy import COMPUTE_FLAGS, LegacyFlagError, from_namespace
+from mace_core.config.loss import LOSS_SHARED_FIELDS, normalize_loss
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.observables import DEFAULT_CATALOGUE
+from mace_core.config.training import SCHEDULER_SHARED_FIELDS, normalize_scheduler
+from mace_core.observables import (
+    DEFAULT_CATALOGUE,
+    UnknownObservableError,
+    resolve_requested,
+)
 
 from mace_torch.cli.eval_configs import boolean
-from mace_torch.cli.legacy_flags import DEFAULTS
+from mace_torch.cli.legacy_flags import DEFAULTS, DIRECT_FLAGS
 
 
 def _literal(value):
@@ -256,7 +262,7 @@ def legacy_document(given: Mapping[str, Any]) -> dict[str, Any]:
             int(values.get("max_num_epochs", DEFAULTS["max_num_epochs"])) * 0.75
         )
     if values.get("lbfgs") and "scheduler" not in given:
-        training["scheduler"] = {"kind": {"kind": "constant"}}
+        training["scheduler"] = {"kind": "constant"}
     return document
 
 
@@ -264,24 +270,29 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
     values = vars(arguments).copy()
     path = values.pop("config", None)
     values = {key: value for key, value in values.items() if key in DEFAULTS}
-    document = read_config_file(path) if path else {}
-    # A legacy file consists of flag destinations; a structured file is validated
-    # unchanged so a misspelled section gets the schema's nearest-key error.
-    legacy_file = (
-        bool(document)
-        and bool(set(document) & set(DEFAULTS) - {"model"})
-        and not any(
-            isinstance(document.get(key), dict) for key in ResolvedConfig.model_fields
-        )
-    )
-    if legacy_file:
-        return _resolve_document(legacy_document({**document, **values}))
-    from mace_torch.cli.commands import TRAIN_FLAGS
-
-    for flag in TRAIN_FLAGS:
-        key = flag.option.removeprefix("--")
-        if key in values:
-            flag.apply(document, values.pop(key))
+    document = apply_overrides(read_config_file(path), {}) if path else {}
+    for section in ("data", "model", "training", "finetune", "runtime", "loss"):
+        if section in document and not isinstance(document[section], Mapping):
+            raise ConfigError(f"{section} must be a configuration section (a mapping)")
+    if "loss" in document:
+        document["loss"] = normalize_loss(document["loss"])
+    training = document.get("training", {})
+    if "scheduler" in training:
+        training["scheduler"] = normalize_scheduler(training["scheduler"])
+    for key, (target, _) in DIRECT_FLAGS.items():
+        if key not in values:
+            continue
+        if "<head>" in target:
+            heads = document.get("data", {}).get("heads", {})
+            if not isinstance(heads, Mapping):
+                raise ConfigError("data.heads must be a mapping of head names")
+            if len(heads) > 1:
+                raise ConfigError(
+                    f"--{key} needs a single head, but found {sorted(heads)}; "
+                    "set each head's file under data.heads"
+                )
+            target = target.replace("<head>", next(iter(heads), "default"))
+        set_value(document, target, values.pop(key))
     if values:
         # A parameter-only override belongs to the choice in the file. Without
         # that context the compatibility translator can only use CLI defaults.
@@ -292,8 +303,8 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
             )
         scheduler = training.get("scheduler", {})
         choice = scheduler.get("kind") if isinstance(scheduler, Mapping) else None
-        if isinstance(choice, Mapping) and not values.get("lbfgs"):
-            values.setdefault("scheduler", choice.get("kind", DEFAULTS["scheduler"]))
+        if choice is not None and not values.get("lbfgs"):
+            values.setdefault("scheduler", choice)
         if "num_radial_basis" in values and "radial_type" not in values:
             radial = document.get("model", {}).get("radial_basis", {})
             if "kind" in radial:
@@ -302,7 +313,18 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
             values["foundation_model"] = document.get("finetune", {}).get(
                 "foundation_model"
             )
+        # A hyperparameter override keeps the file's loss semantics. Replaying a
+        # legacy loss preset here would also change observables and weighting.
+        delta = values.get("huber_delta")
+        if delta is not None:
+            selected_loss = values.get(
+                "loss", document.get("loss", {}).get("kind", "weighted")
+            )
+            if selected_loss not in {"huber", "universal"}:
+                raise ConfigError("--huber_delta requires a huber or universal loss")
         translated = legacy_document(values)
+        if delta is not None:
+            translated.setdefault("loss", {})["delta"] = delta
         declared = document.get("model", {}).get("observables")
         if declared is not None and any(flag in values for flag in COMPUTE_FLAGS):
             selected = list(declared)
@@ -332,17 +354,26 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
         # across variants would keep, for example, Adam's beta in ScheduleFree.
         training = document.get("training", {})
         changed = translated.get("training", {})
-        for previous, incoming, key in (
-            (training, changed, "optimizer"),
-            (training.get("scheduler", {}), changed.get("scheduler", {}), "kind"),
+        for previous, incoming, key, shared in (
+            (training, changed, "optimizer", set()),
+            (training, changed, "scheduler", SCHEDULER_SHARED_FIELDS),
+            (
+                document,
+                translated,
+                "loss",
+                LOSS_SHARED_FIELDS,
+            ),
         ):
+            old, new = previous.get(key), incoming.get(key)
             if (
-                isinstance(previous, Mapping)
-                and isinstance(previous.get(key), Mapping)
-                and isinstance(incoming.get(key), Mapping)
-                and previous[key].get("kind") != incoming[key].get("kind")
+                isinstance(old, Mapping)
+                and isinstance(new, Mapping)
+                and "kind" in new
+                and old.get("kind") != new["kind"]
             ):
-                previous.pop(key)
+                previous[key] = {
+                    name: value for name, value in old.items() if name in shared
+                }
         document = apply_overrides(document, translated)
         if values.get("foundation_head"):
             for settings in document.get("data", {}).get("heads", {}).values():
@@ -351,6 +382,11 @@ def configuration(arguments: argparse.Namespace) -> ResolvedConfig:
 
 
 def _resolve_document(document: dict[str, Any]) -> ResolvedConfig:
+    if "model" in document and not isinstance(document["model"], Mapping):
+        raise ConfigError("model must be a configuration section (a mapping)")
+    observables = document.get("model", {}).get("observables", ())
+    if not isinstance(observables, (list, tuple)):
+        return ResolvedConfig.from_dict(document)
     if "virials" in document.get("model", {}).get(
         "observables", ()
     ) and not document.get("catalogue"):
@@ -366,4 +402,14 @@ def _resolve_document(document: dict[str, Any]) -> ResolvedConfig:
                             name="virials", sign=-1, units="eV", extensive=True
                         )
         document["catalogue"] = catalogue
-    return ResolvedConfig.from_dict(document)
+    config = ResolvedConfig.from_dict(document)
+    try:
+        resolve_requested(
+            config.model.observables, config.catalogue or DEFAULT_CATALOGUE
+        )
+    except UnknownObservableError as error:
+        raise ConfigError(f"model.observables: {error}") from error
+    from mace_torch.models.registry import model_family
+
+    model_family(config.model.model)
+    return config

@@ -79,7 +79,7 @@ def configuration(tmp_path, **training):
         "batch_size": 3,
         "valid_batch_size": 3,
         "lr": 0.01,
-        "scheduler": {"kind": {"kind": "constant"}},
+        "scheduler": {"kind": "constant"},
         **training,
     }
     return ResolvedConfig.model_validate(
@@ -250,7 +250,7 @@ def test_a_partial_learning_rate_factor_is_refused_under_lbfgs(tmp_path):
     config, built = built_task(
         tmp_path,
         optimizer=LBFGS,
-        scheduler={"kind": {"kind": "constant"}, "group_factors": {"readouts": 0.5}},
+        scheduler={"kind": "constant", "group_factors": {"readouts": 0.5}},
     )
     with pytest.raises(ValueError, match="readouts"):
         build_optimizer(built.model, config.training)

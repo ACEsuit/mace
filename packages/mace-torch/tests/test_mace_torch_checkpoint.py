@@ -45,7 +45,7 @@ def two_stage(tmp_path, **training):
     settings = {
         "max_num_epochs": 6,
         "ema": {"enabled": True, "decay": 0.9},
-        "scheduler": {"kind": {"kind": "plateau", "factor": 0.5, "patience": 1}},
+        "scheduler": {"kind": "plateau", "factor": 0.5, "patience": 1},
         "stages": [
             {"name": "main"},
             {
@@ -53,7 +53,7 @@ def two_stage(tmp_path, **training):
                 "start_epoch": 3,
                 "lr": 0.005,
                 "optimizer": {"kind": "adamw"},
-                "scheduler": {"kind": {"kind": "exponential", "gamma": 0.5}},
+                "scheduler": {"kind": "exponential", "gamma": 0.5},
             },
         ],
     }
