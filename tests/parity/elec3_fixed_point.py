@@ -66,6 +66,10 @@ def configuration(**options):
         local_sources=None,
         fixed_point_scf={"kind": "fixed_point_scf", **options},
     )
+    if options.get("update") == "many_body" or options.get(
+        "electron_energy", ""
+    ).startswith("many_body"):
+        document["max_ell"] = 2
     return ModelConfig.model_validate(document)
 
 
@@ -152,7 +156,10 @@ def reference_model(profile="molecular", **options):
         r_max=5.0,
         num_bessel=4,
         num_polynomial_cutoff=5,
-        max_ell=1,
+        max_ell=2
+        if options.get("update") == "many_body"
+        or options.get("electron_energy", "").startswith("many_body")
+        else 1,
         interaction_cls=interaction_classes["RealAgnosticResidualInteractionBlock"],
         interaction_cls_first=interaction_classes["RealAgnosticInteractionBlock"],
         num_interactions=2,
@@ -166,7 +173,9 @@ def reference_model(profile="molecular", **options):
         gate=torch.nn.functional.silu,
         radial_MLP=[8],
         pbc_handling=PROFILES[profile],
-        atom_density_scaling=np.array(options.get("density_scales", (1.0, 1.0))),
+        atom_density_scaling=np.array(
+            options.get("update_scales", options.get("density_scales", (1.0, 1.0)))
+        ),
         atomic_multipoles_max_l=options.get("multipole_max_l", 0),
         atomic_multipoles_smearing_width=options.get("multipole_width", 1.0),
         field_feature_max_l=options.get("feature_max_l", 0),
@@ -181,16 +190,57 @@ def reference_model(profile="molecular", **options):
         use_linear_local_charges=options.get("local_source") == "linear",
         add_local_electron_energy=options.get("electron_energy", "none") != "none",
         fixedpoint_update_config={
-            "type": blocks.OneBodyVariableUpdate,
-            "potential_embedding_cls": blocks.LinearPotentialEmbedding
-            if options.get("potential_embedding") == "linear"
-            else blocks.BiasedLinearPotentialEmbedding,
+            "type": {
+                "one_body": blocks.OneBodyVariableUpdate,
+                "scaled": blocks.OneBodyScaledNonLinearUpdate,
+                "scaled_dot": blocks.OneBodyScaledDPNonLinearUpdate,
+                "many_body": blocks.ManyBodyUpdate,
+            }[options.get("update", "one_body")],
+            "potential_embedding_cls": {
+                "linear": blocks.LinearPotentialEmbedding,
+                "biased_linear": blocks.BiasedLinearPotentialEmbedding,
+                "tanh": blocks.TanhPotentialEmbedding,
+            }[options.get("potential_embedding", "biased_linear")],
+            "nonlinearity_cls": {
+                "none": blocks.NoNonLinearity,
+                "shallow": blocks.ShallowNonLinearity,
+                "mlp": blocks.MLPNonLinearity,
+                "skip_mlp": blocks.SkipMLPLinearity,
+            }[options.get("update_nonlinearity", "none")],
+            **(
+                {
+                    "correlation": options.get("update_correlation", 1),
+                    "use_sc": options.get("update_use_skip", True),
+                    "radial_MLP": list(
+                        options.get("update_radial_hidden", (64, 64, 64))
+                    ),
+                    "central_atom_mixer_cls": {
+                        "none": blocks.NoMixer,
+                        "additive": blocks.AdditiveFieldMixer,
+                        "product": blocks.UncoupledProductMixer,
+                    }[options.get("central_mixer", "additive")],
+                    "central_atom_feats_mixer_cls": {
+                        "none": blocks.NoMixer,
+                        "additive": blocks.AdditiveFieldMixer,
+                        "product": blocks.UncoupledProductMixer,
+                    }[options.get("node_mixer", "none")],
+                    "interaction_cls": blocks.AugRealAgnosticResidualInteractionBlock
+                    if options.get("update_interaction") == "augmented"
+                    else blocks.RealAgnosticDensityResidualInteractionBlock,
+                }
+                if options.get("update") == "many_body"
+                else {}
+            ),
         },
         field_readout_config={
             "type": {
                 "none": blocks.NullFieldReadout,
                 "quadratic_field": blocks.StrictQuadraticFieldEnergyReadout,
                 "linear_charges": blocks.LinearChargesEnergyReadout,
+                "mlp_field": blocks.OneBodyMLPFieldReadout,
+                "quadratic_charges": blocks.QuadraticChargesEnergyReadout,
+                "many_body_charges": blocks.ManyBodyChargesReadout,
+                "many_body_charges_field": blocks.ManyBodyChargesFieldReadout,
             }[options.get("electron_energy", "none")]
         },
     )
@@ -261,13 +311,18 @@ def carry_weights(old, new):
         old.layer_feature_mixer.linears, new.layer_mixer, strict=True
     ):
         copy_linear(before, after)
-    source, target = old.field_dependent_charges_map, new.updates[0]
-    element(source.potential_embedding.prod, target.potential)
-    if target.bias is not None:
-        copy_linear(source.potential_embedding.node_feats_linear, target.bias)
-    sparse(source.dot_products, target.products)
-    sparse(source.tp_out, target.modulation)
-    element(source.element_select_out, target.readout)
+    if new.settings.affine_response:
+        source, target = old.field_dependent_charges_map, new.updates[0]
+        element(source.potential_embedding.prod, target.potential)
+        if target.bias is not None:
+            copy_linear(source.potential_embedding.node_feats_linear, target.bias)
+        sparse(source.dot_products, target.products)
+        sparse(source.tp_out, target.modulation)
+        element(source.element_select_out, target.readout)
+    else:
+        from tests.parity.elec3_scf_nonlinear import carry_update
+
+        carry_update(old.field_dependent_charges_map, new.updates[0])
     if new.electron_energy is not None:
         source, target = old.local_electron_energy, new.electron_energy
         if target.kind == "quadratic_field":
@@ -275,11 +330,17 @@ def carry_weights(old, new):
             copy_linear(source.linear_va, target.field)
             bilinear(source.qv_tp, target.products)
             bilinear(source.tp_down, target.down)
-        else:
+        elif target.kind == "linear_charges":
             bilinear(source.tp, target.down)
+        else:
+            from tests.parity.elec3_scf_nonlinear import carry_energy
+
+            carry_energy(source, target)
 
 
-def oracle_outputs(model, graph, constant_charge=True):
+def oracle_outputs(
+    model, graph, constant_charge=True, *, num_scf_steps=1000, mixing_parameter=0.25
+):
     from mace_scf.electrostatics.fixed_point_runner import FixedPointSCFRunner
     from mace_scf.electrostatics.fixed_point_state import FixedPointSCFOptions
 
@@ -310,9 +371,9 @@ def oracle_outputs(model, graph, constant_charge=True):
     )
     runner = FixedPointSCFRunner(
         FixedPointSCFOptions(
-            num_scf_steps=1000,
+            num_scf_steps=num_scf_steps,
             scf_tolerance=1e-15,
-            mixing_parameter=0.25,
+            mixing_parameter=mixing_parameter,
             constant_charge=constant_charge,
             use_autograd_forces=True,
         )

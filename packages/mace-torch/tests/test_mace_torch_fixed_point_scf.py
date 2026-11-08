@@ -36,6 +36,10 @@ def fixed_model(
     document.update(
         model="fixed_point_scf", local_sources=None, fixed_point_scf=options
     )
+    if options.get("update") == "many_body" or options.get(
+        "electron_energy", ""
+    ).startswith("many_body"):
+        document["max_ell"] = 2
     document["readout"]["gate"] = readout_gate
     config = ModelConfig.model_validate(document)
     model = FixedPointSCFModel(
@@ -285,8 +289,8 @@ def test_fused_solver_binds_once_and_checks_double_backward(monkeypatch):
 @pytest.mark.parametrize(
     "options",
     [
-        {"update_nonlinearity": "mlp"},
-        {"potential_embedding": "tanh"},
+        {"update_nonlinearity": "unknown"},
+        {"potential_embedding": "unknown"},
         {"feature_widths": []},
         {"feature_norms": [1, 2]},
         {"density_scales": [1, 2]},
@@ -318,7 +322,12 @@ def test_singular_equations_fail_instead_of_returning_an_iterate(constant_charge
 @pytest.mark.parametrize("constant_charge", [True, False])
 @pytest.mark.parametrize("solver", ["reference", "fixedpoint-nonbit"])
 def test_training_optimizer_and_solver_preserving_checkpoint(
-    tmp_path, monkeypatch, constant_charge, solver
+    tmp_path,
+    monkeypatch,
+    constant_charge,
+    solver,
+    options=None,
+    learning_rate=0.01,
 ):
     from ase.io import read, write
     from mace_core.config.resolved import ResolvedConfig
@@ -341,9 +350,12 @@ def test_training_optimizer_and_solver_preserving_checkpoint(
             _EntryPoint(Nonbit.name, Nonbit),
         ],
     )
-    document = configuration(tmp_path, max_num_epochs=1).model_dump(mode="json")
+    document = configuration(tmp_path, max_num_epochs=1, lr=learning_rate).model_dump(
+        mode="json"
+    )
     document["model"].update(
-        model="fixed_point_scf", fixed_point_scf={"constant_charge": constant_charge}
+        model="fixed_point_scf",
+        fixed_point_scf={"constant_charge": constant_charge, **(options or {})},
     )
     document["electrostatics"].update(
         enabled=True, periodicity_profile="molecular", solver=solver
@@ -383,7 +395,9 @@ def test_training_optimizer_and_solver_preserving_checkpoint(
     assert record is not None and record.solver == solver
     assert record.bit_parity is (solver == "reference")
     assert record.descriptor["scf_spec"]["method"] == (
-        "affine_fixed_charge" if constant_charge else "affine_fixed_fermi"
+        ("affine_fixed_charge" if constant_charge else "affine_fixed_fermi")
+        if model.settings.affine_response
+        else ("nonlinear_fixed_charge" if constant_charge else "nonlinear_fixed_fermi")
     )
     with pytest.raises(SolverSubstitutionError):
         load_deployed(

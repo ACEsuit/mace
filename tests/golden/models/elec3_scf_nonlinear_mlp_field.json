@@ -1,0 +1,721 @@
+{
+  "format": "mace-v1-checkpoint",
+  "version": 3,
+  "config": {
+    "model": {
+      "model": "fixed_point_scf",
+      "observables": [
+        "energy",
+        "forces"
+      ],
+      "hidden_irreps": null,
+      "pair_repulsion": false,
+      "scaling": "none",
+      "normalization": {},
+      "readout": {
+        "mlp_irreps": "4x0e",
+        "gate": "silu",
+        "last_only": false,
+        "from_embedding": false,
+        "bias": false
+      },
+      "graph_features": [],
+      "backend": "reference",
+      "les": null,
+      "local_sources": null,
+      "qeq": null,
+      "fixed_point_scf": {
+        "kind": "fixed_point_scf",
+        "multipole_max_l": 0,
+        "multipole_width": 1.0,
+        "feature_max_l": 0,
+        "feature_widths": [
+          1.0
+        ],
+        "feature_norms": null,
+        "feature_self_interaction": false,
+        "energy_self_interaction": false,
+        "quadrupole_corrections": false,
+        "constant_charge": false,
+        "fermi_level_offset": 0.0,
+        "local_source": "gated",
+        "density_scales": null,
+        "potential_embedding": "biased_linear",
+        "update": "one_body",
+        "update_nonlinearity": "none",
+        "update_scales": null,
+        "update_correlation": 1,
+        "update_use_skip": true,
+        "update_interaction": "density",
+        "update_radial_hidden": [
+          64,
+          64,
+          64
+        ],
+        "central_mixer": "additive",
+        "node_mixer": "none",
+        "max_iters": 50,
+        "tolerance": 1e-10,
+        "electron_energy": "mlp_field"
+      },
+      "polar": {
+        "multipole_max_l": 0,
+        "multipole_width": 1.0,
+        "feature_max_l": 0,
+        "feature_widths": [
+          1.0
+        ],
+        "feature_norms": null,
+        "num_recursion_steps": 1,
+        "feature_self_interaction": false,
+        "energy_self_interaction": false,
+        "add_local_electron_energy": false,
+        "quadrupole_feature_corrections": false,
+        "field_update": "embedded_one_body",
+        "field_readout": "one_body_mlp"
+      },
+      "magnetic": {
+        "saturation": {},
+        "num_basis": 8,
+        "lmax": 3,
+        "one_body": false,
+        "one_body_basis": 10,
+        "train_one_body": true,
+        "time_reversal": "none"
+      },
+      "r_max": 5.0,
+      "num_interactions": 2,
+      "num_channels": 2,
+      "max_L": 1,
+      "max_ell": 1,
+      "correlation": 2,
+      "radial_basis": {
+        "kind": "bessel",
+        "num_basis": 4,
+        "trainable": false
+      },
+      "distance_transform": {
+        "kind": "none"
+      },
+      "cutoff": {
+        "polynomial_order": 5
+      },
+      "apply_cutoff": true,
+      "radial_mlp": [
+        8
+      ],
+      "interaction_first": "plain",
+      "interaction": "residual",
+      "edge_irreps": null,
+      "use_edge_irreps_first": false,
+      "use_agnostic_product": false,
+      "clebsch_gordan_basis": "reduced"
+    },
+    "pins": {
+      "elec3-reference": "784a510339aacc4412b61b6926ef1a92bca387c0",
+      "elec3-legacy": "9e223a1dd2e20eacd8e6bd551775adc7bd3a0682",
+      "elec3-longrange": "e0eb8945c21e203656f4e0bbece5d1da488b6753"
+    }
+  },
+  "layout": {
+    "backbone.radial_embedding.basis": {
+      "model.radial_basis.kind": "bessel"
+    },
+    "backbone.interactions.0.body.radial_mlp": {
+      "model.radial_mlp": "normalized_silu"
+    },
+    "backbone.interactions.1.body.radial_mlp": {
+      "model.radial_mlp": "normalized_silu"
+    },
+    "backbone.products.0.contraction": {
+      "spec_version": "1.2",
+      "basis": "reduced",
+      "paths": [
+        "0:0e",
+        "1:1o",
+        "0:0e|0:0e",
+        "1:1o|1:0e",
+        "0:0e|1:1o"
+      ]
+    },
+    "backbone.products.1.contraction": {
+      "spec_version": "1.2",
+      "basis": "reduced",
+      "paths": [
+        "0:0e",
+        "1:1o",
+        "0:0e|0:0e",
+        "1:1o|1:0e",
+        "0:0e|1:1o"
+      ]
+    },
+    "electron_energy.mlp": {
+      "model.radial_mlp": "normalized_silu"
+    }
+  },
+  "tensors": [
+    {
+      "module": "backbone.interactions.0.body",
+      "name": "neighbours",
+      "shape": [],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.0.body.linear",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.0.body.linear",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.0.body.linear_up",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.0.body.linear_up",
+      "name": "weight",
+      "shape": [
+        4
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.0.body.radial_mlp",
+      "name": "layer_0",
+      "shape": [
+        4,
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.0.body.radial_mlp",
+      "name": "layer_1",
+      "shape": [
+        8,
+        4
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.0.skip",
+      "name": "weight",
+      "shape": [
+        2,
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.1.body",
+      "name": "neighbours",
+      "shape": [],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.1.body.linear",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.1.body.linear",
+      "name": "weight",
+      "shape": [
+        16
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.1.body.linear_up",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.1.body.linear_up",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.1.body.radial_mlp",
+      "name": "layer_0",
+      "shape": [
+        4,
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.1.body.radial_mlp",
+      "name": "layer_1",
+      "shape": [
+        8,
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.interactions.1.skip",
+      "name": "weight",
+      "shape": [
+        2,
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.node_embedding",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.node_embedding",
+      "name": "weight",
+      "shape": [
+        4
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.products.0.contraction",
+      "name": "path_counts",
+      "shape": [
+        4
+      ],
+      "dtype": "int64"
+    },
+    {
+      "module": "backbone.products.0.contraction",
+      "name": "weight",
+      "shape": [
+        2,
+        5,
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.products.0.linear",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.products.0.linear",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.products.1.contraction",
+      "name": "path_counts",
+      "shape": [
+        4
+      ],
+      "dtype": "int64"
+    },
+    {
+      "module": "backbone.products.1.contraction",
+      "name": "weight",
+      "shape": [
+        2,
+        5,
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.products.1.linear",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.products.1.linear",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.radial_embedding.basis",
+      "name": "frequencies",
+      "shape": [
+        4
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "backbone.radial_embedding.basis",
+      "name": "prefactor",
+      "shape": [],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.charge",
+      "name": "bias",
+      "shape": [
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.charge",
+      "name": "weight",
+      "shape": [
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.charge_products",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.field",
+      "name": "bias",
+      "shape": [
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.field",
+      "name": "weight",
+      "shape": [
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.field_products",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.mlp",
+      "name": "layer_0",
+      "shape": [
+        2,
+        128
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.mlp",
+      "name": "layer_1",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.mlp",
+      "name": "layer_2",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "electron_energy.mlp",
+      "name": "layer_3",
+      "shape": [
+        128,
+        1
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "layer_mixer.0",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "layer_mixer.0",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "layer_mixer.1",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "layer_mixer.1",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.energy_head",
+      "name": "e0_table",
+      "shape": [
+        1,
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.energy_head",
+      "name": "scale",
+      "shape": [
+        1
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.energy_head",
+      "name": "shift",
+      "shape": [
+        1
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.heads.energy.readouts.0",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.heads.energy.readouts.0",
+      "name": "weight",
+      "shape": [
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.heads.energy.readouts.1.first",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.heads.energy.readouts.1.first",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.heads.energy.readouts.1.second",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "outputs.heads.energy.readouts.1.second",
+      "name": "weight",
+      "shape": [
+        4
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.0.first",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.0.first",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.0.last",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.0.last",
+      "name": "weight",
+      "shape": [
+        4
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.0.middle",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.0.middle",
+      "name": "weight",
+      "shape": [
+        16
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.1.first",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.1.first",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.1.last",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.1.last",
+      "name": "weight",
+      "shape": [
+        4
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.1.middle",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "source_maps.1.middle",
+      "name": "weight",
+      "shape": [
+        16
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "updates.0.bias",
+      "name": "bias",
+      "shape": [
+        0
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "updates.0.bias",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "updates.0.modulation",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "updates.0.potential",
+      "name": "weight",
+      "shape": [
+        2,
+        2
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "updates.0.products",
+      "name": "weight",
+      "shape": [
+        8
+      ],
+      "dtype": "float64"
+    },
+    {
+      "module": "updates.0.readout",
+      "name": "weight",
+      "shape": [
+        2,
+        2
+      ],
+      "dtype": "float64"
+    }
+  ]
+}

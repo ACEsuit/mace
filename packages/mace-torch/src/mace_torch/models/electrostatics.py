@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import torch
+from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.local_sources import LocalSplitChargeConfig
 from mace_core.config.model import ModelConfig
@@ -1180,11 +1181,11 @@ class QEqModel(_ChargeAwareModel):
 
 @register_model("fixed_point_scf")
 class FixedPointSCFModel(_ChargeAwareModel):
-    """FixedPointSCF with the reference's affine one-body field update.
+    """FixedPointSCF with affine or nonlinear learned field responses.
 
     Architecture follows ACEsuit/mace-scf FixedPointCore (MIT), revision
-    784a510339aacc4412b61b6926ef1a92bca387c0. Solving the affine fixed-point
-    equation directly preserves its root and includes its implicit derivatives.
+    784a510339aacc4412b61b6926ef1a92bca387c0. Both solve the residual equation
+    and preserve implicit first and second derivatives at its converged root.
     """
 
     projection: Any
@@ -1229,9 +1230,19 @@ class FixedPointSCFModel(_ChargeAwareModel):
                 quadrupole_corrections=settings.quadrupole_corrections,
             ),
             scf_spec=ScfSpec(
-                method="affine_fixed_charge"
-                if settings.constant_charge
-                else "affine_fixed_fermi"
+                method=(
+                    "affine_fixed_charge"
+                    if settings.constant_charge
+                    else "affine_fixed_fermi"
+                )
+                if settings.affine_response
+                else (
+                    "nonlinear_fixed_charge"
+                    if settings.constant_charge
+                    else "nonlinear_fixed_fermi"
+                ),
+                max_iters=settings.max_iters,
+                tolerance=settings.tolerance,
             ),
             precision=precision,
         )
@@ -1253,7 +1264,13 @@ class FixedPointSCFModel(_ChargeAwareModel):
         radial_precision: Precision | None = None,
     ):
         from mace_torch.backends import layout
+        from mace_torch.nn.scf_nonlinear import (
+            NonlinearElectronEnergy,
+            NonlinearFieldUpdate,
+        )
+        from mace_torch.nn.scf_response import ResponseOps
         from mace_torch.physics.affine_fixed_point import AffineFixedPoint
+        from mace_torch.physics.nonlinear_fixed_point import NonlinearFixedPoint
 
         options = config.fixed_point_scf
         if options is None or config.model != "fixed_point_scf":
@@ -1266,6 +1283,26 @@ class FixedPointSCFModel(_ChargeAwareModel):
             raise ValueError("FixedPointSCF requires an energy observable")
         if max(options.multipole_max_l, options.feature_max_l) > config.max_L:
             raise ValueError("FixedPointSCF density/field degree exceeds model.max_L")
+        if options.needs_edges and config.max_ell < 2:
+            raise ValueError(
+                "FixedPointSCF many-body updates/readouts require model.max_ell >= 2"
+            )
+        if options.update in ("scaled", "scaled_dot"):
+            terms = tuple(Irreps.parse(config.node_irreps))
+            if (
+                tuple((ir.degree, ir.parity) for _, ir in terms) != ((0, 1), (1, -1))
+                or terms[0][0] != terms[1][0]
+            ):
+                raise ValueError(
+                    "FixedPointSCF scaled updates require equally many "
+                    "0e and 1o node features"
+                )
+        if options.update_scales is not None and len(options.update_scales) != len(
+            atomic_numbers
+        ):
+            raise ValueError(
+                "fixed_point_scf.update_scales needs one value per atomic number"
+            )
         self.density_irreps = _spherical(options.multipole_max_l)
         self.potential_irreps = _spherical(
             options.feature_max_l, len(options.feature_widths)
@@ -1361,6 +1398,17 @@ class FixedPointSCFModel(_ChargeAwareModel):
                         precision,
                         biased=options.potential_embedding == "biased_linear",
                     )
+                    if options.affine_response
+                    else NonlinearFieldUpdate(
+                        ResponseOps(),
+                        node_irreps,
+                        self.potential_irreps,
+                        self.density_irreps,
+                        len(atomic_numbers),
+                        config.radial_basis.num_basis,
+                        options,
+                        precision,
+                    )
                 ]
             )
             self.electron_energy = (
@@ -1372,9 +1420,28 @@ class FixedPointSCFModel(_ChargeAwareModel):
                     self.density_irreps,
                     precision,
                 )
-                if options.electron_energy != "none"
-                else None
+                if options.electron_energy in ("quadratic_field", "linear_charges")
+                else (
+                    NonlinearElectronEnergy(
+                        backend,
+                        options.electron_energy,
+                        node_irreps,
+                        self.potential_irreps,
+                        self.density_irreps,
+                        len(atomic_numbers),
+                        config.radial_basis.num_basis,
+                        precision,
+                    )
+                    if options.electron_energy != "none"
+                    else None
+                )
             )
+        self.node_terms = layout.terms(node_irreps)
+        self.extended_readout = options.electron_energy not in (
+            "none",
+            "quadratic_field",
+            "linear_charges",
+        )
         scales = options.density_scales or (1.0,) * len(atomic_numbers)
         if len(scales) != len(atomic_numbers):
             raise ValueError(
@@ -1411,7 +1478,15 @@ class FixedPointSCFModel(_ChargeAwareModel):
             )
         span = build_scf_solve(settings, solver=solver)
         self.fixed_point_solve = (
-            span if span is not None else AffineFixedPoint(options.constant_charge)
+            span
+            if span is not None
+            else (
+                AffineFixedPoint(options.constant_charge)
+                if options.affine_response
+                else NonlinearFixedPoint(
+                    options.constant_charge, options.max_iters, options.tolerance
+                )
+            )
         )
 
     def transform_outputs(self, graph, layers, output):
@@ -1447,6 +1522,97 @@ class FixedPointSCFModel(_ChargeAwareModel):
             dim=-1,
         )
         external = self.applied_potential(batch, positions, applied)
+        one_hot = graph["node_attrs"]
+        edge_attributes, edge_radial = self._response_edges(graph)
+        if self.settings.affine_response:
+            density, fermi = self._solve_affine(
+                graph, cache, local, mixed, membership, fermi, external
+            )
+        else:
+            density, fermi = self._solve_nonlinear(
+                graph,
+                cache,
+                local,
+                mixed,
+                membership,
+                fermi,
+                edge_attributes,
+                edge_radial,
+            )
+        final_applied = torch.cat(
+            (
+                (fermi - self.settings.fermi_level_offset)[:, None],
+                graph["external_field"].to(self.solve_dtype),
+            ),
+            dim=-1,
+        )
+        fields = (
+            self.projection(cache, density)
+            + self.applied_potential(batch, positions, final_applied)
+        ) / self.field_norms
+        electron = fermi.new_zeros(fermi.shape)
+        if self.electron_energy is not None:
+            arguments = (
+                layers[-1],
+                fields.to(self.model_dtype),
+                local.to(self.model_dtype),
+                density.to(self.model_dtype),
+            )
+            atom_energy = (
+                self.electron_energy(
+                    *arguments,
+                    one_hot,
+                    edge_attributes,
+                    edge_radial,
+                    graph["edge_index"],
+                )
+                if self.extended_readout
+                else self.electron_energy(*arguments)
+            )
+            electron = segment_sum(atom_energy.to(self.solve_dtype), batch, count)
+        coulomb = self.coulomb(graph, density, geometry)
+        dipole = segment_sum(positions * density[:, :1], batch, count)
+        if self.settings.multipole_max_l == 1:
+            dipole = dipole + segment_sum(density[:, 1:4], batch, count)[:, [2, 0, 1]]
+        output.total_energy = (
+            output.total_energy
+            + electron
+            + coulomb
+            + (graph["external_field"].to(self.solve_dtype) * dipole).sum(-1)
+        )
+        output.dipole = dipole
+        output.extras.update(
+            density_coefficients=density,
+            charges=density[:, 0],
+            total_charge=segment_sum(density[:, 0], batch, count),
+            fermi_level=fermi,
+            electrostatic_features=fields,
+            electrostatic_energy=coulomb,
+            electron_energy=electron,
+            field_independent_charge_density=local,
+        )
+        return output
+
+    def _response_edges(self, graph):
+        positions = graph["positions"]
+        if not self.settings.needs_edges:
+            empty = positions.new_empty((graph["edge_index"].shape[1], 0))
+            return empty, empty
+        sender, receiver = graph["edge_index"]
+        edges = EdgeInputs(
+            (positions[receiver] - positions[sender] + graph["shifts"])[
+                :, self.backbone.edge_axes
+            ],
+            graph["node_atomic_numbers"],
+            graph["edge_index"],
+            self.backbone.spherical_harmonics,
+            self.backbone.radial_embedding,
+        )
+        return edges.attributes[:, :9], edges.radial
+
+    def _solve_affine(self, graph, cache, local, mixed, membership, fermi, external):
+        positions = graph["positions"].to(self.solve_dtype)
+        batch, count = graph["batch"], graph["ptr"].shape[0] - 1
         one_hot = graph["node_attrs"]
         # Assemble the affine map from its linear response; keep the learned
         # offset separate so column construction never subtracts large biases.
@@ -1502,53 +1668,80 @@ class FixedPointSCFModel(_ChargeAwareModel):
             total_charge,
             fermi,
         )
-        final_applied = torch.cat(
+        return density, fermi
+
+    def _solve_nonlinear(
+        self,
+        graph,
+        cache,
+        local,
+        mixed,
+        membership,
+        fermi,
+        edge_attributes,
+        edge_radial,
+    ):
+        from mace_torch.physics.nonlinear_fixed_point import ResponseInputs
+
+        positions = graph["positions"].to(self.solve_dtype)
+        batch, count = graph["batch"], graph["ptr"].shape[0] - 1
+        basis = torch.eye(
+            local.numel(), dtype=self.solve_dtype, device=positions.device
+        )
+        projection = torch.stack(
+            [
+                (
+                    self.projection(cache, column.reshape_as(local)) / self.field_norms
+                ).reshape(-1)
+                for column in basis.unbind()
+            ],
+            dim=1,
+        )
+        fermi_columns = []
+        for column in torch.eye(
+            count, dtype=self.solve_dtype, device=positions.device
+        ).unbind():
+            potential = torch.cat(
+                (column[:, None], positions.new_zeros((count, 3))), dim=-1
+            )
+            fermi_columns.append(
+                (
+                    self.applied_potential(batch, positions, potential)
+                    / self.field_norms
+                ).reshape(-1)
+            )
+        applied = torch.cat(
             (
-                (fermi - self.settings.fermi_level_offset)[:, None],
+                positions.new_full((count, 1), -self.settings.fermi_level_offset),
                 graph["external_field"].to(self.solve_dtype),
             ),
             dim=-1,
         )
-        fields = (
-            self.projection(cache, density)
-            + self.applied_potential(batch, positions, final_applied)
-        ) / self.field_norms
-        electron = (
-            segment_sum(
-                self.electron_energy(
-                    layers[-1],
-                    fields.to(self.model_dtype),
-                    local.to(self.model_dtype),
-                    density.to(self.model_dtype),
-                ).to(self.solve_dtype),
-                batch,
-                count,
-            )
-            if self.electron_energy is not None
-            else fermi.new_zeros(fermi.shape)
+        external = self.applied_potential(batch, positions, applied) / self.field_norms
+        inputs = ResponseInputs(
+            local,
+            projection,
+            external,
+            torch.stack(fermi_columns, dim=1),
+            membership,
+            graph["total_charge"].to(self.solve_dtype)
+            if self.settings.constant_charge
+            else fermi.new_zeros(fermi.shape),
+            fermi,
+            self.layout.to_canonical(mixed, self.node_terms).to(self.solve_dtype),
+            graph["node_attrs"].to(self.solve_dtype),
+            edge_attributes.to(self.solve_dtype),
+            edge_radial.to(self.solve_dtype),
+            graph["edge_index"],
         )
-        coulomb = self.coulomb(graph, density, geometry)
-        dipole = segment_sum(positions * density[:, :1], batch, count)
-        if self.settings.multipole_max_l == 1:
-            dipole = dipole + segment_sum(density[:, 1:4], batch, count)[:, [2, 0, 1]]
-        output.total_energy = (
-            output.total_energy
-            + electron
-            + coulomb
-            + (graph["external_field"].to(self.solve_dtype) * dipole).sum(-1)
-        )
-        output.dipole = dipole
-        output.extras.update(
-            density_coefficients=density,
-            charges=density[:, 0],
-            total_charge=segment_sum(density[:, 0], batch, count),
-            fermi_level=fermi,
-            electrostatic_features=fields,
-            electrostatic_energy=coulomb,
-            electron_energy=electron,
-            field_independent_charge_density=local,
-        )
-        return output
+        update = self.updates[0]
+        # The response is part of the SCF op: evaluate its live canonical tensors
+        # at the configured solve precision, preserving gradients to model weights.
+        parameters = {
+            name: value.to(self.solve_dtype) if value.is_floating_point() else value
+            for name, value in (*update.named_parameters(), *update.named_buffers())
+        }
+        return self.fixed_point_solve(update, parameters, inputs)
 
     def canonical_components(self):
         return {

@@ -110,7 +110,9 @@ class ScfSpec:
         mixing: The fraction of the new iterate taken at each step.
         method: The equation a fused span must solve. QEq and affine SCF
             use exact linear solves; the iteration controls do not apply.
-            Affine SCF fixes either the total charge or the Fermi level.
+            Affine and nonlinear SCF fix either total charge or Fermi level.
+            Nonlinear methods use max_iters and a maximum residual tolerance;
+            mixing is unused by the reference Newton solve.
     """
 
     max_iters: int = 50
@@ -122,6 +124,8 @@ class ScfSpec:
         "qeq_nonperiodic",
         "affine_fixed_charge",
         "affine_fixed_fermi",
+        "nonlinear_fixed_charge",
+        "nonlinear_fixed_fermi",
     ] = "fixed_point"
 
     def __post_init__(self) -> None:
@@ -131,6 +135,8 @@ class ScfSpec:
             "qeq_nonperiodic",
             "affine_fixed_charge",
             "affine_fixed_fermi",
+            "nonlinear_fixed_charge",
+            "nonlinear_fixed_fermi",
         ):
             raise ValueError(f"unknown self-consistent solve method {self.method!r}")
         if self.max_iters < 1:
