@@ -87,7 +87,7 @@ __all__ = [
 
 #: The version of this contract. A backend records it, and a checkpoint carries
 #: it, so a format change is a loud mismatch rather than a silent misread.
-KERNEL_SPEC_VERSION = "1.2"
+KERNEL_SPEC_VERSION = "1.0"
 
 #: The one layout a checkpoint is ever written in.
 CANONICAL_LAYOUT = "mul_ir"

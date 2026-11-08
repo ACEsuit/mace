@@ -2,7 +2,6 @@
 
 import argparse
 import json
-from dataclasses import asdict
 
 import numpy as np
 import pytest
@@ -13,6 +12,7 @@ from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.cli import migrate
 from mace_torch.cli.run_train import parse
 from mace_torch.deploy.loader import load_deployed
+from mace_torch.electrostatics.reference.gto_utils import gto_basis_kspace_cutoff
 from mace_torch.physics import DerivativeEngine
 from mace_torch.train import (
     run_data_stage,
@@ -192,8 +192,6 @@ EXPECTED = {
     "energy_self_interaction": True,
     "add_local_electron_energy": True,
     "quadrupole_feature_corrections": True,
-    "field_update": "embedded_one_body",
-    "field_readout": "one_body_mlp",
 }
 
 
@@ -262,10 +260,14 @@ def test_all_polar_controls_build_train_and_survive_reload(tmp_path, route):
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
     model = built.model.get_submodule("backbone")
-    for key, value in EXPECTED.items():
-        if key in asdict(model.settings):
-            assert getattr(model.settings, key) == value
-    assert model.settings.kspace_cutoff_factor == 0.85
+    assert model.config.polar.model_dump() == EXPECTED
+    assert model.descriptor.kspace_cutoff == pytest.approx(
+        0.85
+        * gto_basis_kspace_cutoff(
+            [model.config.polar.multipole_width, *model.config.polar.feature_widths],
+            max(model.config.polar.multipole_max_l, model.config.polar.feature_max_l),
+        )
+    )
     assert len(model.updates) == 2 and model.density_width == 4
     assert model.descriptor.features.include_self_interaction
     assert model.descriptor.features.quadrupole_corrections
@@ -280,7 +282,7 @@ def test_all_polar_controls_build_train_and_survive_reload(tmp_path, route):
     )
     artifact = write_model(tmp_path / "checked", built.model, built.metadata)
     loaded = load_deployed(artifact)
-    assert loaded.model.settings == model.settings
+    assert loaded.model.config.polar == model.config.polar
     graph = next(iter(next(iter(data.valid_loaders.values())))).graph
     actual = loaded.compute(dict(graph), compute=("forces",))
     expected = built.model(dict(graph), compute=("forces",))

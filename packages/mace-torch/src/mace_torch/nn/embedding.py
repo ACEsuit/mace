@@ -1,14 +1,6 @@
-"""Node and edge embeddings: the element embedding and the radial embedding.
-
-Both are the first thing a MACE model does with a graph. The node embedding
-maps each atom's element to a vector of scalar channels; the radial embedding
-maps each edge's length to a vector of radial features and the smooth cutoff
-envelope that goes with them.
-"""
+"""Radial edge features and their cutoff envelope, built from model settings."""
 
 from __future__ import annotations
-
-import math
 
 import torch
 from mace_core.config import (
@@ -36,7 +28,6 @@ from mace_torch.nn.radial import (
 
 __all__ = [
     "DistanceTransform",
-    "LinearNodeEmbeddingBlock",
     "RadialBasis",
     "RadialEmbeddingBlock",
     "build_cutoff",
@@ -46,31 +37,6 @@ __all__ = [
 
 RadialBasis = BesselBasis | GaussianBasis | ChebyshevBasis
 DistanceTransform = AgnesiTransform | SoftTransform
-
-
-class LinearNodeEmbeddingBlock(torch.nn.Module):
-    """One-hot element attributes -> scalar node channels, a plain weight matrix.
-
-    The element attributes are scalars (``l = 0``), so the equivariant linear
-    layer legacy used reduces to ``node_attributes @ weight / sqrt(num_elements)``
-    with no bias.
-    """
-
-    def __init__(self, num_elements: int, num_channels: int):
-        super().__init__()
-        self.num_elements = num_elements
-        self.num_channels = num_channels
-        self.normalisation = 1.0 / math.sqrt(num_elements)
-        self.weight = torch.nn.Parameter(
-            torch.randn(num_elements, num_channels, dtype=torch.get_default_dtype())
-        )
-
-    def forward(self, node_attributes: torch.Tensor) -> torch.Tensor:
-        """``[n_nodes, num_elements]`` one-hot -> ``[n_nodes, num_channels]``."""
-        return (node_attributes @ self.weight) * self.normalisation
-
-    def extra_repr(self) -> str:
-        return f"num_elements={self.num_elements}, num_channels={self.num_channels}"
 
 
 class RadialEmbeddingBlock(torch.nn.Module):

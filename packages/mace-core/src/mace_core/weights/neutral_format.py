@@ -104,8 +104,8 @@ __all__ = [
 #: What the sidecar says it is.
 FORMAT = "mace-neutral"
 
-#: Bumped when the meaning of a field changes. A reader refuses any other.
-VERSION = 1
+#: The initial V1 format. A reader refuses any other version.
+VERSION = "1.0"
 
 #: Between an op's name and its tensor's. A dot would be ambiguous, since op
 #: names are dotted paths themselves.
@@ -162,7 +162,7 @@ class OpSpec(_Strict):
     """
 
     op_kind: OpKind
-    schema_version: str
+    schema_version: Literal["1.0"]
     clebsch_gordan_basis: Literal["full", "reduced"] | None = None
     parametrization: Literal["nested", "fused"] | None = None
     proj: str | None = None
@@ -197,7 +197,7 @@ class NeutralSidecar(_Strict):
     """The JSON half. See the module docstring for each field."""
 
     format: Literal["mace-neutral"]
-    version: Literal[1]
+    version: Literal["1.0"]
     provenance: Provenance
     family: Literal[
         "plain",

@@ -136,8 +136,6 @@ def inject_lora(model: nn.Module, rank: int = 4, alpha: float = 1.0) -> list[str
         ValueError: If nothing could be adapted, which is a model with no
             linear map in it and an adapter that would train nothing.
     """
-    from mace_torch.nn.radial_mlp import RadialMLP
-
     adapted: list[str] = []
     for path, module in list(model.named_modules()):
         descriptor = getattr(module, "descriptor", None)
@@ -159,9 +157,7 @@ def inject_lora(model: nn.Module, rank: int = 4, alpha: float = 1.0) -> list[str
                 ),
             )
             adapted.append(f"{path}.weight")
-        elif isinstance(module, RadialMLP) or isinstance(
-            descriptor, RadialMLPDescriptor
-        ):
+        elif isinstance(descriptor, RadialMLPDescriptor):
             for index, matrix in enumerate(module.weights):
                 parametrize.register_parametrization(
                     module.weights, str(index), DenseLowRank(matrix, rank, alpha)

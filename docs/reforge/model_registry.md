@@ -4,7 +4,7 @@ The registry in `mace_core.model_registry` describes 24 retained foundation
 models. It is shared by PyTorch and JAX and imports neither framework. Each
 record contains the canonical name, old aliases, family default, precision,
 license, chemistry and theory scope, citations, model hyperparameters, committed
-golden references and badge filename. Metadata uses `ModelMetadata` schema 1.2.
+golden references and badge filename. Metadata uses `ModelMetadata` schema 1.0.
 Registry summaries omit E0 values; the existing checkpoint schema is unchanged.
 
 ```python

@@ -19,11 +19,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import torch
-from mace_core.clebsch_gordan.irreps import Irreps
 
 from tests.parity.fm00_convert import linear_weights_to_canonical, transfer_weights
 
-__all__ = ["polar_backbone_config", "polar_settings", "transfer_polar_weights"]
+__all__ = ["polar_backbone_config", "polar_config", "transfer_polar_weights"]
 
 
 def polar_backbone_config(legacy, build_config) -> dict:
@@ -42,9 +41,9 @@ def polar_backbone_config(legacy, build_config) -> dict:
     return config
 
 
-def polar_settings(legacy, **overrides):
+def polar_config(legacy):
     """The charge-aware settings, read off the trained model."""
-    from mace_torch.models.electrostatics import PolarSettings
+    from mace_core.config.model import PolarConfig
 
     widths = tuple(float(width) for width in legacy.field_feature_widths)
     norms = legacy.field_feature_norms.detach().tolist()
@@ -55,21 +54,17 @@ def polar_settings(legacy, **overrides):
         for _ in widths:
             per_block.append(float(norms[offset]))
             offset += 2 * degree + 1
-    fukui_hidden = Irreps.parse(str(legacy.fukui_source_map.linear_1.irreps_out))
-    return PolarSettings(
+    return PolarConfig(
         multipole_max_l=int(legacy.atomic_multipoles_max_l),
         multipole_width=float(legacy.atomic_multipoles_smearing_width),
         feature_max_l=int(legacy.field_feature_max_l),
         feature_widths=widths,
         feature_norms=tuple(per_block),
         num_recursion_steps=int(legacy.num_recursion_steps),
-        kspace_cutoff_factor=float(legacy.kspace_cutoff_factor),
         feature_self_interaction=bool(legacy.field_si),
         energy_self_interaction=bool(legacy.include_electrostatic_self_interaction),
         add_local_electron_energy=bool(legacy.add_local_electron_energy),
         quadrupole_feature_corrections=bool(legacy.quadrupole_feature_corrections),
-        fukui_hidden=fukui_hidden.dimension,
-        **overrides,
     )
 
 

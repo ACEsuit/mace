@@ -24,10 +24,10 @@ from mace_core.model_registry import (
     published_reference,
     resolve_model,
 )
+from mace_core.weights.checkpoint import read_checkpoint_manifest
 
 from mace_torch.calculators.ase_calculator import MACECalculator
 from mace_torch.deploy.loader import DeployedModel, load_deployed
-from mace_torch.serialization import read_sidecar
 
 # Accepted boundary spellings, never a second implementation selector.
 _MODEL_TYPES = {
@@ -72,8 +72,8 @@ def load_foundation(
     if entry is not None and (notice := entry.license.notice()) is not None:
         print(notice)
     files = resolve_checkpoint(reference)
-    document = read_sidecar(files.metadata)
-    ModelMetadata.from_json(json.dumps(document["config"]))
+    document = read_checkpoint_manifest(files.metadata)
+    ModelMetadata.from_json(json.dumps(document.config))
     loaded = load_deployed(
         files.metadata,
         tensors_path=files.tensors,

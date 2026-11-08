@@ -196,7 +196,7 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
         for tensor, reference in zip(actual, expected, strict=True):
             torch.testing.assert_close(tensor, reference)
     metadata = {
-        "mace_native_version": "1",
+        "mace_native_version": "1.0",
         "mace_nodes": str(nodes),
         "mace_edges": str(edges),
         "mace_cutoff": str(manifest.r_max),

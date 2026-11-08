@@ -771,25 +771,31 @@ def test_each_spelling_of_the_first_layer_builds_its_own_block(tmp_path):
 NONLINEAR = "nonlinear"
 
 
-def test_edge_irreps_set_the_width_a_nonlinear_block_convolves_at(tmp_path):
+@pytest.mark.parametrize("interaction", [NONLINEAR, "residual"])
+def test_edge_irreps_set_the_width_a_nonlinear_block_convolves_at(
+    tmp_path, interaction
+):
     model = build_with(
         tmp_path,
         interaction_first=NONLINEAR,
-        interaction=NONLINEAR,
+        interaction=interaction,
         edge_irreps="4x0e+4x1o",
         use_edge_irreps_first=True,
     )
     first, later = model.backbone.backbone.interactions
     assert isinstance(first, NonLinearInteractionBlock)
-    assert isinstance(later, NonLinearInteractionBlock)
     assert (
         first.num_up_features,
         Irreps.parse(first.convolution.descriptor.irreps_node).dimension,
     ) == (4, 1)
-    assert (
-        later.num_up_features,
-        Irreps.parse(later.convolution.descriptor.irreps_node).dimension,
-    ) == (4, 4)
+    if interaction == NONLINEAR:
+        assert isinstance(later, NonLinearInteractionBlock)
+        assert (
+            later.num_up_features,
+            Irreps.parse(later.convolution.descriptor.irreps_node).dimension,
+        ) == (4, 4)
+    else:
+        assert isinstance(later, ResidualInteractionBlock)
 
 
 @pytest.mark.parametrize(

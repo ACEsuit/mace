@@ -24,7 +24,7 @@ changed. A span uses the widest precision required by its members.
 
 ## Stateless edge spans
 
-Kernel spec 1.2 retains `make_interaction_layer(descriptors)` and its fallback on
+Kernel spec 1.0 defines `make_interaction_layer(descriptors)` and its fallback on
 `None`. `EdgeConvolutionSpan` describes this ordered tuple:
 
 1. Radial basis and spherical harmonics.

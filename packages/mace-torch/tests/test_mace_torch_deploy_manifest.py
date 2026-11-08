@@ -90,7 +90,7 @@ def test_manifest_validation_and_runtime_pins(artifact, tmp_path):
         ({"r_max": 0, "receptive_field": 0}, "r_max"),
         ({"receptive_field": -1}, "receptive_field"),
         ({"halo_exchange": "false"}, "halo_exchange"),
-        ({"schema_version": "1.0"}, "schema_version"),
+        ({"schema_version": "1.1"}, "schema_version"),
         ({"schema_version": "2.0"}, "schema_version"),
         ({"schema_version": "1.2"}, "schema_version"),
         ({"schema_version": "0.9"}, "schema_version"),

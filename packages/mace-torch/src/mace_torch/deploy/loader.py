@@ -223,9 +223,10 @@ def load_deployed(
     from ase.data import atomic_numbers as numbers_of
     from mace_core.data.backend import DatasetStatistics
     from mace_core.elements import ResolvedE0s
+    from mace_core.weights.checkpoint import read_checkpoint_manifest
 
     from mace_torch.models.build import build_model
-    from mace_torch.serialization import load_checkpoint, read_sidecar
+    from mace_torch.serialization import load_checkpoint
 
     source = Path(path)
     manifest = None
@@ -237,8 +238,8 @@ def load_deployed(
             raise DeployError(f"the bundle pins backend {manifest.backend!r}")
         backend = manifest.backend or backend or "reference"
         source = source / "model.json"
-    document = read_sidecar(source)
-    metadata = ModelMetadata.model_validate(document["config"])
+    document = read_checkpoint_manifest(source)
+    metadata = ModelMetadata.model_validate(document.config)
     config = ResolvedConfig.model_validate(metadata.config.resolved)
     if backend is not None:
         config = config.model_copy(

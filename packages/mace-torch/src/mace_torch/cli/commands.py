@@ -119,8 +119,7 @@ _WRITERS = {
 
 def _export_config(arguments: argparse.Namespace) -> int:
     from mace_core.metadata import ModelMetadata
-
-    from mace_torch.serialization import CheckpointError, read_sidecar
+    from mace_core.weights.checkpoint import CheckpointError, read_checkpoint_manifest
 
     writer = _WRITERS.get(arguments.output.suffix.lower())
     if writer is None:
@@ -129,10 +128,10 @@ def _export_config(arguments: argparse.Namespace) -> int:
             f"use {', '.join(_WRITERS)}"
         )
     try:
-        document = read_sidecar(arguments.model)
+        document = read_checkpoint_manifest(arguments.model)
     except CheckpointError as error:
         raise SystemExit(f"mace model export-config: {error}") from error
-    metadata = ModelMetadata.model_validate(document["config"])
+    metadata = ModelMetadata.model_validate(document.config)
     resolved = ResolvedConfig.from_dict(metadata.config.resolved).to_resolved_dict()
     arguments.output.write_text(writer(resolved))
     return 0
@@ -272,7 +271,7 @@ CONVERT_DEVICE = Command(
     run=_convert_device,
     arguments=_convert_device_arguments,
 )
-PREPARE = _module_command("preprocess_data", "Write v2 dataset shards and manifests.")
+PREPARE = _module_command("preprocess_data", "Write V1 dataset shards and manifests.")
 PSEUDOLABEL = Command(
     help="Generate replay labels with the training implementation.",
     run=_pseudolabel,

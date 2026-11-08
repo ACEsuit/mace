@@ -163,7 +163,7 @@
         "reference": "mp_small_e3nn_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "mp_small_e3nn_cpu_fp64.json"
@@ -334,7 +334,7 @@
         "reference": "roster_mp_medium_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_medium_cpu_fp64.json"
@@ -501,7 +501,7 @@
         "reference": "roster_mp_large_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_large_cpu_fp64.json"
@@ -681,7 +681,7 @@
         "reference": "roster_mp_small_0b_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_small_0b_cpu_fp64.json"
@@ -861,7 +861,7 @@
         "reference": "roster_mp_medium_0b_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_medium_0b_cpu_fp64.json"
@@ -1036,7 +1036,7 @@
         "reference": "roster_mp_small_0b2_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_small_0b2_cpu_fp64.json"
@@ -1211,7 +1211,7 @@
         "reference": "roster_mp_medium_0b2_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_medium_0b2_cpu_fp64.json"
@@ -1386,7 +1386,7 @@
         "reference": "roster_mp_large_0b2_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_large_0b2_cpu_fp64.json"
@@ -1567,7 +1567,7 @@
         "reference": "roster_mp_medium_0b3_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_medium_0b3_cpu_fp64.json"
@@ -1748,7 +1748,7 @@
         "reference": "mpa0_medium_e3nn_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "mpa0_medium_e3nn_cpu_fp64.json"
@@ -1929,7 +1929,7 @@
         "reference": "roster_mp_small_omat_0_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_small_omat_0_cpu_fp64.json"
@@ -2110,7 +2110,7 @@
         "reference": "roster_mp_medium_omat_0_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_medium_omat_0_cpu_fp64.json"
@@ -2291,7 +2291,7 @@
         "reference": "roster_mp_mace_matpes_pbe_0_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_mace_matpes_pbe_0_cpu_fp64.json"
@@ -2472,7 +2472,7 @@
         "reference": "roster_mp_mace_matpes_r2scan_0_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_mp_mace_matpes_r2scan_0_cpu_fp64.json"
@@ -2659,7 +2659,7 @@
         "reference": "mh_0_e3nn_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "mh_0_e3nn_cpu_fp64.json"
@@ -2850,7 +2850,7 @@
         "reference": "mh_1_e3nn_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "mh_1_e3nn_cpu_fp64.json"
@@ -2939,7 +2939,7 @@
         "reference": "off_small_e3nn_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "off_small_e3nn_cpu_fp64.json"
@@ -3026,7 +3026,7 @@
         "reference": "off_medium_e3nn_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "off_medium_e3nn_cpu_fp64.json",
@@ -3115,7 +3115,7 @@
         "reference": "roster_off_large_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_off_large_cpu_fp64.json"
@@ -3317,7 +3317,7 @@
         "reference": "omol_e3nn_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "omol_e3nn_cpu_fp64.json"
@@ -3373,9 +3373,7 @@
               "feature_self_interaction": false,
               "energy_self_interaction": true,
               "add_local_electron_energy": true,
-              "quadrupole_feature_corrections": false,
-              "field_update": "embedded_one_body",
-              "field_readout": "one_body_mlp"
+              "quadrupole_feature_corrections": false
             },
             "r_max": 6.0,
             "num_interactions": 1,
@@ -3505,7 +3503,7 @@
         "reference": "polar_foundation_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "polar_foundation_cpu_fp64.json"
@@ -3568,9 +3566,7 @@
               "feature_self_interaction": false,
               "energy_self_interaction": true,
               "add_local_electron_energy": true,
-              "quadrupole_feature_corrections": false,
-              "field_update": "embedded_one_body",
-              "field_readout": "one_body_mlp"
+              "quadrupole_feature_corrections": false
             },
             "r_max": 6.0,
             "num_channels": 512,
@@ -3701,7 +3697,7 @@
         "reference": "roster_polar_1_m_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_polar_1_m_cpu_fp64.json"
@@ -3764,9 +3760,7 @@
               "feature_self_interaction": false,
               "energy_self_interaction": true,
               "add_local_electron_energy": true,
-              "quadrupole_feature_corrections": false,
-              "field_update": "embedded_one_body",
-              "field_readout": "one_body_mlp"
+              "quadrupole_feature_corrections": false
             },
             "r_max": 6.0,
             "num_interactions": 3,
@@ -3898,7 +3892,7 @@
         "reference": "roster_polar_1_l_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "roster_polar_1_l_cpu_fp64.json"
@@ -3971,7 +3965,7 @@
         {
           "title": "MACE-MDP: A General Dipole and Polarizability Model for Organic Molecules and Materials",
           "authors": [
-            "Nils Gönnheimer",
+            "Nils G\u00f6nnheimer",
             "Karsten Reuter",
             "Venkat Kapil",
             "Johannes T. Margraf"
@@ -3998,7 +3992,7 @@
         "reference": "mdp_foundation_cpu_fp64.json",
         "golden_gate_passed": true
       },
-      "schema_version": "1.2"
+      "schema_version": "1.0"
     },
     "golden_refs": [
       "mdp_foundation_cpu_fp64.json"

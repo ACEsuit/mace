@@ -16,9 +16,10 @@ from mace_core.config import (
     PolynomialCutoffConfig,
     SoftTransformConfig,
 )
+from mace_core.kernels.descriptors import LinearDescriptor
 from mace_torch.backends.radial import ChebyshevBasis
+from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.embedding import (
-    LinearNodeEmbeddingBlock,
     RadialEmbeddingBlock,
     build_cutoff,
     build_distance_transform,
@@ -141,7 +142,7 @@ def test_chebyshev_basis_parity_at_the_magnetic_configuration(include_constant, 
 
 def test_linear_node_embedding_parity_with_the_legacy_weight(fp64):
     """Legacy's equivariant linear layer on `0e` inputs is `x @ W / sqrt(fan_in)`,
-    the same product v1 computes, so the weight copies across as is."""
+    the same product v1 computes in its canonical output-major weight order."""
     from e3nn import o3
 
     num_elements, num_channels = 3, 8
@@ -149,9 +150,13 @@ def test_linear_node_embedding_parity_with_the_legacy_weight(fp64):
         irreps_in=o3.Irreps(f"{num_elements}x0e"),
         irreps_out=o3.Irreps(f"{num_channels}x0e"),
     )
-    v1 = LinearNodeEmbeddingBlock(num_elements=num_elements, num_channels=num_channels)
+    v1 = ReferenceBackend().make_linear(
+        LinearDescriptor(
+            irreps_in=f"{num_elements}x0e", irreps_out=f"{num_channels}x0e"
+        )
+    )
     legacy_weight = legacy.linear.weight.detach().reshape(num_elements, num_channels)
     with torch.no_grad():
-        v1.weight.copy_(legacy_weight)
+        v1.weight.copy_(legacy_weight.T.reshape(-1))
     node_attrs = torch.eye(num_elements)[[0, 2, 1, 2]]
     assert_parity(v1(node_attrs), legacy(node_attrs), "node embedding")

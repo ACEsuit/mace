@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import get_args
 
 from mace_core.edges import EdgeFeature, edge_features
-from mace_core.kernels.canonical import CANONICAL_LAYOUT
+from mace_core.kernels.canonical import CANONICAL_LAYOUT, KERNEL_SPEC_VERSION
 from mace_core.kernels.descriptors import (
     ActivationLayout,
     Descriptor,
@@ -67,8 +67,8 @@ class BackendCapabilities:
             compute in, and holds that op's weights in it.
         edge_features: Edge-order features its ops read. The caller completes
             these once per batch, outside the model forward.
-        spec_version: The kernel contract the backend implements. An omitted
-            declaration predates stateless spans and stays usable op by op.
+        spec_version: The current kernel contract, including stateless spans.
+            Other versions are refused before any operators are built.
     """
 
     ops: frozenset[str] = field(default_factory=frozenset)
@@ -87,9 +87,14 @@ class BackendCapabilities:
     supports_double_backward: bool = False
     wide_accumulation: bool = False
     edge_features: frozenset[EdgeFeature] = field(default_factory=frozenset)
-    spec_version: str = "1.1"
+    spec_version: str = KERNEL_SPEC_VERSION
 
     def __post_init__(self) -> None:
+        if self.spec_version != KERNEL_SPEC_VERSION:
+            raise ValueError(
+                f"unsupported kernel spec_version {self.spec_version!r}; "
+                f"expected {KERNEL_SPEC_VERSION!r}"
+            )
         object.__setattr__(self, "edge_features", edge_features(self.edge_features))
         object.__setattr__(
             self, "activation_layouts", frozenset(self.activation_layouts)

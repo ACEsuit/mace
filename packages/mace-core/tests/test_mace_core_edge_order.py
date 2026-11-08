@@ -79,7 +79,7 @@ def test_unknown_features_are_refused_at_the_boundary(factory):
 
 def test_old_backend_declarations_require_no_edge_features():
     assert BackendCapabilities().edge_features == frozenset()
-    assert tuple(map(int, KERNEL_SPEC_VERSION.split("."))) >= (1, 1)
+    assert KERNEL_SPEC_VERSION == "1.0"
 
 
 def test_the_edge_contract_imports_no_framework():

@@ -39,7 +39,7 @@ from tests.parity.fm00_convert import (
 )
 from tests.parity.polar_convert import (
     polar_backbone_config,
-    polar_settings,
+    polar_config,
     transfer_polar_weights,
 )
 
@@ -173,14 +173,29 @@ def convert(legacy, profile, normal):
         ScaleShiftSpec("std", scale, shift),
         PrecisionConfig(),
     )
+    from mace_core.config.electrostatics import ElectrostaticsConfig
+
+    arguments = model_arguments(config)
+    architecture = arguments["config"]
+    arguments["config"] = architecture.model_copy(
+        update={
+            "polar": polar_config(legacy),
+            "readout": architecture.readout.model_copy(
+                update={"mlp_irreps": str(legacy.fukui_source_map.linear_1.irreps_out)}
+            ),
+        }
+    )
     model = PolarModel(
         ReferenceBackend(),
         observables=[ENERGY],
         energy_head=head,
-        settings=polar_settings(
-            legacy, periodicity_profile=profile, slab_normal=normal
+        electrostatics=ElectrostaticsConfig(
+            enabled=True,
+            periodicity_profile=profile,
+            slab_normal=normal,
+            kspace_cutoff_factor=float(legacy.kspace_cutoff_factor),
         ),
-        **model_arguments(config),
+        **arguments,
     )
     transfer_polar_weights(legacy, model, config["correlation"])
     return model, config

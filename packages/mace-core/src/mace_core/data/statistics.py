@@ -6,7 +6,6 @@ use the same E0 values stored in the model.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Mapping, Sequence
 
 import numpy as np
@@ -14,6 +13,7 @@ import numpy as np
 from mace_core.config.model import ScalingMethod
 from mace_core.data.backend import DataBackend, DatasetStatistics
 from mace_core.data.configuration import Configuration
+from mace_core.neighbors import AllPairsBackend, get_neighborhood
 
 __all__ = [
     "compute_statistics",
@@ -29,31 +29,6 @@ def root_mean_square(values) -> float:
     return float(np.sqrt(np.mean(np.asarray(values, dtype=float) ** 2)))
 
 
-def _shift_counts(
-    cell: np.ndarray | None, pbc: Sequence[bool], cutoff: float
-) -> np.ndarray:
-    """How many periodic images to search along each lattice vector.
-
-    The spacing between lattice planes normal to reciprocal vector ``b`` is
-    ``1 / |b|``, so covering ``cutoff`` needs ``ceil(cutoff * |b|)`` of them.
-    Deriving it rather than guessing a constant is what keeps the count right
-    for a thin or a skewed cell, where a fixed number of images silently misses
-    neighbours.
-    """
-    counts = np.zeros(3, dtype=int)
-    if cell is None or not np.any(pbc):
-        return counts
-    volume = abs(float(np.linalg.det(cell)))
-    if volume < 1e-12:
-        return counts
-    reciprocal = np.linalg.inv(cell).T
-    for axis in range(3):
-        if pbc[axis]:
-            spacing = float(np.linalg.norm(reciprocal[axis]))
-            counts[axis] = math.ceil(cutoff * spacing)
-    return counts
-
-
 def count_neighbours(
     positions: np.ndarray,
     cell: np.ndarray | None,
@@ -62,10 +37,8 @@ def count_neighbours(
 ) -> int:
     """How many directed edges a structure has at ``cutoff``.
 
-    Brute force over the periodic images, which is the oracle definition of the
-    edge set rather than the fast one. A self pair at zero shift is excluded;
-    a self pair at a non-zero shift is a real neighbour and is counted, which is
-    what makes a small cell with a large cutoff come out right.
+    Uses the graph's reference neighbour search and self-edge filtering.
+    Periodic self images count; a self pair at zero shift does not.
 
     Args:
         positions: ``[n_atoms, 3]`` in Angstrom.
@@ -76,25 +49,10 @@ def count_neighbours(
     Returns:
         The directed edge count, so each neighbour pair contributes twice.
     """
-    positions = np.asarray(positions, dtype=float)
-    periodic = (
-        (False, False, False) if pbc is None else tuple(bool(flag) for flag in pbc)
+    neighbors = get_neighborhood(
+        positions, cutoff, pbc=pbc, cell=cell, backend=AllPairsBackend()
     )
-    lattice = None if cell is None else np.asarray(cell, dtype=float).reshape(3, 3)
-    counts = _shift_counts(lattice, periodic, cutoff)
-
-    total = 0
-    ranges = [range(-counts[axis], counts[axis] + 1) for axis in range(3)]
-    for a in ranges[0]:
-        for b in ranges[1]:
-            for c in ranges[2]:
-                shift = np.array([a, b, c], dtype=float)
-                offset = shift @ lattice if lattice is not None else np.zeros(3)
-                deltas = positions[None, :, :] + offset - positions[:, None, :]
-                distances = np.linalg.norm(deltas, axis=-1)
-                within = (distances <= cutoff) & (distances > 1e-10)
-                total += int(np.count_nonzero(within))
-    return total
+    return neighbors.edge_index.shape[1]
 
 
 def least_squares_atomic_energies(

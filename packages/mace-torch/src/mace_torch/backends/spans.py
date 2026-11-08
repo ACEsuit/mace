@@ -1,4 +1,4 @@
-"""Public stateless interaction-span call contract, kernel spec 1.2.
+"""Public stateless interaction-span call contract, kernel spec 1.0.
 
 The model owns every tensor. ``member_weights`` contains, in order:
 cutoff radius; basis tensors (Bessel frequencies/prefactor, Gaussian centers,

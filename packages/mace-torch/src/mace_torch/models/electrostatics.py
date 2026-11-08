@@ -31,24 +31,21 @@ in V/Angstrom, one vector per structure.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from typing import Any, cast
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.local_sources import LocalSplitChargeConfig
-from mace_core.config.model import ModelConfig
+from mace_core.config.model import ModelConfig, PolarConfig
 from mace_core.electrostatics import (
     ElectrostaticsSolverDescriptor,
     FeatureProjection,
-    PeriodicityProfile,
-    RealspaceMethod,
     ScfSpec,
 )
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision, widest
-from mace_core.observables import InputSpec, ObservableSpec
+from mace_core.observables import InputSpec, ObservableSpec, irreps_dimension
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
@@ -82,7 +79,6 @@ __all__ = [
     "LocalChargeModel",
     "LocalSplitChargeModel",
     "PolarModel",
-    "PolarSettings",
     "QEqModel",
 ]
 
@@ -129,92 +125,34 @@ POLAR_INPUT_SPECS = (
 POLAR_GRAPH_INPUTS = tuple(spec.name for spec in POLAR_INPUT_SPECS)
 
 
-@dataclass(frozen=True)
-class PolarSettings:
-    """Everything about the charge-aware part of the model.
-
-    Attributes:
-        multipole_max_l: The highest multipole order of the density.
-        multipole_width: The Gaussian width of each atom's density, in
-            Angstrom.
-        feature_max_l: The highest order the potential is projected onto.
-        feature_widths: The widths it is projected onto, in Angstrom.
-        feature_norms: One divisor per order and width, order major, applied
-            to the projected potential. ``None`` divides by one.
-        num_recursion_steps: How many refinement steps the density takes.
-        kspace_cutoff_factor: The reciprocal-space cutoff, as a multiple of
-            the one the widths call for.
-        feature_self_interaction: Whether an atom's projection includes its
-            own density's potential.
-        energy_self_interaction: Whether the electrostatic energy includes each
-            atom's interaction with its own density.
-        add_local_electron_energy: Whether the local energy of the density is
-            added to the total. The reported contribution is zero when disabled.
-        quadrupole_feature_corrections: Whether an open system's projection
-            carries the quadrupole correction.
-        fukui_hidden: The width of the Fukui readout's middle.
-        periodicity_profile: The systems the solve is set up for.
-        slab_normal: The slab correction's axis, for ``z_slab``.
-        realspace_method: How an open system is summed in real space.
-    """
-
-    multipole_max_l: int = 1
-    multipole_width: float = 1.0
-    feature_max_l: int = 1
-    feature_widths: tuple[float, ...] = (1.0,)
-    feature_norms: tuple[float, ...] | None = None
-    num_recursion_steps: int = 1
-    kspace_cutoff_factor: float = 1.5
-    feature_self_interaction: bool = False
-    energy_self_interaction: bool = False
-    add_local_electron_energy: bool = False
-    quadrupole_feature_corrections: bool = False
-    fukui_hidden: int = 16
-    periodicity_profile: PeriodicityProfile = "partial"
-    slab_normal: int | None = None
-    realspace_method: RealspaceMethod = "finite_difference"
-
-    def __post_init__(self) -> None:
-        expected = len(self.feature_widths) * (self.feature_max_l + 1)
-        if self.feature_norms is not None and len(self.feature_norms) != expected:
-            raise ValueError(
-                f"feature_norms has {len(self.feature_norms)} entries and the "
-                f"projection has {expected}: one per order up to "
-                f"{self.feature_max_l}, for each of the {len(self.feature_widths)} "
-                f"widths."
-            )
-        if self.num_recursion_steps < 0:
-            raise ValueError(
-                f"num_recursion_steps is {self.num_recursion_steps}; it counts "
-                f"refinement steps, so it is at least 0."
-            )
-
-    def descriptor(self, precision: Precision) -> ElectrostaticsSolverDescriptor:
-        """The solve this model asks its solver for."""
-        kspace_cutoff = self.kspace_cutoff_factor * gto_basis_kspace_cutoff(
-            [self.multipole_width, *self.feature_widths],
-            max(self.multipole_max_l, self.feature_max_l),
-        )
-        return ElectrostaticsSolverDescriptor(
-            periodicity_profile=self.periodicity_profile,
-            multipole_max_l=self.multipole_max_l,
-            kspace_cutoff=float(kspace_cutoff),
-            smearing_width=self.multipole_width,
-            slab_normal=self.slab_normal,
-            features=FeatureProjection(
-                max_l=self.feature_max_l,
-                widths=tuple(self.feature_widths),
-                include_self_interaction=self.feature_self_interaction,
-                quadrupole_corrections=self.quadrupole_feature_corrections,
-            ),
-            realspace_method=self.realspace_method,
-            external_field_flags=(
-                frozenset({"include_self_interaction"})
-                if self.energy_self_interaction
-                else frozenset()
-            ),
-            precision=precision,
-        )
+def _polar_descriptor(
+    polar: PolarConfig, electrostatics: ElectrostaticsConfig, precision: Precision
+) -> ElectrostaticsSolverDescriptor:
+    """Resolve the solver descriptor from validated architecture and solver settings."""
+    kspace_cutoff = electrostatics.kspace_cutoff_factor * gto_basis_kspace_cutoff(
+        [polar.multipole_width, *polar.feature_widths],
+        max(polar.multipole_max_l, polar.feature_max_l),
+    )
+    return ElectrostaticsSolverDescriptor(
+        periodicity_profile=electrostatics.periodicity_profile,
+        multipole_max_l=polar.multipole_max_l,
+        kspace_cutoff=float(kspace_cutoff),
+        smearing_width=polar.multipole_width,
+        slab_normal=electrostatics.slab_normal,
+        features=FeatureProjection(
+            max_l=polar.feature_max_l,
+            widths=polar.feature_widths,
+            include_self_interaction=polar.feature_self_interaction,
+            quadrupole_corrections=polar.quadrupole_feature_corrections,
+        ),
+        realspace_method="finite_difference",
+        external_field_flags=(
+            frozenset({"include_self_interaction"})
+            if polar.energy_self_interaction
+            else frozenset()
+        ),
+        precision=precision,
+    )
 
 
 class PolarModel(MACEModel):
@@ -226,9 +164,8 @@ class PolarModel(MACEModel):
         observables: What the model reads out through heads. The dipole is not
             among them: it is the density's, computed here.
         energy_head: The energy head.
-        settings: The charge-aware part.
-        solver: The registered electrostatics solver both long-range ops come
-            from.
+        electrostatics: The solver and boundary conditions. The architecture
+            is read directly from ``config.polar``.
         trains_derivatives: Whether the model is trained on forces or stress,
             which needs the solver differentiable twice.
         element_agnostic_product: One set of product weights for every
@@ -256,8 +193,7 @@ class PolarModel(MACEModel):
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
         energy_head: EnergyOutputHead,
-        settings: PolarSettings,
-        solver: str = "reference",
+        electrostatics: ElectrostaticsConfig,
         trains_derivatives: bool = False,
         *,
         avg_num_neighbors: float = 1.0,
@@ -289,13 +225,16 @@ class PolarModel(MACEModel):
         )
         num_layers, num_features = config.num_interactions, config.num_channels
         hidden_irreps = config.node_irreps
-        self.settings = settings
+        settings = config.polar
+        solver = electrostatics.solver
         self.num_recursion_steps = settings.num_recursion_steps
         self.add_local_electron_energy = settings.add_local_electron_energy
         # Displaced charges and projected potentials are subtracted after
         # reduction. Carry the complete solve at the configured accumulation
         # floor; casting only the final sum cannot recover cancelled bits.
-        self.descriptor = settings.descriptor(widest(precision, energy_head.accumulate))
+        self.descriptor = _polar_descriptor(
+            settings, electrostatics, widest(precision, energy_head.accumulate)
+        )
         self.total_dtype = getattr(torch, self.descriptor.precision)
 
         node_irreps = expanded_irreps(hidden_irreps, num_features)
@@ -323,7 +262,7 @@ class PolarModel(MACEModel):
             self.fukui_readout = BiasReadout(
                 backend,
                 node_irreps,
-                f"{settings.fukui_hidden}x0e",
+                f"{irreps_dimension(config.readout.mlp_irreps)}x0e",
                 "2x0e",
                 precision,
                 gate=config.readout.gate,
@@ -421,7 +360,7 @@ class PolarModel(MACEModel):
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:
         return super().extra_observables + _polar_extra_observables(
-            self.settings.multipole_max_l
+            self.config.polar.multipole_max_l
         )
 
     def prepare_model_inputs(self, graph: dict[str, Any], requests=()) -> None:

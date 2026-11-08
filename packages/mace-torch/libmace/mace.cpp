@@ -40,8 +40,8 @@ struct MACE::Runtime {
 
   explicit Runtime(const std::string &path) {
     const auto meta = Loader::load_metadata_from_package(path, "model");
-    TORCH_CHECK(meta.at("mace_native_version") == "1",
-                "libmace requires a V1 native package version 1");
+    TORCH_CHECK(meta.at("mace_native_version") == "1.0",
+                "libmace requires a V1 native package version 1.0");
     TORCH_CHECK(meta.count("mace_atomic_numbers"),
                 "native.pt2 lacks atomic numbers; re-export with current V1");
     nodes = std::stoi(meta.at("mace_nodes"));

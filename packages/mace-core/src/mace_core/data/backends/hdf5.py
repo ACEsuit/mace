@@ -1,4 +1,4 @@
-"""The HDF5 backend: a prepared dataset of v2 shards, read lazily.
+"""The HDF5 backend: a prepared dataset of V1 shards, read lazily.
 
 The format is :mod:`mace_core.data_spec.shard_format`, and nothing about it is
 decided here. What this adds is access: an exact length from the manifest, a
@@ -22,6 +22,8 @@ from mace_core.data.configuration import DEFAULT_HEAD, Configuration
 from mace_core.data.keys import KeySpecification
 from mace_core.data_spec.shard_format import (
     MANIFEST_NAME,
+    SCHEMA_VERSION,
+    SHARD_FORMAT,
     read_configuration,
     read_manifest,
 )
@@ -35,7 +37,7 @@ def _dataset_directory(source: str | Path) -> Path:
 
 
 class HDF5Backend:
-    """A directory of v2 shards and its manifest.
+    """A directory of V1 shards and its manifest.
 
     Structures are served as they were written. The isolated-atom structures
     are whatever the writer was given, so ``keep_isolated_atoms`` has nothing
@@ -96,6 +98,18 @@ class HDF5Backend:
                 raise DataBackendError(
                     str(path), reason=f"not a readable HDF5 file: {failure}"
                 ) from failure
+            format_name = handle.attrs.get("format")
+            version = handle.attrs.get("schema_version")
+            if format_name != SHARD_FORMAT or version != SCHEMA_VERSION:
+                handle.close()
+                raise DataBackendError(
+                    str(path),
+                    reason=(
+                        f"unsupported shard format {format_name!r}, "
+                        f"schema_version {version!r}; "
+                        f"expected {SHARD_FORMAT!r} version {SCHEMA_VERSION!r}"
+                    ),
+                )
             self._handles[shard] = handle
         return handle
 
@@ -126,7 +140,7 @@ class HDF5Backend:
         except KeyError as failure:
             raise DataBackendError(
                 str(self._directory / self._manifest.shards[shard]),
-                reason="no configs group; this is not a v2 shard",
+                reason="no configs group; this is not a V1 shard",
             ) from failure
 
     def __getitem__(self, index: int) -> Configuration:
@@ -150,7 +164,7 @@ class HDF5Backend:
         return self._manifest.statistics
 
     def metadata(self) -> DatasetManifest:
-        """The manifest. A v2 dataset always has one."""
+        """The manifest. A V1 dataset always has one."""
         return self._manifest
 
     def close(self) -> None:

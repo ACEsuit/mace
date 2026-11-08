@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 import pytest
+from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.descriptors import (
     ChannelwiseTPConvDescriptor,
     DistanceTransformDescriptor,
@@ -12,7 +13,7 @@ from mace_core.kernels.descriptors import (
     RadialMLPDescriptor,
     SphericalHarmonicsDescriptor,
 )
-from mace_core.kernels.spans import EdgeConvolutionSpan, supports_span_contract
+from mace_core.kernels.spans import EdgeConvolutionSpan
 
 
 @pytest.mark.parametrize("conditioned", [False, True])
@@ -99,16 +100,11 @@ def test_the_core_shape_imports_no_framework():
     )
 
 
-@pytest.mark.parametrize(
-    "version, supported",
-    [
-        ("1.1", False),
-        ("1.0", False),
-        ("1.2", True),
-        ("1.3", True),
-        ("2.0", False),
-        ("typo", False),
-    ],
-)
-def test_span_version_negotiation(version, supported):
-    assert supports_span_contract(version) is supported
+@pytest.mark.parametrize("version", ["1.1", "1.2", "1.3", "2.0", "typo", 1, None])
+def test_other_kernel_contract_versions_are_refused(version):
+    with pytest.raises(ValueError, match="kernel spec_version"):
+        BackendCapabilities(spec_version=version)
+
+
+def test_initial_contract_includes_stateless_spans():
+    assert BackendCapabilities().spec_version == "1.0"

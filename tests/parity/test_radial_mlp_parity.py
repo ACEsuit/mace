@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import pytest
 import torch
-from mace_torch.nn.radial_mlp import (
-    SECOND_MOMENT_SCALE,
-    RadialMLP,
-    exact_second_moment_scale,
+from mace_core.kernels.canonical import (
+    SILU_SECOND_MOMENT_SCALE,
+    exact_silu_second_moment_scale,
 )
+from mace_core.kernels.descriptors import RadialMLPDescriptor
+from mace_torch.backends.reference import ReferenceBackend
 
 from tests.parity.anchors import load_anchor
 
@@ -30,10 +31,13 @@ def test_the_radial_network_reproduces_the_anchor(fp64, anchor, layer):
     legacy = model.interactions[layer].conv_tp_weights
     layers = [getattr(legacy, f"layer{index}") for index in range(4)]
 
-    mine = RadialMLP(
-        num_radial=layers[0].weight.shape[0],
-        hidden=[weight.weight.shape[1] for weight in layers[:-1]],
-        num_out=layers[-1].weight.shape[1],
+    mine = ReferenceBackend().make_radial_mlp(
+        RadialMLPDescriptor(
+            channels=(
+                layers[0].weight.shape[0],
+                *(layer.weight.shape[1] for layer in layers),
+            )
+        )
     )
     with torch.no_grad():
         for parameter, source in zip(mine.weights, layers, strict=True):
@@ -60,12 +64,12 @@ def test_the_activation_scale_is_the_sampled_one_and_that_is_deliberate():
     the gap stays a recorded decision: if someone replaces the constant with
     the mathematically correct one, every converted model quietly changes.
     """
-    exact = exact_second_moment_scale()
-    gap = abs(SECOND_MOMENT_SCALE - exact) / exact
+    exact = exact_silu_second_moment_scale()
+    gap = abs(SILU_SECOND_MOMENT_SCALE - exact) / exact
 
     assert 1e-3 < gap < 1e-2, (
         f"the carried constant and the exact one now differ by {gap:.2e}, "
         f"where 1.6e-3 was measured. Either the constant changed or the "
         f"quadrature did."
     )
-    assert pytest.approx(1.679176792398942, abs=0.0) == SECOND_MOMENT_SCALE
+    assert pytest.approx(1.679176792398942, abs=0.0) == SILU_SECOND_MOMENT_SCALE

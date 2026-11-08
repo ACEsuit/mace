@@ -1,4 +1,4 @@
-"""Prepare v2 shards through the shared reader, splitter and statistics code."""
+"""Prepare V1 shards through the shared reader, splitter and statistics code."""
 
 from __future__ import annotations
 

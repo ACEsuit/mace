@@ -114,7 +114,7 @@ class LegacyHDF5Backend:
 
     @classmethod
     def sniff(cls, source: str) -> bool:
-        """A ``.h5`` file outside a v2 dataset, or a directory of them with no
+        """A ``.h5`` file outside a V1 dataset, or a directory of them with no
         manifest."""
         path = Path(source)
         if path.is_file():
@@ -144,7 +144,7 @@ class LegacyHDF5Backend:
         warnings.warn(
             f"{source} is in the legacy HDF5 layout, which is read-only and "
             f"will stop being read when the legacy data layer is removed. "
-            f"Prepare the dataset again to get v2 shards.",
+            f"Prepare the dataset again to get V1 shards.",
             FutureWarning,
             stacklevel=2,
         )

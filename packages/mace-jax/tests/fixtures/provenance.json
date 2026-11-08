@@ -7,7 +7,7 @@
       "native": "packages/mace-jax/tests/fixtures/tiny.json",
       "sha256": {
         "tests/golden/models/tiny_scaleshift.model": "44bbe63f991e90593075f78cd85efebaa758924bf7a96eb74112a5186f16a98a",
-        "packages/mace-jax/tests/fixtures/tiny.json": "12190e612ac7dc14e3f3dd7b460e9f9b49491d07aa89c34a37cb9cabf1ccd811",
+        "packages/mace-jax/tests/fixtures/tiny.json": "72ef339c53bfb66edea8530b1700fa624f3a0d5739e1e33833c16080f0853818",
         "packages/mace-jax/tests/fixtures/tiny.safetensors": "ee56d131f28270ac8a1d95b6a57e5a1e888684ec77c92fad2ef2e970f567a88b"
       }
     },
@@ -16,9 +16,13 @@
       "native": "packages/mace-jax/tests/fixtures/tiny_plain.json",
       "sha256": {
         "tests/golden/models/tiny_mace.model": "db698112cd90a0d585de903a5846dd3fb4de2d4e3baea227a933314448f18463",
-        "packages/mace-jax/tests/fixtures/tiny_plain.json": "504dbc6a5a31c72316002bc7580708c23777ddb096cc4eed3160ba9e97f36dbc",
+        "packages/mace-jax/tests/fixtures/tiny_plain.json": "442612d1abbd2c4cbd1c55f729fdb4f0bfdafffd979bee70cc6cb90fb2f557d3",
         "packages/mace-jax/tests/fixtures/tiny_plain.safetensors": "24cf4fe16b62240aea086bfbecdbcc5c31e48865a2abc5cc65b5c411a97f41ca"
       }
     }
-  ]
+  ],
+  "metadata_update": {
+    "date": "2026-11-08",
+    "reason": "Use the initial 1.0 contracts and current configuration schema: flattened loss/scheduler settings and no inert polar/electrostatics selectors. Tensor files are unchanged."
+  }
 }

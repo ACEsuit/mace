@@ -9,8 +9,6 @@ recorded with the rest of the configuration and read back with the model.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import Field, model_validator
 
 from mace_core.config.base import ConfigSection
@@ -30,8 +28,6 @@ class ElectrostaticsConfig(ConfigSection):
         slab_normal: The axis a slab correction acts along, for ``z_slab``.
         kspace_cutoff_factor: The reciprocal-space cutoff, as a multiple of
             the one the Gaussian widths call for.
-        training_step: How an epoch is trained when the model carries the
-            term. ``standard`` is the ordinary step.
     """
 
     enabled: bool = False
@@ -39,7 +35,6 @@ class ElectrostaticsConfig(ConfigSection):
     periodicity_profile: PeriodicityProfile = "partial"
     slab_normal: int | None = None
     kspace_cutoff_factor: float = Field(default=1.5, gt=0)
-    training_step: Literal["standard"] = "standard"
 
     @model_validator(mode="after")
     def _a_slab_says_its_normal(self) -> ElectrostaticsConfig:

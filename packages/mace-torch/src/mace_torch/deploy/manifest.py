@@ -14,7 +14,7 @@ from pydantic.dataclasses import dataclass
 class DeployManifest:
     """Options for the MD runtime. Distances and cutoffs are in Å."""
 
-    VERSION: ClassVar[str] = "1.1"
+    VERSION: ClassVar[str] = "1.0"
     schema_version: str
     target: Literal["lammps-mliap", "lammps-native", "ase", "openmm"]
     head: Annotated[str, Field(min_length=1)]

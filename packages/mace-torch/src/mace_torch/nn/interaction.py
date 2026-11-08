@@ -47,7 +47,7 @@ from mace_core.kernels.descriptors import (
     SegmentReduceDescriptor,
 )
 from mace_core.kernels.precision import Precision
-from mace_core.kernels.spans import EdgeConvolutionSpan, supports_span_contract
+from mace_core.kernels.spans import EdgeConvolutionSpan
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps, layout_of
@@ -103,8 +103,6 @@ def _ask_for_span(
         report_decline = getattr(backend, "decline_interaction_layer", None)
         if report_decline is not None:
             report_decline("a member has no complete descriptor")
-        return None
-    if not supports_span_contract(backend.capabilities().spec_version):
         return None
     members = tuple(
         replace(member, layout=layout_of(backend).name) for member in members

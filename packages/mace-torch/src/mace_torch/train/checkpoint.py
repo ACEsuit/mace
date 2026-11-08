@@ -68,8 +68,8 @@ __all__ = [
 #: What a run checkpoint's sidecar says it is.
 RUN_FORMAT = "mace-v1-run-checkpoint"
 
-#: Bumped when a field's meaning changes. A reader refuses any other.
-RUN_VERSION = 1
+#: The initial V1 format. A reader refuses any other version.
+RUN_VERSION = "1.0"
 
 _SEPARATOR = "::"
 

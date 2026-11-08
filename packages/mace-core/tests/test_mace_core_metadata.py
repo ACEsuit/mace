@@ -139,7 +139,7 @@ def test_lossy_value_is_refused_rather_than_stored():
 
 
 def test_schema_version_is_written():
-    assert SCHEMA_VERSION == "1.2"
+    assert SCHEMA_VERSION == "1.0"
     assert as_document(full_record())["schema_version"] == SCHEMA_VERSION
 
 
@@ -158,7 +158,7 @@ READ_ROUTES = pytest.mark.parametrize(
 @READ_ROUTES
 @pytest.mark.parametrize(
     "version",
-    ["1.0", "1.1", "1.3", "2.0", "0.9", 1, "1", "1.0.0", "01.2", "v1.2", None],
+    ["1.1", "1.2", "1.3", "2.0", "0.9", 1, "1", "1.0.0", "01.0", "v1.0", None],
 )
 def test_an_unreadable_schema_version_is_refused_on_every_route(read, version):
     document = as_document(minimal_record())

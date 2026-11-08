@@ -218,6 +218,21 @@ def test_an_aperiodic_structure_counts_only_real_pairs():
     assert count_neighbours(positions, None, None, 1.5) == 2
 
 
+def test_the_cutoff_is_strict_in_statistics_too():
+    positions = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    assert count_neighbours(positions, None, None, 1.0) == 0
+
+
+def test_unwrapped_atoms_keep_their_periodic_neighbors():
+    positions = np.array([[0.0, 0.0, 0.0], [10.5, 0.0, 0.0]])
+    cell = np.diag([2.0, 10.0, 10.0])
+    assert count_neighbours(positions, cell, (True, False, False), 0.75) == 2
+
+
+def test_distinct_coincident_atoms_are_not_self_edges():
+    assert count_neighbours(np.zeros((2, 3)), None, None, 1.0) == 2
+
+
 def test_a_thin_cell_still_finds_its_images():
     """The image search range is derived from the reciprocal vectors rather
     than fixed, so a cell much thinner than the cutoff still works. A constant
@@ -339,7 +354,7 @@ def test_the_manifest_counts_its_shards_rather_than_assuming_a_group_size():
     assert manifest.length == 237
     revived = DatasetManifest.from_json(manifest.to_json())
     assert revived.length == 237
-    assert revived.schema_version == 1
+    assert revived.schema_version == "1.0"
 
 
 def test_the_manifest_carries_its_statistics_through_json():

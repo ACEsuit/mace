@@ -25,7 +25,6 @@ from mace_core.kernels.canonical import CANONICAL_LAYOUT, KERNEL_SPEC_VERSION
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.protocol import REFERENCE_ONLY_OPS
 from mace_core.kernels.registry import get_backend
-from mace_core.kernels.spans import supports_span_contract
 
 from mace_torch.backends.layout import CANONICAL, Layout
 from mace_torch.backends.precision import PrecisionBackend
@@ -174,11 +173,7 @@ class CompositeBackend:
         self._span_requests += 1
         capabilities = self._primary_capabilities
         span = None
-        if not supports_span_contract(capabilities.spec_version):
-            reason = (
-                f"kernel spec {capabilities.spec_version} predates the span contract"
-            )
-        elif not all(capabilities.supports(member) for member in members):
+        if not all(capabilities.supports(member) for member in members):
             reason = "a span member is not supported"
         else:
             span = self.primary.make_interaction_layer(members)

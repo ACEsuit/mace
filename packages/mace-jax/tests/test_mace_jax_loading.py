@@ -134,15 +134,24 @@ def test_pickle_is_refused_before_reading(path):
         load_model(path)
 
 
-def test_future_metadata_version_is_refused(tmp_path):
+@pytest.mark.parametrize("version", ["1.1", "1.2", "999.0"])
+def test_other_metadata_versions_are_refused(tmp_path, version):
     with pytest.raises(ValueError, match="schema_version"):
         load_model(
             edited(
                 tmp_path,
                 lambda doc, weights: doc["config"].__setitem__(
-                    "schema_version", "999.0"
+                    "schema_version", version
                 ),
             )
+        )
+
+
+@pytest.mark.parametrize("version", [1, 2, 3, "1.1", "1.2"])
+def test_other_checkpoint_versions_are_refused(tmp_path, version):
+    with pytest.raises(ModelLoadError, match="version"):
+        load_model(
+            edited(tmp_path, lambda doc, weights: doc.__setitem__("version", version))
         )
 
 
@@ -192,6 +201,24 @@ def test_tensor_manifest_is_enforced(tmp_path, fault):
             doc["tensors"][0]["shape"] = [987]
 
     with pytest.raises(ModelLoadError, match=r"canonical tensor|disagrees"):
+        load_model(edited(tmp_path, change))
+
+
+@pytest.mark.parametrize(
+    "fault", ["missing_layout", "missing_operator", "extra_operator", "extra_field"]
+)
+def test_the_complete_layout_is_required(tmp_path, fault):
+    def change(doc, weights):
+        if fault == "missing_layout":
+            del doc["layout"]
+        elif fault == "missing_operator":
+            doc["layout"].pop(next(iter(doc["layout"])))
+        elif fault == "extra_operator":
+            doc["layout"]["unexpected"] = {}
+        else:
+            next(iter(doc["layout"].values()))["unknown"] = True
+
+    with pytest.raises(ModelLoadError, match="layout"):
         load_model(edited(tmp_path, change))
 
 

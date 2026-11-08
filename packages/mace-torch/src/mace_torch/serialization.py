@@ -37,8 +37,15 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, TypeVar
 
-import torch
 from mace_core.metadata import ModelMetadata
+from mace_core.weights import CHECKPOINT_FORMAT as FORMAT
+from mace_core.weights import CHECKPOINT_VERSION as VERSION
+from mace_core.weights.checkpoint import (
+    CheckpointError,
+    read_checkpoint_manifest,
+    validate_layout,
+    validate_tensors,
+)
 from safetensors.torch import load_file, save_file
 from torch import Tensor, nn
 
@@ -63,25 +70,12 @@ __all__ = [
     "write_model",
 ]
 
-#: What the sidecar says it is, so a reader can refuse someone else's file
-#: rather than misreading it.
-FORMAT = "mace-v1-checkpoint"
-
-#: Bumped when the meaning of an existing field changes. A reader refuses a
-#: version it was not written for, because guessing at a format is how a model
-#: loads and computes something else. Version 2 added ``layout``, and a version
-#: 1 file carries no record of which basis path each weight multiplies, so it
-#: cannot be validated rather than merely lacking a field.
-# Version 3 stores raw linear/skip weights and the agreed backbone module paths.
-VERSION = 3
+# Raw linear/skip weights, canonical layout and logical component paths are
+# part of the initial format. Unpublished intermediate formats are not read.
 
 #: Separates a module's path from the name its own canonical form gives a
 #: tensor. A dot would be ambiguous against the module path itself.
 _SEPARATOR = "::"
-
-
-class CheckpointError(RuntimeError):
-    """Raised instead of loading something that would be wrong."""
 
 
 def canonical_state(model: nn.Module) -> dict[str, dict[str, Tensor]]:
@@ -155,51 +149,8 @@ def canonical_metadata(model: nn.Module) -> dict[str, dict[str, Any]]:
 
 
 def check_layout(model: nn.Module, recorded: Mapping[str, Mapping[str, Any]]) -> None:
-    """Refuse a file whose layout is not the one this model reads.
-
-    Args:
-        model: The model about to be loaded into.
-        recorded: What the sidecar's ``layout`` holds.
-
-    Only operators the two have in common are compared. A model and a file that
-    hold different operators at all is
-    :func:`load_canonical_state`'s refusal, and it runs before any weight is
-    written, so stating it twice here would only give the same fault two
-    different messages.
-
-    Raises:
-        CheckpointError: If a shared operator's description differs. The
-            message names the first few paths that differ rather than only
-            reporting that something did, because the whole reason the layout
-            is recorded is that a path count can match while the paths do not.
-    """
-    expected = canonical_metadata(model)
-    for path in sorted(set(expected) & set(recorded)):
-        description = expected[path]
-        stored = dict(recorded[path])
-        if stored == description:
-            continue
-        for key, value in description.items():
-            if stored.get(key) == value:
-                continue
-            if isinstance(value, list) and isinstance(stored.get(key), list):
-                differing = [
-                    f"position {position}: file {theirs!r}, model {mine!r}"
-                    for position, (theirs, mine) in enumerate(
-                        zip(stored[key], value, strict=False)
-                    )
-                    if theirs != mine
-                ]
-                detail = "; ".join(differing[:3]) or (
-                    f"the file holds {len(stored[key])} and the model {len(value)}"
-                )
-            else:
-                detail = f"file {stored.get(key)!r}, model {value!r}"
-            raise CheckpointError(
-                f"{path} was written in a different layout: {key} disagrees "
-                f"({detail}). The weights would load and multiply the wrong "
-                f"basis paths."
-            )
+    """Require the complete canonical layout before installing any weights."""
+    validate_layout(canonical_metadata(model), recorded)
 
 
 def save_checkpoint(
@@ -256,35 +207,6 @@ def save_checkpoint(
     return sidecar
 
 
-def read_sidecar(path: str | Path) -> dict[str, Any]:
-    """The sidecar, checked for being one of ours.
-
-    Raises:
-        CheckpointError: If the file is not this format, or is a version this
-            reader was not written for.
-    """
-    sidecar = Path(path).with_suffix(".json")
-    if not sidecar.exists():
-        raise CheckpointError(
-            f"no sidecar at {sidecar}. A checkpoint is two files: the tensors "
-            f"and the JSON that says what they are, and the tensors alone do "
-            f"not say how to rebuild the model."
-        )
-    document = json.loads(sidecar.read_text())
-    if document.get("format") != FORMAT:
-        raise CheckpointError(
-            f"{sidecar} says its format is {document.get('format')!r} and this "
-            f"reader only reads {FORMAT!r}."
-        )
-    if document.get("version") != VERSION:
-        raise CheckpointError(
-            f"{sidecar} is version {document.get('version')!r} and this reader "
-            f"was written for {VERSION}. Reading it anyway would guess at what "
-            f"changed."
-        )
-    return document
-
-
 def load_checkpoint(
     path: str | Path,
     build: Callable[[dict[str, Any]], Model],
@@ -308,9 +230,9 @@ def load_checkpoint(
             sidecar disagree, or if the model and the file hold different
             operators.
     """
-    document = read_sidecar(_refuse_pickle(path))
-    model = build(dict(document["config"]))
-    check_layout(model, document.get("layout", {}))
+    document = read_checkpoint_manifest(_refuse_pickle(path))
+    model = build(document.config)
+    check_layout(model, document.layout)
     load_canonical_state(model, read_canonical_state(path, tensors_path=tensors_path))
     return model
 
@@ -339,29 +261,20 @@ def read_canonical_state(
             the sidecar disagree.
     """
     source = _refuse_pickle(path)
-    document = read_sidecar(source)
+    document = read_checkpoint_manifest(source)
     flat = load_file(str(tensors_path or source.with_suffix(".safetensors")))
 
-    declared = {
-        f"{entry['module']}{_SEPARATOR}{entry['name']}" for entry in document["tensors"]
-    }
-    if declared != set(flat):
-        raise CheckpointError(
-            f"the sidecar declares {len(declared)} tensor(s) and the file holds "
-            f"{len(flat)}. Undeclared: {sorted(set(flat) - declared)}. Declared "
-            f"and absent: {sorted(declared - set(flat))}."
-        )
-
+    validate_tensors(
+        document,
+        {
+            name: (value.shape, str(value.dtype).removeprefix("torch."))
+            for name, value in flat.items()
+        },
+    )
     state: dict[str, dict[str, Tensor]] = {}
-    for entry in document["tensors"]:
-        value = flat[f"{entry['module']}{_SEPARATOR}{entry['name']}"]
-        wanted = getattr(torch, entry["dtype"])
-        if value.dtype != wanted:
-            raise CheckpointError(
-                f"{entry['module']}.{entry['name']} is {value.dtype} in the "
-                f"file and the sidecar says {wanted}."
-            )
-        state.setdefault(entry["module"], {})[entry["name"]] = value
+    for entry in document.tensors:
+        state.setdefault(entry.module, {})[entry.name] = flat[entry.key]
+
     return state
 
 

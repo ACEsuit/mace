@@ -45,6 +45,7 @@ from mace_core.kernels.descriptors import (
     FullyConnectedTPDescriptor,
     LinearDescriptor,
     RadialBasisDescriptor,
+    RadialMLPDescriptor,
     SphericalHarmonicsDescriptor,
     SymmetricContractionDescriptor,
 )
@@ -56,8 +57,8 @@ from mace_torch.backends.layout import (
     expanded_irreps,
 )
 from mace_torch.backends.radial import ChebyshevBasis
+from mace_torch.backends.reference import ReferenceNormalizedSiluMLP
 from mace_torch.kernels import segment_sum
-from mace_torch.nn.radial_mlp import RadialMLP
 
 __all__ = [
     "MagneticBackbone",
@@ -257,13 +258,28 @@ class MagneticInteractionBlock(nn.Module):
             precision,
         )
         joint = num_radial + num_moment_basis
-        self.edge_weights = RadialMLP(
-            joint, RADIAL_HIDDEN, self.edge_coupling.num_paths * num_features, precision
+        self.edge_weights = ReferenceNormalizedSiluMLP(
+            RadialMLPDescriptor(
+                channels=(
+                    joint,
+                    *RADIAL_HIDDEN,
+                    self.edge_coupling.num_paths * num_features,
+                ),
+                precision=precision,
+            ),
+            random_init=True,
         )
-        self.moment_weights = RadialMLP(
-            joint, (), self.moment_coupling.num_paths * num_features, precision
+        self.moment_weights = ReferenceNormalizedSiluMLP(
+            RadialMLPDescriptor(
+                channels=(joint, self.moment_coupling.num_paths * num_features),
+                precision=precision,
+            ),
+            random_init=True,
         )
-        self.density = RadialMLP(num_radial, (), 1, precision)
+        self.density = ReferenceNormalizedSiluMLP(
+            RadialMLPDescriptor(channels=(num_radial, 1), precision=precision),
+            random_init=True,
+        )
         paths_flat = "+".join(
             f"{num_features}x{path.irrep}" for path in self.moment_coupling.paths
         )
@@ -388,11 +404,16 @@ class MagneticProductBlock(nn.Module):
         self.moment_coupling = _PairCoupling(
             backend, irreps_out, irreps_moment, irreps_out, num_features, precision
         )
-        self.moment_weights = RadialMLP(
-            num_moment_basis,
-            RADIAL_HIDDEN,
-            self.moment_coupling.num_paths * num_features,
-            precision,
+        self.moment_weights = ReferenceNormalizedSiluMLP(
+            RadialMLPDescriptor(
+                channels=(
+                    num_moment_basis,
+                    *RADIAL_HIDDEN,
+                    self.moment_coupling.num_paths * num_features,
+                ),
+                precision=precision,
+            ),
+            random_init=True,
         )
         paths_flat = "+".join(
             f"{num_features}x{path.irrep}" for path in self.moment_coupling.paths

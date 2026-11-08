@@ -21,14 +21,15 @@ from mace_core.config import (
     PolynomialCutoffConfig,
     SoftTransformConfig,
 )
+from mace_core.kernels.descriptors import LinearDescriptor
 from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
     GaussianBasis,
     PolynomialCutoff,
 )
+from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.embedding import (
-    LinearNodeEmbeddingBlock,
     RadialEmbeddingBlock,
     build_cutoff,
     build_distance_transform,
@@ -77,19 +78,28 @@ def _block(
 
 
 # ---------------------------------------------------------------------------
-# LinearNodeEmbeddingBlock
+# Node embedding through the backend used by the backbone
 # ---------------------------------------------------------------------------
 
 
 def test_node_embedding_is_a_row_lookup_of_the_weight():
     """One-hot in, so the output of node i is the row of its element, scaled
     by the `1/sqrt(num_elements)` path normalisation."""
-    block = LinearNodeEmbeddingBlock(num_elements=3, num_channels=5)
-    assert block.weight.shape == (3, 5)
+    block = ReferenceBackend().make_linear(
+        LinearDescriptor(
+            irreps_in="3x0e",
+            irreps_out="5x0e",
+            precision=str(torch.get_default_dtype()).removeprefix("torch."),
+        )
+    )
+    block.initialize_weights(0)
+    assert block.weight.shape == (15,)
     one_hot = torch.eye(3)[[2, 0, 2, 1]]
     out = block(one_hot)
     assert out.shape == (4, 5)
-    torch.testing.assert_close(out, block.weight[[2, 0, 2, 1]] / math.sqrt(3))
+    torch.testing.assert_close(
+        out, block.weight.reshape(5, 3).T[[2, 0, 2, 1]] / math.sqrt(3)
+    )
     assert block.weight.requires_grad
 
 
@@ -97,7 +107,14 @@ def test_node_embedding_initialisation_scale():
     """Unit-normal weights; the output carries the `1/sqrt(num_elements)` path
     normalisation."""
     torch.manual_seed(0)
-    block = LinearNodeEmbeddingBlock(num_elements=16, num_channels=4096)
+    block = ReferenceBackend().make_linear(
+        LinearDescriptor(
+            irreps_in="16x0e",
+            irreps_out="4096x0e",
+            precision=str(torch.get_default_dtype()).removeprefix("torch."),
+        )
+    )
+    block.initialize_weights(0)
     assert block.weight.std().item() == pytest.approx(1.0, rel=0.05)
     assert block.weight.mean().item() == pytest.approx(0.0, abs=0.02)
     out = block(torch.eye(16))

@@ -38,8 +38,7 @@ Use `MaceModel("model.mace-deploy/native.pt2", MPI_COMM_WORLD)` in Fortran, or
 `MACE("model.mace-deploy/native.pt2")` in C++. CUDA exports add `--device cuda`
 and optionally `--backend cueq`. Compile on the intended GPU architecture.
 The native package owns dtype/device/backend/head selection. Atomic numbers
-are read from its metadata; packages exported before that metadata addition
-must be re-exported. Node capacity includes one padding atom. Overflow and
+are read from its metadata. Node capacity includes one padding atom. Overflow and
 unknown elements fail explicitly; there is no Python or scripted fallback.
 
 C arrays use row-vector cells and `[n_atoms,3]` positions; Fortran uses

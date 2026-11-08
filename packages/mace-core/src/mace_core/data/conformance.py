@@ -16,7 +16,11 @@ from __future__ import annotations
 
 import pickle
 
-from mace_core.data.backend import DataBackend, DataBackendError
+from mace_core.data.backend import (
+    DATASET_SCHEMA_VERSION,
+    DataBackend,
+    DataBackendError,
+)
 
 __all__ = ["data_backend_conformance"]
 
@@ -82,4 +86,4 @@ def data_backend_conformance(backend: DataBackend, *, expected_length: int) -> N
     statistics = backend.statistics()
     assert statistics is None or statistics.r_max >= 0.0
     manifest = backend.metadata()
-    assert manifest is None or manifest.schema_version >= 1
+    assert manifest is None or manifest.schema_version == DATASET_SCHEMA_VERSION

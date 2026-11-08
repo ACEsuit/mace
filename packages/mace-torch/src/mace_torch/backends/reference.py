@@ -726,18 +726,28 @@ class ReferenceNormalizedSiluMLP(nn.Module):
     ``1 / sqrt(fan_in)`` on every call, so the gradient with respect to the
     stored weight is the frozen tree's. Each hidden activation is a SiLU times
     :data:`~mace_core.kernels.canonical.SILU_SECOND_MOMENT_SCALE`.
+
+    ``random_init`` preserves magnetic blocks' construction-time normal draws.
+    Backend factories allocate zeros; the model initializer assigns seeded
+    canonical weights to both paths afterwards.
     """
 
     layer_normalization: Tensor
 
-    def __init__(self, descriptor: RadialMLPDescriptor) -> None:
+    def __init__(
+        self, descriptor: RadialMLPDescriptor, *, random_init: bool = False
+    ) -> None:
         super().__init__()
         self.descriptor = descriptor
         dtype = TORCH_DTYPES[descriptor.precision]
         widths = _layer_widths(descriptor)
         self.weights = nn.ParameterList(
             [
-                nn.Parameter(torch.zeros(fan_in, fan_out, dtype=dtype))
+                nn.Parameter(
+                    (torch.randn if random_init else torch.zeros)(
+                        fan_in, fan_out, dtype=dtype
+                    )
+                )
                 for fan_in, fan_out in widths
             ]
         )

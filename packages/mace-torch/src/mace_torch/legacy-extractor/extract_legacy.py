@@ -36,9 +36,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-CONVERTER_VERSION = "1"
+CONVERTER_VERSION = "1.0"
 FORMAT = "mace-neutral"
-VERSION = 1
+VERSION = "1.0"
 SCHEMA_VERSION = "1.0"
 SEPARATOR = "::"
 

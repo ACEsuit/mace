@@ -176,7 +176,8 @@ def test_a_missing_sidecar_is_refused(tmp_path):
 @fp64_only
 @pytest.mark.parametrize(
     "field,value,message",
-    [("format", "someone-elses", "only reads"), ("version", 99, "written for")],
+    [("format", "someone-elses", "format")]
+    + [("version", version, "version") for version in (1, 2, 3, "1.1", "1.2", 99)],
 )
 def test_a_file_from_elsewhere_is_refused(tmp_path, field, value, message):
     model = trained()
@@ -203,6 +204,30 @@ def test_tensors_the_sidecar_did_not_declare_are_refused(tmp_path):
 
 
 @fp64_only
+@pytest.mark.parametrize(
+    "fault", ["shape", "dtype", "duplicate", "layout", "operator", "extra_field"]
+)
+def test_manifest_corruption_is_refused_before_weights_are_loaded(tmp_path, fault):
+    sidecar = save_checkpoint(tmp_path / "anchor", trained(), dict(SETTINGS))
+    document = json.loads(sidecar.read_text())
+    if fault == "shape":
+        document["tensors"][0]["shape"] = [999]
+    elif fault == "dtype":
+        document["tensors"][0]["dtype"] = "int64"
+    elif fault == "duplicate":
+        document["tensors"].append(document["tensors"][0])
+    elif fault == "layout":
+        del document["layout"]
+    elif fault == "operator":
+        document["layout"].pop(next(iter(document["layout"])))
+    else:
+        next(iter(document["layout"].values()))["unknown"] = True
+    sidecar.write_text(json.dumps(document))
+    with pytest.raises(CheckpointError):
+        load_checkpoint(sidecar, build)
+
+
+@fp64_only
 def test_a_model_of_a_different_shape_is_refused(tmp_path):
     """A partial load leaves weights at their initial values and still runs.
 
@@ -220,18 +245,13 @@ def test_a_model_of_a_different_shape_is_refused(tmp_path):
         deeper: dict[str, Any] = {**config, "num_layers": 3}
         return build(deeper)
 
-    with pytest.raises(CheckpointError, match=r"products\.1\.contraction"):
+    with pytest.raises(CheckpointError, match="layout"):
         load_checkpoint(tmp_path / "anchor", build_deeper)
 
 
 @fp64_only
 def test_a_file_missing_an_operator_entirely_is_refused(tmp_path):
-    """The other half of the refusal, which the layout check deliberately skips.
-
-    Here every shared operator agrees, so only the operator set differs. That
-    one belongs to `load_canonical_state`, and this pins that it still fires
-    rather than being shadowed by the layout check.
-    """
+    """Removing both layout and tensors must not permit a partial load."""
     model = trained()
     save_checkpoint(tmp_path / "anchor", model, dict(SETTINGS))
     sidecar = tmp_path / "anchor.json"
@@ -248,7 +268,7 @@ def test_a_file_missing_an_operator_entirely_is_refused(tmp_path):
         tensors.pop(key)
     save_file(tensors, str(tmp_path / "anchor.safetensors"))
 
-    with pytest.raises(CheckpointError, match="do not hold the same operators"):
+    with pytest.raises(CheckpointError, match=r"products\.1\.contraction"):
         load_checkpoint(tmp_path / "anchor", build)
 
 

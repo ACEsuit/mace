@@ -49,7 +49,7 @@ inside the model cutoff. Choose capacities for the largest local domain in
 the trajectory. Exceeding either stops the run and reports which capacity
 to increase. The neutral export without `--native` retains its three-file
 format. Native export adds `native.pt2` and records target `lammps-native`
-in version 1.1 of the deployment manifest.
+in version 1.0 of the deployment manifest.
 
 For scalar element-conditioned skips, the native exporter groups node slots
 by their one-hot species and applies the canonical channel matrix for each

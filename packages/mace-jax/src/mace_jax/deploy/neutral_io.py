@@ -17,6 +17,12 @@ from mace_core.kernels.registry import get_backend
 from mace_core.metadata import ModelMetadata
 from mace_core.model_registry import get_model
 from mace_core.outputs import MACEOutput
+from mace_core.weights.checkpoint import (
+    CheckpointError,
+    read_checkpoint_manifest,
+    validate_layout,
+    validate_tensors,
+)
 from safetensors.numpy import load_file
 
 from mace_jax.models.energy import MACEModel
@@ -137,13 +143,11 @@ def load_model(
         )
     jax.config.update("jax_enable_x64", True)
     sidecar, tensors = _paths(path_or_id)
-    document = json.loads(sidecar.read_text())
-    if document.get("format") != "mace-v1-checkpoint" or document.get("version") != 3:
-        raise ModelLoadError(
-            f"{sidecar}: expected mace-v1-checkpoint version 3; "
-            "convert the artifact to the native reduced safetensors format"
-        )
-    metadata = ModelMetadata.from_json(json.dumps(document["config"]))
+    try:
+        document = read_checkpoint_manifest(sidecar)
+    except CheckpointError as error:
+        raise ModelLoadError(str(error)) from error
+    metadata = ModelMetadata.from_json(json.dumps(document.config))
     config = ResolvedConfig.model_validate(metadata.config.resolved)
     _architecture(config)
     if str(path_or_id) in SUPPORTED_MODELS:
@@ -170,34 +174,25 @@ def load_model(
     )
     expected = model.canonical_components()
     flat = load_file(str(tensors))
-    state = {}
-    declared = set()
-    for entry in document["tensors"]:
-        name = entry["module"] + "::" + entry["name"]
-        if name in declared:
-            raise ModelLoadError(f"duplicate canonical tensor {name}")
-        declared.add(name)
-        if name not in flat:
-            raise ModelLoadError(f"missing canonical tensor {name}")
-        value = flat[name]
-        if list(value.shape) != entry["shape"] or str(value.dtype) != entry["dtype"]:
-            raise ModelLoadError(f"{name}: dtype or shape disagrees with the sidecar")
-        state.setdefault(entry["module"], {})[entry["name"]] = value
-    if declared != set(flat):
-        raise ModelLoadError(
-            f"undeclared canonical tensors: {sorted(set(flat) - declared)}"
+    try:
+        validate_tensors(
+            document,
+            {name: (value.shape, str(value.dtype)) for name, value in flat.items()},
         )
+    except CheckpointError as error:
+        raise ModelLoadError(str(error)) from error
+    state = {}
+    for entry in document.tensors:
+        state.setdefault(entry.module, {})[entry.name] = flat[entry.key]
     if set(state) != set(expected):
         raise ModelLoadError(
             "canonical operators differ; "
             f"missing {sorted(set(expected) - set(state))}, "
             f"unsupported {sorted(set(state) - set(expected))}"
         )
-    layouts = document.get("layout", {})
+    layouts = dict(document.layout)
     expected_layouts = model.backbone.canonical_layout()
-    if set(layouts) != set(expected_layouts):
-        raise ModelLoadError("canonical layout modules disagree with the architecture")
-    for name, op in expected.items():
+    for name in expected:
         values = state[name]
         expected_layout = expected_layouts.get(name, {})
         layout = layouts.get(name, {})
@@ -211,15 +206,19 @@ def load_model(
             order = [labels.index(label) for label in expected_labels]
             values = {**values, "weight": values["weight"][:, order, :]}
             layout = {**layout, "paths": expected_labels}
-        if layout != expected_layout:
-            raise ModelLoadError(
-                f"{name}: canonical layout disagrees with the architecture"
-            )
+        if name in layouts:
+            layouts[name] = layout
+        state[name] = values
         if (
             name == "backbone.outputs.energy_head"
             and values["e0_table"].dtype != np.float64
         ):
             raise ModelLoadError("e0_table must retain float64 storage")
-        op.load_canonical(values)
+    try:
+        validate_layout(expected_layouts, layouts)
+    except CheckpointError as error:
+        raise ModelLoadError(str(error)) from error
+    for name, op in expected.items():
+        op.load_canonical(state[name])
     graphdef, params = nnx.split(model)
     return ApplyFn(graphdef, metadata, config, elements, dtype), params

@@ -14,18 +14,7 @@ from mace_core.kernels.descriptors import (
     SphericalHarmonicsDescriptor,
 )
 
-__all__ = ["EdgeConvolutionSpan", "supports_span_contract"]
-
-
-def supports_span_contract(version: str) -> bool:
-    """The stateless call contract starts at kernel spec 1.2."""
-    parts = version.split(".")
-    return (
-        len(parts) == 2
-        and all(part.isdecimal() for part in parts)
-        and int(parts[0]) == 1
-        and int(parts[1]) >= 2
-    )
+__all__ = ["EdgeConvolutionSpan"]
 
 
 @dataclass(frozen=True)

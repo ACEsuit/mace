@@ -27,7 +27,7 @@ __all__ = [
 ]
 
 #: Only this schema is read and written while V1 is under development.
-SCHEMA_VERSION: Final = "1.2"
+SCHEMA_VERSION: Final = "1.0"
 
 #: Validation context key set by `ModelMetadata.from_json`, the route that
 #: reads a record rather than builds one, and so requires its version.

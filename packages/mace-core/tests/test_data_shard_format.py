@@ -1,4 +1,4 @@
-"""The v2 shard format: what is written is what is read, and the manifest is
+"""The V1 shard format: what is written is what is read, and the manifest is
 checked like a file format.
 """
 
@@ -65,7 +65,7 @@ def test_every_field_and_property_round_trips(written):
 
 def test_the_manifest_is_real_json_with_real_types(written):
     payload = json.loads((written / MANIFEST_NAME).read_text())
-    assert payload["schema_version"] == SCHEMA_VERSION == 1
+    assert payload["schema_version"] == SCHEMA_VERSION == "1.0"
     assert payload["shards"] == ["train_0.h5", "train_1.h5", "train_2.h5"]
     assert payload["shard_counts"] == [2, 2, 1]
     assert payload["atomic_numbers"] == [1, 8]
@@ -150,10 +150,20 @@ def _rewrite(directory: Path, **changes) -> None:
     path.write_text(json.dumps(payload))
 
 
-def test_a_manifest_from_another_schema_version_is_refused(written):
-    _rewrite(written, schema_version=2)
-    with pytest.raises(DataBackendError, match="schema_version 2"):
+@pytest.mark.parametrize("version", [1, "1.1", "1.2", "2.0"])
+def test_a_manifest_from_another_schema_version_is_refused(written, version):
+    _rewrite(written, schema_version=version)
+    with pytest.raises(DataBackendError, match="schema_version"):
         read_manifest(written)
+
+
+@pytest.mark.parametrize("version", [1, "1.1", "1.2", "2.0"])
+def test_a_shard_from_another_schema_version_is_refused(written, version):
+    with h5py.File(written / "train_0.h5", "r+") as shard:
+        shard.attrs["schema_version"] = version
+    backend = HDF5Backend.open(written, key_spec=KeySpecification.from_defaults())
+    with pytest.raises(DataBackendError, match="unsupported shard format"):
+        backend[0]
 
 
 def test_a_manifest_with_an_unknown_field_is_refused(written):

@@ -27,6 +27,7 @@ def test_native_package_declares_atomic_numbers_without_another_weight_format(
         halo_exchange=True,
         native_capacity=(8, 32),
     )
+    assert captured["mace_native_version"] == "1.0"
     assert captured["mace_atomic_numbers"] == "1 6 8"
     assert captured["mace_species"] == "H C O"
     assert {path.name for path in bundle.iterdir()} == {

@@ -76,12 +76,12 @@ mace --engine v1 model convert full.json --to-basis reduced --output reduced.jso
 
 Basis conversion verifies every basis projection. With `--reference` and
 `--fixtures`, it also checks energy, forces and stress before writing either
-artifact file. Metadata schema 1.2 records the source/target bases, projection
+artifact file. Metadata schema 1.0 records the source/target bases, projection
 verification and golden-check result. Without reference files that result is
 null; it does not claim a golden check. Older metadata remains readable.
 Reduced-to-full export is underdetermined and belongs to DEP-3.
 
-Prepared data uses v2 shards and manifests. Isolated-atom reference structures
+Prepared data uses V1 shards and manifests. Isolated-atom reference structures
 stay in the training split so the training E0 resolver can read them. Measured
 statistics are written only with `--compute_statistics`; `e0s.json` records the
 resolved references. Selection and pseudolabelling call the same FT-2 functions

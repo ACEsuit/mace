@@ -10,13 +10,13 @@ from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import ResolvedE0s
 from mace_core.metadata import ConfigRecord, ParentModel, Provenance
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue, ObservableSpec
+from mace_core.weights.checkpoint import validate_layout
 
 from mace_torch import __version__
 from mace_torch.deploy.loader import DeployedModel
 from mace_torch.serialization import (
     canonical_metadata,
     canonical_state,
-    check_layout,
     load_canonical_state,
 )
 
@@ -76,7 +76,16 @@ def extend_readouts(
         precision=config.precision,
         initialize=True,
     )
-    check_layout(engine, canonical_metadata(parent.derivative_engine))
+    original_layout = canonical_metadata(parent.derivative_engine)
+    expanded_layout = canonical_metadata(engine)
+    validate_layout(
+        original_layout,
+        {
+            name: expanded_layout[name]
+            for name in original_layout
+            if name in expanded_layout
+        },
+    )
     before = canonical_state(parent.derivative_engine)
     after = canonical_state(engine)
     for operator, tensors in before.items():

@@ -71,7 +71,7 @@ def configurations(count: int = 5) -> list[Configuration]:
 
 
 def write_prepared(tmp_path: Path) -> Path:
-    """Five structures as v2 shards of (2, 2, 1), with statistics."""
+    """Five structures as V1 shards of (2, 2, 1), with statistics."""
     directory = tmp_path / "prepared"
     write_shards(
         configurations(),

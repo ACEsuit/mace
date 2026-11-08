@@ -23,7 +23,6 @@ from mace_core.config.precision import PrecisionConfig, PrecisionPolicy
 from mace_core.kernels.canonical import CANONICAL_LAYOUT
 from mace_core.kernels.capabilities import BackendCapabilities
 from mace_core.kernels.precision import Precision
-from mace_core.kernels.spans import supports_span_contract
 from torch import Tensor, nn
 
 from mace_torch.nn.edges import EdgeInputs
@@ -118,9 +117,7 @@ class PrecisionBackend:
         A fused kernel has one math dtype, so every member is stamped with the
         span's policy: the widest of its members', which meets each floor.
         """
-        if not descriptors or not supports_span_contract(
-            self.capabilities().spec_version
-        ):
+        if not descriptors:
             return None
         stamped = self.span_descriptors(descriptors)
         span = self.backend.make_interaction_layer(stamped)

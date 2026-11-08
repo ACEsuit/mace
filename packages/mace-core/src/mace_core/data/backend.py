@@ -17,11 +17,14 @@ from mace_core.data.configuration import Configuration
 from mace_core.data.keys import KeySpecification
 
 __all__ = [
+    "DATASET_SCHEMA_VERSION",
     "DataBackend",
     "DataBackendError",
     "DatasetManifest",
     "DatasetStatistics",
 ]
+
+DATASET_SCHEMA_VERSION = "1.0"
 
 
 class DataBackendError(RuntimeError):
@@ -98,8 +101,7 @@ class DatasetManifest:
     """The typed description a persisted dataset carries beside its data.
 
     Attributes:
-        schema_version: Bumped when this shape changes, so a mismatch is a
-            named error rather than a missing key.
+        schema_version: The initial V1 schema; other versions are refused.
         shards: The shard files, relative to the manifest, in reading order.
             Listed rather than globbed, so a missing shard is an error and the
             order does not depend on how a directory happens to sort.
@@ -114,7 +116,7 @@ class DatasetManifest:
         statistics: Embedded statistics, when the format carries them.
     """
 
-    schema_version: int = 1
+    schema_version: str = DATASET_SCHEMA_VERSION
     shards: list[str] = field(default_factory=list)
     shard_counts: list[int] = field(default_factory=list)
     key_specification: dict[str, Any] = field(default_factory=dict)
@@ -122,6 +124,13 @@ class DatasetManifest:
     r_max: float = 0.0
     e0_provenance: str = ""
     statistics: DatasetStatistics | None = None
+
+    def __post_init__(self) -> None:
+        if self.schema_version != DATASET_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported dataset schema_version {self.schema_version!r}; "
+                f"expected {DATASET_SCHEMA_VERSION!r}"
+            )
 
     @property
     def length(self) -> int:

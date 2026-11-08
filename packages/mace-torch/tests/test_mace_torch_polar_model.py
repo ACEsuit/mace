@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
+from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.electrostatics import (
@@ -26,7 +27,7 @@ from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.electrostatics import ReferenceSolver
 from mace_torch.kernels.initialization import initialize_model_weights
 from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
-from mace_torch.models.electrostatics import PolarModel, PolarSettings
+from mace_torch.models.electrostatics import PolarModel
 from mace_torch_engine_fixtures import ENERGY, build_graph, crystal, molecule
 from scipy.spatial.transform import Rotation
 
@@ -69,19 +70,22 @@ def build_model(
             correlation=2,
             readout={"mlp_irreps": "4x0e"},
             use_agnostic_product=True,
+            polar={
+                "multipole_max_l": 1,
+                "feature_max_l": 1,
+                "feature_widths": (1.0, 1.5),
+                "num_recursion_steps": steps,
+                "add_local_electron_energy": True,
+            },
         ),
         atomic_numbers=[1, 8],
         observables=[WITH_STRESS],
         energy_head=head,
-        settings=PolarSettings(
-            multipole_max_l=1,
-            feature_max_l=1,
-            feature_widths=(1.0, 1.5),
-            num_recursion_steps=steps,
-            kspace_cutoff_factor=1.0,
-            add_local_electron_energy=True,
+        electrostatics=ElectrostaticsConfig(
+            enabled=True,
+            solver=overrides.pop("solver", "reference"),
             periodicity_profile=profile,
-            fukui_hidden=4,
+            kspace_cutoff_factor=1.0,
         ),
         **overrides,
     )

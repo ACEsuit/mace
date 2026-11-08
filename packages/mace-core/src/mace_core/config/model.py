@@ -265,9 +265,6 @@ class PolarConfig(ConfigSection):
             added to the total. The reported contribution is zero when disabled.
         quadrupole_feature_corrections: Whether an open system's projection
             carries the quadrupole correction as well.
-        field_update: The block each step predicts the increment with. One
-            exists.
-        field_readout: The block the local energy is read with. One exists.
     """
 
     multipole_max_l: int = Field(default=0, ge=0)
@@ -280,8 +277,15 @@ class PolarConfig(ConfigSection):
     energy_self_interaction: bool = False
     add_local_electron_energy: bool = False
     quadrupole_feature_corrections: bool = False
-    field_update: Literal["embedded_one_body"] = "embedded_one_body"
-    field_readout: Literal["one_body_mlp"] = "one_body_mlp"
+
+    @model_validator(mode="after")
+    def _projection_norms_match(self) -> PolarConfig:
+        expected = len(self.feature_widths) * (self.feature_max_l + 1)
+        if self.feature_norms is not None and len(self.feature_norms) != expected:
+            raise ValueError(
+                f"feature_norms needs {expected} entries: one per order and width"
+            )
+        return self
 
 
 class MagneticConfig(ConfigSection):

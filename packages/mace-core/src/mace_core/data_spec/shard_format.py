@@ -1,4 +1,4 @@
-"""The v2 shard format: HDF5 files of configurations and a JSON manifest.
+"""The V1 shard format: HDF5 files of configurations and a JSON manifest.
 
 This module is the format, written down once. It says where each field of a
 :class:`~mace_core.data.configuration.Configuration` lives inside a shard, how
@@ -63,6 +63,7 @@ from typing import Any
 import h5py
 import numpy as np
 
+from mace_core.data.backend import DATASET_SCHEMA_VERSION as SCHEMA_VERSION
 from mace_core.data.backend import DataBackendError, DatasetManifest, DatasetStatistics
 from mace_core.data.configuration import DEFAULT_HEAD, Configuration
 from mace_core.data.keys import KeySpecification
@@ -79,11 +80,6 @@ __all__ = [
 
 #: The manifest's file name, inside the dataset directory.
 MANIFEST_NAME = "dataset.json"
-
-#: The version of both the shard layout and the manifest. Anything that
-#: changes either shape bumps it, and a reader refuses a version it does not
-#: know rather than guessing at a missing key.
-SCHEMA_VERSION = 1
 
 #: What a shard's root ``format`` attribute says, so a shard is recognisable
 #: without its manifest.
@@ -193,7 +189,7 @@ def write_shards(
     e0_provenance: str = "",
     processes: int = 1,
 ) -> DatasetManifest:
-    """Write configurations as v2 shards and the manifest that describes them.
+    """Write configurations as V1 shards and the manifest that describes them.
 
     Args:
         configurations: The structures, in the order they will be read back.
@@ -319,7 +315,10 @@ def read_manifest(directory: str | Path) -> DatasetManifest:
     if missing or unknown:
         raise DataBackendError(
             source,
-            reason=f"fields missing {missing} and unknown {unknown} for version 1",
+            reason=(
+                f"fields missing {missing} and unknown {unknown} "
+                f"for version {SCHEMA_VERSION}"
+            ),
         )
     manifest = DatasetManifest.from_json(json.dumps(payload))
     if len(manifest.shards) != len(manifest.shard_counts):

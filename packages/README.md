@@ -20,6 +20,12 @@ implementation: models, training, deployment. `mace_jax` is inference only and
 covers three foundation architectures. [Navigating the tree](#navigating-the-tree) says what is in
 every file.
 
+Until the first public V1 release, all V1 contracts and artifact schemas use
+version `1.0`. Changes update that initial format directly: intermediate V1
+versions are neither accepted nor migrated. Legacy artifacts enter through the
+explicit legacy converter. This policy does not change dependency versions or
+the frozen legacy reference formats.
+
 ## Names
 
 | Directory | Distribution | Import name | Tag prefix |
@@ -180,7 +186,7 @@ packages/
     config/                      the pydantic configuration, section by section
     data/                        structures, backends, E0s, statistics, splits
       backends/                  in-memory, XYZ, HDF5 and LMDB data backends
-    data_spec/                   the v2 shard format and its writer
+    data_spec/                   the V1 shard format and its writer
     electrostatics/              long-range solve descriptors, solver registry
     elements/                    element tables, default file keys, E0 values
     kernels/                     op descriptors, backend protocol and registry
@@ -241,7 +247,7 @@ the training, calculator and deployment tickets own calling it in their flows.
 
 **A fused edge convolution** matches `EdgeConvolutionSpan` from
 `mace_core.kernels.spans` in `make_interaction_layer`. Declare kernel spec
-`1.2` in the backend capabilities and return a stateless module implementing
+`1.0` in the backend capabilities and return a stateless module implementing
 `InteractionSpan` from `mace_torch.backends.spans`. That public module also
 exports `SpanCapabilities`, `EdgeInputs` and `EdgeRuns` and documents the live
 canonical weight tuple. The model selects the span only when its declared
@@ -290,7 +296,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/data/__init__.py` | The data layer's boundary objects, re-exported. |
 | `mace_core/data/backend.py` | The protocol every data backend implements, and the statistics type. |
 | `mace_core/data/backends/__init__.py` | The shipped backends and their registration. |
-| `mace_core/data/backends/hdf5.py` | Prepared datasets of v2 shards, read lazily. |
+| `mace_core/data/backends/hdf5.py` | Prepared datasets of V1 shards, read lazily. |
 | `mace_core/data/backends/hdf5_legacy.py` | The frozen tree's HDF5 files and statistics, read-only. |
 | `mace_core/data/backends/lmdb.py` | Fairchem-style ASE LMDB databases, read-only. |
 | `mace_core/data/backends/memory.py` | Structures already in memory, presented as a backend. |
@@ -305,7 +311,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/data/normalization.py` | Per-observable, per-head scales and invariant shifts from training labels. |
 | `mace_core/data/xyz.py` | Reading labelled structure files into configurations. |
 | `mace_core/data_spec/__init__.py` | The on-disk dataset formats, re-exported. |
-| `mace_core/data_spec/shard_format.py` | The v2 shard layout, the manifest check and the shard writer. |
+| `mace_core/data_spec/shard_format.py` | The V1 shard layout, the manifest check and the shard writer. |
 | `mace_core/electrostatics/__init__.py` | The electrostatics contract, re-exported. |
 | `mace_core/electrostatics/capabilities.py` | What a solver declares it can do, and the refusal when it cannot. |
 | `mace_core/electrostatics/descriptor.py` | One long-range solve as data: profile, multipoles, projection, method. |
@@ -319,7 +325,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/kernels/canonical.py` | The canonical weight layout that makes checkpoints backend independent. |
 | `mace_core/kernels/capabilities.py` | What a kernel backend declares it can build. |
 | `mace_core/kernels/descriptors.py` | Every dispatched op, described before a backend builds it. |
-| `mace_core/kernels/spans.py` | Closed edge-convolution span shape and kernel-version compatibility. |
+| `mace_core/kernels/spans.py` | Closed edge-convolution span shape. |
 | `mace_core/kernels/paths.py` | The tensor-product paths of the convolution and their order. |
 | `mace_core/kernels/precision.py` | Dtype names, and which is wider. |
 | `mace_core/kernels/protocol.py` | The interface a kernel backend implements. |
@@ -337,6 +343,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/tables.py` | The error table a finished run prints. |
 | `mace_core/units.py` | Units and sign conventions for the whole stack. |
 | `mace_core/weights/__init__.py` | The neutral weights format, re-exported. |
+| `mace_core/weights/checkpoint.py` | Shared native checkpoint schema, tensor manifest and layout validation. |
 | `mace_core/weights/neutral_format.py` | safetensors for the numbers and JSON for their meaning. |
 
 | `mace_core/artifacts.py` | Artifact directories, sidecars and versioned filenames. |
@@ -451,7 +458,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/models/normalization.py` | Equivariant output normalization and its canonical checkpoint buffers. |
 | `mace_torch/nn/__init__.py` | The building blocks, re-exported. |
 | `mace_torch/nn/backbone.py` | `MACEBackbone`: embeddings, interactions and products, features out. |
-| `mace_torch/nn/embedding.py` | Element and radial embeddings. |
+| `mace_torch/nn/embedding.py` | Radial embeddings and cutoff envelopes. |
 | `mace_torch/nn/les.py` | Linear and nonlinear Cartesian tensor readouts for LES multipoles. |
 | `mace_torch/nn/charge_transfer.py` | Canonical equivariant bond transfers and higher-multipole sources for LSC-MACE. |
 | `mace_torch/nn/local_sources.py` | Oxidation embeddings/mixers and the canonical symmetric local polarizability readout. |
@@ -465,7 +472,6 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/nn/node_inputs.py` | Declared per-node inputs mixed into the features. |
 | `mace_torch/nn/product_basis.py` | The many-body product on the backend's contraction. |
 | `mace_torch/nn/radial.py` | Radial bases, cutoffs, distance transforms and the ZBL repulsion. |
-| `mace_torch/nn/radial_mlp.py` | The radial MLP that produces the convolution's path weights. |
 | `mace_torch/physics/__init__.py` | The derivative engine, re-exported. |
 | `mace_torch/physics/charge_equilibration.py` | Constrained charge solving with implicit linear derivatives and a dispatched potential. |
 | `mace_torch/physics/affine_fixed_point.py` | Exact density/Fermi solving with implicit first and second derivatives. |

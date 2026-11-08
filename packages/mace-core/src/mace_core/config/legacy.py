@@ -789,8 +789,8 @@ def _collapse_model(namespace: Any, values: dict[str, Any]) -> None:
 
 #: The one field-update and the one field-readout block the frozen tree has,
 #: by the class name its command line takes and the name v1 records.
-_FIELD_UPDATES = {"AgnosticEmbeddedOneBodyVariableUpdate": "embedded_one_body"}
-_FIELD_READOUTS = {"OneBodyMLPFieldReadout": "one_body_mlp"}
+_FIELD_UPDATES = {"AgnosticEmbeddedOneBodyVariableUpdate"}
+_FIELD_READOUTS = {"OneBodyMLPFieldReadout"}
 _POTENTIAL_EMBEDDINGS = {"AgnosticChargeBiasedLinearPotentialEmbedding"}
 
 
@@ -848,10 +848,6 @@ def _collapse_polar(namespace: Any, values: dict[str, Any]) -> None:
     ]
     if unknown:
         raise LegacyFlagError("; ".join(unknown) + ".")
-    if update:
-        _set(values, "model.polar.field_update", _FIELD_UPDATES[kind])
-    if readout:
-        _set(values, "model.polar.field_readout", _FIELD_READOUTS[reading])
 
 
 def _collapse_observables(namespace: Any, values: dict[str, Any]) -> None:

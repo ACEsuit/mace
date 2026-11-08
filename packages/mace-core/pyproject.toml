@@ -36,7 +36,7 @@ dependencies = [
     "numpy>=1.23",
     "ase>=3.23",
     "safetensors>=0.4",
-    # The two on-disk dataset formats: the v2 shards and the legacy files are
+    # The two on-disk dataset formats: the V1 shards and the legacy files are
     # HDF5, and the fairchem corpora are LMDB. Both are read through their
     # numpy-level bindings, which need no framework.
     "h5py>=3.8",

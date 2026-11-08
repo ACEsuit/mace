@@ -1,8 +1,8 @@
 {
   "format": "mace-v1-checkpoint",
-  "version": 3,
+  "version": "1.0",
   "config": {
-    "schema_version": "1.2",
+    "schema_version": "1.0",
     "config": {
       "user": {},
       "resolved": {
@@ -104,9 +104,7 @@
             "feature_self_interaction": false,
             "energy_self_interaction": false,
             "add_local_electron_energy": false,
-            "quadrupole_feature_corrections": false,
-            "field_update": "embedded_one_body",
-            "field_readout": "one_body_mlp"
+            "quadrupole_feature_corrections": false
           },
           "magnetic": {
             "saturation": {},
@@ -149,12 +147,10 @@
         },
         "catalogue": null,
         "loss": {
-          "kind": {
-            "kind": "weighted"
-          },
           "weights": {},
           "stage_two_weights": {},
-          "use_structure_weights": {}
+          "use_structure_weights": {},
+          "kind": "weighted"
         },
         "training": {
           "optimizer": {
@@ -171,12 +167,10 @@
           "eval_interval": 1,
           "clip_grad": 10.0,
           "scheduler": {
-            "kind": {
-              "kind": "plateau",
-              "factor": 0.8,
-              "patience": 50
-            },
-            "group_factors": {}
+            "group_factors": {},
+            "kind": "plateau",
+            "factor": 0.8,
+            "patience": 50
           },
           "ema": {
             "enabled": false,
@@ -224,8 +218,7 @@
           "solver": "reference",
           "periodicity_profile": "partial",
           "slab_normal": null,
-          "kspace_cutoff_factor": 1.5,
-          "training_step": "standard"
+          "kspace_cutoff_factor": 1.5
         },
         "fixed_point": null
       }
@@ -291,7 +284,7 @@
       "model.radial_mlp": "normalized_silu"
     },
     "backbone.backbone.products.0.contraction": {
-      "spec_version": "1.2",
+      "spec_version": "1.0",
       "basis": "reduced",
       "paths": [
         "0:0e",
@@ -314,7 +307,7 @@
       ]
     },
     "backbone.backbone.products.1.contraction": {
-      "spec_version": "1.2",
+      "spec_version": "1.0",
       "basis": "reduced",
       "paths": [
         "0:0e",

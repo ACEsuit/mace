@@ -1,4 +1,4 @@
-"""``format="auto"`` tells v2 shards from the legacy layout from LMDB, and a
+"""``format="auto"`` tells V1 shards from the legacy layout from LMDB, and a
 source that more than one backend or no backend claims is a hard error.
 """
 

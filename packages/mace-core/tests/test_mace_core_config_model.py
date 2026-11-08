@@ -35,6 +35,23 @@ def test_unknown_readout_activation_is_refused():
         ModelConfig(readout={"gate": "tahn"})
 
 
+@pytest.mark.parametrize("name", ["field_update", "field_readout"])
+def test_inert_polar_selectors_are_not_configuration_fields(name):
+    with pytest.raises(ValidationError, match=name):
+        ModelConfig(polar={name: "unused"})
+
+
+def test_polar_feature_norms_match_the_projection():
+    with pytest.raises(ValidationError, match="feature_norms"):
+        ModelConfig(
+            polar={
+                "feature_max_l": 1,
+                "feature_widths": (1.0, 2.0),
+                "feature_norms": (1.0,),
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "changes,match",
     [

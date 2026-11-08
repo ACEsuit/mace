@@ -22,7 +22,7 @@ from mace_core.weights.neutral_format import (
 def sidecar(**changes) -> NeutralSidecar:
     document = {
         "format": "mace-neutral",
-        "version": 1,
+        "version": "1.0",
         "provenance": {
             "source_file": "model.model",
             "source_sha256": "0" * 64,

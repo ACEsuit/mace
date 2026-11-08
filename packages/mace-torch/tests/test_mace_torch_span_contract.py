@@ -10,7 +10,6 @@ from conftest import assert_close, fp64_only
 from mace_core.config import AgnesiTransformConfig, BesselBasisConfig, ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.edges import plan_edges
-from mace_core.kernels.canonical import KERNEL_SPEC_VERSION
 from mace_core.kernels.descriptors import RadialMLPDescriptor
 from mace_torch.backends.composite import CompositeBackend
 from mace_torch.backends.precision import PrecisionBackend, boundary_precision
@@ -190,24 +189,6 @@ def test_held_state_is_refused_even_when_absent_from_state_dict(nonpersistent):
         validate_span(span, "test_backend")
 
 
-def test_previous_minor_backend_is_never_asked_for_a_span(monkeypatch):
-    backend = SpanBackend()
-    backend.spec_version = "1.1"
-    monkeypatch.setattr(
-        backend,
-        "make_interaction_layer",
-        lambda _: pytest.fail("old span factory called"),
-    )
-    for wrapped in (
-        backend,
-        PrecisionBackend(backend, PrecisionConfig.float64()),
-        CompositeBackend(backend, ReferenceBackend()),
-    ):
-        model = build_engine(backend=wrapped)
-        assert model(build_graph(*molecule())).total_energy is not None
-    assert KERNEL_SPEC_VERSION == "1.2"
-
-
 def test_report_records_each_layer_and_layout():
     backend = CompositeBackend(SpanBackend(), ReferenceBackend())
     build_engine(backend=backend)
@@ -380,13 +361,19 @@ def test_one_widest_precision_policy_casts_the_whole_span(dtype):
     assert_close(actual, expected.detach())
 
 
-def test_a_declined_span_reports_why_and_keeps_the_reference_path():
+def test_a_declined_span_reports_why_and_keeps_the_reference_path(monkeypatch):
     primary = SpanBackend()
-    primary.spec_version = "1.1"
+    monkeypatch.setattr(primary, "make_interaction_layer", lambda _: None)
     backend = CompositeBackend(primary, ReferenceBackend())
     build_engine(backend=backend)
-    assert "layer 0 span: reference; op by op (kernel spec 1.1" in backend.report()
-    assert "layer 1 span: reference; op by op (kernel spec 1.1" in backend.report()
+    assert (
+        "layer 0 span: reference; op by op (backend declined this span shape"
+        in backend.report()
+    )
+    assert (
+        "layer 1 span: reference; op by op (backend declined this span shape"
+        in backend.report()
+    )
 
 
 def test_a_layer_without_a_described_span_still_has_a_report_entry():

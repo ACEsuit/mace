@@ -49,7 +49,7 @@ public:
       error->all(FLERR, "pair_style mace/native requires the native.pt2 path");
     try {
       auto meta = Loader::load_metadata_from_package(argv[0], "model");
-      if (meta.at("mace_native_version") != "1")
+      if (meta.at("mace_native_version") != "1.0")
         throw std::runtime_error("unsupported native package version");
 #ifndef MACE_HAS_CUEQ
       if (meta.at("mace_backend") == "cueq")

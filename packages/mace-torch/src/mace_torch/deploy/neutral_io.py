@@ -424,10 +424,10 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
     )
 
 
-#: The one field-update and field-readout block the frozen tree has, by the
-#: class name it records and the name v1 builds it under.
-_FIELD_UPDATES = {"AgnosticEmbeddedOneBodyVariableUpdate": "embedded_one_body"}
-_FIELD_READOUTS = {"OneBodyMLPFieldReadout": "one_body_mlp"}
+#: Legacy block names accepted by the converter. V1 has one implementation
+#: of each, so these choices are checked here rather than stored in its config.
+_FIELD_UPDATES = {"AgnosticEmbeddedOneBodyVariableUpdate"}
+_FIELD_READOUTS = {"OneBodyMLPFieldReadout"}
 _POTENTIAL_EMBEDDINGS = {"AgnosticChargeBiasedLinearPotentialEmbedding"}
 
 
@@ -480,8 +480,6 @@ def _polar_settings(take) -> tuple[dict[str, Any], dict[str, Any]]:
         "energy_self_interaction": bool(take("include_electrostatic_self_interaction")),
         "add_local_electron_energy": bool(take("add_local_electron_energy")),
         "quadrupole_feature_corrections": bool(take("quadrupole_feature_corrections")),
-        "field_update": _FIELD_UPDATES[kind],
-        "field_readout": _FIELD_READOUTS[reading],
     }
     # The factor that gives the cutoff the source sums to. The frozen tree
     # records a factor and sums to a stored cutoff, and the two disagree on
