@@ -100,7 +100,7 @@ def write_anchor_checkpoint(legacy, directory: Path) -> Path:
         statistics=DatasetStatistics(
             avg_num_neighbors=built["avg_num_neighbors"],
             mean=shift[0],
-            std=scale[0],
+            normalization_scale=scale[0],
         ),
         initialize=False,
     )

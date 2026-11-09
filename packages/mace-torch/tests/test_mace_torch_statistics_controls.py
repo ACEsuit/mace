@@ -45,8 +45,10 @@ def test_explicit_statistics_reach_the_model_and_reload_without_data(
     config = configuration(tmp_path)
     measured = run_data_stage(config, DEFAULT_CATALOGUE)
     statistics = asdict(measured.statistics)
-    statistics.update(mean=1.5, std=2.5, avg_num_neighbors=7.5)
+    statistics.update(mean=1.5, normalization_scale=2.5, avg_num_neighbors=7.5)
     if legacy_json:
+        statistics["std"] = statistics.pop("normalization_scale")
+        statistics.pop("normalization_method")
         for name in ("atomic_numbers", "atomic_energies"):
             statistics[name] = str(statistics[name])
     stats_path = tmp_path / "statistics.json"

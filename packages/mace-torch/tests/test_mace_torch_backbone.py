@@ -376,7 +376,7 @@ class _Recording:
             devices=declared.devices,
             dtypes=declared.dtypes,
             max_lmax=declared.max_lmax,
-            layouts=declared.layouts,
+            weight_layouts=declared.weight_layouts,
             bases=self._bases,
             supports_double_backward=declared.supports_double_backward,
             spec_version=declared.spec_version,

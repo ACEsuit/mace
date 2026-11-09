@@ -76,21 +76,25 @@ class KernelSpec:
         op: The factory this kernel_spec is for, as
             :attr:`~mace_core.kernels.capabilities.BackendCapabilities.ops`
             lists it. A class constant, not a field.
-        layout: The activation layout read and written by this op. Weights
+        activation_layout: The feature ordering read and written by this op. Weights
             always use canonical mul_ir. Scalar ops may leave this as None.
         product: Matrix-product arithmetic for float32 linear maps and fully
             connected tensor products, resolved when the model is built.
     """
 
     op: ClassVar[str] = ""
-    layout: ActivationLayout | None = field(default=None, kw_only=True)
+    activation_layout: ActivationLayout | None = field(default=None, kw_only=True)
     product: Product = field(default="ieee", kw_only=True)
 
     precision: Precision = "float64"
     accumulate: Precision | None = None
 
     def __post_init__(self) -> None:
-        _require_member("layout", self.layout, (None, *get_args(ActivationLayout)))
+        _require_member(
+            "activation_layout",
+            self.activation_layout,
+            (None, *get_args(ActivationLayout)),
+        )
         _require_member("precision", self.precision, PRECISIONS)
         _require_member("product", self.product, PRODUCTS)
         if self.product == "tf32" and (
@@ -143,7 +147,9 @@ class LinearSpec(KernelSpec):
     """
 
     op: ClassVar[str] = "linear"
-    layout: ActivationLayout | None = field(default=CANONICAL_LAYOUT, kw_only=True)
+    activation_layout: ActivationLayout | None = field(
+        default=CANONICAL_LAYOUT, kw_only=True
+    )
 
     irreps_in: str = "0e"
     irreps_out: str = "0e"
@@ -212,7 +218,9 @@ class ChannelwiseTPConvSpec(KernelSpec):
     """
 
     op: ClassVar[str] = "channelwise_tp_conv"
-    layout: ActivationLayout | None = field(default=CANONICAL_LAYOUT, kw_only=True)
+    activation_layout: ActivationLayout | None = field(
+        default=CANONICAL_LAYOUT, kw_only=True
+    )
 
     irreps_node: str = "0e"
     irreps_edge: str = "0e"
@@ -280,7 +288,9 @@ class SymmetricContractionSpec(KernelSpec):
     """
 
     op: ClassVar[str] = "symmetric_contraction"
-    layout: ActivationLayout | None = field(default=CANONICAL_LAYOUT, kw_only=True)
+    activation_layout: ActivationLayout | None = field(
+        default=CANONICAL_LAYOUT, kw_only=True
+    )
 
     irreps_in: str = "0e"
     irreps_out: str = "0e"
@@ -345,7 +355,9 @@ class FullyConnectedTPSpec(KernelSpec):
     """
 
     op: ClassVar[str] = "fully_connected_tp"
-    layout: ActivationLayout | None = field(default=CANONICAL_LAYOUT, kw_only=True)
+    activation_layout: ActivationLayout | None = field(
+        default=CANONICAL_LAYOUT, kw_only=True
+    )
 
     irreps_in1: str = "0e"
     irreps_in2: str = "0e"

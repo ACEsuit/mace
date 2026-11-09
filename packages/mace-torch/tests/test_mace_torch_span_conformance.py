@@ -26,7 +26,7 @@ def test_the_reference_span_passes_the_public_suite(backend, dtype, layout):
         precision="float64" if dtype == torch.float64 else "float32",
         training=True,
         compile_spans=True,
-        layout=layout,
+        activation_layout=layout,
     )
     assert len(results) == 8
     for result in results:

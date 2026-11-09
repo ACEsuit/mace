@@ -29,7 +29,7 @@ STATISTICS = DatasetStatistics(
     atomic_energies={1: -13.6, 8: -2041.5},
     avg_num_neighbors=1.75,
     mean=0.125,
-    std=0.875,
+    normalization_scale=0.875,
     atomic_numbers=[1, 8],
     r_max=5.0,
 )

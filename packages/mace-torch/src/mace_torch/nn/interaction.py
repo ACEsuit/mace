@@ -105,7 +105,7 @@ def _ask_for_span(
             report_decline("a member has no complete kernel_spec")
         return None
     members = tuple(
-        replace(member, layout=layout_of(backend).name) for member in members
+        replace(member, activation_layout=layout_of(backend).name) for member in members
     )
     span = backend.make_interaction_layer(members)
     if span is not None:

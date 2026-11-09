@@ -78,7 +78,7 @@ def model(seed=0, embedding_readout=False):
         z_table=AtomicNumberTable([1, 8]),
         heads=("a",),
         e0s=ResolvedE0s({"a": {1: -13.6, 8: -2040.0}}),
-        statistics=DatasetStatistics(avg_num_neighbors=2.0, std=1.0),
+        statistics=DatasetStatistics(avg_num_neighbors=2.0, normalization_scale=1.0),
     )
     return engine, config
 

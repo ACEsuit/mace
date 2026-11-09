@@ -17,7 +17,6 @@ from ase import units
 from mace_core.data.configuration import Configuration
 from mace_core.neighbors import NeighborListConfig
 
-from mace_torch.backends.precision import interface_dtype
 from mace_torch.data.inputs import graph_inputs_of
 from mace_torch.deploy.loader import DeployError, load_deployed
 from mace_torch.graph import build_batch
@@ -59,7 +58,7 @@ class OpenMMEvaluator:
         self.atomic_numbers = numbers.copy()
         self.atomic_numbers.setflags(write=False)
         self.device = torch.device(device)
-        self.dtype = interface_dtype(self.deployed.engine)
+        self.dtype = self.deployed.dtype
         self.head = self.deployed.select_head(head)
         self.periodic = bool(periodic)
         self.inputs = dict(inputs or {})

@@ -110,7 +110,7 @@ class OeqBackend:
             ops=frozenset({"channelwise_tp_conv"}),
             devices=frozenset({"cuda"}),
             dtypes=frozenset({"float64", "float32"}),
-            layouts=frozenset({"mul_ir"}),
+            weight_layouts=frozenset({"mul_ir"}),
             bases=frozenset({"reduced"}),
             supports_double_backward=True,
         )

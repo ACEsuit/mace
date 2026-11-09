@@ -74,8 +74,8 @@ class CompositeBackend:
         self._primary_capabilities: BackendCapabilities = primary.capabilities()
         self.decisions: list[BuildDecision] = []
         self._span_requests = 0
-        native = self._primary_capabilities.native_layout
-        self.layout = (
+        native = self._primary_capabilities.native_activation_layout
+        self.activation_layout = (
             Layout(native)
             if native in fallback.capabilities().activation_layouts
             else CANONICAL
@@ -94,9 +94,9 @@ class CompositeBackend:
             devices=fallback.devices,
             dtypes=fallback.dtypes,
             max_lmax=fallback.max_lmax,
-            layouts=fallback.layouts,
-            activation_layouts=frozenset({self.layout.name}),
-            native_layout=self.layout.name,
+            weight_layouts=fallback.weight_layouts,
+            activation_layouts=frozenset({self.activation_layout.name}),
+            native_activation_layout=self.activation_layout.name,
             products=primary.products | fallback.products,
             bases=fallback.bases,
             supports_double_backward=primary.supports_double_backward
@@ -106,7 +106,9 @@ class CompositeBackend:
         )
 
     def _build(self, op: str, kernel_spec: Any) -> Any:
-        kernel_spec = replace(kernel_spec, layout=self.layout.name)
+        kernel_spec = replace(
+            kernel_spec, activation_layout=self.activation_layout.name
+        )
         capabilities = self._primary_capabilities
         effective = (
             self.primary.op_spec(kernel_spec)
@@ -165,7 +167,8 @@ class CompositeBackend:
     def make_interaction_layer(self, kernel_specs: tuple[Any, ...]) -> Any | None:
         """One layout for the span; precision is stamped by PrecisionBackend."""
         members = tuple(
-            replace(member, layout=self.layout.name) for member in kernel_specs
+            replace(member, activation_layout=self.activation_layout.name)
+            for member in kernel_specs
         )
         if isinstance(self.primary, PrecisionBackend):
             members = self.primary.span_specs(members)
@@ -214,7 +217,8 @@ class CompositeBackend:
                 reasons.setdefault(decision.op, set()).add(decision.reason)
         lines = [
             f"backend {self.primary.name}, with {self.fallback.name} for the ops "
-            f"it does not build. Every op uses {self.layout.name} activations"
+            f"it does not build. Every op uses {self.activation_layout.name} "
+            "activations"
         ]
         for op in sorted({d.op for d in ops}):
             built = ", ".join(
@@ -265,7 +269,7 @@ def resolve_backend(
 
     if (
         isinstance(backend, ReferenceBackend)
-        and backend.capabilities().native_layout == CANONICAL_LAYOUT
+        and backend.capabilities().native_activation_layout == CANONICAL_LAYOUT
     ):
         return at_precision(backend)
     return CompositeBackend(at_precision(backend), at_precision(ReferenceBackend()))

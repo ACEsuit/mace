@@ -87,7 +87,6 @@ from mace_core.observables import ObservableCatalogue, ObservableSpec
 from mace_core.outputs import FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
 
-from mace_torch.backends.precision import interface_dtype
 from mace_torch.calculators.padding import (
     output_rows,
     requested_padding,
@@ -726,7 +725,7 @@ class MACECalculator(Calculator):
             properties=properties,
             head=self.head,
         )
-        dtype = interface_dtype(self.models[0].engine)
+        dtype = self.models[0].dtype
         graph = build_batch(
             [configuration],
             cutoff=self.r_max,

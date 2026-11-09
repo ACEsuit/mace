@@ -91,7 +91,6 @@ class _DielectricSurface:
 
 def _torch_checks(entry, reference, records, device, results, hardware):
     import torch
-    from mace_torch.backends.precision import interface_dtype
     from mace_torch.calculators import foundations
 
     from tests.golden import foundation_artifacts
@@ -129,7 +128,7 @@ def _torch_checks(entry, reference, records, device, results, hardware):
         results.append(check)
         calculator = loader(reference, device=device, head=head, **options)
         loaded = calculator.models[0]
-        actual_dtype = interface_dtype(loaded.engine)
+        actual_dtype = loaded.dtype
         check["interface_dtype"] = str(actual_dtype).removeprefix("torch.")
         if actual_dtype != getattr(torch, dtype):
             raise ValueError(

@@ -344,7 +344,7 @@ def read_legacy_statistics(path: str | Path) -> DatasetStatistics:
             atomic_energies={int(z): float(e) for z, e in dict(energies).items()},
             avg_num_neighbors=float(payload["avg_num_neighbors"]),
             mean=float(payload["mean"]),
-            std=float(payload["std"]),
+            normalization_scale=float(payload["std"]),
             atomic_numbers=sorted(int(z) for z in numbers),
             r_max=float(payload["r_max"]),
         )

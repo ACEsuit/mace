@@ -152,7 +152,7 @@ def test_a_model_on_it_is_the_reference_model_and_back():
 
 
 def test_its_ops_are_the_ones_the_model_is_built_with(caplog):
-    caplog.set_level("INFO", logger="mace_torch.train.model_stage")
+    caplog.set_level("INFO", logger="mace_torch.models.build")
     engine("example")
     for op in (
         "linear",

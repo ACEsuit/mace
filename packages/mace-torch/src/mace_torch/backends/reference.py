@@ -119,7 +119,7 @@ def _linear_plan(kernel_spec: LinearSpec):
         for out_slice, out_ir in target_irreps.slices():
             if out_ir.degree == 0 and out_ir.parity == 1:
                 bias_rows.append(out_slice.start)
-    layout = Layout(kernel_spec.layout or "mul_ir")
+    layout = Layout(kernel_spec.activation_layout or "mul_ir")
     input_positions = layout.positions(kernel_spec.irreps_in)
     output_positions = layout.positions(kernel_spec.irreps_out)
     return (
@@ -309,7 +309,7 @@ class ReferenceSymmetricContraction(nn.Module):
         self.orders = kernel_spec.correlation
         self.targets = [str(ir) for _, ir in Irreps.parse(kernel_spec.irreps_out)]
         self.num_features = kernel_spec.num_features
-        self.layout = Layout(kernel_spec.layout or "mul_ir")
+        self.layout = Layout(kernel_spec.activation_layout or "mul_ir")
         self.in_terms = terms(kernel_spec.irreps_in)
         self.out_terms = terms(kernel_spec.irreps_out)
         weights, bases = [], []
@@ -508,7 +508,7 @@ class ReferenceChannelwiseTPConv(nn.Module):
         self.kernel_spec = kernel_spec
         dtype = TORCH_DTYPES[kernel_spec.precision]
         coefficients = _coupling_coefficients(kernel_spec)
-        self.layout = Layout(kernel_spec.layout or "mul_ir")
+        self.layout = Layout(kernel_spec.activation_layout or "mul_ir")
         if not self.layout.is_canonical:
             coefficients = coefficients[
                 ..., np.argsort(self.layout.positions(kernel_spec.irreps_edge))
@@ -592,7 +592,7 @@ class ReferenceFullyConnectedTP(nn.Module):
                 irreps_in=kernel_spec.irreps_in1,
                 irreps_out=kernel_spec.irreps_out,
                 precision=kernel_spec.precision,
-                layout=kernel_spec.layout,
+                activation_layout=kernel_spec.activation_layout,
             )
         )
         self.num_scalars = second.dimension
@@ -997,7 +997,7 @@ class ReferenceBackend:
             devices=frozenset({"cpu", "cuda"}),
             dtypes=frozenset({"float64", "float32"}),
             max_lmax=0,
-            layouts=frozenset({"mul_ir"}),
+            weight_layouts=frozenset({"mul_ir"}),
             activation_layouts=frozenset({"mul_ir", "ir_mul"}),
             bases=frozenset({"reduced", "full"}),
             supports_double_backward=True,

@@ -71,6 +71,9 @@ def build_model(
 ) -> tuple[DerivativeEngine, RequestedOutputs]:
     """The model a configuration describes, over an element table and heads.
 
+    ``initialize`` only draws fresh weights. Training-specific capability
+    checks belong to the training stage.
+
     Training supplies measured statistics. Checkpoint loading supplies the
     recorded element and head tables, then restores the canonical buffers.
 
@@ -168,7 +171,6 @@ def build_model(
                 statistics=statistics,
                 precision=precision,
                 supports_float64=supports_float64,
-                trains_derivatives=initialize and bool(requested.derivatives),
             )
         else:
             model_options: dict[str, Any] = {}
@@ -182,7 +184,6 @@ def build_model(
                         widest(precision.model, energy_readout.accumulate),
                     ),
                     solver=config.electrostatics.solver,
-                    trains_derivatives=initialize and bool(requested.derivatives),
                 )
             model = cast(type[MACEModel], model_type)(
                 backend,
@@ -265,7 +266,6 @@ def _polar_model(
     statistics: DatasetStatistics,
     precision: PrecisionConfig,
     supports_float64: bool = True,
-    trains_derivatives: bool,
 ) -> PolarModel:
     """The charge-aware model, with its long-range ops from the named solver.
 
@@ -281,7 +281,6 @@ def _polar_model(
         ],
         energy_readout=energy_readout,
         electrostatics=config.electrostatics,
-        trains_derivatives=trains_derivatives,
         avg_num_neighbors=statistics.avg_num_neighbors,
         radial_precision=precision.for_device(supports_float64)[0]
         .policy_for(RadialBasisSpec())
@@ -426,11 +425,7 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
 def _check_electrostatics(config: ResolvedConfig) -> None:
     """The long-range section and the model have to agree.
 
-    The solver is resolved first, so one that is not registered or did not
-    import is named as such rather than hidden behind a mismatch.
-
     Raises:
-        SolverNotAvailableError: If the solver cannot be delivered.
         ModelBuildError: If the section is enabled for a model that carries no
             long-range term, which would train one without it, or the polar
             model is asked for with the section off, which would leave its
@@ -438,10 +433,6 @@ def _check_electrostatics(config: ResolvedConfig) -> None:
     """
     settings = config.electrostatics
     polar = model_family(config.model.model).electrostatics
-    if settings.enabled:
-        from mace_core.electrostatics import get_solver
-
-        get_solver(settings.solver)
     if settings.enabled and not polar:
         raise ModelBuildError(
             f"electrostatics.enabled is set and model.model is "
@@ -469,6 +460,6 @@ def _scale_shift(
         config.model.scaling,
         # Keep a constant target trainable, as the per-head recipes do. The
         # measured spread remains zero in the dataset statistics.
-        (statistics.std or 1.0,) * num_heads,
+        (statistics.normalization_scale or 1.0,) * num_heads,
         (statistics.mean,) * num_heads,
     )

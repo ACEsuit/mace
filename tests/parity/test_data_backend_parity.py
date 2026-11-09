@@ -160,7 +160,7 @@ def test_the_prepared_statistics_parse_to_what_the_frozen_tree_evaluates(prepare
     assert ours.atomic_numbers == numbers
     assert ours.avg_num_neighbors == payload["avg_num_neighbors"]
     assert ours.mean == payload["mean"]
-    assert ours.std == payload["std"]
+    assert ours.normalization_scale == payload["std"]
     assert ours.r_max == payload["r_max"]
 
 

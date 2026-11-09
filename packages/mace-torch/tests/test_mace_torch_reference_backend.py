@@ -61,7 +61,7 @@ def test_it_declares_every_op_and_a_second_derivative(backend):
     assert "symmetric_contraction" in capabilities.ops
     assert "spherical_harmonics" in capabilities.ops
     assert capabilities.supports_double_backward
-    assert "mul_ir" in capabilities.layouts
+    assert "mul_ir" in capabilities.weight_layouts
 
 
 def test_it_refuses_a_precision_it_did_not_declare(backend):

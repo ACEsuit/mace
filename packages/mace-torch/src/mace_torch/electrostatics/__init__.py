@@ -21,6 +21,7 @@ from mace_torch.electrostatics.solver import (
     long_range_geometry,
     long_range_plan,
     reciprocal_cell_and_volume,
+    resolve_solver,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "long_range_geometry",
     "long_range_plan",
     "reciprocal_cell_and_volume",
+    "resolve_solver",
 ]

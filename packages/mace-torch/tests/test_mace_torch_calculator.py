@@ -620,3 +620,20 @@ def test_the_calculator_collates_once_before_padding(checkpoints, monkeypatch, p
     )
     evaluate(calc, water())
     assert len(calls) == 1
+
+
+@fp64_only
+def test_all_ops_can_be_wider_than_the_deployment_interface(checkpoints):
+    from mace_core.config.precision import OP_KINDS, PrecisionConfig, PrecisionPolicy
+    from mace_torch.deploy.loader import load_deployed
+
+    policy = PrecisionConfig(
+        model="float32",
+        ops={kind: PrecisionPolicy.uniform("float64") for kind in OP_KINDS},
+    )
+    deployed = load_deployed(checkpoints["a"], precision=policy)
+    assert deployed.dtype == torch.float32
+    calculator = MACECalculator(models=deployed)
+    hessian = one(calculator.get_hessian(water()))
+    assert hessian.shape == (9, 3, 3)
+    assert np.isfinite(hessian).all()

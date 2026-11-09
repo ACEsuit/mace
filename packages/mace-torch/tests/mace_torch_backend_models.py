@@ -53,7 +53,7 @@ def engine(
         z_table=AtomicNumberTable([6, 14]),
         heads=heads,
         e0s=ResolvedE0s({name: {6: -1.0, 14: -2.0} for name in heads}),
-        statistics=DatasetStatistics(avg_num_neighbors=8.0, std=1.0),
+        statistics=DatasetStatistics(avg_num_neighbors=8.0, normalization_scale=1.0),
     )
     return built.to(device)
 

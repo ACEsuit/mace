@@ -68,7 +68,9 @@ def converted(legacy, backend="reference"):
         z_table=AtomicNumberTable([1, 8]),
         heads=("default",),
         e0s=ResolvedE0s({"default": {1: -0.5, 8: 1.0}}),
-        statistics=DatasetStatistics(avg_num_neighbors=3.0, mean=0.0, std=1.0),
+        statistics=DatasetStatistics(
+            avg_num_neighbors=3.0, mean=0.0, normalization_scale=1.0
+        ),
         initialize=False,
     )
     transfer_dipole_weights(legacy, engine.model, "energy_dipole")

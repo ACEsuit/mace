@@ -54,6 +54,7 @@ __all__ = [
     "long_range_geometry",
     "long_range_plan",
     "reciprocal_cell_and_volume",
+    "resolve_solver",
 ]
 
 #: The reference's evaluation for each profile. A bulk crystal is a full Ewald
@@ -517,13 +518,29 @@ class ReferenceSolver:
         return NotImplemented
 
 
+def resolve_solver(
+    solver_spec: ElectrostaticsSpec,
+    *,
+    solver: str = "reference",
+    trains_derivatives: bool = False,
+) -> ElectrostaticsSolver:
+    """Resolve and validate one solver for all operations in a model build."""
+    backend: ElectrostaticsSolver = get_solver(solver)
+    backend.capabilities.require(solver_spec, solver)
+    if trains_derivatives:
+        backend.capabilities.require_double_backward(
+            solver, "training on forces or stress"
+        )
+    return backend
+
+
 def build_long_range(
     solver_spec: ElectrostaticsSpec,
     *,
     solver: str = "reference",
     trains_derivatives: bool = False,
 ) -> nn.Module:
-    """The long-range op for a model, resolved once.
+    """Build a standalone long-range energy op.
 
     Args:
         solver_spec: The solve.
@@ -538,12 +555,9 @@ def build_long_range(
             differentiated twice and the model trains on derivatives. Nothing
             is substituted for it.
     """
-    backend: ElectrostaticsSolver = get_solver(solver)
-    backend.capabilities.require(solver_spec, solver)
-    if trains_derivatives:
-        backend.capabilities.require_double_backward(
-            solver, "training on forces or stress"
-        )
+    backend = resolve_solver(
+        solver_spec, solver=solver, trains_derivatives=trains_derivatives
+    )
     return backend.long_range_energy(solver_spec)
 
 
@@ -553,11 +567,10 @@ def build_long_range_features(
     solver: str = "reference",
     trains_derivatives: bool = False,
 ) -> nn.Module:
-    """The potential projection for a model, resolved once.
+    """Build a standalone potential projection.
 
-    The same rules as :func:`build_long_range`, and the same solver: a model
-    reads its features and its energy from one solver, since two would be two
-    conventions for the same density.
+    Models that need several operations resolve one solver with
+    :func:`resolve_solver` and use its factories directly.
 
     Raises:
         SolverNotAvailableError: If no solver has that name, or it did not
@@ -566,12 +579,9 @@ def build_long_range_features(
             projection op, or cannot be differentiated twice and the model
             trains on derivatives.
     """
-    backend: ElectrostaticsSolver = get_solver(solver)
-    backend.capabilities.require(solver_spec, solver)
-    if trains_derivatives:
-        backend.capabilities.require_double_backward(
-            solver, "training on forces or stress"
-        )
+    backend = resolve_solver(
+        solver_spec, solver=solver, trains_derivatives=trains_derivatives
+    )
     return backend.long_range_features(solver_spec)
 
 
@@ -583,7 +593,6 @@ def build_scf_solve(
     ``None`` is the model's cue to run the loop itself, one long-range
     evaluation per iteration.
     """
-    backend: ElectrostaticsSolver = get_solver(solver)
-    backend.capabilities.require(solver_spec, solver)
+    backend = resolve_solver(solver_spec, solver=solver)
     span = backend.make_scf_solve(solver_spec)
     return None if span is NotImplemented else span

@@ -116,7 +116,6 @@ def test_per_operation_precision_is_refused_instead_of_discarded(tmp_path, dtype
             "linear": {
                 "compute_dtype": "float32",
                 "accumulate_dtype": "float32",
-                "param_dtype": "float32",
             }
         }
 

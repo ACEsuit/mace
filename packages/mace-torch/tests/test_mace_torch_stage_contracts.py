@@ -28,7 +28,7 @@ STATISTICS = DatasetStatistics(
     atomic_energies={1: -13.6, 8: -2040.0},
     avg_num_neighbors=6.0,
     mean=-0.5,
-    std=0.25,
+    normalization_scale=0.25,
     atomic_numbers=[1, 8],
     r_max=5.0,
 )

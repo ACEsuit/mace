@@ -35,7 +35,6 @@ __all__ = [
     "cast_at_boundary",
     "constructed_in",
     "degradation_report",
-    "interface_dtype",
 ]
 
 _TORCH_DTYPE = {
@@ -125,7 +124,10 @@ class PrecisionBackend:
         policy = self.config.policy_for(kernel_specs)
         return tuple(
             self.op_spec(
-                dataclasses.replace(member, layout=member.layout or CANONICAL_LAYOUT),
+                dataclasses.replace(
+                    member,
+                    activation_layout=member.activation_layout or CANONICAL_LAYOUT,
+                ),
                 policy,
             )
             for member in kernel_specs
@@ -135,13 +137,6 @@ class PrecisionBackend:
         """The effective specification, including recorded precision degradations."""
         if policy is None:
             policy = self.config.policy_for(kernel_spec)
-        if policy.param_dtype != policy.compute_dtype:
-            raise ValueError(
-                f"the {type(kernel_spec).__name__} policy holds its weights in "
-                f"{policy.param_dtype} and computes in {policy.compute_dtype}. "
-                f"The {self.name!r} backend holds an op's weights in the dtype "
-                f"it computes in; set param_dtype equal to compute_dtype."
-            )
         capabilities = self.capabilities()
         compute = policy.compute_dtype
         accumulate = None
@@ -214,23 +209,6 @@ def boundary_precision(op: nn.Module) -> tuple[Precision, Precision] | None:
     if not inputs:
         return None
     return inputs[0].precision, output[0].precision
-
-
-def interface_dtype(model: nn.Module) -> torch.dtype:
-    """The dtype tensors cross ``model``'s op boundaries in.
-
-    That of its parameters outside every op that casts at its boundary, since
-    an op held wider keeps its own weights in its own dtype.
-    """
-    wider = [
-        path for path, module in model.named_modules() if boundary_precision(module)
-    ]
-    for name, parameter in model.named_parameters():
-        if parameter.is_floating_point() and not any(
-            name.startswith(f"{path}.") for path in wider
-        ):
-            return parameter.dtype
-    raise ValueError("the model has no floating parameter outside its ops")
 
 
 class _CastInputs:

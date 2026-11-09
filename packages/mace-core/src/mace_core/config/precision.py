@@ -2,8 +2,9 @@
 
 **Precision is per dispatched op, never global.** A :class:`PrecisionConfig`
 answers, for each operation specification, a :class:`PrecisionPolicy`: what the op
-computes in, the floor its reductions accumulate in, and what its parameters
-are held in. The policy is stamped on the kernel specification when the model is built,
+computes in and the floor its reductions accumulate in. Parameters use the
+effective compute dtype. The policy is stamped on the kernel specification when
+the model is built,
 so a backend reads it from there and nothing is decided in ``forward``. A
 global autocast would be wrong for a model that trains in float64, and a fused
 span has one math dtype, so the unit has to be the dispatch.
@@ -62,17 +63,15 @@ class PrecisionPolicy:
         accumulate_dtype: The floor its reductions accumulate in. At least as
             wide as ``compute_dtype``; a backend without a separate
             accumulator meets it by computing in it.
-        param_dtype: What the op's weights are held in.
         product: IEEE or TF32 products, independently of the storage dtype.
     """
 
     compute_dtype: Precision
     accumulate_dtype: Precision
-    param_dtype: Precision
     product: Product = "ieee"
 
     def __post_init__(self) -> None:
-        for name in ("compute_dtype", "accumulate_dtype", "param_dtype"):
+        for name in ("compute_dtype", "accumulate_dtype"):
             if getattr(self, name) not in PRECISIONS:
                 raise ValueError(f"unknown {name} {getattr(self, name)!r}")
         if self.product not in PRODUCTS:
@@ -89,7 +88,7 @@ class PrecisionPolicy:
     @classmethod
     def uniform(cls, precision: Precision) -> PrecisionPolicy:
         """Everything in one precision."""
-        return cls(precision, precision, precision)
+        return cls(precision, precision)
 
 
 class PrecisionConfig(ConfigSection):
@@ -154,7 +153,6 @@ class PrecisionConfig(ConfigSection):
             return PrecisionPolicy(
                 compute_dtype=widest(*(p.compute_dtype for p in policies)),
                 accumulate_dtype=widest(*(p.accumulate_dtype for p in policies)),
-                param_dtype=widest(*(p.param_dtype for p in policies)),
                 product="tf32"
                 if all(p.product == "tf32" for p in policies)
                 else "ieee",
@@ -192,7 +190,6 @@ class PrecisionConfig(ConfigSection):
             kind: PrecisionPolicy(
                 lower(policy.compute_dtype, f"{kind} compute"),
                 lower(policy.accumulate_dtype, f"{kind} accumulate"),
-                lower(policy.param_dtype, f"{kind} parameters"),
                 policy.product,
             )
             for kind, policy in self.ops.items()
@@ -213,7 +210,7 @@ class PrecisionConfig(ConfigSection):
     @classmethod
     def tf32(cls) -> PrecisionConfig:
         """Float32 with TF32 products in linear maps and fully connected skips."""
-        policy = PrecisionPolicy("float32", "float32", "float32", product="tf32")
+        policy = PrecisionPolicy("float32", "float32", product="tf32")
         return cls(
             model="float32",
             accumulate="float64",
@@ -231,9 +228,7 @@ class PrecisionConfig(ConfigSection):
             accumulate="float64",
             ops={
                 "radial_basis": PrecisionPolicy.uniform("float64"),
-                "symmetric_contraction": PrecisionPolicy(
-                    "float32", "float64", "float32"
-                ),
+                "symmetric_contraction": PrecisionPolicy("float32", "float64"),
             },
         )
 

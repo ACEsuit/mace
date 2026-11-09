@@ -201,4 +201,4 @@ CANONICAL = Layout("mul_ir")
 
 def layout_of(backend: Any) -> Layout:
     """The layout resolved by the chain builder, canonical for standalone ops."""
-    return getattr(backend, "layout", CANONICAL)
+    return getattr(backend, "activation_layout", CANONICAL)

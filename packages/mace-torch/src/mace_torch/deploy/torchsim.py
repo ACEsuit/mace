@@ -20,7 +20,6 @@ from mace_core.neighbors import NeighborListConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 from torch_sim.models.interface import ModelInterface  # ty: ignore[unresolved-import]
 
-from mace_torch.backends.precision import interface_dtype
 from mace_torch.deploy.loader import DeployError, load_deployed
 from mace_torch.graph import build_batch, pad_batch, unpad_outputs
 from mace_torch.neighbors import resolve_neighbor_provider
@@ -63,7 +62,7 @@ class MaceTorchSimModel(ModelInterface):
         if "energy" not in {spec.name for spec in self.deployed.outputs.observables}:
             raise DeployError("TorchSim requires a model with an energy observable")
         self._device = next(self.deployed.engine.parameters()).device
-        self._dtype = interface_dtype(self.deployed.engine)
+        self._dtype = self.deployed.dtype
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.head = self.deployed.select_head(head)

@@ -319,3 +319,66 @@ def test_a_float32_polar_checkpoint_with_a_mismatched_solve_is_refused(tmp_path)
     path.write_text(json.dumps(document))
     with pytest.raises(CheckpointError, match="precision"):
         load_deployed(path)
+
+
+@fp64_only
+def test_one_solver_instance_builds_the_ops_and_supplies_metadata(
+    tmp_path, monkeypatch
+):
+    instances = []
+
+    class CountedSolver(ReferenceSolver):
+        def __init__(self):
+            super().__init__()
+            instances.append(self)
+
+    monkeypatch.setattr(
+        registry_module,
+        "entry_points",
+        lambda **kwargs: [_EntryPoint("reference", CountedSolver)],
+    )
+    _, model = built(polar_configuration(tmp_path))
+    assert len(instances) == 1
+    assert (
+        model.metadata.electrostatics.bit_parity == instances[0].capabilities.bit_parity
+    )
+    model.engine.model.solver_record()
+    assert len(instances) == 1
+
+
+@fp64_only
+@pytest.mark.parametrize("initialize", [False, True])
+def test_solver_training_validation_is_independent_of_weight_initialization(
+    tmp_path, monkeypatch, initialize
+):
+    from dataclasses import replace
+
+    from mace_core.electrostatics import UnsupportedSolveError
+    from mace_torch.models.build import build_model
+
+    class InferenceSolver(ReferenceSolver):
+        capabilities = replace(
+            ReferenceSolver.capabilities, supports_double_backward=False
+        )
+
+    monkeypatch.setattr(
+        registry_module,
+        "entry_points",
+        lambda **kwargs: [_EntryPoint("reference", InferenceSolver)],
+    )
+    config = polar_configuration(tmp_path)
+    data = run_data_stage(config, DEFAULT_CATALOGUE)
+    # Requesting forces for inference needs one derivative, not training support.
+    engine, outputs = build_model(
+        config,
+        DEFAULT_CATALOGUE,
+        z_table=data.z_table,
+        heads=data.heads,
+        e0s=data.e0s,
+        statistics=data.statistics,
+        initialize=initialize,
+    )
+    assert outputs.derivatives
+    assert isinstance(engine.model, PolarModel)
+    with pytest.raises(UnsupportedSolveError, match=r"twice|double|derivative"):
+        run_model_stage(config, data, DEFAULT_CATALOGUE, initialize=initialize)

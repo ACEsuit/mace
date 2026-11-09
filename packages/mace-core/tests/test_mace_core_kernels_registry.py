@@ -246,7 +246,9 @@ def test_an_op_the_backend_did_not_declare_is_refused():
 def test_a_layout_the_backend_did_not_declare_is_refused_for_ops_with_irreps():
     """An op with irreps reads and writes the canonical layout. One without
     irreps has no layout, so the field does not apply to it."""
-    capabilities = BackendCapabilities(ops=EVERY_OP, layouts=frozenset({"ir_mul"}))
+    capabilities = BackendCapabilities(
+        ops=EVERY_OP, weight_layouts=frozenset({"ir_mul"})
+    )
     assert not capabilities.supports(LinearSpec())
     assert not capabilities.supports(SymmetricContractionSpec())
     assert capabilities.supports(SegmentReduceSpec())
@@ -257,14 +259,16 @@ def test_activation_layouts_are_separate_from_canonical_weights():
     capabilities = BackendCapabilities(
         ops=EVERY_OP,
         activation_layouts=frozenset({"mul_ir", "ir_mul"}),
-        native_layout="ir_mul",
+        native_activation_layout="ir_mul",
     )
-    assert capabilities.layouts == frozenset({"mul_ir"})
-    assert capabilities.supports(LinearSpec(layout="ir_mul"))
-    assert not BackendCapabilities(ops=EVERY_OP).supports(LinearSpec(layout="ir_mul"))
-    assert capabilities.supports(SegmentReduceSpec(layout=None))
-    with pytest.raises(ValueError, match="native_layout"):
-        BackendCapabilities(native_layout="ir_mul")
+    assert capabilities.weight_layouts == frozenset({"mul_ir"})
+    assert capabilities.supports(LinearSpec(activation_layout="ir_mul"))
+    assert not BackendCapabilities(ops=EVERY_OP).supports(
+        LinearSpec(activation_layout="ir_mul")
+    )
+    assert capabilities.supports(SegmentReduceSpec(activation_layout=None))
+    with pytest.raises(ValueError, match="native_activation_layout"):
+        BackendCapabilities(native_activation_layout="ir_mul")
 
 
 def test_an_lmax_beyond_the_declared_one_is_refused():

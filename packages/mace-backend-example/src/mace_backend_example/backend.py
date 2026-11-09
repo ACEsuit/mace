@@ -527,7 +527,7 @@ class ExampleBackend:
             ops=DISPATCHED_OPS,
             devices=frozenset({"cpu", "cuda"}),
             dtypes=frozenset({"float64", "float32"}),
-            layouts=frozenset({"mul_ir"}),
+            weight_layouts=frozenset({"mul_ir"}),
             bases=frozenset({"reduced", "full"}),
             supports_double_backward=True,
         )

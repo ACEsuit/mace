@@ -45,7 +45,7 @@ def build(heads=("default",)):
         z_table=AtomicNumberTable([1]),
         heads=heads,
         e0s=ResolvedE0s({name: {1: 0.0} for name in heads}),
-        statistics=DatasetStatistics(avg_num_neighbors=1.0, std=1.0),
+        statistics=DatasetStatistics(avg_num_neighbors=1.0, normalization_scale=1.0),
     )
     return engine, config
 

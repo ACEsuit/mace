@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from mace_core.config.model import ScalingMethod
 from mace_core.data.configuration import Configuration
 from mace_core.data.keys import KeySpecification
 
@@ -47,10 +48,6 @@ class DataBackendError(RuntimeError):
 class DatasetStatistics:
     """The numbers a model needs from its data before it can be built.
 
-    The field set is a compatibility surface rather than a fresh design: it is
-    exactly what the frozen tree reads back out of its ``statistics.json``
-    (``mace/cli/run_train.py:319-334``).
-
     Attributes:
         atomic_energies: Isolated-atom reference energies, ``{Z: eV}``. Passed
             in already resolved, so the interaction-energy mean and standard
@@ -58,8 +55,11 @@ class DatasetStatistics:
             model buffer, whatever their origin.
         avg_num_neighbors: Mean edge count per atom at ``r_max``.
         mean: Mean interaction energy per atom, in eV.
-        std: Its standard deviation, or the force RMS when that is what the
-            scaling asks for.
+        normalization_scale: Scale selected by ``normalization_method``: eV
+            per atom for energy spread, eV/Angstrom for force RMS, e*Angstrom
+            for dipole RMS, or dimensionless one for no scaling.
+        normalization_method: How the scale was computed; None when unknown
+            (for example, imported legacy statistics).
         atomic_numbers: Every element present, ascending.
         r_max: The cutoff the neighbour count was taken at, in Angstrom.
     """
@@ -67,7 +67,8 @@ class DatasetStatistics:
     atomic_energies: dict[int, float] = field(default_factory=dict)
     avg_num_neighbors: float = 0.0
     mean: float = 0.0
-    std: float = 1.0
+    normalization_scale: float = 1.0
+    normalization_method: ScalingMethod | None = None
     atomic_numbers: list[int] = field(default_factory=list)
     r_max: float = 0.0
 

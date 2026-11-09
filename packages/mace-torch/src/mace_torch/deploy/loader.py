@@ -19,6 +19,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+import torch
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.elements import AtomicNumberTable
@@ -80,6 +81,11 @@ class DeployedModel:
                 )
             head = self.manifest.head
         return choose_head(self.heads, head)
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """The configured dtype of graph inputs and operator interfaces."""
+        return getattr(torch, self.config.precision.model)
 
     @property
     def r_max(self) -> float:

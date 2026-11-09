@@ -15,9 +15,11 @@ split: each of them is a run that would otherwise finish and report a number.
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import math
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 
 from mace_core.config.data import DataConfig, DatasetSource, HeadDataConfig
 from mace_core.config.e0s import E0sTable
@@ -25,6 +27,7 @@ from mace_core.config.precision import DEFAULT_PRECISION, PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.data import (
     Configuration,
+    DatasetStatistics,
     InMemoryBackend,
     KeySpecification,
     compute_statistics,
@@ -241,7 +244,12 @@ def run_data_stage(
 
         path = config.data.statistics_file
         try:
-            statistics = read_legacy_statistics(path)
+            text = Path(path).read_text()
+            statistics = (
+                DatasetStatistics.from_json(text)
+                if "normalization_scale" in json.loads(text)
+                else read_legacy_statistics(path)
+            )
         except Exception as failure:
             raise DataStageError(f"data.statistics_file {path}: {failure}") from failure
         expected = dict(
@@ -255,7 +263,7 @@ def run_data_stage(
                     f"data.statistics_file {path}: {name} disagrees with the "
                     "resolved data/model; regenerate statistics using these inputs"
                 )
-        for name in ("mean", "std", "avg_num_neighbors"):
+        for name in ("mean", "normalization_scale", "avg_num_neighbors"):
             value = getattr(statistics, name)
             if not math.isfinite(value) or (name != "mean" and value < 0):
                 raise DataStageError(

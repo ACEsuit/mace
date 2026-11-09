@@ -142,7 +142,7 @@ def test_uneven_shard_statistics_match_the_frozen_whole_dataset(tmp_path, isolat
     )
     actual = json.loads((output / "statistics.json").read_text())
     np.testing.assert_allclose(
-        [actual["avg_num_neighbors"], actual["mean"], actual["std"]],
+        [actual["avg_num_neighbors"], actual["mean"], actual["normalization_scale"]],
         [neighbors, mean.item(), rms.item()],
         atol=FP64_CPU_REFERENCE.atol,
         rtol=FP64_CPU_REFERENCE.rtol,

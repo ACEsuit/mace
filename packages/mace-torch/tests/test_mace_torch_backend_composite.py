@@ -70,7 +70,7 @@ class PartialBackend:
 def test_the_reference_passes_its_own_conformance(dtype, layout):
     precision = "float64" if str(dtype).endswith("float64") else "float32"
     results = run_backend_conformance(
-        ReferenceBackend(), precision=precision, layout=layout
+        ReferenceBackend(), precision=precision, activation_layout=layout
     )
     assert all(result.built for result in results)
     checked = {check for result in results for check in result.checks}
@@ -86,7 +86,7 @@ def test_backend_reorder_is_block_diagonal(layout):
     independent, invertible blocks within the bound, and back exactly. The
     harness derives the map from the op; here it runs over the reference, and
     each accelerated backend's own suite runs it over that backend."""
-    results = run_backend_conformance(ReferenceBackend(), layout=layout)
+    results = run_backend_conformance(ReferenceBackend(), activation_layout=layout)
     weighted = {"linear", "symmetric_contraction", "fully_connected_tp"}
     assert all(
         "reorder" in result.checks
@@ -193,7 +193,7 @@ class NativePartialBackend(PartialBackend):
         return replace(
             super().capabilities(),
             activation_layouts=frozenset({"mul_ir", "ir_mul"}),
-            native_layout="ir_mul",
+            native_activation_layout="ir_mul",
         )
 
 
@@ -237,7 +237,7 @@ def test_native_chain_preserves_model_outputs_and_force_gradients(family):
             assert theirs.grad is not None
             assert_close(mine.grad, theirs.grad.detach(), name)
     assert backend.decisions and {
-        d.kernel_spec.layout for d in backend.decisions if d.layer is None
+        d.kernel_spec.activation_layout for d in backend.decisions if d.layer is None
     } == {"ir_mul"}
     if family == "energy":
         from mace_torch.nn.backbone import MACEBackbone

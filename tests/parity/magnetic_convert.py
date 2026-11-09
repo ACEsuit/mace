@@ -241,7 +241,7 @@ def write_magnetic_checkpoint(legacy, directory, train_file) -> Path:
         z_table=AtomicNumberTable(numbers),
         heads=("default",),
         e0s=ResolvedE0s(values),
-        statistics=DatasetStatistics(mean=shift[0], std=scale[0]),
+        statistics=DatasetStatistics(mean=shift[0], normalization_scale=scale[0]),
         initialize=False,
     )
     transfer_magnetic_weights(legacy, engine.get_submodule("model"))

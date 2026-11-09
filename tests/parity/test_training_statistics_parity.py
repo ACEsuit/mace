@@ -157,7 +157,7 @@ def test_rms_statistics_match_legacy(isolated, dtype, scaling, batch_size):
     actual = native_statistics(frames, scaling)
     tolerance = FP64_CPU_REFERENCE if dtype == torch.float64 else FP32
     close(actual.mean, np.asarray(expected_mean).item(), tolerance)
-    close(actual.std, expected_rms, tolerance)
+    close(actual.normalization_scale, expected_rms, tolerance)
     close(actual.avg_num_neighbors, compute_avg_num_neighbors(loader), tolerance)
 
 
@@ -181,12 +181,12 @@ def test_native_population_spread_and_zero_neighbor_atoms_are_explicit(isolated)
     # Residual energies per atom are 1, 3, 5, 7, 9; all molecular graphs
     # are complete, while the final atom has no edge.
     close(actual.mean, 5.0, CLOSED_FORM_FP64)
-    close(actual.std, np.sqrt(8.0), CLOSED_FORM_FP64)
+    close(actual.normalization_scale, np.sqrt(8.0), CLOSED_FORM_FP64)
     close(np.asarray(mean).item(), 5.0, FP64_CPU_REFERENCE)
     close(np.asarray(spread).item(), np.sqrt(10.0), FP64_CPU_REFERENCE)
     close(actual.avg_num_neighbors, 34 / 14, CLOSED_FORM_FP64)
     close(compute_avg_num_neighbors(loader), 34 / 13, FP64_CPU_REFERENCE)
-    assert actual.std != np.asarray(spread).item()
+    assert actual.normalization_scale != np.asarray(spread).item()
 
 
 @pytest.mark.parametrize("kind", ["literal", "json", "average", "isolated"])
@@ -246,7 +246,7 @@ def test_statistics_reach_model_buffers_and_survive_reload(
     tolerance = FP64_CPU_REFERENCE if dtype == torch.float64 else FP32
     close(
         head.scale.detach().numpy(),
-        np.array([1.0 if scaling == "none" else measured.std]),
+        np.array([1.0 if scaling == "none" else measured.normalization_scale]),
         tolerance,
     )
     close(
@@ -295,7 +295,7 @@ def test_zero_spread_keeps_the_model_trainable_like_legacy(isolated, tmp_path, s
     close(np.asarray(expected_scale).item(), 1.0, CLOSED_FORM_FP64)
     config = training_config(tmp_path, frames, scaling=scaling)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
-    assert data.statistics.std == 0.0
+    assert data.statistics.normalization_scale == 0.0
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
     close(
         built.engine.model.outputs.energy_readout.scale.detach().numpy(),

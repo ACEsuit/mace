@@ -43,7 +43,7 @@ def test_conditioned_and_density_spans_preserve_live_weights(
 ):
     class NativeSpanBackend(SpanBackend):
         def capabilities(self):
-            return replace(super().capabilities(), native_layout=layout)
+            return replace(super().capabilities(), native_activation_layout=layout)
 
     source = NativeSpanBackend()
     backend = CompositeBackend(source, ReferenceBackend())
@@ -197,7 +197,11 @@ def test_report_records_each_layer_and_layout():
     ]
     assert [d.layer for d in decisions] == [0, 1]
     assert all(d.backend == "test_span" and not d.reason for d in decisions)
-    assert all(member.layout == "mul_ir" for d in decisions for member in d.kernel_spec)
+    assert all(
+        member.activation_layout == "mul_ir"
+        for d in decisions
+        for member in d.kernel_spec
+    )
     assert "layer 0 span: test_span" in backend.report()
     assert "layer 1 span: test_span" in backend.report()
 

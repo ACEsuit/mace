@@ -51,7 +51,7 @@ def test_cueq_passes_the_conformance_harness(dtype, device, layout):
     the canonical one it also declares."""
     precision = "float64" if dtype == torch.float64 else "float32"
     results = run_backend_conformance(
-        CuEqBackend(), precision=precision, device=device, layout=layout
+        CuEqBackend(), precision=precision, device=device, activation_layout=layout
     )
     built = {result.op for result in results if result.built}
     assert built == {
@@ -210,7 +210,7 @@ def test_cueq_ops_compile_whole_and_replay_from_a_cuda_graph(dtype):
         device="cuda",
         compile_ops=True,
         cuda_graphs=True,
-        layout="mul_ir",
+        activation_layout="mul_ir",
     )
     for result in results:
         if result.built:
@@ -225,7 +225,7 @@ def test_a_wider_floor_is_cueqs_math_dtype_and_needs_no_cast(device):
     stays float32 with no cast at any op's boundary."""
     floor = PrecisionConfig(
         model="float32",
-        ops={"symmetric_contraction": PrecisionPolicy("float32", "float64", "float32")},
+        ops={"symmetric_contraction": PrecisionPolicy("float32", "float64")},
     )
     model = engine("cueq", device=device, precision=floor)
     math = {

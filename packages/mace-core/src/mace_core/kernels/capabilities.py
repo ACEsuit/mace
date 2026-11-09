@@ -50,11 +50,11 @@ class BackendCapabilities:
         max_lmax: The highest rotation order it can build, checked against
             every kernel specification's declared irreps. Zero means it declares no
             limit.
-        layouts: Which weight layouts it can consume. Every backend must accept
+        weight_layouts: Which weight layouts it can consume. Every backend must accept
             ``"mul_ir"``, since that is the canonical one and the only one a
             checkpoint is written in.
         activation_layouts: Layouts supported for input and output features.
-        native_layout: Preferred layout for the complete activation chain.
+        native_activation_layout: Preferred layout for the complete activation chain.
         products: Supported float32 matrix-product arithmetic.
         bases: Which Clebsch-Gordan bases it can consume.
         supports_double_backward: Whether its ops are differentiable twice.
@@ -75,11 +75,13 @@ class BackendCapabilities:
     devices: frozenset[str] = field(default_factory=lambda: frozenset({"cpu"}))
     dtypes: frozenset[str] = field(default_factory=lambda: frozenset({"float64"}))
     max_lmax: int = 0
-    layouts: frozenset[str] = field(default_factory=lambda: frozenset({"mul_ir"}))
+    weight_layouts: frozenset[str] = field(
+        default_factory=lambda: frozenset({"mul_ir"})
+    )
     activation_layouts: frozenset[ActivationLayout] = field(
         default_factory=lambda: frozenset({"mul_ir"}), kw_only=True
     )
-    native_layout: ActivationLayout = field(default="mul_ir", kw_only=True)
+    native_activation_layout: ActivationLayout = field(default="mul_ir", kw_only=True)
     products: frozenset[Product] = field(
         default_factory=lambda: frozenset({"ieee"}), kw_only=True
     )
@@ -102,8 +104,10 @@ class BackendCapabilities:
         object.__setattr__(self, "products", frozenset(self.products))
         if not self.activation_layouts <= set(get_args(ActivationLayout)):
             raise ValueError("activation_layouts must use mul_ir or ir_mul")
-        if self.native_layout not in self.activation_layouts:
-            raise ValueError("native_layout must be a supported activation layout")
+        if self.native_activation_layout not in self.activation_layouts:
+            raise ValueError(
+                "native_activation_layout must be a supported activation layout"
+            )
         if not self.products or not self.products <= set(PRODUCTS):
             raise ValueError("products must declare ieee or tf32")
 
@@ -137,14 +141,15 @@ class BackendCapabilities:
                 f"it does not compute in {kernel_spec.precision!r}; its "
                 f"precisions are {sorted(self.dtypes)}"
             )
-        if CANONICAL_LAYOUT not in self.layouts and kernel_spec.weight_numel:
+        if CANONICAL_LAYOUT not in self.weight_layouts and kernel_spec.weight_numel:
             return "it does not accept canonical mul_ir weights"
         if (
-            kernel_spec.layout is not None
-            and kernel_spec.layout not in self.activation_layouts
+            kernel_spec.activation_layout is not None
+            and kernel_spec.activation_layout not in self.activation_layouts
         ):
             return (
-                f"it does not consume activation layout {kernel_spec.layout!r}. "
+                "it does not consume activation layout "
+                f"{kernel_spec.activation_layout!r}. "
                 f"Supported layouts are {sorted(self.activation_layouts)}"
             )
         if kernel_spec.product not in self.products:

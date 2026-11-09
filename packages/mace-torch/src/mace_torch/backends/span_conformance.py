@@ -193,7 +193,7 @@ def run_span_conformance(
     backend_name: str,
     device: str = "cpu",
     precision: Precision = "float64",
-    layout: ActivationLayout = "mul_ir",
+    activation_layout: ActivationLayout = "mul_ir",
     training: bool = False,
     compile_spans: bool = False,
     cuda_graphs: bool = False,
@@ -203,7 +203,7 @@ def run_span_conformance(
     CUDA-graph callers must run under their GPU capability gate. CPU requests
     for capture raise rather than reporting an unexecuted check as successful.
     """
-    Layout(layout)
+    Layout(activation_layout)
     if cuda_graphs and (
         torch.device(device).type != "cuda" or not torch.cuda.is_available()
     ):
@@ -213,7 +213,10 @@ def run_span_conformance(
         raise AssertionError("an unrecognized span tuple must return None")
     results = []
     for shape in span_conformance_cases(precision):
-        members = tuple(replace(member, layout=layout) for member in shape.kernel_specs)
+        members = tuple(
+            replace(member, activation_layout=activation_layout)
+            for member in shape.kernel_specs
+        )
         span = backend.make_interaction_layer(members)
         result = ConformanceResult(
             "interaction_layer", shape, span is not None, ["decline"]
@@ -234,7 +237,7 @@ def run_span_conformance(
             result,
             compile_spans,
             cuda_graphs,
-            Layout(layout),
+            Layout(activation_layout),
         )
     return results
 

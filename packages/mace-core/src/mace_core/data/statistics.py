@@ -72,7 +72,8 @@ def compute_statistics(
         atomic_numbers: The element table.
         r_max: The cutoff, in Angstrom.
         atomic_energies: Isolated-atom references, already resolved.
-        scaling: Which spread to report as ``std``. ``"none"`` measures only
+        scaling: Which spread to report as ``normalization_scale``.
+            ``"none"`` measures only
             neighbour counts and uses a unit scale for models without energy.
             ``"rms_forces"`` is the frozen tree's default model behaviour,
             ``"std"`` the population spread of per-atom interaction energies,
@@ -84,7 +85,8 @@ def compute_statistics(
 
     Returns:
         The statistics, with ``mean`` always the mean per-atom interaction
-        energy and ``std`` whatever ``scaling`` asked for. Neighbour counts
+        energy and ``normalization_scale`` whatever ``scaling`` asked for.
+        Neighbour counts
         include atoms with no edges. Both conventions are the native V1
         contract; legacy uses sample spread and omits zero-neighbour atoms.
         A zero spread is retained here; the output layer uses a unit scale
@@ -154,7 +156,8 @@ def compute_statistics(
         atomic_energies={int(z): float(e) for z, e in atomic_energies.items()},
         avg_num_neighbors=(edges / atoms) if atoms else 0.0,
         mean=mean,
-        std=spread,
+        normalization_scale=spread,
+        normalization_method=scaling,
         atomic_numbers=sorted(int(z) for z in atomic_numbers),
         r_max=float(r_max),
     )

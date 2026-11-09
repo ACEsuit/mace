@@ -42,7 +42,6 @@ def test_operation_policies_use_a_named_immutable_mapping():
                 "linear": {
                     "compute_dtype": "float32",
                     "accumulate_dtype": "float64",
-                    "param_dtype": "float32",
                 }
             },
         }
@@ -50,7 +49,7 @@ def test_operation_policies_use_a_named_immutable_mapping():
     config = ResolvedConfig.from_dict(raw)
     assert config.precision.policy_for(LinearSpec()).accumulate_dtype == "float64"
     assert (
-        config.to_resolved_dict()["precision"]["ops"]["linear"]["param_dtype"]
+        config.to_resolved_dict()["precision"]["ops"]["linear"]["compute_dtype"]
         == "float32"
     )
     assert ResolvedConfig.model_validate_json(config.model_dump_json()) == config
@@ -85,7 +84,7 @@ def test_the_presets():
     assert mixed.policy_for(LinearSpec()) == PrecisionPolicy.uniform("float32")
     assert mixed.policy_for(RadialBasisSpec()) == PrecisionPolicy.uniform("float64")
     assert mixed.policy_for(SymmetricContractionSpec()) == PrecisionPolicy(
-        "float32", "float64", "float32"
+        "float32", "float64"
     )
 
 
@@ -116,13 +115,13 @@ def test_a_span_takes_the_widest_of_its_members_in_each_field():
     config = PrecisionConfig(
         model="float32",
         ops={
-            "linear": PrecisionPolicy("float32", "float32", "float32"),
-            "channelwise_tp_conv": PrecisionPolicy("float32", "float64", "float32"),
-            "segment_reduce": PrecisionPolicy("float64", "float64", "float64"),
+            "linear": PrecisionPolicy("float32", "float32"),
+            "channelwise_tp_conv": PrecisionPolicy("float32", "float64"),
+            "segment_reduce": PrecisionPolicy("float64", "float64"),
         },
     )
     span = (LinearSpec(), ChannelwiseTPConvSpec())
-    assert config.policy_for(span) == PrecisionPolicy("float32", "float64", "float32")
+    assert config.policy_for(span) == PrecisionPolicy("float32", "float64")
     wider = (*span, SegmentReduceSpec())
     assert config.policy_for(wider) == PrecisionPolicy.uniform("float64")
 
@@ -149,7 +148,7 @@ def test_an_empty_span_is_refused():
 
 def test_a_floor_narrower_than_the_compute_dtype_is_refused():
     with pytest.raises(ValueError, match="can only widen"):
-        PrecisionPolicy("float64", "float32", "float64")
+        PrecisionPolicy("float64", "float32")
 
 
 def test_an_unknown_op_kind_is_refused_with_the_known_ones():
@@ -214,12 +213,10 @@ def test_tf32_is_per_operation_and_roundtrips_through_configuration():
 
 def test_invalid_product_policies_fail_at_construction():
     with pytest.raises(ValueError, match="float32"):
-        PrecisionPolicy("float64", "float64", "float64", product="tf32")
+        PrecisionPolicy("float64", "float64", product="tf32")
     with pytest.raises(ValueError, match="apply to"):
         PrecisionConfig(
-            ops={
-                "radial_basis": PrecisionPolicy("float32", "float32", "float32", "tf32")
-            }
+            ops={"radial_basis": PrecisionPolicy("float32", "float32", "tf32")}
         )
     with pytest.raises(ValueError, match="unknown matrix product"):
         replace(PrecisionPolicy.uniform("float32"), product="unknown")
@@ -228,3 +225,20 @@ def test_invalid_product_policies_fail_at_construction():
     with pytest.raises(ValueError, match="tf32 products require"):
         RadialBasisSpec(precision="float32", product="tf32")
     assert LinearSpec(precision="float32", product="tf32").product == "tf32"
+
+
+def test_parameter_storage_dtype_is_not_a_separate_configuration_option():
+    with pytest.raises(ValidationError, match="param_dtype"):
+        ResolvedConfig.from_dict(
+            {
+                "precision": {
+                    "ops": {
+                        "linear": {
+                            "compute_dtype": "float32",
+                            "accumulate_dtype": "float32",
+                            "param_dtype": "float64",
+                        }
+                    }
+                },
+            }
+        )

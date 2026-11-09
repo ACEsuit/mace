@@ -24,7 +24,6 @@ from mace_torch.backends.composite import CompositeBackend
 from mace_torch.backends.precision import (
     PrecisionBackend,
     boundary_precision,
-    interface_dtype,
 )
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.models.build import build_model
@@ -77,7 +76,8 @@ def cast_ops(model: nn.Module) -> dict[str, tuple[str, str]]:
 @pytest.mark.parametrize("preset", ["float64", "float32"])
 def test_a_uniform_preset_casts_nothing(preset):
     model = engine(getattr(PrecisionConfig, preset)())
-    assert interface_dtype(model) == getattr(torch, preset)
+    output = model(graph(getattr(torch, preset)), compute=("forces",))
+    assert output.forces.dtype == getattr(torch, preset)
     assert cast_ops(model) == {}
 
 
@@ -163,7 +163,7 @@ class Recording:
 
 FLOOR = PrecisionConfig(
     model="float32",
-    ops={"symmetric_contraction": PrecisionPolicy("float32", "float64", "float32")},
+    ops={"symmetric_contraction": PrecisionPolicy("float32", "float64")},
 )
 
 
@@ -211,15 +211,6 @@ def test_a_backend_without_spans_declines_one():
         )
         is None
     )
-
-
-def test_weights_held_apart_from_the_compute_dtype_are_refused():
-    config = PrecisionConfig(
-        model="float32",
-        ops={"linear": PrecisionPolicy("float32", "float32", "float64")},
-    )
-    with pytest.raises(ValueError, match="param_dtype equal to compute_dtype"):
-        PrecisionBackend(Recording(), config).make_linear(LinearSpec())
 
 
 def test_without_float64_the_wider_ops_degrade_and_the_report_names_them():
@@ -272,7 +263,7 @@ def test_dispatch_checks_the_effective_precision_and_product():
 def test_widening_the_compute_dtype_also_resolves_tf32():
     policy = PrecisionConfig(
         model="float32",
-        ops={"linear": PrecisionPolicy("float32", "float64", "float32", "tf32")},
+        ops={"linear": PrecisionPolicy("float32", "float64", "tf32")},
     )
     inner = Recording()
     backend = PrecisionBackend(inner, policy)

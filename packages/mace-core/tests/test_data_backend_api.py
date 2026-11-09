@@ -250,7 +250,7 @@ def test_the_statistics_are_computed_in_one_pass_over_any_backend(dataset, key_s
     assert statistics.r_max == 3.0
     assert statistics.avg_num_neighbors >= 0.0
     # Two atoms per structure at 0.25, 0.5 and 0.75 in every component.
-    assert statistics.std == pytest.approx(
+    assert statistics.normalization_scale == pytest.approx(
         float(
             np.sqrt(np.mean(np.concatenate([[0.25] * 6, [0.5] * 9, [0.75] * 12]) ** 2))
         )
@@ -305,7 +305,8 @@ def test_statistics_round_trip_as_real_json_with_real_types():
         atomic_energies={1: -0.5, 8: -4.0},
         avg_num_neighbors=12.5,
         mean=-0.25,
-        std=1.75,
+        normalization_scale=1.75,
+        normalization_method="rms_forces",
         atomic_numbers=[1, 8],
         r_max=5.0,
     )

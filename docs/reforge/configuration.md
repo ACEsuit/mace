@@ -21,12 +21,19 @@ precision:
     linear:
       compute_dtype: float32
       accumulate_dtype: float64
-      param_dtype: float32
 ```
 
 An omitted operation uses the model dtype. Duplicate operation keys are errors,
-and the resolved configuration is immutable. JAX currently supports uniform
+and the resolved configuration is immutable. Parameters are stored in each
+operation's effective compute dtype; there is no separate parameter dtype.
+The model interface keeps `precision.model` even when every operation computes
+in a wider dtype. JAX currently supports uniform
 operation precision and rejects a nonempty `precision.ops` map.
+
+Dataset statistics record `normalization_scale` together with
+`normalization_method`: `std` for per-atom energy spread, `rms_forces`,
+`rms_dipoles`, or `none` for unit scaling. Legacy `statistics.json` files are
+translated at the import boundary; their original method is unknown (`null`).
 
 ## Train from scratch
 

@@ -1180,7 +1180,7 @@ def import_neutral(
         statistics=DatasetStatistics(
             avg_num_neighbors=average.pop(),
             mean=float(np.asarray(shift).reshape(-1)[0]),
-            std=float(np.asarray(scale).reshape(-1)[0]),
+            normalization_scale=float(np.asarray(scale).reshape(-1)[0]),
         ),
         initialize=False,
     )

@@ -37,9 +37,8 @@ def test_badge_compares_committed_values_and_requires_publication(
     def loader(reference, **kwargs):
         seen.append(reference)
         default = "float64" if fault == "default_dtype" else entry.default_dtype
-        model.engine = torch.nn.Linear(
-            1, 1, dtype=getattr(torch, kwargs.get("default_dtype", default))
-        )
+        model.dtype = getattr(torch, kwargs.get("default_dtype", default))
+        model.engine = torch.nn.Linear(1, 1, dtype=model.dtype)
         return SimpleNamespace(models=[model])
 
     monkeypatch.setattr(foundations, "mace_mp", loader)

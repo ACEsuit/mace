@@ -42,6 +42,8 @@ from mace_core.electrostatics import (
     ElectrostaticsSpec,
     FeatureProjection,
     ScfSpec,
+    SolverCapabilities,
+    solver_spec_record,
 )
 from mace_core.kernels.precision import Precision, widest
 from mace_core.kernels.specs import LinearSpec
@@ -58,11 +60,10 @@ from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.precision import cast_at_boundary, constructed_in
 from mace_torch.electrostatics import (
     LONG_RANGE_PLAN,
-    build_long_range,
-    build_long_range_features,
-    build_scf_solve,
+    ElectrostaticsSolver,
     long_range_geometry,
     long_range_plan,
+    resolve_solver,
 )
 from mace_torch.electrostatics.reference.gto_utils import (
     DisplacedGTOExternalFieldBlock,
@@ -161,7 +162,33 @@ def _polar_solver_spec(
     )
 
 
-class PolarModel(MACEModel):
+class _ElectrostaticModel(MACEModel):
+    """Solver identity and capabilities resolved once for each model."""
+
+    solver_spec: ElectrostaticsSpec
+    solver: str
+    solver_capabilities: SolverCapabilities
+
+    def _resolve_solver(
+        self, name: str, trains_derivatives: bool
+    ) -> ElectrostaticsSolver:
+        backend = resolve_solver(
+            self.solver_spec, solver=name, trains_derivatives=trains_derivatives
+        )
+        self.solver = name
+        self.solver_capabilities = backend.capabilities
+        return backend
+
+    def solver_record(self) -> dict[str, Any]:
+        """Record the capabilities of the solver that actually built the ops."""
+        return {
+            "solver": self.solver,
+            "bit_parity": self.solver_capabilities.bit_parity,
+            "solver_spec": solver_spec_record(self.solver_spec),
+        }
+
+
+class PolarModel(_ElectrostaticModel):
     """MACE with a self-consistent density of Gaussian multipoles.
 
     Args:
@@ -305,31 +332,13 @@ class PolarModel(MACEModel):
             self.register_buffer(
                 "field_norms", torch.tensor(expanded, dtype=getattr(torch, precision))
             )
+        solver_backend = self._resolve_solver(solver, trains_derivatives)
         with constructed_in(self.solver_spec.precision):
-            self.projection = build_long_range_features(
-                self.solver_spec, solver=solver, trains_derivatives=trains_derivatives
-            )
-            self.coulomb = build_long_range(
-                self.solver_spec, solver=solver, trains_derivatives=trains_derivatives
-            )
+            self.projection = solver_backend.long_range_features(self.solver_spec)
+            self.coulomb = solver_backend.long_range_energy(self.solver_spec)
         if self.solver_spec.precision != precision:
             cast_at_boundary(self.projection, self.solver_spec.precision, precision)
             cast_at_boundary(self.coulomb, self.solver_spec.precision, precision)
-        self.solver = solver
-
-    def solver_record(self) -> dict[str, Any]:
-        """What a checkpoint records about the long-range solver.
-
-        The solver's name, whether it reproduces the reference bit for bit,
-        and the solve as data. See :class:`mace_core.metadata.ElectrostaticsRecord`.
-        """
-        from mace_core.electrostatics import get_solver, solver_spec_record
-
-        return {
-            "solver": self.solver,
-            "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
-            "solver_spec": solver_spec_record(self.solver_spec),
-        }
 
     def _fix_totals(
         self,
@@ -521,26 +530,14 @@ class PolarModel(MACEModel):
         }
 
 
-class _ChargeAwareModel(MACEModel):
+class _ChargeAwareModel(_ElectrostaticModel):
     """Shared input, solver-metadata and planning contracts for source models."""
 
     _physical_observables: dict[str, ObservableSpec]
-    solver_spec: ElectrostaticsSpec
-    solver: str
 
     @staticmethod
     def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
         return ()
-
-    def solver_record(self) -> dict[str, Any]:
-        """Persist solver identity through the existing artifact contract."""
-        from mace_core.electrostatics import get_solver, solver_spec_record
-
-        return {
-            "solver": self.solver,
-            "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
-            "solver_spec": solver_spec_record(self.solver_spec),
-        }
 
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:
@@ -669,15 +666,11 @@ class LocalChargeModel(_ChargeAwareModel):
                 self._make_source(backend, config, layer, density_irreps, precision)
                 for layer in self.backbone.layer_irreps
             )
+        solver_backend = self._resolve_solver(solver, trains_derivatives)
         with constructed_in(self.solver_spec.precision):
-            self.coulomb = build_long_range(
-                self.solver_spec,
-                solver=solver,
-                trains_derivatives=trains_derivatives,
-            )
+            self.coulomb = solver_backend.long_range_energy(self.solver_spec)
         if self.solver_spec.precision != precision:
             cast_at_boundary(self.coulomb, self.solver_spec.precision, precision)
-        self.solver = solver
 
     def _make_source(self, backend, config, layer, density_irreps, precision):
         return backend.make_linear(
@@ -1050,7 +1043,7 @@ class QEqModel(_ChargeAwareModel):
             edge_axes=(1, 2, 0),
         )
         self.settings = config.qeq
-        self.solver_spec, self.solver = settings, solver
+        self.solver_spec = settings
         self.solve_dtype = getattr(torch, settings.precision)
         with constructed_in(precision):
             self.source_maps = nn.ModuleDict(
@@ -1073,19 +1066,12 @@ class QEqModel(_ChargeAwareModel):
                     )
                 }
             )
+        solver_backend = self._resolve_solver(solver, trains_derivatives)
         with constructed_in(settings.precision):
-            self.coulomb = build_long_range(
-                settings, solver=solver, trains_derivatives=trains_derivatives
-            )
-            span = build_scf_solve(settings, solver=solver)
-            if span is None:
-                span = ChargeEquilibration(
-                    build_long_range_features(
-                        settings,
-                        solver=solver,
-                        trains_derivatives=trains_derivatives,
-                    )
-                )
+            self.coulomb = solver_backend.long_range_energy(settings)
+            span = solver_backend.make_scf_solve(settings)
+            if span is NotImplemented:
+                span = ChargeEquilibration(solver_backend.long_range_features(settings))
             self.charge_solve = span
 
     def transform_outputs(self, graph, layers, output) -> MACEOutput[Tensor]:
@@ -1317,7 +1303,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
             last_layer_irreps=config.node_irreps,
             edge_axes=(1, 2, 0),
         )
-        self.settings, self.solver_spec, self.solver = options, settings, solver
+        self.settings, self.solver_spec = options, settings
         self.solve_dtype, self.model_dtype = (
             getattr(torch, settings.precision),
             getattr(torch, precision),
@@ -1436,20 +1422,17 @@ class FixedPointSCFModel(_ChargeAwareModel):
             torch.tensor(expanded, dtype=self.solve_dtype),
             persistent=False,
         )
+        solver_backend = self._resolve_solver(solver, trains_derivatives)
         with constructed_in(settings.precision):
-            self.projection = build_long_range_features(
-                settings, solver=solver, trains_derivatives=trains_derivatives
-            )
-            self.coulomb = build_long_range(
-                settings, solver=solver, trains_derivatives=trains_derivatives
-            )
+            self.projection = solver_backend.long_range_features(settings)
+            self.coulomb = solver_backend.long_range_energy(settings)
             self.applied_potential = DisplacedGTOExternalFieldBlock(
                 options.feature_max_l, list(options.feature_widths), "receiver"
             )
-        span = build_scf_solve(settings, solver=solver)
+        span = solver_backend.make_scf_solve(settings)
         self.fixed_point_solve = (
             span
-            if span is not None
+            if span is not NotImplemented
             else (
                 AffineFixedPoint(options.constant_charge)
                 if options.affine_response

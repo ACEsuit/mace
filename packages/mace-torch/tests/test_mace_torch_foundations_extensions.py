@@ -10,7 +10,6 @@ import torch
 from conftest import TOLERANCES, fp64_only
 from mace_core.model_registry import get_model
 from mace_core.observables import ObservableSpec
-from mace_torch.backends.precision import interface_dtype
 from mace_torch.calculators.foundations import load_foundation
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.deploy.reference import _evaluate
@@ -41,7 +40,7 @@ def assert_same_predictions(first, second, *, species=False):
         if species:
             # FT-3 rescales raw weights for the expanded element fan-in.
             # This preserves the function up to the existing arithmetic row.
-            atol, rtol = TOLERANCES[interface_dtype(first.engine)]
+            atol, rtol = TOLERANCES[first.dtype]
             np.testing.assert_allclose(value, expected[name], atol=atol, rtol=rtol)
         else:
             np.testing.assert_array_equal(value, expected[name])

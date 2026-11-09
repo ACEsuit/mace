@@ -316,7 +316,7 @@ class _InLayout(nn.Module):
     def __init__(self, op: Any, kernel_spec: Any) -> None:
         super().__init__()
         self.op = op
-        self.layout = Layout(kernel_spec.layout)
+        self.layout = Layout(kernel_spec.activation_layout)
         self.inputs, self.output = _layout_terms(kernel_spec)
 
     def forward(self, *arguments: Any) -> Tensor:
@@ -364,7 +364,7 @@ def run_backend_conformance(
     seed: int = 0,
     compile_ops: bool = False,
     cuda_graphs: bool = False,
-    layout: ActivationLayout = "mul_ir",
+    activation_layout: ActivationLayout = "mul_ir",
     max_block: int = 3,
 ) -> list[ConformanceResult]:
     """Check every case against the reference. Raises on the first failure.
@@ -380,7 +380,7 @@ def run_backend_conformance(
         compile_ops: Also compile each op with ``fullgraph=True``, and check
             that one compilation serves inputs of three sizes.
         cuda_graphs: Also capture each op in a CUDA graph and replay it.
-        layout: The activation layout to test against canonical reference values.
+        activation_layout: Feature ordering to test against canonical references.
         max_block: The largest block an op's canonical to internal weight map
             may have. Three is the largest measured on the production grid.
 
@@ -396,11 +396,11 @@ def run_backend_conformance(
     reference = ReferenceBackend()
     capabilities = backend.capabilities()
     _check_chain_layout(backend, capabilities)
-    Layout(layout)  # Validate before iterating, including a declined layout.
+    Layout(activation_layout)  # Validate before iterating, including a declined layout.
     results = []
     given = cases or conformance_cases(precision)
     for number, kernel_spec in enumerate(given):
-        kernel_spec = replace(kernel_spec, layout=layout)
+        kernel_spec = replace(kernel_spec, activation_layout=activation_layout)
         op = _OPS[type(kernel_spec)]
         make = getattr(backend, f"make_{op}", None)
         if op not in capabilities.ops or not capabilities.supports(kernel_spec):
@@ -423,9 +423,13 @@ def run_backend_conformance(
         result = ConformanceResult(op, kernel_spec, True, ["layout"])
         where = f"{backend.name} {op} {kernel_spec}"
         candidate = make(kernel_spec).to(device)
-        canonical = replace(kernel_spec, layout="mul_ir", product="ieee")
+        canonical = replace(kernel_spec, activation_layout="mul_ir", product="ieee")
         expected_op = getattr(reference, f"make_{op}")(canonical).to(device)
-        runner = candidate if layout == "mul_ir" else _InLayout(candidate, kernel_spec)
+        runner = (
+            candidate
+            if activation_layout == "mul_ir"
+            else _InLayout(candidate, kernel_spec)
+        )
 
         if isinstance(expected_op, InternalWeights):
             if not isinstance(candidate, InternalWeights):
@@ -732,16 +736,16 @@ def _check_chain_layout(backend: Any, capabilities: Any) -> None:
     boundary, and that only holds if the backend really builds its ops in the
     layout it calls native.
     """
-    if "mul_ir" not in capabilities.layouts:
+    if "mul_ir" not in capabilities.weight_layouts:
         raise AssertionError(f"{backend.name} cannot load canonical mul_ir weights")
-    native = capabilities.native_layout
+    native = capabilities.native_activation_layout
     if native not in capabilities.activation_layouts:
         raise AssertionError(
             f"{backend.name} calls {native!r} its native layout and declares "
             f"only {sorted(capabilities.activation_layouts)}: the chain would "
             f"be built in a layout its own ops decline."
         )
-    chain = CompositeBackend(backend, ReferenceBackend()).layout.name
+    chain = CompositeBackend(backend, ReferenceBackend()).activation_layout.name
     if chain not in capabilities.activation_layouts:
         raise AssertionError(
             f"{backend.name} next to the reference resolves the chain to "

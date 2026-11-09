@@ -104,13 +104,13 @@ def _uniform(irreps: str) -> bool:
 
 def _layout(kernel_spec: KernelSpec) -> Any:
     """cuEquivariance's name for the kernel specification's feature layout."""
-    return cue.ir_mul if kernel_spec.layout == "ir_mul" else cue.mul_ir
+    return cue.ir_mul if kernel_spec.activation_layout == "ir_mul" else cue.mul_ir
 
 
 def _method(kernel_spec: KernelSpec) -> str | None:
     """``naive`` in ``ir_mul``, the default otherwise: what measured fastest
     for the linear map and the skip in each, see the module docstring."""
-    return "naive" if kernel_spec.layout == "ir_mul" else None
+    return "naive" if kernel_spec.activation_layout == "ir_mul" else None
 
 
 class CuEqCapabilities(BackendCapabilities):
@@ -505,9 +505,9 @@ class CuEqBackend:
             # anywhere and is what a CPU host gets.
             devices=frozenset({"cuda"} if self.compiled else {"cpu"}),
             dtypes=frozenset({"float64", "float32"}),
-            layouts=frozenset({"mul_ir"}),
+            weight_layouts=frozenset({"mul_ir"}),
             activation_layouts=frozenset({"mul_ir", "ir_mul"}),
-            native_layout="ir_mul",
+            native_activation_layout="ir_mul",
             bases=frozenset({"reduced"}),
             supports_double_backward=True,
             wide_accumulation=True,

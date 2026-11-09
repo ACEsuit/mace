@@ -30,10 +30,8 @@ def test_local_loader_uses_its_family_precision_and_raw_model(
     assert isinstance(calc, fm.MACECalculator)
     raw = loader(foundation, device="", return_raw_model=True)
     assert isinstance(raw, torch.nn.Module)
-    from mace_torch.backends.precision import interface_dtype
-
-    assert interface_dtype(calc.models[0].engine) == expected
-    assert interface_dtype(raw) == expected
+    assert calc.models[0].dtype == expected
+    assert next(raw.parameters()).dtype == expected
     converted = loader(foundation, device="cpu", default_dtype="float64")
     reference = load_deployed(foundation)
     for op, tensors in canonical_state(reference.engine).items():

@@ -7,8 +7,11 @@ backend. Checkpoints retain canonical weights and the reduced basis.
 ## Activation layouts and precision
 
 `BackendCapabilities.activation_layouts` declares accepted activation layouts;
-`native_layout` names the preferred one. The composite resolves one layout for
-the chain at construction. The reference implements both `mul_ir` and `ir_mul`,
+`native_activation_layout` names the preferred one. `KernelSpec.activation_layout`
+specifies the ordering of an operation's input and output features.
+`BackendCapabilities.weight_layouts` describes parameter storage; every backend
+accepts canonical `mul_ir` weights. The composite resolves one activation layout
+for the chain at construction. The reference implements both `mul_ir` and `ir_mul`,
 so fallback operations follow cuEq's native `ir_mul` layout. Descriptors record
 that choice. Physical inputs, public descriptors and observable components retain
 their established ordering. Canonical weight indices, parameter names and saved

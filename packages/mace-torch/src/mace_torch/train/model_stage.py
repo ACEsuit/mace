@@ -100,6 +100,12 @@ def run_model_stage(
             config.model.backend,
             "training on " + ", ".join(sorted(requested.derivatives)),
         )
+        solver_capabilities = getattr(engine.model, "solver_capabilities", None)
+        if solver_capabilities is not None:
+            solver_capabilities.require_double_backward(
+                engine.model.solver,
+                "training on " + ", ".join(sorted(requested.derivatives)),
+            )
     if catalogue != DEFAULT_CATALOGUE:
         config = config.model_copy(update={"catalogue": catalogue})
     metadata = _metadata(config, data)

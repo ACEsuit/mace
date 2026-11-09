@@ -196,8 +196,10 @@ def test_explicit_statistics_are_consumed_without_recomputation(
     config = configuration(tmp_path)
     baseline = run_data_stage(config, CATALOGUE)
     saved = asdict(baseline.statistics)
-    saved.update(mean=2.5, std=3.0, avg_num_neighbors=7.0)
+    saved.update(mean=2.5, normalization_scale=3.0, avg_num_neighbors=7.0)
     if legacy:
+        saved["std"] = saved.pop("normalization_scale")
+        saved.pop("normalization_method")
         for name in ("atomic_numbers", "atomic_energies"):
             saved[name] = str(saved[name])
     path = tmp_path / "statistics.json"
@@ -212,7 +214,7 @@ def test_explicit_statistics_are_consumed_without_recomputation(
     actual = run_data_stage(ResolvedConfig.model_validate(settings), CATALOGUE)
     assert (
         actual.statistics.mean,
-        actual.statistics.std,
+        actual.statistics.normalization_scale,
         actual.statistics.avg_num_neighbors,
     ) == (2.5, 3.0, 7.0)
     assert actual.e0s == baseline.e0s
@@ -224,7 +226,7 @@ def test_explicit_statistics_are_consumed_without_recomputation(
         ("r_max", 9.0),
         ("atomic_numbers", [1]),
         ("atomic_energies", {1: 0.0, 8: 0.0}),
-        ("std", -1.0),
+        ("normalization_scale", -1.0),
         ("mean", float("nan")),
         ("avg_num_neighbors", -1.0),
     ],
@@ -271,13 +273,21 @@ def test_scaling_and_reference_json_are_used_in_preparation(tmp_path, scaling):
         ]
     )
     stats = dataset(output / "train").statistics()
+    assert (
+        stats.normalization_method
+        == {
+            "no_scaling": "none",
+            "std_scaling": "std",
+            "rms_forces_scaling": "rms_forces",
+        }[scaling]
+    )
     expected = {
         "no_scaling": 1.0,
         "std_scaling": np.std(np.arange(5) ** 2 / 2),
         "rms_forces_scaling": np.sqrt(np.mean((np.arange(1, 6) / 10) ** 2)),
     }
     np.testing.assert_allclose(
-        [stats.mean, stats.std],
+        [stats.mean, stats.normalization_scale],
         [np.mean(np.arange(5) ** 2 / 2 - 2), expected[scaling]],
         atol=CLOSED_FORM_FP64.atol,
         rtol=CLOSED_FORM_FP64.rtol,

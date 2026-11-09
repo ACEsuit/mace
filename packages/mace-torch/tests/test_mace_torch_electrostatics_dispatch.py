@@ -274,7 +274,17 @@ def test_an_enabled_section_is_refused_rather_than_trained_without(tmp_path):
 
 def test_an_enabled_section_naming_no_solver_says_so(tmp_path):
     with pytest.raises(SolverNotAvailableError, match="'fast'"):
-        _run_with(tmp_path, enabled=True, solver="fast")
+        from test_mace_torch_polar_training import built, polar_configuration
+
+        config = polar_configuration(tmp_path)
+        config = config.model_copy(
+            update={
+                "electrostatics": config.electrostatics.model_copy(
+                    update={"solver": "fast"}
+                )
+            }
+        )
+        built(config)
 
 
 def test_the_section_is_not_among_the_advertised_flags(capsys):

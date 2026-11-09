@@ -39,7 +39,7 @@ def engine(backend: str, seed: int = 3, device: str = "cpu"):
         z_table=AtomicNumberTable(NUMBERS),
         heads=("default",),
         e0s=ResolvedE0s({"default": {6: -1.0, 14: -2.0}}),
-        statistics=DatasetStatistics(avg_num_neighbors=8.0, std=1.0),
+        statistics=DatasetStatistics(avg_num_neighbors=8.0, normalization_scale=1.0),
     )
     return built.to(device)
 
