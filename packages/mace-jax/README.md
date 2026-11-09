@@ -1,5 +1,10 @@
 # mace-jax
 
+The [v0.3 → V1 migration guide](https://github.com/ACEsuit/mace/blob/mace-reforge/docs/reforge/migration.md) covers commands,
+Python callers, supported checkpoint conversion and explicit pending work.
+The guide and portable migration skill are prepared in the V1 tree; publication
+is a separate release step.
+
 Native JAX inference for reduced-basis, single-head MACE energy checkpoints.
 Requires Python 3.12+, JAX 0.11+ and Flax NNX 0.12.8+. Install alongside the local core:
 

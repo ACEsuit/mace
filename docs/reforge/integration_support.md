@@ -11,7 +11,7 @@ implementations. It is not another model checkpoint.
 | LAMMPS native | Python-free torch.export/AOTInductor, reference/cuEq, changing neighbours and MPI migration on one/two GPUs | Performance results are recorded separately from correctness |
 | ML-IAP | Direct callback, reference/cuEq, eager/compiled regions, one/two MPI ranks | Python callback is required by this compatibility interface |
 | OpenMM | Native C++/AOTInductor on CPU and CUDA/cuEq float32/float64; molecular and periodic trajectories, current triclinic cells, frozen legacy energy/force parity | Whole-System energy models; host transfers remain. The direct Python callback also supports declared inputs |
-| Symmetrix | Public implementations inspected; target is the forthcoming general implementation | Concrete converter and benchmark sweep await its published interface |
+| Symmetrix | General 0.3.0 source inspected at `fc7e532`; native JSON consumer and legacy extractor are public | V1 exporter, architecture checks, parity and benchmark sweep remain pending |
 | libmace | Native AOTInductor C/C++, Fortran on two MPI ranks, changing geometry, legacy E/F/virial parity; installed clients with cuEq float32/float64 on Blackwell | Full-structure root evaluation; spatial decomposition and model scaling across GPUs remain outside this adapter |
 | GROMACS native | Pinned 2026.3 NNPot adapter over libmace; CPU and B200 cuEq float32/float64 E/F/virial parity, changing cells/neighbours, two MPI domains, XY slabs | Whole-system model on the main rank; `pbc=no` is rejected by upstream Verlet. Hybrid embedding and model scaling across GPUs remain outside this adapter |
 | torch-sim | CPU trajectory and legacy E/F/polar parity; static compile reuse; cuEq on H200 and RTX PRO 6000 Blackwell in float32/float64; measured B200 MD throughput | Host graph assembly remains; the complete step includes Python and host transfers |
@@ -19,7 +19,7 @@ implementations. It is not another model checkpoint.
 [Deployment measurements and final validation](gate3/2026-11-07/deployment-completion.md)
 record the 512/4096-atom B200 results, the libmace neighbour-radius correction,
 native OpenMM checks, and the remaining host/MPI costs. Symmetrix's general
-adapter awaits its published interface and external schema agreement. The
+interface is now public; its V1 adapter and validation remain pending. The
 two Polar float32 rows retain their existing open status and precision contract.
 
 ## Native OpenMM
@@ -109,19 +109,30 @@ because the weight export exists.
 
 ## External consumer findings
 
-The intended Symmetrix target is the forthcoming general implementation
-identified by the user on 2026-11-07, with
-[`wcwitt/symmetrix-polar`](https://github.com/wcwitt/symmetrix-polar/tree/f8a23ea0f15dd036375dbaeae2e8542d85d964fc)
-as a reference, rather than a Polar-only converter or Symmetrix-XL. The latter
-is a separate project and was inspected before this clarification. No target
-schema or compatibility promise is inferred for the unpublished general version.
-V1 retains its canonical checkpoint and the component/full-basis export above;
-the concrete consumer adapter and performance sweep remain pending the general
-implementation's published interface. No Polar-specific architecture restrictions
-are added to the V1 export contract. Symmetrix remains an optional external
-runtime; MACE owns the export and parity checks.
+The intended target is now the published general source in
+[`wcwitt/symmetrix`](https://github.com/wcwitt/symmetrix/tree/fc7e53276baa7728f08bee0ddd865a20f82ff998),
+rechecked on 2026-11-09 at `fc7e53276baa7728f08bee0ddd865a20f82ff998`.
+Its `VERSION` declares 0.3.0. It includes the general and Polar implementations,
+native C++ consumers and LAMMPS pair styles. This removes the earlier dependency
+on publication of the general interface, not the need for a V1 adapter.
 
-The inspected Polar branch identifies itself as 0.1.0, with model format 1.
+The supplied `extract_mace_data` still uses `torch.load` and legacy MACE/e3nn
+classes. Its standard path requires two interactions and `l_max=3`, with
+separate nonlinear and Polar paths. The upstream instructions require the JSON
+producer and runtime to use the same Symmetrix version. V1 needs an exporter
+from its canonical checkpoint into that versioned consumer format, with explicit
+architecture checks and measured spline/conversion error. No legacy runtime
+import, Python MD callback or TorchScript artifact is needed in that design.
+Conversion, native parity and the performance sweep remain unimplemented here.
+
+V1 retains its canonical checkpoint and component/full-basis export. Symmetrix
+remains an optional external runtime; MACE owns export and parity checks.
+The following Polar-only and older general inspections are historical context,
+not claims of validation against 0.3.0.
+
+The previously inspected
+[`symmetrix-polar` branch](https://github.com/wcwitt/symmetrix-polar/tree/f8a23ea0f15dd036375dbaeae2e8542d85d964fc)
+identifies itself as 0.1.0, with model format 1.
 Its LAMMPS implementation supports fully periodic cells, charge and spin,
 direct sums or a particle-mesh solver, with a specialized CUDA model shape.
 Its own correctness report excludes stress, and per-atom virials are explicitly

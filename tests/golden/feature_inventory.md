@@ -13,6 +13,12 @@ two disagree. Run it from anywhere:
 python3 tests/golden/check_inventory.py     # prints "all sources covered"
 ```
 
+The [V1 migration guide](../../docs/reforge/migration.md) covers every DROP/MERGE
+row and every training destination. Its portable skill shares the same reference
+tables. `packages/mace-torch/tests/test_mace_torch_migration_guide_complete.py`
+checks that coverage against this inventory and the source declarations; it does
+not replace numerical evidence for individual features.
+
 **Row schema** (every table below, in this order):
 
 | column | meaning |

@@ -13,7 +13,7 @@ mace --engine v1 data prepare --train_file train.xyz --output prepared --compute
 mace --engine v1 data select --config finetune.yaml --head replay --output selected.xyz
 mace --engine v1 data pseudolabel --config finetune.yaml --head replay --output labels
 mace --engine v1 plot training --path results/run.jsonl --output learning.png
-mace --engine v1 migrate --output migrated.yaml -- mace_run_train --train_file train.xyz --num_channels 32
+mace --engine v1 model migrate --output migrated.yaml -- mace_run_train --train_file train.xyz --num_channels 32
 ```
 
 ## Configuration and migration
@@ -47,9 +47,11 @@ unspecified architecture settings absent so they inherit the foundation's
 architecture when loaded. For the old standalone selector it writes ordinary
 head/subselection settings and prints a `data select` command. Other supported
 scripts produce a command/argument YAML manifest and an executable command.
-Retired device/backend weight conversions and the MD driver explain their
-replacement. Convert pickle checkpoints separately with the existing legacy
-importer before using these commands.
+Backend-weight conversions and the MD driver explain their replacement.
+`model convert-device` remains a device-loading check and writes no new model.
+For supported pickle conversion and the complete command map, see the
+[migration guide](migration.md). Non-training command manifests can retain old
+argument tokens: translate those against current subcommand help before running.
 
 The source boundary permits legacy model-name strings in the two input
 adapters. The architecture checks still forbid legacy imports, identifiers,
@@ -79,7 +81,9 @@ Basis conversion verifies every basis projection. With `--reference` and
 artifact file. Metadata schema 1.0 records the source/target bases, projection
 verification and golden-check result. Without reference files that result is
 null; it does not claim a golden check. Only metadata schema 1.0 is accepted.
-Reduced-to-full export is underdetermined and belongs to DEP-3.
+Reconstructing arbitrary original full-basis coefficients is underdetermined.
+DEP-3 exports derived deployment weights while preserving the canonical pair;
+see the [integration support table](integration_support.md).
 
 Prepared data uses V1 shards and manifests. Isolated-atom reference structures
 stay in the training split so the training E0 resolver can read them. Measured
@@ -113,8 +117,10 @@ zero); `--min_epoch -1` includes epoch zero. Input basenames do not determine
 run or seed metadata. This is an explicitly accepted difference from legacy's
 `<run>_run-<seed>_train.txt` requirement.
 
-LAMMPS export remains assigned to DEP-2. The agreed MD-driver removal remains
-in force; ASE dynamics can use the calculator's committee mean and variance.
+LAMMPS supports the neutral ML-IAP compatibility bundle and the native
+torch.export/AOTInductor target; see [integration support](integration_support.md).
+The MD driver is retired; ASE dynamics can use the calculator's committee mean
+and variance.
 
 ## Verification
 

@@ -16,8 +16,14 @@ tracks progress on [its board](https://github.com/orgs/ACEsuit/projects/2).
 
 **v0.3.x remains the supported line.** It keeps taking bug fixes, and nothing
 about installing or using MACE changes today. v1.0 will not preserve code
-compatibility, and trained checkpoints will migrate through an explicit
-converter rather than loading directly; functionality is preserved.
+compatibility, and the supported foundation roster migrates through an explicit
+converter rather than loading directly. Arbitrary user-trained checkpoints
+have no supported automated migration; keep v0.3 or retrain in V1.
+
+The [v0.3 → V1 migration guide](https://github.com/ACEsuit/mace/blob/mace-reforge/docs/reforge/migration.md) covers commands,
+Python callers, supported checkpoint conversion and explicit pending work.
+The guide and portable migration skill are prepared in the V1 tree; publication
+is a separate release step.
 
 Planning to contribute while this is under way? Read
 [CONTRIBUTING.md](CONTRIBUTING.md) first. It says what we can accept into v0.3

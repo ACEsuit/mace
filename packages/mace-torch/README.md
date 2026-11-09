@@ -1,5 +1,10 @@
 # mace-torch-v1
 
+The [v0.3 → V1 migration guide](https://github.com/ACEsuit/mace/blob/mace-reforge/docs/reforge/migration.md) covers commands,
+Python callers, supported checkpoint conversion and explicit pending work.
+The guide and portable migration skill are prepared in the V1 tree; publication
+is a separate release step.
+
 The PyTorch stack for MACE v1: models, training, kernel backends and
 deployment. It depends on `mace_core` and torch, and is the primary training
 and research backend.

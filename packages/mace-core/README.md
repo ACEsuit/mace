@@ -1,5 +1,10 @@
 # mace-core
 
+The [v0.3 → V1 migration guide](https://github.com/ACEsuit/mace/blob/mace-reforge/docs/reforge/migration.md) covers commands,
+Python callers, supported checkpoint conversion and explicit pending work.
+The guide and portable migration skill are prepared in the V1 tree; publication
+is a separate release step.
+
 Framework-agnostic contract and pure math for MACE v1: types, config,
 observables, the kernel-backend protocol, Clebsch-Gordan, neighbours and the
 data spec. It imports no torch, no jax and no e3nn, so both implementation
