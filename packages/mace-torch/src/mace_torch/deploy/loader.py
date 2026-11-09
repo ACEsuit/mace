@@ -253,7 +253,7 @@ def load_deployed(
             update={"model": config.model.model_copy(update={"backend": backend})}
         )
     if manifest is not None and precision is None:
-        precision = replace(config.precision, model=manifest.dtype)
+        precision = config.precision.model_copy(update={"model": manifest.dtype})
     if precision is not None:
         config = config.model_copy(update={"precision": precision})
     catalogue = catalogue or config.catalogue or DEFAULT_CATALOGUE

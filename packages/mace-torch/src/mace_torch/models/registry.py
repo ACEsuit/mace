@@ -11,17 +11,10 @@ from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec
 
 from mace_torch.models.base import MACEModel
+from mace_torch.models.inputs import with_embedded_inputs
 from mace_torch.models.magnetic import MagneticModel
 
 ModelType = TypeVar("ModelType", bound=type[MACEModel])
-
-
-@runtime_checkable
-class DeclaresModelInputs(Protocol):
-    """Additional physical inputs a registered model requires in its graphs."""
-
-    @staticmethod
-    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]: ...
 
 
 @runtime_checkable
@@ -101,6 +94,13 @@ def model_family(name: str) -> ModelFamily:
             f"choose from {sorted(families)}"
         )
     return families[name]
+
+
+def model_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+    """Resolve all model inputs without constructing its operators or weights."""
+    return with_embedded_inputs(
+        config, model_family(config.model).model.declared_inputs(config)
+    )
 
 
 def register_model(

@@ -72,12 +72,7 @@ class MaceTorchSimModel(ModelInterface):
         self.compiled = compile_mode is not None
         catalogue = self.deployed.config.catalogue or DEFAULT_CATALOGUE
         specs = {spec.name: spec for spec in catalogue.inputs}
-        specs.update(
-            {
-                spec.name: spec
-                for spec in getattr(self.deployed.model, "input_specs", ())
-            }
-        )
+        specs.update({spec.name: spec for spec in self.deployed.model.input_specs})
         self.input_specs = tuple(
             spec for spec in specs.values() if spec.name not in {"pos", "strain"}
         )
@@ -88,9 +83,7 @@ class MaceTorchSimModel(ModelInterface):
                 f"input_names contains undeclared inputs: {sorted(unknown)}"
             )
         self.output_catalogue = catalogue
-        self.extra_observables = tuple(
-            getattr(self.deployed.model, "extra_observables", ())
-        )
+        self.extra_observables = self.deployed.model.extra_observables
         if self.compiled:
             self.deployed.derivative_engine.compile_model(
                 mode=compile_mode, backend=compile_backend

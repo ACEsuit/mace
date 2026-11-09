@@ -36,7 +36,11 @@ for fully nonperiodic structures. The geometry uses symmetric strain.
 natural batching schema, including isolated atoms. The apply boundary expects
 an unpadded graph in the model dtype with head index zero. `compute=()` returns
 energies alone. The loader enables JAX float64 support before constructing arrays;
-float32 inference retains float64 E0 storage and model-level accumulation.
+E0 storage remains float64. Loading preserves the checkpoint's precision policy;
+an explicit `dtype` overrides its interface dtype and is recorded in
+`apply.config`. Model-level accumulation follows `precision.accumulate` (float64
+by default). Nonempty `precision.ops` maps are rejected because JAX does not yet
+implement per-operation precision.
 Inference uses the highest matmul precision, so GPU float32 does not use TF32.
 
 Attach the compiled calculator once for repeated ASE evaluations.

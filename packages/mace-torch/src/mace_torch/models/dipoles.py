@@ -42,29 +42,21 @@ import torch
 from mace_core.clebsch_gordan import symmetric_matrix_basis
 from mace_core.config.model import ModelConfig
 from mace_core.kernels.precision import Precision
-from mace_core.observables import DEFAULT_CATALOGUE, ObservableSpec
+from mace_core.observables import DEFAULT_CATALOGUE, InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor
 
 from mace_torch.kernels import segment_sum
 from mace_torch.models.base import MACEModel
+from mace_torch.models.inputs import CHARGES, TOTAL_CHARGE
 from mace_torch.models.outputs import E_ANGSTROM_PER_DEBYE as E_ANGSTROM_PER_DEBYE
 from mace_torch.models.outputs import fixed_charge_dipole
 
 __all__ = [
-    "DIPOLE_GRAPH_INPUTS",
     "DIPOLE_HEADS",
     "DipoleModel",
     "DipoleSettings",
 ]
-
-#: The inputs each of the two models reads, which the data stage writes into
-#: every graph it builds for it: the fixed charges per atom, or the total charge
-#: the predicted ones are fixed to.
-DIPOLE_GRAPH_INPUTS: dict[str, tuple[str, ...]] = {
-    "fixed": ("charges",),
-    "predicted": ("total_charge",),
-}
 
 #: The readouts the model builds for itself. They are observables to the output
 #: layer, which builds and reduces their heads, and implementation to everything
@@ -145,6 +137,10 @@ class DipoleModel(MACEModel):
     """
 
     polarizability_basis: Tensor
+
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        return (TOTAL_CHARGE,) if config.model == "dielectric" else (CHARGES,)
 
     def __init__(
         self,

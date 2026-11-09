@@ -30,6 +30,7 @@ from torch import Tensor, nn
 
 from mace_torch.backends.precision import constructed_in
 from mace_torch.models.energy import EnergyOutputHead
+from mace_torch.models.inputs import CHARGES, with_embedded_inputs
 from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
 from mace_torch.nn.radial import ZBLBasis
@@ -124,18 +125,15 @@ class MACEModel(nn.Module):
                 else None
             )
 
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        """Physical inputs beyond geometry; joint dipoles include fixed charges."""
+        return (CHARGES,) if "dipole" in config.observables else ()
+
     @property
     def input_specs(self) -> tuple[InputSpec, ...]:
-        """Embedded scalar inputs, declared for deployment consumers."""
-        return tuple(
-            InputSpec(
-                name=feature.name,
-                irreps=f"{feature.input_dim}x0e",
-                per_atom=feature.per == "atom",
-                units="1",
-            )
-            for feature in self.config.graph_features
-        )
+        """The same declarations used before model construction by data readers."""
+        return with_embedded_inputs(self.config, self.declared_inputs(self.config))
 
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:

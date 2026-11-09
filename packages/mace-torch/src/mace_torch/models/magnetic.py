@@ -31,11 +31,7 @@ from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.magnetic import MagneticBackbone, OneBodyMomentEnergy
 from mace_torch.nn.radial import ZBLBasis
 
-__all__ = ["MAGNETIC_GRAPH_INPUTS", "MagneticModel"]
-
-#: What the magnetic model reads from a structure beside its geometry: the
-#: moments, from the ``magmom`` property, and none on an atom that has none.
-MAGNETIC_GRAPH_INPUTS: tuple[str, ...] = ("magmom",)
+__all__ = ["MagneticModel"]
 
 
 class MagneticModel(nn.Module):
@@ -117,9 +113,15 @@ class MagneticModel(nn.Module):
                 else None
             )
 
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        return (DEFAULT_CATALOGUE.input("magmom"),)
+
     @property
     def input_specs(self) -> tuple[InputSpec, ...]:
-        return tuple(DEFAULT_CATALOGUE.input(name) for name in MAGNETIC_GRAPH_INPUTS)
+        from mace_torch.models.inputs import with_embedded_inputs
+
+        return with_embedded_inputs(self.config, self.declared_inputs(self.config))
 
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:

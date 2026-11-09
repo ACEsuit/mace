@@ -450,6 +450,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/models/electrostatics.py` | Polar refinement, LC/LSC sources, QEq and affine SCF, sharing solver dispatch and physical derivatives. |
 | `mace_torch/models/registry.py` | Model registration used by data declarations and assembly, outside the forward path. |
 | `mace_torch/models/energy.py` | The energy head: E0s, scale and shift, and the two reductions. |
+| `mace_torch/models/inputs.py` | Physical input specifications and embedded features shared by model families and data readers. |
 | `mace_torch/models/heads.py` | One readout head per declared observable, per head of theory. |
 | `mace_torch/models/les.py` | Long-range LES coupling, latent quantities, Born charges and their applied-field force. |
 | `mace_torch/models/magnetic.py` | `MagneticModel`: an energy model reading a moment on every atom, with its one-body term. |

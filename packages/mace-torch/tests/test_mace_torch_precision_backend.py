@@ -163,7 +163,7 @@ class Recording:
 
 FLOOR = PrecisionConfig(
     model="float32",
-    ops=(("symmetric_contraction", PrecisionPolicy("float32", "float64", "float32")),),
+    ops={"symmetric_contraction": PrecisionPolicy("float32", "float64", "float32")},
 )
 
 
@@ -218,7 +218,7 @@ def test_a_backend_without_spans_declines_one():
 def test_weights_held_apart_from_the_compute_dtype_are_refused():
     config = PrecisionConfig(
         model="float32",
-        ops=(("linear", PrecisionPolicy("float32", "float32", "float64")),),
+        ops={"linear": PrecisionPolicy("float32", "float32", "float64")},
     )
     with pytest.raises(ValueError, match="param_dtype equal to compute_dtype"):
         PrecisionBackend(Recording(), config).make_linear(LinearDescriptor())
@@ -274,7 +274,7 @@ def test_dispatch_checks_the_effective_precision_and_product():
 def test_widening_the_compute_dtype_also_resolves_tf32():
     policy = PrecisionConfig(
         model="float32",
-        ops=(("linear", PrecisionPolicy("float32", "float64", "float32", "tf32")),),
+        ops={"linear": PrecisionPolicy("float32", "float64", "float32", "tf32")},
     )
     inner = Recording()
     backend = PrecisionBackend(inner, policy)

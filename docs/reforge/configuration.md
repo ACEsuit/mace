@@ -11,6 +11,23 @@ are errors. A variant has one string `kind`, alongside its parameters. Nested
 `kind: {kind: ...}` sections are rejected. V1 files use the current schema;
 there are no aliases or migrations for earlier V1 formats.
 
+Precision overrides are a map keyed by operation name:
+
+```yaml
+precision:
+  model: float32
+  accumulate: float64
+  ops:
+    linear:
+      compute_dtype: float32
+      accumulate_dtype: float64
+      param_dtype: float32
+```
+
+An omitted operation uses the model dtype. Duplicate operation keys are errors,
+and the resolved configuration is immutable. JAX currently supports uniform
+operation precision and rejects a nonempty `precision.ops` map.
+
 ## Train from scratch
 
 ```yaml

@@ -20,10 +20,10 @@
 #include "pair.h"
 #include "update.h"
 #include "version.h"
+#include "../native/package_metadata.h"
 
 #include <algorithm>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -49,28 +49,14 @@ public:
       error->all(FLERR, "pair_style mace/native requires the native.pt2 path");
     try {
       auto meta = Loader::load_metadata_from_package(argv[0], "model");
-      if (meta.at("mace_native_version") != "1.0")
-        throw std::runtime_error("unsupported native package version");
-#ifndef MACE_HAS_CUEQ
-      if (meta.at("mace_backend") == "cueq")
-        throw std::runtime_error(
-            "cuEq package requires a plugin built with CUEQ_OPS_DIR");
-#endif
-      nodes = std::stoi(meta.at("mace_nodes"));
-      edges = std::stoi(meta.at("mace_edges"));
-      cutoff = std::stod(meta.at("mace_cutoff"));
-      comm_forward = comm_reverse = std::stoi(meta.at("mace_comm_width"));
-      const auto precision = meta.at("mace_dtype");
-      if (precision != "float64" && precision != "float32")
-        throw std::runtime_error("unsupported native package dtype");
-      dtype = precision == "float64" ? at::kDouble : at::kFloat;
-      species.clear();
-      std::istringstream symbols(meta.at("mace_species"));
-      for (std::string symbol; symbols >> symbol;)
-        species.push_back(symbol);
-      if (nodes < 3 || edges < 1 || !(cutoff > 0) || species.empty())
-        throw std::runtime_error("invalid native capacity, species or cutoff");
-      device = at::Device(meta.at("mace_device"));
+      const mace_native::PackageMetadata package(meta);
+      nodes = package.nodes;
+      edges = package.edges;
+      cutoff = package.cutoff;
+      comm_forward = comm_reverse = package.comm_width;
+      dtype = package.dtype == "float64" ? at::kDouble : at::kFloat;
+      species = package.species;
+      device = at::Device(package.device);
       if (device.is_cuda()) {
         const int count = at::getNumGPUs();
         if (!count)

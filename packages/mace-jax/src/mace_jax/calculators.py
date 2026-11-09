@@ -19,7 +19,7 @@ class MACECalculator(Calculator):
         self,
         model,
         *,
-        dtype="float64",
+        dtype=None,
         device="cpu",
         backend="reference",
         padding=None,

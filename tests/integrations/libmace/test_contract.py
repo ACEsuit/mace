@@ -11,6 +11,40 @@ from mace_torch.deploy.bundle import export_lammps
 ROOT = Path(__file__).resolve().parents[3]
 
 
+@pytest.fixture(scope="session")
+def metadata_reader(tmp_path_factory):
+    compiler = shutil.which("c++")
+    if compiler is None:
+        pytest.skip("requires a C++ compiler")
+    output = tmp_path_factory.mktemp("native-metadata") / "reader"
+    subprocess.run([
+        compiler, "-std=c++17", str(Path(__file__).with_name("native_metadata.cpp")),
+        "-I", str(ROOT / "packages/mace-torch/native"), "-o", str(output),
+    ], check=True, capture_output=True, text=True)
+    return output
+
+
+def test_shared_native_metadata_preserves_values_and_element_order(metadata_reader):
+    result = subprocess.run([str(metadata_reader)], check=True, capture_output=True, text=True)
+    assert result.stdout == "8 32 16 5 float64 cpu\nH:1 C:6 O:8 "
+
+
+@pytest.mark.parametrize("key,value", [
+    ("mace_native_version", "1.1"), ("mace_dtype", "float16"),
+    ("mace_nodes", "2"), ("mace_edges", "0"), ("mace_nodes", "8x"),
+    ("mace_comm_width", "-1"), ("mace_cutoff", "inf"),
+    ("mace_cutoff", "nan"), ("mace_cutoff", "0"),
+    ("mace_backend", "unknown"), ("mace_device", "mps"),
+    ("mace_device", "cuda:abc"), ("mace_atomic_numbers", "1 1 8"),
+    ("mace_atomic_numbers", "1 6 119"), ("mace_atomic_numbers", "1 x 8"),
+    ("mace_atomic_numbers", "1 6 8 999999999999999999999"),
+    ("mace_species", "H H O"), ("mace_species", "H O"),
+])
+def test_shared_native_metadata_refuses_invalid_fields(metadata_reader, key, value):
+    result = subprocess.run([str(metadata_reader), key, value], capture_output=True, text=True)
+    assert result.returncode == 1 and result.stderr
+
+
 def test_native_package_declares_atomic_numbers_without_another_weight_format(
     tmp_path, monkeypatch
 ):

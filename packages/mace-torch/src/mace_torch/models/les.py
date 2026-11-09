@@ -13,7 +13,7 @@ from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.model import LESConfig, ModelConfig
 from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision
-from mace_core.observables import ObservableSpec
+from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 from torch.overrides import TorchFunctionMode
@@ -21,6 +21,7 @@ from torch.overrides import TorchFunctionMode
 from mace_torch.backends.precision import constructed_in
 from mace_torch.models.base import MACEModel
 from mace_torch.models.energy import EnergyOutputHead
+from mace_torch.models.inputs import EXTERNAL_FIELD
 from mace_torch.nn.les import TensorReadout
 
 FIELD_FORCES = ObservableSpec(
@@ -52,6 +53,10 @@ class LatentEwaldModel(MACEModel):
 
     matrix_basis: Tensor
     requestable_outputs = frozenset({"BEC"})
+
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        return (EXTERNAL_FIELD,)
 
     def __init__(
         self,

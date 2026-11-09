@@ -33,6 +33,7 @@ import pytest
 import torch
 from mace_core.config.precision import PrecisionConfig
 from mace_core.data.configuration import Configuration
+from mace_core.kernels.precision import Precision
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data.batch import collate_training
 from mace_torch.data.graphs import graph_from_configuration
@@ -153,16 +154,14 @@ def legacy_model(path: Path) -> torch.nn.Module:
 
 
 @functools.lru_cache(maxsize=2)
-def converted(path: Path, precision: PrecisionConfig | None = None):
+def converted(path: Path, dtype: Precision | None = None):
+    # Cache by the requested dtype; configuration mappings are not cache keys.
+    # Float32 blocks retain the default float64 accumulation used by the goldens.
+    precision = PrecisionConfig(model=dtype) if dtype is not None else None
     with tempfile.TemporaryDirectory() as directory:
         sidecar = extract_here(path, Path(directory) / "artifact")
         imported = import_neutral(sidecar, CATALOGUE, precision=precision)
         return imported, _rebuilt_bases(sidecar)
-
-
-#: What a float32 golden is evaluated in: float32 blocks, with the sums the
-#: v1 default accumulates in float64.
-FLOAT32_PRECISION = PrecisionConfig(model="float32")
 
 
 def _rebuilt_bases(sidecar: Path) -> bool:
@@ -428,7 +427,7 @@ def assert_reproduces_golden(golden: str, device: str) -> None:
     spec = fa.ARTIFACTS[golden]
     path = artifact_path(GOLDENS[golden])
     float32 = spec.dtype == "float32"
-    imported, _ = converted(path, FLOAT32_PRECISION if float32 else None)
+    imported, _ = converted(path, "float32" if float32 else None)
     heads = list(getattr(legacy_model(path), "heads", ["Default"]))
     head = spec.loader_kwargs.get("head", heads[0])
     row = FLOAT32 if float32_constants(path) else tolerance(spec.tolerance_row)

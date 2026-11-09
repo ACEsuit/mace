@@ -8,7 +8,7 @@ from mace_core.data import KeySpecification
 from mace_core.observables import RequestedOutputs
 
 from mace_torch.data.graphs import target_specs
-from mace_torch.models.registry import DeclaresModelInputs, model_family
+from mace_torch.models.registry import model_inputs
 
 __all__ = ["graph_inputs_of", "key_specification"]
 
@@ -20,33 +20,7 @@ def graph_inputs_of(model: ModelConfig) -> tuple[str, ...]:
     embedded features. Written into every graph built for it, from the file or
     from their defaults.
     """
-    inputs: tuple[str, ...] = ()
-    registered = model_family(model.model).model
-    if isinstance(registered, DeclaresModelInputs):
-        inputs = tuple(spec.name for spec in registered.declared_inputs(model))
-    elif model.model == "les":
-        inputs = ("external_field",)
-    elif model.model == "polar":
-        from mace_torch.models.electrostatics import POLAR_GRAPH_INPUTS
-
-        inputs = POLAR_GRAPH_INPUTS
-    elif model.model in ("dipole", "dielectric"):
-        from mace_torch.models.dipoles import DIPOLE_GRAPH_INPUTS
-
-        inputs = DIPOLE_GRAPH_INPUTS[
-            "fixed" if model.model == "dipole" else "predicted"
-        ]
-    elif model.model == "magnetic":
-        from mace_torch.models.magnetic import MAGNETIC_GRAPH_INPUTS
-
-        inputs = MAGNETIC_GRAPH_INPUTS
-    elif "dipole" in model.observables:
-        # Declared joint energy/dipole readouts need the same fixed charges as
-        # the dipole-only model, through every data and deployment consumer.
-        inputs = ("charges",)
-    return inputs + tuple(
-        feature.name for feature in model.graph_features if feature.name not in inputs
-    )
+    return tuple(spec.name for spec in model_inputs(model))
 
 
 def key_specification(
@@ -68,11 +42,9 @@ def key_specification(
                 )
     spec.add_embedding_features(embedding_specs)
     if model is not None:
-        registered = model_family(model.model).model
-        if isinstance(registered, DeclaresModelInputs):
-            for item in registered.declared_inputs(model):
-                keys = spec.atom_keys if item.per_atom else spec.graph_keys
-                keys.setdefault(item.name, item.name)
+        for item in model_inputs(model):
+            keys = spec.atom_keys if item.per_atom else spec.graph_keys
+            keys.setdefault(item.name, item.name)
     if requested is not None:
         # Existing labels retain their agreed keys. New properties are read
         # by their declared name, in the declared per-atom/per-graph storage.

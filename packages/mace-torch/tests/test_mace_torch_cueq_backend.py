@@ -225,12 +225,7 @@ def test_a_wider_floor_is_cueqs_math_dtype_and_needs_no_cast(device):
     stays float32 with no cast at any op's boundary."""
     floor = PrecisionConfig(
         model="float32",
-        ops=(
-            (
-                "symmetric_contraction",
-                PrecisionPolicy("float32", "float64", "float32"),
-            ),
-        ),
+        ops={"symmetric_contraction": PrecisionPolicy("float32", "float64", "float32")},
     )
     model = engine("cueq", device=device, precision=floor)
     math = {

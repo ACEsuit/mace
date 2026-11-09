@@ -1,7 +1,6 @@
 """CLI fine-tuning controls must survive actual training and interruption."""
 
 import json
-from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -25,8 +24,8 @@ def test_lora_cli_trains_resumes_and_saves_a_plain_model(
     config = configuration(tmp_path, max_num_epochs=2)
     config = config.model_copy(
         update={
-            "precision": replace(
-                config.precision, model=str(dtype).removeprefix("torch.")
+            "precision": config.precision.model_copy(
+                update={"model": str(dtype).removeprefix("torch.")}
             )
         }
     )

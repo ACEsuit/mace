@@ -9,7 +9,7 @@
         "precision": {
           "model": "float64",
           "accumulate": "float64",
-          "ops": []
+          "ops": {}
         },
         "runtime": {
           "name": "mace",

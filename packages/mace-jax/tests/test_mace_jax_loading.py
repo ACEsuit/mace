@@ -92,6 +92,38 @@ def edited(tmp_path, edit):
     return path
 
 
+def test_runtime_precision_is_recorded_without_changing_source_metadata():
+    apply, _ = load_model(TINY, dtype="float32")
+    assert apply.dtype == apply.config.precision.model == "float32"
+    assert apply.metadata.config.resolved["precision"]["model"] == "float64"
+
+
+def test_default_load_preserves_checkpoint_precision(tmp_path):
+    def change(document, tensors):
+        document["config"]["config"]["resolved"]["precision"].update(
+            model="float32", accumulate="float32"
+        )
+
+    apply, _ = load_model(edited(tmp_path, change))
+    assert apply.dtype == "float32"
+    assert apply.config.precision.accumulate == "float32"
+
+
+@pytest.mark.parametrize("dtype", [None, "float32"])
+def test_per_operation_precision_is_refused_instead_of_discarded(tmp_path, dtype):
+    def change(document, tensors):
+        document["config"]["config"]["resolved"]["precision"]["ops"] = {
+            "linear": {
+                "compute_dtype": "float32",
+                "accumulate_dtype": "float32",
+                "param_dtype": "float32",
+            }
+        }
+
+    with pytest.raises(ModelLoadError, match=r"per-operation precision\.ops"):
+        load_model(edited(tmp_path, change), dtype=dtype)
+
+
 @pytest.mark.parametrize(
     "field,value,match",
     [

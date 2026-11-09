@@ -3,6 +3,7 @@
 // and edge derivative are the same exported functions used by native LAMMPS.
 #include "mace.h"
 #include "neighbour_list.h"
+#include "../native/package_metadata.h"
 
 #include <ATen/ATen.h>
 #include <c10/core/DeviceGuard.h>
@@ -15,7 +16,6 @@
 #include <cmath>
 #include <iostream>
 #include <mutex>
-#include <sstream>
 #include <unordered_map>
 
 using Loader = torch::inductor::AOTIModelPackageLoader;
@@ -40,36 +40,15 @@ struct MACE::Runtime {
 
   explicit Runtime(const std::string &path) {
     const auto meta = Loader::load_metadata_from_package(path, "model");
-    TORCH_CHECK(meta.at("mace_native_version") == "1.0",
-                "libmace requires a V1 native package version 1.0");
-    TORCH_CHECK(meta.count("mace_atomic_numbers"),
-                "native.pt2 lacks atomic numbers; re-export with current V1");
-    nodes = std::stoi(meta.at("mace_nodes"));
-    edges = std::stoi(meta.at("mace_edges"));
-    cutoff = std::stod(meta.at("mace_cutoff"));
-    const auto precision = meta.at("mace_dtype");
-    TORCH_CHECK(precision == "float64" || precision == "float32",
-                "native package dtype must be float64 or float32");
-    dtype = precision == "float64" ? at::kDouble : at::kFloat;
-    const auto backend = meta.at("mace_backend");
-    TORCH_CHECK(backend == "reference" || backend == "cueq",
-                "unsupported native package backend: ", backend);
-#ifndef MACE_HAS_CUEQ
-    TORCH_CHECK(backend != "cueq",
-                "cuEq package requires libmace built with CUEQ_OPS_DIR");
-#endif
-    std::istringstream numbers(meta.at("mace_atomic_numbers"));
-    for (int number; numbers >> number;) {
-      TORCH_CHECK(number > 0 && number <= 118 && !species.count(number),
-                  "invalid or duplicate native atomic number: ", number);
+    const mace_native::PackageMetadata package(meta);
+    nodes = package.nodes;
+    edges = package.edges;
+    cutoff = package.cutoff;
+    dtype = package.dtype == "float64" ? at::kDouble : at::kFloat;
+    for (int number : package.atomic_numbers) {
       species.emplace(number, species.size());
     }
-    TORCH_CHECK(nodes >= 3 && edges >= 1 && std::isfinite(cutoff) &&
-                    cutoff > 0 && !species.empty(),
-                "invalid native capacity, cutoff or species");
-    device = at::Device(meta.at("mace_device"));
-    TORCH_CHECK(device.is_cpu() || device.is_cuda(),
-                "native package device must be cpu or cuda");
+    device = at::Device(package.device);
     if (device.is_cuda()) {
       TORCH_CHECK(at::getNumGPUs() > 0, "CUDA package needs a visible GPU");
       device = at::Device(at::kCUDA, 0);

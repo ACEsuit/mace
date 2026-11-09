@@ -312,7 +312,9 @@ def test_cuda_compiled_steps_with_cueq(artifact, polar_artifact, dtype, family):
 
     require_cuda()
     path = artifact if family == "energy" else polar_artifact
-    precision = PrecisionConfig(model=str(dtype).removeprefix("torch."))
+    precision = PrecisionConfig(
+        model="float32" if dtype == torch.float32 else "float64"
+    )
     settings = dict(
         device="cuda",
         backend="cueq",
@@ -355,3 +357,38 @@ def test_declared_atomic_moments_and_magnetic_diagnostics(tmp_path):
         close(result["energy"][0], atoms.get_potential_energy())
         close(result["forces"], atoms.get_forces())
         assert result["node_interaction_energy"].shape[0] == len(atoms)
+
+
+@fp64_only
+def test_joint_dipole_preserves_supplied_fixed_charges(tmp_path):
+    from ase import Atoms, units
+    from mace_core.metadata import (
+        ConfigRecord,
+        E0Details,
+        HeadSummary,
+        ModelMetadata,
+        Provenance,
+    )
+    from test_mace_torch_joint_dipole import build
+
+    engine, config = build()
+    metadata = ModelMetadata(
+        elements=[1],
+        config=ConfigRecord.from_config(config),
+        provenance=Provenance(versions={"mace-torch-v1": "test"}),
+        heads={
+            "default": HeadSummary(e0=E0Details(source="explicit", values={"H": 0.0}))
+        },
+    )
+    path = write_model(tmp_path / "joint", engine, metadata)
+    atoms = Atoms("H2", positions=[[0.2, 0.3, -0.1], [0.9, -0.1, 0.2]])
+    state = state_of(atoms)
+    runtime = adapter(path, compute_forces=False, compute_stress=False)
+    without_charges = runtime(state)["dipole"]
+    state.atom_extras["charges"] = torch.tensor([-0.3, 0.7], dtype=torch.float64)
+    graph, _ = runtime._graph(state)
+    close(graph["charges"], state.charges)
+    actual = runtime(state)["dipole"]
+    # The catalogue reports dipoles in Debye; positions and charges use Å and e.
+    expected = (state.positions * state.charges[:, None]).sum(0)[None] / units.Debye
+    close(actual - without_charges, expected)

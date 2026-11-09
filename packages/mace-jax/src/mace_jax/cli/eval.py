@@ -15,7 +15,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--model", required=True)
     parser.add_argument("--configs", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--dtype", choices=("float64", "float32"), default="float64")
+    parser.add_argument("--dtype", choices=("float64", "float32"))
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--backend", default="reference")
     args = parser.parse_args(argv)

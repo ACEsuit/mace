@@ -32,7 +32,6 @@ import torch
 from tests.golden import foundation_artifacts as fa
 from tests.golden.harness import load_fixtures, tolerance
 from tests.parity.test_foundation_roster import (
-    FLOAT32_PRECISION,
     GOLDEN_PARAMS,
     GOLDENS,
     IN_PROCESS,
@@ -83,7 +82,7 @@ def deterministic(enabled: bool):
 def float32_outputs(name: str, enabled: bool) -> dict[tuple[str, str], np.ndarray]:
     """Every fixture the golden pins, evaluated in float32 on the GPU."""
     spec = fa.ARTIFACTS[name]
-    imported, _ = converted(artifact_path(GOLDENS[name]), FLOAT32_PRECISION)
+    imported, _ = converted(artifact_path(GOLDENS[name]), "float32")
     imported.engine.to("cuda")
     found = {}
     try:

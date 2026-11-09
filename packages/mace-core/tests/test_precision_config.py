@@ -25,12 +25,54 @@ from mace_core.kernels.descriptors import (
     SymmetricContractionDescriptor,
 )
 from mace_core.kernels.precision import widest
+from pydantic import ValidationError
 
 ALL_DESCRIPTORS = [
     cls
     for _, cls in inspect.getmembers(descriptors, inspect.isclass)
     if issubclass(cls, Descriptor) and cls is not Descriptor
 ]
+
+
+def test_operation_policies_use_a_named_immutable_mapping():
+    raw = {
+        "precision": {
+            "model": "float32",
+            "ops": {
+                "linear": {
+                    "compute_dtype": "float32",
+                    "accumulate_dtype": "float64",
+                    "param_dtype": "float32",
+                }
+            },
+        }
+    }
+    config = ResolvedConfig.from_dict(raw)
+    assert config.precision.policy_for(LinearDescriptor()).accumulate_dtype == "float64"
+    assert (
+        config.to_resolved_dict()["precision"]["ops"]["linear"]["param_dtype"]
+        == "float32"
+    )
+    assert ResolvedConfig.model_validate_json(config.model_dump_json()) == config
+    with pytest.raises(TypeError, match="immutable"):
+        config.precision.ops["linear"] = PrecisionPolicy.uniform("float64")
+    with pytest.raises(ValidationError):
+        config.precision.model_copy(update={"model": "typo"})
+    with pytest.raises(ValidationError):
+        PrecisionConfig.model_validate(
+            {
+                "ops": [
+                    ("linear", PrecisionPolicy.uniform("float32")),
+                    ("linear", PrecisionPolicy.uniform("float64")),
+                ]
+            }
+        )
+
+
+@pytest.mark.parametrize("name", ["model", "accumulate"])
+def test_invalid_precision_names_fail_at_direct_construction(name):
+    with pytest.raises(ValidationError):
+        PrecisionConfig(**{name: "typo"})  # ty: ignore[invalid-argument-type]
 
 
 def test_the_presets():
@@ -64,9 +106,7 @@ def test_every_descriptor_has_an_op_kind(descriptor):
     matched = [
         kind
         for kind in OP_KINDS
-        if PrecisionConfig(model="float32", ops=((kind, policy),)).policy_for(
-            descriptor()
-        )
+        if PrecisionConfig(model="float32", ops={kind: policy}).policy_for(descriptor())
         == policy
     ]
     assert len(matched) == 1, matched
@@ -75,14 +115,11 @@ def test_every_descriptor_has_an_op_kind(descriptor):
 def test_a_span_takes_the_widest_of_its_members_in_each_field():
     config = PrecisionConfig(
         model="float32",
-        ops=(
-            ("linear", PrecisionPolicy("float32", "float32", "float32")),
-            (
-                "channelwise_tp_conv",
-                PrecisionPolicy("float32", "float64", "float32"),
-            ),
-            ("segment_reduce", PrecisionPolicy("float64", "float64", "float64")),
-        ),
+        ops={
+            "linear": PrecisionPolicy("float32", "float32", "float32"),
+            "channelwise_tp_conv": PrecisionPolicy("float32", "float64", "float32"),
+            "segment_reduce": PrecisionPolicy("float64", "float64", "float64"),
+        },
     )
     span = (LinearDescriptor(), ChannelwiseTPConvDescriptor())
     assert config.policy_for(span) == PrecisionPolicy("float32", "float64", "float32")
@@ -101,7 +138,7 @@ def test_a_descriptor_subclass_keeps_its_operation_policy():
         pass
 
     policy = PrecisionPolicy.uniform("float64")
-    config = PrecisionConfig(model="float32", ops=(("linear", policy),))
+    config = PrecisionConfig(model="float32", ops={"linear": policy})
     assert config.policy_for(SpecializedLinear()) == policy
 
 
@@ -117,7 +154,7 @@ def test_a_floor_narrower_than_the_compute_dtype_is_refused():
 
 def test_an_unknown_op_kind_is_refused_with_the_known_ones():
     with pytest.raises(ValueError, match="symmetric_contraction"):
-        PrecisionConfig(ops=(("contraction", PrecisionPolicy.uniform("float64")),))
+        PrecisionConfig(ops={"contraction": PrecisionPolicy.uniform("float64")})
 
 
 def test_a_device_with_float64_changes_nothing():
@@ -180,12 +217,9 @@ def test_invalid_product_policies_fail_at_construction():
         PrecisionPolicy("float64", "float64", "float64", product="tf32")
     with pytest.raises(ValueError, match="apply to"):
         PrecisionConfig(
-            ops=(
-                (
-                    "radial_basis",
-                    PrecisionPolicy("float32", "float32", "float32", "tf32"),
-                ),
-            )
+            ops={
+                "radial_basis": PrecisionPolicy("float32", "float32", "float32", "tf32")
+            }
         )
     with pytest.raises(ValueError, match="unknown matrix product"):
         replace(PrecisionPolicy.uniform("float32"), product="unknown")

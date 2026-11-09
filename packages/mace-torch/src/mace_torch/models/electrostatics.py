@@ -72,6 +72,7 @@ from mace_torch.kernels import segment_sum
 from mace_torch.models.base import MACEModel
 from mace_torch.models.energy import EnergyOutputHead
 from mace_torch.models.heads import ObservableHead
+from mace_torch.models.inputs import EXTERNAL_FIELD, TOTAL_CHARGE, TOTAL_SPIN
 from mace_torch.nn.charge_transfer import SplitChargeSource
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
@@ -79,7 +80,6 @@ from mace_torch.nn.fixed_point_scf import AffineFieldUpdate, FixedPointEnergy
 from mace_torch.physics.charge_equilibration import ChargeEquilibration
 
 __all__ = [
-    "POLAR_GRAPH_INPUTS",
     "FixedPointSCFModel",
     "LocalChargeModel",
     "LocalSplitChargeModel",
@@ -128,12 +128,7 @@ def _polar_extra_observables(max_l: int) -> tuple[ObservableSpec, ...]:
     )
 
 
-POLAR_INPUT_SPECS = (
-    InputSpec(name="total_charge", irreps="0e", per_atom=False, units="e"),
-    InputSpec(name="total_spin", irreps="0e", per_atom=False, units="1"),
-    InputSpec(name="external_field", irreps="1o", per_atom=False, units="eV/(e*Å)"),
-)
-POLAR_GRAPH_INPUTS = tuple(spec.name for spec in POLAR_INPUT_SPECS)
+POLAR_INPUT_SPECS = (TOTAL_CHARGE, TOTAL_SPIN, EXTERNAL_FIELD)
 
 
 def _polar_descriptor(
@@ -361,9 +356,9 @@ class PolarModel(MACEModel):
         corrected = torch.cat((charges.unsqueeze(-1), density[:, :, 1:]), dim=-1)
         return corrected, weights.to(fukui.dtype)
 
-    @property
-    def input_specs(self) -> tuple[InputSpec, ...]:
-        return super().input_specs + POLAR_INPUT_SPECS
+    @staticmethod
+    def declared_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
+        return POLAR_INPUT_SPECS
 
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:
@@ -546,12 +541,6 @@ class _ChargeAwareModel(MACEModel):
             "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
             "descriptor": descriptor_record(self.descriptor),
         }
-
-    @property
-    def input_specs(self) -> tuple[InputSpec, ...]:
-        specs = {spec.name: spec for spec in super().input_specs}
-        specs.update({spec.name: spec for spec in self.declared_inputs(self.config)})
-        return tuple(specs.values())
 
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:

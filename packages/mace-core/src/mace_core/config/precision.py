@@ -21,10 +21,20 @@ Dtypes are names, from :mod:`mace_core.kernels.precision`.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 
+from pydantic import Field, model_validator
+
+from mace_core.config.base import ConfigSection
 from mace_core.kernels.descriptors import Descriptor, DistanceTransformDescriptor
-from mace_core.kernels.precision import PRODUCTS, WIDTH, Precision, Product, widest
+from mace_core.kernels.precision import (
+    PRECISIONS,
+    PRODUCTS,
+    WIDTH,
+    Precision,
+    Product,
+    widest,
+)
 from mace_core.kernels.protocol import DISPATCHED_OPS, REFERENCE_ONLY_OPS
 
 __all__ = [
@@ -62,6 +72,9 @@ class PrecisionPolicy:
     product: Product = "ieee"
 
     def __post_init__(self) -> None:
+        for name in ("compute_dtype", "accumulate_dtype", "param_dtype"):
+            if getattr(self, name) not in PRECISIONS:
+                raise ValueError(f"unknown {name} {getattr(self, name)!r}")
         if self.product not in PRODUCTS:
             raise ValueError(f"unknown matrix product {self.product!r}")
         if self.product == "tf32" and self.compute_dtype != "float32":
@@ -79,8 +92,7 @@ class PrecisionPolicy:
         return cls(precision, precision, precision)
 
 
-@dataclass(frozen=True)
-class PrecisionConfig:
+class PrecisionConfig(ConfigSection):
     """The model's precision: its interface, its reductions, and each op kind.
 
     Attributes:
@@ -96,10 +108,11 @@ class PrecisionConfig:
 
     model: Precision = "float64"
     accumulate: Precision = "float64"
-    ops: tuple[tuple[str, PrecisionPolicy], ...] = field(default=())
+    ops: dict[str, PrecisionPolicy] = Field(default_factory=dict)
 
-    def __post_init__(self) -> None:
-        unknown = sorted({kind for kind, _ in self.ops} - set(OP_KINDS))
+    @model_validator(mode="after")
+    def _valid_policies(self) -> PrecisionConfig:
+        unknown = sorted(self.ops.keys() - set(OP_KINDS))
         if unknown:
             raise ValueError(
                 f"{unknown} are not op kinds; a policy can be given for "
@@ -107,13 +120,14 @@ class PrecisionConfig:
             )
         invalid_products = [
             kind
-            for kind, policy in self.ops
+            for kind, policy in self.ops.items()
             if policy.product == "tf32" and kind not in PRODUCT_KINDS
         ]
         if invalid_products:
             raise ValueError(
                 f"tf32 products apply to {PRODUCT_KINDS}, received {invalid_products}"
             )
+        return self
 
     @property
     def interface_dtype(self) -> Precision:
@@ -145,8 +159,7 @@ class PrecisionConfig:
                 if all(p.product == "tf32" for p in policies)
                 else "ieee",
             )
-        overrides = dict(self.ops)
-        return overrides.get(descriptor.op, PrecisionPolicy.uniform(self.model))
+        return self.ops.get(descriptor.op, PrecisionPolicy.uniform(self.model))
 
     def resolved_accumulate(self, supports_float64: bool) -> Precision:
         """The model-level accumulation type this device can actually give.
@@ -175,20 +188,17 @@ class PrecisionConfig:
                 return self.model
             return name
 
-        ops = tuple(
-            (
-                kind,
-                PrecisionPolicy(
-                    lower(policy.compute_dtype, f"{kind} compute"),
-                    lower(policy.accumulate_dtype, f"{kind} accumulate"),
-                    lower(policy.param_dtype, f"{kind} parameters"),
-                    policy.product,
-                ),
+        ops = {
+            kind: PrecisionPolicy(
+                lower(policy.compute_dtype, f"{kind} compute"),
+                lower(policy.accumulate_dtype, f"{kind} accumulate"),
+                lower(policy.param_dtype, f"{kind} parameters"),
+                policy.product,
             )
-            for kind, policy in self.ops
-        )
+            for kind, policy in self.ops.items()
+        }
         accumulate = lower(self.accumulate, "the energy reduction")
-        return replace(self, accumulate=accumulate, ops=ops), degraded
+        return self.model_copy(update={"accumulate": accumulate, "ops": ops}), degraded
 
     @classmethod
     def float64(cls) -> PrecisionConfig:
@@ -207,7 +217,7 @@ class PrecisionConfig:
         return cls(
             model="float32",
             accumulate="float64",
-            ops=tuple((kind, policy) for kind in PRODUCT_KINDS),
+            ops=dict.fromkeys(PRODUCT_KINDS, policy),
         )
 
     @classmethod
@@ -219,13 +229,12 @@ class PrecisionConfig:
         return cls(
             model="float32",
             accumulate="float64",
-            ops=(
-                ("radial_basis", PrecisionPolicy.uniform("float64")),
-                (
-                    "symmetric_contraction",
-                    PrecisionPolicy("float32", "float64", "float32"),
+            ops={
+                "radial_basis": PrecisionPolicy.uniform("float64"),
+                "symmetric_contraction": PrecisionPolicy(
+                    "float32", "float64", "float32"
                 ),
-            ),
+            },
         )
 
 

@@ -10,7 +10,6 @@ import jax
 import numpy as np
 from flax import nnx
 from mace_core.artifacts import resolve_checkpoint
-from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.kernels.registry import get_backend
 from mace_core.metadata import ModelMetadata
@@ -46,7 +45,10 @@ class ApplyFn:
     metadata: ModelMetadata
     config: ResolvedConfig
     elements: tuple[int, ...]
-    dtype: str
+
+    @property
+    def dtype(self) -> str:
+        return self.config.precision.model
 
     def __call__(
         self,
@@ -129,14 +131,14 @@ def _paths(reference: str | Path) -> tuple[Path, Path]:
 
 
 def load_model(
-    path_or_id: str | Path, *, backend: str = "reference", dtype: str = "float64"
+    path_or_id: str | Path, *, backend: str = "reference", dtype: str | None = None
 ) -> tuple[ApplyFn, nnx.State]:
     """Load a reduced, single-head energy model. Enables x64 before making arrays.
 
     Both metadata and tensor manifests are checked before any model weights are
     installed. Contraction paths are matched by coupling-tree name, never index.
     """
-    if dtype not in {"float32", "float64"}:
+    if dtype is not None and dtype not in {"float32", "float64"}:
         raise ModelLoadError(
             f"dtype={dtype!r}; JAX inference supports float32 or float64"
         )
@@ -165,8 +167,26 @@ def load_model(
         raise ModelLoadError(
             "metadata.elements is empty; reconvert with the current converter"
         )
-    precision = (
-        PrecisionConfig.float64() if dtype == "float64" else PrecisionConfig.float32()
+    precision = config.precision
+    if dtype is not None:
+        precision = precision.model_copy(update={"model": dtype})
+    if precision.ops:
+        raise ModelLoadError(
+            "JAX inference does not support per-operation precision.ops; "
+            "use the torch engine for this artifact"
+        )
+    if precision.model not in {"float32", "float64"} or precision.accumulate not in {
+        "float32",
+        "float64",
+    }:
+        raise ModelLoadError(
+            "JAX precision.model and accumulate must be float32 or float64"
+        )
+    config = config.model_copy(
+        update={
+            "precision": precision,
+            "model": config.model.model_copy(update={"backend": backend}),
+        }
     )
     model = MACEModel(
         get_backend(backend, framework="jax"), config.model, elements, precision
@@ -220,4 +240,4 @@ def load_model(
     for name, op in expected.items():
         op.load_canonical(state[name])
     graphdef, params = nnx.split(model)
-    return ApplyFn(graphdef, metadata, config, elements, dtype), params
+    return ApplyFn(graphdef, metadata, config, elements), params
