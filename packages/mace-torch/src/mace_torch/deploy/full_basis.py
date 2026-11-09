@@ -18,7 +18,7 @@ from mace_core.clebsch_gordan import (
     full_symmetric_tensor_product_basis,
     reduced_to_full,
 )
-from mace_core.kernels.descriptors import SymmetricContractionDescriptor
+from mace_core.kernels.specs import SymmetricContractionSpec
 from safetensors.torch import save_file
 
 from mace_torch.canonical import canonical_modules
@@ -64,10 +64,10 @@ def export_full_basis_weights(
     weights = {}
     blocks = []
     for identity, module in canonical_modules(deployed.derivative_engine).items():
-        descriptor = getattr(module, "descriptor", None)
-        if not isinstance(descriptor, SymmetricContractionDescriptor):
+        kernel_spec = getattr(module, "kernel_spec", None)
+        if not isinstance(kernel_spec, SymmetricContractionSpec):
             continue
-        if descriptor.basis != "reduced":
+        if kernel_spec.basis != "reduced":
             raise DeployError(
                 "full-basis export requires reduced weights; use "
                 "mace model convert --to-basis reduced for a full-basis checkpoint"
@@ -75,15 +75,15 @@ def export_full_basis_weights(
         state = canonical[identity]
         parts = iter(torch.split(state["weight"], state["path_counts"].tolist(), dim=1))
         expanded, groups, offset = [], [], 0
-        for order in range(1, descriptor.correlation + 1):
-            for _, irrep in Irreps.parse(descriptor.irreps_out):
+        for order in range(1, kernel_spec.correlation + 1):
+            for _, irrep in Irreps.parse(kernel_spec.irreps_out):
                 part = next(parts).detach().cpu().numpy()
-                full = reduced_to_full(part, descriptor.irreps_in, order, irrep)
+                full = reduced_to_full(part, kernel_spec.irreps_in, order, irrep)
                 expanded.append(torch.from_numpy(full))
                 target = str(irrep)
-                labels = full_path_labels(descriptor.irreps_in, order, target)[target]
+                labels = full_path_labels(kernel_spec.irreps_in, order, target)[target]
                 basis = full_symmetric_tensor_product_basis(
-                    descriptor.irreps_in, order, target
+                    kernel_spec.irreps_in, order, target
                 )[target]
                 groups.append(
                     {
@@ -99,7 +99,7 @@ def export_full_basis_weights(
                     }
                 )
                 offset += len(labels)
-        if descriptor.num_elements not in {1, len(deployed.z_table.zs)}:
+        if kernel_spec.num_elements not in {1, len(deployed.z_table.zs)}:
             raise DeployError(f"{identity}: contraction has an unknown element layout")
         key = f"blocks.{len(blocks)}"
         value = torch.cat(expanded, dim=1).contiguous()
@@ -108,13 +108,13 @@ def export_full_basis_weights(
             {
                 "tensor": key,
                 "component": identity,
-                "irreps_in": descriptor.irreps_in,
-                "irreps_out": descriptor.irreps_out,
-                "correlation": descriptor.correlation,
-                "num_features": descriptor.num_features,
+                "irreps_in": kernel_spec.irreps_in,
+                "irreps_out": kernel_spec.irreps_out,
+                "correlation": kernel_spec.correlation,
+                "num_features": kernel_spec.num_features,
                 "element_rows": (
                     "shared"
-                    if descriptor.num_elements == 1 and len(deployed.z_table.zs) > 1
+                    if kernel_spec.num_elements == 1 and len(deployed.z_table.zs) > 1
                     else "species_order"
                 ),
                 "shape": list(value.shape),

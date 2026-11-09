@@ -5,7 +5,7 @@ accelerated one, it rarely builds every op the model asks for: oeq builds only
 the convolution, and cueq declines the shapes its kernels get wrong. Each op
 the chosen backend does not build is built by the reference instead, decided
 here, once, at build time, from the backend's own answer to
-``supports(descriptor)``. Nothing is tried and caught: the frozen tree's
+``supports(kernel_spec)``. Nothing is tried and caught: the frozen tree's
 convert, fail and reconvert (``mace/calculators/mace_torchsim.py:123-137``) has
 no counterpart.
 
@@ -47,13 +47,13 @@ class BuildDecision:
 
     Attributes:
         op: The factory name, such as ``"channelwise_tp_conv"``.
-        descriptor: What was asked for.
+        kernel_spec: What was asked for.
         backend: The name of the backend that built it.
         reason: Empty when the chosen backend built it; otherwise why not.
     """
 
     op: str
-    descriptor: Any
+    kernel_spec: Any
     backend: str
     reason: str = ""
     layer: int | None = None
@@ -105,70 +105,70 @@ class CompositeBackend:
             spec_version=KERNEL_SPEC_VERSION,
         )
 
-    def _build(self, op: str, descriptor: Any) -> Any:
-        descriptor = replace(descriptor, layout=self.layout.name)
+    def _build(self, op: str, kernel_spec: Any) -> Any:
+        kernel_spec = replace(kernel_spec, layout=self.layout.name)
         capabilities = self._primary_capabilities
         effective = (
-            self.primary.op_descriptor(descriptor)
+            self.primary.op_spec(kernel_spec)
             if op in capabilities.ops and isinstance(self.primary, PrecisionBackend)
-            else descriptor
+            else kernel_spec
         )
         if op not in capabilities.ops:
             reason = f"{self.primary.name} does not implement {op}"
         elif not capabilities.supports(effective):
-            reason = f"{self.primary.name} declines this descriptor"
+            reason = f"{self.primary.name} declines this kernel specification"
         else:
-            built = getattr(self.primary, f"make_{op}")(descriptor)
+            built = getattr(self.primary, f"make_{op}")(kernel_spec)
             if built is not None:
                 self.decisions.append(BuildDecision(op, effective, self.primary.name))
                 return built
             reason = f"{self.primary.name} leaves {op} to the reference"
-        fallback_descriptor = (
-            self.fallback.op_descriptor(descriptor)
+        fallback_spec = (
+            self.fallback.op_spec(kernel_spec)
             if isinstance(self.fallback, PrecisionBackend)
-            else descriptor
+            else kernel_spec
         )
         self.decisions.append(
-            BuildDecision(op, fallback_descriptor, self.fallback.name, reason)
+            BuildDecision(op, fallback_spec, self.fallback.name, reason)
         )
         if op not in REFERENCE_ONLY_OPS and op in capabilities.ops:
-            logger.warning("%s is built by the reference: %s", descriptor, reason)
-        return getattr(self.fallback, f"make_{op}")(descriptor)
+            logger.warning("%s is built by the reference: %s", kernel_spec, reason)
+        return getattr(self.fallback, f"make_{op}")(kernel_spec)
 
-    def make_radial_mlp(self, descriptor: Any) -> Any:
-        return self._build("radial_mlp", descriptor)
+    def make_radial_mlp(self, kernel_spec: Any) -> Any:
+        return self._build("radial_mlp", kernel_spec)
 
-    def make_distance_transform(self, descriptor: Any) -> Any:
-        return self._build("distance_transform", descriptor)
+    def make_distance_transform(self, kernel_spec: Any) -> Any:
+        return self._build("distance_transform", kernel_spec)
 
-    def make_linear(self, descriptor: Any) -> Any:
-        return self._build("linear", descriptor)
+    def make_linear(self, kernel_spec: Any) -> Any:
+        return self._build("linear", kernel_spec)
 
-    def make_channelwise_tp_conv(self, descriptor: Any) -> Any:
-        return self._build("channelwise_tp_conv", descriptor)
+    def make_channelwise_tp_conv(self, kernel_spec: Any) -> Any:
+        return self._build("channelwise_tp_conv", kernel_spec)
 
-    def make_symmetric_contraction(self, descriptor: Any) -> Any:
-        return self._build("symmetric_contraction", descriptor)
+    def make_symmetric_contraction(self, kernel_spec: Any) -> Any:
+        return self._build("symmetric_contraction", kernel_spec)
 
-    def make_fully_connected_tp(self, descriptor: Any) -> Any:
-        return self._build("fully_connected_tp", descriptor)
+    def make_fully_connected_tp(self, kernel_spec: Any) -> Any:
+        return self._build("fully_connected_tp", kernel_spec)
 
-    def make_segment_reduce(self, descriptor: Any) -> Any:
-        return self._build("segment_reduce", descriptor)
+    def make_segment_reduce(self, kernel_spec: Any) -> Any:
+        return self._build("segment_reduce", kernel_spec)
 
-    def make_spherical_harmonics(self, descriptor: Any) -> Any:
-        return self._build("spherical_harmonics", descriptor)
+    def make_spherical_harmonics(self, kernel_spec: Any) -> Any:
+        return self._build("spherical_harmonics", kernel_spec)
 
-    def make_radial_basis(self, descriptor: Any) -> Any:
-        return self._build("radial_basis", descriptor)
+    def make_radial_basis(self, kernel_spec: Any) -> Any:
+        return self._build("radial_basis", kernel_spec)
 
-    def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> Any | None:
+    def make_interaction_layer(self, kernel_specs: tuple[Any, ...]) -> Any | None:
         """One layout for the span; precision is stamped by PrecisionBackend."""
         members = tuple(
-            replace(member, layout=self.layout.name) for member in descriptors
+            replace(member, layout=self.layout.name) for member in kernel_specs
         )
         if isinstance(self.primary, PrecisionBackend):
-            members = self.primary.span_descriptors(members)
+            members = self.primary.span_specs(members)
         layer = self._span_requests
         self._span_requests += 1
         capabilities = self._primary_capabilities
@@ -275,7 +275,7 @@ def require_double_backward(name: str, why: str) -> None:
     """Refuse a backend that cannot be differentiated twice, for ``why``.
 
     Raises:
-        UnsupportedDescriptorError: Loudly, naming the backend and the reason
+        UnsupportedKernelSpecError: Loudly, naming the backend and the reason
             it is needed. The backend stays usable for inference.
     """
     get_backend(name).capabilities().require_double_backward(name, why)

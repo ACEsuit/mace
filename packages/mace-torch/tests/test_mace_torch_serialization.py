@@ -22,7 +22,7 @@ from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import Precision
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, ScaleShiftSpec
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn import MACEBackbone
 from mace_torch.serialization import (
@@ -272,8 +272,8 @@ def test_a_file_missing_an_operator_entirely_is_refused(tmp_path):
         load_checkpoint(tmp_path / "anchor", build(dict(SETTINGS)))
 
 
-def energy_head(precision: Precision) -> EnergyOutputHead:
-    return EnergyOutputHead(
+def energy_readout(precision: Precision) -> EnergyReadout:
+    return EnergyReadout(
         ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
         ["default"],
         AtomicNumberTable([1, 8]),
@@ -289,9 +289,9 @@ def test_the_isolated_atom_table_stays_float64_through_the_file(tmp_path):
     The table holds energies of thousands of eV. Writing it at the model's own
     precision would round them on the way out and no later cast recovers them.
     """
-    head = energy_head("float32")
+    head = energy_readout("float32")
     save_checkpoint(tmp_path / "head", head, {})
-    restored = load_checkpoint(tmp_path / "head", energy_head("float32"))
+    restored = load_checkpoint(tmp_path / "head", energy_readout("float32"))
 
     assert restored.e0_table.dtype == torch.float64
     assert torch.equal(restored.e0_table, head.e0_table)
@@ -300,7 +300,7 @@ def test_the_isolated_atom_table_stays_float64_through_the_file(tmp_path):
 
 @fp64_only
 def test_a_narrowed_isolated_atom_table_is_refused(tmp_path):
-    head = energy_head("float64")
+    head = energy_readout("float64")
     with pytest.raises(ValueError, match="float64"):
         head.load_canonical(
             {

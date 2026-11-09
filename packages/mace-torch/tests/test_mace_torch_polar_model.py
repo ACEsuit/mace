@@ -26,7 +26,7 @@ from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.electrostatics import ReferenceSolver
 from mace_torch.kernels.initialization import initialize_model_weights
-from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, ScaleShiftSpec
 from mace_torch.models.electrostatics import PolarModel
 from mace_torch_engine_fixtures import ENERGY, build_graph, crystal, molecule
 from scipy.spatial.transform import Rotation
@@ -49,7 +49,7 @@ def build_model(
     supports_float64=True,
     **overrides,
 ) -> PolarModel:
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
         ["default"],
         AtomicNumberTable([1, 8]),
@@ -80,7 +80,7 @@ def build_model(
         ),
         atomic_numbers=[1, 8],
         observables=[WITH_STRESS],
-        energy_head=head,
+        energy_readout=head,
         electrostatics=ElectrostaticsConfig(
             enabled=True,
             solver=overrides.pop("solver", "reference"),
@@ -286,7 +286,7 @@ def test_charge_reductions_use_the_resolved_precision_floor(
         precision=precision,
     )
     assert model.total_dtype is expected
-    assert getattr(torch, model.descriptor.precision) is expected
+    assert getattr(torch, model.solver_spec.precision) is expected
 
 
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
@@ -408,14 +408,14 @@ def test_float32_polar_electrostatics_honours_the_reduction_floor():
         dtype=torch.float32,
         generator=torch.Generator().manual_seed(11),
     )
-    cache = model.projection.prepare(long_range_geometry(graph, model.descriptor))
+    cache = model.projection.prepare(long_range_geometry(graph, model.solver_spec))
     expected_cache = control.projection.prepare(
-        long_range_geometry(graph, control.descriptor)
+        long_range_geometry(graph, control.solver_spec)
     )
     actual = model.projection(cache, source)
     expected = control.projection(expected_cache, source.double())
     assert actual.dtype == torch.float32
-    assert model.descriptor.precision == "float64"
+    assert model.solver_spec.precision == "float64"
     torch.testing.assert_close(
         actual.double(), expected, atol=FP32.atol, rtol=FP32.rtol
     )

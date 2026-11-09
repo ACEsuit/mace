@@ -90,8 +90,8 @@ def test_step_by_step_ends_with_the_one_go_run_s_weights(foundation, tmp_path):
     built = build(staged_config)
     staged = train(staged_config, built)
 
-    first = canonical_state(one_go.model.get_submodule("backbone"))
-    second = canonical_state(staged.model.get_submodule("backbone"))
+    first = canonical_state(one_go.engine.get_submodule("model"))
+    second = canonical_state(staged.engine.get_submodule("model"))
     assert first.keys() == second.keys()
     for path, tensors in first.items():
         for name, value in tensors.items():

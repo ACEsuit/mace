@@ -39,7 +39,7 @@ def sidecar(**changes) -> NeutralSidecar:
             "node_embedding": {
                 "op_kind": "linear",
                 "schema_version": "1.0",
-                "descriptor": {"irreps_in": "2x0e", "irreps_out": "4x0e"},
+                "kernel_spec": {"irreps_in": "2x0e", "irreps_out": "4x0e"},
                 "tensors": ["weight", "bias"],
             }
         },

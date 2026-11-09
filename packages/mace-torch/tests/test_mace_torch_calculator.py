@@ -420,7 +420,7 @@ def test_declared_temperature_uses_recorded_key_without_replacing_aliases(
     config = ResolvedConfig.model_validate(document)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    path = write_model(tmp_path / "conditioned", built.model, built.metadata)
+    path = write_model(tmp_path / "conditioned", built.engine, built.metadata)
     calculator = MACECalculator(
         model_paths=path,
         info_keys={
@@ -492,11 +492,11 @@ def test_the_hessian_and_the_descriptors_have_the_frozen_tree_s_shapes(checkpoin
     assert one(single.get_hessian(atoms)).shape == (9, 3, 3)
     hessians = committee.get_hessian(atoms)
     assert isinstance(hessians, list) and len(hessians) == 2
-    descriptors = one(single.get_descriptors(atoms))
+    descriptors = one(single.get_atomic_descriptors(atoms))
     assert descriptors.ndim == 2 and descriptors.shape[0] == 3
-    first = one(single.get_descriptors(atoms, num_layers=1))
+    first = one(single.get_atomic_descriptors(atoms, num_layers=1))
     assert first.shape[1] < descriptors.shape[1]
-    assert len(committee.get_descriptors(atoms)) == 2
+    assert len(committee.get_atomic_descriptors(atoms)) == 2
 
 
 @fp64_only

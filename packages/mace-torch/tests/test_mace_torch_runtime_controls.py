@@ -141,7 +141,7 @@ def test_array_key_mapping_changes_predictions_and_invalidates_cache(tmp_path, p
     config = ResolvedConfig.from_dict(document)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    path = write_model(tmp_path / "conditioned", built.model, built.metadata)
+    path = write_model(tmp_path / "conditioned", built.engine, built.metadata)
     calculator = MACECalculator(
         path,
         arrays_keys={"site_value": "evaluation_value"},

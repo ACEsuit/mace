@@ -16,11 +16,11 @@ import torch
 from conftest import assert_close, fp64_only
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
-    UnsupportedDescriptorError,
+    UnsupportedKernelSpecError,
 )
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    LinearDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    LinearSpec,
 )
 from mace_torch.backends import CompositeBackend, ReferenceBackend, resolve_backend
 from mace_torch.backends.conformance import (
@@ -31,10 +31,10 @@ from mace_torch.backends.conformance import (
 
 
 class PartialCapabilities(BackendCapabilities):
-    def supports(self, descriptor) -> bool:
-        if isinstance(descriptor, LinearDescriptor) and descriptor.has_bias:
+    def supports(self, kernel_spec) -> bool:
+        if isinstance(kernel_spec, LinearSpec) and kernel_spec.has_bias:
             return False
-        return super().supports(descriptor)
+        return super().supports(kernel_spec)
 
 
 class PartialBackend:
@@ -54,13 +54,13 @@ class PartialBackend:
             supports_double_backward=self.double_backward,
         )
 
-    def make_linear(self, descriptor):
-        if not self.capabilities().supports(descriptor):
-            raise UnsupportedDescriptorError("partial declines a biased linear")
-        return self.reference.make_linear(descriptor)
+    def make_linear(self, kernel_spec):
+        if not self.capabilities().supports(kernel_spec):
+            raise UnsupportedKernelSpecError("partial declines a biased linear")
+        return self.reference.make_linear(kernel_spec)
 
-    def make_symmetric_contraction(self, descriptor):
-        return self.reference.make_symmetric_contraction(descriptor)
+    def make_symmetric_contraction(self, kernel_spec):
+        return self.reference.make_symmetric_contraction(kernel_spec)
 
     def make_interaction_layer(self, descriptors):
         return None
@@ -108,8 +108,8 @@ def test_a_partial_backend_passes_and_its_declines_are_recorded():
 @fp64_only
 def test_a_backend_that_builds_what_it_declines_fails_the_harness():
     class Dishonest(PartialBackend):
-        def make_linear(self, descriptor):
-            return self.reference.make_linear(descriptor)
+        def make_linear(self, kernel_spec):
+            return self.reference.make_linear(kernel_spec)
 
     with pytest.raises(AssertionError, match="built it anyway"):
         run_backend_conformance(Dishonest())
@@ -118,8 +118,8 @@ def test_a_backend_that_builds_what_it_declines_fails_the_harness():
 @fp64_only
 def test_a_backend_that_computes_something_else_fails_on_the_values():
     class Wrong(PartialBackend):
-        def make_symmetric_contraction(self, descriptor):
-            other = replace(descriptor, basis="full")
+        def make_symmetric_contraction(self, kernel_spec):
+            other = replace(kernel_spec, basis="full")
             return self.reference.make_symmetric_contraction(other)
 
     with pytest.raises(AssertionError, match="symmetric_contraction"):
@@ -134,22 +134,22 @@ def test_the_tolerances_are_pinned():
 def test_the_composite_builds_each_op_where_it_is_supported(caplog):
     composite = CompositeBackend(PartialBackend(), ReferenceBackend())
     with caplog.at_level(logging.WARNING, logger="mace_torch.backends.composite"):
-        for descriptor in conformance_cases():
+        for kernel_spec in conformance_cases():
             op = {
-                "LinearDescriptor": "linear",
-                "ChannelwiseTPConvDescriptor": "channelwise_tp_conv",
-                "SymmetricContractionDescriptor": "symmetric_contraction",
-                "FullyConnectedTPDescriptor": "fully_connected_tp",
-                "SegmentReduceDescriptor": "segment_reduce",
-            }[type(descriptor).__name__]
-            getattr(composite, f"make_{op}")(descriptor)
+                "LinearSpec": "linear",
+                "ChannelwiseTPConvSpec": "channelwise_tp_conv",
+                "SymmetricContractionSpec": "symmetric_contraction",
+                "FullyConnectedTPSpec": "fully_connected_tp",
+                "SegmentReduceSpec": "segment_reduce",
+            }[type(kernel_spec).__name__]
+            getattr(composite, f"make_{op}")(kernel_spec)
     by = {(d.op, d.backend) for d in composite.decisions}
     assert ("linear", "partial") in by and ("linear", "reference") in by
     assert ("channelwise_tp_conv", "reference") in by
     assert ("symmetric_contraction", "partial") in by
-    # A declined descriptor of an op the backend implements is a warning; an
+    # A declined kernel_spec of an op the backend implements is a warning; an
     # op it never implements is the reference's without complaint.
-    assert "declines this descriptor" in caplog.text
+    assert "declines this kernel specification" in caplog.text
     assert "channelwise_tp_conv" not in caplog.text
     report = composite.report()
     assert "linear: 2 by partial, 1 by reference" in report
@@ -176,16 +176,16 @@ def test_a_backend_without_double_backward_is_refused_for_force_training(
     monkeypatch.setattr(
         module, "get_backend", lambda name: PartialBackend(double_backward=False)
     )
-    with pytest.raises(UnsupportedDescriptorError, match="training on forces"):
+    with pytest.raises(UnsupportedKernelSpecError, match="training on forces"):
         module.require_double_backward("partial", "training on forces")
     composite = module.resolve_backend("partial")
     assert not composite.capabilities().supports_double_backward
     # Inference is still a first-class use: building it is not refused.
-    composite.make_linear(LinearDescriptor(irreps_in="2x0e", irreps_out="2x0e"))
+    composite.make_linear(LinearSpec(irreps_in="2x0e", irreps_out="2x0e"))
 
 
 def test_the_conv_descriptor_carries_the_channel_count():
-    assert ChannelwiseTPConvDescriptor(num_features=8).num_features == 8
+    assert ChannelwiseTPConvSpec(num_features=8).num_features == 8
 
 
 class NativePartialBackend(PartialBackend):
@@ -211,7 +211,7 @@ def test_native_chain_preserves_model_outputs_and_force_gradients(family):
         from test_mace_torch_polar_model import WITH_STRESS, build_model, polar_graph
 
         def make(backend=None):
-            return DerivativeEngine(build_model(backend=backend), WITH_STRESS, None)
+            return DerivativeEngine(build_model(backend=backend), WITH_STRESS)
 
         graph = polar_graph(*molecule())
     else:
@@ -237,18 +237,20 @@ def test_native_chain_preserves_model_outputs_and_force_gradients(family):
             assert theirs.grad is not None
             assert_close(mine.grad, theirs.grad.detach(), name)
     assert backend.decisions and {
-        d.descriptor.layout for d in backend.decisions if d.layer is None
+        d.kernel_spec.layout for d in backend.decisions if d.layer is None
     } == {"ir_mul"}
     if family == "energy":
         from mace_torch.nn.backbone import MACEBackbone
 
-        assert isinstance(native.backbone, MACEBackbone)
-        assert isinstance(canonical.backbone, MACEBackbone)
-        mine, theirs = native.backbone(graph), canonical.backbone(graph)
+        assert isinstance(native.model.backbone, MACEBackbone)
+        assert isinstance(canonical.model.backbone, MACEBackbone)
+        mine, theirs = native.model.backbone(graph), canonical.model.backbone(graph)
         assert mine.layout == "ir_mul"
         assert_close(
-            native.backbone.descriptors(mine, invariants_only=False),
-            canonical.backbone.descriptors(theirs, invariants_only=False).detach(),
+            native.model.backbone.atomic_descriptors(mine, invariants_only=False),
+            canonical.model.backbone.atomic_descriptors(
+                theirs, invariants_only=False
+            ).detach(),
         )
 
 
@@ -257,7 +259,7 @@ def test_native_readouts_return_canonical_components_per_head(heads, dtype):
     from mace_core.observables import ObservableSpec
     from mace_torch.backends.layout import Layout
     from mace_torch.kernels import initialize_model_weights
-    from mace_torch.models.heads import ObservableHead
+    from mace_torch.models.readouts import ObservableReadout
     from mace_torch.serialization import canonical_state, load_canonical_state
 
     declaration = "3x0e+3x1o+3x2e"
@@ -265,7 +267,7 @@ def test_native_readouts_return_canonical_components_per_head(heads, dtype):
     spec = ObservableSpec(name="test", irreps="2x1o+2x2e", per_atom=True, units="1")
 
     def make(backend):
-        return ObservableHead(
+        return ObservableReadout(
             backend,
             spec,
             ["0e+1o+2e"] * 2,

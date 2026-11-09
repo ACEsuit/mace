@@ -8,10 +8,14 @@ registrations coalesce. Checkpoint substitution follows ``solver_to_load``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from importlib.metadata import entry_points
+from importlib.metadata import EntryPoint, entry_points
 from typing import Any
 
-from mace_core._entry_points import load_entry_point, unique_entries
+from mace_core._entry_points import (
+    load_entry_point,
+    resolve_entry_point,
+    unique_entries,
+)
 
 __all__ = [
     "ENTRY_POINT_GROUPS",
@@ -63,22 +67,22 @@ class DiscoveredSolver:
     factory: Any = field(default=None, repr=False, compare=False)
 
 
-def _discover(framework: str) -> list[DiscoveredSolver]:
+def _entries(framework: str) -> dict[str, EntryPoint]:
     group = ENTRY_POINT_GROUPS.get(framework)
     if group is None:
         raise ValueError(
             f"{framework!r} is not a framework this registry knows. The "
             f"frameworks are {sorted(ENTRY_POINT_GROUPS)}."
         )
+    return unique_entries(entry_points(group=group), group, DuplicateSolverError)
+
+
+def _discover(framework: str) -> list[DiscoveredSolver]:
     found = []
-    for entry in unique_entries(
-        entry_points(group=group), group, DuplicateSolverError
-    ).values():
+    for name, entry in sorted(_entries(framework).items()):
         factory, reason = load_entry_point(entry)
-        found.append(
-            DiscoveredSolver(entry.name, framework, not reason, reason, factory)
-        )
-    return sorted(found, key=lambda solver: solver.name)
+        found.append(DiscoveredSolver(name, framework, not reason, reason, factory))
+    return found
 
 
 def available_solvers(framework: str = "torch") -> list[DiscoveredSolver]:
@@ -94,21 +98,15 @@ def get_solver(name: str, framework: str = "torch") -> Any:
             it did not import. The two are told apart, and the import failure
             is quoted, since they call for different fixes.
     """
-    by_name = {solver.name: solver for solver in _discover(framework)}
-    if name not in by_name:
-        raise SolverNotAvailableError(
-            f"no {framework} electrostatics solver is registered as {name!r}. "
-            f"The registered names are {sorted(by_name)}, from the entry point "
-            f"group {ENTRY_POINT_GROUPS[framework]!r}."
-        )
-    solver = by_name[name]
-    if not solver.loaded:
-        raise SolverNotAvailableError(
-            f"the {framework} electrostatics solver {name!r} is registered but "
-            f"did not import here: {solver.reason}. Nothing is substituted for "
-            f"it, because another solver is another set of numbers."
-        )
-    return solver.factory()
+    entries = _entries(framework)
+    factory = resolve_entry_point(
+        entries,
+        name,
+        group=ENTRY_POINT_GROUPS[framework],
+        description=f"{framework} electrostatics solver",
+        unavailable=SolverNotAvailableError,
+    )
+    return factory()
 
 
 def solver_to_load(

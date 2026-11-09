@@ -43,14 +43,14 @@ def test_stages_apply_the_requested_execution_settings(
     }
     config = ResolvedConfig.model_validate(document)
     observed = []
-    describe = Foundation.describe
+    structure_descriptors = Foundation.structure_descriptors
 
     def observe(self, items):
         parameter = next(self.engine.parameters())
         observed.append((parameter.device.type, str(parameter.dtype)))
-        return describe(self, items)
+        return structure_descriptors(self, items)
 
-    monkeypatch.setattr(Foundation, "describe", observe)
+    monkeypatch.setattr(Foundation, "structure_descriptors", observe)
     if stage == "select":
         selected = select_structures(config, "replay", tmp_path / "kept.xyz")
         assert len(read(selected, ":")) == 3
@@ -109,7 +109,7 @@ def cached_config(tmp_path, values):
                         "subselect": {
                             "method": "fps",
                             "num_samples": 3,
-                            "descriptors": str(descriptors),
+                            "structure_descriptors_file": str(descriptors),
                         },
                     }
                 }
@@ -164,7 +164,7 @@ def test_legacy_descriptor_option_maps_to_typed_selection(tmp_path):
             "pool.xyz",
             "--output",
             "selected.xyz",
-            "--descriptors",
+            "--structure-descriptors-file",
             "descriptors.npy",
             "--default_dtype",
             "float32",
@@ -172,7 +172,10 @@ def test_legacy_descriptor_option_maps_to_typed_selection(tmp_path):
     )
     config = ResolvedConfig.model_validate(document)
     subselect = config.data.heads["selected"].subselect
-    assert subselect is not None and str(subselect.descriptors) == "descriptors.npy"
+    assert (
+        subselect is not None
+        and str(subselect.structure_descriptors_file) == "descriptors.npy"
+    )
     assert config.precision.model == "float32"
     assert output == "selected.xyz"
 

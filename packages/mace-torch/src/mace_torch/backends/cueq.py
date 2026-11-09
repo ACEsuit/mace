@@ -5,7 +5,7 @@ fused convolution, the symmetric contraction and the skip connection. Every
 other op, and every shape declined here, is built by the reference through
 :class:`~mace_torch.backends.composite.CompositeBackend`.
 
-**The layout is the chain's.** Each op is built in the descriptor's layout,
+**The layout is the chain's.** Each op is built in the kernel specification's layout,
 which is ``ir_mul``, cuEquivariance's native one, whenever cueq is the chosen
 backend: the composite resolves the chain to it and the reference follows.
 Built in ``mul_ir`` instead, its ops transpose inside themselves; measured on an
@@ -61,17 +61,17 @@ import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
-    UnsupportedDescriptorError,
-)
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    Descriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    SymmetricContractionDescriptor,
+    UnsupportedKernelSpecError,
 )
 from mace_core.kernels.paths import channelwise_paths
 from mace_core.kernels.reorder import ReorderError, WeightReorder, derive_reorder
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    KernelSpec,
+    LinearSpec,
+    SymmetricContractionSpec,
+)
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
@@ -102,35 +102,35 @@ def _uniform(irreps: str) -> bool:
     return all(multiplicity == 1 for multiplicity, _ in Irreps.parse(irreps).terms)
 
 
-def _layout(descriptor: Descriptor) -> Any:
-    """cuEquivariance's name for the descriptor's feature layout."""
-    return cue.ir_mul if descriptor.layout == "ir_mul" else cue.mul_ir
+def _layout(kernel_spec: KernelSpec) -> Any:
+    """cuEquivariance's name for the kernel specification's feature layout."""
+    return cue.ir_mul if kernel_spec.layout == "ir_mul" else cue.mul_ir
 
 
-def _method(descriptor: Descriptor) -> str | None:
+def _method(kernel_spec: KernelSpec) -> str | None:
     """``naive`` in ``ir_mul``, the default otherwise: what measured fastest
     for the linear map and the skip in each, see the module docstring."""
-    return "naive" if descriptor.layout == "ir_mul" else None
+    return "naive" if kernel_spec.layout == "ir_mul" else None
 
 
 class CuEqCapabilities(BackendCapabilities):
     """The coarse fields, and the shapes the kernels take."""
 
-    def supports(self, descriptor: Descriptor) -> bool:
-        if not super().supports(descriptor):
+    def supports(self, kernel_spec: KernelSpec) -> bool:
+        if not super().supports(kernel_spec):
             return False
-        if isinstance(descriptor, LinearDescriptor):
-            return not descriptor.has_bias
-        if isinstance(descriptor, ChannelwiseTPConvDescriptor):
-            return _uniform(descriptor.irreps_node)
-        if isinstance(descriptor, SymmetricContractionDescriptor):
+        if isinstance(kernel_spec, LinearSpec):
+            return not kernel_spec.has_bias
+        if isinstance(kernel_spec, ChannelwiseTPConvSpec):
+            return _uniform(kernel_spec.irreps_node)
+        if isinstance(kernel_spec, SymmetricContractionSpec):
             return (
-                descriptor.basis == "reduced"
-                and _uniform(descriptor.irreps_in)
-                and _uniform(descriptor.irreps_out)
+                kernel_spec.basis == "reduced"
+                and _uniform(kernel_spec.irreps_in)
+                and _uniform(kernel_spec.irreps_out)
             )
-        if isinstance(descriptor, FullyConnectedTPDescriptor):
-            terms = Irreps.parse(descriptor.irreps_in2).terms
+        if isinstance(kernel_spec, FullyConnectedTPSpec):
+            terms = Irreps.parse(kernel_spec.irreps_in2).terms
             return (
                 len(terms) == 1 and terms[0][1].degree == 0 and terms[0][1].parity == 1
             )
@@ -211,24 +211,24 @@ class _PermutedWeights(nn.Module):
 class CuEqLinear(_PermutedWeights):
     """An equivariant linear map without a bias."""
 
-    def __init__(self, descriptor: LinearDescriptor) -> None:
+    def __init__(self, kernel_spec: LinearSpec) -> None:
         super().__init__()
-        dtype = _DTYPES[descriptor.precision]
-        self.descriptor = descriptor
-        reference = ReferenceBackend().make_linear(descriptor)
+        dtype = _DTYPES[kernel_spec.precision]
+        self.kernel_spec = kernel_spec
+        reference = ReferenceBackend().make_linear(kernel_spec)
         operation = cuet.Linear(
-            _irreps(descriptor.irreps_in),
-            _irreps(descriptor.irreps_out),
-            layout=_layout(descriptor),
-            method=_method(descriptor),
+            _irreps(kernel_spec.irreps_in),
+            _irreps(kernel_spec.irreps_out),
+            layout=_layout(kernel_spec),
+            method=_method(kernel_spec),
             shared_weights=True,
             internal_weights=True,
             dtype=dtype,
-            math_dtype=_DTYPES[descriptor.accumulate_floor],
+            math_dtype=_DTYPES[kernel_spec.accumulate_floor],
         )
         self._setup(
             reference,
-            _linear_order(descriptor.irreps_in, descriptor.irreps_out),
+            _linear_order(kernel_spec.irreps_in, kernel_spec.irreps_out),
             operation,
         )
 
@@ -244,26 +244,26 @@ class CuEqLinear(_PermutedWeights):
 class CuEqFullyConnectedTP(_PermutedWeights):
     """The skip connection against a block of scalars."""
 
-    def __init__(self, descriptor: FullyConnectedTPDescriptor) -> None:
+    def __init__(self, kernel_spec: FullyConnectedTPSpec) -> None:
         super().__init__()
-        dtype = _DTYPES[descriptor.precision]
-        self.descriptor = descriptor
-        reference = ReferenceBackend().make_fully_connected_tp(descriptor)
+        dtype = _DTYPES[kernel_spec.precision]
+        self.kernel_spec = kernel_spec
+        reference = ReferenceBackend().make_fully_connected_tp(kernel_spec)
         operation = cuet.FullyConnectedTensorProduct(
-            _irreps(descriptor.irreps_in1),
-            _irreps(descriptor.irreps_in2),
-            _irreps(descriptor.irreps_out),
-            layout=_layout(descriptor),
-            method=_method(descriptor),
+            _irreps(kernel_spec.irreps_in1),
+            _irreps(kernel_spec.irreps_in2),
+            _irreps(kernel_spec.irreps_out),
+            layout=_layout(kernel_spec),
+            method=_method(kernel_spec),
             shared_weights=True,
             internal_weights=True,
             dtype=dtype,
-            math_dtype=_DTYPES[descriptor.accumulate_floor],
+            math_dtype=_DTYPES[kernel_spec.accumulate_floor],
         )
-        scalars = Irreps.parse(descriptor.irreps_in2).dimension
+        scalars = Irreps.parse(kernel_spec.irreps_in2).dimension
         self._setup(
             reference,
-            _linear_order(descriptor.irreps_in1, descriptor.irreps_out, scalars),
+            _linear_order(kernel_spec.irreps_in1, kernel_spec.irreps_out, scalars),
             operation,
         )
 
@@ -274,34 +274,34 @@ class CuEqFullyConnectedTP(_PermutedWeights):
 class CuEqChannelwiseTPConv(nn.Module):
     """The convolution, gather, product and scatter in one kernel call."""
 
-    def __init__(self, descriptor: ChannelwiseTPConvDescriptor) -> None:
+    def __init__(self, kernel_spec: ChannelwiseTPConvSpec) -> None:
         super().__init__()
-        dtype = _DTYPES[descriptor.precision]
-        self.descriptor = descriptor
+        dtype = _DTYPES[kernel_spec.precision]
+        self.kernel_spec = kernel_spec
         paths = channelwise_paths(
-            descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
+            kernel_spec.irreps_node, kernel_spec.irreps_edge, kernel_spec.irreps_out
         )
         self.num_paths = len(paths)
-        self.weight_width = self.num_paths * descriptor.num_features
-        self.output_width = descriptor.num_features * sum(
+        self.weight_width = self.num_paths * kernel_spec.num_features
+        self.output_width = kernel_spec.num_features * sum(
             path.irrep.dimension for path in paths
         )
         self.operation = cuet.ChannelWiseTensorProduct(
-            _irreps(expanded_irreps(descriptor.irreps_node, descriptor.num_features)),
-            _irreps(descriptor.irreps_edge),
-            [ir for _, ir in _irreps(descriptor.irreps_out)],
-            layout=_layout(descriptor),
+            _irreps(expanded_irreps(kernel_spec.irreps_node, kernel_spec.num_features)),
+            _irreps(kernel_spec.irreps_edge),
+            [ir for _, ir in _irreps(kernel_spec.irreps_out)],
+            layout=_layout(kernel_spec),
             shared_weights=False,
             internal_weights=False,
             dtype=dtype,
-            math_dtype=_DTYPES[descriptor.accumulate_floor],
+            math_dtype=_DTYPES[kernel_spec.accumulate_floor],
         )
         expected = _irreps(
-            "+".join(f"{descriptor.num_features}x{path.irrep}" for path in paths)
+            "+".join(f"{kernel_spec.num_features}x{path.irrep}" for path in paths)
         )
         if self.operation.irreps_out != expected:
-            raise UnsupportedDescriptorError(
-                f"cuEquivariance orders the paths of {descriptor} as "
+            raise UnsupportedKernelSpecError(
+                f"cuEquivariance orders the paths of {kernel_spec} as "
                 f"{self.operation.irreps_out}, and the pinned order is {expected}"
             )
 
@@ -357,14 +357,14 @@ def _contraction_map(
     normalization cuEquivariance applies inside its kernel. One channel and one
     element suffice: the map is the same for every channel and element.
     """
-    descriptor = SymmetricContractionDescriptor(
+    kernel_spec = SymmetricContractionSpec(
         irreps_in=irreps_in,
         irreps_out=irreps_out,
         correlation=correlation,
         num_elements=1,
         num_features=1,
     )
-    reference = ReferenceBackend().make_symmetric_contraction(descriptor)
+    reference = ReferenceBackend().make_symmetric_contraction(kernel_spec)
     operation = cuet.SymmetricContraction(
         _irreps(irreps_in),
         _irreps(irreps_out),
@@ -376,10 +376,10 @@ def _contraction_map(
         original_mace=False,
         method="naive",
     )
-    paths = descriptor.path_count
+    paths = kernel_spec.path_count
     if operation.weight.shape[1] != paths:
-        raise UnsupportedDescriptorError(
-            f"cuEquivariance's basis for {descriptor} has "
+        raise UnsupportedKernelSpecError(
+            f"cuEquivariance's basis for {kernel_spec} has "
             f"{operation.weight.shape[1]} paths and the canonical one {paths}"
         )
     generator = torch.Generator().manual_seed(0)
@@ -408,8 +408,8 @@ def _contraction_map(
     try:
         return derive_reorder(canonical_outputs, cueq_outputs, tolerance=1e-10 * scale)
     except ReorderError as error:
-        raise UnsupportedDescriptorError(
-            f"cuEquivariance's contraction for {descriptor} cannot hold the "
+        raise UnsupportedKernelSpecError(
+            f"cuEquivariance's contraction for {kernel_spec} cannot hold the "
             f"canonical weights: {error}"
         ) from error
 
@@ -422,27 +422,27 @@ class CuEqSymmetricContraction(nn.Module):
     once per basis shape. The map runs only at the checkpoint boundary.
     """
 
-    def __init__(self, descriptor: SymmetricContractionDescriptor) -> None:
+    def __init__(self, kernel_spec: SymmetricContractionSpec) -> None:
         super().__init__()
-        dtype = _DTYPES[descriptor.precision]
-        self.descriptor = descriptor
-        features = descriptor.num_features
+        dtype = _DTYPES[kernel_spec.precision]
+        self.kernel_spec = kernel_spec
+        features = kernel_spec.num_features
         self.operation = cuet.SymmetricContraction(
-            _irreps(expanded_irreps(descriptor.irreps_in, features)),
-            _irreps(expanded_irreps(descriptor.irreps_out, features)),
-            descriptor.correlation,
-            descriptor.num_elements,
-            layout=_layout(descriptor),
+            _irreps(expanded_irreps(kernel_spec.irreps_in, features)),
+            _irreps(expanded_irreps(kernel_spec.irreps_out, features)),
+            kernel_spec.correlation,
+            kernel_spec.num_elements,
+            layout=_layout(kernel_spec),
             dtype=dtype,
-            math_dtype=_DTYPES[descriptor.accumulate_floor],
+            math_dtype=_DTYPES[kernel_spec.accumulate_floor],
             original_mace=False,
         )
         #: Canonical weights onto cuEquivariance's paths, and back.
         self.weight_reorder = _contraction_map(
-            descriptor.irreps_in, descriptor.irreps_out, descriptor.correlation
+            kernel_spec.irreps_in, kernel_spec.irreps_out, kernel_spec.correlation
         )
         self._restore = self.weight_reorder.inverse()
-        self._reference = [ReferenceBackend().make_symmetric_contraction(descriptor)]
+        self._reference = [ReferenceBackend().make_symmetric_contraction(kernel_spec)]
         self._path_counts = self._reference[0].to_canonical()["path_counts"]
 
     def forward(self, features: Tensor, element: Tensor) -> Tensor:
@@ -513,30 +513,30 @@ class CuEqBackend:
             wide_accumulation=True,
         )
 
-    def _check(self, descriptor: Descriptor) -> None:
-        self.capabilities().require(descriptor, self.name)
+    def _check(self, kernel_spec: KernelSpec) -> None:
+        self.capabilities().require(kernel_spec, self.name)
 
-    def make_linear(self, descriptor: LinearDescriptor) -> CuEqLinear:
-        self._check(descriptor)
-        return CuEqLinear(descriptor)
+    def make_linear(self, kernel_spec: LinearSpec) -> CuEqLinear:
+        self._check(kernel_spec)
+        return CuEqLinear(kernel_spec)
 
     def make_channelwise_tp_conv(
-        self, descriptor: ChannelwiseTPConvDescriptor
+        self, kernel_spec: ChannelwiseTPConvSpec
     ) -> CuEqChannelwiseTPConv:
-        self._check(descriptor)
-        return CuEqChannelwiseTPConv(descriptor)
+        self._check(kernel_spec)
+        return CuEqChannelwiseTPConv(kernel_spec)
 
     def make_symmetric_contraction(
-        self, descriptor: SymmetricContractionDescriptor
+        self, kernel_spec: SymmetricContractionSpec
     ) -> CuEqSymmetricContraction:
-        self._check(descriptor)
-        return CuEqSymmetricContraction(descriptor)
+        self._check(kernel_spec)
+        return CuEqSymmetricContraction(kernel_spec)
 
     def make_fully_connected_tp(
-        self, descriptor: FullyConnectedTPDescriptor
+        self, kernel_spec: FullyConnectedTPSpec
     ) -> CuEqFullyConnectedTP:
-        self._check(descriptor)
-        return CuEqFullyConnectedTP(descriptor)
+        self._check(kernel_spec)
+        return CuEqFullyConnectedTP(kernel_spec)
 
-    def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> None:
+    def make_interaction_layer(self, kernel_specs: tuple[Any, ...]) -> None:
         return None

@@ -21,7 +21,7 @@ from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 
 from tests.golden.harness import CLOSED_FORM_FP64, FP64_CPU_REFERENCE
@@ -57,7 +57,7 @@ def converted(legacy, *, basis="reduced"):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     config = build_config(legacy)
     values, scale, shift = energy_constants_to_canonical(legacy)
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s(values),
         ["default"],
         AtomicNumberTable(numbers),
@@ -71,7 +71,7 @@ def converted(legacy, *, basis="reduced"):
     model = MACEModel(
         ReferenceBackend(),
         observables=[ENERGY],
-        energy_head=head,
+        energy_readout=head,
         **arguments,
     )
     transfer_weights(legacy, model, config["correlation"])
@@ -122,14 +122,14 @@ def assert_all_parameter_gradients(legacy, model):
             compare(original, weight, weight.grad)
     for source, target in zip(legacy.products, model.backbone.products, strict=True):
         linear(source.linear, target.linear)
-        descriptor = target.contraction.descriptor
+        kernel_spec = target.contraction.kernel_spec
         for position, contraction in enumerate(
             source.symmetric_contractions.contractions
         ):
-            bases = canonical_contraction_bases(descriptor, position)
+            bases = canonical_contraction_bases(kernel_spec, position)
             for coupling, original, order in legacy_contraction_blocks(contraction):
                 weight = target.contraction.weights[
-                    position * descriptor.correlation + order - 1
+                    position * kernel_spec.correlation + order - 1
                 ]
                 mapping = torch.from_numpy(
                     legacy_to_reference_map(coupling, bases[order - 1], order)
@@ -144,7 +144,7 @@ def assert_all_parameter_gradients(legacy, model):
                     original, weight, torch.einsum("pq,zqc->zpc", mapping, weight.grad)
                 )
     for source, target in zip(
-        legacy.readouts, model.outputs.heads["energy"].readouts, strict=True
+        legacy.readouts, model.outputs.readouts["energy"].readouts, strict=True
     ):
         if hasattr(source, "linear_1"):
             linear(source.linear_1, target.first)

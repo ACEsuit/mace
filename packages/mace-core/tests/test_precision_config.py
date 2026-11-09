@@ -15,22 +15,22 @@ from mace_core.config.precision import (
     PrecisionPolicy,
 )
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.kernels import descriptors
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    Descriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    SegmentReduceDescriptor,
-    SymmetricContractionDescriptor,
-)
+from mace_core.kernels import specs
 from mace_core.kernels.precision import widest
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    KernelSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    SegmentReduceSpec,
+    SymmetricContractionSpec,
+)
 from pydantic import ValidationError
 
-ALL_DESCRIPTORS = [
+ALL_KERNEL_SPECS = [
     cls
-    for _, cls in inspect.getmembers(descriptors, inspect.isclass)
-    if issubclass(cls, Descriptor) and cls is not Descriptor
+    for _, cls in inspect.getmembers(specs, inspect.isclass)
+    if issubclass(cls, KernelSpec) and cls is not KernelSpec
 ]
 
 
@@ -48,7 +48,7 @@ def test_operation_policies_use_a_named_immutable_mapping():
         }
     }
     config = ResolvedConfig.from_dict(raw)
-    assert config.precision.policy_for(LinearDescriptor()).accumulate_dtype == "float64"
+    assert config.precision.policy_for(LinearSpec()).accumulate_dtype == "float64"
     assert (
         config.to_resolved_dict()["precision"]["ops"]["linear"]["param_dtype"]
         == "float32"
@@ -82,31 +82,31 @@ def test_the_presets():
     assert PrecisionConfig.float32().accumulate == "float64"
     mixed = PrecisionConfig.mixed()
     assert mixed.interface_dtype == "float32"
-    assert mixed.policy_for(LinearDescriptor()) == PrecisionPolicy.uniform("float32")
-    assert mixed.policy_for(RadialBasisDescriptor()) == PrecisionPolicy.uniform(
-        "float64"
-    )
-    assert mixed.policy_for(SymmetricContractionDescriptor()) == PrecisionPolicy(
+    assert mixed.policy_for(LinearSpec()) == PrecisionPolicy.uniform("float32")
+    assert mixed.policy_for(RadialBasisSpec()) == PrecisionPolicy.uniform("float64")
+    assert mixed.policy_for(SymmetricContractionSpec()) == PrecisionPolicy(
         "float32", "float64", "float32"
     )
 
 
-@pytest.mark.parametrize("descriptor", ALL_DESCRIPTORS, ids=lambda c: c.__name__)
+@pytest.mark.parametrize("kernel_spec", ALL_KERNEL_SPECS, ids=lambda c: c.__name__)
 @pytest.mark.parametrize("preset", ["float64", "float32"])
-def test_a_uniform_preset_gives_every_op_the_interface_dtype(descriptor, preset):
+def test_a_uniform_preset_gives_every_op_the_interface_dtype(kernel_spec, preset):
     config = getattr(PrecisionConfig, preset)()
-    assert config.policy_for(descriptor()) == PrecisionPolicy.uniform(preset)
+    assert config.policy_for(kernel_spec()) == PrecisionPolicy.uniform(preset)
 
 
-@pytest.mark.parametrize("descriptor", ALL_DESCRIPTORS, ids=lambda c: c.__name__)
-def test_every_descriptor_has_an_op_kind(descriptor):
-    """A descriptor without one would take the default silently, so a
+@pytest.mark.parametrize("kernel_spec", ALL_KERNEL_SPECS, ids=lambda c: c.__name__)
+def test_every_descriptor_has_an_op_kind(kernel_spec):
+    """A kernel_spec without one would take the default silently, so a
     configuration naming its kind could never reach it."""
     policy = PrecisionPolicy.uniform("float64")
     matched = [
         kind
         for kind in OP_KINDS
-        if PrecisionConfig(model="float32", ops={kind: policy}).policy_for(descriptor())
+        if PrecisionConfig(model="float32", ops={kind: policy}).policy_for(
+            kernel_spec()
+        )
         == policy
     ]
     assert len(matched) == 1, matched
@@ -121,20 +121,20 @@ def test_a_span_takes_the_widest_of_its_members_in_each_field():
             "segment_reduce": PrecisionPolicy("float64", "float64", "float64"),
         },
     )
-    span = (LinearDescriptor(), ChannelwiseTPConvDescriptor())
+    span = (LinearSpec(), ChannelwiseTPConvSpec())
     assert config.policy_for(span) == PrecisionPolicy("float32", "float64", "float32")
-    wider = (*span, SegmentReduceDescriptor())
+    wider = (*span, SegmentReduceSpec())
     assert config.policy_for(wider) == PrecisionPolicy.uniform("float64")
 
 
 def test_a_span_of_one_is_its_member():
     config = PrecisionConfig.mixed()
-    member = SymmetricContractionDescriptor()
+    member = SymmetricContractionSpec()
     assert config.policy_for([member]) == config.policy_for(member)
 
 
 def test_a_descriptor_subclass_keeps_its_operation_policy():
-    class SpecializedLinear(LinearDescriptor):
+    class SpecializedLinear(LinearSpec):
         pass
 
     policy = PrecisionPolicy.uniform("float64")
@@ -168,8 +168,8 @@ def test_a_float64_floor_degrades_to_the_model_dtype_and_says_so():
     resolved, degraded = PrecisionConfig.mixed().for_device(False)
     assert resolved.accumulate == "float32"
     assert resolved.resolved_accumulate(False) == "float32"
-    for descriptor in ALL_DESCRIPTORS:
-        assert resolved.policy_for(descriptor()) == PrecisionPolicy.uniform("float32")
+    for kernel_spec in ALL_KERNEL_SPECS:
+        assert resolved.policy_for(kernel_spec()) == PrecisionPolicy.uniform("float32")
     assert "the energy reduction" in degraded
     assert "radial_basis compute" in degraded
     assert "symmetric_contraction accumulate" in degraded
@@ -200,16 +200,16 @@ def test_the_module_imports_no_framework():
 def test_tf32_is_per_operation_and_roundtrips_through_configuration():
     config = PrecisionConfig.tf32()
     assert config.model == "float32" and config.accumulate == "float64"
-    for kind in ALL_DESCRIPTORS:
-        descriptor = kind()
-        expected = "tf32" if descriptor.op in PRODUCT_KINDS else "ieee"
-        assert config.policy_for(descriptor).product == expected
+    for kind in ALL_KERNEL_SPECS:
+        kernel_spec = kind()
+        expected = "tf32" if kernel_spec.op in PRODUCT_KINDS else "ieee"
+        assert config.policy_for(kernel_spec).product == expected
     model = ResolvedConfig.model_validate({"precision": config})
     assert (
         ResolvedConfig.model_validate_json(model.model_dump_json()).precision == config
     )
     assert config.for_device(False)[0].ops == config.ops
-    assert PrecisionConfig().policy_for(LinearDescriptor()).product == "ieee"
+    assert PrecisionConfig().policy_for(LinearSpec()).product == "ieee"
 
 
 def test_invalid_product_policies_fail_at_construction():
@@ -224,7 +224,7 @@ def test_invalid_product_policies_fail_at_construction():
     with pytest.raises(ValueError, match="unknown matrix product"):
         replace(PrecisionPolicy.uniform("float32"), product="unknown")
     with pytest.raises(ValueError, match="tf32 products require"):
-        LinearDescriptor(product="tf32")
+        LinearSpec(product="tf32")
     with pytest.raises(ValueError, match="tf32 products require"):
-        RadialBasisDescriptor(precision="float32", product="tf32")
-    assert LinearDescriptor(precision="float32", product="tf32").product == "tf32"
+        RadialBasisSpec(precision="float32", product="tf32")
+    assert LinearSpec(precision="float32", product="tf32").product == "tf32"

@@ -35,7 +35,7 @@ def test_every_family_declares_its_physical_inputs(family, expected):
 
 def test_joint_dipole_declares_the_fixed_charges_to_all_consumers():
     engine, config = build()
-    inputs = engine.backbone.input_specs
+    inputs = engine.model.input_specs
     assert inputs == model_inputs(config.model)
     assert [(spec.name, spec.per_atom, spec.units) for spec in inputs] == [
         ("charges", True, "e")

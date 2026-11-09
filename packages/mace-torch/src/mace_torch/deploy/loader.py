@@ -91,7 +91,7 @@ class DeployedModel:
         """The model inside the engine, where the canonical state lives."""
         return cast(
             "MACEModel | MagneticModel",
-            self.derivative_engine.get_submodule("backbone"),
+            self.derivative_engine.get_submodule("model"),
         )
 
     @property
@@ -183,7 +183,7 @@ class DeployedModel:
         # Some backend FX modules reconstruct CPU coefficient buffers when
         # deep-copied. Restore the runtime device without casting op dtypes.
         engine = deepcopy(self.engine).to(next(self.engine.parameters()).device)
-        model = engine.backbone
+        model = engine.model
         if not isinstance(model, MagneticModel):
             raise DeployError("time reversal requires a magnetic energy model")
         model.config = config.model
@@ -302,7 +302,7 @@ def load_deployed(
     load_checkpoint(source, engine, manifest=document, tensors_path=tensors_path)
     engine.to(device)
     engine.eval()
-    metadata = _check_recorded_solve(engine.get_submodule("backbone"), metadata, path)
+    metadata = _check_recorded_solve(engine.get_submodule("model"), metadata, path)
     return DeployedModel(
         engine=_with_fixed_point(engine, config),
         config=config,
@@ -380,24 +380,24 @@ def _check_recorded_solve(
     moved between versions would rebuild the same weights around another
     solve. The record is what says which one they were fitted in.
     """
-    from mace_core.electrostatics import descriptor_record
+    from mace_core.electrostatics import solver_spec_record
 
     from mace_torch.serialization import CheckpointError
 
     record = metadata.electrostatics
-    descriptor = getattr(model, "descriptor", None)
-    if record is None or descriptor is None:
+    solver_spec = getattr(model, "solver_spec", None)
+    if record is None or solver_spec is None:
         return metadata
-    rebuilt = descriptor_record(descriptor)
-    if rebuilt != record.descriptor:
+    rebuilt = solver_spec_record(solver_spec)
+    if rebuilt != record.solver_spec:
         differing = sorted(
             key
-            for key in set(rebuilt) | set(record.descriptor)
-            if rebuilt.get(key) != record.descriptor.get(key)
+            for key in set(rebuilt) | set(record.solver_spec)
+            if rebuilt.get(key) != record.solver_spec.get(key)
         )
         raise CheckpointError(
             f"{path} was trained with the long-range solve "
-            f"{record.descriptor} and rebuilds as {rebuilt}; they differ in "
+            f"{record.solver_spec} and rebuilds as {rebuilt}; they differ in "
             f"{differing}. The weights were fitted in the recorded one."
         )
     return metadata

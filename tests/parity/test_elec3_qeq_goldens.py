@@ -87,7 +87,7 @@ def test_qeq_projected_matrix_is_energy_hessian_on_fixed_charge_subspace(profile
 
     model = load_model("fixed", profile)
     graph = graph_for(profile)
-    geometry = long_range_geometry(graph, model.descriptor)
+    geometry = long_range_geometry(graph, model.solver_spec)
     count = graph["positions"].shape[0]
     matrix = model.charge_solve.potential_matrix(graph, geometry)
     hessian = torch.autograd.functional.hessian(

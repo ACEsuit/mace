@@ -14,7 +14,7 @@ What the contract asks of every op:
   holds its weights in that layout already, so both are views.
 * **The canonical draw.** ``initialize_weights`` draws a standard normal at the
   canonical scale of each weight.
-* **Honest capabilities.** A descriptor this backend cannot compute is declined
+* **Honest capabilities.** Unsupported kernel specifications are declined
   in :meth:`ExampleCapabilities.supports`, and asking for it anyway raises.
 
 Features cross every op in the canonical ``mul_ir`` layout: each irrep term is
@@ -46,18 +46,18 @@ from mace_core.kernels.canonical import (
 )
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
-    UnsupportedDescriptorError,
-)
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    Descriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    SegmentReduceDescriptor,
-    SymmetricContractionDescriptor,
+    UnsupportedKernelSpecError,
 )
 from mace_core.kernels.paths import channelwise_paths
 from mace_core.kernels.protocol import DISPATCHED_OPS
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    KernelSpec,
+    LinearSpec,
+    SegmentReduceSpec,
+    SymmetricContractionSpec,
+)
 from torch import Tensor, nn
 
 from mace_backend_example.ops import contraction, segment_sum, tp_conv
@@ -175,14 +175,14 @@ class ExampleLinear(nn.Module):
 
     bias_row: Tensor
 
-    def __init__(self, descriptor: LinearDescriptor) -> None:
+    def __init__(self, kernel_spec: LinearSpec) -> None:
         super().__init__()
-        dtype = _DTYPES[descriptor.precision]
-        self.map = _DenseMap(descriptor.irreps_in, descriptor.irreps_out)
+        dtype = _DTYPES[kernel_spec.precision]
+        self.map = _DenseMap(kernel_spec.irreps_in, kernel_spec.irreps_out)
         bias_rows = [
             out_slice.start
-            for out_slice, ir in Irreps.parse(descriptor.irreps_out).slices()
-            if descriptor.has_bias and ir.degree == 0 and ir.parity == 1
+            for out_slice, ir in Irreps.parse(kernel_spec.irreps_out).slices()
+            if kernel_spec.has_bias and ir.degree == 0 and ir.parity == 1
         ]
         self.register_buffer(
             "bias_row", torch.tensor(bias_rows, dtype=torch.long), persistent=False
@@ -219,16 +219,16 @@ class ExampleFullyConnectedTP(nn.Module):
 
     path_normalization: Tensor
 
-    def __init__(self, descriptor: FullyConnectedTPDescriptor) -> None:
+    def __init__(self, kernel_spec: FullyConnectedTPSpec) -> None:
         super().__init__()
-        dtype = _DTYPES[descriptor.precision]
-        self.map = _DenseMap(descriptor.irreps_in1, descriptor.irreps_out)
-        self.num_scalars = Irreps.parse(descriptor.irreps_in2).dimension
-        source = Irreps.parse(descriptor.irreps_in1)
-        target = Irreps.parse(descriptor.irreps_out)
+        dtype = _DTYPES[kernel_spec.precision]
+        self.map = _DenseMap(kernel_spec.irreps_in1, kernel_spec.irreps_out)
+        self.num_scalars = Irreps.parse(kernel_spec.irreps_in2).dimension
+        source = Irreps.parse(kernel_spec.irreps_in1)
+        target = Irreps.parse(kernel_spec.irreps_out)
         self.scales = [
             fully_connected_tp_path_normalization(
-                descriptor.irreps_in1, descriptor.irreps_in2, out_ir
+                kernel_spec.irreps_in1, kernel_spec.irreps_in2, out_ir
             )
             for _, out_ir in target.slices()
             for in_mul, in_ir in source.terms
@@ -274,7 +274,7 @@ class ExampleFullyConnectedTP(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def _coupling(descriptor: ChannelwiseTPConvDescriptor) -> tuple[np.ndarray, list[int]]:
+def _coupling(kernel_spec: ChannelwiseTPConvSpec) -> tuple[np.ndarray, list[int]]:
     """``[O, I, J]`` coupling coefficients over every path, and the path of
     each output component.
 
@@ -282,12 +282,12 @@ def _coupling(descriptor: ChannelwiseTPConvDescriptor) -> tuple[np.ndarray, list
     symbol of its three degrees scaled by the square root of the output
     dimension, so each path's output has unit variance when its inputs do.
     """
-    node = Irreps.parse(descriptor.irreps_node)
-    edge = Irreps.parse(descriptor.irreps_edge)
+    node = Irreps.parse(kernel_spec.irreps_node)
+    edge = Irreps.parse(kernel_spec.irreps_edge)
     node_slices = list(node.slices())
     edge_slices = list(edge.slices())
     paths = channelwise_paths(
-        descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
+        kernel_spec.irreps_node, kernel_spec.irreps_edge, kernel_spec.irreps_out
     )
     width = sum(path.irrep.dimension for path in paths)
     coupling = np.zeros((width, node.dimension, edge.dimension))
@@ -311,10 +311,10 @@ class ExampleChannelwiseTPConv(nn.Module):
     coupling: Tensor
     path: Tensor
 
-    def __init__(self, descriptor: ChannelwiseTPConvDescriptor) -> None:
+    def __init__(self, kernel_spec: ChannelwiseTPConvSpec) -> None:
         super().__init__()
-        dtype = _DTYPES[descriptor.precision]
-        coupling, owner = _coupling(descriptor)
+        dtype = _DTYPES[kernel_spec.precision]
+        coupling, owner = _coupling(kernel_spec)
         self.register_buffer(
             "coupling", torch.tensor(coupling, dtype=dtype), persistent=False
         )
@@ -322,10 +322,10 @@ class ExampleChannelwiseTPConv(nn.Module):
             "path", torch.tensor(owner, dtype=torch.long), persistent=False
         )
         paths = channelwise_paths(
-            descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
+            kernel_spec.irreps_node, kernel_spec.irreps_edge, kernel_spec.irreps_out
         )
-        self.num_features = descriptor.num_features
-        self.node_terms = _terms(descriptor.irreps_node)
+        self.num_features = kernel_spec.num_features
+        self.node_terms = _terms(kernel_spec.irreps_node)
         self.path_terms = tuple((1, path.irrep.dimension) for path in paths)
 
     @property
@@ -378,26 +378,26 @@ def _symmetrized(array: np.ndarray, order: int) -> np.ndarray:
 class ExampleSymmetricContraction(nn.Module):
     """The many-body contraction, one symmetric power at a time."""
 
-    def __init__(self, descriptor: SymmetricContractionDescriptor) -> None:
+    def __init__(self, kernel_spec: SymmetricContractionSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        dtype = _DTYPES[descriptor.precision]
+        self.kernel_spec = kernel_spec
+        dtype = _DTYPES[kernel_spec.precision]
         build = (
             reduced_symmetric_tensor_product_basis
-            if descriptor.basis == "reduced"
+            if kernel_spec.basis == "reduced"
             else full_symmetric_tensor_product_basis
         )
-        dimension = Irreps.parse(descriptor.irreps_in).dimension
-        outputs = [str(ir) for _, ir in Irreps.parse(descriptor.irreps_out)]
+        dimension = Irreps.parse(kernel_spec.irreps_in).dimension
+        outputs = [str(ir) for _, ir in Irreps.parse(kernel_spec.irreps_out)]
         self.widths = [Irreps.parse(ir).dimension for ir in outputs]
-        self.orders = descriptor.correlation
+        self.orders = kernel_spec.correlation
         # Held in the canonical order, body order outermost and the output
         # irreps within it, which is what makes the canonical form a view.
         self.targets: list[int] = []
         weights, bases = [], []
-        for order in range(1, descriptor.correlation + 1):
+        for order in range(1, kernel_spec.correlation + 1):
             for target, irrep in enumerate(outputs):
-                array = build(descriptor.irreps_in, order, irrep)[irrep]
+                array = build(kernel_spec.irreps_in, order, irrep)[irrep]
                 paths = array.shape[0]
                 shaped = array.reshape(paths, self.widths[target], *[dimension] * order)
                 bases.append(
@@ -408,9 +408,9 @@ class ExampleSymmetricContraction(nn.Module):
                 weights.append(
                     nn.Parameter(
                         torch.zeros(
-                            descriptor.num_elements,
+                            kernel_spec.num_elements,
                             paths,
-                            descriptor.num_features,
+                            kernel_spec.num_features,
                             dtype=dtype,
                         )
                     )
@@ -419,8 +419,8 @@ class ExampleSymmetricContraction(nn.Module):
         self.weights = nn.ParameterList(weights)
         for position, basis in enumerate(bases):
             self.register_buffer(f"basis_{position}", basis, persistent=False)
-        self.in_terms = _terms(descriptor.irreps_in)
-        self.out_terms = _terms(descriptor.irreps_out)
+        self.in_terms = _terms(kernel_spec.irreps_in)
+        self.out_terms = _terms(kernel_spec.irreps_out)
 
     def _bases(self) -> list[Tensor]:
         return [getattr(self, f"basis_{p}") for p in range(len(self.targets))]
@@ -429,7 +429,7 @@ class ExampleSymmetricContraction(nn.Module):
         return [self.weights[p] for p in range(len(self.targets))]
 
     def forward(self, features: Tensor, element: Tensor) -> Tensor:
-        channels = self.descriptor.num_features
+        channels = self.kernel_spec.num_features
         joined = contraction(
             _channel_major(features, self.in_terms, channels),
             self._weights(),
@@ -453,13 +453,13 @@ class ExampleSymmetricContraction(nn.Module):
         """What each weight on the path axis multiplies, by name."""
         return {
             "spec_version": KERNEL_SPEC_VERSION,
-            "basis": self.descriptor.basis,
+            "basis": self.kernel_spec.basis,
             "paths": list(
                 contraction_path_labels(
-                    self.descriptor.irreps_in,
-                    self.descriptor.irreps_out,
-                    self.descriptor.correlation,
-                    basis=self.descriptor.basis,
+                    self.kernel_spec.irreps_in,
+                    self.kernel_spec.irreps_out,
+                    self.kernel_spec.correlation,
+                    basis=self.kernel_spec.basis,
                 )
             ),
         }
@@ -498,22 +498,22 @@ def _single_copies(irreps: str) -> bool:
 class ExampleCapabilities(BackendCapabilities):
     """The coarse fields, and the shapes these ops were written for."""
 
-    def supports(self, descriptor: Descriptor) -> bool:
-        if not super().supports(descriptor):
+    def supports(self, kernel_spec: KernelSpec) -> bool:
+        if not super().supports(kernel_spec):
             return False
-        if isinstance(descriptor, ChannelwiseTPConvDescriptor):
+        if isinstance(kernel_spec, ChannelwiseTPConvSpec):
             # A path reads one node term and one edge term, and the coupling
             # is written for one copy of each.
-            return _single_copies(descriptor.irreps_node) and _single_copies(
-                descriptor.irreps_edge
+            return _single_copies(kernel_spec.irreps_node) and _single_copies(
+                kernel_spec.irreps_edge
             )
-        if isinstance(descriptor, FullyConnectedTPDescriptor):
+        if isinstance(kernel_spec, FullyConnectedTPSpec):
             return all(
                 ir.degree == 0 and ir.parity == 1
-                for _, ir in Irreps.parse(descriptor.irreps_in2).terms
+                for _, ir in Irreps.parse(kernel_spec.irreps_in2).terms
             )
-        if isinstance(descriptor, SegmentReduceDescriptor):
-            return descriptor.reduction == "sum"
+        if isinstance(kernel_spec, SegmentReduceSpec):
+            return kernel_spec.reduction == "sum"
         return True
 
 
@@ -532,50 +532,50 @@ class ExampleBackend:
             supports_double_backward=True,
         )
 
-    def _check(self, descriptor: Descriptor) -> None:
-        if not self.capabilities().supports(descriptor):
-            raise UnsupportedDescriptorError(
-                f"the example backend does not build {descriptor!r}. It builds "
+    def _check(self, kernel_spec: KernelSpec) -> None:
+        if not self.capabilities().supports(kernel_spec):
+            raise UnsupportedKernelSpecError(
+                f"the example backend does not build {kernel_spec!r}. It builds "
                 f"convolutions over single copies of each node and edge irrep, "
                 f"skips against scalar attributes, and sums."
             )
 
-    def make_linear(self, descriptor: LinearDescriptor) -> ExampleLinear:
-        self._check(descriptor)
-        return ExampleLinear(descriptor)
+    def make_linear(self, kernel_spec: LinearSpec) -> ExampleLinear:
+        self._check(kernel_spec)
+        return ExampleLinear(kernel_spec)
 
     def make_channelwise_tp_conv(
-        self, descriptor: ChannelwiseTPConvDescriptor
+        self, kernel_spec: ChannelwiseTPConvSpec
     ) -> ExampleChannelwiseTPConv:
-        self._check(descriptor)
-        return ExampleChannelwiseTPConv(descriptor)
+        self._check(kernel_spec)
+        return ExampleChannelwiseTPConv(kernel_spec)
 
     def make_symmetric_contraction(
-        self, descriptor: SymmetricContractionDescriptor
+        self, kernel_spec: SymmetricContractionSpec
     ) -> ExampleSymmetricContraction:
-        self._check(descriptor)
-        return ExampleSymmetricContraction(descriptor)
+        self._check(kernel_spec)
+        return ExampleSymmetricContraction(kernel_spec)
 
     def make_fully_connected_tp(
-        self, descriptor: FullyConnectedTPDescriptor
+        self, kernel_spec: FullyConnectedTPSpec
     ) -> ExampleFullyConnectedTP:
-        self._check(descriptor)
-        return ExampleFullyConnectedTP(descriptor)
+        self._check(kernel_spec)
+        return ExampleFullyConnectedTP(kernel_spec)
 
     def make_segment_reduce(
-        self, descriptor: SegmentReduceDescriptor
+        self, kernel_spec: SegmentReduceSpec
     ) -> ExampleSegmentReduce:
-        self._check(descriptor)
+        self._check(kernel_spec)
         return ExampleSegmentReduce()
 
-    def make_spherical_harmonics(self, descriptor: Descriptor) -> None:
+    def make_spherical_harmonics(self, kernel_spec: KernelSpec) -> None:
         """Left to the reference, which is what ``None`` says."""
         return None
 
-    def make_radial_basis(self, descriptor: Descriptor) -> None:
+    def make_radial_basis(self, kernel_spec: KernelSpec) -> None:
         """Left to the reference."""
         return None
 
-    def make_interaction_layer(self, descriptors: Sequence[Descriptor]) -> None:
+    def make_interaction_layer(self, kernel_specs: Sequence[KernelSpec]) -> None:
         """No fused span: every op is built on its own."""
         return None

@@ -1,7 +1,7 @@
 """A backend whose ops are built at the precision the configuration gives each.
 
 The model's builders ask the backend for ops and never choose a dtype. This
-wrapper stands between them: every descriptor is stamped with its
+wrapper stands between them: every kernel_spec is stamped with its
 :class:`~mace_core.config.precision.PrecisionPolicy` before the wrapped backend
 sees it, and an op that computes in something other than the interface dtype is
 given casts at its boundary. Everything is decided here, once, when the model is
@@ -95,8 +95,8 @@ class PrecisionBackend:
     def _stamping(self, factory: str) -> Any:
         make = getattr(self.backend, factory)
 
-        def build(descriptor: Any) -> Any:
-            stamped = self.op_descriptor(descriptor)
+        def build(kernel_spec: Any) -> Any:
+            stamped = self.op_spec(kernel_spec)
             op = make(stamped)
             if op is not None and stamped.precision != self._interface:
                 cast_at_boundary(op, stamped.precision, self._interface)
@@ -104,42 +104,40 @@ class PrecisionBackend:
 
         return build
 
-    def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> Any | None:
+    def make_interaction_layer(self, kernel_specs: tuple[Any, ...]) -> Any | None:
         """A fused span, if the wrapped backend has one, at one policy.
 
         A fused kernel has one math dtype, so every member is stamped with the
         span's policy: the widest of its members', which meets each floor.
         """
-        if not descriptors:
+        if not kernel_specs:
             return None
-        stamped = self.span_descriptors(descriptors)
+        stamped = self.span_specs(kernel_specs)
         span = self.backend.make_interaction_layer(stamped)
         if span is not None and stamped[0].precision != self._interface:
             cast_at_boundary(span, stamped[0].precision, self._interface)
         return span
 
-    def span_descriptors(self, descriptors: tuple[Any, ...]) -> tuple[Any, ...]:
+    def span_specs(self, kernel_specs: tuple[Any, ...]) -> tuple[Any, ...]:
         """Stamp one policy before compatibility is checked or the span is built."""
-        if not descriptors:
+        if not kernel_specs:
             return ()
-        policy = self.config.policy_for(descriptors)
+        policy = self.config.policy_for(kernel_specs)
         return tuple(
-            self.op_descriptor(
+            self.op_spec(
                 dataclasses.replace(member, layout=member.layout or CANONICAL_LAYOUT),
                 policy,
             )
-            for member in descriptors
+            for member in kernel_specs
         )
 
-    def op_descriptor(
-        self, descriptor: Any, policy: PrecisionPolicy | None = None
-    ) -> Any:
-        """The effective descriptor, including recorded precision degradations."""
+    def op_spec(self, kernel_spec: Any, policy: PrecisionPolicy | None = None) -> Any:
+        """The effective specification, including recorded precision degradations."""
         if policy is None:
-            policy = self.config.policy_for(descriptor)
+            policy = self.config.policy_for(kernel_spec)
         if policy.param_dtype != policy.compute_dtype:
             raise ValueError(
-                f"the {type(descriptor).__name__} policy holds its weights in "
+                f"the {type(kernel_spec).__name__} policy holds its weights in "
                 f"{policy.param_dtype} and computes in {policy.compute_dtype}. "
                 f"The {self.name!r} backend holds an op's weights in the dtype "
                 f"it computes in; set param_dtype equal to compute_dtype."
@@ -156,18 +154,18 @@ class PrecisionBackend:
         if product == "tf32" and (
             product not in capabilities.products or compute != "float32"
         ):
-            what = f"{type(descriptor).__name__} tf32 products"
+            what = f"{type(kernel_spec).__name__} tf32 products"
             if what not in self.degraded:
                 self.degraded.append(what)
                 logger.warning(
                     "backend %r uses IEEE products for %s at %s precision",
                     self.name,
-                    type(descriptor).__name__,
+                    type(kernel_spec).__name__,
                     compute,
                 )
             product = "ieee"
         return dataclasses.replace(
-            descriptor, precision=compute, accumulate=accumulate, product=product
+            kernel_spec, precision=compute, accumulate=accumulate, product=product
         )
 
 

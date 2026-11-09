@@ -22,7 +22,7 @@ from mace_core.config import (
     PolynomialCutoffConfig,
     SoftTransformConfig,
 )
-from mace_core.kernels.descriptors import LinearDescriptor
+from mace_core.kernels.specs import LinearSpec
 from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
@@ -87,7 +87,7 @@ def test_node_embedding_is_a_row_lookup_of_the_weight():
     """One-hot in, so the output of node i is the row of its element, scaled
     by the `1/sqrt(num_elements)` path normalisation."""
     block = ReferenceBackend().make_linear(
-        LinearDescriptor(
+        LinearSpec(
             irreps_in="3x0e",
             irreps_out="5x0e",
             precision=str(torch.get_default_dtype()).removeprefix("torch."),
@@ -109,7 +109,7 @@ def test_node_embedding_initialisation_scale():
     normalisation."""
     torch.manual_seed(0)
     block = ReferenceBackend().make_linear(
-        LinearDescriptor(
+        LinearSpec(
             irreps_in="16x0e",
             irreps_out="4096x0e",
             precision=str(torch.get_default_dtype()).removeprefix("torch."),
@@ -137,7 +137,7 @@ def test_apply_cutoff_decides_whether_the_features_carry_the_envelope(
     (the CLI default) pre-multiplies; the other mode hands the bare basis over
     and the consumer's product is bit-for-bit the default."""
     lengths, node_atomic_numbers, edge_index = _embedding_inputs()
-    assert _block().radial.descriptor.apply_cutoff is True
+    assert _block().radial.kernel_spec.apply_cutoff is True
     applying = _block(radial_basis, distance_transform)
     deferring = _block(radial_basis, distance_transform, apply_cutoff=False)
     applied, applied_cutoff = applying(lengths, node_atomic_numbers, edge_index)
@@ -303,9 +303,9 @@ def test_backbone_builds_and_evaluates_the_backend_radial_operator(apply_cutoff)
     from mace_torch.nn.backbone import MACEBackbone
 
     class RecordingBackend(ReferenceBackend):
-        def make_radial_basis(self, descriptor):
-            self.descriptor = descriptor
-            radial = super().make_radial_basis(descriptor)
+        def make_radial_basis(self, kernel_spec):
+            self.kernel_spec = kernel_spec
+            radial = super().make_radial_basis(kernel_spec)
             self.calls = []
             radial.register_forward_hook(
                 lambda module, inputs, output: self.calls.append(output)
@@ -323,8 +323,8 @@ def test_backbone_builds_and_evaluates_the_backend_radial_operator(apply_cutoff)
     )
     backbone = MACEBackbone(backend, config=config, atomic_numbers=[1, 6])
     features, envelope = backbone.radial_embedding(*_embedding_inputs())
-    assert backend.descriptor.trainable
-    assert backend.descriptor.apply_cutoff == apply_cutoff
+    assert backend.kernel_spec.trainable
+    assert backend.kernel_spec.apply_cutoff == apply_cutoff
     assert len(backend.calls) == 1
     assert torch.equal(features, backend.calls[0])
     assert envelope.shape == (3, 1)

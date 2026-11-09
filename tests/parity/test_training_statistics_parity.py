@@ -241,7 +241,7 @@ def test_statistics_reach_model_buffers_and_survive_reload(
     config = training_config(tmp_path, frames, scaling=scaling)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    head = built.model.backbone.outputs.energy_head
+    head = built.engine.model.outputs.energy_readout
     measured = native_statistics(frames, "std" if scaling == "none" else scaling)
     tolerance = FP64_CPU_REFERENCE if dtype == torch.float64 else FP32
     close(
@@ -258,8 +258,8 @@ def test_statistics_reach_model_buffers_and_survive_reload(
         head.e0_table.detach().numpy(), np.array([list(E0S.values())]), CLOSED_FORM_FP64
     )
     batch = next(iter(data.train_eval_loaders["default"])).graph
-    expected = built.model(batch, compute=("forces",))
-    saved = write_model(tmp_path / "model", built.model, built.metadata)
+    expected = built.engine(batch, compute=("forces",))
+    saved = write_model(tmp_path / "model", built.engine, built.metadata)
     loaded = load_deployed(saved)
     actual = loaded.engine(batch, compute=("forces",))
     for name in ("energy", "forces"):
@@ -298,13 +298,13 @@ def test_zero_spread_keeps_the_model_trainable_like_legacy(isolated, tmp_path, s
     assert data.statistics.std == 0.0
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
     close(
-        built.model.backbone.outputs.energy_head.scale.detach().numpy(),
+        built.engine.model.outputs.energy_readout.scale.detach().numpy(),
         np.array([1.0]),
         CLOSED_FORM_FP64,
     )
     batch = next(iter(data.train_eval_loaders["default"])).graph
-    built.model(batch, compute=()).get("energy").sum().backward()
-    gradients = [p.grad for p in built.model.parameters() if p.grad is not None]
+    built.engine(batch, compute=()).get("energy").sum().backward()
+    gradients = [p.grad for p in built.engine.parameters() if p.grad is not None]
     assert gradients and all(torch.isfinite(g).all() for g in gradients)
     assert any(torch.count_nonzero(g) for g in gradients)
 
@@ -356,7 +356,7 @@ def test_foundation_e0s_use_live_converted_predictions(isolated, tmp_path, kind)
         FP64_CPU_REFERENCE,
     )
     close(
-        built.model.backbone.outputs.energy_head.e0_table.detach().numpy(),
+        built.engine.model.outputs.energy_readout.e0_table.detach().numpy(),
         np.array([[expected[z] for z in E0S]]),
         FP64_CPU_REFERENCE,
     )

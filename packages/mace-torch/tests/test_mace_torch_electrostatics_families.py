@@ -16,7 +16,7 @@ from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import Precision
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.kernels import initialize_model_weights
-from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, ScaleShiftSpec
 from mace_torch.models.electrostatics import LocalChargeModel
 from mace_torch.models.registry import registered_models
 from mace_torch.physics import DerivativeEngine
@@ -46,7 +46,7 @@ def test_registration_refuses_an_electrostatic_family_without_a_solver(monkeypat
     class MissingSolver(MACEModel):
         pass
 
-    with pytest.raises(TypeError, match="must define solver_descriptor"):
+    with pytest.raises(TypeError, match="must define solver_spec"):
         registry.register_model("missing_solver", electrostatics=True)(MissingSolver)
     assert "missing_solver" not in registry.MODEL_REGISTRY
 
@@ -95,7 +95,7 @@ def model_for(
         readout={"mlp_irreps": "4x0e"},
         interaction_first="plain",
     )
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s({"default": {1: 0.0, 8: 0.0}}),
         ["default"],
         AtomicNumberTable([1, 8]),
@@ -109,7 +109,7 @@ def model_for(
         [1, 8],
         [ENERGY_STRESS],
         head,
-        settings=LocalChargeModel.solver_descriptor(
+        settings=LocalChargeModel.make_solver_spec(
             config,
             ElectrostaticsConfig(
                 enabled=True,
@@ -372,16 +372,16 @@ def test_training_optimizer_members_and_deployment_roundtrip(
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
     parameters = {
         id(parameter)
-        for parameter in built.model.parameters()
+        for parameter in built.engine.parameters()
         if parameter.requires_grad
     }
     optimized = [
         id(parameter)
-        for group in build_optimizer(built.model, config.training).param_groups
+        for group in build_optimizer(built.engine, config.training).param_groups
         for parameter in group["params"]
     ]
     assert set(optimized) == parameters and len(optimized) == len(parameters)
-    local_model = cast(LocalChargeModel, built.model.get_submodule("backbone"))
+    local_model = cast(LocalChargeModel, built.engine.get_submodule("model"))
     original = [p.detach().clone() for p in local_model.source_maps.parameters()]
     trained = run_train_stage(config, built, checkpoint_path=tmp_path / "local")
     assert np.isfinite(trained.history[-1].train_loss)
@@ -418,7 +418,7 @@ def test_planned_forward_compiles_without_graph_breaks(kind):
 
     model = model_for(kind, degree=0, profile="full_periodic")
     graph = graph_for("full_periodic")
-    graph[LONG_RANGE_PLAN] = long_range_plan(graph, model.descriptor, dense_pairs=True)
+    graph[LONG_RANGE_PLAN] = long_range_plan(graph, model.solver_spec, dense_pairs=True)
     expected = model(graph)
     compiled = torch.compile(model, backend="aot_eager", fullgraph=True)
     actual = compiled(graph)

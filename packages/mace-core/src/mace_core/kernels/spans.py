@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    Descriptor,
-    DistanceTransformDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SphericalHarmonicsDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    DistanceTransformSpec,
+    KernelSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SphericalHarmonicsSpec,
 )
 
 __all__ = ["EdgeConvolutionSpan"]
@@ -25,34 +25,32 @@ class EdgeConvolutionSpan:
     basis, harmonics, optional transform, radial network, optional density,
     convolution. Element conditioning is described by the radial network.
     All members use the chain's activation layout. Other radial families can
-    define their own shape and matcher over the same descriptor tuple protocol.
+    define their own shape and matcher over the same tuple of kernel specifications.
     """
 
-    radial_basis: RadialBasisDescriptor
-    spherical_harmonics: SphericalHarmonicsDescriptor
-    radial_network: RadialMLPDescriptor
-    convolution: ChannelwiseTPConvDescriptor
-    distance_transform: DistanceTransformDescriptor | None = None
-    density: RadialMLPDescriptor | None = None
+    radial_basis: RadialBasisSpec
+    spherical_harmonics: SphericalHarmonicsSpec
+    radial_network: RadialMLPSpec
+    convolution: ChannelwiseTPConvSpec
+    distance_transform: DistanceTransformSpec | None = None
+    density: RadialMLPSpec | None = None
 
     def __post_init__(self) -> None:
         for name, kind in (
-            ("radial_basis", RadialBasisDescriptor),
-            ("spherical_harmonics", SphericalHarmonicsDescriptor),
-            ("radial_network", RadialMLPDescriptor),
-            ("convolution", ChannelwiseTPConvDescriptor),
+            ("radial_basis", RadialBasisSpec),
+            ("spherical_harmonics", SphericalHarmonicsSpec),
+            ("radial_network", RadialMLPSpec),
+            ("convolution", ChannelwiseTPConvSpec),
         ):
             if not isinstance(getattr(self, name), kind):
                 raise TypeError(f"{name} must be {kind.__name__}.")
         if self.distance_transform is not None and not isinstance(
-            self.distance_transform, DistanceTransformDescriptor
+            self.distance_transform, DistanceTransformSpec
         ):
-            raise TypeError(
-                "distance_transform must be DistanceTransformDescriptor or None."
-            )
+            raise TypeError("distance_transform must be DistanceTransformSpec or None.")
         if self.density is not None:
-            if not isinstance(self.density, RadialMLPDescriptor):
-                raise TypeError("density must be RadialMLPDescriptor or None.")
+            if not isinstance(self.density, RadialMLPSpec):
+                raise TypeError("density must be RadialMLPSpec or None.")
             if self.density.channels[-1] != 1:
                 raise ValueError("density must produce one scalar per edge.")
             for name in ("num_elements", "element_embedding_width"):
@@ -64,7 +62,7 @@ class EdgeConvolutionSpan:
                 raise ValueError("density and radial network must share input widths.")
 
     @property
-    def descriptors(self) -> tuple[Descriptor, ...]:
+    def kernel_specs(self) -> tuple[KernelSpec, ...]:
         return (
             (self.radial_basis, self.spherical_harmonics)
             + (() if self.distance_transform is None else (self.distance_transform,))
@@ -74,33 +72,33 @@ class EdgeConvolutionSpan:
         )
 
     @classmethod
-    def from_descriptors(
-        cls, descriptors: tuple[Descriptor, ...]
+    def from_specs(
+        cls, kernel_specs: tuple[KernelSpec, ...]
     ) -> EdgeConvolutionSpan | None:
         """Match exactly this shape; never infer a missing or reordered member."""
-        kinds = tuple(type(member) for member in descriptors)
-        prefix = (RadialBasisDescriptor, SphericalHarmonicsDescriptor)
+        kinds = tuple(type(member) for member in kernel_specs)
+        prefix = (RadialBasisSpec, SphericalHarmonicsSpec)
         if kinds[:2] != prefix:
             return None
         offset = 2
         transform = None
-        if kinds[offset : offset + 1] == (DistanceTransformDescriptor,):
-            transform = cast(DistanceTransformDescriptor, descriptors[offset])
+        if kinds[offset : offset + 1] == (DistanceTransformSpec,):
+            transform = cast(DistanceTransformSpec, kernel_specs[offset])
             offset += 1
         suffix = kinds[offset:]
         if suffix not in (
-            (RadialMLPDescriptor, ChannelwiseTPConvDescriptor),
-            (RadialMLPDescriptor, RadialMLPDescriptor, ChannelwiseTPConvDescriptor),
+            (RadialMLPSpec, ChannelwiseTPConvSpec),
+            (RadialMLPSpec, RadialMLPSpec, ChannelwiseTPConvSpec),
         ):
             return None
         try:
             return cls(
-                radial_basis=cast(RadialBasisDescriptor, descriptors[0]),
-                spherical_harmonics=cast(SphericalHarmonicsDescriptor, descriptors[1]),
-                radial_network=cast(RadialMLPDescriptor, descriptors[offset]),
-                convolution=cast(ChannelwiseTPConvDescriptor, descriptors[-1]),
+                radial_basis=cast(RadialBasisSpec, kernel_specs[0]),
+                spherical_harmonics=cast(SphericalHarmonicsSpec, kernel_specs[1]),
+                radial_network=cast(RadialMLPSpec, kernel_specs[offset]),
+                convolution=cast(ChannelwiseTPConvSpec, kernel_specs[-1]),
                 distance_transform=transform,
-                density=cast(RadialMLPDescriptor, descriptors[offset + 1])
+                density=cast(RadialMLPSpec, kernel_specs[offset + 1])
                 if len(suffix) == 3
                 else None,
             )

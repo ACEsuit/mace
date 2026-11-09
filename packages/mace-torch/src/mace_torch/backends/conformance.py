@@ -2,7 +2,7 @@
 
 Point :func:`run_backend_conformance` at a backend and it builds each case the
 backend says it supports, next to the reference's build of the same
-descriptor, and checks:
+kernel_spec, and checks:
 
 * **the weights**: the candidate loads the reference's canonical weights and
   gives the same ones back, which is the whole of why one checkpoint loads into
@@ -16,7 +16,7 @@ descriptor, and checks:
   that claims it. Training on forces differentiates through the backward, and a
   backward that is not itself differentiable gives wrong forces rather than
   none;
-* **honesty**: a descriptor the backend declines is refused when asked for,
+* **honesty**: a kernel_spec the backend declines is refused when asked for,
   rather than built into something that fails later;
 * **one layout for the chain**: the backend's native feature layout is one it
   declares, and next to the reference the chain of ops resolves to exactly
@@ -46,20 +46,20 @@ import numpy as np
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.clebsch_gordan.real_basis import wigner_d_real
-from mace_core.kernels.capabilities import UnsupportedDescriptorError
-from mace_core.kernels.descriptors import (
-    ActivationLayout,
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    SegmentReduceDescriptor,
-    SymmetricContractionDescriptor,
-)
+from mace_core.kernels.capabilities import UnsupportedKernelSpecError
 from mace_core.kernels.paths import channelwise_paths
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.protocol import InternalWeights
 from mace_core.kernels.registry import get_backend
 from mace_core.kernels.reorder import decompose
+from mace_core.kernels.specs import (
+    ActivationLayout,
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    SegmentReduceSpec,
+    SymmetricContractionSpec,
+)
 from torch import Tensor, nn
 
 from mace_torch.backends.composite import CompositeBackend
@@ -84,18 +84,18 @@ TOLERANCES: dict[str, tuple[float, float]] = {
 
 _DTYPES = {"float64": torch.float64, "float32": torch.float32}
 
-#: The op each descriptor type is built by.
+#: The op each kernel_spec type is built by.
 _OPS = {
-    LinearDescriptor: "linear",
-    ChannelwiseTPConvDescriptor: "channelwise_tp_conv",
-    SymmetricContractionDescriptor: "symmetric_contraction",
-    FullyConnectedTPDescriptor: "fully_connected_tp",
-    SegmentReduceDescriptor: "segment_reduce",
+    LinearSpec: "linear",
+    ChannelwiseTPConvSpec: "channelwise_tp_conv",
+    SymmetricContractionSpec: "symmetric_contraction",
+    FullyConnectedTPSpec: "fully_connected_tp",
+    SegmentReduceSpec: "segment_reduce",
 }
 
 
 def conformance_cases(precision: Precision = "float64") -> list[Any]:
-    """The descriptors every backend is checked on.
+    """The kernel specifications every backend is checked on.
 
     The shapes of a MACE layer at small width: the up and down linears with
     and without a bias, the convolution from ``0e+1o`` nodes over harmonics to
@@ -112,26 +112,22 @@ def conformance_cases(precision: Precision = "float64") -> list[Any]:
     target_flat = expanded_irreps(target, features)
     node_flat = expanded_irreps(node, features)
     return [
-        LinearDescriptor(
-            irreps_in=node_flat, irreps_out=node_flat, precision=precision
-        ),
-        LinearDescriptor(
-            irreps_in=path_flat, irreps_out=target_flat, precision=precision
-        ),
-        LinearDescriptor(
+        LinearSpec(irreps_in=node_flat, irreps_out=node_flat, precision=precision),
+        LinearSpec(irreps_in=path_flat, irreps_out=target_flat, precision=precision),
+        LinearSpec(
             irreps_in=node_flat,
             irreps_out=f"{features}x0e+2x0e",
             has_bias=True,
             precision=precision,
         ),
-        ChannelwiseTPConvDescriptor(
+        ChannelwiseTPConvSpec(
             irreps_node=node,
             irreps_edge=edge,
             irreps_out=target,
             num_features=features,
             precision=precision,
         ),
-        SymmetricContractionDescriptor(
+        SymmetricContractionSpec(
             irreps_in=target,
             irreps_out=node,
             correlation=3,
@@ -139,13 +135,13 @@ def conformance_cases(precision: Precision = "float64") -> list[Any]:
             num_features=features,
             precision=precision,
         ),
-        FullyConnectedTPDescriptor(
+        FullyConnectedTPSpec(
             irreps_in1=node_flat,
             irreps_in2="2x0e",
             irreps_out=node_flat,
             precision=precision,
         ),
-        SegmentReduceDescriptor(num_features=6, precision=precision),
+        SegmentReduceSpec(num_features=6, precision=precision),
     ]
 
 
@@ -155,13 +151,13 @@ class ConformanceResult:
 
     Attributes:
         op: The factory name.
-        descriptor: The case.
+        kernel_spec: The case.
         built: Whether the backend built it. ``False`` means it declined.
         checks: The checks that ran and passed, by name.
     """
 
     op: str
-    descriptor: Any
+    kernel_spec: Any
     built: bool
     checks: list[str] = field(default_factory=list)
 
@@ -200,7 +196,7 @@ class _Inputs:
     rotate: Callable[[np.ndarray], tuple[list[Any], np.ndarray]] | None
 
 
-def _inputs(descriptor: Any, dtype: torch.dtype, device: str, seed: int) -> _Inputs:
+def _inputs(kernel_spec: Any, dtype: torch.dtype, device: str, seed: int) -> _Inputs:
     generator = torch.Generator().manual_seed(seed)
 
     def randn(*shape: int) -> Tensor:
@@ -210,27 +206,27 @@ def _inputs(descriptor: Any, dtype: torch.dtype, device: str, seed: int) -> _Inp
         matrix = torch.tensor(_block_rotation(irreps, rotation), dtype=dtype)
         return values @ matrix.to(device).T
 
-    if isinstance(descriptor, LinearDescriptor):
-        source = randn(5, Irreps.parse(descriptor.irreps_in).dimension)
+    if isinstance(kernel_spec, LinearSpec):
+        source = randn(5, Irreps.parse(kernel_spec.irreps_in).dimension)
 
         def rotate_linear(rotation):
-            out = _block_rotation(descriptor.irreps_out, rotation)
-            return [rotated(source, descriptor.irreps_in, rotation)], out
+            out = _block_rotation(kernel_spec.irreps_out, rotation)
+            return [rotated(source, kernel_spec.irreps_in, rotation)], out
 
-        rotate = None if descriptor.has_bias else rotate_linear
+        rotate = None if kernel_spec.has_bias else rotate_linear
         return _Inputs([source], [0], rotate)
 
-    if isinstance(descriptor, ChannelwiseTPConvDescriptor):
-        features = descriptor.num_features
+    if isinstance(kernel_spec, ChannelwiseTPConvSpec):
+        features = kernel_spec.num_features
         paths = channelwise_paths(
-            descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
+            kernel_spec.irreps_node, kernel_spec.irreps_edge, kernel_spec.irreps_out
         )
-        node_irreps = expanded_irreps(descriptor.irreps_node, features)
+        node_irreps = expanded_irreps(kernel_spec.irreps_node, features)
         out_irreps = "+".join(f"{features}x{path.irrep}" for path in paths)
         nodes, sender, receiver = 4, [0, 1, 2, 3, 0, 2, 1], [1, 0, 3, 2, 2, 0, 3]
         node_features = randn(nodes, Irreps.parse(node_irreps).dimension)
         edge_attributes = randn(
-            len(sender), Irreps.parse(descriptor.irreps_edge).dimension
+            len(sender), Irreps.parse(kernel_spec.irreps_edge).dimension
         )
         weights = randn(len(sender), len(paths), features)
         senders = torch.tensor(sender, device=device)
@@ -240,17 +236,19 @@ def _inputs(descriptor: Any, dtype: torch.dtype, device: str, seed: int) -> _Inp
         def rotate_conv(rotation):
             moved = list(arguments)
             moved[0] = rotated(node_features, node_irreps, rotation)
-            moved[1] = rotated(edge_attributes, descriptor.irreps_edge, rotation)
+            moved[1] = rotated(edge_attributes, kernel_spec.irreps_edge, rotation)
             return moved, _block_rotation(out_irreps, rotation)
 
         return _Inputs(arguments, [0, 1, 2], rotate_conv)
 
-    if isinstance(descriptor, SymmetricContractionDescriptor):
-        features = descriptor.num_features
-        in_irreps = expanded_irreps(descriptor.irreps_in, features)
-        out_irreps = expanded_irreps(descriptor.irreps_out, features)
+    if isinstance(kernel_spec, SymmetricContractionSpec):
+        features = kernel_spec.num_features
+        in_irreps = expanded_irreps(kernel_spec.irreps_in, features)
+        out_irreps = expanded_irreps(kernel_spec.irreps_out, features)
         source = randn(5, Irreps.parse(in_irreps).dimension)
-        element = torch.tensor([0, 1, 1, 0, 1], device=device) % descriptor.num_elements
+        element = (
+            torch.tensor([0, 1, 1, 0, 1], device=device) % kernel_spec.num_elements
+        )
 
         def rotate_contraction(rotation):
             moved = [rotated(source, in_irreps, rotation), element]
@@ -258,51 +256,51 @@ def _inputs(descriptor: Any, dtype: torch.dtype, device: str, seed: int) -> _Inp
 
         return _Inputs([source, element], [0], rotate_contraction)
 
-    if isinstance(descriptor, FullyConnectedTPDescriptor):
-        first = randn(5, Irreps.parse(descriptor.irreps_in1).dimension)
-        second = randn(5, Irreps.parse(descriptor.irreps_in2).dimension)
+    if isinstance(kernel_spec, FullyConnectedTPSpec):
+        first = randn(5, Irreps.parse(kernel_spec.irreps_in1).dimension)
+        second = randn(5, Irreps.parse(kernel_spec.irreps_in2).dimension)
 
         def rotate_skip(rotation):
-            moved = [rotated(first, descriptor.irreps_in1, rotation), second]
-            return moved, _block_rotation(descriptor.irreps_out, rotation)
+            moved = [rotated(first, kernel_spec.irreps_in1, rotation), second]
+            return moved, _block_rotation(kernel_spec.irreps_out, rotation)
 
         return _Inputs([first, second], [0, 1], rotate_skip)
 
-    if isinstance(descriptor, SegmentReduceDescriptor):
-        values = randn(7, descriptor.num_features)
+    if isinstance(kernel_spec, SegmentReduceSpec):
+        values = randn(7, kernel_spec.num_features)
         index = torch.tensor([0, 2, 1, 0, 2, 2, 1], device=device)
         return _Inputs([values, index, 3], [0], None)
 
-    raise TypeError(f"no conformance inputs for {type(descriptor).__name__}")
+    raise TypeError(f"no conformance inputs for {type(kernel_spec).__name__}")
 
 
 # Layout-aware conformance adapts reforge/perf-integration (8dee319d).
-def _layout_terms(descriptor: Any) -> tuple[dict[int, Terms], Terms]:
+def _layout_terms(kernel_spec: Any) -> tuple[dict[int, Terms], Terms]:
     """Which arguments of an op carry features, and the terms of each and of
     the output, so that a value can be moved between layouts."""
     terms = Layout.terms
-    if isinstance(descriptor, LinearDescriptor):
-        return {0: terms(descriptor.irreps_in)}, terms(descriptor.irreps_out)
-    if isinstance(descriptor, ChannelwiseTPConvDescriptor):
-        features = descriptor.num_features
+    if isinstance(kernel_spec, LinearSpec):
+        return {0: terms(kernel_spec.irreps_in)}, terms(kernel_spec.irreps_out)
+    if isinstance(kernel_spec, ChannelwiseTPConvSpec):
+        features = kernel_spec.num_features
         paths = channelwise_paths(
-            descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
+            kernel_spec.irreps_node, kernel_spec.irreps_edge, kernel_spec.irreps_out
         )
-        node = terms(expanded_irreps(descriptor.irreps_node, features))
-        edge = terms(descriptor.irreps_edge)
+        node = terms(expanded_irreps(kernel_spec.irreps_node, features))
+        edge = terms(kernel_spec.irreps_edge)
         return {0: node, 1: edge}, tuple(
             (features, path.irrep.dimension) for path in paths
         )
-    if isinstance(descriptor, SymmetricContractionDescriptor):
-        features = descriptor.num_features
+    if isinstance(kernel_spec, SymmetricContractionSpec):
+        features = kernel_spec.num_features
         return (
-            {0: terms(expanded_irreps(descriptor.irreps_in, features))},
-            terms(expanded_irreps(descriptor.irreps_out, features)),
+            {0: terms(expanded_irreps(kernel_spec.irreps_in, features))},
+            terms(expanded_irreps(kernel_spec.irreps_out, features)),
         )
-    if isinstance(descriptor, FullyConnectedTPDescriptor):
+    if isinstance(kernel_spec, FullyConnectedTPSpec):
         return (
-            {0: terms(descriptor.irreps_in1), 1: terms(descriptor.irreps_in2)},
-            terms(descriptor.irreps_out),
+            {0: terms(kernel_spec.irreps_in1), 1: terms(kernel_spec.irreps_in2)},
+            terms(kernel_spec.irreps_out),
         )
     return {}, ()
 
@@ -315,11 +313,11 @@ class _InLayout(nn.Module):
     gradient or a rotation that disagrees is the op's and not the layout's.
     """
 
-    def __init__(self, op: Any, descriptor: Any) -> None:
+    def __init__(self, op: Any, kernel_spec: Any) -> None:
         super().__init__()
         self.op = op
-        self.layout = Layout(descriptor.layout)
-        self.inputs, self.output = _layout_terms(descriptor)
+        self.layout = Layout(kernel_spec.layout)
+        self.inputs, self.output = _layout_terms(kernel_spec)
 
     def forward(self, *arguments: Any) -> Tensor:
         moved = [
@@ -377,7 +375,7 @@ def run_backend_conformance(
             it.
         device: Where the ops run.
         precision: The dtype the cases are built at.
-        cases: The descriptors. :func:`conformance_cases` by default.
+        cases: The kernel_specs. :func:`conformance_cases` by default.
         seed: For the weights, the inputs and the rotation.
         compile_ops: Also compile each op with ``fullgraph=True``, and check
             that one compilation serves inputs of three sizes.
@@ -390,7 +388,7 @@ def run_backend_conformance(
         One result per case, including the declined ones.
 
     Raises:
-        AssertionError: Naming the op, the descriptor and the check.
+        AssertionError: Naming the op, the kernel_spec and the check.
     """
     if isinstance(backend, str):
         backend = get_backend(backend)
@@ -401,33 +399,33 @@ def run_backend_conformance(
     Layout(layout)  # Validate before iterating, including a declined layout.
     results = []
     given = cases or conformance_cases(precision)
-    for number, descriptor in enumerate(given):
-        descriptor = replace(descriptor, layout=layout)
-        op = _OPS[type(descriptor)]
+    for number, kernel_spec in enumerate(given):
+        kernel_spec = replace(kernel_spec, layout=layout)
+        op = _OPS[type(kernel_spec)]
         make = getattr(backend, f"make_{op}", None)
-        if op not in capabilities.ops or not capabilities.supports(descriptor):
+        if op not in capabilities.ops or not capabilities.supports(kernel_spec):
             if make is not None and op in capabilities.ops:
                 try:
-                    make(descriptor)
-                except UnsupportedDescriptorError:
+                    make(kernel_spec)
+                except UnsupportedKernelSpecError:
                     pass
                 else:
                     raise AssertionError(
-                        f"{backend.name} declines {descriptor} and built it "
-                        f"anyway. A declined descriptor must be refused, or the "
+                        f"{backend.name} declines {kernel_spec} and built it "
+                        f"anyway. A declined kernel_spec must be refused, or the "
                         f"model is built with an op its backend said it cannot "
                         f"compute."
                     )
-            results.append(ConformanceResult(op, descriptor, False))
+            results.append(ConformanceResult(op, kernel_spec, False))
             continue
         if make is None:
             raise AssertionError(f"{backend.name} claims {op} and has no make_{op}")
-        result = ConformanceResult(op, descriptor, True, ["layout"])
-        where = f"{backend.name} {op} {descriptor}"
-        candidate = make(descriptor).to(device)
-        canonical = replace(descriptor, layout="mul_ir", product="ieee")
+        result = ConformanceResult(op, kernel_spec, True, ["layout"])
+        where = f"{backend.name} {op} {kernel_spec}"
+        candidate = make(kernel_spec).to(device)
+        canonical = replace(kernel_spec, layout="mul_ir", product="ieee")
         expected_op = getattr(reference, f"make_{op}")(canonical).to(device)
-        runner = candidate if layout == "mul_ir" else _InLayout(candidate, descriptor)
+        runner = candidate if layout == "mul_ir" else _InLayout(candidate, kernel_spec)
 
         if isinstance(expected_op, InternalWeights):
             if not isinstance(candidate, InternalWeights):
@@ -464,7 +462,7 @@ def run_backend_conformance(
                 _check_reorder(candidate, state, like, max_block, where)
                 result.checks.append("reorder")
 
-        inputs = _inputs(descriptor, dtype, device, seed + number)
+        inputs = _inputs(kernel_spec, dtype, device, seed + number)
         mine_arguments = [
             value.detach().clone().requires_grad_(index in inputs.differentiable)
             if isinstance(value, Tensor) and value.is_floating_point()
@@ -542,7 +540,7 @@ def run_backend_conformance(
             value.detach() if isinstance(value, Tensor) else value
             for value in inputs.arguments
         ]
-        if isinstance(descriptor, ChannelwiseTPConvDescriptor):
+        if isinstance(kernel_spec, ChannelwiseTPConvSpec):
             _check_no_edges(runner, detached, theirs.shape[1], where)
             result.checks.append("no edges")
         if compile_ops:
@@ -553,7 +551,7 @@ def run_backend_conformance(
                     compiled(*detached), mine.detach(), precision, f"{where} compiled"
                 )
             result.checks.append("compiles")
-            _check_every_size(runner, descriptor, detached, precision, where)
+            _check_every_size(runner, kernel_spec, detached, precision, where)
             result.checks.append("one compile for every size")
         if cuda_graphs:
             _check_cuda_graph(runner, detached, mine.detach(), precision, where)
@@ -752,7 +750,7 @@ def _check_chain_layout(backend: Any, capabilities: Any) -> None:
         )
 
 
-def _tiled(descriptor: Any, arguments: list[Any], copies: int) -> list[Any]:
+def _tiled(kernel_spec: Any, arguments: list[Any], copies: int) -> list[Any]:
     """``copies`` independent copies of one op's inputs, side by side.
 
     Node rows, edge rows and segment rows repeat, and the indices of each copy
@@ -765,7 +763,7 @@ def _tiled(descriptor: Any, arguments: list[Any], copies: int) -> list[Any]:
     def rows(value: Tensor) -> Tensor:
         return torch.cat([value] * copies)
 
-    if isinstance(descriptor, ChannelwiseTPConvDescriptor):
+    if isinstance(kernel_spec, ChannelwiseTPConvSpec):
         nodes, attributes, weights, sender, receiver, num_nodes = arguments
         offsets = [num_nodes * copy for copy in range(copies)]
         return [
@@ -776,7 +774,7 @@ def _tiled(descriptor: Any, arguments: list[Any], copies: int) -> list[Any]:
             torch.cat([receiver + offset for offset in offsets]),
             num_nodes * copies,
         ]
-    if isinstance(descriptor, SegmentReduceDescriptor):
+    if isinstance(kernel_spec, SegmentReduceSpec):
         values, index, segments = arguments
         return [
             rows(values),
@@ -787,7 +785,7 @@ def _tiled(descriptor: Any, arguments: list[Any], copies: int) -> list[Any]:
 
 
 def _check_every_size(
-    candidate: Any, descriptor: Any, arguments: list[Any], precision: str, where: str
+    candidate: Any, kernel_spec: Any, arguments: list[Any], precision: str, where: str
 ) -> None:
     """One compilation for inputs of three sizes, each equal to eager.
 
@@ -810,7 +808,7 @@ def _check_every_size(
     compiled = torch.compile(candidate, backend=counter, fullgraph=True, dynamic=True)
     sizes = (2, 3, 5)
     for copies in sizes:
-        tiled = _tiled(descriptor, arguments, copies)
+        tiled = _tiled(kernel_spec, arguments, copies)
         with torch.no_grad():
             _close(
                 compiled(*tiled),

@@ -16,26 +16,26 @@ from typing import Any
 import pytest
 import torch
 from mace_core.kernels.canonical import SILU_SECOND_MOMENT_SCALE
-from mace_core.kernels.descriptors import (
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialMLPDescriptor,
-    SymmetricContractionDescriptor,
-)
 from mace_core.kernels.protocol import INTERNAL_WEIGHT_OPS, InternalWeights
+from mace_core.kernels.specs import (
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialMLPSpec,
+    SymmetricContractionSpec,
+)
 from mace_torch.backends.reference import ReferenceBackend, ReferenceLayerNormSiluMLP
 from mace_torch.kernels import initialize_model_weights, op_seed
 
 BACKEND = ReferenceBackend()
-LINEAR = LinearDescriptor(irreps_in="4x0e+4x1o", irreps_out="4x0e+4x1o", has_bias=True)
-SKIP = FullyConnectedTPDescriptor(
+LINEAR = LinearSpec(irreps_in="4x0e+4x1o", irreps_out="4x0e+4x1o", has_bias=True)
+SKIP = FullyConnectedTPSpec(
     irreps_in1="4x0e+4x1o", irreps_in2="2x0e", irreps_out="4x0e+4x1o"
 )
-CONTRACTION = SymmetricContractionDescriptor(
+CONTRACTION = SymmetricContractionSpec(
     irreps_in="0e+1o", irreps_out="0e", correlation=2, num_elements=2, num_features=4
 )
-RADIAL_MLP = RadialMLPDescriptor(channels=(8, 16, 12))
-LAYER_NORM_MLP = RadialMLPDescriptor(channels=(8, 16, 12), kind="layer_norm_silu")
+RADIAL_MLP = RadialMLPSpec(channels=(8, 16, 12))
+LAYER_NORM_MLP = RadialMLPSpec(channels=(8, 16, 12), kind="layer_norm_silu")
 
 
 def built() -> dict[str, Any]:
@@ -104,13 +104,11 @@ def test_linear_and_skip_weights_are_drawn_standard_normal():
     """The canonical weight is the raw one ``e3nn`` stores. Its ``1 / sqrt(fan_in)``
     is applied in the forward, so a draw that folded it in as well would apply
     it twice and train at a different effective rate."""
-    linear = BACKEND.make_linear(LinearDescriptor(irreps_in="64x0e", irreps_out="8x0e"))
+    linear = BACKEND.make_linear(LinearSpec(irreps_in="64x0e", irreps_out="8x0e"))
     linear.initialize_weights(3)
     assert float(linear.weight.detach().std()) == pytest.approx(1.0, rel=0.1)
     skip = BACKEND.make_fully_connected_tp(
-        FullyConnectedTPDescriptor(
-            irreps_in1="64x0e", irreps_in2="4x0e", irreps_out="8x0e"
-        )
+        FullyConnectedTPSpec(irreps_in1="64x0e", irreps_in2="4x0e", irreps_out="8x0e")
     )
     skip.initialize_weights(3)
     assert float(skip.weight.detach().std()) == pytest.approx(1.0, rel=0.1)
@@ -120,16 +118,14 @@ def test_the_linear_forward_applies_the_fan_in():
     """Written out: 64 inputs of one through weights of one is 64, and the
     ``e3nn`` normalization divides by ``sqrt(64)``. The repeated ``0e`` input
     terms share one fan-in, ``4 + 12 = 16``."""
-    linear = BACKEND.make_linear(LinearDescriptor(irreps_in="64x0e", irreps_out="1x0e"))
+    linear = BACKEND.make_linear(LinearSpec(irreps_in="64x0e", irreps_out="1x0e"))
     with torch.no_grad():
         linear.weight.fill_(1.0)
     assert float(linear(torch.ones(1, 64, dtype=torch.float64))[0, 0]) == pytest.approx(
         8.0
     )
 
-    split = BACKEND.make_linear(
-        LinearDescriptor(irreps_in="4x0e+12x0e", irreps_out="1x0e")
-    )
+    split = BACKEND.make_linear(LinearSpec(irreps_in="4x0e+12x0e", irreps_out="1x0e"))
     with torch.no_grad():
         split.weight.fill_(1.0)
     assert float(split(torch.ones(1, 16, dtype=torch.float64))[0, 0]) == pytest.approx(
@@ -141,7 +137,7 @@ def test_the_skip_forward_shares_one_fan_in_across_the_paths_into_an_output():
     """``e3nn`` counts the fan-in per output: ``4x0e+2x0e`` against ``3x0e``
     is 18, so one active attribute and weights of one give ``6 / sqrt(18)``."""
     skip = BACKEND.make_fully_connected_tp(
-        FullyConnectedTPDescriptor(
+        FullyConnectedTPSpec(
             irreps_in1="4x0e+2x0e", irreps_in2="3x0e", irreps_out="1x0e"
         )
     )
@@ -166,7 +162,7 @@ def test_the_symmetric_contraction_draws_over_each_block_path_count():
     and 4 paths, so a draw that ignored the count would be off by a factor of
     two or four in the larger two."""
     op = BACKEND.make_symmetric_contraction(
-        SymmetricContractionDescriptor(
+        SymmetricContractionSpec(
             irreps_in="0e+1o",
             irreps_out="0e",
             correlation=3,
@@ -187,13 +183,13 @@ def test_the_normalized_radial_mlp_forward_applies_the_fan_in():
     """64 inputs of one through weights of one is 64, divided by ``sqrt(64)``.
     The draw is a standard normal, unscaled, for the same reason as the
     linear's."""
-    mlp = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=(64, 1)))
+    mlp = BACKEND.make_radial_mlp(RadialMLPSpec(channels=(64, 1)))
     with torch.no_grad():
         mlp.weights[0].fill_(1.0)
     assert float(mlp(torch.ones(1, 64, dtype=torch.float64))[0, 0]) == pytest.approx(
         8.0
     )
-    wide = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=(64, 64, 64)))
+    wide = BACKEND.make_radial_mlp(RadialMLPSpec(channels=(64, 64, 64)))
     wide.initialize_weights(3)
     for weight in wide.weights:
         assert float(weight.detach().std()) == pytest.approx(1.0, rel=0.1)
@@ -202,7 +198,7 @@ def test_the_normalized_radial_mlp_forward_applies_the_fan_in():
 def test_the_normalized_radial_mlp_scales_its_hidden_activation():
     """Widths of one and weights of one leave only the activation, which is a
     SiLU times the pinned second-moment scale."""
-    mlp = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=(1, 1, 1)))
+    mlp = BACKEND.make_radial_mlp(RadialMLPSpec(channels=(1, 1, 1)))
     with torch.no_grad():
         for weight in mlp.weights:
             weight.fill_(1.0)
@@ -234,7 +230,7 @@ def test_the_layer_norm_radial_mlp_draws_like_a_torch_linear():
     """Weight and bias uniform on ``1 / sqrt(fan_in)``; the norms stay the
     identity; and the same seed gives the same draw."""
     mlp = BACKEND.make_radial_mlp(
-        RadialMLPDescriptor(channels=(64, 64, 64), kind="layer_norm_silu")
+        RadialMLPSpec(channels=(64, 64, 64), kind="layer_norm_silu")
     )
     assert isinstance(mlp, ReferenceLayerNormSiluMLP)
     mlp.initialize_weights(5)
@@ -246,7 +242,7 @@ def test_the_layer_norm_radial_mlp_draws_like_a_torch_linear():
         assert float(values.std()) == pytest.approx(bound / 3**0.5, rel=0.15)
     assert all(float(w.detach().min()) == 1.0 for w in mlp.norm_weights)
     assert all(float(b.detach().abs().max()) == 0.0 for b in mlp.norm_biases)
-    again = BACKEND.make_radial_mlp(mlp.descriptor)
+    again = BACKEND.make_radial_mlp(mlp.kernel_spec)
     again.initialize_weights(5)
     for first, second in zip(mlp.parameters(), again.parameters(), strict=True):
         assert torch.equal(first, second)
@@ -304,7 +300,7 @@ OTHER_DEVICE = (
 #: The same four ops at float32, with both radial MLP kinds. Metal has no
 #: float64 at all, so a float64 module cannot even be moved there; the device
 #: question is the same at either precision.
-NARROW_LINEAR = LinearDescriptor(
+NARROW_LINEAR = LinearSpec(
     irreps_in="4x0e+4x1o",
     irreps_out="4x0e+4x1o",
     has_bias=True,
@@ -316,7 +312,7 @@ def built_narrow() -> dict[str, Any]:
     return {
         "linear": BACKEND.make_linear(NARROW_LINEAR),
         "fully_connected_tp": BACKEND.make_fully_connected_tp(
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1="4x0e+4x1o",
                 irreps_in2="2x0e",
                 irreps_out="4x0e+4x1o",
@@ -324,7 +320,7 @@ def built_narrow() -> dict[str, Any]:
             )
         ),
         "symmetric_contraction": BACKEND.make_symmetric_contraction(
-            SymmetricContractionDescriptor(
+            SymmetricContractionSpec(
                 irreps_in="0e+1o",
                 irreps_out="0e",
                 correlation=2,
@@ -334,10 +330,10 @@ def built_narrow() -> dict[str, Any]:
             )
         ),
         "radial_mlp": BACKEND.make_radial_mlp(
-            RadialMLPDescriptor(channels=(8, 16, 12), precision="float32")
+            RadialMLPSpec(channels=(8, 16, 12), precision="float32")
         ),
         "radial_mlp_layer_norm": BACKEND.make_radial_mlp(
-            RadialMLPDescriptor(
+            RadialMLPSpec(
                 channels=(8, 16, 12), kind="layer_norm_silu", precision="float32"
             )
         ),

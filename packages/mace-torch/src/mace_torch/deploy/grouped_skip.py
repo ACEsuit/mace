@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import fully_connected_tp_path_normalization
-from mace_core.kernels.descriptors import FullyConnectedTPDescriptor
+from mace_core.kernels.specs import FullyConnectedTPSpec
 from torch import Tensor, nn
 
 from mace_torch.backends.precision import boundary_precision
@@ -57,20 +57,20 @@ def lower_scalar_skips(interactions: nn.ModuleList) -> int:
     lowered = 0
     for layer in interactions:
         skip = getattr(layer, "skip", None)
-        descriptor = getattr(skip, "descriptor", None)
-        if skip is None or not isinstance(descriptor, FullyConnectedTPDescriptor):
+        kernel_spec = getattr(skip, "kernel_spec", None)
+        if skip is None or not isinstance(kernel_spec, FullyConnectedTPSpec):
             continue
         if (
-            descriptor.accumulate_floor != descriptor.precision
+            kernel_spec.accumulate_floor != kernel_spec.precision
             or boundary_precision(skip) is not None
         ):
             continue
         irreps = [
             Irreps.parse(v)
             for v in (
-                descriptor.irreps_in1,
-                descriptor.irreps_in2,
-                descriptor.irreps_out,
+                kernel_spec.irreps_in1,
+                kernel_spec.irreps_in2,
+                kernel_spec.irreps_out,
             )
         ]
         if not all(
@@ -82,7 +82,7 @@ def lower_scalar_skips(interactions: nn.ModuleList) -> int:
             continue
         inputs, species, outputs = (r.dimension for r in irreps)
         factor = fully_connected_tp_path_normalization(
-            descriptor.irreps_in1, descriptor.irreps_in2, irreps[2].terms[0][1]
+            kernel_spec.irreps_in1, kernel_spec.irreps_in2, irreps[2].terms[0][1]
         )
         matrices = (
             skip.to_canonical()["weight"].reshape(species, outputs, inputs) * factor

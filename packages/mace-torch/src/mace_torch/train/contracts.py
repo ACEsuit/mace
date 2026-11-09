@@ -80,14 +80,14 @@ class BuiltModel:
     """Built model with its data and checkpoint metadata.
 
     Attributes:
-        model: nn.Module on the configured device and precision.
+        engine: nn.Module on the configured device and precision.
         outputs: Resolved observables and requested derivatives, used by losses
             and error tables.
         data: The data bundle used to build this model.
         metadata: Checkpoint record, complete except for training results.
     """
 
-    model: nn.Module
+    engine: nn.Module
     outputs: RequestedOutputs
     data: DataBundle
     metadata: ModelMetadata
@@ -124,7 +124,7 @@ class TrainedModel:
     """What a finished run leaves behind.
 
     Attributes:
-        model: The trained model. With EMA on it carries the averaged weights,
+        engine: The trained derivative engine. With EMA it carries averaged weights,
             because those are the ones the best checkpoint was chosen by.
         metadata: The build record, plus what training added to it.
         history: One entry per epoch, oldest first.
@@ -134,7 +134,7 @@ class TrainedModel:
             when the run was asked not to write one.
     """
 
-    model: nn.Module
+    engine: nn.Module
     metadata: ModelMetadata
     history: tuple[EpochRecord, ...] = ()
     best_epoch: int | None = None

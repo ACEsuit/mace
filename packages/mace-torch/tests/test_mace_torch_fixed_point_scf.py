@@ -47,8 +47,8 @@ def fixed_model(
         config,
         [1, 8],
         [ENERGY_STRESS],
-        local.outputs.energy_head,
-        settings=FixedPointSCFModel.solver_descriptor(
+        local.outputs.energy_readout,
+        settings=FixedPointSCFModel.make_solver_spec(
             config,
             ElectrostaticsConfig(
                 enabled=True,
@@ -231,7 +231,7 @@ def test_rotation_inversion_permutation_and_origin(constant_charge, profile, deg
 def test_planned_forward_compiles_with_fullgraph(profile):
     model = fixed_model(profile)
     graph = fixed_graph(profile)
-    graph[LONG_RANGE_PLAN] = long_range_plan(graph, model.descriptor, dense_pairs=True)
+    graph[LONG_RANGE_PLAN] = long_range_plan(graph, model.solver_spec, dense_pairs=True)
     expected = model(graph)
     actual = torch.compile(model, backend="aot_eager", fullgraph=True)(graph)
     torch.testing.assert_close(actual.total_energy, expected.total_energy)
@@ -247,8 +247,8 @@ def test_fused_solver_binds_once_and_checks_double_backward(monkeypatch):
     class Fused(ReferenceSolver):
         name = "fused-fixed-point"
 
-        def make_scf_solve(self, descriptor):
-            assert descriptor.scf_spec.method == "affine_fixed_charge"
+        def make_scf_solve(self, solver_spec):
+            assert solver_spec.scf_spec.method == "affine_fixed_charge"
             calls.append("build")
 
             class Span(AffineFixedPoint):
@@ -375,14 +375,14 @@ def test_training_optimizer_and_solver_preserving_checkpoint(
     config = ResolvedConfig.model_validate(document)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    parameters = {id(p) for p in built.model.parameters() if p.requires_grad}
+    parameters = {id(p) for p in built.engine.parameters() if p.requires_grad}
     optimized = [
         id(p)
-        for group in build_optimizer(built.model, config.training).param_groups
+        for group in build_optimizer(built.engine, config.training).param_groups
         for p in group["params"]
     ]
     assert set(optimized) == parameters and len(optimized) == len(parameters)
-    model = cast(FixedPointSCFModel, built.model.get_submodule("backbone"))
+    model = cast(FixedPointSCFModel, built.engine.get_submodule("model"))
     before = [p.detach().clone() for p in model.updates.parameters()]
     trained = run_train_stage(config, built, checkpoint_path=tmp_path / "fixedpoint")
     assert np.isfinite(trained.history[-1].train_loss)
@@ -394,7 +394,7 @@ def test_training_optimizer_and_solver_preserving_checkpoint(
     record = deployed.metadata.electrostatics
     assert record is not None and record.solver == solver
     assert record.bit_parity is (solver == "reference")
-    assert record.descriptor["scf_spec"]["method"] == (
+    assert record.solver_spec["scf_spec"]["method"] == (
         ("affine_fixed_charge" if constant_charge else "affine_fixed_fermi")
         if model.settings.affine_response
         else ("nonlinear_fixed_charge" if constant_charge else "nonlinear_fixed_fermi")

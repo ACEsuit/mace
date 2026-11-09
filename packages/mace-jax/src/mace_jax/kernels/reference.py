@@ -12,13 +12,13 @@ from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.clebsch_gordan.real_basis import wigner_3j_real
 from mace_core.kernels.canonical import KERNEL_SPEC_VERSION
 from mace_core.kernels.capabilities import BackendCapabilities
-from mace_core.kernels.descriptors import (
-    FullyConnectedTPDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-)
 from mace_core.kernels.protocol import DISPATCHED_OPS, REFERENCE_ONLY_OPS
+from mace_core.kernels.specs import (
+    FullyConnectedTPSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+)
 
 from mace_jax.kernels.ops import (
     CanonicalOp,
@@ -39,9 +39,9 @@ class SphericalHarmonics(nnx.Module):
     tensors; normalization is fixed by Y_l(y) = sqrt(2l+1).
     """
 
-    def __init__(self, descriptor):
-        self.lmax = descriptor.lmax
-        self.normalize = descriptor.normalize
+    def __init__(self, kernel_spec):
+        self.lmax = kernel_spec.lmax
+        self.normalize = kernel_spec.normalize
         self.couplings = nnx.List()
         for degree in range(2, self.lmax + 1):
             coefficient = wigner_3j_real(degree, degree - 1, 1)
@@ -51,7 +51,7 @@ class SphericalHarmonics(nnx.Module):
             )
             self.couplings.append(
                 nnx.Variable(
-                    jnp.asarray(factor * coefficient, dtype=descriptor.precision)
+                    jnp.asarray(factor * coefficient, dtype=kernel_spec.precision)
                 )
             )
 
@@ -78,17 +78,17 @@ class SphericalHarmonics(nnx.Module):
 
 
 class RadialBasis(CanonicalOp):
-    def __init__(self, descriptor):
-        self.cutoff, self.order = descriptor.cutoff, descriptor.cutoff_order
-        self.apply_cutoff = descriptor.apply_cutoff
+    def __init__(self, kernel_spec):
+        self.cutoff, self.order = kernel_spec.cutoff, kernel_spec.cutoff_order
+        self.apply_cutoff = kernel_spec.apply_cutoff
         super().__init__(
             {
                 "frequencies": jnp.arange(
-                    1, descriptor.num_basis + 1, dtype=descriptor.precision
+                    1, kernel_spec.num_basis + 1, dtype=kernel_spec.precision
                 )
-                * (math.pi / descriptor.cutoff),
+                * (math.pi / kernel_spec.cutoff),
                 "prefactor": jnp.asarray(
-                    math.sqrt(2 / descriptor.cutoff), dtype=descriptor.precision
+                    math.sqrt(2 / kernel_spec.cutoff), dtype=kernel_spec.precision
                 ),
             }
         )
@@ -105,8 +105,8 @@ class RadialBasis(CanonicalOp):
 
 
 class SegmentReduce(nnx.Module):
-    def __init__(self, descriptor):
-        self.reduction = descriptor.reduction
+    def __init__(self, kernel_spec):
+        self.reduction = kernel_spec.reduction
 
     def __call__(self, values, indices, num_segments):
         return jax.ops.segment_sum(values, indices, num_segments=num_segments)
@@ -114,34 +114,31 @@ class SegmentReduce(nnx.Module):
 
 @dataclass(frozen=True)
 class ReferenceCapabilities(BackendCapabilities):
-    def unsupported_reason(self, descriptor):
-        reason = super().unsupported_reason(descriptor)
+    def unsupported_reason(self, kernel_spec):
+        reason = super().unsupported_reason(kernel_spec)
         if reason:
             return reason
-        if descriptor.accumulate_floor != descriptor.precision:
+        if kernel_spec.accumulate_floor != kernel_spec.precision:
             return (
                 "JAX reference requires a uniform op dtype; request the wider precision"
             )
         if (
-            isinstance(descriptor, SegmentReduceDescriptor)
-            and descriptor.reduction != "sum"
+            isinstance(kernel_spec, SegmentReduceSpec)
+            and kernel_spec.reduction != "sum"
         ):
             return "JAX reference segment_reduce supports sum only"
+        if isinstance(kernel_spec, RadialBasisSpec) and kernel_spec.kind != "bessel":
+            return f"radial basis {kernel_spec.kind!r} is not supported; use bessel"
         if (
-            isinstance(descriptor, RadialBasisDescriptor)
-            and descriptor.kind != "bessel"
-        ):
-            return f"radial basis {descriptor.kind!r} is not supported; use bessel"
-        if (
-            isinstance(descriptor, RadialMLPDescriptor)
-            and descriptor.kind != "normalized_silu"
+            isinstance(kernel_spec, RadialMLPSpec)
+            and kernel_spec.kind != "normalized_silu"
         ):
             return (
-                f"radial MLP {descriptor.kind!r} is not supported; use normalized_silu"
+                f"radial MLP {kernel_spec.kind!r} is not supported; use normalized_silu"
             )
-        if isinstance(descriptor, FullyConnectedTPDescriptor) and any(
+        if isinstance(kernel_spec, FullyConnectedTPSpec) and any(
             ir.degree != 0 or ir.parity != 1
-            for _, ir in Irreps.parse(descriptor.irreps_in2)
+            for _, ir in Irreps.parse(kernel_spec.irreps_in2)
         ):
             return "fully connected TP requires even scalar second inputs"
         return None
@@ -160,33 +157,33 @@ class ReferenceBackend:
             spec_version=KERNEL_SPEC_VERSION,
         )
 
-    def _build(self, constructor, descriptor):
-        self.capabilities().require(descriptor, self.name)
-        return constructor(descriptor)
+    def _build(self, constructor, kernel_spec):
+        self.capabilities().require(kernel_spec, self.name)
+        return constructor(kernel_spec)
 
-    def make_linear(self, descriptor):
-        return self._build(Linear, descriptor)
+    def make_linear(self, kernel_spec):
+        return self._build(Linear, kernel_spec)
 
-    def make_channelwise_tp_conv(self, descriptor):
-        return self._build(ChannelwiseTPConv, descriptor)
+    def make_channelwise_tp_conv(self, kernel_spec):
+        return self._build(ChannelwiseTPConv, kernel_spec)
 
-    def make_fully_connected_tp(self, descriptor):
-        return self._build(FullyConnectedTP, descriptor)
+    def make_fully_connected_tp(self, kernel_spec):
+        return self._build(FullyConnectedTP, kernel_spec)
 
-    def make_symmetric_contraction(self, descriptor):
-        return self._build(SymmetricContraction, descriptor)
+    def make_symmetric_contraction(self, kernel_spec):
+        return self._build(SymmetricContraction, kernel_spec)
 
-    def make_segment_reduce(self, descriptor):
-        return self._build(SegmentReduce, descriptor)
+    def make_segment_reduce(self, kernel_spec):
+        return self._build(SegmentReduce, kernel_spec)
 
-    def make_spherical_harmonics(self, descriptor):
-        return self._build(SphericalHarmonics, descriptor)
+    def make_spherical_harmonics(self, kernel_spec):
+        return self._build(SphericalHarmonics, kernel_spec)
 
-    def make_radial_basis(self, descriptor):
-        return self._build(RadialBasis, descriptor)
+    def make_radial_basis(self, kernel_spec):
+        return self._build(RadialBasis, kernel_spec)
 
-    def make_radial_mlp(self, descriptor):
-        return self._build(RadialMLP, descriptor)
+    def make_radial_mlp(self, kernel_spec):
+        return self._build(RadialMLP, kernel_spec)
 
-    def make_interaction_layer(self, descriptors):
+    def make_interaction_layer(self, kernel_specs):
         return None

@@ -111,7 +111,8 @@ class SubselectConfig(ConfigSection):
         num_samples: How many structures to keep. ``None`` keeps every one
             that passes the filter.
         method: ``random``, or ``fps`` for farthest-point sampling.
-        descriptors: Optional numeric ``.npy`` matrix ``[structures, features]``
+        structure_descriptors_file: Numeric ``.npy`` matrix
+            ``[structures, features]``
             for FPS, in source order before filtering. Rows must cover every
             structure across all source files. Otherwise the foundation model
             computes them. Object arrays and pickle files are not accepted.
@@ -128,15 +129,17 @@ class SubselectConfig(ConfigSection):
 
     num_samples: int | None = 10000
     method: Literal["random", "fps"] = "random"
-    descriptors: Path | None = None
+    structure_descriptors_file: Path | None = None
     filtering: Literal["none", "combinations", "exclusive", "inclusive"] = "none"
     elements: tuple[int, ...] = ()
     allow_random_padding: bool = True
 
     @model_validator(mode="after")
     def _check(self) -> SubselectConfig:
-        if self.descriptors is not None and self.method != "fps":
-            raise ValueError("subselect.descriptors requires method='fps'")
+        if self.structure_descriptors_file is not None and self.method != "fps":
+            raise ValueError(
+                "subselect.structure_descriptors_file requires method='fps'"
+            )
         if self.num_samples is not None and self.num_samples < 1:
             raise ValueError(
                 f"subselect.num_samples is {self.num_samples}. Keep at least "

@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.descriptors import ActivationLayout
+from mace_core.kernels.specs import ActivationLayout
 from torch import Tensor
 
 __all__ = [

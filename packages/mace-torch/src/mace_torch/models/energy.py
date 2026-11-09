@@ -31,7 +31,7 @@ from torch import Tensor, nn
 
 from mace_torch.kernels import segment_sum
 
-__all__ = ["EnergyOutputHead", "EnergyTerms", "ScaleShiftSpec", "ScalingMethod"]
+__all__ = ["EnergyReadout", "EnergyTerms", "ScaleShiftSpec", "ScalingMethod"]
 
 _TORCH_DTYPE = {
     "float64": torch.float64,
@@ -96,7 +96,7 @@ class EnergyTerms:
     contributions: Tensor | None = None
 
 
-class EnergyOutputHead(nn.Module):
+class EnergyReadout(nn.Module):
     """Isolated-atom energies, scale and shift, and the two reductions.
 
     Args:

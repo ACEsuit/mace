@@ -233,7 +233,7 @@ def test_validation_batches_and_reported_loss_match_legacy(tmp_path, batch_size)
         count = len(native_batch.graph["ptr"]) - 1
         assert count == frozen_batch.num_graphs
         seen += count
-        predictions = built.model(native_batch.graph, compute=("forces",))
+        predictions = built.engine(native_batch.graph, compute=("forces",))
         oracle.update(
             output={
                 "energy": predictions.get("energy"),
@@ -245,7 +245,10 @@ def test_validation_batches_and_reported_loss_match_legacy(tmp_path, batch_size)
     expected, _ = oracle.compute()
     requested = resolve_requested(config.model.observables, DEFAULT_CATALOGUE)
     actual = evaluate(
-        built.model, loader, build_loss(requested, config.loss), metric_specs(requested)
+        built.engine,
+        loader,
+        build_loss(requested, config.loss),
+        metric_specs(requested),
     )
     torch.testing.assert_close(
         torch.tensor(actual["loss"]),

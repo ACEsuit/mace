@@ -39,12 +39,12 @@ from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.local_sources import LocalSplitChargeConfig
 from mace_core.config.model import ModelConfig, PolarConfig
 from mace_core.electrostatics import (
-    ElectrostaticsSolverDescriptor,
+    ElectrostaticsSpec,
     FeatureProjection,
     ScfSpec,
 )
-from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision, widest
+from mace_core.kernels.specs import LinearSpec
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
     InputSpec,
@@ -70,9 +70,9 @@ from mace_torch.electrostatics.reference.gto_utils import (
 )
 from mace_torch.kernels import segment_sum
 from mace_torch.models.base import MACEModel
-from mace_torch.models.energy import EnergyOutputHead
-from mace_torch.models.heads import ObservableHead
+from mace_torch.models.energy import EnergyReadout
 from mace_torch.models.inputs import EXTERNAL_FIELD, TOTAL_CHARGE, TOTAL_SPIN
+from mace_torch.models.readouts import ObservableReadout
 from mace_torch.nn.charge_transfer import SplitChargeSource
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.field import BiasReadout, ChargeUpdate, ElectronEnergyReadout
@@ -131,15 +131,15 @@ def _polar_extra_observables(max_l: int) -> tuple[ObservableSpec, ...]:
 POLAR_INPUT_SPECS = (TOTAL_CHARGE, TOTAL_SPIN, EXTERNAL_FIELD)
 
 
-def _polar_descriptor(
+def _polar_solver_spec(
     polar: PolarConfig, electrostatics: ElectrostaticsConfig, precision: Precision
-) -> ElectrostaticsSolverDescriptor:
-    """Resolve the solver descriptor from validated architecture and solver settings."""
+) -> ElectrostaticsSpec:
+    """Resolve the solve from validated architecture and solver settings."""
     kspace_cutoff = electrostatics.kspace_cutoff_factor * gto_basis_kspace_cutoff(
         [polar.multipole_width, *polar.feature_widths],
         max(polar.multipole_max_l, polar.feature_max_l),
     )
-    return ElectrostaticsSolverDescriptor(
+    return ElectrostaticsSpec(
         periodicity_profile=electrostatics.periodicity_profile,
         multipole_max_l=polar.multipole_max_l,
         kspace_cutoff=float(kspace_cutoff),
@@ -169,7 +169,7 @@ class PolarModel(MACEModel):
         atomic_numbers: The element table, ascending.
         observables: What the model reads out through heads. The dipole is not
             among them: it is the density's, computed here.
-        energy_head: The energy head.
+        energy_readout: The energy head.
         electrostatics: The solver and boundary conditions. The architecture
             is read directly from ``config.polar``.
         trains_derivatives: Whether the model is trained on forces or stress,
@@ -195,7 +195,7 @@ class PolarModel(MACEModel):
         config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
-        energy_head: EnergyOutputHead,
+        energy_readout: EnergyReadout,
         electrostatics: ElectrostaticsConfig,
         trains_derivatives: bool = False,
         *,
@@ -217,7 +217,7 @@ class PolarModel(MACEModel):
             config,
             atomic_numbers=atomic_numbers,
             observables=observables,
-            energy_head=energy_head,
+            energy_readout=energy_readout,
             avg_num_neighbors=avg_num_neighbors,
             radial_precision=radial_precision,
             precision=precision,
@@ -235,10 +235,10 @@ class PolarModel(MACEModel):
         # Displaced charges and projected potentials are subtracted after
         # reduction. Carry the complete solve at the configured accumulation
         # floor; casting only the final sum cannot recover cancelled bits.
-        self.descriptor = _polar_descriptor(
-            settings, electrostatics, widest(precision, energy_head.accumulate)
+        self.solver_spec = _polar_solver_spec(
+            settings, electrostatics, widest(precision, energy_readout.accumulate)
         )
-        self.total_dtype = getattr(torch, self.descriptor.precision)
+        self.total_dtype = getattr(torch, self.solver_spec.precision)
 
         node_irreps = expanded_irreps(hidden_irreps, num_features)
         one_spin = _spherical(settings.multipole_max_l)
@@ -251,7 +251,7 @@ class PolarModel(MACEModel):
 
             def linear(irreps_in: str, irreps_out: str):
                 return backend.make_linear(
-                    LinearDescriptor(
+                    LinearSpec(
                         irreps_in=irreps_in, irreps_out=irreps_out, precision=precision
                     )
                 )
@@ -278,7 +278,7 @@ class PolarModel(MACEModel):
                     self.density_irreps,
                     num_elements=len(atomic_numbers),
                     precision=precision,
-                    accumulate=self.descriptor.precision,
+                    accumulate=self.solver_spec.precision,
                 )
                 for _ in range(settings.num_recursion_steps)
             )
@@ -288,7 +288,7 @@ class PolarModel(MACEModel):
                 self.potential_irreps,
                 self.density_irreps,
                 precision,
-                accumulate=self.descriptor.precision,
+                accumulate=self.solver_spec.precision,
             )
             self.external_field = DisplacedGTOExternalFieldBlock(
                 settings.feature_max_l, list(settings.feature_widths), "receiver"
@@ -305,16 +305,16 @@ class PolarModel(MACEModel):
             self.register_buffer(
                 "field_norms", torch.tensor(expanded, dtype=getattr(torch, precision))
             )
-        with constructed_in(self.descriptor.precision):
+        with constructed_in(self.solver_spec.precision):
             self.projection = build_long_range_features(
-                self.descriptor, solver=solver, trains_derivatives=trains_derivatives
+                self.solver_spec, solver=solver, trains_derivatives=trains_derivatives
             )
             self.coulomb = build_long_range(
-                self.descriptor, solver=solver, trains_derivatives=trains_derivatives
+                self.solver_spec, solver=solver, trains_derivatives=trains_derivatives
             )
-        if self.descriptor.precision != precision:
-            cast_at_boundary(self.projection, self.descriptor.precision, precision)
-            cast_at_boundary(self.coulomb, self.descriptor.precision, precision)
+        if self.solver_spec.precision != precision:
+            cast_at_boundary(self.projection, self.solver_spec.precision, precision)
+            cast_at_boundary(self.coulomb, self.solver_spec.precision, precision)
         self.solver = solver
 
     def solver_record(self) -> dict[str, Any]:
@@ -323,12 +323,12 @@ class PolarModel(MACEModel):
         The solver's name, whether it reproduces the reference bit for bit,
         and the solve as data. See :class:`mace_core.metadata.ElectrostaticsRecord`.
         """
-        from mace_core.electrostatics import descriptor_record, get_solver
+        from mace_core.electrostatics import get_solver, solver_spec_record
 
         return {
             "solver": self.solver,
             "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
-            "descriptor": descriptor_record(self.descriptor),
+            "solver_spec": solver_spec_record(self.solver_spec),
         }
 
     def _fix_totals(
@@ -375,7 +375,7 @@ class PolarModel(MACEModel):
         if LONG_RANGE_PLAN not in graph:
             graph[LONG_RANGE_PLAN] = long_range_plan(
                 graph,
-                self.descriptor,
+                self.solver_spec,
                 (self.projection, self.coulomb),
                 dense_pairs=any(graph.get("structure_padding", ())),
             )
@@ -414,7 +414,7 @@ class PolarModel(MACEModel):
             element, len(self.backbone.atomic_numbers)
         ).to(dtype)
 
-        geometry = long_range_geometry(graph, self.descriptor)
+        geometry = long_range_geometry(graph, self.solver_spec)
         cache = self.projection.prepare(geometry)
 
         density = sum(
@@ -525,7 +525,7 @@ class _ChargeAwareModel(MACEModel):
     """Shared input, solver-metadata and planning contracts for source models."""
 
     _physical_observables: dict[str, ObservableSpec]
-    descriptor: ElectrostaticsSolverDescriptor
+    solver_spec: ElectrostaticsSpec
     solver: str
 
     @staticmethod
@@ -534,12 +534,12 @@ class _ChargeAwareModel(MACEModel):
 
     def solver_record(self) -> dict[str, Any]:
         """Persist solver identity through the existing artifact contract."""
-        from mace_core.electrostatics import descriptor_record, get_solver
+        from mace_core.electrostatics import get_solver, solver_spec_record
 
         return {
             "solver": self.solver,
             "bit_parity": bool(get_solver(self.solver).capabilities.bit_parity),
-            "descriptor": descriptor_record(self.descriptor),
+            "solver_spec": solver_spec_record(self.solver_spec),
         }
 
     @property
@@ -548,7 +548,7 @@ class _ChargeAwareModel(MACEModel):
 
     def prepare_model_inputs(self, graph: dict[str, Any], requests=()) -> None:
         if LONG_RANGE_PLAN not in graph:
-            graph[LONG_RANGE_PLAN] = long_range_plan(graph, self.descriptor)
+            graph[LONG_RANGE_PLAN] = long_range_plan(graph, self.solver_spec)
 
 
 class LocalChargeModel(_ChargeAwareModel):
@@ -567,16 +567,16 @@ class LocalChargeModel(_ChargeAwareModel):
         return (POLAR_INPUT_SPECS[2],)
 
     @staticmethod
-    def solver_descriptor(
+    def make_solver_spec(
         config: ModelConfig,
         electrostatics: ElectrostaticsConfig,
         precision: Precision,
-    ) -> ElectrostaticsSolverDescriptor:
+    ) -> ElectrostaticsSpec:
         """Resolve model physics and solver settings once at the build boundary."""
         settings = config.local_sources
         if settings is None:
             raise ValueError("model.local_sources is required")
-        return ElectrostaticsSolverDescriptor(
+        return ElectrostaticsSpec(
             periodicity_profile=electrostatics.periodicity_profile,
             slab_normal=electrostatics.slab_normal,
             multipole_max_l=settings.multipole_max_l,
@@ -600,9 +600,9 @@ class LocalChargeModel(_ChargeAwareModel):
         config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
-        energy_head: EnergyOutputHead | None,
+        energy_readout: EnergyReadout | None,
         *,
-        settings: ElectrostaticsSolverDescriptor,
+        settings: ElectrostaticsSpec,
         solver: str = "reference",
         trains_derivatives: bool = False,
         avg_num_neighbors: float = 1.0,
@@ -613,7 +613,7 @@ class LocalChargeModel(_ChargeAwareModel):
         sources = config.local_sources
         if sources is None or sources.kind != self.kind:
             raise ValueError(f"model.local_sources.kind must be {self.kind!r}")
-        if energy_head is None:
+        if energy_readout is None:
             raise ValueError(f"{self.kind} requires an energy observable")
         if sources.multipole_max_l > config.max_L:
             raise ValueError("local_sources.multipole_max_l exceeds model.max_L")
@@ -652,7 +652,7 @@ class LocalChargeModel(_ChargeAwareModel):
                 for spec in observables
                 if spec.name not in self._physical_observables
             ],
-            energy_head,
+            energy_readout,
             avg_num_neighbors=avg_num_neighbors,
             precision=precision,
             num_heads=num_heads,
@@ -661,27 +661,27 @@ class LocalChargeModel(_ChargeAwareModel):
             edge_axes=(1, 2, 0),
         )
         self.settings = sources
-        self.total_dtype = getattr(torch, energy_head.accumulate)
+        self.total_dtype = getattr(torch, energy_readout.accumulate)
         density_irreps = _spherical(sources.multipole_max_l)
-        self.descriptor = settings
+        self.solver_spec = settings
         with constructed_in(precision):
             self.source_maps = nn.ModuleList(
                 self._make_source(backend, config, layer, density_irreps, precision)
                 for layer in self.backbone.layer_irreps
             )
-        with constructed_in(self.descriptor.precision):
+        with constructed_in(self.solver_spec.precision):
             self.coulomb = build_long_range(
-                self.descriptor,
+                self.solver_spec,
                 solver=solver,
                 trains_derivatives=trains_derivatives,
             )
-        if self.descriptor.precision != precision:
-            cast_at_boundary(self.coulomb, self.descriptor.precision, precision)
+        if self.solver_spec.precision != precision:
+            cast_at_boundary(self.coulomb, self.solver_spec.precision, precision)
         self.solver = solver
 
     def _make_source(self, backend, config, layer, density_irreps, precision):
         return backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=layer,
                 irreps_out=density_irreps,
                 precision=precision,
@@ -786,9 +786,9 @@ class LocalSplitChargeModel(LocalChargeModel):
         config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
-        energy_head: EnergyOutputHead | None,
+        energy_readout: EnergyReadout | None,
         *,
-        settings: ElectrostaticsSolverDescriptor,
+        settings: ElectrostaticsSpec,
         solver: str = "reference",
         trains_derivatives: bool = False,
         avg_num_neighbors: float = 1.0,
@@ -801,7 +801,7 @@ class LocalSplitChargeModel(LocalChargeModel):
             config,
             atomic_numbers,
             observables,
-            energy_head,
+            energy_readout,
             settings=settings,
             solver=solver,
             trains_derivatives=trains_derivatives,
@@ -962,13 +962,13 @@ class QEqModel(_ChargeAwareModel):
         )
 
     @staticmethod
-    def solver_descriptor(
+    def make_solver_spec(
         config: ModelConfig, electrostatics: ElectrostaticsConfig, precision: Precision
-    ) -> ElectrostaticsSolverDescriptor:
+    ) -> ElectrostaticsSpec:
         settings = config.qeq
         if settings is None:
             raise ValueError("model.qeq is required")
-        return ElectrostaticsSolverDescriptor(
+        return ElectrostaticsSpec(
             periodicity_profile=electrostatics.periodicity_profile,
             slab_normal=electrostatics.slab_normal,
             multipole_max_l=0,
@@ -1003,9 +1003,9 @@ class QEqModel(_ChargeAwareModel):
         config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
-        energy_head: EnergyOutputHead | None,
+        energy_readout: EnergyReadout | None,
         *,
-        settings: ElectrostaticsSolverDescriptor,
+        settings: ElectrostaticsSpec,
         solver: str = "reference",
         trains_derivatives: bool = False,
         avg_num_neighbors: float = 1.0,
@@ -1015,7 +1015,7 @@ class QEqModel(_ChargeAwareModel):
     ) -> None:
         if config.qeq is None or config.model != "qeq":
             raise ValueError("QEq requires model.qeq and model.model='qeq'")
-        if energy_head is None:
+        if energy_readout is None:
             raise ValueError("QEq requires an energy observable")
         self._physical_observables = {
             name: ObservableSpec(
@@ -1041,7 +1041,7 @@ class QEqModel(_ChargeAwareModel):
                 for spec in observables
                 if spec.name not in self._physical_observables
             ],
-            energy_head,
+            energy_readout,
             avg_num_neighbors=avg_num_neighbors,
             precision=precision,
             num_heads=num_heads,
@@ -1050,12 +1050,12 @@ class QEqModel(_ChargeAwareModel):
             edge_axes=(1, 2, 0),
         )
         self.settings = config.qeq
-        self.descriptor, self.solver = settings, solver
+        self.solver_spec, self.solver = settings, solver
         self.solve_dtype = getattr(torch, settings.precision)
         with constructed_in(precision):
             self.source_maps = nn.ModuleDict(
                 {
-                    name: ObservableHead(
+                    name: ObservableReadout(
                         backend,
                         self._physical_observables[name],
                         [config.node_irreps] * config.num_interactions,
@@ -1121,7 +1121,7 @@ class QEqModel(_ChargeAwareModel):
             hardness = hardness + self.source_maps["hardness"](
                 layers, node_head
             ).reshape(-1).to(self.solve_dtype)
-        geometry = long_range_geometry(graph, self.descriptor)
+        geometry = long_range_geometry(graph, self.solver_spec)
         charges = self.charge_solve(
             graph,
             electronegativity,
@@ -1174,13 +1174,13 @@ class FixedPointSCFModel(_ChargeAwareModel):
         return (constraint, POLAR_INPUT_SPECS[2])
 
     @staticmethod
-    def solver_descriptor(
+    def make_solver_spec(
         config: ModelConfig, electrostatics: ElectrostaticsConfig, precision: Precision
-    ) -> ElectrostaticsSolverDescriptor:
+    ) -> ElectrostaticsSpec:
         settings = config.fixed_point_scf
         if settings is None:
             raise ValueError("model.fixed_point_scf is required")
-        return ElectrostaticsSolverDescriptor(
+        return ElectrostaticsSpec(
             periodicity_profile=electrostatics.periodicity_profile,
             slab_normal=electrostatics.slab_normal,
             multipole_max_l=settings.multipole_max_l,
@@ -1225,9 +1225,9 @@ class FixedPointSCFModel(_ChargeAwareModel):
         config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
-        energy_head: EnergyOutputHead | None,
+        energy_readout: EnergyReadout | None,
         *,
-        settings: ElectrostaticsSolverDescriptor,
+        settings: ElectrostaticsSpec,
         solver: str = "reference",
         trains_derivatives: bool = False,
         avg_num_neighbors: float = 1.0,
@@ -1251,7 +1251,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
             raise ValueError(
                 "FixedPointSCF supports one head, as the reference architecture"
             )
-        if energy_head is None:
+        if energy_readout is None:
             raise ValueError("FixedPointSCF requires an energy observable")
         if max(options.multipole_max_l, options.feature_max_l) > config.max_L:
             raise ValueError("FixedPointSCF density/field degree exceeds model.max_L")
@@ -1309,7 +1309,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
                 for spec in observables
                 if spec.name not in self._physical_observables
             ],
-            energy_head,
+            energy_readout,
             avg_num_neighbors=avg_num_neighbors,
             precision=precision,
             num_heads=num_heads,
@@ -1317,7 +1317,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
             last_layer_irreps=config.node_irreps,
             edge_axes=(1, 2, 0),
         )
-        self.settings, self.descriptor, self.solver = options, settings, solver
+        self.settings, self.solver_spec, self.solver = options, settings, solver
         self.solve_dtype, self.model_dtype = (
             getattr(torch, settings.precision),
             getattr(torch, precision),
@@ -1332,9 +1332,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
 
             def linear(source, target):
                 return backend.make_linear(
-                    LinearDescriptor(
-                        irreps_in=source, irreps_out=target, precision=precision
-                    )
+                    LinearSpec(irreps_in=source, irreps_out=target, precision=precision)
                 )
 
             self.source_maps = nn.ModuleList(
@@ -1466,7 +1464,7 @@ class FixedPointSCFModel(_ChargeAwareModel):
         count = graph["ptr"].shape[0] - 1
         batch = graph["batch"]
         positions = graph["positions"].to(self.solve_dtype)
-        geometry = long_range_geometry(graph, self.descriptor)
+        geometry = long_range_geometry(graph, self.solver_spec)
         cache = self.projection.prepare(geometry)
         local = sum(
             self.layout.to_canonical(cast(Any, source)(layer), self.density_terms)

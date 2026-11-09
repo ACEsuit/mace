@@ -1,6 +1,6 @@
 """The reference electrostatics solver, and resolving a solver at build time.
 
-A solver builds the long-range energy op from a descriptor. The op reads the
+A solver builds the long-range energy op from a solver specification. The op reads the
 graph it is handed and nothing else: the positions, the batch, the per-graph
 periodicity, and the cell. **The cell is the graph's**, whichever the graph
 builder put there: the physical cell when any axis is periodic, with an
@@ -10,8 +10,8 @@ so a strain the derivative engine applies to that cell reaches both, and the
 stress it contributes is the derivative of the energy it computed.
 
 **Nothing is decided in forward.** The solver is resolved by name, checked
-against the descriptor, and asked for its op once, when the model is built. Its
-periodicity handling is fixed then too: each profile maps to one evaluation of
+against the solver specification, and asked for its op at model construction.
+Its periodicity handling is fixed then too: each profile maps to one evaluation of
 the reference, never to one chosen from the batch it happens to see.
 
 **The geometry is computed once per forward and shared.** A charge-aware model
@@ -33,7 +33,7 @@ from typing import Any, Protocol
 
 import torch
 from mace_core.electrostatics import (
-    ElectrostaticsSolverDescriptor,
+    ElectrostaticsSpec,
     SolverCapabilities,
     get_solver,
 )
@@ -80,21 +80,17 @@ class ElectrostaticsSolver(Protocol):
     name: str
     capabilities: SolverCapabilities
 
-    def long_range_energy(
-        self, descriptor: ElectrostaticsSolverDescriptor
-    ) -> nn.Module:
+    def long_range_energy(self, solver_spec: ElectrostaticsSpec) -> nn.Module:
         """The op: ``(graph, source_feats, geometry) -> energy per graph``."""
         ...
 
-    def long_range_features(
-        self, descriptor: ElectrostaticsSolverDescriptor
-    ) -> nn.Module:
+    def long_range_features(self, solver_spec: ElectrostaticsSpec) -> nn.Module:
         """The projection op: ``prepare(geometry)`` once, then
         ``(cache, source_feats) -> features per atom`` as often as needed."""
         ...
 
     def make_scf_solve(
-        self, descriptor: ElectrostaticsSolverDescriptor
+        self, solver_spec: ElectrostaticsSpec
     ) -> nn.Module | NotImplementedType:
         """A fused self-consistent solve, or ``NotImplemented`` for none."""
         ...
@@ -210,12 +206,12 @@ class LongRangePlan:
 
 
 def _sums_k_vectors(
-    descriptor: ElectrostaticsSolverDescriptor, periodic: tuple[bool, ...] | None
+    solver_spec: ElectrostaticsSpec, periodic: tuple[bool, ...] | None
 ) -> bool:
     """Whether a solve reads k-vectors: not when it sums in real space, nor
     for a batch the host knows has no periodic structure under a profile that
     sums such a batch in real space."""
-    handling = PBC_HANDLING[descriptor.periodicity_profile]
+    handling = PBC_HANDLING[solver_spec.periodicity_profile]
     open_batch = periodic is not None and not any(periodic)
     return not (
         handling == "realspace"
@@ -226,7 +222,7 @@ def _sums_k_vectors(
 @torch.no_grad()
 def long_range_plan(
     graph: Mapping[str, Any],
-    descriptor: ElectrostaticsSolverDescriptor,
+    solver_spec: ElectrostaticsSpec,
     ops: tuple[Any, ...] = (),
     dense_pairs: bool = False,
 ) -> LongRangePlan:
@@ -239,7 +235,7 @@ def long_range_plan(
     Args:
         graph: The current batch. Selection uses detached cell values; the
             forward evaluates reciprocal vectors from the differentiable cell.
-        descriptor: The solve.
+        solver_spec: The solve.
         ops: The model's long-range ops.
         dense_pairs: Plan the real-space sums over every pair of the batch.
     """
@@ -247,7 +243,7 @@ def long_range_plan(
 
     batch = graph["batch"]
     cell = (
-        graph["cell"].detach().to(getattr(torch, descriptor.precision)).view(-1, 3, 3)
+        graph["cell"].detach().to(getattr(torch, solver_spec.precision)).view(-1, 3, 3)
     )
     num_graphs = cell.shape[0]
     sizes = graph.get("structure_sizes")
@@ -262,13 +258,13 @@ def long_range_plan(
     ):
         periodic = [flag or pad for flag, pad in zip(periodic, padding, strict=True)]
     coefficients = kept = None
-    if _sums_k_vectors(descriptor, tuple(periodic)):
+    if _sums_k_vectors(solver_spec, tuple(periodic)):
         rcell, _ = reciprocal_cell_and_volume(cell)
         coefficients, kept = k_vector_selection(
-            float(descriptor.kspace_cutoff), cell, rcell
+            float(solver_spec.kspace_cutoff), cell, rcell
         )
     plan = LongRangePlan(
-        kspace_cutoff=float(descriptor.kspace_cutoff),
+        kspace_cutoff=float(solver_spec.kspace_cutoff),
         sizes=tuple(int(size) for size in sizes),
         periodic=tuple(bool(flag) for flag in periodic),
         coefficients=coefficients,
@@ -278,7 +274,7 @@ def long_range_plan(
     planners = [op.plan for op in ops if hasattr(op, "plan")]
     if not planners:
         return plan
-    geometry = long_range_geometry({**graph, LONG_RANGE_PLAN: plan}, descriptor)
+    geometry = long_range_geometry({**graph, LONG_RANGE_PLAN: plan}, solver_spec)
     solvers: dict[str, Any] = {}
     for planner in planners:
         solvers.update(planner(geometry))
@@ -286,7 +282,7 @@ def long_range_plan(
 
 
 def long_range_geometry(
-    graph: Mapping[str, Any], descriptor: ElectrostaticsSolverDescriptor
+    graph: Mapping[str, Any], solver_spec: ElectrostaticsSpec
 ) -> LongRangeGeometry:
     """The shared geometry of one batch, for one solve.
 
@@ -304,18 +300,18 @@ def long_range_geometry(
         k_vectors_from_selection,
     )
 
-    dtype = getattr(torch, descriptor.precision)
+    dtype = getattr(torch, solver_spec.precision)
     positions = graph["positions"].to(dtype)
     cell = graph["cell"].to(dtype).view(-1, 3, 3)
     rcell, volume = reciprocal_cell_and_volume(cell)
     plan: LongRangePlan | None = graph.get(LONG_RANGE_PLAN)
     sizes = periodic = None
     if plan is not None:
-        if plan.kspace_cutoff != float(descriptor.kspace_cutoff):
+        if plan.kspace_cutoff != float(solver_spec.kspace_cutoff):
             raise ValueError(
                 f"the batch's long-range plan was made for a k-space cutoff "
                 f"of {plan.kspace_cutoff}, and this solve's is "
-                f"{float(descriptor.kspace_cutoff)}. Plan the batch for the "
+                f"{float(solver_spec.kspace_cutoff)}. Plan the batch for the "
                 f"model it is evaluated with."
             )
         sizes, periodic = plan.sizes, plan.periodic
@@ -324,14 +320,14 @@ def long_range_geometry(
         k_vectors, k_norm2, k_vector_batch, k0_mask = k_vectors_from_selection(
             plan.coefficients, plan.kept, rcell
         )
-    elif plan is not None or not _sums_k_vectors(descriptor, periodic):
+    elif plan is not None or not _sums_k_vectors(solver_spec, periodic):
         k_vectors = positions.new_empty((0, 3))
         k_norm2 = positions.new_empty((0,))
         k_vector_batch = graph["batch"].new_empty((0,))
         k0_mask = positions.new_empty((0,))
     else:
         k_vectors, k_norm2, k_vector_batch, k0_mask = compute_k_vectors_flat(
-            float(descriptor.kspace_cutoff), cell, rcell
+            float(solver_spec.kspace_cutoff), cell, rcell
         )
     return LongRangeGeometry(
         positions=positions,
@@ -355,25 +351,25 @@ class LongRangeEnergy(nn.Module):
     """The reference long-range energy of a batch of Gaussian multipoles.
 
     Args:
-        descriptor: The solve it computes.
+        solver_spec: The solve it computes.
         solver: The name of the solver that built it, which is part of the
             model's state for a solver that is not bit for bit the reference.
     """
 
-    def __init__(self, descriptor: ElectrostaticsSolverDescriptor, solver: str) -> None:
+    def __init__(self, solver_spec: ElectrostaticsSpec, solver: str) -> None:
         super().__init__()
         from mace_torch.electrostatics.reference.energy import GTOElectrostaticEnergy
 
-        self.descriptor = descriptor
+        self.solver_spec = solver_spec
         self.solver = solver
-        self.kspace_cutoff = float(descriptor.kspace_cutoff)
+        self.kspace_cutoff = float(solver_spec.kspace_cutoff)
         self.energy = GTOElectrostaticEnergy(
-            density_max_l=descriptor.multipole_max_l,
-            density_smearing_width=descriptor.smearing_width,
+            density_max_l=solver_spec.multipole_max_l,
+            density_smearing_width=solver_spec.smearing_width,
             kspace_cutoff=self.kspace_cutoff,
             include_self_interaction=SELF_INTERACTION
-            in descriptor.external_field_flags,
-            pbc_handling=PBC_HANDLING[descriptor.periodicity_profile],  # ty: ignore[invalid-argument-type]
+            in solver_spec.external_field_flags,
+            pbc_handling=PBC_HANDLING[solver_spec.periodicity_profile],  # ty: ignore[invalid-argument-type]
         )
 
     def forward(
@@ -392,7 +388,7 @@ class LongRangeEnergy(nn.Module):
                 built it for another op. Built here otherwise.
         """
         if geometry is None:
-            geometry = long_range_geometry(graph, self.descriptor)
+            geometry = long_range_geometry(graph, self.solver_spec)
         return self.energy(
             k_vectors=geometry.k_vectors,
             k_norm2=geometry.k_norm2,
@@ -418,35 +414,35 @@ class LongRangeFeatures(nn.Module):
     it.
 
     Args:
-        descriptor: The solve. Its ``features`` say what is projected onto.
+        solver_spec: The solve. Its ``features`` say what is projected onto.
         solver: The name of the solver that built it.
     """
 
-    def __init__(self, descriptor: ElectrostaticsSolverDescriptor, solver: str) -> None:
+    def __init__(self, solver_spec: ElectrostaticsSpec, solver: str) -> None:
         super().__init__()
         from mace_torch.electrostatics.reference.features import (
             GTOElectrostaticFeatures,
         )
 
-        projection = descriptor.features
+        projection = solver_spec.features
         if projection is None:
             raise ValueError(
-                "the descriptor declares no feature projection, so there is "
+                "the solver_spec declares no feature projection, so there is "
                 "nothing to project onto. Give it `features`."
             )
-        self.descriptor = descriptor
+        self.solver_spec = solver_spec
         self.solver = solver
         self.dimension = projection.dimension
         self.features = GTOElectrostaticFeatures(
-            density_max_l=descriptor.multipole_max_l,
-            density_smearing_width=descriptor.smearing_width,
+            density_max_l=solver_spec.multipole_max_l,
+            density_smearing_width=solver_spec.smearing_width,
             feature_max_l=projection.max_l,
             feature_smearing_widths=list(projection.widths),
             include_self_interaction=projection.include_self_interaction,
-            kspace_cutoff=float(descriptor.kspace_cutoff),
+            kspace_cutoff=float(solver_spec.kspace_cutoff),
             quadrupole_feature_corrections=projection.quadrupole_corrections,
             integral_normalization=projection.normalization,
-            pbc_handling=PBC_HANDLING[descriptor.periodicity_profile],  # ty: ignore[invalid-argument-type]
+            pbc_handling=PBC_HANDLING[solver_spec.periodicity_profile],  # ty: ignore[invalid-argument-type]
         )
 
     def prepare(self, geometry: LongRangeGeometry) -> dict[str, Any]:
@@ -501,32 +497,28 @@ class ReferenceSolver:
         bit_parity=True,
     )
 
-    def long_range_energy(
-        self, descriptor: ElectrostaticsSolverDescriptor
-    ) -> nn.Module:
-        return LongRangeEnergy(descriptor, self.name)
+    def long_range_energy(self, solver_spec: ElectrostaticsSpec) -> nn.Module:
+        return LongRangeEnergy(solver_spec, self.name)
 
-    def long_range_features(
-        self, descriptor: ElectrostaticsSolverDescriptor
-    ) -> nn.Module:
+    def long_range_features(self, solver_spec: ElectrostaticsSpec) -> nn.Module:
         if (
-            descriptor.scf_spec is not None
-            and descriptor.scf_spec.method == "qeq_nonperiodic"
+            solver_spec.scf_spec is not None
+            and solver_spec.scf_spec.method == "qeq_nonperiodic"
         ):
             from .reference.qeq import NonperiodicQEqPotential
 
-            return NonperiodicQEqPotential(descriptor.smearing_width)
-        return LongRangeFeatures(descriptor, self.name)
+            return NonperiodicQEqPotential(solver_spec.smearing_width)
+        return LongRangeFeatures(solver_spec, self.name)
 
     def make_scf_solve(
-        self, descriptor: ElectrostaticsSolverDescriptor
+        self, solver_spec: ElectrostaticsSpec
     ) -> nn.Module | NotImplementedType:
-        del descriptor
+        del solver_spec
         return NotImplemented
 
 
 def build_long_range(
-    descriptor: ElectrostaticsSolverDescriptor,
+    solver_spec: ElectrostaticsSpec,
     *,
     solver: str = "reference",
     trains_derivatives: bool = False,
@@ -534,7 +526,7 @@ def build_long_range(
     """The long-range op for a model, resolved once.
 
     Args:
-        descriptor: The solve.
+        solver_spec: The solve.
         solver: The registered solver to build it with.
         trains_derivatives: Whether the model trains on forces or stress, which
             needs the solve differentiated twice.
@@ -547,16 +539,16 @@ def build_long_range(
             is substituted for it.
     """
     backend: ElectrostaticsSolver = get_solver(solver)
-    backend.capabilities.require(descriptor, solver)
+    backend.capabilities.require(solver_spec, solver)
     if trains_derivatives:
         backend.capabilities.require_double_backward(
             solver, "training on forces or stress"
         )
-    return backend.long_range_energy(descriptor)
+    return backend.long_range_energy(solver_spec)
 
 
 def build_long_range_features(
-    descriptor: ElectrostaticsSolverDescriptor,
+    solver_spec: ElectrostaticsSpec,
     *,
     solver: str = "reference",
     trains_derivatives: bool = False,
@@ -575,16 +567,16 @@ def build_long_range_features(
             trains on derivatives.
     """
     backend: ElectrostaticsSolver = get_solver(solver)
-    backend.capabilities.require(descriptor, solver)
+    backend.capabilities.require(solver_spec, solver)
     if trains_derivatives:
         backend.capabilities.require_double_backward(
             solver, "training on forces or stress"
         )
-    return backend.long_range_features(descriptor)
+    return backend.long_range_features(solver_spec)
 
 
 def build_scf_solve(
-    descriptor: ElectrostaticsSolverDescriptor, *, solver: str = "reference"
+    solver_spec: ElectrostaticsSpec, *, solver: str = "reference"
 ) -> nn.Module | None:
     """A solver's fused self-consistent solve, or ``None`` when it has none.
 
@@ -592,6 +584,6 @@ def build_scf_solve(
     evaluation per iteration.
     """
     backend: ElectrostaticsSolver = get_solver(solver)
-    backend.capabilities.require(descriptor, solver)
-    span = backend.make_scf_solve(descriptor)
+    backend.capabilities.require(solver_spec, solver)
+    span = backend.make_scf_solve(solver_spec)
     return None if span is NotImplemented else span

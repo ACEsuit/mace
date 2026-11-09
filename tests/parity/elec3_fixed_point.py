@@ -14,7 +14,7 @@ from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.precision import widest
 from mace_torch.backends import resolve_backend
-from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, ScaleShiftSpec
 from mace_torch.models.electrostatics import FixedPointSCFModel
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import save_checkpoint
@@ -84,7 +84,7 @@ def build_model(
     **options,
 ):
     precision = str(dtype).removeprefix("torch.")
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s({"default": {1: -0.2, 8: -0.7}}),
         ["default"],
         AtomicNumberTable([1, 8]),
@@ -93,7 +93,7 @@ def build_model(
         widen_node_energy=False,
     )
     config = configuration(**options)
-    descriptor = FixedPointSCFModel.solver_descriptor(
+    solver_spec = FixedPointSCFModel.make_solver_spec(
         config,
         ElectrostaticsConfig(
             enabled=True,
@@ -111,7 +111,7 @@ def build_model(
         [1, 8],
         [ENERGY],
         head,
-        settings=descriptor,
+        settings=solver_spec,
         precision=precision,
         solver=solver,
         trains_derivatives=trains_derivatives,

@@ -153,7 +153,7 @@ def extend_elements(
         statistics=DatasetStatistics(avg_num_neighbors=1.0),
         initialize=True,
     )
-    model = engine.get_submodule("backbone")
+    model = engine.get_submodule("model")
     state = _extended_state(
         canonical_state(parent.model),
         canonical_state(model),
@@ -271,7 +271,7 @@ def _per_element(
     new_count: int,
 ) -> Tensor:
     """One per-element tensor over the new table, by the rule for its kind."""
-    if path.endswith("energy_head") and name == "e0_table":
+    if path.endswith("energy_readout") and name == "e0_table":
         # The rebuild holds the given energies for the added elements, which a
         # copied element keeps: its energy is its own, never its donor's. The
         # old elements' are copied from the parent, to keep their bits.

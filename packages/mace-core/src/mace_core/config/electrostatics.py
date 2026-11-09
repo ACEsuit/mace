@@ -9,10 +9,15 @@ recorded with the rest of the configuration and read back with the model.
 
 from __future__ import annotations
 
-from pydantic import Field, model_validator
+from pydantic import model_validator
 
 from mace_core.config.base import ConfigSection
-from mace_core.electrostatics.descriptor import PeriodicityProfile
+from mace_core.electrostatics.spec import (
+    PeriodicityProfile,
+    PositiveFinite,
+    SlabNormal,
+    validate_slab_normal,
+)
 
 __all__ = ["ElectrostaticsConfig"]
 
@@ -33,15 +38,10 @@ class ElectrostaticsConfig(ConfigSection):
     enabled: bool = False
     solver: str = "reference"
     periodicity_profile: PeriodicityProfile = "partial"
-    slab_normal: int | None = None
-    kspace_cutoff_factor: float = Field(default=1.5, gt=0)
+    slab_normal: SlabNormal | None = None
+    kspace_cutoff_factor: PositiveFinite = 1.5
 
     @model_validator(mode="after")
     def _a_slab_says_its_normal(self) -> ElectrostaticsConfig:
-        if (self.periodicity_profile == "z_slab") != (self.slab_normal is not None):
-            raise ValueError(
-                f"electrostatics.slab_normal is {self.slab_normal!r} under the "
-                f"profile {self.periodicity_profile!r}. A slab needs the axis "
-                f"its correction acts along, and nothing else takes one."
-            )
+        validate_slab_normal(self.periodicity_profile, self.slab_normal)
         return self

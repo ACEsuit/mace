@@ -341,9 +341,9 @@ def reduced_tagged(sidecar_path: Path, tmp_path: Path) -> Path:
     for name, spec in artifact.sidecar.ops.items():
         if spec.op_kind != "symmetric_contraction":
             continue
-        irreps_in = spec.descriptor["irreps_in"]
-        target = spec.descriptor["target"]
-        for order in range(1, spec.descriptor["correlation"] + 1):
+        irreps_in = spec.kernel_spec["irreps_in"]
+        target = spec.kernel_spec["target"]
+        for order in range(1, spec.kernel_spec["correlation"] + 1):
             weights = artifact.tensor(name, f"weights.{order}")
             source = artifact.tensor(name, f"basis.{order}")
             tensors[f"{name}::weights.{order}"] = full_to_reduced(
@@ -415,7 +415,7 @@ def test_a_body_order_held_at_zero_is_refused(converted, tmp_path):
         name = next(
             n for n, op in ops.items() if op["op_kind"] == "symmetric_contraction"
         )
-        ops[name]["descriptor"]["zeroed"]["3"] = True
+        ops[name]["kernel_spec"]["zeroed"]["3"] = True
         return ops
 
     with pytest.raises(NeutralImportError, match="body order 3 at zero"):
@@ -445,7 +445,7 @@ def test_the_radial_frequencies_are_carried(converted, tmp_path):
     )
     written = read_neutral(changed).tensor("radial_basis", "weights")
     radial = import_neutral(changed, CATALOGUE).engine.get_submodule(
-        "backbone.backbone.radial_embedding"
+        "model.backbone.radial_embedding"
     )
     assert np.array_equal(radial.radial.basis.frequencies.detach().numpy(), written)
 
@@ -457,7 +457,7 @@ def test_the_repulsion_constants_are_carried(converted, tmp_path):
     changed = with_tensor(sidecar, tmp_path, "pair_repulsion::c", lambda c: c * 1.01)
     written = read_neutral(changed).tensor("pair_repulsion", "c")
     repulsion = import_neutral(changed, CATALOGUE).engine.get_submodule(
-        "backbone.repulsion"
+        "model.repulsion"
     )
     assert np.array_equal(repulsion.screening_coefficients.detach().numpy(), written)
 

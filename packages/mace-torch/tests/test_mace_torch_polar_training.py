@@ -89,11 +89,11 @@ class _Accelerated:
         bit_parity=False,
     )
 
-    def long_range_energy(self, descriptor):
-        return ReferenceSolver().long_range_energy(descriptor)
+    def long_range_energy(self, solver_spec):
+        return ReferenceSolver().long_range_energy(solver_spec)
 
-    def long_range_features(self, descriptor):
-        return ReferenceSolver().long_range_features(descriptor)
+    def long_range_features(self, solver_spec):
+        return ReferenceSolver().long_range_features(solver_spec)
 
 
 class _Twin(_Accelerated):
@@ -148,7 +148,7 @@ def fixture_trained(tmp_path):
 @fp64_only
 def test_the_polar_model_is_built_by_its_registry_name(tmp_path):
     _, model = built(polar_configuration(tmp_path))
-    assert isinstance(model.model.get_submodule("backbone"), PolarModel)
+    assert isinstance(model.engine.model, PolarModel)
 
 
 @fp64_only
@@ -161,7 +161,7 @@ def test_a_polar_model_builds_the_biased_readout_it_is_asked_for(tmp_path):
             update={"model": config.model.model_copy(update={"readout": readout})}
         )
     )
-    head = model.model.get_submodule("backbone.outputs.heads.energy")
+    head = model.engine.model.outputs.readouts["energy"]
     assert head.readouts[-1].middle is not None
 
 
@@ -245,8 +245,8 @@ def test_charge_spin_and_field_come_from_the_data_or_their_defaults(tmp_path):
 def test_the_checkpoint_records_the_solver_and_the_solve(trained):
     record = json.loads(trained.read_text())["config"]["electrostatics"]
     assert record["solver"] == "reference" and record["bit_parity"] is True
-    assert record["descriptor"]["periodicity_profile"] == "molecular"
-    assert record["descriptor"]["realspace_method"] == "finite_difference"
+    assert record["solver_spec"]["periodicity_profile"] == "molecular"
+    assert record["solver_spec"]["realspace_method"] == "finite_difference"
 
 
 @fp64_only
@@ -299,7 +299,7 @@ def test_a_model_trained_with_another_solver_is_not_loaded_with_the_reference(
 def test_a_solve_that_rebuilds_differently_is_refused(trained):
     """What a default that moved between versions would look like."""
     document = json.loads(trained.read_text())
-    document["config"]["electrostatics"]["descriptor"]["kspace_cutoff"] = 1.0
+    document["config"]["electrostatics"]["solver_spec"]["kspace_cutoff"] = 1.0
     trained.write_text(json.dumps(document))
     with pytest.raises(CheckpointError, match="kspace_cutoff"):
         load_deployed(trained)
@@ -313,9 +313,9 @@ def test_a_float32_polar_checkpoint_with_a_mismatched_solve_is_refused(tmp_path)
         update={"precision": PrecisionConfig(model="float32")}
     )
     _, stage = built(config)
-    path = write_model(tmp_path / "polar", stage.model, stage.metadata)
+    path = write_model(tmp_path / "polar", stage.engine, stage.metadata)
     document = json.loads(path.read_text())
-    document["config"]["electrostatics"]["descriptor"]["precision"] = "float32"
+    document["config"]["electrostatics"]["solver_spec"]["precision"] = "float32"
     path.write_text(json.dumps(document))
     with pytest.raises(CheckpointError, match="precision"):
         load_deployed(path)

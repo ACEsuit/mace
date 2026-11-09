@@ -1,12 +1,13 @@
 """What an op is, before any backend has agreed to build it.
 
-A descriptor is the complete statement of one operation's shape: enough for a
+A kernel specification is the complete statement of one operation's shape: enough for a
 backend to answer whether it can build it, and enough to build it. It carries no
 weights and no tensors, only the numbers and the irreps strings, so it is
 hashable and can be compared, cached and written into a checkpoint.
 
-Descriptors are frozen. A backend is handed one at model build time, returns an
-op, and the descriptor is never consulted again: nothing resolves in ``forward``.
+Kernel specifications are frozen. A backend receives one at model build time,
+returns an op, and the specification is never consulted again: nothing resolves
+in ``forward``.
 """
 
 from __future__ import annotations
@@ -23,16 +24,16 @@ from mace_core.kernels.precision import PRECISIONS, PRODUCTS, WIDTH, Precision, 
 __all__ = [
     "CLEBSCH_GORDAN_BASES",
     "ActivationLayout",
-    "ChannelwiseTPConvDescriptor",
-    "Descriptor",
-    "DistanceTransformDescriptor",
-    "FullyConnectedTPDescriptor",
-    "LinearDescriptor",
-    "RadialBasisDescriptor",
-    "RadialMLPDescriptor",
-    "SegmentReduceDescriptor",
-    "SphericalHarmonicsDescriptor",
-    "SymmetricContractionDescriptor",
+    "ChannelwiseTPConvSpec",
+    "DistanceTransformSpec",
+    "FullyConnectedTPSpec",
+    "KernelSpec",
+    "LinearSpec",
+    "RadialBasisSpec",
+    "RadialMLPSpec",
+    "SegmentReduceSpec",
+    "SphericalHarmonicsSpec",
+    "SymmetricContractionSpec",
 ]
 
 
@@ -67,12 +68,12 @@ def _highest_degree(*declarations: str) -> int:
 
 
 @dataclass(frozen=True)
-class Descriptor:
-    """What every op descriptor carries.
+class KernelSpec:
+    """What every operation specification carries.
 
     Attributes:
         precision: The dtype the op computes in, by name.
-        op: The factory this descriptor is for, as
+        op: The factory this kernel_spec is for, as
             :attr:`~mace_core.kernels.capabilities.BackendCapabilities.ops`
             lists it. A class constant, not a field.
         layout: The activation layout read and written by this op. Weights
@@ -129,7 +130,7 @@ class Descriptor:
 
 
 @dataclass(frozen=True)
-class LinearDescriptor(Descriptor):
+class LinearSpec(KernelSpec):
     """An equivariant linear map between two irreps declarations.
 
     Attributes:
@@ -174,7 +175,7 @@ class LinearDescriptor(Descriptor):
 
 
 @dataclass(frozen=True)
-class ChannelwiseTPConvDescriptor(Descriptor):
+class ChannelwiseTPConvSpec(KernelSpec):
     """The message-passing tensor product, channel by channel, over the edges.
 
     Attributes:
@@ -199,9 +200,9 @@ class ChannelwiseTPConvDescriptor(Descriptor):
     the model.
 
     The weights are per edge, ``[n_edges, n_paths, num_features]``: the output
-    of a radial MLP (:class:`RadialMLPDescriptor`) read path by path, with the
+    of a radial MLP (:class:`RadialMLPSpec`) read path by path, with the
     channels varying fastest. A backend that fuses the two does so through the
-    span factory, which is handed both descriptors.
+    span factory, which is handed both kernel specifications.
 
     The op is **always node-level**: it returns ``[n_nodes, ...]``, never
     ``[n_edges, ...]``. Whether the reduction over edges is fused into the
@@ -256,7 +257,7 @@ class ChannelwiseTPConvDescriptor(Descriptor):
 
 
 @dataclass(frozen=True)
-class SymmetricContractionDescriptor(Descriptor):
+class SymmetricContractionSpec(KernelSpec):
     """The many-body contraction over the reduced Clebsch-Gordan basis.
 
     Attributes:
@@ -334,7 +335,7 @@ class SymmetricContractionDescriptor(Descriptor):
 
 
 @dataclass(frozen=True)
-class FullyConnectedTPDescriptor(Descriptor):
+class FullyConnectedTPSpec(KernelSpec):
     """The skip connection's tensor product against the element attributes.
 
     Attributes:
@@ -356,7 +357,7 @@ class FullyConnectedTPDescriptor(Descriptor):
 
     @property
     def weight_numel(self) -> int:
-        """Derived from the irreps, like every other descriptor's.
+        """Derived from the irreps, like every other kernel specification's.
 
         The second input is scalars, so the product is one equivariant linear
         map per attribute: the matching multiplicity pairs between the first
@@ -380,7 +381,7 @@ Reduction = Literal["sum", "mean", "max"]
 
 
 @dataclass(frozen=True)
-class SegmentReduceDescriptor(Descriptor):
+class SegmentReduceSpec(KernelSpec):
     """A reduction of values into segments. No irreps semantics.
 
     Attributes:
@@ -401,7 +402,7 @@ class SegmentReduceDescriptor(Descriptor):
 
 
 @dataclass(frozen=True)
-class SphericalHarmonicsDescriptor(Descriptor):
+class SphericalHarmonicsSpec(KernelSpec):
     """Real spherical harmonics of the edge directions.
 
     Reference-only: a backend may decline it and the reference builds it, since
@@ -432,7 +433,7 @@ RadialBasisKind = Literal["bessel", "gaussian", "chebyshev"]
 
 
 @dataclass(frozen=True)
-class RadialBasisDescriptor(Descriptor):
+class RadialBasisSpec(KernelSpec):
     """The radial embedding of the edge lengths.
 
     Attributes:
@@ -467,7 +468,7 @@ DistanceTransformKind = Literal["agnesi", "soft"]
 
 
 @dataclass(frozen=True)
-class DistanceTransformDescriptor(Descriptor):
+class DistanceTransformSpec(KernelSpec):
     """The transform of the edge lengths the radial basis is evaluated on.
 
     Not an op a backend builds: the transform is a few closed forms of the
@@ -496,7 +497,7 @@ RadialMLPKind = Literal["normalized_silu", "layer_norm_silu"]
 
 
 @dataclass(frozen=True)
-class RadialMLPDescriptor(Descriptor):
+class RadialMLPSpec(KernelSpec):
     """The dense network that turns a radial embedding into per-edge weights.
 
     One per interaction, feeding the convolution its path weights, and the same
@@ -539,8 +540,8 @@ class RadialMLPDescriptor(Descriptor):
             raise ValueError("element conditioning needs both a table size and width.")
         if not isfinite(self.layer_norm_epsilon) or self.layer_norm_epsilon <= 0:
             raise ValueError("layer_norm_epsilon must be finite and positive.")
-        # A list from a configuration file would make the descriptor
-        # unhashable, and a descriptor is a cache key.
+        # A list from a configuration file would make the kernel_spec
+        # unhashable, and a kernel_spec is a cache key.
         object.__setattr__(self, "channels", tuple(self.channels))
         if len(self.channels) < 2:
             raise ValueError(

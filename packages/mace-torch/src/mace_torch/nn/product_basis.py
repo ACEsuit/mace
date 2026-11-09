@@ -8,12 +8,12 @@ TorchScript.
 
 from __future__ import annotations
 
-from mace_core.kernels.descriptors import (
-    ClebschGordanBasis,
-    LinearDescriptor,
-    SymmetricContractionDescriptor,
-)
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import (
+    ClebschGordanBasis,
+    LinearSpec,
+    SymmetricContractionSpec,
+)
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
@@ -36,7 +36,7 @@ class EquivariantProductBasisBlock(nn.Module):
             One shares them across elements.
         num_features: The channel count.
         basis: The Clebsch-Gordan basis the weights are written against,
-            passed to the contraction's descriptor unchanged.
+            passed to the contraction's kernel specification unchanged.
         precision: The dtype name every op is built at.
     """
 
@@ -54,7 +54,7 @@ class EquivariantProductBasisBlock(nn.Module):
         super().__init__()
         out_flat = expanded_irreps(irreps_out, num_features)
         self.contraction = backend.make_symmetric_contraction(
-            SymmetricContractionDescriptor(
+            SymmetricContractionSpec(
                 irreps_in=irreps_in,
                 irreps_out=irreps_out,
                 correlation=correlation,
@@ -65,9 +65,7 @@ class EquivariantProductBasisBlock(nn.Module):
             )
         )
         self.linear = backend.make_linear(
-            LinearDescriptor(
-                irreps_in=out_flat, irreps_out=out_flat, precision=precision
-            )
+            LinearSpec(irreps_in=out_flat, irreps_out=out_flat, precision=precision)
         )
 
     def forward(

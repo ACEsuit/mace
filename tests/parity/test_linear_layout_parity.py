@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.descriptors import LinearDescriptor
+from mace_core.kernels.specs import LinearSpec
 from mace_torch.backends.reference import ReferenceLinear
 
 from tests.parity.anchors import load_anchor
@@ -25,7 +25,7 @@ def test_a_trained_linear_converts_exactly(fp64, anchor, layer, which):
     legacy = getattr(model.interactions[layer], which)
     irreps_in, irreps_out = str(legacy.irreps_in), str(legacy.irreps_out)
 
-    mine = ReferenceLinear(LinearDescriptor(irreps_in=irreps_in, irreps_out=irreps_out))
+    mine = ReferenceLinear(LinearSpec(irreps_in=irreps_in, irreps_out=irreps_out))
     with torch.no_grad():
         mine.weight.copy_(
             torch.tensor(

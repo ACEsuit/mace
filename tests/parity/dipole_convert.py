@@ -167,7 +167,7 @@ def transfer_dipole_weights(legacy, model, family: str) -> None:
     transfer_backbone_weights(legacy, model, build_config(legacy)["correlation"])
     with torch.no_grad():
         for name, legacy_copies in _OUTPUT_COPIES[family].items():
-            head = model.outputs.heads[name]
+            head = model.outputs.readouts[name]
             for readout_index, layer in enumerate(head.reachable):
                 source = legacy.readouts[layer]
                 destination = head.readouts[readout_index]

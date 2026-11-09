@@ -166,7 +166,7 @@ def _align_null_components(legacy, model):
                 source.symmetric_contractions.contractions
             ):
                 bases = canonical_contraction_bases(
-                    target.contraction.descriptor, position
+                    target.contraction.kernel_spec, position
                 )
                 for coupling, weight, order in legacy_contraction_blocks(contraction):
                     mapping = torch.from_numpy(

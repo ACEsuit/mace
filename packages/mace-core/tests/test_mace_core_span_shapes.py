@@ -6,14 +6,14 @@ import sys
 
 import pytest
 from mace_core.kernels.capabilities import BackendCapabilities
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    DistanceTransformDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SphericalHarmonicsDescriptor,
-)
 from mace_core.kernels.spans import EdgeConvolutionSpan
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    DistanceTransformSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SphericalHarmonicsSpec,
+)
 
 
 @pytest.mark.parametrize("conditioned", [False, True])
@@ -23,7 +23,7 @@ def test_extended_shapes_keep_network_order_and_embedding_dimensions(
 ):
     from dataclasses import replace
 
-    network = RadialMLPDescriptor(
+    network = RadialMLPSpec(
         channels=(12 if conditioned else 8, 4, 16),
         num_elements=3 if conditioned else 0,
         element_embedding_width=2 if conditioned else 0,
@@ -33,20 +33,20 @@ def test_extended_shapes_keep_network_order_and_embedding_dimensions(
         replace(network, channels=(network.channels[0], 3, 1)) if with_density else None
     )
     shape = EdgeConvolutionSpan(
-        RadialBasisDescriptor(),
-        SphericalHarmonicsDescriptor(),
+        RadialBasisSpec(),
+        SphericalHarmonicsSpec(),
         network,
-        ChannelwiseTPConvDescriptor(),
+        ChannelwiseTPConvSpec(),
         density=density,
     )
-    assert EdgeConvolutionSpan.from_descriptors(shape.descriptors) == shape
+    assert EdgeConvolutionSpan.from_specs(shape.kernel_specs) == shape
     assert hash(shape)
     if density is not None:
-        assert shape.descriptors[-3:] == (network, density, shape.convolution)
+        assert shape.kernel_specs[-3:] == (network, density, shape.convolution)
         with pytest.raises(ValueError, match="one scalar"):
             replace(shape, density=network)
-        reordered = (*shape.descriptors[:2], density, network, shape.convolution)
-        assert EdgeConvolutionSpan.from_descriptors(reordered) is None
+        reordered = (*shape.kernel_specs[:2], density, network, shape.convolution)
+        assert EdgeConvolutionSpan.from_specs(reordered) is None
 
 
 @pytest.mark.parametrize(
@@ -63,26 +63,26 @@ def test_extended_shapes_keep_network_order_and_embedding_dimensions(
 )
 def test_invalid_conditioning_is_rejected_before_build(settings):
     with pytest.raises(ValueError):
-        RadialMLPDescriptor(**settings)
+        RadialMLPSpec(**settings)
 
 
-@pytest.mark.parametrize("transform", [None, DistanceTransformDescriptor()])
+@pytest.mark.parametrize("transform", [None, DistanceTransformSpec()])
 def test_only_the_exact_shape_round_trips(transform):
     shape = EdgeConvolutionSpan(
-        RadialBasisDescriptor(),
-        SphericalHarmonicsDescriptor(),
-        RadialMLPDescriptor(),
-        ChannelwiseTPConvDescriptor(),
+        RadialBasisSpec(),
+        SphericalHarmonicsSpec(),
+        RadialMLPSpec(),
+        ChannelwiseTPConvSpec(),
         transform,
     )
-    assert EdgeConvolutionSpan.from_descriptors(shape.descriptors) == shape
-    for members in itertools.permutations(shape.descriptors):
-        if members != shape.descriptors:
-            assert EdgeConvolutionSpan.from_descriptors(members) is None
-    assert EdgeConvolutionSpan.from_descriptors(()) is None
+    assert EdgeConvolutionSpan.from_specs(shape.kernel_specs) == shape
+    for members in itertools.permutations(shape.kernel_specs):
+        if members != shape.kernel_specs:
+            assert EdgeConvolutionSpan.from_specs(members) is None
+    assert EdgeConvolutionSpan.from_specs(()) is None
     assert (
-        EdgeConvolutionSpan.from_descriptors(
-            (*shape.descriptors, RadialMLPDescriptor()),
+        EdgeConvolutionSpan.from_specs(
+            (*shape.kernel_specs, RadialMLPSpec()),
         )
         is None
     )

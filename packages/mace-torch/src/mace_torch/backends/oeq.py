@@ -25,8 +25,8 @@ import numpy as np
 import openequivariance as oeq  # ty: ignore[unresolved-import]
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.capabilities import BackendCapabilities
-from mace_core.kernels.descriptors import ChannelwiseTPConvDescriptor, Descriptor
 from mace_core.kernels.paths import channelwise_paths
+from mace_core.kernels.specs import ChannelwiseTPConvSpec, KernelSpec
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
@@ -39,13 +39,13 @@ _DTYPES = {"float64": np.float64, "float32": np.float32}
 class OeqCapabilities(BackendCapabilities):
     """The convolution, when every node term has one copy per channel."""
 
-    def supports(self, descriptor: Descriptor) -> bool:
-        if not super().supports(descriptor):
+    def supports(self, kernel_spec: KernelSpec) -> bool:
+        if not super().supports(kernel_spec):
             return False
-        if isinstance(descriptor, ChannelwiseTPConvDescriptor):
+        if isinstance(kernel_spec, ChannelwiseTPConvSpec):
             return all(
                 multiplicity == 1
-                for multiplicity, _ in Irreps.parse(descriptor.irreps_node).terms
+                for multiplicity, _ in Irreps.parse(kernel_spec.irreps_node).terms
             )
         return False
 
@@ -53,19 +53,19 @@ class OeqCapabilities(BackendCapabilities):
 class OeqChannelwiseTPConv(nn.Module):
     """The convolution, gather, product and scatter in one kernel call."""
 
-    def __init__(self, descriptor: ChannelwiseTPConvDescriptor) -> None:
+    def __init__(self, kernel_spec: ChannelwiseTPConvSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        features = descriptor.num_features
+        self.kernel_spec = kernel_spec
+        features = kernel_spec.num_features
         paths = channelwise_paths(
-            descriptor.irreps_node, descriptor.irreps_edge, descriptor.irreps_out
+            kernel_spec.irreps_node, kernel_spec.irreps_edge, kernel_spec.irreps_out
         )
         self.num_paths = len(paths)
-        self.weight_width = self.num_paths * descriptor.num_features
-        dtype = _DTYPES[descriptor.precision]
+        self.weight_width = self.num_paths * kernel_spec.num_features
+        dtype = _DTYPES[kernel_spec.precision]
         problem = oeq.TPProblem(
-            expanded_irreps(descriptor.irreps_node, features),
-            descriptor.irreps_edge,
+            expanded_irreps(kernel_spec.irreps_node, features),
+            kernel_spec.irreps_edge,
             "+".join(f"{features}x{path.irrep}" for path in paths),
             [
                 (path.node_term, path.edge_term, index, "uvu", True)
@@ -116,10 +116,10 @@ class OeqBackend:
         )
 
     def make_channelwise_tp_conv(
-        self, descriptor: ChannelwiseTPConvDescriptor
+        self, kernel_spec: ChannelwiseTPConvSpec
     ) -> OeqChannelwiseTPConv:
-        self.capabilities().require(descriptor, self.name)
-        return OeqChannelwiseTPConv(descriptor)
+        self.capabilities().require(kernel_spec, self.name)
+        return OeqChannelwiseTPConv(kernel_spec)
 
-    def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> None:
+    def make_interaction_layer(self, kernel_specs: tuple[Any, ...]) -> None:
         return None

@@ -25,7 +25,7 @@ from mace_torch.models.dipoles import (
     DipoleModel,
     DipoleSettings,
 )
-from mace_torch.models.heads import ObservableHead
+from mace_torch.models.readouts import ObservableReadout
 from mace_torch.physics import DerivativeEngine
 from mace_torch_engine_fixtures import ENERGY, build_graph, molecule
 from scipy.spatial.transform import Rotation
@@ -227,7 +227,7 @@ def test_a_scalar_middle_gives_the_last_layer_no_vector_to_read(dtype):
     """
     positions, numbers = molecule()
     model = build_model(FIXED, readout_hidden="4x0e")
-    head = cast(ObservableHead, model.outputs.heads["atomic_dipoles"])
+    head = cast(ObservableReadout, model.outputs.readouts["atomic_dipoles"])
     graph = graph_of(positions, numbers)
     layers = list(model.backbone(graph).layers)
     last = head.per_layer(layers)[-1]

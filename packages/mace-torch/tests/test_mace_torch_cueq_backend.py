@@ -18,10 +18,10 @@ import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    LinearDescriptor,
-    SymmetricContractionDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    LinearSpec,
+    SymmetricContractionSpec,
 )
 from mace_torch_backend_models import engine, graph
 
@@ -86,15 +86,15 @@ def test_the_contraction_map_is_block_diagonal_with_small_blocks(
 def test_it_declines_what_its_kernels_cannot_compute():
     capabilities = CuEqBackend().capabilities()
     assert not capabilities.supports(
-        LinearDescriptor(irreps_in="2x0e", irreps_out="2x0e", has_bias=True)
+        LinearSpec(irreps_in="2x0e", irreps_out="2x0e", has_bias=True)
     )
     with pytest.raises(ValueError, match="multiplicity"):
-        ChannelwiseTPConvDescriptor(irreps_node="2x0e+1o", irreps_edge="0e+1o")
+        ChannelwiseTPConvSpec(irreps_node="2x0e+1o", irreps_edge="0e+1o")
     assert not capabilities.supports(
-        SymmetricContractionDescriptor(irreps_in="0e+1o", basis="full")
+        SymmetricContractionSpec(irreps_in="0e+1o", basis="full")
     )
     assert capabilities.supports(
-        ChannelwiseTPConvDescriptor(irreps_node="0e+1o", irreps_edge="0e+1o")
+        ChannelwiseTPConvSpec(irreps_node="0e+1o", irreps_edge="0e+1o")
     )
 
 

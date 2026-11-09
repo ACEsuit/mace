@@ -29,7 +29,7 @@ torch.set_default_dtype(torch.float64)
 trained = run(configuration(Path(sys.argv[1])))
 loaded = load_deployed(trained.checkpoint_path)
 inputs = graph(CLUSTER, moments(4))
-before = trained.model(inputs, compute=("forces", "magforces"))
+before = trained.engine(inputs, compute=("forces", "magforces"))
 after = loaded.engine(inputs, compute=("forces", "magforces"))
 for name in ("total_energy", "forces", "magforces"):
     actual, expected = after.get(name), before.get(name)

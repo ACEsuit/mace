@@ -1,6 +1,6 @@
 """The electrostatics solve and what a solver declares, without a framework.
 
-The descriptor refuses a solve that cannot be meant, and the capability
+The solver_spec refuses a solve that cannot be meant, and the capability
 record decides support: a solver that does bulk crystals only declines a
 molecule or a mixed batch rather than doing something else with it.
 """
@@ -14,7 +14,7 @@ import pytest
 from mace_core.electrostatics import (
     PERIODICITY_PROFILES,
     REALSPACE_METHODS,
-    ElectrostaticsSolverDescriptor,
+    ElectrostaticsSpec,
     FeatureProjection,
     ScfSpec,
     SolverCapabilities,
@@ -22,9 +22,9 @@ from mace_core.electrostatics import (
 )
 
 
-def solve(profile="full_periodic", **settings) -> ElectrostaticsSolverDescriptor:
-    return ElectrostaticsSolverDescriptor(
-        profile,
+def solve(profile="full_periodic", **settings) -> ElectrostaticsSpec:
+    return ElectrostaticsSpec(
+        periodicity_profile=profile,
         multipole_max_l=settings.pop("multipole_max_l", 1),
         kspace_cutoff=settings.pop("kspace_cutoff", 3.0),
         smearing_width=settings.pop("smearing_width", 1.0),
@@ -43,7 +43,7 @@ def test_the_five_profiles_are_the_ones_named():
 
 
 def test_an_unknown_profile_is_refused():
-    with pytest.raises(ValueError, match="periodicity profile"):
+    with pytest.raises(ValueError, match="periodicity_profile"):
         solve("bulk")
 
 
@@ -56,9 +56,9 @@ def test_a_slab_needs_its_normal_and_nothing_else_takes_one():
 
 
 def test_a_solve_with_no_width_or_no_cutoff_is_refused():
-    with pytest.raises(ValueError, match="positive"):
+    with pytest.raises(ValueError, match="greater than 0"):
         solve(smearing_width=0.0)
-    with pytest.raises(ValueError, match="positive"):
+    with pytest.raises(ValueError, match="greater than 0"):
         solve(kspace_cutoff=-1.0)
 
 
@@ -106,7 +106,7 @@ def test_a_solver_that_cannot_differentiate_twice_says_why_it_is_refused():
 
 def test_the_real_space_method_is_one_of_the_named_ones():
     assert REALSPACE_METHODS == ("finite_difference",)
-    with pytest.raises(ValueError, match="real-space method"):
+    with pytest.raises(ValueError, match="realspace_method"):
         solve(realspace_method="analytical")
 
 

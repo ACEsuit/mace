@@ -66,12 +66,8 @@ class Quadratic(MagneticModel):
 
 def project(model, mode):
     result = deepcopy(model)
-    settings = result.backbone.config.magnetic.model_copy(
-        update={"time_reversal": mode}
-    )
-    result.backbone.config = result.backbone.config.model_copy(
-        update={"magnetic": settings}
-    )
+    settings = result.model.config.magnetic.model_copy(update={"time_reversal": mode})
+    result.model.config = result.model.config.model_copy(update={"magnetic": settings})
     return result
 
 
@@ -208,7 +204,7 @@ def test_loaded_projection_persists_and_calculator_padding_is_inert(tmp_path, ba
     from mace_torch.finetune.stages import build
 
     built = build(configuration(tmp_path))
-    write_model(tmp_path / "base", built.model, built.metadata)
+    write_model(tmp_path / "base", built.engine, built.metadata)
     original = load_deployed(tmp_path / "base.json")
     assert isinstance(original.engine, DerivativeEngine)
     original.engine.compile_model(backend="eager")
@@ -274,7 +270,7 @@ def test_nonmagnetic_models_refuse_projection(tmp_path):
 
     config = configuration(tmp_path, model="scale_shift", observables=["energy"])
     built = build(config)
-    write_model(tmp_path / "energy", built.model, built.metadata)
+    write_model(tmp_path / "energy", built.engine, built.metadata)
     with pytest.raises(DeployError, match="magnetic"):
         load_deployed(tmp_path / "energy.json").with_time_reversal()
     config = config.model_copy(
@@ -307,7 +303,7 @@ def test_unequal_structures_and_heads_remain_independent(tmp_path, mode):
         }
     )
     built = build(config)
-    native = project(built.model, mode)
+    native = project(built.engine, mode)
     frames = [
         Configuration(
             atomic_numbers=np.array([8, 26, 26, 26])[:count],
@@ -336,7 +332,7 @@ def test_unequal_structures_and_heads_remain_independent(tmp_path, mode):
         for key, value in padded.items()
     }
     counts = []
-    hook = native.backbone.backbone.register_forward_pre_hook(
+    hook = native.model.backbone.register_forward_pre_hook(
         lambda module, args: counts.append(
             (len(args[0]["positions"]), len(args[0]["ptr"]) - 1)
         )

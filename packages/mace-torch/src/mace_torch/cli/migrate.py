@@ -112,7 +112,7 @@ def selection_document(tokens: list[str]) -> tuple[dict, str]:
     parser.add_argument("--num_samples", type=int)
     parser.add_argument("--subselect", choices=("fps", "random"), default="fps")
     parser.add_argument("--model", default="small")
-    parser.add_argument("--descriptors")
+    parser.add_argument("--structure-descriptors-file")
     parser.add_argument("--device", default="cpu")
     parser.add_argument(
         "--default_dtype", choices=("float32", "float64"), default="float64"
@@ -135,7 +135,7 @@ def selection_document(tokens: list[str]) -> tuple[dict, str]:
         "readout_from": args.head_pt,
         "subselect": {
             "method": args.subselect,
-            "descriptors": args.descriptors,
+            "structure_descriptors_file": args.structure_descriptors_file,
             "num_samples": args.num_samples,
             "filtering": args.filtering_type,
             "elements": ast.literal_eval(args.filter_atomic_numbers_pt)

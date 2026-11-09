@@ -22,7 +22,7 @@ from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import load_checkpoint, save_checkpoint
 
@@ -54,7 +54,7 @@ def convert(legacy):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     config = build_config(legacy)
     values, scale, shift = energy_constants_to_canonical(legacy)
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s(values),
         ["default"],
         AtomicNumberTable(numbers),
@@ -66,7 +66,7 @@ def convert(legacy):
     model = MACEModel(
         ReferenceBackend(),
         observables=[ENERGY],
-        energy_head=head,
+        energy_readout=head,
         **model_arguments(config),
     )
     transfer_weights(legacy, model, config["correlation"])
@@ -166,7 +166,7 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
     save_checkpoint(tmp_path / "converted", model, config)
 
     def rebuild(stored):
-        head = EnergyOutputHead(
+        head = EnergyReadout(
             ResolvedE0s(values),
             ["default"],
             AtomicNumberTable(numbers),
@@ -176,7 +176,7 @@ def test_a_converted_anchor_survives_the_checkpoint(fp64, tmp_path):
         return MACEModel(
             ReferenceBackend(),
             observables=[ENERGY],
-            energy_head=head,
+            energy_readout=head,
             **model_arguments(stored),
         )
 

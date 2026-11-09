@@ -22,7 +22,7 @@ from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.data import GraphDataset
-from mace_torch.models import MACEOutputs, ObservableHead
+from mace_torch.models import MACEOutputs, ObservableReadout
 from mace_torch.models.build import ModelBuildError
 from mace_torch.nn.interaction import (
     InteractionBlock,
@@ -156,7 +156,7 @@ def test_a_built_model_has_weights_it_can_move(pipeline):
     _, _, built = pipeline
     weighted = [
         name
-        for name, parameter in built.model.named_parameters()
+        for name, parameter in built.engine.named_parameters()
         if parameter.numel() and float(parameter.detach().abs().max()) > 0.0
     ]
     assert len(weighted) > 10
@@ -169,7 +169,7 @@ def test_the_same_seed_builds_the_same_model(tmp_path):
     first = run_model_stage(config, data, CATALOGUE)
     second = run_model_stage(config, data, CATALOGUE)
     for (_, left), (_, right) in zip(
-        first.model.named_parameters(), second.model.named_parameters(), strict=True
+        first.engine.named_parameters(), second.engine.named_parameters(), strict=True
     ):
         assert torch.equal(left, right)
 
@@ -179,7 +179,7 @@ def test_the_model_produces_the_observables_that_were_requested(pipeline):
     _, data, built = pipeline
     assert built.outputs.derivatives == ("forces",)
     batch = next(iter(data.valid_loaders["default"]))
-    output = built.model(batch.graph, compute=("forces",))
+    output = built.engine(batch.graph, compute=("forces",))
     assert output.total_energy is not None
     assert output.forces is not None
     assert output.stress is None
@@ -217,12 +217,12 @@ def test_initial_validation_precedes_steps_and_preserves_weights_and_rng(
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
     expected = loop.evaluate_heads(
-        built.model,
+        built.engine,
         data.valid_loaders,
         build_loss(built.outputs, config.loss, config.schedule()[0]),
         metric_specs(built.outputs),
     )["default"]
-    weights = [parameter.detach().clone() for parameter in built.model.parameters()]
+    weights = [parameter.detach().clone() for parameter in built.engine.parameters()]
     directory = config.runtime.directory("results")
     directory.mkdir(parents=True)
     path = directory / f"{config.runtime.name}.jsonl"
@@ -240,7 +240,7 @@ def test_initial_validation_precedes_steps_and_preserves_weights_and_rng(
         assert len(evaluations) == 1
         assert torch.equal(torch.random.get_rng_state(), evaluations[0])
         assert not optimizer.state
-        for before, after in zip(weights, built.model.parameters(), strict=True):
+        for before, after in zip(weights, built.engine.parameters(), strict=True):
             assert torch.equal(before, after)
         records = [json.loads(line) for line in path.read_text().splitlines()]
         assert records == [
@@ -259,7 +259,7 @@ def test_initial_validation_precedes_steps_and_preserves_weights_and_rng(
     if not epochs:
         assert len(records) == 1
         assert len(evaluations) == 1
-        for before, after in zip(weights, built.model.parameters(), strict=True):
+        for before, after in zip(weights, built.engine.parameters(), strict=True):
             assert torch.equal(before, after)
 
 
@@ -623,11 +623,11 @@ def test_a_model_built_for_two_heads_gives_each_its_own_readout(tmp_path):
     )
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
-    outputs = built.model.get_submodule("backbone.outputs")
+    outputs = built.engine.get_submodule("model.outputs")
     assert isinstance(outputs, MACEOutputs)
-    assert cast(ObservableHead, outputs.heads["energy"]).num_heads == 2
-    assert outputs.energy_head is not None
-    assert outputs.energy_head.e0_table.shape[0] == 2
+    assert cast(ObservableReadout, outputs.readouts["energy"]).num_heads == 2
+    assert outputs.energy_readout is not None
+    assert outputs.energy_readout.e0_table.shape[0] == 2
 
 
 @fp64_only
@@ -661,7 +661,7 @@ def test_the_run_ends_on_the_model_it_wrote(tmp_path):
     trained = run_train_stage(config, built, checkpoint_path=tmp_path / "model")
     assert trained.best_epoch is not None
     written = read_canonical_state(tmp_path / "model")
-    held = canonical_state(trained.model)
+    held = canonical_state(trained.engine)
     assert set(written) == set(held)
     for path in held:
         for name, value in held[path].items():
@@ -729,7 +729,7 @@ def build_with(tmp_path, **model):
         }
     )
     data = run_data_stage(config, CATALOGUE)
-    return run_model_stage(config, data, CATALOGUE).model
+    return run_model_stage(config, data, CATALOGUE).engine
 
 
 @pytest.mark.parametrize(
@@ -759,10 +759,8 @@ def test_each_spelling_of_the_first_layer_builds_its_own_block(tmp_path):
     plain one applies its skip to the message."""
     plain = build_with(tmp_path, interaction_first="plain")
     residual = build_with(tmp_path, interaction_first="residual")
-    assert isinstance(plain.backbone.backbone.interactions[0], InteractionBlock)
-    assert isinstance(
-        residual.backbone.backbone.interactions[0], ResidualInteractionBlock
-    )
+    assert isinstance(plain.model.backbone.interactions[0], InteractionBlock)
+    assert isinstance(residual.model.backbone.interactions[0], ResidualInteractionBlock)
     assert sum(p.numel() for p in plain.parameters()) != sum(
         p.numel() for p in residual.parameters()
     )
@@ -782,17 +780,17 @@ def test_edge_irreps_set_the_width_a_nonlinear_block_convolves_at(
         edge_irreps="4x0e+4x1o",
         use_edge_irreps_first=True,
     )
-    first, later = model.backbone.backbone.interactions
+    first, later = model.model.backbone.interactions
     assert isinstance(first, NonLinearInteractionBlock)
     assert (
         first.num_up_features,
-        Irreps.parse(first.convolution.descriptor.irreps_node).dimension,
+        Irreps.parse(first.convolution.kernel_spec.irreps_node).dimension,
     ) == (4, 1)
     if interaction == NONLINEAR:
         assert isinstance(later, NonLinearInteractionBlock)
         assert (
             later.num_up_features,
-            Irreps.parse(later.convolution.descriptor.irreps_node).dimension,
+            Irreps.parse(later.convolution.kernel_spec.irreps_node).dimension,
         ) == (4, 4)
     else:
         assert isinstance(later, ResidualInteractionBlock)
@@ -820,10 +818,10 @@ def test_edge_irreps_a_standard_block_would_read_are_refused(tmp_path, setting):
 @pytest.mark.parametrize("gate", ["tanh", "abs", "None"])
 def test_retained_readout_gates_build_with_a_full_basis(tmp_path, gate):
     engine = build_with(tmp_path, clebsch_gordan_basis="full", readout={"gate": gate})
-    assert engine.backbone.config.readout.gate == gate
+    assert engine.model.config.readout.gate == gate
 
 
 def test_reviewed_plain_layers_and_full_basis_reach_the_built_model(tmp_path):
     engine = build_with(tmp_path, interaction="plain", clebsch_gordan_basis="full")
-    assert isinstance(engine.backbone.backbone.interactions[1], InteractionBlock)
-    assert engine.backbone.backbone.products[0].contraction.descriptor.basis == "full"
+    assert isinstance(engine.model.backbone.interactions[1], InteractionBlock)
+    assert engine.model.backbone.products[0].contraction.kernel_spec.basis == "full"

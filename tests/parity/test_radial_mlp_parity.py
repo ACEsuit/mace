@@ -17,7 +17,7 @@ from mace_core.kernels.canonical import (
     SILU_SECOND_MOMENT_SCALE,
     exact_silu_second_moment_scale,
 )
-from mace_core.kernels.descriptors import RadialMLPDescriptor
+from mace_core.kernels.specs import RadialMLPSpec
 from mace_torch.backends.reference import ReferenceBackend
 
 from tests.parity.anchors import load_anchor
@@ -32,7 +32,7 @@ def test_the_radial_network_reproduces_the_anchor(fp64, anchor, layer):
     layers = [getattr(legacy, f"layer{index}") for index in range(4)]
 
     mine = ReferenceBackend().make_radial_mlp(
-        RadialMLPDescriptor(
+        RadialMLPSpec(
             channels=(
                 layers[0].weight.shape[0],
                 *(layer.weight.shape[1] for layer in layers),

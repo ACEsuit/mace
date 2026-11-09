@@ -9,7 +9,7 @@ cancellation-prone electrostatic calculation from predicted density errors.
 import numpy as np
 import pytest
 import torch
-from mace_core.electrostatics import ElectrostaticsSolverDescriptor, FeatureProjection
+from mace_core.electrostatics import ElectrostaticsSpec, FeatureProjection
 from mace_torch.backends.precision import cast_at_boundary
 from mace_torch.electrostatics import (
     build_long_range,
@@ -71,7 +71,7 @@ def test_polar_solver_reductions_match_high_precision_legacy(
         dtype=dtype,
         generator=torch.Generator().manual_seed(149),
     ).to(device)
-    descriptor = ElectrostaticsSolverDescriptor(
+    solver_spec = ElectrostaticsSpec(
         "molecular",
         1,
         3.0,
@@ -89,7 +89,7 @@ def test_polar_solver_reductions_match_high_precision_legacy(
         old = legacy.RealSpaceFiniteDifferenceElectrostaticFeatures(
             1, 1.5, 1, [1.5, 3.0], include_self_interaction=self_interaction
         ).to(device)
-        new = build_long_range_features(descriptor).to(device)
+        new = build_long_range_features(solver_spec).to(device)
 
         def reference(source, coords):
             return old(source.double().unsqueeze(-2), coords.double(), batch)[0]
@@ -97,7 +97,7 @@ def test_polar_solver_reductions_match_high_precision_legacy(
         old = legacy.RealSpaceFiniteDiffereneEnergy(
             1, 1.5, include_self_interaction=self_interaction
         ).to(device)
-        new = build_long_range(descriptor).to(device)
+        new = build_long_range(solver_spec).to(device)
 
         def reference(source, coords):
             return old(source.double(), coords.double(), batch)
@@ -112,7 +112,7 @@ def test_polar_solver_reductions_match_high_precision_legacy(
             * torch.eye(3, dtype=dtype, device=device).expand(len(fixtures), 3, 3),
             "pbc": torch.zeros((len(fixtures), 3), dtype=torch.bool, device=device),
         }
-        geometry = long_range_geometry(graph, descriptor)
+        geometry = long_range_geometry(graph, solver_spec)
         return (
             new(new.prepare(geometry), source)
             if kind == "projection"

@@ -27,7 +27,7 @@ OUTPUT_COLUMNS = {
     "forces": OutputColumn("forces", True),
     "stress": OutputColumn("stress", False),
     "BO_contributions": OutputColumn("contributions", False),
-    "descriptors": OutputColumn("descriptors", True),
+    "atomic_descriptors": OutputColumn("atomic_descriptors", True),
     "node_energies": OutputColumn("node_energies", True),
     "magforces": OutputColumn("magforces", True, "MAG-1"),
     "BEC": OutputColumn("BEC", True, "ELEC-4"),
@@ -173,7 +173,7 @@ def run(args: argparse.Namespace) -> int:
             backbone = deployed.model.get_submodule("backbone")
             assert isinstance(backbone, MACEBackbone)
             with torch.no_grad():
-                output.extras["descriptors"] = backbone.descriptors(
+                output.extras["atomic_descriptors"] = backbone.atomic_descriptors(
                     backbone(graph),
                     num_layers=args.descriptor_num_layers,
                     invariants_only=args.descriptor_invariants_only,
@@ -188,7 +188,7 @@ def run(args: argparse.Namespace) -> int:
             for flag, name in (
                 (args.compute_stress, "stress"),
                 (args.return_contributions, "BO_contributions"),
-                (args.return_descriptors, "descriptors"),
+                (args.return_descriptors, "atomic_descriptors"),
                 (args.return_node_energies, "node_energies"),
                 (args.return_magforces, "magforces"),
                 (args.compute_bec, "BEC"),
@@ -210,7 +210,7 @@ def run(args: argparse.Namespace) -> int:
                     else values[index]
                 )
                 target = atoms.arrays if column.per_atom else atoms.info
-                if name == "descriptors" and args.descriptor_aggregation_method:
+                if name == "atomic_descriptors" and args.descriptor_aggregation_method:
                     target = atoms.info
                     row = (
                         row.mean(axis=0)
@@ -226,7 +226,13 @@ def run(args: argparse.Namespace) -> int:
                     )
                 elif column.per_atom and row.ndim > 2:
                     row = row.reshape(len(atoms), -1)
-                target[args.info_prefix + name] = row
+                output_name = (
+                    "structure_descriptors"
+                    if name == "atomic_descriptors"
+                    and args.descriptor_aggregation_method
+                    else name
+                )
+                target[args.info_prefix + output_name] = row
             offset += len(atoms)
     write(args.output, structures, format="extxyz")
     print_citations(deployed.metadata)

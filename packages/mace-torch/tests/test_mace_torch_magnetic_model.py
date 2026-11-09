@@ -32,7 +32,7 @@ from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.stages import build
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models.build import ModelBuildError
-from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models.energy import EnergyReadout, ScaleShiftSpec
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn.magnetic import OneBodyMomentEnergy
@@ -50,7 +50,7 @@ CLUSTER = np.array(
 
 
 def engine(one_body: int = 6, seed: int = 3, backend=None) -> DerivativeEngine:
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s({"default": {8: -4.25, 26: -6.75}}),
         ["default"],
         AtomicNumberTable(NUMBERS),
@@ -62,7 +62,7 @@ def engine(one_body: int = 6, seed: int = 3, backend=None) -> DerivativeEngine:
         backend or ReferenceBackend(),
         atomic_numbers=NUMBERS,
         observables=[ENERGY],
-        energy_head=head,
+        energy_readout=head,
         saturation=[1.2, 4.5],
         config=ModelConfig(
             num_channels=4,
@@ -81,7 +81,7 @@ def engine(one_body: int = 6, seed: int = 3, backend=None) -> DerivativeEngine:
         ),
     )
     initialize_model_weights(model, seed)
-    return DerivativeEngine(model, ENERGY, None, inputs=[MAGMOM])
+    return DerivativeEngine(model, ENERGY, inputs=[MAGMOM])
 
 
 def graph(positions, moments, numbers=(8, 26, 26, 26)):
@@ -179,7 +179,7 @@ def test_the_derivative_at_a_zero_moment_is_the_finite_difference(model):
 
 
 def test_the_squashed_length_runs_from_one_to_minus_one_at_saturation(model):
-    features = model.backbone.backbone.moments
+    features = model.model.backbone.moments
     element = torch.tensor([0, 1, 1])
     spins = torch.tensor([[0.0, 0.0, 0.0], [0.0, 4.5, 0.0], [6.0, 0.0, 8.0]])
     squashed = features.squashed_length(spins, element).squeeze(-1)
@@ -187,8 +187,8 @@ def test_the_squashed_length_runs_from_one_to_minus_one_at_saturation(model):
 
 
 def test_the_one_body_term_reads_the_moment_length_alone(model):
-    one_body = model.backbone.one_body
-    features = model.backbone.backbone.moments
+    one_body = model.model.one_body
+    features = model.model.backbone.moments
     element = torch.tensor([0, 1, 1, 1])
     spins = torch.tensor(moments())
     rotation = torch.tensor(Rotation.from_euler("y", 1.3).as_matrix())
@@ -286,18 +286,18 @@ def test_a_magnetic_model_comes_back_from_its_checkpoint(trained):
     deployed = load_deployed(trained.checkpoint_path)
     assert list(deployed.z_table.zs) == NUMBERS
     probe = graph(CLUSTER, moments(4))
-    before = trained.model(probe, compute=("forces", "magforces"))
+    before = trained.engine(probe, compute=("forces", "magforces"))
     after = deployed.engine(probe, compute=("forces", "magforces"))
     assert torch.equal(before.total_energy, after.total_energy)
     assert torch.equal(before.extras["magforces"], after.extras["magforces"])
     assert torch.equal(
-        trained.model.backbone.backbone.moments.saturation,
+        trained.engine.model.backbone.moments.saturation,
         torch.tensor([1.2, 4.5], dtype=torch.float64),
     )
 
 
 def one_body_of(engine) -> OneBodyMomentEnergy:
-    return cast(OneBodyMomentEnergy, engine.get_submodule("backbone.one_body"))
+    return cast(OneBodyMomentEnergy, engine.get_submodule("model.one_body"))
 
 
 def test_one_body_coefficients_that_are_not_trained_keep_their_values(tmp_path):
@@ -306,9 +306,9 @@ def test_one_body_coefficients_that_are_not_trained_keep_their_values(tmp_path):
         magnetic={"one_body": True, "one_body_basis": 6, "train_one_body": False},
     )
     built = build(config)
-    start = one_body_of(built.model).coefficients.detach().clone()
+    start = one_body_of(built.engine).coefficients.detach().clone()
     trained = run(config)
-    assert torch.equal(one_body_of(trained.model).coefficients, start)
+    assert torch.equal(one_body_of(trained.engine).coefficients, start)
 
 
 def test_magnetic_forces_are_refused_for_a_model_that_reads_no_moments(tmp_path):
@@ -333,7 +333,7 @@ def test_the_calculator_reports_the_magnetic_forces_of_the_model(trained):
     assert "magforces" in calculator.implemented_properties
     atoms = iron_cluster()
     calculator.calculate(atoms)
-    direct = trained.model(
+    direct = trained.engine(
         graph(CLUSTER, atoms.arrays["REF_magmom"]), compute=("forces", "magforces")
     )
     np.testing.assert_allclose(
@@ -535,19 +535,19 @@ def test_a_fine_tune_starts_from_the_foundation_s_moment_terms(
     built = build(config)
     table = list(built.data.z_table.zs)
     assert table == ([8, 26] if element_table == "foundation" else [26])
-    before = built.model(iron_graph(table), compute=("forces", "magforces"))
-    parent = trained.model(iron_graph(NUMBERS), compute=("forces", "magforces"))
+    before = built.engine(iron_graph(table), compute=("forces", "magforces"))
+    parent = trained.engine(iron_graph(NUMBERS), compute=("forces", "magforces"))
     assert torch.allclose(before.forces, parent.forces, atol=1e-12)
     assert torch.allclose(
         before.extras["magforces"], parent.extras["magforces"], atol=1e-12
     )
     kept = [NUMBERS.index(z) for z in table]
     assert torch.equal(
-        one_body_of(built.model).coefficients,
-        one_body_of(trained.model).coefficients[kept],
+        one_body_of(built.engine).coefficients,
+        one_body_of(trained.engine).coefficients[kept],
     )
     saturation = cast(
-        torch.Tensor, built.model.get_submodule("backbone.backbone.moments").saturation
+        torch.Tensor, built.engine.get_submodule("model.backbone.moments").saturation
     )
     assert torch.equal(saturation, torch.tensor([1.2, 4.5], dtype=torch.float64)[kept])
 
@@ -575,7 +575,7 @@ def test_saturations_given_in_the_table_s_order_survive_a_smaller_table(tmp_path
         built = build(config)
         saturation = cast(
             torch.Tensor,
-            built.model.get_submodule("backbone.backbone.moments").saturation,
+            built.engine.get_submodule("model.backbone.moments").saturation,
         )
         assert torch.equal(saturation, torch.tensor([4.5], dtype=torch.float64))
     finally:

@@ -15,7 +15,7 @@ from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, MACEModel, ScaleShiftSpec
 from mace_torch_engine_fixtures import ATOMIC_NUMBERS, ENERGY
 
 
@@ -23,7 +23,7 @@ def build(default: torch.dtype) -> MACEModel:
     previous = torch.get_default_dtype()
     torch.set_default_dtype(default)
     try:
-        head = EnergyOutputHead(
+        head = EnergyReadout(
             ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
             ["default"],
             AtomicNumberTable(ATOMIC_NUMBERS),
@@ -42,7 +42,7 @@ def build(default: torch.dtype) -> MACEModel:
             ),
             atomic_numbers=ATOMIC_NUMBERS,
             observables=[ENERGY],
-            energy_head=head,
+            energy_readout=head,
             precision="float64",
         )
     finally:

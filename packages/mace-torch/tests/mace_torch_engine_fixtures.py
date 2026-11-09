@@ -16,7 +16,7 @@ from mace_core.neighbors import NeighborListConfig
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.graph import build_batch
-from mace_torch.models import EnergyOutputHead, MACEOutputs, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, MACEOutputs, ScaleShiftSpec
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn import MACEBackbone
 from mace_torch.physics import DerivativeEngine
@@ -49,6 +49,21 @@ NODE_INPUT = InputSpec(
 )
 
 
+class FeatureReadoutModel(torch.nn.Module):
+    """Compose the synthetic feature extractor and readouts before differentiation."""
+
+    def __init__(self, backbone, outputs):
+        super().__init__()
+        self.backbone = backbone
+        self.outputs = outputs
+
+    def forward(self, graph):
+        return self.outputs(graph, list(self.backbone(graph).layers))
+
+    def canonical_components(self):
+        return {"backbone": self.backbone, "outputs": self.outputs}
+
+
 def build_engine(seed: int = 0, inputs=(), backend=None) -> DerivativeEngine:
     """A backbone and output layer with weights, wired to the engine.
 
@@ -72,14 +87,14 @@ def build_engine(seed: int = 0, inputs=(), backend=None) -> DerivativeEngine:
         avg_num_neighbors=6.0,
         node_inputs=[spec for spec in inputs if spec.per_atom],
     )
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s({"default": {1: -13.6, 8: -2040.0}}),
         ["default"],
         AtomicNumberTable(ATOMIC_NUMBERS),
         ScaleShiftSpec("std", (1.0,), (0.0,)),
         PrecisionConfig(),
     )
-    outputs = MACEOutputs(backend, [ENERGY], ["0e+1o", "0e"], 4, energy_head=head)
+    outputs = MACEOutputs(backend, [ENERGY], ["0e+1o", "0e"], 4, energy_readout=head)
     generator = torch.Generator().manual_seed(seed + 1)
     with torch.no_grad():
         for module in (backbone, outputs):
@@ -89,7 +104,9 @@ def build_engine(seed: int = 0, inputs=(), backend=None) -> DerivativeEngine:
                         parameter.shape, generator=generator, dtype=parameter.dtype
                     )
                 )
-    return DerivativeEngine(backbone, ENERGY, outputs, inputs=inputs)
+    return DerivativeEngine(
+        FeatureReadoutModel(backbone, outputs), ENERGY, inputs=inputs
+    )
 
 
 def build_graph(positions, numbers, cell=None, pbc=(False, False, False)) -> dict:

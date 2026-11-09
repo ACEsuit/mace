@@ -32,11 +32,11 @@ from e3nn import nn as e3nn_nn
 from e3nn import o3
 from mace_core.kernels import (
     LAYER_NORM_EPSILON,
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialMLPDescriptor,
-    SymmetricContractionDescriptor,
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialMLPSpec,
+    SymmetricContractionSpec,
 )
 from mace_torch.backends.reference import ReferenceBackend
 
@@ -101,7 +101,7 @@ def test_the_linear_map_matches_legacy_in_value_and_weight_gradient(
         else LegacyLinear(o3.Irreps(irreps_in), o3.Irreps(irreps_out))
     )
     reference = BACKEND.make_linear(
-        LinearDescriptor(irreps_in=irreps_in, irreps_out=irreps_out, has_bias=has_bias)
+        LinearSpec(irreps_in=irreps_in, irreps_out=irreps_out, has_bias=has_bias)
     )
     reference.initialize_weights(3)
     permutation = linear_permutation(legacy)
@@ -148,7 +148,7 @@ def test_the_skip_connection_matches_legacy_in_value_and_weight_gradient(
         o3.Irreps(irreps_in1), o3.Irreps(irreps_in2), o3.Irreps(irreps_out)
     )
     reference = BACKEND.make_fully_connected_tp(
-        FullyConnectedTPDescriptor(
+        FullyConnectedTPSpec(
             irreps_in1=irreps_in1, irreps_in2=irreps_in2, irreps_out=irreps_out
         )
     )
@@ -227,15 +227,15 @@ def test_the_convolution_matches_legacy_in_value_and_radial_gradient(
         shared_weights=False,
         internal_weights=False,
     )
-    descriptor = ChannelwiseTPConvDescriptor(
+    kernel_spec = ChannelwiseTPConvSpec(
         irreps_node=irreps_node,
         irreps_edge=irreps_edge,
         irreps_out=irreps_out,
         num_features=channels,
     )
-    reference = BACKEND.make_channelwise_tp_conv(descriptor)
+    reference = BACKEND.make_channelwise_tp_conv(kernel_spec)
     assert [str(ir) for _, ir in irreps_mid] == [
-        str(path.irrep) for path in descriptor.paths
+        str(path.irrep) for path in kernel_spec.paths
     ]
 
     generator = _generator(11)
@@ -283,11 +283,11 @@ def test_the_paths_follow_legacy_order_where_both_parities_meet(fp64):
     irreps_mid, _ = tp_out_irreps_with_instructions(
         o3.Irreps(node), o3.Irreps(edge), o3.Irreps(out)
     )
-    descriptor = ChannelwiseTPConvDescriptor(
+    kernel_spec = ChannelwiseTPConvSpec(
         irreps_node=node, irreps_edge=edge, irreps_out=out
     )
     assert [str(ir) for _, ir in irreps_mid] == [
-        str(path.irrep) for path in descriptor.paths
+        str(path.irrep) for path in kernel_spec.paths
     ]
 
 
@@ -297,10 +297,10 @@ def test_a_scalar_node_passes_the_edge_harmonics_through(fp64):
     ``[1, sqrt(3) x, sqrt(3) y, sqrt(3) z]`` on a unit edge, in the two paths
     that read the scalar. Without the ``sqrt(2 l_out + 1)`` path weight the
     ``1o`` block came out ``sqrt(3)`` too small."""
-    descriptor = ChannelwiseTPConvDescriptor(
+    kernel_spec = ChannelwiseTPConvSpec(
         irreps_node="0e+1o", irreps_edge="0e+1o", irreps_out="0e+1o"
     )
-    reference = BACKEND.make_channelwise_tp_conv(descriptor)
+    reference = BACKEND.make_channelwise_tp_conv(kernel_spec)
     node_features = torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
     direction = torch.tensor([[0.3, -0.5, 0.8]])
     direction = direction / direction.norm()
@@ -310,7 +310,7 @@ def test_a_scalar_node_passes_the_edge_harmonics_through(fp64):
         node_features, harmonics, radial, torch.tensor([0]), torch.tensor([1]), 2
     )
     # Paths 0e x 0e -> 0e, 1o x 1o -> 0e, 0e x 1o -> 1o and 1o x 0e -> 1o.
-    assert descriptor.irreps_paths == "1x0e+1x0e+1x1o+1x1o"
+    assert kernel_spec.irreps_paths == "1x0e+1x0e+1x1o+1x1o"
     assert_parity(
         out[1, [0, 2, 3, 4]], harmonics[0], "scalar node through the convolution"
     )
@@ -348,7 +348,7 @@ def test_the_contraction_matches_legacy_in_value_and_weight_gradient(
         use_reduced_cg=False,
     )
     reference = BACKEND.make_symmetric_contraction(
-        SymmetricContractionDescriptor(
+        SymmetricContractionSpec(
             irreps_in=irreps_in,
             irreps_out=irreps_out,
             correlation=correlation,
@@ -362,7 +362,7 @@ def test_the_contraction_matches_legacy_in_value_and_weight_gradient(
     maps = []
     with torch.no_grad():
         for position, contraction in enumerate(legacy.contractions):
-            tables = canonical_contraction_bases(reference.descriptor, position)
+            tables = canonical_contraction_bases(reference.kernel_spec, position)
             for coupling, weight, order in legacy_contraction_blocks(contraction):
                 if weight.numel() == 0:
                     continue
@@ -418,7 +418,7 @@ def test_the_contraction_draw_has_the_legacy_spread_per_block(fp64):
         use_reduced_cg=False,
     )
     reference = BACKEND.make_symmetric_contraction(
-        SymmetricContractionDescriptor(
+        SymmetricContractionSpec(
             irreps_in="0e+1o",
             irreps_out="0e",
             correlation=3,
@@ -455,7 +455,7 @@ def _compare_radial_mlps(reference, legacy, pairs, what):
     ``pairs`` matches each canonical tensor with the legacy parameter it is,
     and whether the legacy one is held transposed.
     """
-    radial = torch.randn(17, reference.descriptor.channels[0], generator=_generator(5))
+    radial = torch.randn(17, reference.kernel_spec.channels[0], generator=_generator(5))
     radial.requires_grad_(True)
     reference_out = reference(radial)
     legacy_out = legacy(radial)
@@ -494,7 +494,7 @@ def test_the_normalized_radial_mlp_is_e3nns_fully_connected_net(fp64, channels):
     fan_out]`` and divides in the forward, as the canonical layout does."""
     torch.manual_seed(0)
     legacy = e3nn_nn.FullyConnectedNet(list(channels), torch.nn.functional.silu)
-    reference = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=channels))
+    reference = BACKEND.make_radial_mlp(RadialMLPSpec(channels=channels))
     legacy_weights = [
         getattr(legacy, f"layer{i}").weight for i in range(len(channels) - 1)
     ]
@@ -517,7 +517,7 @@ def test_the_layer_norm_radial_mlp_is_the_legacy_radial_mlp(fp64, channels):
             norm.weight.uniform_(0.5, 1.5, generator=_generator(7))
             norm.bias.uniform_(-0.5, 0.5, generator=_generator(8))
     reference = BACKEND.make_radial_mlp(
-        RadialMLPDescriptor(channels=channels, kind="layer_norm_silu")
+        RadialMLPSpec(channels=channels, kind="layer_norm_silu")
     )
     pairs = {}
     for i, linear in enumerate(linears):
@@ -538,7 +538,7 @@ def test_the_layer_norm_radial_mlp_is_the_legacy_radial_mlp(fp64, channels):
 
 def test_the_normalized_radial_mlp_draws_at_the_legacy_spread(fp64):
     """``e3nn`` draws a standard normal and so does the canonical draw."""
-    reference = BACKEND.make_radial_mlp(RadialMLPDescriptor(channels=(64, 64, 64)))
+    reference = BACKEND.make_radial_mlp(RadialMLPSpec(channels=(64, 64, 64)))
     reference.initialize_weights(3)
     legacy = e3nn_nn.FullyConnectedNet([64, 64, 64], torch.nn.functional.silu)
     for i, weight in enumerate(reference.weights):
@@ -551,7 +551,7 @@ def test_the_normalized_radial_mlp_draws_at_the_legacy_spread(fp64):
 def test_the_layer_norm_radial_mlp_draws_where_torch_linear_does(fp64):
     """Uniform on ``1 / sqrt(fan_in)``, weight and bias alike."""
     reference = BACKEND.make_radial_mlp(
-        RadialMLPDescriptor(channels=(64, 64, 64), kind="layer_norm_silu")
+        RadialMLPSpec(channels=(64, 64, 64), kind="layer_norm_silu")
     )
     reference.initialize_weights(3)
     legacy = LegacyRadialMLP([64, 64, 64])

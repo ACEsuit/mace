@@ -9,7 +9,7 @@ import math
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.descriptors import FullyConnectedTPDescriptor, LinearDescriptor
+from mace_core.kernels.specs import FullyConnectedTPSpec, LinearSpec
 from torch import Tensor, nn
 
 from mace_torch.backends import layout
@@ -93,7 +93,7 @@ class AffineFieldUpdate(nn.Module):
         )
         attributes = f"{num_elements}x0e"
         self.potential = backend.make_fully_connected_tp(
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1=potential_irreps,
                 irreps_in2=attributes,
                 irreps_out=node_irreps,
@@ -102,7 +102,7 @@ class AffineFieldUpdate(nn.Module):
         )
         self.bias = (
             backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=node_irreps, irreps_out=node_irreps, precision=precision
                 )
             )
@@ -115,7 +115,7 @@ class AffineFieldUpdate(nn.Module):
             node_irreps, channels, feature_layout=self.layout
         )
         self.readout = backend.make_fully_connected_tp(
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1=node_irreps,
                 irreps_in2=attributes,
                 irreps_out=density_irreps,
@@ -159,12 +159,12 @@ class FixedPointEnergy(nn.Module):
         if kind == "quadratic_field":
             hidden = "32x0e+32x1o"
             self.charge = backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=density_irreps, irreps_out=hidden, precision=precision
                 )
             )
             self.field = backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=potential_irreps, irreps_out=hidden, precision=precision
                 )
             )

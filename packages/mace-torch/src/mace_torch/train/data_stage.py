@@ -53,7 +53,7 @@ from mace_torch.finetune.replay import read_curated
 from mace_torch.finetune.subselect import (
     SelectionError,
     passes_filter,
-    read_descriptors,
+    read_structure_descriptors,
     select,
     split_by_filter,
 )
@@ -99,7 +99,7 @@ def run_data_stage(
         foundation: What the foundation model a fine-tune starts from
             contributes: its element table, which the model is built over,
             its energies per head, for the E0 kinds that copy them, and
-            descriptors for farthest-point sampling.
+            structure_descriptors for farthest-point sampling.
         pseudolabel: The seam a fine-tune uses to relabel replay structures
             before they are measured, called with each head's name and its
             structures. It runs before the statistics, because a statistic
@@ -463,14 +463,16 @@ def _subselect(
     """
     settings = head.subselect
     assert settings is not None
-    descriptors = None
+    structure_descriptors = None
     passed, _ = split_by_filter(structures, settings.elements, settings.filtering)
-    if settings.descriptors is not None:
+    if settings.structure_descriptors_file is not None:
         try:
-            descriptors = read_descriptors(settings.descriptors, len(structures))
+            structure_descriptors = read_structure_descriptors(
+                settings.structure_descriptors_file, len(structures)
+            )
         except SelectionError as failure:
             raise DataStageError(f"head {name!r}: {failure}") from failure
-        descriptors = descriptors[
+        structure_descriptors = structure_descriptors[
             [
                 passes_filter(
                     item.atomic_numbers, settings.elements, settings.filtering
@@ -483,12 +485,12 @@ def _subselect(
         and settings.num_samples is not None
         and 0 < settings.num_samples < len(passed)
     ):
-        if foundation is None or foundation.describe is None:
+        if foundation is None or foundation.structure_descriptors is None:
             raise DataStageError(
                 f"head {name!r} asks for farthest-point sampling, which reads "
-                f"a foundation model's descriptors, and the run has none."
+                f"a foundation model's structure descriptors, and the run has none."
             )
-        descriptors = foundation.describe(passed)
+        structure_descriptors = foundation.structure_descriptors(passed)
     try:
         return select(
             structures,
@@ -498,7 +500,7 @@ def _subselect(
             elements=settings.elements,
             allow_random_padding=settings.allow_random_padding,
             seed=config.runtime.seed,
-            descriptors=descriptors,
+            structure_descriptors=structure_descriptors,
         )
     except SelectionError as failure:
         raise DataStageError(f"head {name!r}: {failure}") from failure

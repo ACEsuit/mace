@@ -16,7 +16,7 @@ import pytest
 import torch
 from mace_core.electrostatics import (
     ENTRY_POINT_GROUPS,
-    ElectrostaticsSolverDescriptor,
+    ElectrostaticsSpec,
     FeatureProjection,
     SolverCapabilities,
     SolverNotAvailableError,
@@ -35,7 +35,7 @@ from mace_torch.electrostatics import (
 )
 from torch import nn
 
-SOLVE = ElectrostaticsSolverDescriptor("full_periodic", 1, 3.0, 1.0)
+SOLVE = ElectrostaticsSpec("full_periodic", 1, 3.0, 1.0)
 
 
 class _EntryPoint:
@@ -64,10 +64,10 @@ class _Accelerated:
         bit_parity=False,
     )
 
-    def long_range_energy(self, descriptor):
+    def long_range_energy(self, solver_spec):
         return nn.Identity()
 
-    def make_scf_solve(self, descriptor) -> nn.Module | NotImplementedType:
+    def make_scf_solve(self, solver_spec) -> nn.Module | NotImplementedType:
         return _Span()
 
 
@@ -149,7 +149,7 @@ def test_it_is_usable_for_inference(registered):
 def test_a_solver_that_declines_a_system_is_an_error_not_a_fallback(registered):
     """Not the reference's numbers, so the reference is never handed back in
     its place: that would change the model."""
-    molecule = ElectrostaticsSolverDescriptor("molecular", 1, 3.0, 1.0)
+    molecule = ElectrostaticsSpec("molecular", 1, 3.0, 1.0)
     with pytest.raises(UnsupportedSolveError, match="accelerated"):
         build_long_range(molecule, solver="accelerated")
 
@@ -158,7 +158,7 @@ def test_a_solver_that_declines_a_system_is_an_error_not_a_fallback(registered):
 # The projection, and the geometry both ops share
 # ---------------------------------------------------------------------------
 
-PROJECTING = ElectrostaticsSolverDescriptor(
+PROJECTING = ElectrostaticsSpec(
     "full_periodic", 1, 3.0, 1.0, features=FeatureProjection(1, (1.0, 1.5))
 )
 
@@ -202,7 +202,7 @@ def test_a_solve_summed_in_real_space_builds_no_k_vectors():
         "cell": 10.0 * torch.eye(3, dtype=torch.float64).unsqueeze(0),
         "pbc": torch.tensor([[False, False, False]]),
     }
-    molecule = ElectrostaticsSolverDescriptor("molecular", 1, 3.0, 1.0)
+    molecule = ElectrostaticsSpec("molecular", 1, 3.0, 1.0)
     assert long_range_geometry(graph, molecule).k_vectors.shape == (0, 3)
 
 
@@ -228,7 +228,7 @@ def test_the_solver_imports_neither_e3nn_nor_the_frozen_tree():
     """The in-tree solver replaced both of the original's imports of them."""
     probe = (
         "import sys\n"
-        "from mace_core.electrostatics import ElectrostaticsSolverDescriptor as D\n"
+        "from mace_core.electrostatics import ElectrostaticsSpec as D\n"
         "from mace_torch.electrostatics import build_long_range\n"
         "build_long_range(D('partial', 1, 3.0, 1.0))\n"
         "roots = {name.split('.')[0] for name in sys.modules}\n"

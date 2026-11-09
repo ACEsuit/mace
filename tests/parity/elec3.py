@@ -20,7 +20,7 @@ from mace_core.kernels.precision import widest
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends import resolve_backend
 from mace_torch.graph import build_batch
-from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, ScaleShiftSpec
 from mace_torch.models.electrostatics import LocalChargeModel
 from mace_torch.models.registry import registered_models
 from mace_torch.neighbors import resolve_neighbor_backend
@@ -69,7 +69,7 @@ def build_model(
     kind, degree, profile, dtype=torch.float64, backend="reference", **options
 ):
     precision = str(dtype).removeprefix("torch.")
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s({"default": {1: -0.2, 8: -0.7}}),
         ["default"],
         AtomicNumberTable([1, 8]),
@@ -84,7 +84,7 @@ def build_model(
         [1, 8],
         [ENERGY],
         head,
-        settings=LocalChargeModel.solver_descriptor(
+        settings=LocalChargeModel.make_solver_spec(
             config,
             ElectrostaticsConfig(
                 enabled=True,

@@ -274,16 +274,16 @@
     }
   },
   "layout": {
-    "backbone.backbone.radial_embedding.basis": {
+    "model.backbone.radial_embedding.basis": {
       "model.radial_basis.kind": "bessel"
     },
-    "backbone.backbone.interactions.0.body.radial_mlp": {
+    "model.backbone.interactions.0.body.radial_mlp": {
       "model.radial_mlp": "normalized_silu"
     },
-    "backbone.backbone.interactions.1.body.radial_mlp": {
+    "model.backbone.interactions.1.body.radial_mlp": {
       "model.radial_mlp": "normalized_silu"
     },
-    "backbone.backbone.products.0.contraction": {
+    "model.backbone.products.0.contraction": {
       "spec_version": "1.0",
       "basis": "reduced",
       "paths": [
@@ -306,7 +306,7 @@
         "1:1o|2:1o|2:1o"
       ]
     },
-    "backbone.backbone.products.1.contraction": {
+    "model.backbone.products.1.contraction": {
       "spec_version": "1.0",
       "basis": "reduced",
       "paths": [
@@ -324,13 +324,13 @@
   },
   "tensors": [
     {
-      "module": "backbone.backbone.interactions.0.body",
+      "module": "model.backbone.interactions.0.body",
       "name": "neighbours",
       "shape": [],
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.body.linear",
+      "module": "model.backbone.interactions.0.body.linear",
       "name": "bias",
       "shape": [
         0
@@ -338,7 +338,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.body.linear",
+      "module": "model.backbone.interactions.0.body.linear",
       "name": "weight",
       "shape": [
         768
@@ -346,7 +346,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.body.linear_up",
+      "module": "model.backbone.interactions.0.body.linear_up",
       "name": "bias",
       "shape": [
         0
@@ -354,7 +354,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.body.linear_up",
+      "module": "model.backbone.interactions.0.body.linear_up",
       "name": "weight",
       "shape": [
         256
@@ -362,7 +362,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.body.radial_mlp",
+      "module": "model.backbone.interactions.0.body.radial_mlp",
       "name": "layer_0",
       "shape": [
         8,
@@ -371,7 +371,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.body.radial_mlp",
+      "module": "model.backbone.interactions.0.body.radial_mlp",
       "name": "layer_1",
       "shape": [
         64,
@@ -380,7 +380,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.body.radial_mlp",
+      "module": "model.backbone.interactions.0.body.radial_mlp",
       "name": "layer_2",
       "shape": [
         64,
@@ -389,7 +389,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.body.radial_mlp",
+      "module": "model.backbone.interactions.0.body.radial_mlp",
       "name": "layer_3",
       "shape": [
         64,
@@ -398,7 +398,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.0.skip",
+      "module": "model.backbone.interactions.0.skip",
       "name": "weight",
       "shape": [
         3,
@@ -407,13 +407,13 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body",
+      "module": "model.backbone.interactions.1.body",
       "name": "neighbours",
       "shape": [],
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body.linear",
+      "module": "model.backbone.interactions.1.body.linear",
       "name": "bias",
       "shape": [
         0
@@ -421,7 +421,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body.linear",
+      "module": "model.backbone.interactions.1.body.linear",
       "name": "weight",
       "shape": [
         1792
@@ -429,7 +429,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body.linear_up",
+      "module": "model.backbone.interactions.1.body.linear_up",
       "name": "bias",
       "shape": [
         0
@@ -437,7 +437,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body.linear_up",
+      "module": "model.backbone.interactions.1.body.linear_up",
       "name": "weight",
       "shape": [
         512
@@ -445,7 +445,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body.radial_mlp",
+      "module": "model.backbone.interactions.1.body.radial_mlp",
       "name": "layer_0",
       "shape": [
         8,
@@ -454,7 +454,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body.radial_mlp",
+      "module": "model.backbone.interactions.1.body.radial_mlp",
       "name": "layer_1",
       "shape": [
         64,
@@ -463,7 +463,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body.radial_mlp",
+      "module": "model.backbone.interactions.1.body.radial_mlp",
       "name": "layer_2",
       "shape": [
         64,
@@ -472,7 +472,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.body.radial_mlp",
+      "module": "model.backbone.interactions.1.body.radial_mlp",
       "name": "layer_3",
       "shape": [
         64,
@@ -481,7 +481,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.interactions.1.skip",
+      "module": "model.backbone.interactions.1.skip",
       "name": "weight",
       "shape": [
         3,
@@ -490,7 +490,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.node_embedding",
+      "module": "model.backbone.node_embedding",
       "name": "bias",
       "shape": [
         0
@@ -498,7 +498,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.node_embedding",
+      "module": "model.backbone.node_embedding",
       "name": "weight",
       "shape": [
         48
@@ -506,7 +506,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.products.0.contraction",
+      "module": "model.backbone.products.0.contraction",
       "name": "path_counts",
       "shape": [
         6
@@ -514,7 +514,7 @@
       "dtype": "int64"
     },
     {
-      "module": "backbone.backbone.products.0.contraction",
+      "module": "model.backbone.products.0.contraction",
       "name": "weight",
       "shape": [
         3,
@@ -524,7 +524,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.products.0.linear",
+      "module": "model.backbone.products.0.linear",
       "name": "bias",
       "shape": [
         0
@@ -532,7 +532,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.products.0.linear",
+      "module": "model.backbone.products.0.linear",
       "name": "weight",
       "shape": [
         512
@@ -540,7 +540,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.products.1.contraction",
+      "module": "model.backbone.products.1.contraction",
       "name": "path_counts",
       "shape": [
         3
@@ -548,7 +548,7 @@
       "dtype": "int64"
     },
     {
-      "module": "backbone.backbone.products.1.contraction",
+      "module": "model.backbone.products.1.contraction",
       "name": "weight",
       "shape": [
         3,
@@ -558,7 +558,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.products.1.linear",
+      "module": "model.backbone.products.1.linear",
       "name": "bias",
       "shape": [
         0
@@ -566,7 +566,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.products.1.linear",
+      "module": "model.backbone.products.1.linear",
       "name": "weight",
       "shape": [
         256
@@ -574,7 +574,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.radial_embedding.basis",
+      "module": "model.backbone.radial_embedding.basis",
       "name": "frequencies",
       "shape": [
         8
@@ -582,13 +582,13 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.backbone.radial_embedding.basis",
+      "module": "model.backbone.radial_embedding.basis",
       "name": "prefactor",
       "shape": [],
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.energy_head",
+      "module": "model.outputs.energy_readout",
       "name": "e0_table",
       "shape": [
         1,
@@ -597,7 +597,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.energy_head",
+      "module": "model.outputs.energy_readout",
       "name": "scale",
       "shape": [
         1
@@ -605,7 +605,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.energy_head",
+      "module": "model.outputs.energy_readout",
       "name": "shift",
       "shape": [
         1
@@ -613,7 +613,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.heads.energy.readouts.0",
+      "module": "model.outputs.readouts.energy.readouts.0",
       "name": "bias",
       "shape": [
         0
@@ -621,7 +621,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.heads.energy.readouts.0",
+      "module": "model.outputs.readouts.energy.readouts.0",
       "name": "weight",
       "shape": [
         16
@@ -629,7 +629,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.heads.energy.readouts.1.first",
+      "module": "model.outputs.readouts.energy.readouts.1.first",
       "name": "bias",
       "shape": [
         0
@@ -637,7 +637,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.heads.energy.readouts.1.first",
+      "module": "model.outputs.readouts.energy.readouts.1.first",
       "name": "weight",
       "shape": [
         128
@@ -645,7 +645,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.heads.energy.readouts.1.second",
+      "module": "model.outputs.readouts.energy.readouts.1.second",
       "name": "bias",
       "shape": [
         0
@@ -653,7 +653,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.outputs.heads.energy.readouts.1.second",
+      "module": "model.outputs.readouts.energy.readouts.1.second",
       "name": "weight",
       "shape": [
         8
@@ -661,7 +661,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.repulsion",
+      "module": "model.repulsion",
       "name": "covalent_radii",
       "shape": [
         119
@@ -669,7 +669,7 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.repulsion",
+      "module": "model.repulsion",
       "name": "screening_coefficients",
       "shape": [
         4
@@ -677,13 +677,13 @@
       "dtype": "float64"
     },
     {
-      "module": "backbone.repulsion",
+      "module": "model.repulsion",
       "name": "screening_length_exponent",
       "shape": [],
       "dtype": "float64"
     },
     {
-      "module": "backbone.repulsion",
+      "module": "model.repulsion",
       "name": "screening_length_prefactor",
       "shape": [],
       "dtype": "float64"

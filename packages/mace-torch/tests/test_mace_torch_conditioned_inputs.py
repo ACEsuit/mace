@@ -238,7 +238,7 @@ def test_no_input_is_named_in_the_engine_or_the_backbone():
     A single `if name == "magmom"` anywhere below would make the next
     conditioned input a code change instead of a declaration.
     """
-    from mace_torch.models import energy, heads, outputs
+    from mace_torch.models import energy, outputs, readouts
     from mace_torch.nn import backbone, interaction, product_basis
     from mace_torch.physics import fixed_point
     from mace_torch.physics import outputs as engine
@@ -249,7 +249,7 @@ def test_no_input_is_named_in_the_engine_or_the_backbone():
         interaction,
         product_basis,
         energy,
-        heads,
+        readouts,
         outputs,
         engine,
         fixed_point,

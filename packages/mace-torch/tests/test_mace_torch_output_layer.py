@@ -24,7 +24,7 @@ from mace_core.neighbors import get_neighborhood
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.kernels import segment_sum
-from mace_torch.models import EnergyOutputHead, MACEOutputs, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, MACEOutputs, ScaleShiftSpec
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn import MACEBackbone
 
@@ -50,8 +50,8 @@ def precision_name():
     return str(torch.get_default_dtype()).removeprefix("torch.")
 
 
-def energy_head(scale=1.0, shift=0.0, zbl_in_scale_shift=True, **kwargs):
-    return EnergyOutputHead(
+def energy_readout(scale=1.0, shift=0.0, zbl_in_scale_shift=True, **kwargs):
+    return EnergyReadout(
         E0S,
         ["default"],
         AtomicNumberTable(ATOMIC_NUMBERS),
@@ -112,7 +112,7 @@ def make_stack(observables=(ENERGY, DIPOLE, POLARIZABILITY), seed=0, **head_kwar
         precision=precision_name(),
     )
     head = (
-        energy_head(**head_kwargs)
+        energy_readout(**head_kwargs)
         if any(s.name == "energy" for s in observables)
         else None
     )
@@ -121,7 +121,7 @@ def make_stack(observables=(ENERGY, DIPOLE, POLARIZABILITY), seed=0, **head_kwar
         list(observables),
         layer_irreps=[HIDDEN, "0e"],
         num_features=4,
-        energy_head=head,
+        energy_readout=head,
         precision=precision_name(),
     )
     return randomize(backbone, seed), randomize(outputs, seed + 1)
@@ -224,9 +224,11 @@ def test_an_observable_with_no_data_behind_it_is_an_error_naming_the_key():
 def test_an_energy_declaration_without_a_head_is_refused():
     backend = ReferenceBackend()
     with pytest.raises(ValueError, match="isolated-atom"):
-        MACEOutputs(backend, [ENERGY], [HIDDEN, HIDDEN], 4, energy_head=None)
+        MACEOutputs(backend, [ENERGY], [HIDDEN, HIDDEN], 4, energy_readout=None)
     with pytest.raises(ValueError, match="not declared"):
-        MACEOutputs(backend, [DIPOLE], [HIDDEN, HIDDEN], 4, energy_head=energy_head())
+        MACEOutputs(
+            backend, [DIPOLE], [HIDDEN, HIDDEN], 4, energy_readout=energy_readout()
+        )
 
 
 @fp64_only
@@ -259,7 +261,7 @@ def test_the_e0_table_is_float64_whatever_the_model_computes_in():
     few decimals of every atom's contribution before training starts, and no
     later cast gets them back.
     """
-    head = energy_head()
+    head = energy_readout()
     assert head.e0_table.dtype == torch.float64
     assert not head.e0_table.requires_grad
     assert "e0_table" not in dict(head.named_parameters())
@@ -270,7 +272,7 @@ def test_the_e0_table_is_float64_whatever_the_model_computes_in():
 
 def test_the_e0_gather_is_the_one_hot_matmul():
     """Same numbers, without building the one-hot. Exact, not close."""
-    head = energy_head()
+    head = energy_readout()
     element = torch.tensor([1, 0, 0])
     one_hot = torch.zeros(3, 2, dtype=torch.float64)
     one_hot[torch.arange(3), element] = 1.0
@@ -316,7 +318,7 @@ def test_the_head_uses_two_reductions_and_not_one():
     """
     from mace_torch.models import energy
 
-    source = inspect.getsource(energy.EnergyOutputHead.forward)
+    source = inspect.getsource(energy.EnergyReadout.forward)
     assert source.count("segment_sum(") == 2, (
         "the energy head should call the reduction exactly twice, once for the "
         "site energies and once for the isolated-atom energies"
@@ -326,7 +328,7 @@ def test_the_head_uses_two_reductions_and_not_one():
 @fp64_only
 def test_the_dtype_split_is_per_quantity():
     """Total in the model's dtype, per-atom in the accumulation dtype."""
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         E0S,
         ["default"],
         AtomicNumberTable(ATOMIC_NUMBERS),
@@ -354,11 +356,11 @@ def test_the_accumulation_type_is_a_floor_the_device_may_not_meet():
     the identity. The difference is that there it is discovered as a dtype
     error later.
     """
-    plain = energy_head()
+    plain = energy_readout()
     assert plain.accumulate == "float64"
     assert plain.build_report() is None
 
-    degraded = EnergyOutputHead(
+    degraded = EnergyReadout(
         E0S,
         ["default"],
         AtomicNumberTable(ATOMIC_NUMBERS),
@@ -387,8 +389,8 @@ def test_the_pair_repulsion_placement_changes_the_energy():
         torch.zeros(3, dtype=torch.long),
         1,
     )
-    inside = energy_head(scale=3.0, shift=0.5, zbl_in_scale_shift=True)(*arguments)
-    outside = energy_head(scale=3.0, shift=0.5, zbl_in_scale_shift=False)(*arguments)
+    inside = energy_readout(scale=3.0, shift=0.5, zbl_in_scale_shift=True)(*arguments)
+    outside = energy_readout(scale=3.0, shift=0.5, zbl_in_scale_shift=False)(*arguments)
 
     e0 = -13.6 - 13.6 - 2040.0
     site = torch.tensor([0.1, 0.2, 0.3])
@@ -427,9 +429,9 @@ def test_the_two_energies_have_the_same_derivative_against_positions():
 def test_the_output_layer_never_hardcodes_a_cast_to_double():
     """The dtype rule is declarative. A literal `.double()` would override it
     on a device that cannot honour it."""
-    from mace_torch.models import energy, heads, outputs
+    from mace_torch.models import energy, outputs, readouts
 
-    for module in (energy, heads, outputs):
+    for module in (energy, readouts, outputs):
         tree = ast.parse(inspect.getsource(module))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "double":

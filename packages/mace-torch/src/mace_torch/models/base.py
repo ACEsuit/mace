@@ -1,4 +1,4 @@
-"""The whole model in one piece: descriptor, repulsion, observables.
+"""The whole model in one piece: kernel_spec, repulsion, observables.
 
 A graph goes in and the typed output comes out. Still no gradient call
 anywhere: forces and stress are taken around this by the derivative engine.
@@ -29,7 +29,7 @@ from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.backends.precision import constructed_in
-from mace_torch.models.energy import EnergyOutputHead
+from mace_torch.models.energy import EnergyReadout
 from mace_torch.models.inputs import CHARGES, with_embedded_inputs
 from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.backbone import MACEBackbone
@@ -53,7 +53,7 @@ class MACEModel(nn.Module):
         config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
-        energy_head: EnergyOutputHead | None = None,
+        energy_readout: EnergyReadout | None = None,
         *,
         avg_num_neighbors: float = 1.0,
         precision: Precision = "float64",
@@ -64,11 +64,11 @@ class MACEModel(nn.Module):
         radial_precision: Precision | None = None,
     ) -> None:
         super().__init__()
-        if config.pair_repulsion and energy_head is None:
+        if config.pair_repulsion and energy_readout is None:
             raise ValueError("pair repulsion requires an energy head")
         if last_layer_irreps is None:
             last_layer_irreps = config.node_irreps
-            if energy_head is not None:
+            if energy_readout is not None:
                 # Energy needs scalars; additional observables must retain their
                 # own irreps too, or their final readout silently disappears.
                 required = {
@@ -106,7 +106,7 @@ class MACEModel(nn.Module):
                     for layer in self.backbone.layer_irreps
                 ),
                 num_features=config.num_channels,
-                energy_head=energy_head,
+                energy_readout=energy_readout,
                 precision=precision,
                 readout_irreps=config.readout.mlp_irreps,
                 gate=config.readout.gate,
@@ -138,10 +138,10 @@ class MACEModel(nn.Module):
     @property
     def extra_observables(self) -> tuple[ObservableSpec, ...]:
         """Declarations of diagnostics emitted alongside the configured heads."""
-        if self.outputs.energy_head is None:
+        if self.outputs.energy_readout is None:
             return ()
         specs = list(ENERGY_EXTRA_OBSERVABLES)
-        if not self.outputs.energy_head.zbl_in_scale_shift:
+        if not self.outputs.energy_readout.zbl_in_scale_shift:
             specs.append(
                 ObservableSpec(
                     name="contributions",

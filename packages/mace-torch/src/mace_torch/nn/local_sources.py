@@ -12,7 +12,7 @@ import torch
 from mace_core.clebsch_gordan import symmetric_matrix_basis
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.clebsch_gordan.real_basis import wigner_3j_real
-from mace_core.kernels.descriptors import FullyConnectedTPDescriptor, LinearDescriptor
+from mace_core.kernels.specs import FullyConnectedTPSpec, LinearSpec
 from torch import Tensor, nn
 
 from mace_torch.backends import layout
@@ -32,7 +32,7 @@ class OxidationEmbedding(nn.Module):
         self.factor = 2.0 / (upper - self.lower)
         self.basis = ChebyshevBasis(8)
         self.linear = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in="8x0e",
                 irreps_out=f"{channels}x0e",
                 precision=precision,
@@ -66,7 +66,7 @@ class OxidationGraphEmbedding(nn.Module):
         )
         self.product = (
             backend.make_fully_connected_tp(
-                FullyConnectedTPDescriptor(
+                FullyConnectedTPSpec(
                     irreps_in1=f"{channels}x0e",
                     irreps_in2=f"{channels}x0e",
                     irreps_out=f"{channels}x0e",
@@ -107,7 +107,7 @@ class LocalPolarizability(nn.Module):
         self.layout = layout.layout_of(backend)
         self.terms = layout.terms(irreps)
         self.linear = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=irreps,
                 irreps_out=irreps,
                 precision=precision,
@@ -132,14 +132,14 @@ class LocalPolarizability(nn.Module):
         self.paths = tuple(paths)
         self.products_irreps = "+".join(terms)
         self.readout = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=self.products_irreps,
                 irreps_out="0e+2e",
                 precision=precision,
             )
         )
         self.skip = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=irreps,
                 irreps_out="0e+2e",
                 precision=precision,

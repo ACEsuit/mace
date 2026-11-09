@@ -60,7 +60,7 @@ from torch import Tensor
 from mace_torch import __version__
 from mace_torch.canonical import canonical_modules
 from mace_torch.electrostatics.reference.gto_utils import gto_basis_kspace_cutoff
-from mace_torch.models.heads import ObservableHead
+from mace_torch.models.readouts import ObservableReadout
 from mace_torch.physics import DerivativeEngine
 from mace_torch.physics.fixed_point import FixedPointDriver
 from mace_torch.serialization import canonical_state, load_canonical_state
@@ -402,7 +402,7 @@ def resolved_config(artifact: NeutralArtifact) -> ResolvedConfig:
             )
     if family == "les":
         # Source checkpoints always passed explicit charges to Les, bypassing
-        # its optional descriptor MLP even when the source flag was true.
+        # its optional kernel_spec MLP even when the source flag was true.
         model["les"] = dict(take("les_arguments"), use_atomwise=False)
     if family == "polar":
         model["polar"], sections["electrostatics"] = _polar_settings(take)
@@ -557,7 +557,7 @@ def _contraction(
         key=lambda name: list(artifact.sidecar.ops).index(name),
     )
     specs = [artifact.sidecar.ops[name] for name in names]
-    correlations = {int(spec.descriptor["correlation"]) for spec in specs}
+    correlations = {int(spec.kernel_spec["correlation"]) for spec in specs}
     if len(correlations) != 1:
         raise NeutralImportError(
             f"product {index} mixes correlations {sorted(correlations)}."
@@ -566,9 +566,9 @@ def _contraction(
     pieces: list[np.ndarray] = []
     for order in range(1, correlation + 1):
         for name, spec in zip(names, specs, strict=True):
-            target = str(spec.descriptor["target"])
-            irreps_in = str(spec.descriptor["irreps_in"])
-            if spec.descriptor.get("zeroed", {}).get(str(order)):
+            target = str(spec.kernel_spec["target"])
+            irreps_in = str(spec.kernel_spec["irreps_in"])
+            if spec.kernel_spec.get("zeroed", {}).get(str(order)):
                 raise NeutralImportError(
                     f"{name} fixes body order {order} at zero. v1 has no frozen "
                     f"body order: the converted model would compute the same "
@@ -664,8 +664,8 @@ def _state(
     """Every canonical tensor the model holds, filled from the artifact."""
     expected = canonical_state(engine)
     operators = canonical_modules(engine)
-    backbone = "backbone.backbone."
-    outputs = "backbone.outputs."
+    backbone = "model.backbone."
+    outputs = "model.outputs."
     ops = artifact.sidecar.ops
     state: dict[str, dict[str, Tensor]] = {}
     responses: dict[str, dict[str, Tensor]] | None = None
@@ -684,7 +684,7 @@ def _state(
                     for name, value in tensors.items()
                 }
             elif rest == "body":
-                value = ops[source].descriptor["avg_num_neighbors"]
+                value = ops[source].kernel_spec["avg_num_neighbors"]
                 state[path] = {
                     "neighbours": torch.tensor(float(value)).to(
                         tensors["neighbours"].dtype
@@ -746,7 +746,7 @@ def _state(
                     tensors["prefactor"],
                 ),
             }
-        elif path == "backbone.repulsion":
+        elif path == "model.repulsion":
             state[path] = {}
             for name, source in _REPULSION_TENSORS.items():
                 value = artifact.tensor("pair_repulsion", source)
@@ -774,7 +774,7 @@ def _state(
                 }
             else:
                 raise NeutralImportError(f"the model holds {path}, which no op fills.")
-        elif path == f"{outputs}energy_head":
+        elif path == f"{outputs}energy_readout":
             state[path] = _energy_constants(artifact, tensors)
         elif path == f"{backbone}graph_embedding":
             state[path] = {
@@ -785,18 +785,18 @@ def _state(
             state[path] = _linear(artifact, "embedding_readout", tensors)
         elif (
             artifact.sidecar.family == "polar"
-            and path.removeprefix("backbone.") in ops
-            and path.startswith("backbone.")
+            and path.removeprefix("model.") in ops
+            and path.startswith("model.")
         ):
             state[path] = _polar_op(artifact, operators[path], path, tensors)
-        elif path in {f"{backbone}moments", "backbone.one_body"}:
+        elif path in {f"{backbone}moments", "model.one_body"}:
             op = "moments" if path.endswith("moments") else "one_body"
             state[path] = {
                 name: _as(artifact.tensor(op, name), value)
                 for name, value in tensors.items()
             }
-        elif artifact.sidecar.family == "les" and path.removeprefix("backbone.") in ops:
-            op = path.removeprefix("backbone.")
+        elif artifact.sidecar.family == "les" and path.removeprefix("model.") in ops:
+            op = path.removeprefix("model.")
             if ops[op].op_kind == "linear":
                 state[path] = _linear(artifact, op, tensors)
             else:
@@ -804,7 +804,7 @@ def _state(
                     name: _as(artifact.tensor(op, name), value)
                     for name, value in tensors.items()
                 }
-        elif path.startswith(f"{outputs}heads.") and artifact.sidecar.family in {
+        elif path.startswith(f"{outputs}readouts.") and artifact.sidecar.family in {
             "dielectric",
             "dipole",
             "energy_dipole",
@@ -812,10 +812,10 @@ def _state(
             if responses is None:
                 responses = _response_readouts(artifact, engine, expected)
             state[path] = responses[path]
-        elif path.startswith(f"{outputs}heads.energy.readouts."):
+        elif path.startswith(f"{outputs}readouts.energy.readouts."):
             state[path] = _linear(
                 artifact,
-                "readouts." + path.removeprefix(f"{outputs}heads.energy.readouts."),
+                "readouts." + path.removeprefix(f"{outputs}readouts.energy.readouts."),
                 tensors,
             )
         else:
@@ -823,16 +823,16 @@ def _state(
     # Neutral artifacts store effective linear maps. The agreed kernel
     # contract stores raw parameters and applies these factors in forward.
     # Unfold after splitting shared readouts, using each destination's fan-in.
-    from mace_core.kernels.descriptors import (
-        FullyConnectedTPDescriptor,
-        LinearDescriptor,
+    from mace_core.kernels.specs import (
+        FullyConnectedTPSpec,
+        LinearSpec,
     )
 
     for path, tensors in state.items():
-        descriptor = getattr(operators[path], "descriptor", None)
-        if isinstance(descriptor, LinearDescriptor):
-            source = descriptor.irreps_in
-            target = descriptor.irreps_out
+        kernel_spec = getattr(operators[path], "kernel_spec", None)
+        if isinstance(kernel_spec, LinearSpec):
+            source = kernel_spec.irreps_in
+            target = kernel_spec.irreps_out
             output = list(Irreps.parse(target).slices())
             normalization = {
                 irrep: linear_path_normalization(source, irrep)
@@ -842,12 +842,12 @@ def _state(
                 normalization[output[out][1]]
                 for out, _ in linear_weight_table(source, target)
             ]
-        elif isinstance(descriptor, FullyConnectedTPDescriptor):
-            source, target = descriptor.irreps_in1, descriptor.irreps_out
+        elif isinstance(kernel_spec, FullyConnectedTPSpec):
+            source, target = kernel_spec.irreps_in1, kernel_spec.irreps_out
             output = list(Irreps.parse(target).slices())
             normalization = {
                 irrep: fully_connected_tp_path_normalization(
-                    source, descriptor.irreps_in2, irrep
+                    source, kernel_spec.irreps_in2, irrep
                 )
                 for _, irrep in Irreps.parse(target)
             }
@@ -865,7 +865,7 @@ def _polar_op(
     artifact: NeutralArtifact, module, path: str, expected: dict[str, Tensor]
 ) -> dict[str, Tensor]:
     """One op of the charge-aware half, by the kind the artifact records."""
-    op = path.removeprefix("backbone.")
+    op = path.removeprefix("model.")
     kind = artifact.sidecar.ops[op].op_kind
     if kind == "linear":
         return _linear(artifact, op, expected)
@@ -930,11 +930,11 @@ def _copies(irreps: str) -> list[tuple[str, int]]:
 
 def _entries(artifact: NeutralArtifact, op: str) -> dict[tuple[int, int], float]:
     """A linear op's weight for each (output copy, input copy) it joins."""
-    descriptor = artifact.sidecar.ops[op].descriptor
-    if not descriptor["irreps_in"] or not descriptor["irreps_out"]:
+    kernel_spec = artifact.sidecar.ops[op].kernel_spec
+    if not kernel_spec["irreps_in"] or not kernel_spec["irreps_out"]:
         return {}
     weight = artifact.tensor(op, "weight").astype(np.float64)
-    table = linear_weight_table(descriptor["irreps_in"], descriptor["irreps_out"])
+    table = linear_weight_table(kernel_spec["irreps_in"], kernel_spec["irreps_out"])
     return {key: float(weight[index]) for key, index in table.items()}
 
 
@@ -972,7 +972,7 @@ def _gate_roles(artifact: NeutralArtifact, layer: int, gate):
     the gated channels, all its heads' together; each v1 head has its own,
     built from the same weights, with the sections it reads out.
     """
-    sections = artifact.sidecar.ops[f"readouts.{layer}.first"].descriptor[
+    sections = artifact.sidecar.ops[f"readouts.{layer}.first"].kernel_spec[
         "gate_sections"
     ]
     scalars = Irreps.parse(sections["scalars"]).dimension if sections["scalars"] else 0
@@ -986,7 +986,9 @@ def _gate_roles(artifact: NeutralArtifact, layer: int, gate):
             first[("gated", str(irrep), channel)] = gated_at + channel
         gate_at += multiplicity
         gated_at += multiplicity
-    second_in = artifact.sidecar.ops[f"readouts.{layer}.second"].descriptor["irreps_in"]
+    second_in = artifact.sidecar.ops[f"readouts.{layer}.second"].kernel_spec[
+        "irreps_in"
+    ]
     second = {
         (("scalar", channel) if irrep == "0e" else ("gated", irrep, channel)): position
         for position, (irrep, channel) in enumerate(_copies(second_in))
@@ -1023,8 +1025,8 @@ def _response_readouts(
         "energy_dipole": {"energy": [0], "dipole": [1]},
     }
     for name, sources in copies[artifact.sidecar.family].items():
-        path = f"backbone.outputs.heads.{name}"
-        head = cast(ObservableHead, operators[path])
+        path = f"model.outputs.readouts.{name}"
+        head = cast(ObservableReadout, operators[path])
         for position, layer in enumerate(head.reachable):
             grouped = head._grouped[position]
             identity: list[int | None] = list(range(len(_copies(grouped))))
@@ -1086,13 +1088,13 @@ def _check_constants(artifact: NeutralArtifact, config: ResolvedConfig) -> None:
     ops = artifact.sidecar.ops
     refusals: list[str] = []
 
-    order = int(ops["cutoff"].descriptor["p"])
+    order = int(ops["cutoff"].kernel_spec["p"])
     if order != config.model.cutoff.polynomial_order:
         refusals.append(
             f"the cutoff envelope has order {order} and the configuration "
             f"{config.model.cutoff.polynomial_order}"
         )
-    if "pair_repulsion" in ops and int(ops["pair_repulsion"].descriptor["p"]) != order:
+    if "pair_repulsion" in ops and int(ops["pair_repulsion"].kernel_spec["p"]) != order:
         refusals.append(
             "the repulsion's envelope order differs from the cutoff's, and "
             "v1 uses one order for both"
@@ -1160,7 +1162,7 @@ def import_neutral(
         else np.zeros(1)
     )
     average = {
-        float(spec.descriptor["avg_num_neighbors"])
+        float(spec.kernel_spec["avg_num_neighbors"])
         for name, spec in artifact.sidecar.ops.items()
         if spec.op_kind == "interaction"
     }

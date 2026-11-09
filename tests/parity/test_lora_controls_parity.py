@@ -6,7 +6,7 @@ import math
 import pytest
 import torch
 from e3nn import o3
-from mace_core.kernels.descriptors import LinearDescriptor
+from mace_core.kernels.specs import LinearSpec
 from mace_torch.backends.reference import ReferenceLinear
 from mace_torch.finetune.lora import DenseLowRank, inject_lora, merge_lora
 from torch.func import functional_call
@@ -32,7 +32,7 @@ def test_equivariant_adapters_match_values_gradients_and_merge(rank, alpha, irre
     base = o3.Linear(irreps_in, irreps_out, biases=True)
     legacy = LoRAO3Linear(base, rank=rank, alpha=alpha)
     native = ReferenceLinear(
-        LinearDescriptor(irreps_in=irreps_in, irreps_out=irreps_out, has_bias=True)
+        LinearSpec(irreps_in=irreps_in, irreps_out=irreps_out, has_bias=True)
     )
     permutation = linear_permutation(base)
     with torch.no_grad():
@@ -171,8 +171,8 @@ def test_readout_transfer_flag_matches_legacy_function_and_forces(tmp_path, flag
         max_L=1,
     )
     transfer_foundation(
-        source_native.engine.backbone,
-        target_native.engine.backbone,
+        source_native.engine.model,
+        target_native.engine.model,
         foundation_elements=numbers,
         elements=numbers,
         foundation_heads=("default",),

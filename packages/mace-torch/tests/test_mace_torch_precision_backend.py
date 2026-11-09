@@ -14,10 +14,10 @@ from mace_core.data.backend import DatasetStatistics
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.canonical import KERNEL_SPEC_VERSION
 from mace_core.kernels.capabilities import BackendCapabilities
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    LinearDescriptor,
-    SymmetricContractionDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    LinearSpec,
+    SymmetricContractionSpec,
 )
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.composite import CompositeBackend
@@ -84,10 +84,10 @@ def test_a_uniform_preset_casts_nothing(preset):
 def test_mixed_casts_exactly_the_ops_it_holds_wider():
     ops = cast_ops(engine(PrecisionConfig.mixed()))
     assert ops == {
-        "backbone.backbone.radial_embedding": ("float64", "float32"),
-        "backbone.backbone.radial_embedding.radial": ("float64", "float32"),
-        "backbone.backbone.products.0.contraction": ("float64", "float32"),
-        "backbone.backbone.products.1.contraction": ("float64", "float32"),
+        "model.backbone.radial_embedding": ("float64", "float32"),
+        "model.backbone.radial_embedding.radial": ("float64", "float32"),
+        "model.backbone.products.0.contraction": ("float64", "float32"),
+        "model.backbone.products.1.contraction": ("float64", "float32"),
     }
 
 
@@ -148,12 +148,12 @@ class Recording:
             wide_accumulation=self.wide_accumulation, spec_version=KERNEL_SPEC_VERSION
         )
 
-    def make_linear(self, descriptor):
-        self.seen.append(descriptor)
+    def make_linear(self, kernel_spec):
+        self.seen.append(kernel_spec)
         return nn.Identity()
 
-    def make_symmetric_contraction(self, descriptor):
-        self.seen.append(descriptor)
+    def make_symmetric_contraction(self, kernel_spec):
+        self.seen.append(kernel_spec)
         return nn.Identity()
 
     def make_interaction_layer(self, descriptors):
@@ -170,7 +170,7 @@ FLOOR = PrecisionConfig(
 def test_a_backend_without_its_own_accumulator_computes_in_the_floor():
     inner = Recording()
     PrecisionBackend(inner, FLOOR).make_symmetric_contraction(
-        SymmetricContractionDescriptor()
+        SymmetricContractionSpec()
     )
     assert (inner.seen[0].precision, inner.seen[0].accumulate) == ("float64", None)
 
@@ -178,7 +178,7 @@ def test_a_backend_without_its_own_accumulator_computes_in_the_floor():
 def test_a_backend_with_its_own_accumulator_is_handed_both():
     inner = Recording(wide_accumulation=True)
     op = PrecisionBackend(inner, FLOOR).make_symmetric_contraction(
-        SymmetricContractionDescriptor()
+        SymmetricContractionSpec()
     )
     assert (inner.seen[0].precision, inner.seen[0].accumulate) == (
         "float32",
@@ -189,9 +189,7 @@ def test_a_backend_with_its_own_accumulator_is_handed_both():
 
 def test_an_op_at_the_interface_dtype_is_stamped_and_left_alone():
     inner = Recording()
-    op = PrecisionBackend(inner, FLOOR).make_linear(
-        LinearDescriptor(precision="float64")
-    )
+    op = PrecisionBackend(inner, FLOOR).make_linear(LinearSpec(precision="float64"))
     assert inner.seen[0].precision == "float32"
     assert boundary_precision(op) is None
 
@@ -199,7 +197,7 @@ def test_an_op_at_the_interface_dtype_is_stamped_and_left_alone():
 def test_a_span_is_stamped_with_one_policy():
     inner = Recording()
     span = PrecisionBackend(inner, FLOOR).make_interaction_layer(
-        (LinearDescriptor(), SymmetricContractionDescriptor())
+        (LinearSpec(), SymmetricContractionSpec())
     )
     assert {member.precision for member in inner.seen} == {"float64"}
     assert span is not None
@@ -209,7 +207,7 @@ def test_a_span_is_stamped_with_one_policy():
 def test_a_backend_without_spans_declines_one():
     assert (
         PrecisionBackend(ReferenceBackend(), FLOOR).make_interaction_layer(
-            (ChannelwiseTPConvDescriptor(),)
+            (ChannelwiseTPConvSpec(),)
         )
         is None
     )
@@ -221,12 +219,12 @@ def test_weights_held_apart_from_the_compute_dtype_are_refused():
         ops={"linear": PrecisionPolicy("float32", "float32", "float64")},
     )
     with pytest.raises(ValueError, match="param_dtype equal to compute_dtype"):
-        PrecisionBackend(Recording(), config).make_linear(LinearDescriptor())
+        PrecisionBackend(Recording(), config).make_linear(LinearSpec())
 
 
 def test_without_float64_the_wider_ops_degrade_and_the_report_names_them():
     backend = PrecisionBackend(Recording(), PrecisionConfig.mixed(), False)
-    op = backend.make_symmetric_contraction(SymmetricContractionDescriptor())
+    op = backend.make_symmetric_contraction(SymmetricContractionSpec())
     assert boundary_precision(op) is None
     report = backend.build_report()
     assert report is not None
@@ -238,12 +236,12 @@ def test_tf32_degradation_is_recorded_without_global_math_switches(caplog):
     inner = Recording()
     backend = PrecisionBackend(inner, PrecisionConfig.tf32())
     previous = torch.get_float32_matmul_precision()
-    backend.make_linear(LinearDescriptor())
-    backend.make_linear(LinearDescriptor())
+    backend.make_linear(LinearSpec())
+    backend.make_linear(LinearSpec())
     assert inner.seen[0].product == "ieee" and inner.seen[0].precision == "float32"
-    assert backend.degraded == ["LinearDescriptor tf32 products"]
+    assert backend.degraded == ["LinearSpec tf32 products"]
     report = backend.build_report()
-    assert report is not None and "LinearDescriptor tf32 products" in report
+    assert report is not None and "LinearSpec tf32 products" in report
     assert "uses IEEE products" in caplog.text
     assert torch.get_float32_matmul_precision() == previous
 
@@ -262,10 +260,10 @@ def test_dispatch_checks_the_effective_precision_and_product():
     primary = PrecisionBackend(inner, PrecisionConfig.tf32())
     fallback = PrecisionBackend(ReferenceBackend(), PrecisionConfig.tf32())
     backend = CompositeBackend(primary, fallback)
-    backend.make_linear(LinearDescriptor())
+    backend.make_linear(LinearSpec())
     assert inner.seen[0].product == "tf32"
     assert inner.seen[0].precision == "float32"
-    assert backend.decisions[-1].descriptor == inner.seen[0]
+    assert backend.decisions[-1].kernel_spec == inner.seen[0]
     assert backend.decisions[-1].backend == inner.name
     assert primary.build_report() is None
     assert backend.capabilities().products == frozenset({"ieee", "tf32"})
@@ -278,7 +276,7 @@ def test_widening_the_compute_dtype_also_resolves_tf32():
     )
     inner = Recording()
     backend = PrecisionBackend(inner, policy)
-    backend.make_linear(LinearDescriptor())
+    backend.make_linear(LinearSpec())
     assert inner.seen[0].precision == "float64"
     assert inner.seen[0].product == "ieee"
     report = backend.build_report()

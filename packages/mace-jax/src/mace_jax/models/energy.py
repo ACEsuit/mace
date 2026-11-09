@@ -8,8 +8,8 @@ from flax import nnx
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.model import ModelConfig
 from mace_core.kernels.canonical import SILU_SECOND_MOMENT_SCALE
-from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.protocol import KernelBackend
+from mace_core.kernels.specs import LinearSpec
 from mace_core.outputs import MACEOutput
 
 from mace_jax.kernels.ops import CanonicalOp
@@ -22,14 +22,14 @@ class Readout(nnx.Module):
         self.nonlinear = nonlinear
         if nonlinear:
             self.first = backend.make_linear(
-                LinearDescriptor(irreps_in=irreps, irreps_out=middle, precision=dtype)
+                LinearSpec(irreps_in=irreps, irreps_out=middle, precision=dtype)
             )
             self.second = backend.make_linear(
-                LinearDescriptor(irreps_in=middle, irreps_out="0e", precision=dtype)
+                LinearSpec(irreps_in=middle, irreps_out="0e", precision=dtype)
             )
         else:
             self.linear = backend.make_linear(
-                LinearDescriptor(irreps_in=irreps, irreps_out="0e", precision=dtype)
+                LinearSpec(irreps_in=irreps, irreps_out="0e", precision=dtype)
             )
 
     def __call__(self, features):
@@ -100,9 +100,9 @@ class MACEOutputs(nnx.Module):
         )
 
     def canonical_components(self):
-        result = {"backbone.outputs.energy_head": self.energy}
+        result = {"model.outputs.energy_readout": self.energy}
         for index, readout in enumerate(self.readouts):
-            prefix = f"backbone.outputs.heads.energy.readouts.{index}"
+            prefix = f"model.outputs.readouts.energy.readouts.{index}"
             if readout.nonlinear:
                 result[prefix + ".first"] = readout.first
                 result[prefix + ".second"] = readout.second
@@ -171,5 +171,5 @@ class MACEModel(nnx.Module):
             **self.outputs.canonical_components(),
         }
         if self.repulsion is not None:
-            result["backbone.repulsion"] = self.repulsion
+            result["model.repulsion"] = self.repulsion
         return result

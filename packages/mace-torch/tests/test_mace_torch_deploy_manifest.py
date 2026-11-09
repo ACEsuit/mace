@@ -124,7 +124,7 @@ def test_multihead_bundle_uses_the_exported_head(tmp_path):
     config = ResolvedConfig.model_validate(doc)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    source = write_model(tmp_path / "multi", built.model, built.metadata)
+    source = write_model(tmp_path / "multi", built.engine, built.metadata)
     with pytest.raises(ValueError, match="head"):
         export_lammps(source, halo_exchange=False)
     pad = FixedPadding(nodes_budget=16, edges_budget=128, graphs_budget=2)

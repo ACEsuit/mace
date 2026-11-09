@@ -48,7 +48,7 @@ class ChargeEquilibration(nn.Module):
     """Reference QEq span over a build-time-dispatched potential projection.
 
     A fused QEq span has the same call: ``(graph, electronegativity, hardness,
-    total_charge, geometry) -> charges``. Its descriptor's SCF method distinguishes
+    total_charge, geometry) -> charges``. Its solver_spec's SCF method distinguishes
     QEq from a nonlinear fixed point and from the legacy nonperiodic alternative.
     The fallback is a dense reference solve, not a large-system iterative solver.
     """

@@ -26,7 +26,7 @@ it computes what the reference computes.
   when what the backend can build depends on the shape;
   `ExampleCapabilities` declines a convolution over more than one copy of an
   irrep, and a skip against anything but scalars.
-- One `make_<op>(descriptor)` per op in `DISPATCHED_OPS`. A descriptor is the
+- One `make_<op>(kernel_spec)` per op in `DISPATCHED_OPS`. A kernel_spec is the
   op's shape; it carries no weights. Returning `None` from
   `make_spherical_harmonics` or `make_radial_basis` leaves them to the
   reference, and so does `make_interaction_layer` for a fused span.

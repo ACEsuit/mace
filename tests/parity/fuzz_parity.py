@@ -20,7 +20,7 @@ from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.data.graphs import graph_from_configuration
 from mace_torch.graph.collate import collate
-from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 
 from tests.golden.harness import FP32, FP64_CPU_REFERENCE
@@ -79,7 +79,7 @@ def models(lmax, dtype, constants_dtype):
         ).eval()
         settings = build_config(legacy)
         values, scale, shift = energy_constants_to_canonical(legacy)
-        head = EnergyOutputHead(
+        head = EnergyReadout(
             ResolvedE0s(values),
             ["default"],
             AtomicNumberTable([1, 8]),
@@ -89,7 +89,7 @@ def models(lmax, dtype, constants_dtype):
         native = MACEModel(
             ReferenceBackend(),
             observables=[ENERGY],
-            energy_head=head,
+            energy_readout=head,
             precision=dtype,
             **model_arguments(settings),
         ).eval()
@@ -97,9 +97,9 @@ def models(lmax, dtype, constants_dtype):
         native.double()
         transfer_weights(legacy, native, settings["correlation"])
         native.to(getattr(torch, dtype))
-        native.outputs.energy_head.to(getattr(torch, constants_dtype))
-        native.outputs.energy_head.e0_table = (
-            native.outputs.energy_head.e0_table.double()
+        native.outputs.energy_readout.to(getattr(torch, constants_dtype))
+        native.outputs.energy_readout.e0_table = (
+            native.outputs.energy_readout.e0_table.double()
         )
         legacy.to(getattr(torch, dtype))
         legacy.atomic_energies_fn.double()

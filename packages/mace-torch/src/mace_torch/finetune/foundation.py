@@ -24,15 +24,15 @@ from mace_core.observables import ObservableCatalogue
 from torch import nn
 
 __all__ = [
-    "Describe",
     "Foundation",
     "FoundationContext",
     "FoundationError",
+    "StructureDescriptors",
     "read_foundation",
 ]
 
 #: One descriptor row per structure, in the order given.
-Describe = Callable[[Sequence[Configuration]], np.ndarray]
+StructureDescriptors = Callable[[Sequence[Configuration]], np.ndarray]
 
 
 class FoundationError(ValueError):
@@ -50,14 +50,15 @@ class FoundationContext:
         heads: Its heads, in order.
         e0s: Its isolated-atom energies, ``head -> atomic number -> eV``, as
             its checkpoint records them.
-        describe: Descriptors for farthest-point sampling, or ``None`` when the
+        structure_descriptors: Descriptors for farthest-point sampling, or
+            ``None`` when the
             run does not sample that way.
     """
 
     z_table: AtomicNumberTable
     heads: tuple[str, ...]
     e0s: Mapping[str, Mapping[int, float]]
-    describe: Describe | None = None
+    structure_descriptors: StructureDescriptors | None = None
 
     def e0_table(self, head: str | None) -> Mapping[int, float]:
         """One head's energies.
@@ -109,13 +110,13 @@ class Foundation:
     @property
     def model(self) -> nn.Module:
         """The model inside the engine, where the canonical state lives."""
-        return self.engine.get_submodule("backbone")
+        return self.engine.get_submodule("model")
 
-    def context(self, describe: bool = False) -> FoundationContext:
+    def context(self, include_structure_descriptors: bool = False) -> FoundationContext:
         """What the data stage reads from it.
 
         Args:
-            describe: Attach a descriptor function, which farthest-point
+            include_structure_descriptors: Attach the descriptor function that FPS
                 sampling needs and nothing else does. It runs the model over
                 every structure it is given, so it is not attached by default.
         """
@@ -123,10 +124,14 @@ class Foundation:
             z_table=self.z_table,
             heads=self.heads,
             e0s=self.e0s,
-            describe=self.describe if describe else None,
+            structure_descriptors=self.structure_descriptors
+            if include_structure_descriptors
+            else None,
         )
 
-    def describe(self, configurations: Sequence[Configuration]) -> np.ndarray:
+    def structure_descriptors(
+        self, configurations: Sequence[Configuration]
+    ) -> np.ndarray:
         """One descriptor row per structure, for farthest-point sampling.
 
         Each structure's invariant node features, averaged per element, one
@@ -138,7 +143,7 @@ class Foundation:
         from mace_torch.data import GraphDataset, collate_training
         from mace_torch.finetune.subselect import ABSENT
         from mace_torch.nn import MACEBackbone
-        from mace_torch.nn.backbone import aggregate_descriptors
+        from mace_torch.nn.backbone import aggregate_atomic_descriptors
 
         backbone = self.model.get_submodule("backbone")
         assert isinstance(backbone, MACEBackbone)
@@ -160,9 +165,9 @@ class Foundation:
                     float_dtype=dtype,
                     features=dataset.features,
                 ).to(parameter.device)
-                descriptors = backbone.descriptors(backbone(batch.graph))
-                means = aggregate_descriptors(
-                    descriptors,
+                atomic_descriptors = backbone.atomic_descriptors(backbone(batch.graph))
+                means = aggregate_atomic_descriptors(
+                    atomic_descriptors,
                     batch.graph["batch"],
                     batch.graph["ptr"].shape[0] - 1,
                     "per_element_mean",
@@ -170,8 +175,8 @@ class Foundation:
                     atomic_numbers=self.z_table.zs,
                 )
                 assert isinstance(means, list)
-                block = descriptors.new_full(
-                    (len(self.z_table.zs), descriptors.shape[1]), ABSENT
+                block = atomic_descriptors.new_full(
+                    (len(self.z_table.zs), atomic_descriptors.shape[1]), ABSENT
                 )
                 for position, number in enumerate(self.z_table.zs):
                     if int(number) in means[0]:

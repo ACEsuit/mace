@@ -645,7 +645,7 @@ class MACECalculator(Calculator):
             values = [value[0] for value in values]
         return values[0] if len(values) == 1 else tuple(values)
 
-    def get_descriptors(
+    def get_atomic_descriptors(
         self,
         atoms: Atoms | None = None,
         invariants_only: bool = True,
@@ -668,7 +668,7 @@ class MACECalculator(Calculator):
             for model in self.models:
                 backbone = model.model.get_submodule("backbone")
                 assert isinstance(backbone, MACEBackbone)
-                value = backbone.descriptors(
+                value = backbone.atomic_descriptors(
                     backbone(graph),
                     num_layers=num_layers,
                     invariants_only=invariants_only,

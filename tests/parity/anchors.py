@@ -35,5 +35,10 @@ def load_anchor_weights(path: Path, model: torch.nn.Module) -> None:
     state = {}
     for key, value in load_file(str(path.with_suffix(".safetensors"))).items():
         module, name = key.split("::", 1)
+        # Match numerical roles after naming changes, without accepting these
+        # edit-locked oracle containers as product checkpoints.
+        module = module.replace("outputs.heads.", "outputs.readouts.").replace(
+            "outputs.energy_head", "outputs.energy_readout"
+        )
         state.setdefault(module, {})[name] = value
     load_canonical_state(model, state)

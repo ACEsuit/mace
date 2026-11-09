@@ -232,7 +232,7 @@ def test_only_training_retains_the_response_graph(training):
     result = engine(graph(), compute=("response",), training=training)
     if training:
         result.get("signal").sum().backward()
-        assert engine.backbone.get_parameter("weight").grad is not None
+        assert engine.model.get_parameter("weight").grad is not None
     else:
         with pytest.raises(RuntimeError, match="second time"):
             result.get("signal").sum().backward()

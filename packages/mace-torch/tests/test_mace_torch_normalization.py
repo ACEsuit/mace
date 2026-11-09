@@ -135,10 +135,10 @@ def test_head_statistics_reload_selection_and_finetune(tmp_path, normalize_secon
         }
     )
     built = build(config)
-    energy = built.model.get_submodule("backbone.outputs.energy_head")
+    energy = built.engine.get_submodule("model.outputs.energy_readout")
     torch.testing.assert_close(energy.scale, torch.tensor([1.0, 2.0]), rtol=0, atol=0)
     torch.testing.assert_close(energy.shift, torch.tensor([2.0, 4.0]), rtol=0, atol=0)
-    normalizer = built.model.get_submodule("backbone.outputs.normalization.q")
+    normalizer = built.engine.get_submodule("model.outputs.normalization.q")
     assert isinstance(normalizer, ObservableNormalization)
     torch.testing.assert_close(
         normalizer.scale,
@@ -152,11 +152,11 @@ def test_head_statistics_reload_selection_and_finetune(tmp_path, normalize_secon
         rtol=0,
         atol=0,
     )
-    path = write_model(tmp_path / "model", built.model, built.metadata)
+    path = write_model(tmp_path / "model", built.engine, built.metadata)
     loaded = load_deployed(path)
     assert loaded.config.model.normalization == config.model.normalization
     batch = next(iter(built.data.train_eval_loaders["b"])).graph
-    expected = built.model(batch, compute=())
+    expected = built.engine(batch, compute=())
     for name in ("energy", "q"):
         torch.testing.assert_close(
             loaded.engine(batch, compute=()).get(name),
@@ -197,9 +197,9 @@ def test_head_statistics_reload_selection_and_finetune(tmp_path, normalize_secon
     document["finetune"]["foundation_model"] = str(path)
     document["model"] = {"observables": ["energy", "q"]}
     fine = build(ResolvedConfig.from_dict(document))
-    for role in ("energy_head", "normalization.q"):
+    for role in ("energy_readout", "normalization.q"):
         source = loaded.model.get_submodule(f"outputs.{role}")
-        target = fine.model.get_submodule(f"backbone.outputs.{role}")
+        target = fine.engine.get_submodule(f"model.outputs.{role}")
         for buffer in ("scale", "shift"):
             torch.testing.assert_close(
                 target.get_buffer(buffer), source.get_buffer(buffer)[1:], rtol=0, atol=0

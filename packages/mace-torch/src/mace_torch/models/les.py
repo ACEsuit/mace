@@ -11,8 +11,8 @@ import torch
 from mace_core.clebsch_gordan import symmetric_matrix_basis
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.model import LESConfig, ModelConfig
-from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import LinearSpec
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
@@ -20,7 +20,7 @@ from torch.overrides import TorchFunctionMode
 
 from mace_torch.backends.precision import constructed_in
 from mace_torch.models.base import MACEModel
-from mace_torch.models.energy import EnergyOutputHead
+from mace_torch.models.energy import EnergyReadout
 from mace_torch.models.inputs import EXTERNAL_FIELD
 from mace_torch.nn.les import TensorReadout
 
@@ -64,14 +64,14 @@ class LatentEwaldModel(MACEModel):
         config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
-        energy_head: EnergyOutputHead | None,
+        energy_readout: EnergyReadout | None,
         *,
         avg_num_neighbors: float = 1.0,
         precision: Precision = "float64",
         num_heads: int = 1,
         radial_precision: Precision | None = None,
     ) -> None:
-        if energy_head is None:
+        if energy_readout is None:
             raise ValueError("LES requires an energy head")
         try:
             solver_class = import_module("les").Les
@@ -151,7 +151,7 @@ class LatentEwaldModel(MACEModel):
                 ),
                 *declarations,
             ],
-            energy_head,
+            energy_readout,
             last_layer_irreps=config.node_irreps,
             avg_num_neighbors=avg_num_neighbors,
             precision=precision,
@@ -177,7 +177,7 @@ class LatentEwaldModel(MACEModel):
                 with constructed_in(precision):
                     readouts[name] = nn.ModuleList(
                         backend.make_linear(
-                            LinearDescriptor(
+                            LinearSpec(
                                 irreps_in=layer, irreps_out=output, precision=precision
                             )
                         )

@@ -21,7 +21,7 @@ from mace_core.kernels import (
     contraction_path_order,
     derive_reorder,
 )
-from mace_core.kernels.descriptors import SymmetricContractionDescriptor
+from mace_core.kernels.specs import SymmetricContractionSpec
 
 ATOL = 1e-12
 
@@ -78,11 +78,11 @@ def test_the_pieces_follow_the_enumeration_path_count_walks(
 
 @pytest.mark.parametrize(("irreps_in", "irreps_out", "correlation"), GRID)
 def test_one_label_per_weight_on_the_path_axis(irreps_in, irreps_out, correlation):
-    descriptor = SymmetricContractionDescriptor(
+    kernel_spec = SymmetricContractionSpec(
         irreps_in=irreps_in, irreps_out=irreps_out, correlation=correlation
     )
     labels = contraction_path_labels(irreps_in, irreps_out, correlation)
-    assert len(labels) == descriptor.path_count
+    assert len(labels) == kernel_spec.path_count
 
 
 @pytest.mark.parametrize(("irreps_in", "irreps_out", "correlation"), GRID)

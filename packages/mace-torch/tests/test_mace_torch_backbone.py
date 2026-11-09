@@ -16,13 +16,13 @@ from conftest import assert_close, fp64_only
 from mace_core.config import AgnesiTransformConfig, ModelConfig
 from mace_core.kernels import (
     BackendCapabilities,
-    ChannelwiseTPConvDescriptor,
-    DistanceTransformDescriptor,
+    ChannelwiseTPConvSpec,
+    DistanceTransformSpec,
     Precision,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SphericalHarmonicsDescriptor,
-    UnsupportedDescriptorError,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SphericalHarmonicsSpec,
+    UnsupportedKernelSpecError,
 )
 from mace_core.observables import InputSpec
 from mace_torch.backends.harmonics import spherical_harmonics
@@ -33,7 +33,7 @@ from mace_torch.nn.backbone import (
     LocalityInfo,
     MACEBackbone,
     NodeFeatures,
-    aggregate_descriptors,
+    aggregate_atomic_descriptors,
 )
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.interaction import (
@@ -249,7 +249,9 @@ def test_rotated_inputs_give_wigner_rotated_features(variant):
         assert_close(after[layer], expected, f"{variant} layer {layer}")
     # The invariant channels do not move at all.
     assert_close(
-        model.descriptors(model(rotated)), model.descriptors(model(graph)), "invariants"
+        model.atomic_descriptors(model(rotated)),
+        model.atomic_descriptors(model(graph)),
+        "invariants",
     )
 
 
@@ -388,10 +390,10 @@ class _Recording:
     def __getattr__(self, name):
         factory = getattr(self._backend, name)
 
-        def recorded(descriptor):
+        def recorded(kernel_spec):
             self.calls.append(name)
-            self.capabilities().require(descriptor, self.name)
-            return factory(descriptor)
+            self.capabilities().require(kernel_spec, self.name)
+            return factory(kernel_spec)
 
         return recorded
 
@@ -498,17 +500,17 @@ def test_every_block_asks_for_its_span_once_naming_every_member():
     for members in backend.spans:
         kinds = [type(member) for member in members]
         for required in (
-            RadialBasisDescriptor,
-            SphericalHarmonicsDescriptor,
-            DistanceTransformDescriptor,
-            RadialMLPDescriptor,
-            ChannelwiseTPConvDescriptor,
+            RadialBasisSpec,
+            SphericalHarmonicsSpec,
+            DistanceTransformSpec,
+            RadialMLPSpec,
+            ChannelwiseTPConvSpec,
         ):
             assert required in kinds, required.__name__
 
 
 def test_a_convolution_with_an_undescribed_piece_does_not_ask():
-    """With the envelope after the radial networks, no descriptor states the
+    """With the envelope after the radial networks, no kernel_spec states the
     radial embedding, so the block builds op by op without asking."""
     backend = _Recording()
     _backbone(backend, apply_cutoff=False)
@@ -536,7 +538,7 @@ def test_the_basis_reaches_every_contraction_unchanged(basis):
     assert ModelConfig.model_validate(config.model_dump(mode="json")) == config
     model = MACEBackbone(ReferenceBackend(), config, ELEMENTS, precision=_precision())
     products = cast(list[EquivariantProductBasisBlock], list(model.products))
-    assert [product.contraction.descriptor.basis for product in products] == [
+    assert [product.contraction.kernel_spec.basis for product in products] == [
         basis,
         basis,
     ]
@@ -545,7 +547,7 @@ def test_the_basis_reaches_every_contraction_unchanged(basis):
 def test_a_full_basis_model_builds_only_on_a_backend_that_declares_it():
     reduced_only = _Recording(bases=frozenset({"reduced"}))
     _backbone(reduced_only)
-    with pytest.raises(UnsupportedDescriptorError, match="full"):
+    with pytest.raises(UnsupportedKernelSpecError, match="full"):
         _backbone(_Recording(bases=frozenset({"reduced"})), clebsch_gordan_basis="full")
 
 
@@ -647,7 +649,7 @@ def test_the_invariant_descriptors_are_each_layers_scalars():
     model = _backbone(num_interactions=3)
     features = model(_cluster())
     channels = model.num_features
-    every = model.descriptors(features)
+    every = model.atomic_descriptors(features)
     assert every.shape[1] == 3 * channels
     for layer in range(3):
         assert torch.equal(
@@ -655,20 +657,20 @@ def test_the_invariant_descriptors_are_each_layers_scalars():
             features.layers[layer][:, :channels],
         )
     assert torch.equal(
-        model.descriptors(features, num_layers=2), every[:, : 2 * channels]
+        model.atomic_descriptors(features, num_layers=2), every[:, : 2 * channels]
     )
 
 
 def test_the_full_descriptors_are_the_layers_side_by_side():
     model = _backbone()
     features = model(_cluster())
-    full = model.descriptors(features, invariants_only=False)
+    full = model.atomic_descriptors(features, invariants_only=False)
     widths = [layer.shape[1] for layer in features.layers]
     assert full.shape[1] == sum(widths)
     # The last layer carries only its scalars.
     assert widths[-1] == model.num_features
     assert torch.equal(
-        model.descriptors(features, num_layers=1, invariants_only=False),
+        model.atomic_descriptors(features, num_layers=1, invariants_only=False),
         features.layers[0],
     )
 
@@ -677,16 +679,16 @@ def test_a_layer_count_out_of_range_is_refused():
     model = _backbone()
     features = model(_cluster())
     with pytest.raises(ValueError, match="num_layers"):
-        model.descriptors(features, num_layers=3)
+        model.atomic_descriptors(features, num_layers=3)
 
 
 def test_the_descriptors_aggregate_per_structure():
     descriptors = torch.arange(10.0).reshape(5, 2)
     batch = torch.tensor([0, 0, 1, 1, 1])
     element = torch.tensor([0, 1, 1, 1, 2])
-    means = aggregate_descriptors(descriptors, batch, 2, "mean")
+    means = aggregate_atomic_descriptors(descriptors, batch, 2, "mean")
     assert_close(means, [[1.0, 2.0], [6.0, 7.0]], "mean")
-    per_element = aggregate_descriptors(
+    per_element = aggregate_atomic_descriptors(
         descriptors,
         batch,
         2,
@@ -697,9 +699,9 @@ def test_the_descriptors_aggregate_per_structure():
     assert sorted(per_element[0]) == [1, 6]
     assert sorted(per_element[1]) == [6, 8]
     assert_close(per_element[1][6], [5.0, 6.0], "per element")
-    assert aggregate_descriptors(descriptors, batch, 2, None) is descriptors
+    assert aggregate_atomic_descriptors(descriptors, batch, 2, None) is descriptors
     with pytest.raises(ValueError, match="aggregation"):
-        aggregate_descriptors(descriptors, batch, 2, cast(Any, "median"))
+        aggregate_atomic_descriptors(descriptors, batch, 2, cast(Any, "median"))
 
 
 # ---------------------------------------------------------------------------

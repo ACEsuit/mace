@@ -102,7 +102,7 @@ def select_structures(
     describe = (
         settings.subselect is not None
         and settings.subselect.method == "fps"
-        and settings.subselect.descriptors is None
+        and settings.subselect.structure_descriptors_file is None
     )
     if describe and foundation is None and config.finetune.foundation_model is not None:
         foundation = _foundation(config, catalogue)
@@ -111,7 +111,9 @@ def select_structures(
         settings,
         config,
         replace(key_specification(config.data, model=config.model), label_names=()),
-        foundation.context(describe=describe) if foundation is not None else None,
+        foundation.context(include_structure_descriptors=describe)
+        if foundation is not None
+        else None,
     )
     return write_configurations(
         output, structures, key_specification(config.data, model=config.model)
@@ -160,7 +162,7 @@ def pseudolabel(
         settings,
         config,
         key_specification(config.data, model=config.model),
-        foundation.context(describe=describe),
+        foundation.context(include_structure_descriptors=describe),
     )
     structures += validation_structures(
         head, settings, config, key_specification(config.data, model=config.model)
@@ -227,7 +229,9 @@ def build(
         config,
         catalogue,
         foundation=(
-            foundation.context(describe=describe) if foundation is not None else None
+            foundation.context(include_structure_descriptors=describe)
+            if foundation is not None
+            else None
         ),
         pseudolabel=(
             relabelling(config, foundation, context=context)

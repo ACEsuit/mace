@@ -2,7 +2,7 @@
 
 The same two levels as a kernel backend's: coarse fields as a cheap first
 filter, and :meth:`SolverCapabilities.supports` as the authoritative answer
-over one complete descriptor. A solver declares; it never chooses, and a
+over one complete solver specification. A solver declares; it never chooses, and a
 system it declines is an error with both sides named, never a quiet switch to
 another solver.
 
@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mace_core.electrostatics.descriptor import (
+from mace_core.electrostatics.spec import (
     PERIODICITY_PROFILES,
     REALSPACE_METHODS,
-    ElectrostaticsSolverDescriptor,
+    ElectrostaticsSpec,
 )
 
 __all__ = ["SolverCapabilities", "UnsupportedSolveError"]
@@ -72,42 +72,42 @@ class SolverCapabilities:
     supports_double_backward: bool = False
     bit_parity: bool = False
 
-    def supports(self, descriptor: ElectrostaticsSolverDescriptor) -> bool:
+    def supports(self, solver_spec: ElectrostaticsSpec) -> bool:
         """Whether this solver can build exactly this solve."""
         if "long_range_energy" not in self.ops:
             return False
-        if descriptor.precision not in self.dtypes:
+        if solver_spec.precision not in self.dtypes:
             return False
-        if descriptor.periodicity_profile not in self.periodicity_profiles:
+        if solver_spec.periodicity_profile not in self.periodicity_profiles:
             return False
         if (
-            descriptor.slab_normal is not None
-            and descriptor.slab_normal not in self.slab_normals
+            solver_spec.slab_normal is not None
+            and solver_spec.slab_normal not in self.slab_normals
         ):
             return False
-        if not descriptor.external_field_flags <= self.field_flags:
+        if not solver_spec.external_field_flags <= self.field_flags:
             return False
-        if descriptor.realspace_method not in self.realspace_methods:
+        if solver_spec.realspace_method not in self.realspace_methods:
             return False
-        if descriptor.features is not None and "long_range_features" not in self.ops:
+        if solver_spec.features is not None and "long_range_features" not in self.ops:
             return False
         return self.max_multipole_l is None or (
-            descriptor.multipole_max_l <= self.max_multipole_l
+            solver_spec.multipole_max_l <= self.max_multipole_l
         )
 
-    def require(self, descriptor: ElectrostaticsSolverDescriptor, solver: str) -> None:
-        """Raise unless this solver can build ``descriptor``.
+    def require(self, solver_spec: ElectrostaticsSpec, solver: str) -> None:
+        """Raise unless this solver can build ``solver_spec``.
 
         Raises:
             UnsupportedSolveError: Naming the solver, the solve, and what the
                 solver declared. Never a fallback: another solver is another
                 set of numbers unless it is bit for bit the same.
         """
-        if not self.supports(descriptor):
+        if not self.supports(solver_spec):
             limit = "no limit" if self.max_multipole_l is None else self.max_multipole_l
             raise UnsupportedSolveError(
                 f"the electrostatics solver {solver!r} does not support "
-                f"{descriptor!r}. It declares the profiles "
+                f"{solver_spec!r}. It declares the profiles "
                 f"{sorted(self.periodicity_profiles)}, the slab normals "
                 f"{sorted(self.slab_normals)}, the real-space methods "
                 f"{sorted(self.realspace_methods)}, the ops {sorted(self.ops)}, "

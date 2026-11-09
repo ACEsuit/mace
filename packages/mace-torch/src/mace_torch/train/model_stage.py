@@ -103,7 +103,7 @@ def run_model_stage(
     if catalogue != DEFAULT_CATALOGUE:
         config = config.model_copy(update={"catalogue": catalogue})
     metadata = _metadata(config, data)
-    model = engine.get_submodule("backbone")
+    model = engine.model
     solver_record = getattr(model, "solver_record", None)
     if callable(solver_record):
         metadata = metadata.model_copy(
@@ -112,7 +112,7 @@ def run_model_stage(
     if foundation is not None:
         transfer_foundation(
             foundation.model,
-            engine.get_submodule("backbone"),
+            engine.model,
             foundation_elements=foundation.z_table.zs,
             elements=data.z_table.zs,
             foundation_heads=foundation.heads,
@@ -139,7 +139,7 @@ def run_model_stage(
 
     metadata = metadata.model_copy(update={"citations": required_citations(metadata)})
     return BuiltModel(
-        model=engine,
+        engine=engine,
         outputs=requested,
         data=data,
         metadata=metadata,

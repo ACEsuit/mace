@@ -2,22 +2,22 @@
 
 from mace_torch.models.base import MACEModel
 from mace_torch.models.energy import (
-    EnergyOutputHead,
+    EnergyReadout,
     EnergyTerms,
     ScaleShiftSpec,
     ScalingMethod,
 )
-from mace_torch.models.heads import ObservableHead
 from mace_torch.models.outputs import ENERGY_OBSERVABLE, MACEOutputs
+from mace_torch.models.readouts import ObservableReadout
 from mace_torch.models.registry import register_model
 
 __all__ = [
     "ENERGY_OBSERVABLE",
-    "EnergyOutputHead",
+    "EnergyReadout",
     "EnergyTerms",
     "MACEModel",
     "MACEOutputs",
-    "ObservableHead",
+    "ObservableReadout",
     "ScaleShiftSpec",
     "ScalingMethod",
     "register_model",

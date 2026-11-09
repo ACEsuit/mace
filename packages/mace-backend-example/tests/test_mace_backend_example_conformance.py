@@ -16,11 +16,11 @@ import torch
 from mace_backend_example import ExampleBackend
 from mace_backend_example_models import engine, graph
 from mace_core.kernels import available_backends, get_backend
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    LinearDescriptor,
-    SegmentReduceDescriptor,
-    SymmetricContractionDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    LinearSpec,
+    SegmentReduceSpec,
+    SymmetricContractionSpec,
 )
 from mace_torch.backends.conformance import conformance_cases, run_backend_conformance
 from mace_torch.serialization import canonical_state, load_canonical_state
@@ -65,7 +65,7 @@ WEIGHTED = {"weights", "weight gradients"}
 def test_it_passes_the_whole_suite(precision):
     results = run_backend_conformance("example", precision=precision, compile_ops=True)
     assert all(result.built for result in results), [
-        result.descriptor for result in results if not result.built
+        result.kernel_spec for result in results if not result.built
     ]
     for result in results:
         wanted = set(ALWAYS)
@@ -73,8 +73,8 @@ def test_it_passes_the_whole_suite(precision):
             wanted.add("double backward")
         if result.op in {"linear", "symmetric_contraction", "fully_connected_tp"}:
             wanted |= WEIGHTED | ({"reorder"} if precision == "float64" else set())
-        biased = isinstance(result.descriptor, LinearDescriptor) and (
-            result.descriptor.has_bias
+        biased = isinstance(result.kernel_spec, LinearSpec) and (
+            result.kernel_spec.has_bias
         )
         if result.op != "segment_reduce" and not biased:
             wanted.add("equivariance")
@@ -101,7 +101,7 @@ def test_the_hot_ops_run_on_its_own_registrations():
     reference's registrations would make the double-backward and compile
     checks above a test of the reference."""
     backend = ExampleBackend()
-    conv = backend.make_channelwise_tp_conv(_case(ChannelwiseTPConvDescriptor))
+    conv = backend.make_channelwise_tp_conv(_case(ChannelwiseTPConvSpec))
     nodes, edges = 4, 6
     sender = torch.tensor([0, 1, 2, 3, 0, 2])
     receiver = torch.tensor([1, 0, 3, 2, 2, 0])
@@ -111,10 +111,8 @@ def test_the_hot_ops_run_on_its_own_registrations():
         torch.randn(edges, conv.num_paths, 4, dtype=torch.float64),
     )
 
-    contraction = backend.make_symmetric_contraction(
-        _case(SymmetricContractionDescriptor)
-    )
-    reduce = backend.make_segment_reduce(_case(SegmentReduceDescriptor))
+    contraction = backend.make_symmetric_contraction(_case(SymmetricContractionSpec))
+    reduce = backend.make_segment_reduce(_case(SegmentReduceSpec))
 
     seen = {
         "tp_conv": _namespaces(

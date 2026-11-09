@@ -10,7 +10,7 @@ from conftest import assert_close, fp64_only
 from mace_core.config import AgnesiTransformConfig, BesselBasisConfig, ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.edges import plan_edges
-from mace_core.kernels.descriptors import RadialMLPDescriptor
+from mace_core.kernels.specs import RadialMLPSpec
 from mace_torch.backends.composite import CompositeBackend
 from mace_torch.backends.precision import PrecisionBackend, boundary_precision
 from mace_torch.backends.radial import BesselBasis, GaussianBasis
@@ -80,7 +80,7 @@ def test_conditioned_and_density_spans_preserve_live_weights(
         features = model(
             {**graph, "positions": positions, "differentiated_twice": True}
         )
-        output = model.descriptors(features, invariants_only=False)
+        output = model.atomic_descriptors(features, invariants_only=False)
         force = torch.autograd.grad(output.sum(), positions, create_graph=True)[0]
         (output.square().sum() + force.square().sum()).backward()
         outputs.append(output.detach())
@@ -197,7 +197,7 @@ def test_report_records_each_layer_and_layout():
     ]
     assert [d.layer for d in decisions] == [0, 1]
     assert all(d.backend == "test_span" and not d.reason for d in decisions)
-    assert all(member.layout == "mul_ir" for d in decisions for member in d.descriptor)
+    assert all(member.layout == "mul_ir" for d in decisions for member in d.kernel_spec)
     assert "layer 0 span: test_span" in backend.report()
     assert "layer 1 span: test_span" in backend.report()
 
@@ -262,10 +262,10 @@ def test_engine_builds_runs_before_compilation_and_restores_edge_force_order():
         (
             (
                 lambda: ReferenceBackend().make_radial_mlp(
-                    RadialMLPDescriptor(channels=(3, 4, 2))
+                    RadialMLPSpec(channels=(3, 4, 2))
                 ),
                 lambda: ReferenceBackend().make_radial_mlp(
-                    RadialMLPDescriptor(channels=(3, 4, 2), kind="layer_norm_silu")
+                    RadialMLPSpec(channels=(3, 4, 2), kind="layer_norm_silu")
                 ),
             ),
             "model.radial_mlp",
@@ -382,11 +382,11 @@ def test_a_layer_without_a_described_span_still_has_a_report_entry():
         backend, ModelConfig(num_channels=2, apply_cutoff=False), ATOMIC_NUMBERS
     )
     assert (
-        "layer 0 span: reference; op by op (a member has no complete descriptor)"
+        "layer 0 span: reference; op by op (a member has no complete kernel_spec)"
         in backend.report()
     )
     assert (
-        "layer 1 span: reference; op by op (a member has no complete descriptor)"
+        "layer 1 span: reference; op by op (a member has no complete kernel_spec)"
         in backend.report()
     )
 
@@ -400,8 +400,13 @@ def test_a_model_with_spans_compiles_as_one_graph():
     )
     expected = model(graph, compute=("forces", "stress"))
     assert expected.stress.abs().max() > 0
-    model.compile_model(backend="aot_eager")
-    actual = model(graph, compute=("forces", "stress"))
+    # Compilation specializations from other tests share this Python code object.
+    torch.compiler.reset()
+    try:
+        model.compile_model(backend="aot_eager")
+        actual = model(graph, compute=("forces", "stress"))
+    finally:
+        torch.compiler.reset()
     assert_close(actual.total_energy, expected.total_energy.detach())
     assert_close(actual.forces, expected.forces.detach())
     assert_close(actual.stress, expected.stress.detach())

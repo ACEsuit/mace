@@ -6,7 +6,7 @@ from typing import Protocol, TypeVar, runtime_checkable
 
 from mace_core.config.electrostatics import ElectrostaticsConfig
 from mace_core.config.model import ModelConfig
-from mace_core.electrostatics.descriptor import ElectrostaticsSolverDescriptor
+from mace_core.electrostatics.spec import ElectrostaticsSpec
 from mace_core.kernels.precision import Precision
 from mace_core.observables import InputSpec
 
@@ -22,9 +22,9 @@ class ElectrostaticModelFactory(Protocol):
     """The solver specification supplied by an electrostatic model family."""
 
     @staticmethod
-    def solver_descriptor(
+    def make_solver_spec(
         config: ModelConfig, electrostatics: ElectrostaticsConfig, precision: Precision
-    ) -> ElectrostaticsSolverDescriptor: ...
+    ) -> ElectrostaticsSpec: ...
 
 
 @dataclass(frozen=True)
@@ -117,9 +117,7 @@ def register_model(
         if name in families:
             raise ValueError(f"model {name!r} is already registered")
         if electrostatics and not isinstance(model, ElectrostaticModelFactory):
-            raise TypeError(
-                f"electrostatic model {name!r} must define solver_descriptor"
-            )
+            raise TypeError(f"electrostatic model {name!r} must define solver_spec")
         families[name] = ModelFamily(
             model, zbl_in_scale_shift, widen_node_energy, electrostatics
         )

@@ -1,6 +1,6 @@
 """Message passing: the interaction blocks, on the kernel backend's ops.
 
-Every equivariant operation is an op the backend built from a descriptor when
+Every equivariant operation is an op the backend built from a kernel specification when
 the block was constructed: the linears, the convolution, the skip connection,
 the radial networks and the reduction. Nothing resolves in ``forward``, nothing
 branches on how the backend fused its kernels, and no tensor product is
@@ -37,17 +37,17 @@ from typing import Any, cast
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    Descriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialMLPDescriptor,
-    RadialMLPKind,
-    SegmentReduceDescriptor,
-)
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.spans import EdgeConvolutionSpan
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    KernelSpec,
+    LinearSpec,
+    RadialMLPKind,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+)
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps, layout_of
@@ -78,20 +78,20 @@ _INITIAL_ALPHA = 20.0
 _ELEMENT_EMBEDDING_BOUND = 1e-3
 
 
-def _radial_network(backend, descriptor: RadialMLPDescriptor) -> Any:
+def _radial_network(backend, kernel_spec: RadialMLPSpec) -> Any:
     """The backend's radial MLP, or the reference's when it declines.
 
     A reference-only op: declining is a normal answer, and the weights are
     canonical whoever builds them.
     """
-    built = backend.make_radial_mlp(descriptor)
+    built = backend.make_radial_mlp(kernel_spec)
     if built is None:
-        built = ReferenceBackend().make_radial_mlp(descriptor)
+        built = ReferenceBackend().make_radial_mlp(kernel_spec)
     return built
 
 
 def _ask_for_span(
-    backend, members: tuple[Descriptor, ...] | None
+    backend, members: tuple[KernelSpec, ...] | None
 ) -> InteractionSpan | None:
     """The backend's answer for a whole edge convolution, asked once at build.
 
@@ -102,7 +102,7 @@ def _ask_for_span(
     if members is None:
         report_decline = getattr(backend, "decline_interaction_layer", None)
         if report_decline is not None:
-            report_decline("a member has no complete descriptor")
+            report_decline("a member has no complete kernel_spec")
         return None
     members = tuple(
         replace(member, layout=layout_of(backend).name) for member in members
@@ -110,7 +110,7 @@ def _ask_for_span(
     span = backend.make_interaction_layer(members)
     if span is not None:
         validate_span(span, backend.name)
-        if EdgeConvolutionSpan.from_descriptors(members) is None:
+        if EdgeConvolutionSpan.from_specs(members) is None:
             raise ValueError(
                 f"backend {backend.name!r} accepted an unrecognized span shape; "
                 "return None."
@@ -140,11 +140,11 @@ class _Convolution(nn.Module):
         precision: Precision,
         learned_density: bool,
         envelope_outside: bool,
-        edge_members: tuple[Descriptor, ...] | None,
+        edge_members: tuple[KernelSpec, ...] | None,
     ) -> None:
         super().__init__()
         node_flat = expanded_irreps(irreps_node, num_features)
-        convolution = ChannelwiseTPConvDescriptor(
+        convolution = ChannelwiseTPConvSpec(
             irreps_node=irreps_node,
             irreps_edge=irreps_edge,
             irreps_out=irreps_target,
@@ -157,19 +157,17 @@ class _Convolution(nn.Module):
         self.irreps_out = expanded_irreps(irreps_target, num_features)
 
         self.linear_up = backend.make_linear(
-            LinearDescriptor(
-                irreps_in=node_flat, irreps_out=node_flat, precision=precision
-            )
+            LinearSpec(irreps_in=node_flat, irreps_out=node_flat, precision=precision)
         )
         self.convolution = backend.make_channelwise_tp_conv(convolution)
-        weights = RadialMLPDescriptor(
+        weights = RadialMLPSpec(
             channels=(num_radial, *radial_hidden, self.num_paths * num_features),
             kind="normalized_silu",
             precision=precision,
         )
         self.radial_mlp = _radial_network(backend, weights)
         self.linear = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=expanded_irreps(convolution.irreps_paths, num_features),
                 irreps_out=self.irreps_out,
                 precision=precision,
@@ -181,7 +179,7 @@ class _Convolution(nn.Module):
         )
         # One linear map of the radial embedding to one number per edge.
         density = (
-            RadialMLPDescriptor(
+            RadialMLPSpec(
                 channels=(num_radial, 1), kind="normalized_silu", precision=precision
             )
             if learned_density
@@ -191,9 +189,7 @@ class _Convolution(nn.Module):
             None if density is None else _radial_network(backend, density)
         )
         self.reduce = backend.make_segment_reduce(
-            SegmentReduceDescriptor(
-                reduction="sum", num_features=1, precision=precision
-            )
+            SegmentReduceSpec(reduction="sum", num_features=1, precision=precision)
         )
         members = (
             None
@@ -314,7 +310,7 @@ class InteractionBlock(nn.Module):
         learned_density: Normalize by a density learned per atom.
         envelope_outside: The radial embedding does not carry the cutoff
             envelope, so the radial networks' outputs are multiplied by it.
-        edge_members: The descriptors of the radial basis, the harmonics and
+        edge_members: The specifications of the radial basis, the harmonics and
             the distance transform this block's edge convolution starts from,
             or ``None`` when one of them has none.
     """
@@ -333,7 +329,7 @@ class InteractionBlock(nn.Module):
         precision: Precision = "float64",
         learned_density: bool = False,
         envelope_outside: bool = False,
-        edge_members: tuple[Descriptor, ...] | None = None,
+        edge_members: tuple[KernelSpec, ...] | None = None,
     ) -> None:
         super().__init__()
         self.body = _Convolution(
@@ -351,7 +347,7 @@ class InteractionBlock(nn.Module):
             edge_members,
         )
         self.skip = backend.make_fully_connected_tp(
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1=self.body.irreps_out,
                 irreps_in2=f"{num_elements}x0e",
                 irreps_out=self.body.irreps_out,
@@ -407,7 +403,7 @@ class ResidualInteractionBlock(nn.Module):
         precision: Precision = "float64",
         learned_density: bool = False,
         envelope_outside: bool = False,
-        edge_members: tuple[Descriptor, ...] | None = None,
+        edge_members: tuple[KernelSpec, ...] | None = None,
     ) -> None:
         super().__init__()
         self.body = _Convolution(
@@ -425,7 +421,7 @@ class ResidualInteractionBlock(nn.Module):
             edge_members,
         )
         self.skip = backend.make_fully_connected_tp(
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1=expanded_irreps(irreps_node, num_features),
                 irreps_in2=f"{num_elements}x0e",
                 irreps_out=expanded_irreps(irreps_skip_out, num_features),
@@ -519,7 +515,7 @@ class NonLinearInteractionBlock(nn.Module):
         radial_hidden: tuple[int, ...] = DEFAULT_RADIAL_HIDDEN,
         precision: Precision = "float64",
         envelope_outside: bool = False,
-        edge_members: tuple[Descriptor, ...] | None = None,
+        edge_members: tuple[KernelSpec, ...] | None = None,
     ) -> None:
         super().__init__()
         node_flat = expanded_irreps(irreps_node, num_features)
@@ -527,7 +523,7 @@ class NonLinearInteractionBlock(nn.Module):
         target_flat = expanded_irreps(irreps_target, num_features)
         nonlinear_flat = gate_input_irreps(target_flat)
         element_scalars = _even_scalars(node_flat)
-        convolution = ChannelwiseTPConvDescriptor(
+        convolution = ChannelwiseTPConvSpec(
             irreps_node=irreps_up,
             irreps_edge=irreps_edge,
             irreps_out=irreps_target,
@@ -539,8 +535,8 @@ class NonLinearInteractionBlock(nn.Module):
         self.envelope_outside = envelope_outside
         self.irreps_out = target_flat
 
-        def linear(irreps_in: str, irreps_out: str) -> LinearDescriptor:
-            return LinearDescriptor(
+        def linear(irreps_in: str, irreps_out: str) -> LinearSpec:
+            return LinearSpec(
                 irreps_in=irreps_in, irreps_out=irreps_out, precision=precision
             )
 
@@ -560,14 +556,14 @@ class NonLinearInteractionBlock(nn.Module):
         self.convolution = backend.make_channelwise_tp_conv(convolution)
         conditioned = num_radial + 2 * element_scalars
         kind: RadialMLPKind = "layer_norm_silu"
-        weights = RadialMLPDescriptor(
+        weights = RadialMLPSpec(
             channels=(conditioned, *radial_hidden, self.num_paths * num_up_features),
             kind=kind,
             precision=precision,
             num_elements=num_elements,
             element_embedding_width=element_scalars,
         )
-        density = RadialMLPDescriptor(
+        density = RadialMLPSpec(
             channels=(conditioned, *_NONLINEAR_DENSITY_HIDDEN, 1),
             kind=kind,
             precision=precision,
@@ -577,9 +573,7 @@ class NonLinearInteractionBlock(nn.Module):
         self.radial_mlp = _radial_network(backend, weights)
         self.density_mlp = _radial_network(backend, density)
         self.reduce = backend.make_segment_reduce(
-            SegmentReduceDescriptor(
-                reduction="sum", num_features=1, precision=precision
-            )
+            SegmentReduceSpec(reduction="sum", num_features=1, precision=precision)
         )
         self.linear_mix = backend.make_linear(
             linear(

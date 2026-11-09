@@ -43,8 +43,8 @@ def qeq_model(
         config,
         [1, 8],
         [ENERGY_STRESS],
-        local.outputs.energy_head,
-        settings=QEqModel.solver_descriptor(
+        local.outputs.energy_readout,
+        settings=QEqModel.make_solver_spec(
             config,
             ElectrostaticsConfig(
                 enabled=True,
@@ -235,7 +235,7 @@ def test_applied_field_changes_charge_and_tracks_origin_work():
 def test_planned_qeq_compiles_without_graph_breaks(profile):
     model = qeq_model(profile, train_hardness=True)
     graph = qeq_graph(profile)
-    graph[LONG_RANGE_PLAN] = long_range_plan(graph, model.descriptor, dense_pairs=True)
+    graph[LONG_RANGE_PLAN] = long_range_plan(graph, model.solver_spec, dense_pairs=True)
     expected = model(graph)
     actual = torch.compile(model, backend="aot_eager", fullgraph=True)(graph)
     torch.testing.assert_close(actual.total_energy, expected.total_energy)
@@ -251,10 +251,10 @@ def test_fused_span_is_selected_once_and_inference_solver_is_refused_for_trainin
     class Fused(ReferenceSolver):
         name = "fused-qeq"
 
-        def make_scf_solve(self, descriptor):
-            assert descriptor.scf_spec.method == "qeq"
+        def make_scf_solve(self, solver_spec):
+            assert solver_spec.scf_spec.method == "qeq"
             calls.append("build")
-            projection = self.long_range_features(descriptor)
+            projection = self.long_range_features(solver_spec)
 
             class Span(ChargeEquilibration):
                 def forward(self, *args, **kwargs):
@@ -358,14 +358,14 @@ def test_qeq_training_inputs_optimizer_and_checkpoint(tmp_path, monkeypatch, sol
     config = ResolvedConfig.model_validate(document)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    parameters = {id(p) for p in built.model.parameters() if p.requires_grad}
+    parameters = {id(p) for p in built.engine.parameters() if p.requires_grad}
     optimized = [
         id(p)
-        for group in build_optimizer(built.model, config.training).param_groups
+        for group in build_optimizer(built.engine, config.training).param_groups
         for p in group["params"]
     ]
     assert set(optimized) == parameters and len(optimized) == len(parameters)
-    model = cast(QEqModel, built.model.get_submodule("backbone"))
+    model = cast(QEqModel, built.engine.get_submodule("model"))
     before = {
         name: [p.detach().clone() for p in head.parameters()]
         for name, head in model.source_maps.items()
@@ -381,7 +381,7 @@ def test_qeq_training_inputs_optimizer_and_checkpoint(tmp_path, monkeypatch, sol
     record = deployed.metadata.electrostatics
     assert record is not None
     assert record.solver == solver and record.bit_parity is (solver == "reference")
-    assert record.descriptor["scf_spec"]["method"] == "qeq"
+    assert record.solver_spec["scf_spec"]["method"] == "qeq"
     with pytest.raises(SolverSubstitutionError):
         load_deployed(
             tmp_path / "qeq.json",
@@ -444,9 +444,9 @@ def test_qeq_compiled_solve_reuses_graph_when_structure_sizes_change():
             total_charge=torch.tensor([0.6, -0.2]),
         )
         graph[LONG_RANGE_PLAN] = long_range_plan(
-            graph, model.descriptor, dense_pairs=True
+            graph, model.solver_spec, dense_pairs=True
         )
-        geometry = long_range_geometry(graph, model.descriptor)
+        geometry = long_range_geometry(graph, model.solver_spec)
         args = (
             graph,
             graph["input_chi"],

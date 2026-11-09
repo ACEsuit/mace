@@ -19,7 +19,7 @@ import pytest
 import torch
 from conftest import fp64_only
 from mace_core.data.configuration import Configuration
-from mace_core.electrostatics import ElectrostaticsSolverDescriptor
+from mace_core.electrostatics import ElectrostaticsSpec
 from mace_core.elements import AtomicNumberTable
 from mace_torch.data import collate_training
 from mace_torch.data.graphs import graph_from_configuration
@@ -48,8 +48,8 @@ TABLE = AtomicNumberTable([1, 8])
 WATER = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
 
 
-def descriptor(profile: Any, slab_normal: int | None = None, **settings):
-    return ElectrostaticsSolverDescriptor(
+def solver_spec(profile: Any, slab_normal: int | None = None, **settings):
+    return ElectrostaticsSpec(
         profile,
         multipole_max_l=settings.pop("max_l", 1),
         kspace_cutoff=settings.pop(
@@ -145,7 +145,7 @@ def test_each_profile_s_op_is_the_original_s_evaluation(name):
     case = REFERENCE["cases"][name]
     profile, normal = PROFILE_OF_MODE[case["mode"]]
     op = build_long_range(
-        descriptor(profile, normal, kspace_cutoff=case["kspace_cutoff"])
+        solver_spec(profile, normal, kspace_cutoff=case["kspace_cutoff"])
     )
     energy = op(graph_of(case), torch.tensor(case["source_feats"]))
     torch.testing.assert_close(
@@ -169,7 +169,7 @@ def test_the_solve_is_differentiable_twice(profile):
         )
     ]
     op = build_long_range(
-        descriptor(profile, 2 if profile == "z_slab" else None),
+        solver_spec(profile, 2 if profile == "z_slab" else None),
         trains_derivatives=True,
     )
     graph = graph_of(case)
@@ -191,7 +191,7 @@ def test_the_stress_is_the_derivative_of_the_energy_it_computed():
     is handed, so a strain of that cell reaches both. Taken from the cell
     before the strain, as the frozen tree took them, the stress misses their
     part and is wrong by tens of percent in a small box."""
-    op = build_long_range(descriptor("full_periodic"))
+    op = build_long_range(solver_spec("full_periodic"))
     graph = graph_from_builder(WATER + 0.5, np.eye(3) * 6.0, (True, True, True))
 
     def strained(strain: torch.Tensor) -> torch.Tensor:
@@ -242,8 +242,8 @@ def test_a_molecule_in_its_box_converges_on_the_open_molecule():
     a wrong one would leave it off by a constant."""
     charges = MULTIPOLES.clone()
     charges[:, 1:] = 0.0
-    exact = build_long_range(descriptor("molecular"))
-    boxed = build_long_range(descriptor("partial"))
+    exact = build_long_range(solver_spec("molecular"))
+    boxed = build_long_range(solver_spec("partial"))
     gaps = []
     for cutoff in (5.0, 10.0, 20.0):
         graph = graph_from_builder(WATER, np.zeros((3, 3)), (False,) * 3, cutoff)
@@ -280,19 +280,19 @@ def test_a_cell_with_no_volume_has_a_zero_reciprocal_cell():
 
 @pytest.mark.parametrize("profile", ["full_periodic", "molecular", "partial"])
 def test_the_reference_supports_every_profile(profile):
-    assert ReferenceSolver.capabilities.supports(descriptor(profile))
+    assert ReferenceSolver.capabilities.supports(solver_spec(profile))
 
 
 def test_the_reference_slab_correction_acts_along_z_only():
     """The original corrects along z and nothing else, so another normal is a
     solve it declines rather than one it quietly does along z."""
     capabilities = ReferenceSolver.capabilities
-    assert capabilities.supports(descriptor("z_slab", 2))
-    assert not capabilities.supports(descriptor("z_slab", 0))
+    assert capabilities.supports(solver_spec("z_slab", 2))
+    assert not capabilities.supports(solver_spec("z_slab", 0))
 
 
 def test_an_option_the_reference_does_not_know_is_declined():
-    unknown = descriptor("full_periodic", external_field_flags=frozenset({"field"}))
+    unknown = solver_spec("full_periodic", external_field_flags=frozenset({"field"}))
     assert not ReferenceSolver.capabilities.supports(unknown)
 
 

@@ -322,8 +322,7 @@ class DerivativeEngine(nn.Module):
     """The only place in the stack that calls ``autograd.grad``.
 
     Args:
-        backbone: The node-feature model.
-        output_layer: The observable heads.
+        model: The complete model, including its observable readouts.
         inputs: The declared model inputs beyond the positions and the cell.
             The differentiable ones become graph leaves in phase A and can be
             asked for by name. Nothing here knows what any of them mean: a
@@ -349,26 +348,20 @@ class DerivativeEngine(nn.Module):
 
     def __init__(
         self,
-        backbone: nn.Module,
+        model: nn.Module,
         energy: ObservableSpec | None,
-        output_layer: nn.Module | None = None,
+        *,
         inputs: Iterable[InputSpec] = (),
         responses: Iterable[ObservableSpec] = (),
     ) -> None:
         super().__init__()
-        # Either a backbone and an output layer, or one model that is already
-        # both. The engine brackets a model; that the model came in two pieces
-        # was an assumption, and a model with a pair repulsion in it does not.
-        self.backbone = backbone
+        self.model = model
         required_edges = frozenset().union(
-            *(getattr(module, "edge_features", ()) for module in backbone.modules())
+            *(getattr(module, "edge_features", ()) for module in model.modules())
         )
         self.edge_plan = plan_edges(required_edges, frozenset())
-        self.model_requests = frozenset(getattr(backbone, "requestable_outputs", ()))
-        self.model_needs_position_grad = getattr(
-            backbone, "requires_position_grad", False
-        )
-        self.output_layer = output_layer
+        self.model_requests = frozenset(getattr(model, "requestable_outputs", ()))
+        self.model_needs_position_grad = getattr(model, "requires_position_grad", False)
         self.energy = energy
         self.inputs = list(inputs)
         self.differentiable_inputs = [
@@ -400,12 +393,10 @@ class DerivativeEngine(nn.Module):
     def model_forward(self, prepared: Mapping[str, Any]) -> MACEOutput[Tensor]:
         """The model alone, between preparing the inputs and differentiating.
 
-        What :meth:`compile_model` compiles: everything the backbone and the
-        heads do, and nothing that calls ``autograd.grad``.
+        What :meth:`compile_model` compiles: the complete model and its readouts,
+        with no calls to ``autograd.grad``.
         """
-        if self.output_layer is None:
-            return self.backbone(prepared)
-        return self.output_layer(prepared, list(self.backbone(prepared).layers))
+        return self.model(prepared)
 
     def compile_model(
         self, mode: str | None = None, backend: str | Callable = "inductor"
@@ -556,7 +547,7 @@ class DerivativeEngine(nn.Module):
         # A Python boolean carried only in the prepared forward input. The
         # model's training mode independently controls weight gradients.
         prepared["differentiated_twice"] = need_hessian or (training and bool(wanted))
-        prepare = getattr(self.backbone, "prepare_model_inputs", None)
+        prepare = getattr(self.model, "prepare_model_inputs", None)
         if prepare is not None:
             prepare(prepared, model_requests)
         run = self._compiled_model or self.model_forward
@@ -770,7 +761,4 @@ class DerivativeEngine(nn.Module):
 
     def canonical_components(self) -> dict[str, nn.Module | None]:
         """Stable checkpoint roles, independent of implementation attributes."""
-        return {
-            "backbone": self.backbone,
-            "output_layer": self.output_layer,
-        }
+        return {"model": self.model}

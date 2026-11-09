@@ -92,7 +92,7 @@ def fixture_converted():
     try:
         legacy = magnetic_surfaces().load_anchor()
         engine = DerivativeEngine(
-            convert_magnetic(legacy, [ENERGY]), ENERGY, None, inputs=[MAGMOM]
+            convert_magnetic(legacy, [ENERGY]), ENERGY, inputs=[MAGMOM]
         )
         yield legacy, engine
     finally:

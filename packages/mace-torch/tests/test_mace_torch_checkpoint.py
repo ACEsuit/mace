@@ -108,7 +108,7 @@ def test_a_resumed_run_ends_where_the_uninterrupted_one_does(tmp_path, split):
     assert [r.stage for r in resumed.history] == [r.stage for r in tail]
     assert [r.train_loss for r in resumed.history] == [r.train_loss for r in tail]
     assert [r.learning_rate for r in resumed.history] == [r.learning_rate for r in tail]
-    assert_identical(weights(resumed.model), weights(uninterrupted.model))
+    assert_identical(weights(resumed.engine), weights(uninterrupted.engine))
 
 
 @fp64_only
@@ -145,16 +145,16 @@ def test_the_average_continues_from_its_shadow(tmp_path):
     assert latest is not None
 
     built = pipeline(config)
-    optimizer = build_optimizer(built.model, config.training)
-    ema = ExponentialMovingAverage(built.model.parameters(), 0.9)
-    read_run_checkpoint(latest, model=built.model, optimizer=optimizer, ema=ema)
+    optimizer = build_optimizer(built.engine, config.training)
+    ema = ExponentialMovingAverage(built.engine.parameters(), 0.9)
+    read_run_checkpoint(latest, model=built.engine, optimizer=optimizer, ema=ema)
 
     document = json.loads(latest.read_text())
     saved_updates = dict((key, value) for key, value in document["ema"]["mapping"])[
         "num_updates"
     ]
     assert ema.num_updates == saved_updates > 0
-    raw = [p.detach() for p in built.model.parameters() if p.requires_grad]
+    raw = [p.detach() for p in built.engine.parameters() if p.requires_grad]
     assert any(not torch.equal(s, r) for s, r in zip(ema.shadow, raw, strict=True))
 
 
@@ -163,7 +163,7 @@ def test_a_round_trip_restores_every_piece_exactly(tmp_path):
     config = two_stage(tmp_path, max_num_epochs=2)
     built = pipeline(config)
     trained = run_train_stage(config, built, checkpoint_path=tmp_path / "m")
-    model = trained.model
+    model = trained.engine
     optimizer = build_optimizer(model, config.training)
     scheduler = build_scheduler(optimizer, config.training.scheduler)
     assert scheduler is not None
@@ -189,7 +189,7 @@ def test_a_round_trip_restores_every_piece_exactly(tmp_path):
         metadata=built.metadata,
     )
 
-    fresh = pipeline(config).model
+    fresh = pipeline(config).engine
     fresh_optimizer = build_optimizer(fresh, config.training)
     fresh_scheduler = build_scheduler(fresh_optimizer, config.training.scheduler)
     assert fresh_scheduler is not None
@@ -230,7 +230,7 @@ def test_changed_parameter_groups_load_the_weights_and_say_why(tmp_path):
     latest = latest_run_checkpoint(tmp_path, "m")
     assert latest is not None
 
-    fresh = pipeline(config).model
+    fresh = pipeline(config).engine
     halves = [p for p in fresh.parameters() if p.requires_grad]
     regrouped = torch.optim.Adam(
         [{"params": halves[::2]}, {"params": halves[1::2]}], lr=0.01
@@ -270,9 +270,9 @@ def test_truncated_tensors_are_refused(tmp_path):
     with pytest.raises(CheckpointError, match="cannot be read"):
         read_run_checkpoint(
             latest,
-            model=built.model,
-            optimizer=build_optimizer(built.model, config.training),
-            ema=ExponentialMovingAverage(built.model.parameters(), 0.9),
+            model=built.engine,
+            optimizer=build_optimizer(built.engine, config.training),
+            ema=ExponentialMovingAverage(built.engine.parameters(), 0.9),
         )
 
 

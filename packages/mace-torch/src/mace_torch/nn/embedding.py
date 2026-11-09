@@ -12,8 +12,8 @@ from mace_core.config import (
     NoDistanceTransformConfig,
     SoftTransformConfig,
 )
-from mace_core.kernels.descriptors import RadialBasisDescriptor
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import RadialBasisSpec
 
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.radial import (
@@ -62,7 +62,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
 
     @property
     def num_basis(self) -> int:
-        return self.radial.descriptor.num_basis
+        return self.radial.kernel_spec.num_basis
 
     def forward(
         self,
@@ -86,7 +86,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
         return edge_radial_features, edge_cutoff
 
     def extra_repr(self) -> str:
-        return f"apply_cutoff={self.radial.descriptor.apply_cutoff}"
+        return f"apply_cutoff={self.radial.kernel_spec.apply_cutoff}"
 
     def span_weights(self) -> tuple[torch.Tensor, ...]:
         """Live canonical edge-member tensors in the public span call order."""
@@ -117,16 +117,16 @@ def build_radial_embedding(
 ) -> RadialEmbeddingBlock:
     """Build every basis through the backend, preserving all model options."""
     basis = config.radial_basis
-    descriptor = RadialBasisDescriptor(
+    kernel_spec = RadialBasisSpec(
         **basis.model_dump(),
         cutoff=config.r_max,
         cutoff_order=config.cutoff.polynomial_order,
         apply_cutoff=config.apply_cutoff,
         precision=precision,
     )
-    radial = backend.make_radial_basis(descriptor)
+    radial = backend.make_radial_basis(kernel_spec)
     if radial is None:
-        radial = ReferenceBackend().make_radial_basis(descriptor)
+        radial = ReferenceBackend().make_radial_basis(kernel_spec)
     return RadialEmbeddingBlock(
         radial, build_distance_transform(config.distance_transform)
     )

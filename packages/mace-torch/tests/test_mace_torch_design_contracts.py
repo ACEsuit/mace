@@ -123,8 +123,8 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
     )
     initial = build(config)
     if normalize:
-        normalizer = initial.model.get_submodule(
-            "backbone.outputs.normalization.custom_property"
+        normalizer = initial.engine.get_submodule(
+            "model.outputs.normalization.custom_property"
         )
         assert isinstance(normalizer, ObservableNormalization)
         assert torch.all(normalizer.scale > 0)
@@ -132,10 +132,10 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
         assert not list(normalizer.parameters())
     before = {
         path: {key: value.to(device).clone() for key, value in values.items()}
-        for path, values in canonical_state(initial.model).items()
+        for path, values in canonical_state(initial.engine).items()
     }
     trained = run(config)
-    after = canonical_state(trained.model)
+    after = canonical_state(trained.engine)
     assert any(
         not torch.equal(value, after[path][key])
         for path, values in before.items()
@@ -153,14 +153,14 @@ def test_custom_observable_trains_saves_and_loads_without_energy(
         )
         from mace_torch.finetune.freeze import freeze
 
-        freeze(initial.model, 1)
-        features = initial.model.get_submodule("backbone.backbone.graph_embedding")
+        freeze(initial.engine, 1)
+        features = initial.engine.get_submodule("model.backbone.graph_embedding")
         assert all(not parameter.requires_grad for parameter in features.parameters())
     assert trained.checkpoint_path is not None
     loaded = load_deployed(trained.checkpoint_path, device=device)
     assert loaded.engine.energy is None
     batch = next(iter(initial.data.train_eval_loaders["default"])).to(device)
-    expected = trained.model(batch.graph, compute=()).get("custom_property")
+    expected = trained.engine(batch.graph, compute=()).get("custom_property")
     actual = loaded.engine(batch.graph, compute=()).get("custom_property")
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     assert loaded.metadata.config.resolved["catalogue"] == catalogue.model_dump(
@@ -251,18 +251,18 @@ def test_model_config_controls_repulsion_and_readout(tmp_path):
     )
     config = config.model_copy(update={"model": architecture})
     built = build(config)
-    staged = built.model.backbone
+    staged = built.engine.model
     assert isinstance(staged, MACEModel)
     direct = MACEModel(
         ReferenceBackend(),
         architecture,
         list(built.data.z_table.zs),
         [DEFAULT_CATALOGUE.observable("energy")],
-        staged.outputs.energy_head,
+        staged.outputs.energy_readout,
         avg_num_neighbors=built.data.statistics.avg_num_neighbors,
     )
     assert direct.repulsion is not None
-    assert direct.outputs.heads["energy"].reachable == [
+    assert direct.outputs.readouts["energy"].reachable == [
         architecture.num_interactions - 1
     ]
     load_canonical_state(direct, canonical_state(staged))
@@ -340,7 +340,7 @@ def test_custom_scalar_position_response_and_double_backward():
     model = MACEModel(ReferenceBackend(), config, [1, 8], [spec])
     initialize_model_weights(model, 7)
     engine = DerivativeEngine(
-        model, None, None, inputs=DEFAULT_CATALOGUE.inputs, responses=[spec]
+        model, None, inputs=DEFAULT_CATALOGUE.inputs, responses=[spec]
     )
     graph = build_graph([[0, 0, 0], [0.9, 0, 0], [-0.2, 0.9, 0]], [8, 1, 1])
     name = spec.derivative_name("pos")

@@ -249,9 +249,9 @@ def test_conditioned_checkpoint_cli_calculator_padding_and_cache(
         close(atoms.get_forces(), forces)
 
     # Foundation consumers build their own batches, including a mixed-size
-    # pseudolabel batch and one descriptor batch per structure.
+    # pseudolabel batch and one kernel_spec batch per structure.
     foundation = read_foundation(path, DEFAULT_CATALOGUE)
-    descriptors = foundation.describe(configurations)
+    descriptors = foundation.structure_descriptors(configurations)
     assert descriptors.shape[0] == len(frames) and np.isfinite(descriptors).all()
     labelled = generate_pseudolabels(
         foundation.engine,

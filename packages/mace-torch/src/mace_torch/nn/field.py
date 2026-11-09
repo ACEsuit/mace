@@ -33,8 +33,8 @@ from collections.abc import Sequence
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import LinearSpec
 from torch import Tensor, nn
 
 from mace_torch.backends import layout
@@ -369,12 +369,10 @@ class BiasReadout(nn.Module):
         gate_in = f"{num_scalars + num_gates}x0e" + (f"+{gated}" if gated else "")
         middle = f"{num_scalars}x0e" + (f"+{gated}" if gated else "")
         self.first = backend.make_linear(
-            LinearDescriptor(
-                irreps_in=irreps_in, irreps_out=gate_in, precision=precision
-            )
+            LinearSpec(irreps_in=irreps_in, irreps_out=gate_in, precision=precision)
         )
         self.middle = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=middle,
                 irreps_out=gate_in,
                 has_bias=has_bias,
@@ -382,7 +380,7 @@ class BiasReadout(nn.Module):
             )
         )
         self.last = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=middle,
                 irreps_out=irreps_out,
                 has_bias=has_bias,
@@ -439,7 +437,7 @@ class ChargeUpdate(nn.Module):
 
         def linear(irreps_in: str, irreps_out: str):
             return backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=irreps_in, irreps_out=irreps_out, precision=precision
                 )
             )
@@ -547,7 +545,7 @@ class ElectronEnergyReadout(nn.Module):
 
         def biased(irreps_in: str):
             return backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=irreps_in,
                     irreps_out=node_irreps,
                     has_bias=True,

@@ -265,7 +265,7 @@ def test_exported_head_reaches_mliap_graph(tmp_path):
     config = ResolvedConfig.model_validate(doc)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    checkpoint = write_model(tmp_path / "multi", built.model, built.metadata)
+    checkpoint = write_model(tmp_path / "multi", built.engine, built.metadata)
     bundle = export_lammps(
         checkpoint, halo_exchange=False, head="scan", compile_regions=False
     )

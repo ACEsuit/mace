@@ -157,7 +157,7 @@ def test_the_data_s_table_is_the_frozen_tree_s_sliced_model(
     assert list(built.data.z_table.zs) == [1, 8]
     legacy = legacy_subset(anchor, [1, 8])
     structures = water_structures()
-    energy, forces = forces_and_energies(built.model, legacy, structures)
+    energy, forces = forces_and_energies(built.engine, legacy, structures)
     expected_energy, expected_forces = legacy_forces_and_energies(legacy, structures)
     assert torch.allclose(energy, expected_energy, atol=1e-12, rtol=0), float(
         (energy - expected_energy).abs().max()
@@ -189,7 +189,7 @@ def test_the_foundation_s_table_computes_what_the_anchor_does(
     built = fine_tune(tmp_path, path, "foundation")
     assert list(built.data.z_table.zs) == [1, 6, 8]
     structures = water_structures()
-    energy = energies(built.model, anchor, structures)
+    energy = energies(built.engine, anchor, structures)
     expected, _ = legacy_forces_and_energies(anchor, structures)
     assert torch.allclose(energy, expected, atol=1e-12, rtol=0), float(
         (energy - expected).abs().max()

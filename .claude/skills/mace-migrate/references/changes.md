@@ -256,7 +256,7 @@ Contents: [training destinations](#training-destinations) ·
 | `cli.fine_tuning_select.subselect` | MERGE | `--subselect` | Use `data.heads.selected.subselect.method`. The migration helper translates selection config for `mace data select`; selection also runs inside training. |
 | `cli.fine_tuning_select.model` | MERGE | `--model` | Use `finetune.foundation_model`. The migration helper translates selection config for `mace data select`; selection also runs inside training. |
 | `cli.fine_tuning_select.output` | MERGE | `--output` | Use `data select --output`. The migration helper translates selection config for `mace data select`; selection also runs inside training. |
-| `cli.fine_tuning_select.descriptors` | MERGE | `--descriptors` | Use `data.heads.selected.subselect.descriptors`. The migration helper translates selection config for `mace data select`; selection also runs inside training. |
+| `cli.fine_tuning_select.descriptors` | MERGE | `--descriptors` | Use `data.heads.selected.subselect.structure_descriptors_file`. The migration helper translates selection config for `mace data select`; selection also runs inside training. |
 | `cli.fine_tuning_select.device` | MERGE | `--device` | Use `runtime.device`. The migration helper translates selection config for `mace data select`; selection also runs inside training. |
 | `cli.fine_tuning_select.head_pt` | MERGE | `--head_pt` | Use `data.heads.selected.readout_from`. The migration helper translates selection config for `mace data select`; selection also runs inside training. |
 | `cli.fine_tuning_select.head_ft` | MERGE | `--head_ft` | Use `data.heads.fine_tune_<index>.readout_from`. The migration helper translates selection config for `mace data select`; selection also runs inside training. |

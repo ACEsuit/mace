@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    SegmentReduceDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    SegmentReduceSpec,
 )
 from mace_torch.backends.reference import ReferenceBackend
 
@@ -53,9 +53,9 @@ def evaluate(inputs, *, reverse=False):
             item.flip(0) for item in (values, receiver, sender, edges)
         )
     backend = ReferenceBackend()
-    reduce = backend.make_segment_reduce(SegmentReduceDescriptor(precision="float32"))
+    reduce = backend.make_segment_reduce(SegmentReduceSpec(precision="float32"))
     convolution = backend.make_channelwise_tp_conv(
-        ChannelwiseTPConvDescriptor(
+        ChannelwiseTPConvSpec(
             precision="float32",
             irreps_node="0e",
             irreps_edge="0e",

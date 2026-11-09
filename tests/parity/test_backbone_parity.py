@@ -26,7 +26,7 @@ from mace_core.config import (
     PolynomialCutoffConfig,
 )
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.nn.backbone import MACEBackbone, aggregate_descriptors
+from mace_torch.nn.backbone import MACEBackbone, aggregate_atomic_descriptors
 
 from mace import modules
 from mace.tools import utils
@@ -61,13 +61,13 @@ LEGACY_CLASS = {
 
 
 def _carry_linear(legacy: o3.Linear, op) -> None:
-    assert str(legacy.irreps_in) == op.descriptor.irreps_in, (
+    assert str(legacy.irreps_in) == op.kernel_spec.irreps_in, (
         legacy.irreps_in,
-        op.descriptor.irreps_in,
+        op.kernel_spec.irreps_in,
     )
-    assert str(legacy.irreps_out) == op.descriptor.irreps_out, (
+    assert str(legacy.irreps_out) == op.kernel_spec.irreps_out, (
         legacy.irreps_out,
-        op.descriptor.irreps_out,
+        op.kernel_spec.irreps_out,
     )
     state = op.to_canonical()
     weight = torch.zeros_like(state["weight"])
@@ -76,15 +76,15 @@ def _carry_linear(legacy: o3.Linear, op) -> None:
 
 
 def _carry_skip(legacy: o3.FullyConnectedTensorProduct, op) -> None:
-    assert str(legacy.irreps_in1) == op.descriptor.irreps_in1
-    assert str(legacy.irreps_out) == op.descriptor.irreps_out
+    assert str(legacy.irreps_in1) == op.kernel_spec.irreps_in1
+    assert str(legacy.irreps_out) == op.kernel_spec.irreps_out
     weight = torch.zeros_like(op.to_canonical()["weight"])
     weight.view(-1)[skip_permutation(legacy)] = legacy.weight.detach()
     op.load_canonical({"weight": weight})
 
 
 def _carry_fully_connected_net(legacy, op) -> None:
-    layers = len(op.descriptor.channels) - 1
+    layers = len(op.kernel_spec.channels) - 1
     op.load_canonical(
         {
             f"layer_{i}": getattr(legacy, f"layer{i}").weight.detach()
@@ -107,10 +107,10 @@ def _carry_radial_mlp(legacy, op) -> None:
 
 
 def _carry_contraction(legacy, op) -> None:
-    correlation = op.descriptor.correlation
+    correlation = op.kernel_spec.correlation
     with torch.no_grad():
         for position, contraction in enumerate(legacy.contractions):
-            tables = canonical_contraction_bases(op.descriptor, position)
+            tables = canonical_contraction_bases(op.kernel_spec, position)
             for coupling, weight, order in legacy_contraction_blocks(contraction):
                 if weight.numel() == 0:
                     continue
@@ -346,7 +346,7 @@ def test_either_basis_reproduces_the_anchor(fp64, fixtures, basis):
         **ANCHOR_CONFIG,
     )
     backbone = MACEBackbone(BACKEND, config, list(ELEMENTS), avg_num_neighbors=8.0)
-    assert {p.contraction.descriptor.basis for p in backbone.products} == {basis}
+    assert {p.contraction.kernel_spec.basis for p in backbone.products} == {basis}
     carry_weights(legacy, backbone)
     _compare(legacy, backbone, fixtures)
 
@@ -377,7 +377,7 @@ def test_the_descriptors_are_the_legacy_calculators(
         expected = calculator.get_descriptors(
             atoms, invariants_only=invariants_only, num_layers=num_layers
         )
-        ours = backbone.descriptors(
+        ours = backbone.atomic_descriptors(
             backbone(_v1_graph(legacy, atoms)),
             num_layers=num_layers,
             invariants_only=invariants_only,
@@ -404,11 +404,13 @@ def test_the_aggregations_are_the_eval_command_lines(fp64, fixtures):
     batch = anchors.anchor_batch(legacy, structures).to_dict()
     table = torch.tensor(list(ELEMENTS))
     batch["node_atomic_numbers"] = table[batch["node_attrs"].argmax(dim=-1)]
-    descriptors = backbone.descriptors(backbone(batch)).detach()
+    descriptors = backbone.atomic_descriptors(backbone(batch)).detach()
     element = batch["node_attrs"].argmax(dim=-1)
     num_graphs = batch["ptr"].numel() - 1
-    means = aggregate_descriptors(descriptors, batch["batch"], num_graphs, "mean")
-    per_element = aggregate_descriptors(
+    means = aggregate_atomic_descriptors(
+        descriptors, batch["batch"], num_graphs, "mean"
+    )
+    per_element = aggregate_atomic_descriptors(
         descriptors,
         batch["batch"],
         num_graphs,

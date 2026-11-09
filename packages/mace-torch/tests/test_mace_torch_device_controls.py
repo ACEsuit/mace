@@ -40,8 +40,8 @@ def test_device_flag_trains_resumes_and_loads_on_cpu(
             assert value.device.type == device
             gradients.append(device)
 
-        result.model.register_forward_pre_hook(check_forward)
-        for parameter in result.model.parameters():
+        result.engine.register_forward_pre_hook(check_forward)
+        for parameter in result.engine.parameters():
             if parameter.requires_grad:
                 parameter.register_hook(check_gradient)
         return result

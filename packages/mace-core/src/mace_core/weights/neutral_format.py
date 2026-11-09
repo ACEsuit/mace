@@ -157,7 +157,7 @@ class OpSpec(_Strict):
             flat array.
         proj: The name of a tensor holding a change of parametrization, when
             the weights need one to mean what the basis says.
-        descriptor: What the op needs to be rebuilt: irreps, widths, orders.
+        kernel_spec: What the op needs to be rebuilt: irreps, widths, orders.
         tensors: The names of its tensors, each stored as ``<op>::<name>``.
     """
 
@@ -166,7 +166,7 @@ class OpSpec(_Strict):
     clebsch_gordan_basis: Literal["full", "reduced"] | None = None
     parametrization: Literal["nested", "fused"] | None = None
     proj: str | None = None
-    descriptor: dict[str, Any] = {}
+    kernel_spec: dict[str, Any] = {}
     tensors: tuple[str, ...] = ()
 
 

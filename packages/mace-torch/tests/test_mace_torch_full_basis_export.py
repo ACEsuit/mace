@@ -40,7 +40,7 @@ def source(tmp_path, dtype, request):
     config = ResolvedConfig.model_validate(doc)
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    return write_model(tmp_path / "reduced", built.model, built.metadata)
+    return write_model(tmp_path / "reduced", built.engine, built.metadata)
 
 
 def exported_engine(source, artifact):

@@ -76,7 +76,7 @@ def _rank(rank: int, port: int, config, results) -> None:
             (
                 rank,
                 handler.seen,
-                [p.detach().clone() for p in trained.model.parameters()],
+                [p.detach().clone() for p in trained.engine.parameters()],
                 None,
             )
         )
@@ -133,7 +133,7 @@ def test_two_ranks_evaluate_every_closure_at_the_same_point(tmp_path):
     # moves them by many orders more.
     data = run_data_stage(config, CATALOGUE)
     alone = run_train_stage(config, run_model_stage(config, data, CATALOGUE))
-    for together, single in zip(outcomes[0][1], alone.model.parameters(), strict=True):
+    for together, single in zip(outcomes[0][1], alone.engine.parameters(), strict=True):
         torch.testing.assert_close(together, single.detach(), rtol=1e-8, atol=1e-10)
 
 

@@ -132,7 +132,7 @@ class WeightReorder:
             raise ReorderError(
                 f"the weights have {moved.shape[0]} paths on axis {axis} and "
                 f"this map covers {self.path_count}. Check that the map was "
-                f"derived for this descriptor."
+                f"derived for this kernel_spec."
             )
         out = np.zeros_like(moved, dtype=np.result_type(moved.dtype, np.float64))
         for block in self.blocks:

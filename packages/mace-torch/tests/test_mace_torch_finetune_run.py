@@ -75,7 +75,7 @@ def foundation_path(tmp_path_factory):
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
     trained = run_train_stage(config, built)
-    return write_model(directory / "model", trained.model, built.metadata), directory
+    return write_model(directory / "model", trained.engine, built.metadata), directory
 
 
 def new_level_of_theory(path, count=16):
@@ -146,7 +146,7 @@ def target_error(built, config):
     """The loss on the new head's validation set, the number that must drop."""
     loss = build_loss(built.outputs, config.loss)
     metrics = evaluate(
-        built.model,
+        built.engine,
         built.data.valid_loaders["target"],
         loss,
         metric_specs(built.outputs),
@@ -166,7 +166,7 @@ def test_a_fine_tune_trains_both_heads_and_improves_the_new_one(foundation_path)
     after = target_error(built, config)
 
     assert data.heads == ("replay", "target")
-    readout = built.model.get_submodule("backbone.outputs.heads.energy")
+    readout = built.engine.get_submodule("model.outputs.readouts.energy")
     assert readout.num_heads == 2
     assert after < before, f"the new head's error went from {before:.4g} to {after:.4g}"
     assert trained.best_epoch is not None
@@ -313,12 +313,12 @@ def test_a_lora_fine_tune_ends_with_the_shapes_of_one_never_adapted(foundation_p
     trained = run_train_stage(config, built, checkpoint_path=directory / "lora")
     assert trained.checkpoint_path is not None
     assert not any(
-        "parametrizations" in name for name, _ in trained.model.named_parameters()
+        "parametrizations" in name for name, _ in trained.engine.named_parameters()
     )
 
     plain = run_model_stage(
         config, data, CATALOGUE, foundation=foundation, initialize=False
-    ).model
+    ).engine
     shapes = {
         path: {name: value.shape for name, value in tensors.items()}
         for path, tensors in canonical_state(plain).items()
@@ -331,7 +331,7 @@ def test_a_lora_fine_tune_ends_with_the_shapes_of_one_never_adapted(foundation_p
     graph = next(iter(data.valid_loaders["target"])).graph
     assert torch.allclose(
         reloaded(dict(graph), compute=()).total_energy,
-        trained.model(dict(graph), compute=()).total_energy,
+        trained.engine(dict(graph), compute=()).total_energy,
         rtol=0,
         atol=1e-12,
     )
@@ -350,9 +350,9 @@ def test_a_lora_fine_tune_moves_the_model_only_through_its_adapters(foundation_p
     )
     data = run_data_stage(config, CATALOGUE, foundation=foundation.context())
     built = run_model_stage(config, data, CATALOGUE, foundation=foundation)
-    before = snapshot(built.model)
+    before = snapshot(built.engine)
     trained = run_train_stage(config, built)
-    after = snapshot(trained.model)
+    after = snapshot(trained.engine)
     untouched = [name for name in before if ".contraction." in name or ".skip." in name]
     assert untouched
     for name in untouched:
@@ -370,9 +370,9 @@ def test_a_frozen_fine_tune_leaves_the_frozen_groups_where_they_were(foundation_
     config = with_finetune(fine_tune_config(directory, path), freeze=5)
     data = run_data_stage(config, CATALOGUE, foundation=foundation.context())
     built = run_model_stage(config, data, CATALOGUE, foundation=foundation)
-    before = snapshot(built.model)
+    before = snapshot(built.engine)
     trained = run_train_stage(config, built)
-    after = snapshot(trained.model)
+    after = snapshot(trained.engine)
     for name in before:
         frozen = "node_embedding" in name or ".interactions." in name
         changed = not torch.equal(before[name], after[name])

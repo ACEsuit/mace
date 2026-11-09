@@ -96,7 +96,7 @@ def mlp(source, target):
         _carry_radial_mlp,
     )
 
-    if target.descriptor.kind == "normalized_silu":
+    if target.solver_spec.kind == "normalized_silu":
         _carry_fully_connected_net(source, target)
     else:
         _carry_radial_mlp(source, target)

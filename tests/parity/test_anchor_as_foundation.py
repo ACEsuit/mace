@@ -104,7 +104,7 @@ def write_anchor_checkpoint(legacy, directory: Path) -> Path:
         ),
         initialize=False,
     )
-    transfer_weights(legacy, engine.get_submodule("backbone"), built["correlation"])
+    transfer_weights(legacy, engine.get_submodule("model"), built["correlation"])
     metadata = ModelMetadata(
         elements=built["atomic_numbers"],
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
@@ -220,7 +220,7 @@ def test_the_checkpoint_read_back_is_the_anchor(anchor_foundation):
 
 def new_head_error(built, config) -> float:
     metrics = evaluate(
-        built.model,
+        built.engine,
         built.data.valid_loaders["DFT"],
         build_loss(built.outputs, config.loss),
         metric_specs(built.outputs),
@@ -241,7 +241,7 @@ def test_a_fine_tune_from_the_anchor_trains_both_heads(anchor_foundation, tmp_pa
     after = new_head_error(built, config)
 
     assert data.heads == ("pt_head", "DFT")
-    assert built.model.get_submodule("backbone.outputs.heads.energy").num_heads == 2
+    assert built.engine.get_submodule("model.outputs.readouts.energy").num_heads == 2
     assert trained.best_epoch is not None
     assert after < before, f"the new head's error went from {before:.4g} to {after:.4g}"
 
@@ -273,7 +273,7 @@ def test_the_replay_head_starts_as_the_anchor(anchor_foundation, tmp_path):
     data = run_data_stage(config, CATALOGUE, foundation=foundation.context())
     built = run_model_stage(config, data, CATALOGUE, foundation=foundation)
     assert data.heads.index("pt_head") == 0
-    got = energies(built.model, legacy, structures)
+    got = energies(built.engine, legacy, structures)
     assert torch.allclose(got, expected, atol=1e-12, rtol=0), (
         f"largest difference {float((got - expected).abs().max()):.3g} eV"
     )
@@ -283,7 +283,7 @@ def test_the_replay_head_starts_as_the_anchor(anchor_foundation, tmp_path):
 def test_foundation_selection_descriptors_match_legacy_element_means(
     anchor_foundation, selection_dtype
 ):
-    """Selection consumes the reviewed descriptor API, including absent elements."""
+    """Selection consumes the reviewed kernel_spec API, including absent elements."""
     import numpy as np
     from ase import Atoms
     from mace_core.config.precision import PrecisionConfig
@@ -328,12 +328,15 @@ def test_foundation_selection_descriptors_match_legacy_element_means(
         expected.append(np.concatenate(rows))
     if selection_dtype == "float32":
         np.testing.assert_allclose(
-            foundation.describe(configurations),
+            foundation.structure_descriptors(configurations),
             expected,
             atol=FP32.atol,
             rtol=FP32.rtol,
         )
     else:
         np.testing.assert_allclose(
-            foundation.describe(configurations), expected, atol=1e-12, rtol=0
+            foundation.structure_descriptors(configurations),
+            expected,
+            atol=1e-12,
+            rtol=0,
         )

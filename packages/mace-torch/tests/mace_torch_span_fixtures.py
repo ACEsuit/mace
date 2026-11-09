@@ -158,8 +158,8 @@ class SpanBackend(ReferenceBackend):
             spec_version=self.spec_version,
         )
 
-    def make_interaction_layer(self, descriptors):
-        shape = EdgeConvolutionSpan.from_descriptors(descriptors)
+    def make_interaction_layer(self, kernel_specs):
+        shape = EdgeConvolutionSpan.from_specs(kernel_specs)
         if shape is None:
             return None
         span = ReferenceSpan(shape)

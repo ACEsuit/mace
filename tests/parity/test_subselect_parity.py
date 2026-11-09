@@ -144,7 +144,7 @@ def test_precomputed_descriptor_rows_match_the_frozen_filtered_input(
     original = data_stage.select
 
     def observe(*args, **kwargs):
-        captured.append(kwargs["descriptors"])
+        captured.append(kwargs["structure_descriptors"])
         return original(*args, **kwargs)
 
     monkeypatch.setattr(data_stage, "select", observe)
@@ -161,7 +161,7 @@ def test_precomputed_descriptor_rows_match_the_frozen_filtered_input(
                             "num_samples": 1,
                             "filtering": filtering,
                             "elements": elements,
-                            "descriptors": str(native_file),
+                            "structure_descriptors_file": str(native_file),
                         },
                     }
                 }

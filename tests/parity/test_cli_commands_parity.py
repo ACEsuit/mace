@@ -11,7 +11,7 @@ from mace_core.clebsch_gordan.conversion import reduced_to_full
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.cli import main
 from mace_core.config.resolved import ResolvedConfig
-from mace_core.kernels.descriptors import SymmetricContractionDescriptor
+from mace_core.kernels.specs import SymmetricContractionSpec
 from mace_core.metadata import ConfigRecord
 from mace_torch.canonical import canonical_modules
 from mace_torch.cli.eval_configs import OUTPUT_COLUMNS
@@ -71,6 +71,7 @@ def test_flag_grammar_matches_frozen_parser():
 def test_all_thirteen_output_columns_are_accounted_for():
     scan, stores = scan_eval_surface()
     assert not scan.unresolved
+    stores["atomic_descriptors"] = stores.pop("descriptors")
     assert set(OUTPUT_COLUMNS) == set(stores)
     assert len(stores) == 13
     for name, column in OUTPUT_COLUMNS.items():
@@ -211,19 +212,19 @@ def test_conversion_and_eval_preserve_the_committed_anchor(fp64, tmp_path, name)
     state = canonical_state(source.engine)
     destination_state = canonical_state(full)
     for path, module in canonical_modules(source.engine).items():
-        descriptor = getattr(module, "descriptor", None)
-        if not isinstance(descriptor, SymmetricContractionDescriptor):
+        kernel_spec = getattr(module, "kernel_spec", None)
+        if not isinstance(kernel_spec, SymmetricContractionSpec):
             continue
         tensors = state[path]
         pieces = iter(tensors["weight"].split(tensors["path_counts"].tolist(), dim=1))
         weights = []
-        for order in range(1, descriptor.correlation + 1):
-            for _, irrep in Irreps.parse(descriptor.irreps_out):
+        for order in range(1, kernel_spec.correlation + 1):
+            for _, irrep in Irreps.parse(kernel_spec.irreps_out):
                 piece = next(pieces)
                 weights.append(
                     torch.as_tensor(
                         reduced_to_full(
-                            piece.numpy(), descriptor.irreps_in, order, irrep
+                            piece.numpy(), kernel_spec.irreps_in, order, irrep
                         ),
                         dtype=piece.dtype,
                     )

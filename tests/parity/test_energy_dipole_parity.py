@@ -71,7 +71,7 @@ def converted(legacy, backend="reference"):
         statistics=DatasetStatistics(avg_num_neighbors=3.0, mean=0.0, std=1.0),
         initialize=False,
     )
-    transfer_dipole_weights(legacy, engine.backbone, "energy_dipole")
+    transfer_dipole_weights(legacy, engine.model, "energy_dipole")
     return engine, config
 
 
@@ -103,8 +103,8 @@ def test_joint_values_and_derivatives_match_legacy(fp64, device, charged):
 
     legacy = legacy_model()
     native, _ = converted(legacy)
-    assert native.backbone.backbone.layer_irreps[-1] == "4x0e+4x1o"
-    assert native.backbone.outputs.heads["dipole"].reachable == [0, 1]
+    assert native.model.backbone.layer_irreps[-1] == "4x0e+4x1o"
+    assert native.model.outputs.readouts["dipole"].reachable == [0, 1]
     _, old, new = inputs(legacy, charged)
     old = {key: value.to(device) for key, value in old.items()}
     new = {key: value.to(device) for key, value in new.items()}
@@ -129,7 +129,7 @@ def test_joint_values_and_derivatives_match_legacy(fp64, device, charged):
     oracle_loss.backward()
     # Radial weights share coordinates; force training exercises double backward.
     for old_layer, new_layer in zip(
-        legacy.interactions, native.backbone.backbone.interactions, strict=True
+        legacy.interactions, native.model.backbone.interactions, strict=True
     ):
         for index, weight in enumerate(new_layer.body.radial_mlp.weights):
             close(

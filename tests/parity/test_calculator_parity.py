@@ -88,7 +88,7 @@ def test_the_descriptors_agree(calculators):
     for atoms in structures():
         for invariants_only in (True, False):
             np.testing.assert_allclose(
-                v1.get_descriptors(atoms, invariants_only=invariants_only),
+                v1.get_atomic_descriptors(atoms, invariants_only=invariants_only),
                 legacy.get_descriptors(atoms, invariants_only=invariants_only),
                 rtol=RTOL,
                 atol=ATOL,
@@ -99,7 +99,7 @@ def test_the_first_layer_s_descriptors_agree(calculators):
     legacy, v1 = calculators
     atoms = structures()[0]
     np.testing.assert_allclose(
-        v1.get_descriptors(atoms, num_layers=1),
+        v1.get_atomic_descriptors(atoms, num_layers=1),
         legacy.get_descriptors(atoms, num_layers=1),
         rtol=RTOL,
         atol=ATOL,

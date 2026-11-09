@@ -317,7 +317,7 @@ def test_embedding_readout_trains_as_an_independent_optional_group(level):
     )
     optimizer = build_optimizer(engine, training)
     (group,) = [g for g in optimizer.param_groups if g["name"] == "embedding_readout"]
-    readout = engine.backbone.outputs.embedding_readout
+    readout = engine.model.outputs.embedding_readout
     assert {id(p) for p in group["params"]} == {id(p) for p in readout.parameters()}
     all_ids = [id(p) for g in optimizer.param_groups for p in g["params"]]
     assert len(all_ids) == len(set(all_ids))

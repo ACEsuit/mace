@@ -24,7 +24,7 @@ import torch
 from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, MACEModel, ScaleShiftSpec
 from mace_torch.physics import DerivativeEngine
 
 from tests.parity.anchors import load_anchor
@@ -81,7 +81,7 @@ def convert(legacy):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     config = build_config(legacy)
     values, scale, shift = energy_constants_to_canonical(legacy, heads=HEADS)
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s(values),
         list(HEADS),
         AtomicNumberTable(numbers),
@@ -92,7 +92,7 @@ def convert(legacy):
     model = MACEModel(
         ReferenceBackend(),
         observables=[ENERGY],
-        energy_head=head,
+        energy_readout=head,
         **model_arguments(config),
     )
     transfer_weights(legacy, model, config["correlation"])
@@ -179,7 +179,7 @@ def test_the_two_heads_really_disagree(isolated, pair):
 def test_the_converted_model_holds_one_readout_per_head(pair):
     _, model, config = pair
     assert config["num_heads"] == len(HEADS)
-    assert model.outputs.heads["energy"].num_heads == len(HEADS)
+    assert model.outputs.readouts["energy"].num_heads == len(HEADS)
 
 
 def test_multihead_training_gradients_follow_the_conversion(isolated, pair):

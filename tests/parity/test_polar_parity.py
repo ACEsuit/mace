@@ -27,7 +27,7 @@ from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, ScaleShiftSpec
 from mace_torch.models.electrostatics import PolarModel
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.physics import DerivativeEngine
@@ -166,7 +166,7 @@ def convert(legacy, profile, normal):
     numbers = [int(z) for z in legacy.atomic_numbers.tolist()]
     config = polar_backbone_config(legacy, build_config)
     values, scale, shift = energy_constants_to_canonical(legacy)
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s(values),
         ["default"],
         AtomicNumberTable(numbers),
@@ -188,7 +188,7 @@ def convert(legacy, profile, normal):
     model = PolarModel(
         ReferenceBackend(),
         observables=[ENERGY],
-        energy_head=head,
+        energy_readout=head,
         electrostatics=ElectrostaticsConfig(
             enabled=True,
             periodicity_profile=profile,

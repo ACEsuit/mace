@@ -142,9 +142,9 @@ class ElectrostaticsRecord(_Record):
     #: Whether it declared bit parity with the reference, which decides whether
     #: another solver may stand in for it at load time.
     bit_parity: bool
-    #: The solve, as :func:`mace_core.electrostatics.descriptor_record` writes
+    #: The solve, as :func:`mace_core.electrostatics.solver_spec_record` writes
     #: it. A rebuilt model's solve is compared against it.
-    descriptor: dict[str, Any] = Field(default_factory=dict)
+    solver_spec: dict[str, Any] = Field(default_factory=dict)
 
 
 class ElementExtensionRecord(_Record):

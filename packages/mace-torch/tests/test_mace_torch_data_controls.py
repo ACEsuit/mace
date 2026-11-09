@@ -116,12 +116,12 @@ def test_validation_batch_size_keeps_every_structure_and_the_same_errors(
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
     requested = resolve_requested(config.model.observables, DEFAULT_CATALOGUE)
     loss, specs = build_loss(requested, config.loss), metric_specs(requested)
-    actual = evaluate(built.model, loader, loss, specs)
+    actual = evaluate(built.engine, loader, loss, specs)
     assert isinstance(loader.dataset, GraphDataset)
     whole = make_loader(
         loader.dataset, batch_size=12, shuffle=False, float_dtype=config.precision.model
     )
-    expected = evaluate(built.model, whole, loss, specs)
+    expected = evaluate(built.engine, whole, loss, specs)
     assert actual.keys() == expected.keys()
     # Reported loss retains legacy's batch-dependent reduction; its parity
     # is checked against MACELoss in test_data_controls_parity.py.

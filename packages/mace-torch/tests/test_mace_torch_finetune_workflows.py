@@ -179,7 +179,7 @@ def test_fps_descriptors_follow_the_foundations_dtype(foundation, model_dtype):
         configuration_from_atoms(atoms, KeySpecification.from_defaults())
         for atoms in replay_structures(count=3)
     ]
-    descriptors = loaded.describe(items)
+    descriptors = loaded.structure_descriptors(items)
     assert descriptors.shape[0] == 3
     assert np.isfinite(descriptors).all()
     assert next(loaded.engine.parameters()).dtype == getattr(torch, model_dtype)

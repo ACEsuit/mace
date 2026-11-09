@@ -40,17 +40,17 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import torch
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
-)
 from mace_core.kernels.paths import channelwise_paths
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
+)
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import (
@@ -110,9 +110,7 @@ class MomentFeatures(nn.Module):
         )
         self.basis = ChebyshevBasis(num_basis=num_basis, include_constant=False)
         self.harmonics = backend.make_spherical_harmonics(
-            SphericalHarmonicsDescriptor(
-                lmax=lmax, normalize=False, precision=precision
-            )
+            SphericalHarmonicsSpec(lmax=lmax, normalize=False, precision=precision)
         )
 
     def squashed_length(self, moments: Tensor, element: Tensor) -> Tensor:
@@ -175,7 +173,7 @@ class _PairCoupling(nn.Module):
         self.num_features = num_features
         self.irreps_paths = "+".join(str(path.irrep) for path in self.paths)
         self.convolution = backend.make_channelwise_tp_conv(
-            ChannelwiseTPConvDescriptor(
+            ChannelwiseTPConvSpec(
                 irreps_node=irreps_node,
                 irreps_edge=irreps_attribute,
                 irreps_out=irreps_target,
@@ -242,9 +240,7 @@ class MagneticInteractionBlock(nn.Module):
         self.irreps_out = target_flat
 
         self.linear_up = backend.make_linear(
-            LinearDescriptor(
-                irreps_in=node_flat, irreps_out=node_flat, precision=precision
-            )
+            LinearSpec(irreps_in=node_flat, irreps_out=node_flat, precision=precision)
         )
         self.edge_coupling = _PairCoupling(
             backend, irreps_node, irreps_edge, irreps_edge, num_features, precision
@@ -259,7 +255,7 @@ class MagneticInteractionBlock(nn.Module):
         )
         joint = num_radial + num_moment_basis
         self.edge_weights = ReferenceNormalizedSiluMLP(
-            RadialMLPDescriptor(
+            RadialMLPSpec(
                 channels=(
                     joint,
                     *RADIAL_HIDDEN,
@@ -270,27 +266,27 @@ class MagneticInteractionBlock(nn.Module):
             random_init=True,
         )
         self.moment_weights = ReferenceNormalizedSiluMLP(
-            RadialMLPDescriptor(
+            RadialMLPSpec(
                 channels=(joint, self.moment_coupling.num_paths * num_features),
                 precision=precision,
             ),
             random_init=True,
         )
         self.density = ReferenceNormalizedSiluMLP(
-            RadialMLPDescriptor(channels=(num_radial, 1), precision=precision),
+            RadialMLPSpec(channels=(num_radial, 1), precision=precision),
             random_init=True,
         )
         paths_flat = "+".join(
             f"{num_features}x{path.irrep}" for path in self.moment_coupling.paths
         )
         self.linear = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=paths_flat, irreps_out=target_flat, precision=precision
             )
         )
         self.residual = irreps_skip_out is not None
         self.skip = backend.make_fully_connected_tp(
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1=node_flat if self.residual else target_flat,
                 irreps_in2=f"{num_elements}x0e",
                 irreps_out=(
@@ -392,7 +388,7 @@ class MagneticProductBlock(nn.Module):
         self.num_features = num_features
         out_flat = expanded_irreps(irreps_out, num_features)
         self.contraction = backend.make_symmetric_contraction(
-            SymmetricContractionDescriptor(
+            SymmetricContractionSpec(
                 irreps_in=irreps_in,
                 irreps_out=irreps_out,
                 correlation=correlation,
@@ -405,7 +401,7 @@ class MagneticProductBlock(nn.Module):
             backend, irreps_out, irreps_moment, irreps_out, num_features, precision
         )
         self.moment_weights = ReferenceNormalizedSiluMLP(
-            RadialMLPDescriptor(
+            RadialMLPSpec(
                 channels=(
                     num_moment_basis,
                     *RADIAL_HIDDEN,
@@ -419,14 +415,10 @@ class MagneticProductBlock(nn.Module):
             f"{num_features}x{path.irrep}" for path in self.moment_coupling.paths
         )
         self.linear = backend.make_linear(
-            LinearDescriptor(
-                irreps_in=paths_flat, irreps_out=out_flat, precision=precision
-            )
+            LinearSpec(irreps_in=paths_flat, irreps_out=out_flat, precision=precision)
         )
         self.linear_ori = backend.make_linear(
-            LinearDescriptor(
-                irreps_in=out_flat, irreps_out=out_flat, precision=precision
-            )
+            LinearSpec(irreps_in=out_flat, irreps_out=out_flat, precision=precision)
         )
 
     def forward(
@@ -585,10 +577,10 @@ class MagneticBackbone(nn.Module):
         edge_irreps = _degrees(lmax)
         self.edge_irreps = edge_irreps
         self.edge_attributes = backend.make_spherical_harmonics(
-            SphericalHarmonicsDescriptor(lmax=lmax, precision=precision)
+            SphericalHarmonicsSpec(lmax=lmax, precision=precision)
         )
         self.radial = backend.make_radial_basis(
-            RadialBasisDescriptor(
+            RadialBasisSpec(
                 kind="bessel",
                 num_basis=num_radial,
                 cutoff=cutoff,
@@ -600,7 +592,7 @@ class MagneticBackbone(nn.Module):
             backend, saturation, num_moment_basis, moment_lmax, precision
         )
         self.node_embedding = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=f"{len(self.atomic_numbers)}x0e",
                 irreps_out=f"{num_features}x0e",
                 precision=precision,

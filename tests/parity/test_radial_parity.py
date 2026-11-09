@@ -17,7 +17,7 @@ from mace_core.config import (
     PolynomialCutoffConfig,
     SoftTransformConfig,
 )
-from mace_core.kernels.descriptors import LinearDescriptor
+from mace_core.kernels.specs import LinearSpec
 from mace_torch.backends.radial import ChebyshevBasis
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.embedding import (
@@ -150,9 +150,7 @@ def test_linear_node_embedding_parity_with_the_legacy_weight(fp64):
         irreps_out=o3.Irreps(f"{num_channels}x0e"),
     )
     v1 = ReferenceBackend().make_linear(
-        LinearDescriptor(
-            irreps_in=f"{num_elements}x0e", irreps_out=f"{num_channels}x0e"
-        )
+        LinearSpec(irreps_in=f"{num_elements}x0e", irreps_out=f"{num_channels}x0e")
     )
     legacy_weight = legacy.linear.weight.detach().reshape(num_elements, num_channels)
     with torch.no_grad():

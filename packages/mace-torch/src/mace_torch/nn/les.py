@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.descriptors import LinearDescriptor
+from mace_core.kernels.specs import LinearSpec
 from torch import Tensor, nn
 
 
@@ -20,7 +20,7 @@ class TensorReadout(nn.Module):
     ):
         super().__init__()
         self.linear = backend.make_linear(
-            LinearDescriptor(irreps_in=irreps, irreps_out=irreps, precision=precision)
+            LinearSpec(irreps_in=irreps, irreps_out=irreps, precision=precision)
         )
         indices = {key: [] for key in ("0e", "1o", "1e")}
         for span, ir in Irreps.parse(irreps).slices():

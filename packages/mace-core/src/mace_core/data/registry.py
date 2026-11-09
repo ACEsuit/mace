@@ -9,7 +9,7 @@ raises for unavailable providers. Conflicting registrations raise
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from importlib.metadata import entry_points
+from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Any
 
@@ -59,17 +59,19 @@ class DiscoveredDataBackend:
     factory: Any = field(default=None, repr=False, compare=False)
 
 
-def _discover() -> dict[str, DiscoveredDataBackend]:
-    found: dict[str, DiscoveredDataBackend] = {}
-    for entry in unique_entries(
+def _entries() -> dict[str, EntryPoint]:
+    return unique_entries(
         entry_points(group=ENTRY_POINT_GROUP),
         ENTRY_POINT_GROUP,
         DuplicateDataBackendError,
-    ).values():
+    )
+
+
+def _discover(entries: dict[str, EntryPoint]) -> dict[str, DiscoveredDataBackend]:
+    found = {}
+    for name, entry in entries.items():
         factory, reason = load_entry_point(entry)
-        found[entry.name] = DiscoveredDataBackend(
-            entry.name, not reason, reason, factory
-        )
+        found[name] = DiscoveredDataBackend(name, not reason, reason, factory)
     return found
 
 
@@ -79,7 +81,7 @@ def available_backends() -> dict[str, DiscoveredDataBackend]:
     A broken optional backend must not break ``import``, so this never raises
     for one that failed to load. The record says why.
     """
-    return _discover()
+    return _discover(_entries())
 
 
 def _ordered(names: list[str]) -> list[str]:
@@ -114,35 +116,36 @@ def open_dataset(
         DataBackendError: The backend was found and the source could not be
             read.
     """
-    discovered = _discover()
+    entries = _entries()
     text = str(source)
 
     if format != "auto":
-        if format not in discovered:
+        if format not in entries:
             raise UnknownBackendError(
                 text,
                 reason=(
                     f"no data backend is registered as {format!r}. The "
-                    f"registered names are {sorted(discovered)}, from the "
+                    f"registered names are {sorted(entries)}, from the "
                     f"entry point group {ENTRY_POINT_GROUP!r}."
                 ),
             )
-        record = discovered[format]
-        if not record.loaded:
+        factory, reason = load_entry_point(entries[format])
+        if reason:
             raise UnknownBackendError(
                 text,
                 reason=(
                     f"the data backend {format!r} is registered but did not "
-                    f"import: {record.reason}"
+                    f"import: {reason}"
                 ),
             )
-        return record.factory.open(
+        return factory.open(
             source,
             key_spec=key_spec,
             head=head,
             keep_isolated_atoms=keep_isolated_atoms,
         )
 
+    discovered = _discover(entries)
     claimed = [
         name
         for name in _ordered(list(discovered))

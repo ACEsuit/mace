@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from importlib.metadata import EntryPoint
 from typing import Any
 
@@ -38,3 +38,26 @@ def load_entry_point(entry: EntryPoint) -> tuple[Any, str]:
         return entry.load(), ""
     except Exception as failure:
         return None, repr(failure)
+
+
+def resolve_entry_point(
+    entries: Mapping[str, EntryPoint],
+    name: str,
+    *,
+    group: str,
+    description: str,
+    unavailable: type[RuntimeError],
+) -> Any:
+    """Load one named registration without importing any other provider."""
+    if name not in entries:
+        raise unavailable(
+            f"no {description} is registered as {name!r}. The registered names "
+            f"are {sorted(entries)}, from the entry point group {group!r}."
+        )
+    factory, reason = load_entry_point(entries[name])
+    if reason:
+        raise unavailable(
+            f"the {description} {name!r} is registered but did not import "
+            f"on this machine: {reason}. It is not being substituted."
+        )
+    return factory

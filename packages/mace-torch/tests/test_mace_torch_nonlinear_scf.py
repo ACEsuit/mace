@@ -321,7 +321,7 @@ def test_force_stress_match_energy_finite_differences(options):
 def test_model_fullgraph_capture(options, compiler_cache):
     model = model_for({**options, "max_iters": 4})
     graph = graph_for()
-    graph[LONG_RANGE_PLAN] = long_range_plan(graph, model.descriptor, dense_pairs=True)
+    graph[LONG_RANGE_PLAN] = long_range_plan(graph, model.solver_spec, dense_pairs=True)
     expected = model(graph)
     compiled = torch.compile(model, backend="aot_eager", fullgraph=True)
     actual = compiled(graph)
@@ -364,24 +364,24 @@ def test_training_and_checkpoint(tmp_path, monkeypatch, options, constant_charge
     ["linear", "fully_connected_tp", "channelwise_tp_conv", "symmetric_contraction"],
 )
 def test_response_jacobian_matches_registered_kernel_backward(kind):
-    from mace_core.kernels.descriptors import (
-        ChannelwiseTPConvDescriptor,
-        FullyConnectedTPDescriptor,
-        LinearDescriptor,
-        SymmetricContractionDescriptor,
+    from mace_core.kernels.specs import (
+        ChannelwiseTPConvSpec,
+        FullyConnectedTPSpec,
+        LinearSpec,
+        SymmetricContractionSpec,
     )
 
     descriptors = {
-        "linear": LinearDescriptor(
+        "linear": LinearSpec(
             irreps_in="2x0e+2x1o", irreps_out="2x0e+2x1o", has_bias=True
         ),
-        "fully_connected_tp": FullyConnectedTPDescriptor(
+        "fully_connected_tp": FullyConnectedTPSpec(
             irreps_in1="2x0e+2x1o", irreps_in2="2x0e", irreps_out="2x0e+2x1o"
         ),
-        "channelwise_tp_conv": ChannelwiseTPConvDescriptor(
+        "channelwise_tp_conv": ChannelwiseTPConvSpec(
             irreps_node="0e+1o", irreps_edge="0e+1o", irreps_out="0e+1o", num_features=2
         ),
-        "symmetric_contraction": SymmetricContractionDescriptor(
+        "symmetric_contraction": SymmetricContractionSpec(
             irreps_in="0e+1o",
             irreps_out="0e+1o",
             num_features=2,
@@ -389,9 +389,9 @@ def test_response_jacobian_matches_registered_kernel_backward(kind):
             correlation=3,
         ),
     }
-    descriptor = descriptors[kind]
-    native = getattr(ResponseOps(), "make_" + kind)(descriptor)
-    ordinary = getattr(ReferenceBackend(), "make_" + kind)(descriptor)
+    solver_spec = descriptors[kind]
+    native = getattr(ResponseOps(), "make_" + kind)(solver_spec)
+    ordinary = getattr(ReferenceBackend(), "make_" + kind)(solver_spec)
     initialize_model_weights(ordinary, 15)
     if kind != "channelwise_tp_conv":
         native.load_canonical(ordinary.to_canonical())
@@ -404,10 +404,10 @@ def test_response_jacobian_matches_registered_kernel_backward(kind):
     elif kind == "symmetric_contraction":
         args = (torch.tensor([0, 1]),)
     else:
-        assert isinstance(descriptor, ChannelwiseTPConvDescriptor)
+        assert isinstance(solver_spec, ChannelwiseTPConvSpec)
         args = (
             torch.randn(2, 4),
-            torch.randn(2, len(descriptor.paths), 2),
+            torch.randn(2, len(solver_spec.paths), 2),
             torch.tensor([0, 1]),
             torch.tensor([1, 0]),
             2,
@@ -440,8 +440,8 @@ def test_nonlinear_solver_span_is_selected_only_at_build(monkeypatch):
     class Solver(ReferenceSolver):
         name = "nonlinear-test-solver"
 
-        def make_scf_solve(self, descriptor):
-            assert descriptor.scf_spec.method == "nonlinear_fixed_fermi"
+        def make_scf_solve(self, solver_spec):
+            assert solver_spec.scf_spec.method == "nonlinear_fixed_fermi"
             events.append("build")
 
             class Span(NonlinearFixedPoint):
@@ -450,7 +450,7 @@ def test_nonlinear_solver_span_is_selected_only_at_build(monkeypatch):
                     return super().forward(response, parameters, inputs)
 
             return Span(
-                False, descriptor.scf_spec.max_iters, descriptor.scf_spec.tolerance
+                False, solver_spec.scf_spec.max_iters, solver_spec.scf_spec.tolerance
             )
 
     monkeypatch.setattr(

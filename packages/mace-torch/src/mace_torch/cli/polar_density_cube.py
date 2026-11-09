@@ -141,11 +141,11 @@ def load_calculator(model: str, device: str, default_dtype: str):
             f"{model} is a {type(polar).__name__}, which has no density to "
             f"write. This takes a charge-aware model."
         )
-    descriptor = polar.descriptor
+    solver_spec = polar.solver_spec
     settings = (
-        float(descriptor.smearing_width),
-        int(descriptor.multipole_max_l),
-        float(descriptor.kspace_cutoff),
+        float(solver_spec.smearing_width),
+        int(solver_spec.multipole_max_l),
+        float(solver_spec.kspace_cutoff),
     )
     return MACECalculator(models=deployed, device=device), settings
 

@@ -40,20 +40,20 @@ def test_exported_skip_and_adjoint_with_changing_composition(nodes, species):
 
 
 def test_lowering_respects_canonical_weights_irreps_and_precision():
-    from mace_core.kernels.descriptors import FullyConnectedTPDescriptor
+    from mace_core.kernels.specs import FullyConnectedTPSpec
     from mace_torch.backends.precision import cast_at_boundary
     from mace_torch.backends.reference import ReferenceFullyConnectedTP
     from mace_torch.deploy.grouped_skip import lower_scalar_skips
 
     def make(inp="3x0e", out="7x0e", **kwargs):
-        descriptor = FullyConnectedTPDescriptor(
+        kernel_spec = FullyConnectedTPSpec(
             irreps_in1=inp,
             irreps_in2="5x0e",
             irreps_out=out,
             precision="float32",
             **kwargs,
         )
-        return ReferenceFullyConnectedTP(descriptor)
+        return ReferenceFullyConnectedTP(kernel_spec)
 
     torch.manual_seed(934)
     scalar, vector, wider, casting = (
@@ -103,7 +103,7 @@ def test_native_bundle_selects_and_executes_scalar_skips(tmp_path):
     )
     data = run_data_stage(config, CATALOGUE)
     trained = run_model_stage(config, data, CATALOGUE)
-    write_model(tmp_path / "source", trained.model, trained.metadata)
+    write_model(tmp_path / "source", trained.engine, trained.metadata)
     dtype = torch.get_default_dtype()
     precision = "float32" if dtype == torch.float32 else "float64"
     bundle = export_lammps(

@@ -10,7 +10,7 @@ from mace_core.config.local_sources import LocalSplitChargeConfig
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import canonical_state, load_canonical_state
 from scipy.spatial.transform import Rotation
-from test_mace_torch_electrostatics_families import model_for, graph_for, ENERGY_STRESS
+from test_mace_torch_electrostatics_families import ENERGY_STRESS, graph_for, model_for
 
 CASES = [
     {"oxidation_mixer": "sum"},
@@ -203,7 +203,7 @@ def test_fullgraph_compilation(options):
         model = model_for("lsc_mace", options=options)
         graph = graph_for()
         graph[LONG_RANGE_PLAN] = long_range_plan(
-            graph, model.descriptor, dense_pairs=True
+            graph, model.solver_spec, dense_pairs=True
         )
         expected = model(graph)
         actual = torch.compile(model, backend="aot_eager", fullgraph=True)(graph)
@@ -236,8 +236,8 @@ def test_invalid_or_unused_configuration(options):
 def test_combined_training_and_deployment(tmp_path):
     from ase.io import read, write
     from mace_core.config.resolved import ResolvedConfig
-    from mace_core.observables import DEFAULT_CATALOGUE
     from mace_core.elements.default_keys import DefaultKeys
+    from mace_core.observables import DEFAULT_CATALOGUE
     from mace_torch.deploy.loader import load_deployed
     from mace_torch.models.electrostatics import LocalSplitChargeModel
     from mace_torch.train import run_data_stage, run_model_stage, run_train_stage
@@ -273,12 +273,12 @@ def test_combined_training_and_deployment(tmp_path):
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
     optimized = [
         id(p)
-        for group in build_optimizer(built.model, config.training).param_groups
+        for group in build_optimizer(built.engine, config.training).param_groups
         for p in group["params"]
     ]
-    parameters = {id(p) for p in built.model.parameters() if p.requires_grad}
+    parameters = {id(p) for p in built.engine.parameters() if p.requires_grad}
     assert len(optimized) == len(parameters) and set(optimized) == parameters
-    local = cast(LocalSplitChargeModel, built.model.get_submodule("backbone"))
+    local = cast(LocalSplitChargeModel, built.engine.get_submodule("model"))
     assert local.backbone.graph_embedding is not None
     assert local.polarizability_readouts is not None
     modules = (
@@ -334,20 +334,22 @@ def test_polarizability_readout_higher_features(max_l):
     from mace_torch.kernels import initialize_model_weights
     from mace_torch.nn.local_sources import LocalPolarizability
 
-    irreps = "+".join(f"2x{l}{'o' if l % 2 else 'e'}" for l in range(max_l + 1))
+    irreps = "+".join(
+        f"2x{degree}{'o' if degree % 2 else 'e'}" for degree in range(max_l + 1)
+    )
     block = LocalPolarizability(ReferenceBackend(), irreps, "float64")
     initialize_model_weights(block, 43)
     rotation = Rotation.from_rotvec([0.3, -0.1, 0.2]).as_matrix()
     # Charge-aware backbones evaluate harmonics on edges ordered (y, z, x).
     feature_rotation = rotation[np.ix_([1, 2, 0], [1, 2, 0])]
     features, rotated, inverted = [], [], []
-    for l in range(max_l + 1):
-        x = torch.randn(3, 2, 2 * l + 1)
+    for degree in range(max_l + 1):
+        x = torch.randn(3, 2, 2 * degree + 1)
         features.append(x.flatten(1))
         rotated.append(
-            (x @ torch.tensor(wigner_d_real(l, feature_rotation))).flatten(1)
+            (x @ torch.tensor(wigner_d_real(degree, feature_rotation))).flatten(1)
         )
-        inverted.append((x * (-1) ** l).flatten(1))
+        inverted.append((x * (-1) ** degree).flatten(1))
     features = torch.cat(features, dim=-1).requires_grad_()
     expected = block(features)
     matrix = torch.tensor(rotation)

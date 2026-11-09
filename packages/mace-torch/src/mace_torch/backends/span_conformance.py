@@ -16,17 +16,17 @@ from mace_core.config import (
     SoftTransformConfig,
 )
 from mace_core.edges import plan_edges
-from mace_core.kernels.descriptors import (
-    ActivationLayout,
-    ChannelwiseTPConvDescriptor,
-    DistanceTransformDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SphericalHarmonicsDescriptor,
-)
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.registry import get_backend
 from mace_core.kernels.spans import EdgeConvolutionSpan
+from mace_core.kernels.specs import (
+    ActivationLayout,
+    ChannelwiseTPConvSpec,
+    DistanceTransformSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SphericalHarmonicsSpec,
+)
 from torch import Tensor, nn
 
 from mace_torch.backends.conformance import (
@@ -50,7 +50,7 @@ def span_conformance_cases(
     precision: Precision = "float64",
 ) -> list[EdgeConvolutionSpan]:
     """Small angular convolutions, all bases and both distance transforms."""
-    convolution = ChannelwiseTPConvDescriptor(
+    convolution = ChannelwiseTPConvSpec(
         irreps_node="0e+1o",
         irreps_edge="0e+1o",
         irreps_out="0e+1o",
@@ -58,11 +58,9 @@ def span_conformance_cases(
         precision=precision,
     )
     base = EdgeConvolutionSpan(
-        RadialBasisDescriptor(num_basis=3, cutoff=3.0, precision=precision),
-        SphericalHarmonicsDescriptor(lmax=1, precision=precision),
-        RadialMLPDescriptor(
-            channels=(3, 4, len(convolution.paths) * 2), precision=precision
-        ),
+        RadialBasisSpec(num_basis=3, cutoff=3.0, precision=precision),
+        SphericalHarmonicsSpec(lmax=1, precision=precision),
+        RadialMLPSpec(channels=(3, 4, len(convolution.paths) * 2), precision=precision),
         convolution,
     )
     conditioned = replace(
@@ -79,19 +77,17 @@ def span_conformance_cases(
         replace(base, radial_basis=replace(base.radial_basis, kind="chebyshev")),
         replace(
             base,
-            distance_transform=DistanceTransformDescriptor(
+            distance_transform=DistanceTransformSpec(
                 kind="agnesi", precision=precision
             ),
         ),
         replace(
             base,
-            distance_transform=DistanceTransformDescriptor(
-                kind="soft", precision=precision
-            ),
+            distance_transform=DistanceTransformSpec(kind="soft", precision=precision),
         ),
         replace(
             base,
-            density=RadialMLPDescriptor(channels=(3, 1), precision=precision),
+            density=RadialMLPSpec(channels=(3, 1), precision=precision),
         ),
         replace(base, radial_network=conditioned),
         replace(
@@ -217,7 +213,7 @@ def run_span_conformance(
         raise AssertionError("an unrecognized span tuple must return None")
     results = []
     for shape in span_conformance_cases(precision):
-        members = tuple(replace(member, layout=layout) for member in shape.descriptors)
+        members = tuple(replace(member, layout=layout) for member in shape.kernel_specs)
         span = backend.make_interaction_layer(members)
         result = ConformanceResult(
             "interaction_layer", shape, span is not None, ["decline"]

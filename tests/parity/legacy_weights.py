@@ -120,7 +120,7 @@ def legacy_to_reference_map(
     return solution.T
 
 
-def canonical_contraction_bases(descriptor, position):
+def canonical_contraction_bases(kernel_spec, position):
     """The declared basis, independent of a backend's compressed storage."""
     from mace_core.clebsch_gordan.irreps import Irreps
     from mace_core.clebsch_gordan.reduced_basis import (
@@ -130,13 +130,13 @@ def canonical_contraction_bases(descriptor, position):
 
     build = (
         reduced_symmetric_tensor_product_basis
-        if descriptor.basis == "reduced"
+        if kernel_spec.basis == "reduced"
         else full_symmetric_tensor_product_basis
     )
-    target = str(Irreps.parse(descriptor.irreps_out).terms[position][1])
+    target = str(Irreps.parse(kernel_spec.irreps_out).terms[position][1])
     tables = []
-    for order in range(1, descriptor.correlation + 1):
-        array = build(descriptor.irreps_in, order, target)[target]
+    for order in range(1, kernel_spec.correlation + 1):
+        array = build(kernel_spec.irreps_in, order, target)[target]
         tables.append(
             torch.tensor(
                 array.reshape(

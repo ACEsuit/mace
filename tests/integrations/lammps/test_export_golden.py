@@ -255,7 +255,7 @@ def test_the_mliap_export_declares_the_committed_interface(anchor_copy):
     """The ML-IAP artefact's interface is snapshotted; its numerics are not.
 
     What LAMMPS reads off this object before it ever calls the model -- the
-    element list, the cutoff, the descriptor and parameter counts -- is what
+    element list, the cutoff, the kernel_spec and parameter counts -- is what
     a pair_style line has to agree with, so a change in any of it breaks
     every input script in the field. That is committed.
 

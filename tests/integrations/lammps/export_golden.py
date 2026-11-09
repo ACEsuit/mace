@@ -205,7 +205,7 @@ def mliap_interface(artifact_path: Path) -> Dict[str, object]:
     Not TorchScript -- the ML-IAP export is a pickled module -- so it is read
     with ``torch.load`` and inspected through the attributes the ML-IAP
     runtime itself reads: LAMMPS asks for the element list, the cutoff and
-    the descriptor/parameter counts before it ever calls the model, and a
+    the kernel_spec/parameter counts before it ever calls the model, and a
     change in any of them changes what a LAMMPS input script has to say.
     """
     import torch  # noqa: PLC0415

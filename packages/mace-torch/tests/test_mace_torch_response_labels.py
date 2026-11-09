@@ -369,7 +369,7 @@ def test_response_labels_train_evaluate_and_reload(
     # Produce labels from a seeded model; the later learner sees a 20% changed
     # response. Loss arithmetic and axis ownership are pinned independently above.
     teacher = build(ResolvedConfig.model_validate(document))
-    teacher.model.to(device)
+    teacher.engine.to(device)
     frame_index = 0
     for loader in (
         teacher.data.train_eval_loaders["default"],
@@ -377,7 +377,7 @@ def test_response_labels_train_evaluate_and_reload(
     ):
         for batch in loader:
             batch = batch.to(device)
-            output = teacher.model(batch.graph, compute=(response_name,))
+            output = teacher.engine(batch.graph, compute=(response_name,))
             response = output.get(response_name).detach().cpu()
             rows = response if observable.is_scalar else response.movedim(0, 1)
             assert torch.count_nonzero(rows)
@@ -403,24 +403,24 @@ def test_response_labels_train_evaluate_and_reload(
     document["loss"]["weights"][response_name] = 1.0
     config = ResolvedConfig.model_validate(document)
     initial = build(config)
-    initial.model.to(device)
+    initial.engine.to(device)
     loss = build_loss(requested, config.loss)
     specs = metric_specs(requested)
     loader = initial.data.train_eval_loaders["default"]
     before = evaluate(
-        initial.model, loader, loss, specs, device=device, compute=(response_name,)
+        initial.engine, loader, loss, specs, device=device, compute=(response_name,)
     )
     assert before[f"rmse_{response_name}"] > 0
     trained = run(config)
     after = evaluate(
-        trained.model, loader, loss, specs, device=device, compute=(response_name,)
+        trained.engine, loader, loss, specs, device=device, compute=(response_name,)
     )
     assert after["loss"] < before["loss"]
     assert after[f"rmse_{response_name}"] < before[f"rmse_{response_name}"]
     assert trained.checkpoint_path is not None
     loaded = load_deployed(trained.checkpoint_path, device=device)
     batch = next(iter(loader)).to(device)
-    expected = trained.model(batch.graph, compute=(response_name,)).get(response_name)
+    expected = trained.engine(batch.graph, compute=(response_name,)).get(response_name)
     actual = loaded.engine(batch.graph, compute=(response_name,)).get(response_name)
     torch.testing.assert_close(actual, expected, rtol=EXACT.rtol, atol=EXACT.atol)
     measured = evaluate(

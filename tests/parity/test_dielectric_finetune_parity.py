@@ -95,7 +95,7 @@ def write_foundation(legacy, directory):
         ),
         initialize=False,
     )
-    transfer_dipole_weights(legacy, engine_.get_submodule("backbone"), "dielectric")
+    transfer_dipole_weights(legacy, engine_.get_submodule("model"), "dielectric")
     metadata = ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
         provenance=Provenance(versions={"mace-torch-v1": "anchor"}),
@@ -179,7 +179,7 @@ def test_the_data_s_table_is_the_frozen_tree_s_dielectric_transfer(
     built = build(fine_tune_config(tmp_path, path, "data"))
     assert list(built.data.z_table.zs) == [1, 8]
     subset = legacy_subset(legacy, [1, 8])
-    compare(built.model.get_submodule("backbone"), subset, "water", [1, 8])
+    compare(built.engine.get_submodule("model"), subset, "water", [1, 8])
 
 
 def test_the_foundation_s_table_computes_what_the_foundation_does(foundation, tmp_path):
@@ -187,7 +187,7 @@ def test_the_foundation_s_table_computes_what_the_foundation_does(foundation, tm
     built = build(fine_tune_config(tmp_path, path, "foundation"))
     assert list(built.data.z_table.zs) == [1, 6, 8]
     for name in ("water", "methanol"):
-        compare(built.model.get_submodule("backbone"), legacy, name, [1, 6, 8])
+        compare(built.engine.get_submodule("model"), legacy, name, [1, 6, 8])
 
 
 def test_the_converted_foundation_drives_the_calculator(foundation):

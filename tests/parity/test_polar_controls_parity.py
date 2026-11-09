@@ -259,9 +259,9 @@ def test_all_polar_controls_build_train_and_survive_reload(tmp_path, route):
     assert config.electrostatics.kspace_cutoff_factor == 0.85
     data = run_data_stage(config, DEFAULT_CATALOGUE)
     built = run_model_stage(config, data, DEFAULT_CATALOGUE)
-    model = built.model.get_submodule("backbone")
+    model = built.engine.get_submodule("model")
     assert model.config.polar.model_dump() == EXPECTED
-    assert model.descriptor.kspace_cutoff == pytest.approx(
+    assert model.solver_spec.kspace_cutoff == pytest.approx(
         0.85
         * gto_basis_kspace_cutoff(
             [model.config.polar.multipole_width, *model.config.polar.feature_widths],
@@ -269,23 +269,23 @@ def test_all_polar_controls_build_train_and_survive_reload(tmp_path, route):
         )
     )
     assert len(model.updates) == 2 and model.density_width == 4
-    assert model.descriptor.features.include_self_interaction
-    assert model.descriptor.features.quadrupole_corrections
+    assert model.solver_spec.features.include_self_interaction
+    assert model.solver_spec.features.quadrupole_corrections
     before = {
         name: parameter.detach().clone()
-        for name, parameter in built.model.named_parameters()
+        for name, parameter in built.engine.named_parameters()
     }
     run_train_stage(config, built, checkpoint_path=tmp_path / "polar")
     assert any(
         not torch.equal(before[name], parameter)
-        for name, parameter in built.model.named_parameters()
+        for name, parameter in built.engine.named_parameters()
     )
-    artifact = write_model(tmp_path / "checked", built.model, built.metadata)
+    artifact = write_model(tmp_path / "checked", built.engine, built.metadata)
     loaded = load_deployed(artifact)
     assert loaded.model.config.polar == model.config.polar
     graph = next(iter(next(iter(data.valid_loaders.values())))).graph
     actual = loaded.compute(dict(graph), compute=("forces",))
-    expected = built.model(dict(graph), compute=("forces",))
+    expected = built.engine(dict(graph), compute=("forces",))
     for name in ("total_energy", "forces", "dipole"):
         close(getattr(actual, name), getattr(expected, name), EXACT)
     assert actual.extras.keys() == expected.extras.keys()

@@ -168,7 +168,7 @@ def _rebuilt_bases(sidecar: Path) -> bool:
     from mace_core.weights.neutral_format import read_neutral
 
     return any(
-        spec.descriptor.get("basis_rebuilt_at_float64")
+        spec.kernel_spec.get("basis_rebuilt_at_float64")
         for spec in read_neutral(sidecar).sidecar.ops.values()
         if spec.op_kind == "symmetric_contraction"
     )

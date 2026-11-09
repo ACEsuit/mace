@@ -108,7 +108,7 @@ def water_foundation(directory):
         data = run_data_stage(config, DEFAULT_CATALOGUE)
         built = run_model_stage(config, data, DEFAULT_CATALOGUE)
         trained = run_train_stage(config, built)
-        return write_model(directory / "model", trained.model, built.metadata)
+        return write_model(directory / "model", trained.engine, built.metadata)
     finally:
         torch.set_default_dtype(previous)
 
@@ -175,7 +175,7 @@ def test_every_old_row_is_carried_with_the_new_raw_weight_normalization(
                     carried.reshape(-1, 3)[:, rows],
                     value.reshape(-1, 2) * (3 / 2) ** 0.5,
                 )
-            elif path.endswith("energy_head"):
+            elif path.endswith("energy_readout"):
                 assert torch.equal(carried[:, rows], value), f"{path}:{name}"
             elif path.endswith(".skip"):
                 assert torch.equal(carried[rows], value * (3 / 2) ** 0.5), (

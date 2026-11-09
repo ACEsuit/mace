@@ -61,7 +61,7 @@ def test_position_independent_energy_has_zero_derivatives(dtype, trainable, trai
     assert result.extras["edge_forces"].shape == (0, 3)
     if training:
         result.forces.square().sum().backward()
-        assert engine.backbone.energy.grad is None
+        assert engine.model.energy.grad is None
 
 
 @fp64_only
@@ -80,7 +80,7 @@ def test_no_model_forward_takes_a_gradient():
     frozen tree's compiled path never went anywhere. The engine is the only
     differentiation site.
     """
-    from mace_torch.models import energy, heads, outputs
+    from mace_torch.models import energy, outputs, readouts
     from mace_torch.nn import backbone, graph_features, interaction, product_basis
 
     forbidden = {"grad", "requires_grad_", "backward"}
@@ -90,7 +90,7 @@ def test_no_model_forward_takes_a_gradient():
         product_basis,
         graph_features,
         energy,
-        heads,
+        readouts,
         outputs,
     )
     scanned = 0
@@ -287,10 +287,14 @@ def test_a_derivative_without_an_energy_says_what_is_missing():
 
     engine = build_engine()
     dipole = ObservableSpec(name="dipole", irreps="1o", per_atom=False, units="eV/A")
+    from mace_torch_engine_fixtures import FeatureReadoutModel
+
     without_energy = DerivativeEngine(
-        engine.backbone,
+        FeatureReadoutModel(
+            engine.model.backbone,
+            MACEOutputs(ReferenceBackend(), [dipole], ["0e+1o", "0e"], 4),
+        ),
         ENERGY,
-        MACEOutputs(ReferenceBackend(), [dipole], ["0e+1o", "0e"], 4),
     )
     positions, numbers = molecule()
     with pytest.raises(ValueError, match="total_energy"):

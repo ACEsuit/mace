@@ -493,7 +493,7 @@ class Walk:
             name,
             "linear",
             {"weight": weight, "bias": bias},
-            descriptor={
+            kernel_spec={
                 "irreps_in": str(module.irreps_in),
                 "irreps_out": str(module.irreps_out),
             },
@@ -510,7 +510,7 @@ def layer_norm_mlp(walker: Walk, name: str, module, prefix: str) -> None:
     for key, value in module.net.named_parameters():
         walker.use(f"{prefix}.net.{key}")
         tensors[key] = value.detach().cpu().numpy()
-    walker.op(name, "layer_norm_mlp", tensors, descriptor={"widths": list(module.hs)})
+    walker.op(name, "layer_norm_mlp", tensors, kernel_spec={"widths": list(module.hs)})
 
 
 def walk_nonlinear(walker: Walk, block, prefix: str) -> None:
@@ -528,7 +528,7 @@ def walk_nonlinear(walker: Walk, block, prefix: str) -> None:
             name: getattr(block, name).detach().cpu().numpy().reshape(())
             for name in ("alpha", "beta")
         },
-        descriptor={
+        kernel_spec={
             "class": type(block).__name__,
             "avg_num_neighbors": float(block.avg_num_neighbors),
             "edge_irreps": str(block.edge_irreps),
@@ -602,7 +602,7 @@ def walk(model, spelling: str) -> Walk:
             "weights": basis.bessel_weights.detach().cpu().numpy(),
             "prefactor": basis.prefactor.detach().cpu().numpy(),
         },
-        descriptor={
+        kernel_spec={
             "r_max": float(basis.r_max),
             "num_basis": int(basis.bessel_weights.numel()),
         },
@@ -615,7 +615,7 @@ def walk(model, spelling: str) -> Walk:
         "cutoff",
         "polynomial_cutoff",
         {},
-        descriptor={
+        kernel_spec={
             "p": int(radial.cutoff_fn.p),
             "r_max": float(radial.cutoff_fn.r_max),
         },
@@ -669,7 +669,7 @@ def walk(model, spelling: str) -> Walk:
             "pair_repulsion",
             "zbl",
             {name: getattr(zbl, name).detach().cpu().numpy() for name in names},
-            descriptor={"p": int(zbl.p)},
+            kernel_spec={"p": int(zbl.p)},
         )
 
     # A dielectric model has no isolated-atom energies: it reads out no energy.
@@ -711,7 +711,7 @@ def walk(model, spelling: str) -> Walk:
             prefix,
             "interaction",
             {},
-            descriptor={
+            kernel_spec={
                 "class": kind,
                 "avg_num_neighbors": float(block.avg_num_neighbors),
             },
@@ -743,7 +743,7 @@ def walk(model, spelling: str) -> Walk:
             f"{prefix}.skip",
             "element_linear",
             {"weight": skip_to_canonical(block.skip_tp)},
-            descriptor={
+            kernel_spec={
                 "irreps_in": str(block.skip_tp.irreps_in1),
                 "irreps_out": str(block.skip_tp.irreps_out),
                 "num_elements": int(block.skip_tp.irreps_in2.dim),
@@ -795,7 +795,7 @@ def walk(model, spelling: str) -> Walk:
                 tensors,
                 clebsch_gordan_basis="reduced" if use_reduced else "full",
                 parametrization="nested",
-                descriptor={
+                kernel_spec={
                     "irreps_in": irreps_in,
                     "target": target,
                     "correlation": int(correlation),
@@ -855,7 +855,7 @@ def walk(model, spelling: str) -> Walk:
         walker.linear(f"{prefix}.second", readout.linear_2, f"{prefix}.linear_2")
         acts = getattr(readout.non_linearity, "acts", [])
         gate = [getattr(getattr(act, "f", act), "__name__", None) for act in acts]
-        walker.ops[f"{prefix}.first"]["descriptor"]["gate"] = gate[0] if gate else None
+        walker.ops[f"{prefix}.first"]["kernel_spec"]["gate"] = gate[0] if gate else None
     if spelling == "les":
         walk_les(walker, model)
     if spelling == "polar":
@@ -903,9 +903,9 @@ def walk(model, spelling: str) -> Walk:
 def walk_les(walker: Walk, model) -> None:
     """The LES-specific readouts. Equivariant maps use the usual canonical weights."""
     for source, role in {
-        "les_readouts": "outputs.heads.latent_charges.readouts",
-        "les_alpha_readouts": "outputs.heads.latent_alphas.readouts",
-        "les_kappa_readouts": "outputs.heads.latent_kappas.readouts",
+        "les_readouts": "outputs.readouts.latent_charges.readouts",
+        "les_alpha_readouts": "outputs.readouts.latent_alphas.readouts",
+        "les_kappa_readouts": "outputs.readouts.latent_kappas.readouts",
         "les_u_readouts": "multipoles.dipole",
         "les_quad_2e_readouts": "multipoles.quad_sh",
         "les_alpha_2e_readouts": "multipoles.alpha_sh",
@@ -956,7 +956,7 @@ def walk_radial(walker: Walk, name: str, module, source: str) -> None:
         name,
         "radial_mlp",
         layers,
-        descriptor={"widths": list(module.hs), "activation": activation},
+        kernel_spec={"widths": list(module.hs), "activation": activation},
     )
 
 
@@ -997,7 +997,7 @@ def walk_magnetic_interaction(walker: Walk, block, prefix: str) -> None:
         f"{prefix}.skip",
         "element_linear",
         {"weight": skip_to_canonical(skip)},
-        descriptor={
+        kernel_spec={
             "irreps_in": str(skip.irreps_in1),
             "irreps_out": str(skip.irreps_out),
             "num_elements": int(skip.irreps_in2.dim),
@@ -1009,11 +1009,11 @@ def walk_magnetic_interaction(walker: Walk, block, prefix: str) -> None:
 
 def dipole_polar_readout(walker: Walk, readout, prefix: str) -> None:
     """The dielectric model's gated readout: its two linears, and the gate's
-    sections, scalars, gates and gated, as the descriptor of the first."""
+    sections, scalars, gates and gated, as the kernel specification of the first."""
     walker.linear(f"{prefix}.first", readout.linear_1, f"{prefix}.linear_1")
     walker.linear(f"{prefix}.second", readout.linear_2, f"{prefix}.linear_2")
     gate = readout.equivariant_nonlin
-    walker.ops[f"{prefix}.first"]["descriptor"]["gate_sections"] = {
+    walker.ops[f"{prefix}.first"]["kernel_spec"]["gate_sections"] = {
         "scalars": str(gate.irreps_scalars),
         "gates": str(gate.irreps_gates),
         "gated": str(gate.irreps_gated),
@@ -1085,7 +1085,7 @@ def sparse_product(walker: Walk, name: str, product, prefix: str) -> None:
         name,
         "sparse_product",
         tensors,
-        descriptor={
+        kernel_spec={
             "irreps_in1": str(product.irreps_in1),
             "irreps_in2": str(product.irreps_in2),
             "irreps_out": str(product.irreps_out),

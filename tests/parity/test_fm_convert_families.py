@@ -351,7 +351,7 @@ def test_fm_convert_magnetic_scf_precision_and_foundation(fp64, tmp_path):
     )
     foundation = read_foundation(checkpoint, DEFAULT_CATALOGUE)
     assert isinstance(foundation.engine, DerivativeEngine)
-    assert foundation.model is foundation.engine.backbone
+    assert foundation.model is foundation.engine.model
 
 
 @pytest.mark.magnetic
@@ -437,7 +437,7 @@ def test_fm_convert_magnetic_without_one_body_or_repulsion(fp64, tmp_path, layer
     )
     legacy = MagneticScaleShiftMACE(**settings)
     imported, _ = converted(legacy, tmp_path)
-    assert imported.engine.backbone.one_body is None
+    assert imported.engine.model.one_body is None
     atoms = surfaces.magnetic_fixtures()["mag_fe3_canted"]
     expected = legacy(
         surfaces.build_batch(legacy, atoms), compute_force=True, compute_magforces=True

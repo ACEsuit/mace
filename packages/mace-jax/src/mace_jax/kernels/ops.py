@@ -30,12 +30,12 @@ from mace_core.kernels.canonical import (
     linear_path_normalization,
     linear_weight_table,
 )
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialMLPDescriptor,
-    SymmetricContractionDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialMLPSpec,
+    SymmetricContractionSpec,
 )
 
 
@@ -119,10 +119,10 @@ class CanonicalOp(nnx.Module):
 class Linear(CanonicalOp):
     """Equivariant linear: [nodes, dim_in] -> [nodes, dim_out]."""
 
-    def __init__(self, descriptor: LinearDescriptor, *, scalars: str | None = None):
-        source = Irreps.parse(descriptor.irreps_in)
-        target = Irreps.parse(descriptor.irreps_out)
-        table = linear_weight_table(descriptor.irreps_in, descriptor.irreps_out)
+    def __init__(self, kernel_spec: LinearSpec, *, scalars: str | None = None):
+        source = Irreps.parse(kernel_spec.irreps_in)
+        target = Irreps.parse(kernel_spec.irreps_out)
+        table = linear_weight_table(kernel_spec.irreps_in, kernel_spec.irreps_out)
         count = len(table)
         self.dim_out = target.dimension
         self.scalars = scalars
@@ -144,15 +144,15 @@ class Linear(CanonicalOp):
                 for row in range(multiplicity)
             )
             factor = (
-                linear_path_normalization(descriptor.irreps_in, irrep)
+                linear_path_normalization(kernel_spec.irreps_in, irrep)
                 if scalars is None
                 else fully_connected_tp_path_normalization(
-                    descriptor.irreps_in, scalars, irrep
+                    kernel_spec.irreps_in, scalars, irrep
                 )
             )
             bias = (
                 bias_offset
-                if descriptor.has_bias and irrep.degree == 0 and irrep.parity == 1
+                if kernel_spec.has_bias and irrep.degree == 0 and irrep.parity == 1
                 else None
             )
             if bias is not None:
@@ -164,9 +164,9 @@ class Linear(CanonicalOp):
         shape = (
             (count,) if scalars is None else (Irreps.parse(scalars).dimension, count)
         )
-        arrays = {"weight": jnp.zeros(shape, dtype=descriptor.precision)}
+        arrays = {"weight": jnp.zeros(shape, dtype=kernel_spec.precision)}
         if scalars is None:
-            arrays["bias"] = jnp.zeros((bias_offset,), dtype=descriptor.precision)
+            arrays["bias"] = jnp.zeros((bias_offset,), dtype=kernel_spec.precision)
         super().__init__(arrays)
 
     def __call__(
@@ -198,27 +198,27 @@ class Linear(CanonicalOp):
 
 
 class FullyConnectedTP(Linear):
-    def __init__(self, descriptor: FullyConnectedTPDescriptor):
+    def __init__(self, kernel_spec: FullyConnectedTPSpec):
         if any(
             ir.degree != 0 or ir.parity != 1
-            for _, ir in Irreps.parse(descriptor.irreps_in2)
+            for _, ir in Irreps.parse(kernel_spec.irreps_in2)
         ):
             raise ValueError("fully_connected_tp requires even scalar second inputs")
         super().__init__(
-            LinearDescriptor(
-                irreps_in=descriptor.irreps_in1,
-                irreps_out=descriptor.irreps_out,
-                precision=descriptor.precision,
+            LinearSpec(
+                irreps_in=kernel_spec.irreps_in1,
+                irreps_out=kernel_spec.irreps_out,
+                precision=kernel_spec.precision,
             ),
-            scalars=descriptor.irreps_in2,
+            scalars=kernel_spec.irreps_in2,
         )
 
 
 class ChannelwiseTPConv(nnx.Module):
     """Weighted edge coupling followed by a sum into exactly num_nodes slots."""
 
-    def __init__(self, descriptor: ChannelwiseTPConvDescriptor):
-        self.descriptor = descriptor
+    def __init__(self, kernel_spec: ChannelwiseTPConvSpec):
+        self.kernel_spec = kernel_spec
         self.coefficients = nnx.List(
             [
                 nnx.Variable(
@@ -226,33 +226,33 @@ class ChannelwiseTPConv(nnx.Module):
                         math.sqrt(path.irrep.dimension)
                         * wigner_3j_real(
                             path.irrep.degree,
-                            Irreps.parse(descriptor.irreps_node)
+                            Irreps.parse(kernel_spec.irreps_node)
                             .terms[path.node_term][1]
                             .degree,
-                            Irreps.parse(descriptor.irreps_edge)
+                            Irreps.parse(kernel_spec.irreps_edge)
                             .terms[path.edge_term][1]
                             .degree,
                         ),
-                        dtype=descriptor.precision,
+                        dtype=kernel_spec.precision,
                     )
                 )
-                for path in descriptor.paths
+                for path in kernel_spec.paths
             ]
         )
 
     def __call__(self, features, attributes, weights, sender, receiver, num_nodes):
-        descriptor = self.descriptor
+        kernel_spec = self.kernel_spec
         channels = per_channel(
-            features, descriptor.irreps_node, descriptor.num_features
+            features, kernel_spec.irreps_node, kernel_spec.num_features
         )
         node_slices = tuple(
-            span for span, _ in Irreps.parse(descriptor.irreps_node).slices()
+            span for span, _ in Irreps.parse(kernel_spec.irreps_node).slices()
         )
         edge_slices = tuple(
-            span for span, _ in Irreps.parse(descriptor.irreps_edge).slices()
+            span for span, _ in Irreps.parse(kernel_spec.irreps_edge).slices()
         )
         paths = []
-        for index, path in enumerate(descriptor.paths):
+        for index, path in enumerate(kernel_spec.paths):
             coupled = jnp.einsum(
                 "eci,ej,oij->eco",
                 channels[sender, :, node_slices[path.node_term]],
@@ -263,31 +263,31 @@ class ChannelwiseTPConv(nnx.Module):
         messages = jnp.concatenate(paths, axis=-1)
         return grouped(
             jax.ops.segment_sum(messages, receiver, num_segments=num_nodes),
-            descriptor.irreps_paths,
+            kernel_spec.irreps_paths,
         )
 
 
 class SymmetricContraction(CanonicalOp):
     """Reduced, named coupling paths evaluated as shared symmetric monomials."""
 
-    def __init__(self, descriptor: SymmetricContractionDescriptor):
-        if descriptor.basis != "reduced":
+    def __init__(self, kernel_spec: SymmetricContractionSpec):
+        if kernel_spec.basis != "reduced":
             raise ValueError("JAX symmetric_contraction requires basis='reduced'")
-        self.descriptor = descriptor
+        self.kernel_spec = kernel_spec
         self.path_labels = contraction_path_labels(
-            descriptor.irreps_in, descriptor.irreps_out, descriptor.correlation
+            kernel_spec.irreps_in, kernel_spec.irreps_out, kernel_spec.correlation
         )
         self.groups = []
         self.coefficients = nnx.List()
         counts = []
-        width = Irreps.parse(descriptor.irreps_in).dimension
+        width = Irreps.parse(kernel_spec.irreps_in).dimension
         offset = 0
-        targets = tuple(str(ir) for _, ir in Irreps.parse(descriptor.irreps_out))
+        targets = tuple(str(ir) for _, ir in Irreps.parse(kernel_spec.irreps_out))
         for target, order in contraction_path_order(
-            descriptor.irreps_out, descriptor.correlation
+            kernel_spec.irreps_out, kernel_spec.correlation
         ):
             basis = reduced_symmetric_tensor_product_basis(
-                descriptor.irreps_in, order, target
+                kernel_spec.irreps_in, order, target
             )[target]
             monomials = tuple(
                 itertools.combinations_with_replacement(range(width), order)
@@ -306,15 +306,15 @@ class SymmetricContraction(CanonicalOp):
                 (targets.index(target), offset, basis.shape[0], monomials)
             )
             self.coefficients.append(
-                nnx.Variable(jnp.asarray(compressed, dtype=descriptor.precision))
+                nnx.Variable(jnp.asarray(compressed, dtype=kernel_spec.precision))
             )
             counts.append(basis.shape[0])
             offset += basis.shape[0]
         super().__init__(
             {
                 "weight": jnp.zeros(
-                    (descriptor.num_elements, offset, descriptor.num_features),
-                    dtype=descriptor.precision,
+                    (kernel_spec.num_elements, offset, kernel_spec.num_features),
+                    dtype=kernel_spec.precision,
                 ),
                 "path_counts": jnp.asarray(counts, dtype=jnp.int64),
             }
@@ -339,14 +339,14 @@ class SymmetricContraction(CanonicalOp):
 
     def __call__(self, features, elements):
         channels = per_channel(
-            features, self.descriptor.irreps_in, self.descriptor.num_features
+            features, self.kernel_spec.irreps_in, self.kernel_spec.num_features
         )
         results = [
             jnp.zeros(
-                (features.shape[0], self.descriptor.num_features, ir.dimension),
+                (features.shape[0], self.kernel_spec.num_features, ir.dimension),
                 dtype=features.dtype,
             )
-            for _, ir in Irreps.parse(self.descriptor.irreps_out)
+            for _, ir in Irreps.parse(self.kernel_spec.irreps_out)
         ]
         cached = {}
         for index, (target, offset, count, monomials) in enumerate(self.groups):
@@ -364,19 +364,19 @@ class SymmetricContraction(CanonicalOp):
             results[target] = results[target] + jnp.einsum(
                 "ncpo,npc->nco", projection, weights
             )
-        return grouped(jnp.concatenate(results, axis=-1), self.descriptor.irreps_out)
+        return grouped(jnp.concatenate(results, axis=-1), self.kernel_spec.irreps_out)
 
 
 class RadialMLP(CanonicalOp):
-    def __init__(self, descriptor: RadialMLPDescriptor):
-        if descriptor.kind != "normalized_silu":
-            raise ValueError(f"JAX radial_mlp does not support {descriptor.kind!r}")
+    def __init__(self, kernel_spec: RadialMLPSpec):
+        if kernel_spec.kind != "normalized_silu":
+            raise ValueError(f"JAX radial_mlp does not support {kernel_spec.kind!r}")
         self.widths = tuple(
-            zip(descriptor.channels[:-1], descriptor.channels[1:], strict=True)
+            zip(kernel_spec.channels[:-1], kernel_spec.channels[1:], strict=True)
         )
         super().__init__(
             {
-                f"layer_{index}": jnp.zeros((left, right), dtype=descriptor.precision)
+                f"layer_{index}": jnp.zeros((left, right), dtype=kernel_spec.precision)
                 for index, (left, right) in enumerate(self.widths)
             }
         )

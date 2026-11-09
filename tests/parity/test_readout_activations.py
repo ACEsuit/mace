@@ -6,7 +6,7 @@ import pytest
 import torch
 from e3nn import o3
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models.heads import _Gate, _GatedReadout
+from mace_torch.models.readouts import _Gate, _GatedReadout
 
 from mace.modules import gate_dict
 from mace.modules.blocks import NonLinearBiasReadoutBlock, NonLinearReadoutBlock
@@ -196,7 +196,7 @@ def test_converted_dielectric_preserves_readout_activation(
         for name in ("polarizability", "dmu_dr", "dalpha_dr")
     ).backward()
     for old, new in zip(
-        legacy.interactions, native.engine.backbone.backbone.interactions, strict=True
+        legacy.interactions, native.engine.model.backbone.interactions, strict=True
     ):
         for index, weight in enumerate(new.body.radial_mlp.weights):
             close(

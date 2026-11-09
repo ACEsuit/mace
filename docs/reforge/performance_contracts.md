@@ -14,17 +14,17 @@ that choice. Physical inputs, public descriptors and observable components retai
 their established ordering. Canonical weight indices, parameter names and saved
 weights do not depend on the activation layout.
 
-`PrecisionPolicy.product` and `Descriptor.product` accept `ieee` or `tf32`.
+`PrecisionPolicy.product` and `KernelSpec.product` accept `ieee` or `tf32`.
 Only float32 linear and fully connected tensor products may request TF32.
 `PrecisionConfig.tf32()` requests it for those two operation classes and keeps
 the existing float64 accumulation floor. A backend must declare `tf32` in its
-`products` capability. Otherwise the effective descriptor uses IEEE and the
+`products` capability. Otherwise the effective kernel_spec uses IEEE and the
 build report records the degradation. No process-wide matrix-product flag is
 changed. A span uses the widest precision required by its members.
 
 ## Stateless edge spans
 
-Kernel spec 1.0 defines `make_interaction_layer(descriptors)` and its fallback on
+Kernel spec 1.0 defines `make_interaction_layer(kernel_specs)` and its fallback on
 `None`. `EdgeConvolutionSpan` describes this ordered tuple:
 
 1. Radial basis and spherical harmonics.
@@ -32,7 +32,7 @@ Kernel spec 1.0 defines `make_interaction_layer(descriptors)` and its fallback o
 3. Radial network and optional density network.
 4. Receiver-summed channelwise convolution.
 
-`RadialMLPDescriptor.channels[0]` is the full input width. With element
+`RadialMLPSpec.channels[0]` is the full input width. With element
 conditioning it includes the radial features and two embeddings of
 `element_embedding_width` each. `num_elements` describes the tables;
 `layer_norm_epsilon` describes the normalization when present. Table parameters
@@ -65,7 +65,7 @@ second derivatives, equivariance, layouts, padding and both edge-run views.
 
 ## Long-range preparation
 
-`long_range_plan(graph, descriptor, ops)` selects discrete reciprocal indices,
+`long_range_plan(graph, kernel_spec, ops)` selects discrete reciprocal indices,
 atom counts and periodicity outside the compiled model. An optional
 `op.plan(geometry)` contributes solver-specific preparation through a mapping.
 The plan travels under `long_range_plan`; it is runtime state, never checkpoint

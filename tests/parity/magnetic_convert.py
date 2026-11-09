@@ -21,7 +21,7 @@ from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.observables import DEFAULT_CATALOGUE
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models.energy import EnergyOutputHead, ScaleShiftSpec
+from mace_torch.models.energy import EnergyReadout, ScaleShiftSpec
 from mace_torch.models.magnetic import MagneticModel
 
 from tests.parity.fm00_convert import (
@@ -83,7 +83,7 @@ def convert_magnetic(legacy, observables=None) -> MagneticModel:
     """A rewrite model computing what ``legacy`` computes."""
     config = magnetic_config(legacy)
     values, scale, shift = energy_constants_to_canonical(legacy)
-    head = EnergyOutputHead(
+    head = EnergyReadout(
         ResolvedE0s(values),
         ["default"],
         AtomicNumberTable(config["atomic_numbers"]),
@@ -94,7 +94,7 @@ def convert_magnetic(legacy, observables=None) -> MagneticModel:
     model = MagneticModel(
         ReferenceBackend(),
         observables=observables or [DEFAULT_CATALOGUE.observable("energy")],
-        energy_head=head,
+        energy_readout=head,
         **model_arguments(config),
     )
     transfer_magnetic_weights(legacy, model)
@@ -161,7 +161,7 @@ def transfer_magnetic_weights(legacy, model: MagneticModel) -> None:
             copy_linear(source.linear, product.linear)
             copy_linear(source.linear_ori, product.linear_ori)
 
-        head = model.outputs.heads["energy"]
+        head = model.outputs.readouts["energy"]
         for source, destination in zip(legacy.readouts, head.readouts, strict=True):
             if hasattr(source, "linear_1"):
                 copy_linear(source.linear_1, destination.first)
@@ -244,7 +244,7 @@ def write_magnetic_checkpoint(legacy, directory, train_file) -> Path:
         statistics=DatasetStatistics(mean=shift[0], std=scale[0]),
         initialize=False,
     )
-    transfer_magnetic_weights(legacy, engine.get_submodule("backbone"))
+    transfer_magnetic_weights(legacy, engine.get_submodule("model"))
     metadata = ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
         provenance=Provenance(versions={"mace-torch-v1": "anchor"}),

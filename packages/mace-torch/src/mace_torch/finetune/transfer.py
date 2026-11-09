@@ -39,11 +39,11 @@ from typing import cast
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import linear_weight_table
-from mace_core.kernels.descriptors import FullyConnectedTPDescriptor, LinearDescriptor
+from mace_core.kernels.specs import FullyConnectedTPSpec, LinearSpec
 from torch import Tensor, nn
 
 from mace_torch.canonical import canonical_modules
-from mace_torch.models import ObservableHead
+from mace_torch.models import ObservableReadout
 from mace_torch.serialization import (
     canonical_metadata,
     canonical_state,
@@ -138,20 +138,20 @@ def _keep_scalar_paths(
             "weight"
         ]
     else:
-        descriptor = target_op.descriptor
-        if isinstance(descriptor, FullyConnectedTPDescriptor):
-            inputs = descriptor.irreps_in1
-        elif isinstance(descriptor, LinearDescriptor):
-            inputs = descriptor.irreps_in
+        kernel_spec = target_op.kernel_spec
+        if isinstance(kernel_spec, FullyConnectedTPSpec):
+            inputs = kernel_spec.irreps_in1
+        elif isinstance(kernel_spec, LinearSpec):
+            inputs = kernel_spec.irreps_in
         else:
             raise TransferError(
                 "LES final-layer expansion requires a linear or element-conditioned map"
             )
-        outputs = list(Irreps.parse(descriptor.irreps_out).slices())
+        outputs = list(Irreps.parse(kernel_spec.irreps_out).slices())
         indices = [
             slot
             for (out, _), slot in linear_weight_table(
-                inputs, descriptor.irreps_out
+                inputs, kernel_spec.irreps_out
             ).items()
             if str(outputs[out][1]) == "0e"
         ]
@@ -174,7 +174,7 @@ def transfer_foundation(
 
     Args:
         foundation: The foundation model, the module holding the canonical
-            state (``engine.backbone``).
+            state (``engine.model``).
         model: The fine-tune's model, built from the same architecture.
         foundation_elements: The foundation's element table, in order.
         elements: The fine-tune's, a subset of it, in order.
@@ -206,7 +206,7 @@ def transfer_foundation(
         {
             name
             for name in target
-            if name.startswith(("multipoles.", "outputs.heads.latent_"))
+            if name.startswith(("multipoles.", "outputs.readouts.latent_"))
         }
         if add_les
         else set()
@@ -236,7 +236,7 @@ def transfer_foundation(
                 name: value[sources].clone() for name, value in found.items()
             }
             continue
-        if path.endswith("energy_head"):
+        if path.endswith("energy_readout"):
             state[path] = {
                 "e0_table": tensors["e0_table"],
                 "scale": torch.stack(
@@ -320,11 +320,13 @@ def transfer_foundation(
         return
     outputs = model.get_submodule("outputs")
     source_outputs = foundation.get_submodule("outputs")
-    for name, head in cast(nn.ModuleDict, outputs.get_submodule("heads")).items():
+    for name, readout in cast(nn.ModuleDict, outputs.get_submodule("readouts")).items():
         if add_les and name.startswith("latent_"):
             continue
-        donor = cast(ObservableHead, source_outputs.get_submodule(f"heads.{name}"))
-        receiver = cast(ObservableHead, head)
+        donor = cast(
+            ObservableReadout, source_outputs.get_submodule(f"readouts.{name}")
+        )
+        receiver = cast(ObservableReadout, readout)
         with torch.no_grad():
             for position, fine_tune_head in enumerate(heads):
                 receiver.load_head_state(

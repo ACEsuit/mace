@@ -80,7 +80,7 @@ def select_head(args: argparse.Namespace) -> int:
     engine = _rebuild(source, config, (args.head,))
     transfer_foundation(
         source.model,
-        engine.get_submodule("backbone"),
+        engine.get_submodule("model"),
         foundation_elements=source.z_table.zs,
         elements=source.z_table.zs,
         foundation_heads=source.heads,
@@ -117,7 +117,7 @@ def convert(args: argparse.Namespace) -> int:
     from mace_core.clebsch_gordan.conversion import full_to_reduced
     from mace_core.clebsch_gordan.irreps import Irreps
     from mace_core.config.resolved import ResolvedConfig
-    from mace_core.kernels.descriptors import SymmetricContractionDescriptor
+    from mace_core.kernels.specs import SymmetricContractionSpec
     from mace_core.metadata import BasisConversionRecord, ConfigRecord
 
     from mace_torch.canonical import canonical_modules
@@ -151,19 +151,19 @@ def convert(args: argparse.Namespace) -> int:
     state = canonical_state(source.engine)
     target_state = canonical_state(target)
     for path, module in canonical_modules(source.engine).items():
-        descriptor = getattr(module, "descriptor", None)
-        if not isinstance(descriptor, SymmetricContractionDescriptor):
+        kernel_spec = getattr(module, "kernel_spec", None)
+        if not isinstance(kernel_spec, SymmetricContractionSpec):
             continue
         tensors = state[path]
         pieces = iter(
             torch.split(tensors["weight"], tensors["path_counts"].tolist(), dim=1)
         )
         projected = []
-        for order in range(1, descriptor.correlation + 1):
-            for _, irrep in Irreps.parse(descriptor.irreps_out):
+        for order in range(1, kernel_spec.correlation + 1):
+            for _, irrep in Irreps.parse(kernel_spec.irreps_out):
                 weight = next(pieces)
                 converted = full_to_reduced(
-                    weight.cpu().numpy(), descriptor.irreps_in, order, irrep
+                    weight.cpu().numpy(), kernel_spec.irreps_in, order, irrep
                 )
                 projected.append(torch.as_tensor(converted, dtype=weight.dtype))
         state[path] = {

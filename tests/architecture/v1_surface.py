@@ -174,7 +174,7 @@ def config_construction_violations(source: str, path: str) -> list[str]:
         keyword_only = list(arguments.kwonlyargs)
         parameters = positional + keyword_only
         runtime = {
-            "backend", "atomic_numbers", "observables", "energy_head",
+            "backend", "atomic_numbers", "observables", "energy_readout",
             "avg_num_neighbors", "precision", "radial_precision", "node_inputs",
             "num_heads", "last_layer_irreps", "edge_axes", "settings", "solver",
             "trains_derivatives", "saturation", "electrostatics",

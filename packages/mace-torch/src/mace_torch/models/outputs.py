@@ -1,4 +1,4 @@
-"""The output layer: heads, reductions, and the typed result.
+"""The output layer: readouts, reductions, and the typed result.
 
 The second of the two layers. The backbone produced node features; this turns
 them into the declared observables and returns them as the typed dataclass, not
@@ -16,18 +16,18 @@ for the dipole cases alone.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
-from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import LinearSpec
 from mace_core.observables import ObservableSpec
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
 from mace_torch.kernels import segment_sum
-from mace_torch.models.energy import EnergyOutputHead
-from mace_torch.models.heads import ObservableHead, per_head_irreps
+from mace_torch.models.energy import EnergyReadout
+from mace_torch.models.readouts import ObservableReadout, per_head_irreps
 
 __all__ = [
     "ENERGY_EXTRA_OBSERVABLES",
@@ -60,11 +60,11 @@ def fixed_charge_dipole(
 
 
 #: The one observable whose head is not a plain readout. Its site energies go
-#: through the energy head, which owns the isolated-atom energies, the scale and
+#: through the energy readout, which owns the isolated-atom energies, the scale and
 #: shift, and the two-reduction structure.
 ENERGY_OBSERVABLE = "energy"
 
-#: Diagnostics share the same declarations as configured output heads.
+#: Diagnostics share the same declarations as configured observable readouts.
 ENERGY_EXTRA_OBSERVABLES = (
     ObservableSpec(name="interaction_energy", irreps="0e", per_atom=False, units="eV"),
     ObservableSpec(
@@ -82,23 +82,27 @@ class MACEOutputs(nn.Module):
         layer_irreps: One channel's node-feature declaration per layer, as the
             backbone reports them.
         num_features: The channel width.
-        energy_head: The energy head, required when ``energy`` is declared and
+        energy_readout: The energy readout, required when ``energy`` is declared and
             rejected when it is not.
-        nonlinear: Whether each head's last-layer readout carries a gate.
+        nonlinear: Whether each observable has a gated last-layer readout.
         readout_irreps: That gated readout's middle, as ``MLP_irreps``; an
             integer is that many scalars.
         precision: The dtype every op is built at.
         num_heads: How many levels of theory the model reads out. Every
             observable gets one readout per head, so what the heads share is
             the backbone and nothing after it.
-        last_only: Read out only the last layer; see :class:`ObservableHead`.
+        last_only: Read out only the last layer; see :class:`ObservableReadout`.
         biased: The biased gated readout on the last layer; see
-            :class:`ObservableHead`.
+            :class:`ObservableReadout`.
         embedding_irreps: One channel's declaration of the node embedding,
             when the energy also reads it out: a linear map to one scalar per
             head, added beside the isolated-atom energies. ``None`` for no
             such readout.
     """
+
+    # RNG identities are numerical state, independent of API and checkpoint names.
+    # Keep the readout draws stable when the Python container is renamed.
+    _initialization_names: ClassVar[dict[str, str]] = {"readouts": "heads"}
 
     def __init__(
         self,
@@ -106,7 +110,7 @@ class MACEOutputs(nn.Module):
         observables: Sequence[ObservableSpec],
         layer_irreps,
         num_features: int,
-        energy_head: EnergyOutputHead | None = None,
+        energy_readout: EnergyReadout | None = None,
         nonlinear: bool = True,
         precision: Precision = "float64",
         readout_irreps: int | str = 16,
@@ -122,37 +126,37 @@ class MACEOutputs(nn.Module):
         if duplicates:
             raise ValueError(
                 f"{duplicates} are declared more than once. Each observable is "
-                f"declared once, and its head is built from that declaration."
+                f"declared once, and its readout is built from that declaration."
             )
         wants_energy = ENERGY_OBSERVABLE in names
-        if wants_energy and energy_head is None:
+        if wants_energy and energy_readout is None:
             raise ValueError(
-                f"{ENERGY_OBSERVABLE!r} is declared but no energy head was "
+                f"{ENERGY_OBSERVABLE!r} is declared but no energy readout was "
                 f"given. The isolated-atom energies and the scale and shift "
                 f"live there, so the energy cannot be read out without it."
             )
-        if energy_head is not None and not wants_energy:
+        if energy_readout is not None and not wants_energy:
             raise ValueError(
-                f"an energy head was given but {ENERGY_OBSERVABLE!r} is not "
+                f"an energy readout was given but {ENERGY_OBSERVABLE!r} is not "
                 f"declared. The declarations are {names}."
             )
 
-        if energy_head is not None and energy_head.e0_table.shape[0] != num_heads:
+        if energy_readout is not None and energy_readout.e0_table.shape[0] != num_heads:
             raise ValueError(
-                f"the energy head carries isolated-atom energies for "
-                f"{energy_head.e0_table.shape[0]} heads and the readouts are "
+                f"the energy readout carries isolated-atom energies for "
+                f"{energy_readout.e0_table.shape[0]} heads and the readouts are "
                 f"built for {num_heads}. A head is one row of each, so the two "
                 f"counts are the same number or the rows do not line up."
             )
 
         self.specs = list(observables)
-        self.energy_head = energy_head
+        self.energy_readout = energy_readout
         self.fixed_charge_dipole = wants_energy and "dipole" in names
         self.num_heads = num_heads
         self.normalization = nn.ModuleDict()
-        self.heads = nn.ModuleDict(
+        self.readouts = nn.ModuleDict(
             {
-                spec.name: ObservableHead(
+                spec.name: ObservableReadout(
                     backend,
                     spec,
                     layer_irreps=layer_irreps,
@@ -168,14 +172,14 @@ class MACEOutputs(nn.Module):
                 for spec in observables
             }
         )
-        if embedding_irreps is not None and energy_head is None:
+        if embedding_irreps is not None and energy_readout is None:
             raise ValueError(
                 "an embedding readout was asked for and no energy is declared. "
                 "It reads out an energy, so declare one or leave it out."
             )
         self.embedding_readout = (
             backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=expanded_irreps(embedding_irreps, num_features),
                     irreps_out=per_head_irreps("0e", num_heads),
                     precision=precision,
@@ -251,13 +255,13 @@ class MACEOutputs(nn.Module):
         extras: dict[str, Tensor] = {}
 
         for spec in self.specs:
-            head = cast(ObservableHead, self.heads[spec.name])
+            readout = cast(ObservableReadout, self.readouts[spec.name])
             if spec.name == ENERGY_OBSERVABLE:
-                assert self.energy_head is not None
-                terms = self.energy_head(
+                assert self.energy_readout is not None
+                terms = self.energy_readout(
                     [
                         value.squeeze(-1)
-                        for value in head.per_layer(features, node_head)
+                        for value in readout.per_layer(features, node_head)
                     ],
                     zbl_node_energy,
                     graph["node_attrs"].argmax(dim=-1),
@@ -274,7 +278,7 @@ class MACEOutputs(nn.Module):
                     extras["contributions"] = terms.contributions
                 continue
 
-            value = head(features, node_head)
+            value = readout(features, node_head)
             if not spec.per_atom:
                 value = segment_sum(value, batch, num_graphs)
             if spec.name in self.normalization:
@@ -297,8 +301,8 @@ class MACEOutputs(nn.Module):
     def canonical_components(self) -> dict[str, nn.Module | None]:
         """Stable checkpoint roles, independent of implementation attributes."""
         return {
-            "energy_head": self.energy_head,
-            "heads": self.heads,
+            "energy_readout": self.energy_readout,
+            "readouts": self.readouts,
             "normalization": self.normalization,
             "embedding_readout": self.embedding_readout,
         }

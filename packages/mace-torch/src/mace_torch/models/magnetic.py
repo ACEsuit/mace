@@ -26,7 +26,7 @@ from mace_core.outputs import MACEOutput
 from torch import Tensor, nn
 
 from mace_torch.backends.precision import constructed_in
-from mace_torch.models.energy import EnergyOutputHead
+from mace_torch.models.energy import EnergyReadout
 from mace_torch.models.outputs import ENERGY_EXTRA_OBSERVABLES, MACEOutputs
 from mace_torch.nn.magnetic import MagneticBackbone, OneBodyMomentEnergy
 from mace_torch.nn.radial import ZBLBasis
@@ -42,7 +42,7 @@ class MagneticModel(nn.Module):
         atomic_numbers: The element table, ascending.
         observables: What the model reads out. The energy, and only the
             energy: the moments are what it reads in.
-        energy_head: The isolated-atom energies and the scale and shift.
+        energy_readout: The isolated-atom energies and the scale and shift.
         saturation: One moment saturation per element, in muB.
         one_body_basis: How many polynomials the one-body term of the moment
             length has, the constant included. Zero for no such term.
@@ -58,7 +58,7 @@ class MagneticModel(nn.Module):
         config: ModelConfig,
         atomic_numbers: Sequence[int],
         observables: Sequence[ObservableSpec],
-        energy_head: EnergyOutputHead,
+        energy_readout: EnergyReadout,
         saturation: Sequence[float],
         *,
         num_heads: int = 1,
@@ -95,7 +95,7 @@ class MagneticModel(nn.Module):
                 list(observables),
                 layer_irreps=self.backbone.layer_irreps,
                 num_features=config.num_channels,
-                energy_head=energy_head,
+                energy_readout=energy_readout,
                 precision=precision,
                 readout_irreps=config.readout.mlp_irreps,
                 num_heads=num_heads,

@@ -16,9 +16,9 @@ from mace_core.config.resolved import ResolvedConfig
 from mace_core.data.backend import DatasetStatistics
 from mace_core.data.normalization import NormalizationValues
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
-from mace_core.kernels.descriptors import RadialBasisDescriptor
 from mace_core.kernels.precision import widest
 from mace_core.kernels.protocol import KernelBackend
+from mace_core.kernels.specs import RadialBasisSpec
 from mace_core.observables import (
     ObservableCatalogue,
     RequestedOutputs,
@@ -31,7 +31,7 @@ from mace_torch.backends import (
 )
 from mace_torch.backends.precision import PrecisionBackend, degradation_report
 from mace_torch.kernels import initialize_model_weights
-from mace_torch.models import EnergyOutputHead, MACEModel, ScaleShiftSpec
+from mace_torch.models import EnergyReadout, MACEModel, ScaleShiftSpec
 from mace_torch.models.dipoles import DipoleModel, DipoleSettings
 from mace_torch.models.electrostatics import POLAR_DIPOLE, PolarModel
 from mace_torch.models.magnetic import MagneticModel
@@ -120,7 +120,7 @@ def build_model(
         energy = next(
             (spec for spec in requested.observables if spec.name == "energy"), None
         )
-        energy_head = None
+        energy_readout = None
         if energy is None and (
             model_type is not MACEModel or config.model.pair_repulsion
         ):
@@ -128,7 +128,7 @@ def build_model(
                 "this model's physical energy terms require an `energy` observable"
             )
         if energy is not None:
-            energy_head = EnergyOutputHead(
+            energy_readout = EnergyReadout(
                 e0s,
                 heads,
                 z_table,
@@ -138,7 +138,7 @@ def build_model(
                 supports_float64=supports_float64,
                 widen_node_energy=family.widen_node_energy,
             )
-            if (report := energy_head.build_report()) is not None:
+            if (report := energy_readout.build_report()) is not None:
                 logger.warning(report)
         responses = (
             ()
@@ -146,22 +146,22 @@ def build_model(
             else tuple(spec for spec in requested.observables if spec.name != "energy")
         )
         if model_type is MagneticModel:
-            assert energy_head is not None
+            assert energy_readout is not None
             model = _magnetic_model(
                 config,
                 requested,
-                energy_head,
+                energy_readout,
                 backend=backend,
                 z_table=z_table,
                 heads=heads,
                 precision=precision,
             )
         elif config.model.model == "polar":
-            assert energy_head is not None
+            assert energy_readout is not None
             model = _polar_model(
                 config,
                 requested,
-                energy_head,
+                energy_readout,
                 backend=backend,
                 z_table=z_table,
                 heads=heads,
@@ -173,13 +173,13 @@ def build_model(
         else:
             model_options: dict[str, Any] = {}
             if family.electrostatics:
-                assert energy_head is not None
+                assert energy_readout is not None
                 assert isinstance(model_type, ElectrostaticModelFactory)
                 model_options.update(
-                    settings=model_type.solver_descriptor(
+                    settings=model_type.make_solver_spec(
                         config.model,
                         config.electrostatics,
-                        widest(precision.model, energy_head.accumulate),
+                        widest(precision.model, energy_readout.accumulate),
                     ),
                     solver=config.electrostatics.solver,
                     trains_derivatives=initialize and bool(requested.derivatives),
@@ -189,10 +189,10 @@ def build_model(
                 config=config.model,
                 atomic_numbers=list(z_table.zs),
                 observables=requested.observables,
-                energy_head=energy_head,
+                energy_readout=energy_readout,
                 avg_num_neighbors=statistics.avg_num_neighbors,
                 radial_precision=precision.for_device(supports_float64)[0]
-                .policy_for(RadialBasisDescriptor())
+                .policy_for(RadialBasisSpec())
                 .accumulate_dtype,
                 precision=precision.model,
                 num_heads=len(heads),
@@ -234,7 +234,7 @@ def _configure_normalization(
             for head in heads
         ]
         if name == "energy":
-            energy = model.outputs.energy_head
+            energy = model.outputs.energy_readout
             assert energy is not None
             for index, head in enumerate(heads):
                 if head in recipes:
@@ -257,7 +257,7 @@ def _report_backend(backend: KernelBackend) -> None:
 def _polar_model(
     config: ResolvedConfig,
     requested: RequestedOutputs,
-    energy_head: EnergyOutputHead,
+    energy_readout: EnergyReadout,
     *,
     backend: KernelBackend,
     z_table: AtomicNumberTable,
@@ -279,12 +279,12 @@ def _polar_model(
         observables=[
             spec for spec in requested.observables if spec.name != POLAR_DIPOLE.name
         ],
-        energy_head=energy_head,
+        energy_readout=energy_readout,
         electrostatics=config.electrostatics,
         trains_derivatives=trains_derivatives,
         avg_num_neighbors=statistics.avg_num_neighbors,
         radial_precision=precision.for_device(supports_float64)[0]
-        .policy_for(RadialBasisDescriptor())
+        .policy_for(RadialBasisSpec())
         .accumulate_dtype,
         precision=precision.model,
         num_heads=len(heads),
@@ -327,7 +327,7 @@ def _response_model(
         settings=settings,
         avg_num_neighbors=statistics.avg_num_neighbors,
         radial_precision=precision.for_device(supports_float64)[0]
-        .policy_for(RadialBasisDescriptor())
+        .policy_for(RadialBasisSpec())
         .accumulate_dtype,
         precision=precision.model,
     )
@@ -336,7 +336,7 @@ def _response_model(
 def _magnetic_model(
     config: ResolvedConfig,
     requested: RequestedOutputs,
-    energy_head: EnergyOutputHead,
+    energy_readout: EnergyReadout,
     *,
     backend: KernelBackend,
     z_table: AtomicNumberTable,
@@ -357,7 +357,7 @@ def _magnetic_model(
         config.model,
         atomic_numbers=list(z_table.zs),
         observables=requested.observables,
-        energy_head=energy_head,
+        energy_readout=energy_readout,
         saturation=settings.saturation_for(z_table.zs),
         num_heads=len(heads),
         precision=precision.model,

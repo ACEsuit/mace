@@ -1,6 +1,6 @@
 """Framework-independent kernel factories, resolved once at model build time.
 
-Each factory takes a descriptor and returns an op bound into the model tree;
+Each factory takes a kernel specification and returns an op bound into the model tree;
 forward calls perform no backend lookup. The op set is closed. Spherical
 harmonics, radial bases and radial MLPs may use reference implementations;
 fused convolution is negotiated through the span factory.
@@ -15,15 +15,15 @@ from __future__ import annotations
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from mace_core.kernels.capabilities import BackendCapabilities
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
 )
 
 __all__ = [
@@ -115,11 +115,11 @@ class KernelBackend(Protocol):
         """What this backend declares it can do. Called before anything is built."""
         ...
 
-    def make_linear(self, descriptor: LinearDescriptor) -> Any:
-        """An equivariant linear map, bias included when the descriptor says so."""
+    def make_linear(self, kernel_spec: LinearSpec) -> Any:
+        """An equivariant linear map, with the specified bias."""
         ...
 
-    def make_channelwise_tp_conv(self, descriptor: ChannelwiseTPConvDescriptor) -> Any:
+    def make_channelwise_tp_conv(self, kernel_spec: ChannelwiseTPConvSpec) -> Any:
         """The message-passing tensor product. Returns node-level values.
 
         Always ``[n_nodes, ...]``. Whether the reduction over edges is fused
@@ -128,44 +128,42 @@ class KernelBackend(Protocol):
         """
         ...
 
-    def make_symmetric_contraction(
-        self, descriptor: SymmetricContractionDescriptor
-    ) -> Any:
-        """The many-body contraction, over the basis the descriptor records."""
+    def make_symmetric_contraction(self, kernel_spec: SymmetricContractionSpec) -> Any:
+        """The many-body contraction over the specified basis."""
         ...
 
-    def make_fully_connected_tp(self, descriptor: FullyConnectedTPDescriptor) -> Any:
+    def make_fully_connected_tp(self, kernel_spec: FullyConnectedTPSpec) -> Any:
         """The skip connection's tensor product."""
         ...
 
-    def make_segment_reduce(self, descriptor: SegmentReduceDescriptor) -> Any:
+    def make_segment_reduce(self, kernel_spec: SegmentReduceSpec) -> Any:
         """A reduction into segments, with no irreps semantics."""
         ...
 
     def make_spherical_harmonics(
-        self, descriptor: SphericalHarmonicsDescriptor
+        self, kernel_spec: SphericalHarmonicsSpec
     ) -> Any | None:
         """Real spherical harmonics, or ``None`` to leave them to the reference.
 
         A backend that supplies its own must produce the convention
-        :class:`~mace_core.kernels.descriptors.SphericalHarmonicsDescriptor`
+        :class:`~mace_core.kernels.specs.SphericalHarmonicsSpec`
         states, which is e3nn's with ``normalization="component"``, the one
         legacy models were trained in. Producing a different one is not an
         optimization, it is a different model.
         """
         ...
 
-    def make_radial_basis(self, descriptor: RadialBasisDescriptor) -> Any | None:
+    def make_radial_basis(self, kernel_spec: RadialBasisSpec) -> Any | None:
         """The radial embedding, or ``None`` to leave it to the reference.
 
         The op evaluates lengths with an optional precomputed ``envelope``;
         this keeps a distance transform from changing the cutoff's argument.
-        Torch ops expose ``descriptor``, ``cutoff``, ``canonical_components``
+        Torch ops expose ``kernel_spec``, ``cutoff``, ``canonical_components``
         and ``span_weights`` for composition and canonical checkpoint roles.
         """
         ...
 
-    def make_radial_mlp(self, descriptor: RadialMLPDescriptor) -> Any | None:
+    def make_radial_mlp(self, kernel_spec: RadialMLPSpec) -> Any | None:
         """The radial MLP, or ``None`` to leave it to the reference.
 
         Its weights are canonical whoever builds it, so declining changes where
@@ -173,7 +171,7 @@ class KernelBackend(Protocol):
         """
         ...
 
-    def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> Any | None:
+    def make_interaction_layer(self, kernel_specs: tuple[Any, ...]) -> Any | None:
         """A whole interaction layer in one kernel, or ``None``.
 
         The optional span factory. A backend that can fuse further than one op

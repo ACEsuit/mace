@@ -15,7 +15,7 @@ from mace_torch.cli.run_train import parse, run
 from mace_torch.data import GraphDataset
 from mace_torch.deploy.loader import load_deployed
 from mace_torch.finetune.stages import build
-from mace_torch.models import EnergyOutputHead
+from mace_torch.models import EnergyReadout
 from mace_torch.train import run_data_stage, run_model_stage
 from mace_torch.train.checkpoint import write_model
 from test_mace_torch_training_pipeline import configuration
@@ -60,19 +60,19 @@ def test_explicit_statistics_reach_the_model_and_reload_without_data(
     assert data.e0s == measured.e0s
     assert tuple(data.z_table.zs) == (1, 8)
     built = run_model_stage(selected, data, DEFAULT_CATALOGUE)
-    head = built.model.get_submodule("backbone.outputs.energy_head")
-    assert isinstance(head, EnergyOutputHead)
+    head = built.engine.get_submodule("model.outputs.energy_readout")
+    assert isinstance(head, EnergyReadout)
     assert head.scale.tolist() == [2.5]
     assert head.shift.tolist() == [1.5]
     neighbor_buffers = [
         value
-        for name, value in built.model.named_buffers()
+        for name, value in built.engine.named_buffers()
         if name.endswith(".neighbours")
     ]
     assert neighbor_buffers and all(value.item() == 7.5 for value in neighbor_buffers)
     batch = next(iter(data.train_eval_loaders["default"])).graph
-    expected = built.model(batch, compute=("forces",))
-    artifact = write_model(tmp_path / "model", built.model, built.metadata)
+    expected = built.engine(batch, compute=("forces",))
+    artifact = write_model(tmp_path / "model", built.engine, built.metadata)
     # The measured constants travel with the weights, so a deployed model
     # needs neither its training source nor the statistics file to rebuild.
     stats_path.unlink()
@@ -94,13 +94,13 @@ def test_estimated_e0s_use_the_named_foundation_head_and_train(tmp_path):
     }
     foundation = build(ResolvedConfig.model_validate(document))
     artifact = write_model(
-        tmp_path / "foundation", foundation.model, foundation.metadata
+        tmp_path / "foundation", foundation.engine, foundation.metadata
     )
     loader = foundation.data.train_eval_loaders["b"]
     predictions = []
     for batch in loader:
         predictions.extend(
-            foundation.model(batch.graph, compute=()).get("energy").detach().tolist()
+            foundation.engine(batch.graph, compute=()).get("energy").detach().tolist()
         )
     correction = {1: 0.25, 8: -0.5}
     assert isinstance(loader.dataset, GraphDataset)

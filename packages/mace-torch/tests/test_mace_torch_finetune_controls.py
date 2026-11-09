@@ -31,7 +31,7 @@ def test_lora_cli_trains_resumes_and_saves_a_plain_model(
     )
     foundation = run_train.build(config, DEFAULT_CATALOGUE)
     artifact = write_model(
-        tmp_path / "foundation", foundation.model, foundation.metadata
+        tmp_path / "foundation", foundation.engine, foundation.metadata
     )
     document = config.model_dump(mode="json")
     document["model"] = {"observables": ["energy", "forces"]}
@@ -136,7 +136,7 @@ def test_lora_cli_trains_resumes_and_saves_a_plain_model(
         "parametrizations" in name for name, _ in loaded.engine.named_parameters()
     )
     graph = next(iter(foundation.data.valid_loaders["default"])).graph
-    expected = resumed.model(dict(graph), compute=("forces",))
+    expected = resumed.engine(dict(graph), compute=("forces",))
     actual = loaded.engine(dict(graph), compute=("forces",))
     assert_close(actual.total_energy.detach(), expected.total_energy.detach(), "energy")
     assert_close(actual.forces.detach(), expected.forces.detach(), "forces")
@@ -152,7 +152,7 @@ def test_incomplete_or_different_lora_state_cannot_resume(tmp_path, changed):
     from mace_torch.train.optimizers import build_optimizer
 
     config = configuration(tmp_path)
-    model = run_train.build(config, DEFAULT_CATALOGUE).model
+    model = run_train.build(config, DEFAULT_CATALOGUE).engine
     inject_lora(model, rank=3, alpha=2.5)
     path = write_run_checkpoint(
         tmp_path,
@@ -167,7 +167,7 @@ def test_incomplete_or_different_lora_state_cannot_resume(tmp_path, changed):
     elif changed == "missing_tensor":
         record["lora"]["parameters"]["mapping"][0][1]["tensor"] = "absent"
     path.write_text(json.dumps(record))
-    target = run_train.build(config, DEFAULT_CATALOGUE).model
+    target = run_train.build(config, DEFAULT_CATALOGUE).engine
     if changed != "disabled":
         inject_lora(
             target,

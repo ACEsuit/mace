@@ -40,14 +40,14 @@ from mace_core.config.model import (
     ModelConfig,
     NoDistanceTransformConfig,
 )
-from mace_core.kernels.descriptors import (
-    Descriptor,
-    DistanceTransformDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    SphericalHarmonicsDescriptor,
-)
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import (
+    DistanceTransformSpec,
+    KernelSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    SphericalHarmonicsSpec,
+)
 from mace_core.observables import InputSpec
 from torch import Tensor, nn
 
@@ -73,7 +73,7 @@ __all__ = [
     "LocalityInfo",
     "MACEBackbone",
     "NodeFeatures",
-    "aggregate_descriptors",
+    "aggregate_atomic_descriptors",
 ]
 
 #: The graph keys every backbone reads, whatever it declares.
@@ -122,7 +122,7 @@ class NodeFeatures:
     Attributes:
         layers: One ``[n_nodes, dim_layer]`` tensor per interaction in ``layout``.
             Under a :class:`LocalityInfo`, the local nodes only.
-        layout: The internal activation layout. ``descriptors`` returns public
+        layout: The internal activation layout. ``atomic_descriptors`` returns public
             features in canonical mul_ir.
     """
 
@@ -130,7 +130,7 @@ class NodeFeatures:
     layout: Literal["mul_ir", "ir_mul"] = "mul_ir"
 
 
-#: How :func:`aggregate_descriptors` reduces per structure.
+#: How :func:`aggregate_atomic_descriptors` reduces per structure.
 Aggregation = Literal["mean", "per_element_mean"] | None
 
 
@@ -160,11 +160,11 @@ def _per_channel(irreps: str) -> tuple[str, int]:
 
 def _edge_members(
     config: ModelConfig, precision: Precision
-) -> tuple[Descriptor, ...] | None:
-    """The descriptors of what every edge convolution starts from, or ``None``.
+) -> tuple[KernelSpec, ...] | None:
+    """The edge convolution kernel specifications, or ``None``.
 
     The radial basis with its envelope, the harmonics, and the distance
-    transform when there is one. ``None`` when a piece has no descriptor that
+    transform when there is one. ``None`` when a piece has no kernel specification that
     states it: an envelope applied after the radial networks, or a Chebyshev
     basis that starts at the constant.
     """
@@ -173,21 +173,19 @@ def _edge_members(
         return None
     if isinstance(basis, ChebyshevBasisConfig) and basis.include_constant:
         return None
-    members: tuple[Descriptor, ...] = (
-        RadialBasisDescriptor(
+    members: tuple[KernelSpec, ...] = (
+        RadialBasisSpec(
             kind=basis.kind,
             num_basis=basis.num_basis,
             cutoff=config.r_max,
             cutoff_order=config.cutoff.polynomial_order,
             precision=precision,
         ),
-        SphericalHarmonicsDescriptor(lmax=config.max_ell, precision=precision),
+        SphericalHarmonicsSpec(lmax=config.max_ell, precision=precision),
     )
     transform = config.distance_transform
     if not isinstance(transform, NoDistanceTransformConfig):
-        members += (
-            DistanceTransformDescriptor(kind=transform.kind, precision=precision),
-        )
+        members += (DistanceTransformSpec(kind=transform.kind, precision=precision),)
     return members
 
 
@@ -201,7 +199,7 @@ class MACEBackbone(nn.Module):
     Args:
         backend: The kernel backend. Consulted at construction only.
         config: The architecture. Its ``clebsch_gordan_basis`` reaches every
-            symmetric contraction's descriptor unchanged.
+            symmetric contraction's kernel specification unchanged.
         atomic_numbers: The element table, the columns of ``node_attrs``.
         avg_num_neighbors: The dataset's average neighbour count, the
             normalization of every block without a learned density.
@@ -261,9 +259,7 @@ class MACEBackbone(nn.Module):
         self.receiver_runs = "receiver_runs" in backend.capabilities().edge_features
         self.sender_runs = "sender_runs" in backend.capabilities().edge_features
 
-        harmonics = SphericalHarmonicsDescriptor(
-            lmax=config.max_ell, precision=precision
-        )
+        harmonics = SphericalHarmonicsSpec(lmax=config.max_ell, precision=precision)
         built = backend.make_spherical_harmonics(harmonics)
         self.spherical_harmonics = (
             built
@@ -295,7 +291,7 @@ class MACEBackbone(nn.Module):
         embedding_irreps = "+".join(embedding_terms)
         embedding_flat = expanded_irreps(embedding_irreps, num_features)
         self.node_embedding = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=f"{num_elements}x0e",
                 irreps_out=embedding_flat,
                 precision=precision,
@@ -303,7 +299,7 @@ class MACEBackbone(nn.Module):
         )
         self.node_input_maps = nn.ModuleList(
             backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=spec.irreps,
                     irreps_out=embedding_flat,
                     precision=precision,
@@ -377,7 +373,7 @@ class MACEBackbone(nn.Module):
         num_radial: int,
         num_elements: int,
         avg_num_neighbors: float,
-        edge_members: tuple[Descriptor, ...] | None,
+        edge_members: tuple[KernelSpec, ...] | None,
     ) -> nn.Module:
         """The interaction block a layer's kind names."""
         config = self.config
@@ -537,7 +533,7 @@ class MACEBackbone(nn.Module):
     # Descriptors
     # ------------------------------------------------------------------
 
-    def descriptors(
+    def atomic_descriptors(
         self,
         features: NodeFeatures,
         num_layers: int = -1,
@@ -586,21 +582,22 @@ class MACEBackbone(nn.Module):
         }
 
 
-def aggregate_descriptors(
-    descriptors: Tensor,
+def aggregate_atomic_descriptors(
+    atomic_descriptors: Tensor,
     batch: Tensor,
     num_graphs: int,
     aggregation: Aggregation,
     element: Tensor | None = None,
     atomic_numbers: Sequence[int] = (),
 ) -> Tensor | list[dict[int, Tensor]]:
-    """Reduce per-atom descriptors per structure.
+    """Reduce atomic descriptors per structure.
 
     Args:
-        descriptors: ``[n_nodes, width]``, from :meth:`MACEBackbone.descriptors`.
+        atomic_descriptors: ``[n_nodes, width]``, from
+            :meth:`MACEBackbone.atomic_descriptors`.
         batch: ``[n_nodes]``, int64, each node's structure.
         num_graphs: How many structures, ``ptr.numel() - 1``.
-        aggregation: ``None`` returns the descriptors as they are. ``"mean"``
+        aggregation: ``None`` returns the atomic descriptors as they are. ``"mean"``
             averages each structure's atoms, ``[num_graphs, width]``.
             ``"per_element_mean"`` averages each structure's atoms of each
             element present, one dict per structure keyed by atomic number.
@@ -609,11 +606,13 @@ def aggregate_descriptors(
         atomic_numbers: The element table. Needed for ``"per_element_mean"``.
     """
     if aggregation is None:
-        return descriptors
+        return atomic_descriptors
     if aggregation == "mean":
-        totals = descriptors.new_zeros(num_graphs, descriptors.shape[1])
-        totals = totals.index_add(0, batch, descriptors)
-        counts = torch.bincount(batch, minlength=num_graphs).to(descriptors.dtype)
+        totals = atomic_descriptors.new_zeros(num_graphs, atomic_descriptors.shape[1])
+        totals = totals.index_add(0, batch, atomic_descriptors)
+        counts = torch.bincount(batch, minlength=num_graphs).to(
+            atomic_descriptors.dtype
+        )
         return totals / counts.unsqueeze(-1)
     if aggregation == "per_element_mean":
         if element is None or not atomic_numbers:
@@ -627,7 +626,7 @@ def aggregate_descriptors(
             for column, atomic_number in enumerate(atomic_numbers):
                 mask = in_graph & (element == column)
                 if bool(mask.any()):
-                    means[int(atomic_number)] = descriptors[mask].mean(dim=0)
+                    means[int(atomic_number)] = atomic_descriptors[mask].mean(dim=0)
             result.append(means)
         return result
     raise ValueError(

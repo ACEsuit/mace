@@ -52,7 +52,7 @@ def test_each_transform_matches_the_live_legacy_model(
     imported = assert_matches(
         legacy_model(*PAIRINGS[pairing], distance_transform=transform), tmp_path
     )
-    built = imported.engine.backbone.backbone.radial_embedding.distance_transform
+    built = imported.engine.model.backbone.radial_embedding.distance_transform
     assert isinstance(
         built, {"Agnesi": AgnesiTransform, "Soft": SoftTransform}[transform]
     )
@@ -67,7 +67,7 @@ def test_the_radii_are_the_model_s_own(fp64, isolated, tmp_path):
     with torch.no_grad():
         radii[list(ATOMIC_NUMBERS)] *= 1.3
     imported = assert_matches(legacy, tmp_path)
-    transform = imported.engine.backbone.backbone.radial_embedding.distance_transform
+    transform = imported.engine.model.backbone.radial_embedding.distance_transform
     assert isinstance(transform, AgnesiTransform)
     assert torch.equal(transform.covalent_radii, radii)
 

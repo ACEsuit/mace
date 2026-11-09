@@ -60,7 +60,7 @@ def artifact(tmp_path):
     )
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
-    write_model(tmp_path / "source", built.model, built.metadata)
+    write_model(tmp_path / "source", built.engine, built.metadata)
     return tmp_path / "source.json"
 
 
@@ -390,7 +390,10 @@ def test_eval_columns_and_calculator_agree(artifact, tmp_path, batch_size):
         )
         close(result.arrays["TEST_node_energies"].sum(), result.info["TEST_energy"])
         close(result.info["TEST_BO_contributions"].sum(), result.info["TEST_energy"])
-        close(result.arrays["TEST_descriptors"], calculator.get_descriptors(atoms))
+        close(
+            result.arrays["TEST_atomic_descriptors"],
+            calculator.get_atomic_descriptors(atoms),
+        )
 
 
 def test_eval_descriptor_options_and_optional_columns(artifact, tmp_path):
@@ -440,12 +443,15 @@ def test_eval_descriptor_options_and_optional_columns(artifact, tmp_path):
         default = results["default"][index]
         assert "MACE_stress" not in default.info
         assert "MACE_BO_contributions" not in default.info
-        assert not {"MACE_descriptors", "MACE_node_energies"} & default.arrays.keys()
-        nodes = results["nodes"][index].arrays["MACE_descriptors"]
+        assert (
+            not {"MACE_atomic_descriptors", "MACE_node_energies"}
+            & default.arrays.keys()
+        )
+        nodes = results["nodes"][index].arrays["MACE_atomic_descriptors"]
         mean, elements = results["mean"][index], results["elements"][index]
-        assert "MACE_descriptors" not in mean.arrays
-        assert "MACE_descriptors" not in elements.arrays
-        close(mean.info["MACE_descriptors"], nodes.mean(axis=0))
+        assert "MACE_atomic_descriptors" not in mean.arrays
+        assert "MACE_atomic_descriptors" not in elements.arrays
+        close(mean.info["MACE_structure_descriptors"], nodes.mean(axis=0))
         expected = np.concatenate(
             [
                 nodes[atoms.numbers == number].mean(axis=0)
@@ -454,12 +460,13 @@ def test_eval_descriptor_options_and_optional_columns(artifact, tmp_path):
                 for number in (1, 8)
             ]
         )
-        close(elements.info["MACE_descriptors"], expected)
+        close(elements.info["MACE_structure_descriptors"], expected)
         assert (
-            results["one"][index].arrays["MACE_descriptors"].shape[1] < nodes.shape[1]
+            results["one"][index].arrays["MACE_atomic_descriptors"].shape[1]
+            < nodes.shape[1]
         )
         assert (
-            results["equivariant"][index].arrays["MACE_descriptors"].shape[1]
+            results["equivariant"][index].arrays["MACE_atomic_descriptors"].shape[1]
             > nodes.shape[1]
         )
 
@@ -514,7 +521,7 @@ def test_eval_refuses_an_unknown_head_and_unsupported_contributions(tmp_path):
     assert config.model.model == "scale_shift"
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
-    artifact = write_model(tmp_path / "scaled", built.model, built.metadata)
+    artifact = write_model(tmp_path / "scaled", built.engine, built.metadata)
     source, target = tmp_path / "source.xyz", tmp_path / "refused.xyz"
     write(source, [water(False)])
     for flags in (["--head", "absent"], ["--return_contributions"]):
@@ -617,7 +624,7 @@ def test_multihead_selection_matches_selected_head(tmp_path, embedding, capsys):
     )
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
-    write_model(tmp_path / "multi", built.model, built.metadata)
+    write_model(tmp_path / "multi", built.engine, built.metadata)
     command = ["model", "select-head", "--model", str(tmp_path / "multi.json")]
     assert main([*command, "--list_heads"]) == 0
     assert capsys.readouterr().out.strip() == "Heads: first, second"
@@ -1151,8 +1158,8 @@ def test_stage_api_records_and_restores_its_precision(tmp_path):
     config = config.model_copy(update={"precision": PrecisionConfig(model="float32")})
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
-    assert next(built.model.parameters()).dtype == torch.float32
-    path = write_model(tmp_path / "single_precision", built.model, built.metadata)
+    assert next(built.engine.parameters()).dtype == torch.float32
+    path = write_model(tmp_path / "single_precision", built.engine, built.metadata)
     assert next(load_deployed(path).model.parameters()).dtype == torch.float32
     explicit = run_model_stage(
         config, data, CATALOGUE, precision=PrecisionConfig(model="float64")

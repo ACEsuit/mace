@@ -193,7 +193,7 @@ def test_farthest_points_spread_out():
 
 
 def test_farthest_point_sampling_needs_descriptors():
-    with pytest.raises(SelectionError, match="needs a descriptor"):
+    with pytest.raises(SelectionError, match="needs a descriptor per structure"):
         select(SIX, num_samples=2, method="fps", filtering="none")
 
 
@@ -204,17 +204,25 @@ def test_the_descriptors_must_match_the_structures():
             num_samples=2,
             method="fps",
             filtering="none",
-            descriptors=np.zeros((5, 3)),
+            structure_descriptors=np.zeros((5, 3)),
         )
 
 
 def test_farthest_point_selection_is_reproducible():
     descriptors = np.random.RandomState(0).normal(size=(6, 4))
     first = select(
-        SIX, num_samples=3, method="fps", filtering="none", descriptors=descriptors
+        SIX,
+        num_samples=3,
+        method="fps",
+        filtering="none",
+        structure_descriptors=descriptors,
     )
     second = select(
-        SIX, num_samples=3, method="fps", filtering="none", descriptors=descriptors
+        SIX,
+        num_samples=3,
+        method="fps",
+        filtering="none",
+        structure_descriptors=descriptors,
     )
     assert tags(first) == tags(second)
     assert len(set(tags(first))) == 3

@@ -71,4 +71,4 @@ def test_one_element_row_serves_every_element():
 
 @pytest.mark.parametrize("basis", ["reduced", "full"])
 def test_the_basis_is_handed_to_the_contraction_unchanged(basis):
-    assert _block(basis=basis).contraction.descriptor.basis == basis
+    assert _block(basis=basis).contraction.kernel_spec.basis == basis

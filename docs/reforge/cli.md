@@ -59,11 +59,10 @@ classes and attribute access there.
 
 ## Evaluation and artifacts
 
-Evaluation preserves the thirteen legacy extxyz names and records their
-owners in `OUTPUT_COLUMNS`. Magnetic and polar channels use their existing
+Evaluation records its extxyz columns and their owners in `OUTPUT_COLUMNS`. Magnetic and polar channels use their existing
 model implementations. Requested unsupported derivatives fail. Additional
-declared properties use their observable name. Descriptors support per-atom,
-mean and per-element mean output. Energies are eV, forces eV/Angstrom and
+declared properties use their observable name. Per-atom vectors use `atomic_descriptors`;
+mean and per-element mean outputs use `structure_descriptors`. Energies are eV, forces eV/Angstrom and
 stress eV/Angstrom cubed; aperiodic stress remains zero.
 
 Head selection keeps the chosen readouts, embedding readout, scale, shift and

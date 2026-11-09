@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 import torch
 from conftest import assert_close, fp64_only
-from mace_core.electrostatics import ElectrostaticsSolverDescriptor, FeatureProjection
+from mace_core.electrostatics import ElectrostaticsSpec, FeatureProjection
 from mace_torch.electrostatics import (
     LONG_RANGE_PLAN,
     LongRangeEnergy,
@@ -33,7 +33,7 @@ def test_whole_polar_forward_compiles_with_prepared_geometry(profile):
         *molecule(), cell=(torch.eye(3) * 7).numpy(), pbc=(periodic,) * 3
     )
     model = build_model(profile=profile)
-    engine = DerivativeEngine(model, WITH_STRESS, None).eval()
+    engine = DerivativeEngine(model, WITH_STRESS).eval()
     expected = engine(graph, compute=("forces", "stress"))
     counter = CompileCounter()
     engine.compile_model(backend=counter)
@@ -54,7 +54,7 @@ def test_plan_preserves_energy_projection_and_cell_gradients(profile, dtype):
         else value
         for key, value in graph.items()
     }
-    descriptor = ElectrostaticsSolverDescriptor(
+    solver_spec = ElectrostaticsSpec(
         profile,
         1,
         2.5,
@@ -62,16 +62,16 @@ def test_plan_preserves_energy_projection_and_cell_gradients(profile, dtype):
         precision="float64" if dtype == torch.float64 else "float32",
         features=FeatureProjection(max_l=1, widths=(1.0, 1.5)),
     )
-    energy = LongRangeEnergy(descriptor, "reference").to(dtype)
-    features = LongRangeFeatures(descriptor, "reference").to(dtype)
+    energy = LongRangeEnergy(solver_spec, "reference").to(dtype)
+    features = LongRangeFeatures(solver_spec, "reference").to(dtype)
     source = torch.randn(4, 4, dtype=dtype)
-    plan = long_range_plan(graph, descriptor)
+    plan = long_range_plan(graph, solver_spec)
     values, gradients = [], []
     for supplied in ({}, {LONG_RANGE_PLAN: plan}):
         positions = graph["positions"].detach().clone().requires_grad_(True)
         cell = graph["cell"].detach().clone().requires_grad_(True)
         batch = {**graph, **supplied, "positions": positions, "cell": cell}
-        geometry = long_range_geometry(batch, descriptor)
+        geometry = long_range_geometry(batch, solver_spec)
         output = torch.cat(
             (
                 energy(batch, source, geometry).reshape(-1),
@@ -89,26 +89,26 @@ def test_plan_preserves_energy_projection_and_cell_gradients(profile, dtype):
             assert_close(actual, expected.detach())
     with pytest.raises(ValueError, match="cutoff"):
         long_range_geometry(
-            {**graph, LONG_RANGE_PLAN: plan}, replace(descriptor, kspace_cutoff=3.0)
+            {**graph, LONG_RANGE_PLAN: plan}, replace(solver_spec, kspace_cutoff=3.0)
         )
 
 
 def test_solver_specific_plans_share_one_geometry_without_held_model_state():
     graph = polar_graph(*molecule())
-    descriptor = ElectrostaticsSolverDescriptor("molecular", 1, 2.5, 1.0)
+    solver_spec = ElectrostaticsSpec("molecular", 1, 2.5, 1.0)
 
     class Planner:
         def plan(self, geometry):
             assert geometry.sizes == (4,)
             return {"test_solver": geometry.positions.new_tensor([7.0])}
 
-    plan = long_range_plan(graph, descriptor, (Planner(),))
-    geometry = long_range_geometry({**graph, LONG_RANGE_PLAN: plan}, descriptor)
+    plan = long_range_plan(graph, solver_spec, (Planner(),))
+    geometry = long_range_geometry({**graph, LONG_RANGE_PLAN: plan}, solver_spec)
     assert geometry.plans["test_solver"].item() == 7
     assert geometry.prepared == {}
     geometry.prepared["test_solver"] = "one forward only"
     assert not long_range_geometry(
-        {**graph, LONG_RANGE_PLAN: plan}, descriptor
+        {**graph, LONG_RANGE_PLAN: plan}, solver_spec
     ).prepared
 
 
@@ -143,13 +143,13 @@ def test_planned_solver_compiles_and_replays_a_cuda_graph(profile, dtype):
         head_precision=PrecisionConfig(model=precision),
         precision=precision,
     ).to("cuda")
-    descriptor = model.descriptor
+    solver_spec = model.solver_spec
     energy, features = model.coulomb, model.projection
-    plan = long_range_plan(graph, descriptor)
+    plan = long_range_plan(graph, solver_spec)
 
     def run(positions, cell, source):
         batch = {**graph, "positions": positions, "cell": cell, LONG_RANGE_PLAN: plan}
-        geometry = long_range_geometry(batch, descriptor)
+        geometry = long_range_geometry(batch, solver_spec)
         return torch.cat(
             (
                 energy(batch, source, geometry),

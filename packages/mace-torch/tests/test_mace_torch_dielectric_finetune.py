@@ -121,7 +121,7 @@ def test_the_record_holds_the_element_table(foundation):
 def test_a_dielectric_fine_tune_trains_from_the_foundation(foundation, tmp_path):
     config = fine_tune(tmp_path / "fine_tune", foundation)
     assert config.runtime.error_table == "DipolePolarRMSE"
-    before = weights(build(config).model)
+    before = weights(build(config).engine)
     parent = weights(load_deployed(foundation).engine)
     assert before.keys() == parent.keys()
     assert all(torch.equal(before[key], parent[key]) for key in before), (
@@ -151,7 +151,7 @@ def test_the_fine_tuned_checkpoint_reproduces_the_trained_model(foundation, tmp_
     trained = run(fine_tune(tmp_path / "fine_tune", foundation))
     assert trained.checkpoint_path is not None
     deployed = load_deployed(trained.checkpoint_path)
-    in_memory = dataclasses.replace(deployed, engine=trained.model)
+    in_memory = dataclasses.replace(deployed, engine=trained.engine)
     atoms = water()
     results = {}
     for name, calculator in (

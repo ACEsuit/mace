@@ -11,10 +11,10 @@ from typing import NamedTuple
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.clebsch_gordan.real_basis import wigner_3j_real
-from mace_core.kernels.descriptors import (
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialMLPDescriptor,
+from mace_core.kernels.specs import (
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialMLPSpec,
 )
 from torch import Tensor, nn
 
@@ -27,7 +27,7 @@ from mace_torch.nn.product_basis import EquivariantProductBasisBlock
 
 def linear(backend, source, target, precision, bias=False):
     return backend.make_linear(
-        LinearDescriptor(
+        LinearSpec(
             irreps_in=source, irreps_out=target, precision=precision, has_bias=bias
         )
     )
@@ -44,7 +44,7 @@ class InvariantActivation(nn.Module):
             if kind == "none"
             else _radial_network(
                 backend,
-                RadialMLPDescriptor(
+                RadialMLPSpec(
                     channels=(channels, channels)
                     if kind == "shallow"
                     else (channels, 64, 64, channels),
@@ -114,7 +114,7 @@ class PotentialEmbedding(nn.Module):
             )
         else:
             self.potential = backend.make_fully_connected_tp(
-                FullyConnectedTPDescriptor(
+                FullyConnectedTPSpec(
                     irreps_in1=source,
                     irreps_in2=f"{elements}x0e",
                     irreps_out=target,
@@ -262,7 +262,7 @@ class FeatureMixer(nn.Module):
                 "uvu",
                 layout.layout_of(backend),
             )
-            # Linear descriptors retain repeated terms; the converter folds the
+            # Linear specifications retain repeated terms; the converter folds the
             # reference's simplified input into this equivalent declaration.
             self.down = linear(backend, intermediate, target, precision)
 
@@ -441,7 +441,7 @@ class NonlinearFieldUpdate(nn.Module):
             else None
         )
         self.readout = backend.make_fully_connected_tp(
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1=nodes,
                 irreps_in2=f"{elements}x0e",
                 irreps_out=density,
@@ -507,7 +507,7 @@ class NonlinearElectronEnergy(nn.Module):
             self.field_products = InvariantProducts(nodes, feature_layout=self.layout)
             self.mlp = _radial_network(
                 backend,
-                RadialMLPDescriptor(
+                RadialMLPSpec(
                     channels=(channels, 128, 128, 128, 1),
                     kind="normalized_silu",
                     precision=precision,
@@ -546,7 +546,7 @@ class NonlinearElectronEnergy(nn.Module):
                 nodes, channels, feature_layout=self.layout
             )
             self.down = backend.make_fully_connected_tp(
-                FullyConnectedTPDescriptor(
+                FullyConnectedTPSpec(
                     irreps_in1=nodes,
                     irreps_in2=f"{elements}x0e",
                     irreps_out="0e",

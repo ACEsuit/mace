@@ -69,7 +69,7 @@ def test_multihead_element_transfer_preserves_the_frozen_foundation(
     frozen_batch = anchor_batch(legacy, waters)
     expected = legacy(frozen_batch.to_dict(), compute_force=True)
     for loader in built.data.valid_loaders.values():
-        actual = built.model(next(iter(loader)).graph, compute=("forces",))
+        actual = built.engine(next(iter(loader)).graph, compute=("forces",))
         for value, reference in (
             (actual.total_energy, expected["energy"]),
             (actual.forces, expected["forces"]),

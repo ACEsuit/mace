@@ -25,12 +25,12 @@ from mace_core.config.model import ModelConfig
 from mace_core.config.precision import PrecisionConfig
 from mace_core.elements import AtomicNumberTable, ResolvedE0s
 from mace_core.kernels.canonical import linear_bias_table, linear_weight_table
-from mace_core.kernels.descriptors import LinearDescriptor
+from mace_core.kernels.specs import LinearSpec
 from mace_core.neighbors import get_neighborhood
 from mace_core.observables import ObservableSpec
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.models import EnergyOutputHead, MACEOutputs, ScaleShiftSpec
-from mace_torch.models.heads import copy_heads, head_columns, per_head_irreps
+from mace_torch.models import EnergyReadout, MACEOutputs, ScaleShiftSpec
+from mace_torch.models.readouts import copy_heads, head_columns, per_head_irreps
 from mace_torch.neighbors import resolve_neighbor_backend
 from mace_torch.nn import MACEBackbone
 
@@ -47,10 +47,10 @@ def precision_name():
     return str(torch.get_default_dtype()).removeprefix("torch.")
 
 
-def energy_head(heads=HEADS):
+def energy_readout(heads=HEADS):
     """Identical energies and scales on every head, so only the readout differs."""
     values = {name: {1: -13.6, 8: -2040.0} for name in heads}
-    return EnergyOutputHead(
+    return EnergyReadout(
         ResolvedE0s(values),
         list(heads),
         AtomicNumberTable(ATOMIC_NUMBERS),
@@ -96,7 +96,7 @@ def outputs(heads=HEADS, observables=(ENERGY,), seed=1):
             list(observables),
             layer_irreps=[HIDDEN, "0e"],
             num_features=4,
-            energy_head=energy_head(heads) if ENERGY in observables else None,
+            energy_readout=energy_readout(heads) if ENERGY in observables else None,
             precision=precision_name(),
             num_heads=len(heads),
         ),
@@ -179,9 +179,9 @@ def test_the_weight_table_is_the_reference_backends_plan():
     They are two descriptions of one ordering and have to agree."""
     from mace_torch.backends.reference import _linear_plan
 
-    descriptor = LinearDescriptor(irreps_in="3x0e+2x1o", irreps_out="2x0e+1x1o")
-    *_, count, _ = _linear_plan(descriptor)
-    table = linear_weight_table(descriptor.irreps_in, descriptor.irreps_out)
+    kernel_spec = LinearSpec(irreps_in="3x0e+2x1o", irreps_out="2x0e+1x1o")
+    *_, count, _ = _linear_plan(kernel_spec)
+    table = linear_weight_table(kernel_spec.irreps_in, kernel_spec.irreps_out)
     assert sorted(table.values()) == list(range(count))
     # Output copies outermost: both of the first scalar output's weights come
     # before any weight of the second.
@@ -212,7 +212,7 @@ def test_the_linear_readouts_grow_with_the_heads_and_the_gated_one_squares():
     tree: its cross-head blocks multiply a masked zero."""
     single = outputs(heads=HEADS[:1])
     double = outputs(heads=HEADS)
-    head = single.heads["energy"]
+    head = single.readouts["energy"]
     linear = head.readouts[0].weight.numel()
     first = head.readouts[1].first.weight.numel()
     second = head.readouts[1].second.weight.numel()
@@ -265,7 +265,7 @@ def test_each_head_reaches_as_many_weights_as_a_single_head_model_has():
 
 def test_a_state_round_trips():
     model = outputs()
-    head = model.heads["energy"]
+    head = model.readouts["energy"]
     before = {name: p.detach().clone() for name, p in model.named_parameters()}
     head.load_head_state(1, head.head_state(1))
     for name, parameter in model.named_parameters():
@@ -274,9 +274,9 @@ def test_a_state_round_trips():
 
 def test_writing_one_head_leaves_the_other_alone():
     model = outputs()
-    head = model.heads["energy"]
+    head = model.readouts["energy"]
     untouched = head.head_state(0)
-    donor = outputs(seed=7).heads["energy"].head_state(1)
+    donor = outputs(seed=7).readouts["energy"].head_state(1)
     head.load_head_state(1, donor)
     for layer_before, layer_after in zip(untouched, head.head_state(0), strict=True):
         for op in layer_before:
@@ -292,7 +292,7 @@ def test_copying_a_head_makes_the_two_heads_agree():
     the only thing that could make their energies equal."""
     model_backbone = backbone()
     model_outputs = outputs()
-    head = model_outputs.heads["energy"]
+    head = model_outputs.readouts["energy"]
     g = graph((0, 1))
     before = model_outputs(g, list(model_backbone(g).layers)).total_energy
     assert abs(float((before[0] - before[1]).detach())) > 1e-3
@@ -309,7 +309,9 @@ def test_a_single_head_readout_loaded_into_head_one_reproduces_that_model():
     model_backbone = backbone()
     single = outputs(heads=HEADS[:1], seed=3)
     double = outputs(heads=HEADS, seed=4)
-    double.heads["energy"].load_head_state(1, single.heads["energy"].head_state(0))
+    double.readouts["energy"].load_head_state(
+        1, single.readouts["energy"].head_state(0)
+    )
     g_single = graph((0, 0))
     g_double = graph((1, 1))
     expected = single(g_single, list(model_backbone(g_single).layers)).total_energy
@@ -318,7 +320,7 @@ def test_a_single_head_readout_loaded_into_head_one_reproduces_that_model():
 
 
 def test_a_state_from_a_different_model_is_refused():
-    model = outputs().heads["energy"]
+    model = outputs().readouts["energy"]
     shorter = model.head_state(0)[:1]
     with pytest.raises(ValueError, match="different model"):
         model.load_head_state(0, shorter)
@@ -326,7 +328,7 @@ def test_a_state_from_a_different_model_is_refused():
 
 def test_a_head_that_does_not_exist_is_refused():
     with pytest.raises(IndexError, match="does not exist"):
-        outputs().heads["energy"].head_state(2)
+        outputs().readouts["energy"].head_state(2)
 
 
 # ---------------------------------------------------------------------------
@@ -353,13 +355,13 @@ def test_an_energy_head_for_a_different_number_of_heads_is_refused():
             [ENERGY],
             layer_irreps=[HIDDEN, "0e"],
             num_features=4,
-            energy_head=energy_head(HEADS),
+            energy_readout=energy_readout(HEADS),
             num_heads=3,
         )
 
 
 def test_several_heads_without_a_per_atom_head_index_is_refused():
-    head = outputs().heads["energy"]
+    head = outputs().readouts["energy"]
     layers = [torch.zeros(3, 4, 4), torch.zeros(3, 4, 4)]
     with pytest.raises(ValueError, match="which head's readout"):
         head.per_layer(layers)

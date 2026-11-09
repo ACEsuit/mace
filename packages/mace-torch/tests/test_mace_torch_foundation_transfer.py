@@ -120,8 +120,8 @@ def checkpoint(tmp_path_factory, request):
     trained = run_train_stage(config, built)
     # Written here rather than taken from the run: the run writes its best
     # epoch, and what this file compares against is the model it holds.
-    path = write_model(directory / "model", trained.model, built.metadata)
-    return path, trained.model
+    path = write_model(directory / "model", trained.engine, built.metadata)
+    return path, trained.engine
 
 
 def water_graph(z_table, head=0):
@@ -195,8 +195,8 @@ def test_checkpoint_preserves_head_identity_after_reload(tmp_path, run_checkpoin
             tmp_path,
             "ordered",
             RunState(0),
-            model=built.model,
-            optimizer=build_optimizer(built.model, config.training),
+            model=built.engine,
+            optimizer=build_optimizer(built.engine, config.training),
             metadata=built.metadata,
         )
         recorded = json.loads(path.read_text())["config"]
@@ -205,18 +205,18 @@ def test_checkpoint_preserves_head_identity_after_reload(tmp_path, run_checkpoin
         restored = run_model_stage(restored_config, restored_data, CATALOGUE)
         read_run_checkpoint(
             path,
-            model=restored.model,
-            optimizer=build_optimizer(restored.model, config.training),
+            model=restored.engine,
+            optimizer=build_optimizer(restored.engine, config.training),
         )
-        heads, engine = restored_data.heads, restored.model
+        heads, engine = restored_data.heads, restored.engine
     else:
-        path = write_model(tmp_path / "ordered", built.model, built.metadata)
+        path = write_model(tmp_path / "ordered", built.engine, built.metadata)
         restored = read_foundation(path, CATALOGUE)
         heads, engine = restored.heads, restored.engine
     assert heads == ("zeta", "alpha")
     energies = []
     for index in range(2):
-        expected = built.model(water_graph(data.z_table, index), compute=("forces",))
+        expected = built.engine(water_graph(data.z_table, index), compute=("forces",))
         actual = engine(water_graph(data.z_table, index), compute=("forces",))
         assert torch.equal(actual.total_energy, expected.total_energy)
         assert torch.equal(actual.forces, expected.forces)
@@ -259,7 +259,7 @@ def test_every_head_computes_the_foundations_interaction_energy(checkpoint, elem
     engine, table = fine_tune_model(foundation, elements=elements)
     transfer_foundation(
         foundation.model,
-        engine.get_submodule("backbone"),
+        engine.get_submodule("model"),
         foundation_elements=foundation.z_table.zs,
         elements=table.zs,
         foundation_heads=foundation.heads,
@@ -293,17 +293,17 @@ def test_the_heads_keep_their_own_isolated_atom_energies(checkpoint):
     it, and that is what a head is."""
     foundation = read_foundation(checkpoint[0], CATALOGUE)
     engine, table = fine_tune_model(foundation)
-    before = engine.get_submodule("backbone.outputs.energy_head").e0_table.clone()
+    before = engine.get_submodule("model.outputs.energy_readout").e0_table.clone()
     transfer_foundation(
         foundation.model,
-        engine.get_submodule("backbone"),
+        engine.get_submodule("model"),
         foundation_elements=foundation.z_table.zs,
         elements=table.zs,
         foundation_heads=foundation.heads,
         heads=("replay", "target"),
         readout_from={"replay": "pbe", "target": "pbe"},
     )
-    after = engine.get_submodule("backbone.outputs.energy_head").e0_table
+    after = engine.get_submodule("model.outputs.energy_readout").e0_table
     assert torch.equal(before, after)
 
 
@@ -313,7 +313,7 @@ def test_without_the_readout_only_the_backbone_is_copied(checkpoint):
     engine, table = fine_tune_model(foundation)
     transfer_foundation(
         foundation.model,
-        engine.get_submodule("backbone"),
+        engine.get_submodule("model"),
         foundation_elements=foundation.z_table.zs,
         elements=table.zs,
         foundation_heads=foundation.heads,
@@ -354,7 +354,7 @@ def test_an_element_outside_the_foundation_is_refused(checkpoint):
     with pytest.raises(TransferError, match=r"elements \[7\]"):
         transfer_foundation(
             foundation.model,
-            engine.get_submodule("backbone"),
+            engine.get_submodule("model"),
             foundation_elements=foundation.z_table.zs,
             elements=table.zs,
             foundation_heads=foundation.heads,
@@ -442,7 +442,7 @@ def two_head_checkpoint(tmp_path_factory):
     data = run_data_stage(config, CATALOGUE)
     built = run_model_stage(config, data, CATALOGUE)
     trained = run_train_stage(config, built)
-    return write_model(directory / "model", trained.model, built.metadata)
+    return write_model(directory / "model", trained.engine, built.metadata)
 
 
 def foundation_energy(foundation, head):
@@ -462,7 +462,7 @@ def test_each_head_takes_the_readout_it_names(two_head_checkpoint):
     engine, table = fine_tune_model(foundation)
     transfer_foundation(
         foundation.model,
-        engine.get_submodule("backbone"),
+        engine.get_submodule("model"),
         foundation_elements=foundation.z_table.zs,
         elements=table.zs,
         foundation_heads=foundation.heads,

@@ -229,7 +229,7 @@ def load_model(
             layouts[name] = layout
         state[name] = values
         if (
-            name == "backbone.outputs.energy_head"
+            name == "model.outputs.energy_readout"
             and values["e0_table"].dtype != np.float64
         ):
             raise ModelLoadError("e0_table must retain float64 storage")

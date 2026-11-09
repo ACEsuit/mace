@@ -85,7 +85,7 @@ def test_joint_normalization_leaves_fixed_charges_in_physical_units():
     for head in (0, 1):
         graph["head"].fill_(head)
         expected.append(engine(graph, compute=()).dipole.detach())
-    engine.backbone.outputs.normalization["dipole"] = normalizer
+    engine.model.outputs.normalization["dipole"] = normalizer
     for head, scale in enumerate((2.0, 3.0)):
         graph["head"].fill_(head)
         close(
@@ -133,8 +133,8 @@ def test_scalar_final_layer_checkpoint_is_refused(tmp_path):
         ReferenceBackend(),
         config.model,
         atomic_numbers=[1],
-        observables=engine.backbone.outputs.specs,
-        energy_head=engine.backbone.outputs.energy_head,
+        observables=engine.model.outputs.specs,
+        energy_readout=engine.model.outputs.energy_readout,
         last_layer_irreps="0e",
     )
     old_engine = DerivativeEngine(

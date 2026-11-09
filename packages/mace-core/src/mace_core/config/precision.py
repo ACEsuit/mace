@@ -1,9 +1,9 @@
 """Which dtype each dispatched op computes and accumulates in.
 
 **Precision is per dispatched op, never global.** A :class:`PrecisionConfig`
-answers, for each op descriptor, a :class:`PrecisionPolicy`: what the op
+answers, for each operation specification, a :class:`PrecisionPolicy`: what the op
 computes in, the floor its reductions accumulate in, and what its parameters
-are held in. The policy is stamped on the descriptor when the model is built,
+are held in. The policy is stamped on the kernel specification when the model is built,
 so a backend reads it from there and nothing is decided in ``forward``. A
 global autocast would be wrong for a model that trains in float64, and a fused
 span has one math dtype, so the unit has to be the dispatch.
@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from pydantic import Field, model_validator
 
 from mace_core.config.base import ConfigSection
-from mace_core.kernels.descriptors import Descriptor, DistanceTransformDescriptor
 from mace_core.kernels.precision import (
     PRECISIONS,
     PRODUCTS,
@@ -36,6 +35,7 @@ from mace_core.kernels.precision import (
     widest,
 )
 from mace_core.kernels.protocol import DISPATCHED_OPS, REFERENCE_ONLY_OPS
+from mace_core.kernels.specs import DistanceTransformSpec, KernelSpec
 
 __all__ = [
     "DEFAULT_PRECISION",
@@ -47,7 +47,7 @@ __all__ = [
 
 #: The op kinds a policy can be given for.
 OP_KINDS: tuple[str, ...] = tuple(
-    sorted(DISPATCHED_OPS | REFERENCE_ONLY_OPS | {DistanceTransformDescriptor.op})
+    sorted(DISPATCHED_OPS | REFERENCE_ONLY_OPS | {DistanceTransformSpec.op})
 )
 PRODUCT_KINDS: tuple[str, ...] = ("linear", "fully_connected_tp")
 
@@ -135,7 +135,7 @@ class PrecisionConfig(ConfigSection):
         return self.model
 
     def policy_for(
-        self, descriptor: Descriptor | Sequence[Descriptor]
+        self, kernel_spec: KernelSpec | Sequence[KernelSpec]
     ) -> PrecisionPolicy:
         """The policy for this dispatched op, or for this fused span.
 
@@ -145,10 +145,10 @@ class PrecisionConfig(ConfigSection):
         member's floor.
 
         Args:
-            descriptor: One op descriptor, or the descriptors of a span.
+            kernel_spec: One operation specification, or the specifications of a span.
         """
-        if isinstance(descriptor, Sequence):
-            policies = [self.policy_for(member) for member in descriptor]
+        if isinstance(kernel_spec, Sequence):
+            policies = [self.policy_for(member) for member in kernel_spec]
             if not policies:
                 raise ValueError("a span has at least one op")
             return PrecisionPolicy(
@@ -159,7 +159,7 @@ class PrecisionConfig(ConfigSection):
                 if all(p.product == "tf32" for p in policies)
                 else "ieee",
             )
-        return self.ops.get(descriptor.op, PrecisionPolicy.uniform(self.model))
+        return self.ops.get(kernel_spec.op, PrecisionPolicy.uniform(self.model))
 
     def resolved_accumulate(self, supports_float64: bool) -> Precision:
         """The model-level accumulation type this device can actually give.

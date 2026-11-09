@@ -12,12 +12,12 @@ import math
 import torch
 from mace_core.config.local_sources import LocalSplitChargeConfig
 from mace_core.config.model import ModelConfig
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    LinearDescriptor,
-    RadialMLPDescriptor,
-)
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    LinearSpec,
+    RadialMLPSpec,
+)
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps, layout_of
@@ -42,23 +42,23 @@ class ChargeTransfer(nn.Module):
         )
         # Only scalar paths can reach the final scalar linear. Eliminating
         # the other paths leaves the function and every relevant weight intact.
-        descriptor = ChannelwiseTPConvDescriptor(
+        kernel_spec = ChannelwiseTPConvSpec(
             irreps_node=config.node_irreps,
             irreps_edge=edge_irreps,
             irreps_out="0e",
             num_features=self.channels,
             precision=precision,
         )
-        self.paths = len(descriptor.paths)
-        linear = LinearDescriptor(
+        self.paths = len(kernel_spec.paths)
+        linear = LinearSpec(
             irreps_in=node_irreps, irreps_out=node_irreps, precision=precision
         )
         self.sender = backend.make_linear(linear)
         self.receiver = backend.make_linear(linear)
-        self.product = backend.make_channelwise_tp_conv(descriptor)
+        self.product = backend.make_channelwise_tp_conv(kernel_spec)
         self.radial = _radial_network(
             backend,
-            RadialMLPDescriptor(
+            RadialMLPSpec(
                 channels=(
                     config.radial_basis.num_basis,
                     32 if compressed else 64,
@@ -71,10 +71,10 @@ class ChargeTransfer(nn.Module):
             ),
         )
         self.readout = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=f"{self.channels}x0e"
                 if compressed
-                else expanded_irreps(descriptor.irreps_paths, self.channels),
+                else expanded_irreps(kernel_spec.irreps_paths, self.channels),
                 irreps_out="0e",
                 precision=precision,
             )
@@ -131,7 +131,7 @@ class SplitChargeSource(nn.Module):
         )
         self.density_map = (
             backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=expanded_irreps(config.node_irreps, config.num_channels),
                     irreps_out="+".join(
                         f"{ell}{'e' if ell % 2 == 0 else 'o'}"

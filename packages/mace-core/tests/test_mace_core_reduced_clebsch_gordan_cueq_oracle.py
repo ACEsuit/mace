@@ -3,7 +3,7 @@
 `cuequivariance` is a **test-only** dependency here. `mace_core` must never
 import it, and `tests/architecture/test_no_vendor_deps.py` asserts that. This
 file imports it precisely because it is the independent derivation the basis is
-checked against, and it is numpy-level descriptor mathematics that runs with no
+checked against, and it is numpy-level kernel_spec mathematics that runs with no
 GPU present.
 
 **Spans, not entries.** The real basis is the one stated in

@@ -33,7 +33,7 @@ import math
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import linear_weight_table
-from mace_core.kernels.descriptors import LinearDescriptor, RadialMLPDescriptor
+from mace_core.kernels.specs import LinearSpec, RadialMLPSpec
 from torch import Tensor, nn
 from torch.nn.utils import parametrize
 
@@ -138,13 +138,13 @@ def inject_lora(model: nn.Module, rank: int = 4, alpha: float = 1.0) -> list[str
     """
     adapted: list[str] = []
     for path, module in list(model.named_modules()):
-        descriptor = getattr(module, "descriptor", None)
+        kernel_spec = getattr(module, "kernel_spec", None)
         weight = getattr(module, "weight", None)
-        # A linear map, by what its descriptor says it is. The skip connection
-        # holds a descriptor too and is a tensor product, which the frozen
+        # A linear map, by what its kernel_spec says it is. The skip connection
+        # holds a kernel_spec too and is a tensor product, which the frozen
         # tree does not adapt either.
         if (
-            isinstance(descriptor, LinearDescriptor)
+            isinstance(kernel_spec, LinearSpec)
             and isinstance(weight, nn.Parameter)
             and weight.numel() > 0
             and not parametrize.is_parametrized(module, "weight")
@@ -153,11 +153,11 @@ def inject_lora(model: nn.Module, rank: int = 4, alpha: float = 1.0) -> list[str
                 module,
                 "weight",
                 EquivariantLowRank(
-                    descriptor.irreps_in, descriptor.irreps_out, rank, alpha, weight
+                    kernel_spec.irreps_in, kernel_spec.irreps_out, rank, alpha, weight
                 ),
             )
             adapted.append(f"{path}.weight")
-        elif isinstance(descriptor, RadialMLPDescriptor):
+        elif isinstance(kernel_spec, RadialMLPSpec):
             for index, matrix in enumerate(module.weights):
                 parametrize.register_parametrization(
                     module.weights, str(index), DenseLowRank(matrix, rank, alpha)

@@ -1,18 +1,18 @@
-"""Descriptor-built backbone: node features out, without readouts or gradients."""
+"""KernelSpec-built backbone: node features out, without readouts or gradients."""
 
 from __future__ import annotations
 
 import jax.numpy as jnp
 from flax import nnx
 from mace_core.kernels.canonical import KERNEL_SPEC_VERSION, contraction_path_labels
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
 )
 
 from mace_jax.kernels.ops import CanonicalOp, expanded
@@ -38,27 +38,27 @@ class Interaction(nnx.Module):
         self.channels = channels
         node = expanded(node_irreps, channels)
         message = expanded(message_irreps, channels)
-        descriptor = ChannelwiseTPConvDescriptor(
+        kernel_spec = ChannelwiseTPConvSpec(
             irreps_node=node_irreps,
             irreps_edge=message_irreps,
             irreps_out=message_irreps,
             num_features=channels,
             precision=dtype,
         )
-        self.num_paths = len(descriptor.paths)
-        self.convolution = backend.make_channelwise_tp_conv(descriptor)
+        self.num_paths = len(kernel_spec.paths)
+        self.convolution = backend.make_channelwise_tp_conv(kernel_spec)
         self.linear_up = backend.make_linear(
-            LinearDescriptor(irreps_in=node, irreps_out=node, precision=dtype)
+            LinearSpec(irreps_in=node, irreps_out=node, precision=dtype)
         )
         self.linear = backend.make_linear(
-            LinearDescriptor(
-                irreps_in=expanded(descriptor.irreps_paths, channels),
+            LinearSpec(
+                irreps_in=expanded(kernel_spec.irreps_paths, channels),
                 irreps_out=message,
                 precision=dtype,
             )
         )
         self.radial_mlp = backend.make_radial_mlp(
-            RadialMLPDescriptor(
+            RadialMLPSpec(
                 channels=(
                     config.radial_basis.num_basis,
                     *config.radial_mlp,
@@ -70,7 +70,7 @@ class Interaction(nnx.Module):
         )
         self.density_mlp = (
             backend.make_radial_mlp(
-                RadialMLPDescriptor(
+                RadialMLPSpec(
                     channels=(config.radial_basis.num_basis, 1),
                     kind="normalized_silu",
                     precision=dtype,
@@ -80,11 +80,11 @@ class Interaction(nnx.Module):
             else None
         )
         self.reduce = backend.make_segment_reduce(
-            SegmentReduceDescriptor(reduction="sum", num_features=1, precision=dtype)
+            SegmentReduceSpec(reduction="sum", num_features=1, precision=dtype)
         )
         self.normalization = CanonicalOp({"neighbours": jnp.asarray(1.0, dtype=dtype)})
         self.skip = backend.make_fully_connected_tp(
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1=node if self.residual else message,
                 irreps_in2=f"{elements}x0e",
                 irreps_out=expanded(output_irreps, channels)
@@ -139,7 +139,7 @@ class ProductBasis(nnx.Module):
             "paths": list(contraction_path_labels(message, output, config.correlation)),
         }
         self.contraction = backend.make_symmetric_contraction(
-            SymmetricContractionDescriptor(
+            SymmetricContractionSpec(
                 irreps_in=message,
                 irreps_out=output,
                 correlation=config.correlation,
@@ -151,7 +151,7 @@ class ProductBasis(nnx.Module):
         )
         flat = expanded(output, config.num_channels)
         self.linear = backend.make_linear(
-            LinearDescriptor(irreps_in=flat, irreps_out=flat, precision=dtype)
+            LinearSpec(irreps_in=flat, irreps_out=flat, precision=dtype)
         )
 
     def __call__(self, message, elements, skip):
@@ -167,14 +167,14 @@ class MACEBackbone(nnx.Module):
 
         self.config = config
         self.embedding = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=f"{elements}x0e",
                 irreps_out=f"{config.num_channels}x0e",
                 precision=dtype,
             )
         )
         self.harmonics = backend.make_spherical_harmonics(
-            SphericalHarmonicsDescriptor(lmax=config.max_ell, precision=dtype)
+            SphericalHarmonicsSpec(lmax=config.max_ell, precision=dtype)
         )
         self.basis = CanonicalOp(
             {
@@ -268,7 +268,7 @@ class MACEBackbone(nnx.Module):
         return tuple(layers), lengths
 
     def canonical_components(self):
-        prefix = "backbone.backbone"
+        prefix = "model.backbone"
         result = {
             prefix + ".node_embedding": self.embedding,
             prefix + ".radial_embedding.basis": self.basis,
@@ -287,7 +287,7 @@ class MACEBackbone(nnx.Module):
 
     def canonical_layout(self):
         """Canonical semantics are model state, independent of the selected backend."""
-        prefix = "backbone.backbone"
+        prefix = "model.backbone"
         result = {
             prefix + ".radial_embedding.basis": {"model.radial_basis.kind": "bessel"}
         }

@@ -123,17 +123,17 @@ class ResponseOps(ReferenceBackend):
     Canonical weights are identical to the ordinary reference implementations.
     """
 
-    def make_linear(self, descriptor):
-        return _Linear(descriptor)
+    def make_linear(self, kernel_spec):
+        return _Linear(kernel_spec)
 
-    def make_fully_connected_tp(self, descriptor):
-        return _ElementLinear(descriptor)
+    def make_fully_connected_tp(self, kernel_spec):
+        return _ElementLinear(kernel_spec)
 
-    def make_channelwise_tp_conv(self, descriptor):
-        return _Convolution(descriptor)
+    def make_channelwise_tp_conv(self, kernel_spec):
+        return _Convolution(kernel_spec)
 
-    def make_symmetric_contraction(self, descriptor):
-        return _Contraction(descriptor)
+    def make_symmetric_contraction(self, kernel_spec):
+        return _Contraction(kernel_spec)
 
-    def make_segment_reduce(self, descriptor):
-        return _Reduce(descriptor)
+    def make_segment_reduce(self, kernel_spec):
+        return _Reduce(kernel_spec)

@@ -229,7 +229,7 @@ def run_train_stage(
         The trained model, with the averaged weights in place when the run
         averaged, since those are the ones the best checkpoint holds.
     """
-    model = built.model.to(device)
+    model = built.engine.to(device)
     processes = distributed or DistributedContext(device=device)
     valid_loaders = built.data.valid_loaders
     if processes.distributed:
@@ -286,7 +286,7 @@ def run_train_stage(
             # Before any epoch and before any file: the point of the flag is to
             # prove the configuration builds a model, and a dry run that wrote one
             # would be indistinguishable from a run of length zero.
-            return TrainedModel(model=model, metadata=built.metadata)
+            return TrainedModel(engine=model, metadata=built.metadata)
 
         # A resumed run's earlier epochs belong to the run that wrote them:
         # inventing records for them would put numbers in the history that were
@@ -518,7 +518,7 @@ def run_train_stage(
             processes=processes,
         )
         return TrainedModel(
-            model=model,
+            engine=model,
             metadata=built.metadata,
             history=tuple(history),
             best_epoch=best_epoch,

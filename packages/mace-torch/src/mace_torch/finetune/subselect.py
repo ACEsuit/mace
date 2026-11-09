@@ -3,7 +3,7 @@
 A replay set is large, and training on all of it makes the fine-tune about the
 replay set. So a head keeps a subset: first the structures a filter on their
 elements allows, then either a random draw or farthest-point sampling over a
-foundation model's descriptors, padded at random from the rest when the filter
+foundation model's structure descriptors, padded at random from the rest when the filter
 let too few through.
 
 The frozen tree's version is a 575-line command-line script whose selection
@@ -41,7 +41,7 @@ __all__ = [
     "SelectionError",
     "farthest_point_indices",
     "passes_filter",
-    "read_descriptors",
+    "read_structure_descriptors",
     "select",
     "split_by_filter",
 ]
@@ -68,7 +68,7 @@ class SelectionError(ValueError):
     """A selection that cannot be made as asked."""
 
 
-def read_descriptors(path: Path, count: int) -> np.ndarray:
+def read_structure_descriptors(path: Path, count: int) -> np.ndarray:
     """Read a numeric ``[count, features]`` NPY array in unfiltered source order.
 
     The caller owns the row-to-structure correspondence. No implicit cache,
@@ -86,7 +86,9 @@ def read_descriptors(path: Path, count: int) -> np.ndarray:
         ):
             raise ValueError(f"expected a finite numeric [{count}, features] matrix")
     except (OSError, ValueError) as error:
-        raise SelectionError(f"subselect.descriptors {str(path)!r}: {error}") from error
+        raise SelectionError(
+            f"subselect.structure_descriptors_file {str(path)!r}: {error}"
+        ) from error
     return values
 
 
@@ -166,7 +168,7 @@ def farthest_point_indices(
         generator: Draws the first point.
     """
     if points.ndim != 2 or not np.isfinite(points).all():
-        raise SelectionError("descriptors must be a finite [n, d] array")
+        raise SelectionError("structure_descriptors must be a finite [n, d] array")
     total = points.shape[0]
     if count < 1:
         raise SelectionError("keep at least one farthest point")
@@ -191,7 +193,7 @@ def _exact_farthest_points(points: np.ndarray, count: int, start: int) -> list[i
     chosen = [start]
     nearest = np.linalg.norm(values - values[start], axis=1)
     for _ in range(count - 1):
-        # Equal descriptors still represent distinct structures. Exclude each
+        # Equal structure descriptors still represent distinct structures. Exclude each
         # chosen index even when all remaining distances are zero.
         nearest[chosen[-1]] = -np.inf
         candidate = int(np.argmax(nearest))
@@ -211,7 +213,7 @@ def select(
     elements: Sequence[int] = (),
     allow_random_padding: bool = True,
     seed: int = 42,
-    descriptors: np.ndarray | None = None,
+    structure_descriptors: np.ndarray | None = None,
 ) -> list[Configuration]:
     """The part of a dataset a head keeps.
 
@@ -228,7 +230,7 @@ def select(
         allow_random_padding: Make up a shortfall at random from the structures
             the filter refused.
         seed: Seeds every random draw here, and nothing else in the process.
-        descriptors: ``[n, d]`` over the structures the filter allows, in
+        structure_descriptors: ``[n, d]`` over the structures the filter allows, in
             their order. Required for ``fps`` and read by nothing else.
 
     Raises:
@@ -268,18 +270,21 @@ def select(
             for index in _random_indices(num_samples, len(passed), generator)
         ]
     if method == "fps":
-        if descriptors is None:
+        if structure_descriptors is None:
             raise SelectionError(
                 "farthest-point sampling needs a descriptor per structure, and "
                 "none were given."
             )
-        if descriptors.shape[0] != len(passed):
+        if structure_descriptors.shape[0] != len(passed):
             raise SelectionError(
-                f"{descriptors.shape[0]} descriptors were given for "
+                f"{structure_descriptors.shape[0]} structure descriptors "
+                "were given for "
                 f"{len(passed)} structures."
             )
         return [
             passed[index]
-            for index in farthest_point_indices(descriptors, num_samples, generator)
+            for index in farthest_point_indices(
+                structure_descriptors, num_samples, generator
+            )
         ]
     raise SelectionError(f"{method!r} is not a method. They are {list(METHODS)}.")

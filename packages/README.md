@@ -115,9 +115,24 @@ catalogue travels with the checkpoint, so loading needs no separate declaration.
 
 Model and block classes bind stable checkpoint roles to their children through
 `canonical_components()`. Plain containers retain their registered child names;
-an empty role makes an implementation wrapper transparent. This preserves the
-format-3 tensor names and values while allowing Python attributes to be renamed.
+an empty role makes an implementation wrapper transparent. These roles identify
+tensors in the 1.0 checkpoint format independently of Python attribute names.
 An undeclared component with canonical state is rejected when saving or loading.
+
+The public names distinguish construction specifications from numerical features:
+`KernelSpec` (for example `LinearSpec`) describes an operator;
+`ElectrostaticsSpec` describes a long-range solve. Operators expose `kernel_spec`,
+and electrostatic models expose `solver_spec`. Neither is a feature vector.
+`MACEBackbone.atomic_descriptors()` and `MACECalculator.get_atomic_descriptors()`
+return per-atom vectors; `Foundation.structure_descriptors()` returns one row per
+structure. FPS can read these rows from `subselect.structure_descriptors_file`.
+
+A `head` selects a level of theory. `ObservableReadout` produces an observable
+for those heads; `EnergyReadout` combines the energy terms. `backbone` denotes
+the feature extractor, `model` the complete physical model, and `engine` its
+derivative wrapper. Both `BuiltModel` and `TrainedModel` expose `engine`.
+The wrapper takes one composed model. RNG identities are independent of Python
+attribute names so API renames do not redraw weights for an unchanged seed.
 
 ## Source attribution
 
@@ -186,9 +201,9 @@ packages/
     data/                        structures, backends, E0s, statistics, splits
       backends/                  in-memory, XYZ, HDF5 and LMDB data backends
     data_spec/                   the V1 shard format and its writer
-    electrostatics/              long-range solve descriptors, solver registry
+    electrostatics/              long-range solve specifications, solver registry
     elements/                    element tables, default file keys, E0 values
-    kernels/                     op descriptors, backend protocol and registry
+    kernels/                     kernel specifications, backend protocol and registry
     observables/                 declared observables and their derivatives
     weights/                     the neutral weights format
   mace-torch/src/mace_torch/     the PyTorch implementation
@@ -229,7 +244,7 @@ the model, applies the strain and takes the derivatives;
 output.
 
 **A new kernel backend** implements `mace_core/kernels/protocol.py`, reads its
-ops from `mace_core/kernels/descriptors.py` and registers an entry point; the
+ops from `mace_core/kernels/specs.py` and registers an entry point; the
 reference in `mace_torch/backends/reference.py` is the one to copy.
 **A new long-range solver** does the same against
 `mace_core/electrostatics/capabilities.py` and `mace_torch/electrostatics/solver.py`.
@@ -313,7 +328,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/data_spec/shard_format.py` | The V1 shard layout, the manifest check and the shard writer. |
 | `mace_core/electrostatics/__init__.py` | The electrostatics contract, re-exported. |
 | `mace_core/electrostatics/capabilities.py` | What a solver declares it can do, and the refusal when it cannot. |
-| `mace_core/electrostatics/descriptor.py` | One long-range solve as data: profile, multipoles, projection, method. |
+| `mace_core/electrostatics/spec.py` | One long-range solve as data: profile, multipoles, projection, method. |
 | `mace_core/electrostatics/registry.py` | Solver discovery by entry point, and which solver a model loads with. |
 | `mace_core/elements/__init__.py` | Element bookkeeping, re-exported. |
 | `mace_core/elements/default_keys.py` | The default file keys of a labelled structure file. |
@@ -323,7 +338,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/kernels/__init__.py` | The kernel contract, re-exported. |
 | `mace_core/kernels/canonical.py` | The canonical weight layout that makes checkpoints backend independent. |
 | `mace_core/kernels/capabilities.py` | What a kernel backend declares it can build. |
-| `mace_core/kernels/descriptors.py` | Every dispatched op, described before a backend builds it. |
+| `mace_core/kernels/specs.py` | Every dispatched op, described before a backend builds it. |
 | `mace_core/kernels/spans.py` | Closed edge-convolution span shape. |
 | `mace_core/kernels/paths.py` | The tensor-product paths of the convolution and their order. |
 | `mace_core/kernels/precision.py` | Dtype names, and which is wider. |
@@ -390,7 +405,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/cli/model.py` | Head selection and verified full-to-reduced basis conversion. |
 | `mace_torch/cli/training_config.py` | Translate explicit flags and legacy configuration syntax into the V1 schema. |
 | `mace_torch/cli/legacy_flags.py` | Legacy flag spellings and parser grammar at the input boundary. |
-| `mace_torch/cli/eval_configs.py` | Batch extxyz evaluation, descriptors and the thirteen legacy output names. |
+| `mace_torch/cli/eval_configs.py` | Batch extxyz evaluation, atomic/structure descriptors and physical outputs. |
 | `mace_torch/cli/convert_legacy.py` | `mace_convert_legacy`: a legacy checkpoint into a v1 one. |
 | `mace_torch/cli/polar_density_cube.py` | `mace_polar_density_cube --engine v1`: a charge-aware model's density as cube files. |
 | `mace_torch/cli/run_train.py` | `mace_run_train --engine v1`: training from a configuration file. |
@@ -449,9 +464,9 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/models/dipoles.py` | `DipoleModel`: a dipole, or a dipole and a polarizability, read off per-atom responses. |
 | `mace_torch/models/electrostatics.py` | Polar refinement, LC/LSC sources, QEq and affine SCF, sharing solver dispatch and physical derivatives. |
 | `mace_torch/models/registry.py` | Model registration used by data declarations and assembly, outside the forward path. |
-| `mace_torch/models/energy.py` | The energy head: E0s, scale and shift, and the two reductions. |
+| `mace_torch/models/energy.py` | The energy readout: E0s, scale and shift, and the two reductions. |
 | `mace_torch/models/inputs.py` | Physical input specifications and embedded features shared by model families and data readers. |
-| `mace_torch/models/heads.py` | One readout head per declared observable, per head of theory. |
+| `mace_torch/models/readouts.py` | One readout per observable, with weights per level-of-theory head. |
 | `mace_torch/models/les.py` | Long-range LES coupling, latent quantities, Born charges and their applied-field force. |
 | `mace_torch/models/magnetic.py` | `MagneticModel`: an energy model reading a moment on every atom, with its one-body term. |
 | `mace_torch/models/outputs.py` | `MACEOutputs`: every declared observable read out and typed. |
@@ -533,7 +548,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_jax/models/energy.py` | Energy readouts, E0 assembly and backbone/output composition. |
 | `mace_jax/models/registry.py` | The three supported foundation architectures and pending publication references. |
 | `mace_jax/nn/__init__.py` | Neural building-block namespace. |
-| `mace_jax/nn/backbone.py` | Four interaction variants and the descriptor-built product basis. |
+| `mace_jax/nn/backbone.py` | Four interaction variants and the product basis built from kernel specifications. |
 | `mace_jax/nn/radial.py` | Bessel basis, polynomial envelope, Agnesi transform and ZBL repulsion. |
 | `mace_jax/physics/__init__.py` | Derivative-output namespace. |
 | `mace_jax/physics/outputs.py` | Forces, stress and virials from position and symmetric-strain gradients. |

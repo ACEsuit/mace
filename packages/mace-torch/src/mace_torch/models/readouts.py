@@ -40,8 +40,8 @@ import numpy as np
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import linear_bias_table, linear_weight_table
-from mace_core.kernels.descriptors import LinearDescriptor
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import LinearSpec
 from mace_core.observables import ObservableSpec
 from torch import Tensor, nn
 
@@ -50,7 +50,7 @@ from mace_torch.backends.layout import expanded_irreps
 from mace_torch.nn.gate import ScalarActivation
 
 __all__ = [
-    "ObservableHead",
+    "ObservableReadout",
     "component_heads",
     "copy_heads",
     "head_columns",
@@ -124,11 +124,11 @@ def _effective_weight_factors(op, like: Tensor) -> Tensor:
     """The raw-to-effective factors of the complete readout, before slicing a head."""
     from mace_core.kernels.canonical import linear_path_normalization
 
-    descriptor = op.descriptor
-    output = list(Irreps.parse(descriptor.irreps_out).slices())
+    kernel_spec = op.kernel_spec
+    output = list(Irreps.parse(kernel_spec.irreps_out).slices())
     factors = [
-        linear_path_normalization(descriptor.irreps_in, output[out][1])
-        for out, _ in linear_weight_table(descriptor.irreps_in, descriptor.irreps_out)
+        linear_path_normalization(kernel_spec.irreps_in, output[out][1])
+        for out, _ in linear_weight_table(kernel_spec.irreps_in, kernel_spec.irreps_out)
     ]
     return like.new_tensor(factors)
 
@@ -292,7 +292,7 @@ class _Gate(nn.Module):
         return torch.cat([scalars, self.layout.join(pieces)], dim=-1)
 
 
-class ObservableHead(nn.Module):
+class ObservableReadout(nn.Module):
     """The readout for one observable.
 
     Args:
@@ -399,7 +399,7 @@ class ObservableHead(nn.Module):
             else:
                 readouts.append(
                     backend.make_linear(
-                        LinearDescriptor(
+                        LinearSpec(
                             irreps_in=grouped,
                             irreps_out=per_head_irreps(spec.irreps, num_heads),
                             precision=precision,
@@ -687,7 +687,7 @@ class _GatedReadout(nn.Module):
             feature_layout=layout.layout_of(backend),
         )
         self.first = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=irreps_in,
                 irreps_out=self.gate.irreps_in,
                 precision=precision,
@@ -695,7 +695,7 @@ class _GatedReadout(nn.Module):
         )
         self.middle = (
             backend.make_linear(
-                LinearDescriptor(
+                LinearSpec(
                     irreps_in=self.gate.irreps_out,
                     irreps_out=self.gate.irreps_in,
                     has_bias=True,
@@ -706,7 +706,7 @@ class _GatedReadout(nn.Module):
             else None
         )
         self.second = backend.make_linear(
-            LinearDescriptor(
+            LinearSpec(
                 irreps_in=self.gate.irreps_out,
                 irreps_out=per_head_irreps(irreps_out, num_heads),
                 has_bias=biased,

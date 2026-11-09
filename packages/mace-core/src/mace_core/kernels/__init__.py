@@ -1,4 +1,4 @@
-"""Framework-independent kernel descriptors, capabilities, protocol and registry.
+"""Framework-independent kernel specifications, capabilities, protocol and registry.
 
 Backends must support the recorded basis or reject the build. Dispatch resolves
 once at construction. Canonical weights are raw; ``layout`` specifies the
@@ -22,20 +22,7 @@ from mace_core.kernels.canonical import (
 )
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
-    UnsupportedDescriptorError,
-)
-from mace_core.kernels.descriptors import (
-    CLEBSCH_GORDAN_BASES,
-    ChannelwiseTPConvDescriptor,
-    Descriptor,
-    DistanceTransformDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
+    UnsupportedKernelSpecError,
 )
 from mace_core.kernels.paths import ConvolutionPath, channelwise_paths, path_irreps
 from mace_core.kernels.precision import PRECISIONS, Precision
@@ -60,6 +47,19 @@ from mace_core.kernels.reorder import (
     WeightReorder,
     derive_reorder,
 )
+from mace_core.kernels.specs import (
+    CLEBSCH_GORDAN_BASES,
+    ChannelwiseTPConvSpec,
+    DistanceTransformSpec,
+    FullyConnectedTPSpec,
+    KernelSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
+)
 
 __all__ = [
     "CANONICAL_LAYOUT",
@@ -74,25 +74,25 @@ __all__ = [
     "SILU_SECOND_MOMENT_SCALE",
     "BackendCapabilities",
     "BackendNotAvailableError",
-    "ChannelwiseTPConvDescriptor",
+    "ChannelwiseTPConvSpec",
     "ConvolutionPath",
-    "Descriptor",
     "DiscoveredBackend",
-    "DistanceTransformDescriptor",
+    "DistanceTransformSpec",
     "DuplicateBackendError",
-    "FullyConnectedTPDescriptor",
+    "FullyConnectedTPSpec",
     "InternalWeights",
     "KernelBackend",
-    "LinearDescriptor",
+    "KernelSpec",
+    "LinearSpec",
     "Precision",
-    "RadialBasisDescriptor",
-    "RadialMLPDescriptor",
+    "RadialBasisSpec",
+    "RadialMLPSpec",
     "ReorderBlock",
     "ReorderError",
-    "SegmentReduceDescriptor",
-    "SphericalHarmonicsDescriptor",
-    "SymmetricContractionDescriptor",
-    "UnsupportedDescriptorError",
+    "SegmentReduceSpec",
+    "SphericalHarmonicsSpec",
+    "SymmetricContractionSpec",
+    "UnsupportedKernelSpecError",
     "WeightReorder",
     "available_backends",
     "canonical_weight_shape",

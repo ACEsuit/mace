@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
-from mace_core.kernels.descriptors import FullyConnectedTPDescriptor
+from mace_core.kernels.specs import FullyConnectedTPSpec
 from mace_torch.backends.layout import grouped, term_widths
 from mace_torch.backends.reference import ReferenceBackend, ReferenceFullyConnectedTP
 from mace_torch.nn.product_basis import EquivariantProductBasisBlock
@@ -46,7 +46,7 @@ def test_the_skip_connection_converts_exactly(fp64, anchor, layer):
     elements = Irreps.parse(irreps_in2).dimension
 
     mine = ReferenceFullyConnectedTP(
-        FullyConnectedTPDescriptor(
+        FullyConnectedTPSpec(
             irreps_in1=irreps_in1, irreps_in2=irreps_in2, irreps_out=irreps_out
         )
     )

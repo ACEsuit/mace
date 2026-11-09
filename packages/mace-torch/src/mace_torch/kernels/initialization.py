@@ -6,8 +6,10 @@ that cannot be trained: zero-valued tensors multiply to zero, so does the
 gradient, and the run finishes reporting a model that never moved. A model
 built to be trained is initialised here, once, right after it is built.
 
-**The seed is per op, derived from the run's seed and the op's path in the
-module tree.** One seed for the whole model would give two ops of the same
+**The seed is per op, derived from the run's seed and the op's numerical
+identity.** By default this is its path in the module tree. A parent can pin
+a child's RNG name independently of its Python attribute name. One seed for
+the whole model would give two ops of the same
 shape the same weights, and drawing from the global generator would make a
 model depend on how many random numbers anything else had drawn first. The
 derivation is a hash of the path, so it is stable across processes and across
@@ -54,11 +56,19 @@ def initialize_model_weights(model: nn.Module, seed: int = 0) -> tuple[str, ...]
     """
     # Deepest first, so that a block which sets its own start for one of its
     # ops overrides what that op drew rather than being overwritten by it.
+    tree = dict(model.named_modules())
     modules = [
         (path, module)
-        for path, module in model.named_modules()
+        for path, module in tree.items()
         if isinstance(module, InternalWeights)
     ]
     for path, module in reversed(modules):
-        module.initialize_weights(op_seed(seed, path))
+        parts = path.split(".")
+        numerical_path = ".".join(
+            getattr(tree[".".join(parts[:index])], "_initialization_names", {}).get(
+                name, name
+            )
+            for index, name in enumerate(parts)
+        )
+        module.initialize_weights(op_seed(seed, numerical_path))
     return tuple(path for path, _ in modules)

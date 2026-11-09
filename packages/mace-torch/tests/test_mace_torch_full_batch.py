@@ -141,7 +141,7 @@ def gradient(model) -> torch.Tensor:
 def test_the_parts_add_up_to_the_loss_of_the_whole_set(tmp_path):
     """Its loss and its gradient, both, against one batch holding everything."""
     config, built = built_task(tmp_path)
-    model, loss = built.model, termwise(build_loss(built.outputs, config.loss))
+    model, loss = built.engine, termwise(build_loss(built.outputs, config.loss))
     loader = built.data.train_loader
     parts = list(loader.batches(0, drop_last=False))
     sizes = {
@@ -175,7 +175,7 @@ def test_weighing_by_share_of_structures_is_not_the_loss_of_the_whole_set(tmp_pa
     It is right for the energy, whose term is a mean over structures, and
     wrong for the forces, whose term is a mean over atoms."""
     config, built = built_task(tmp_path)
-    model, loss = built.model, termwise(build_loss(built.outputs, config.loss))
+    model, loss = built.engine, termwise(build_loss(built.outputs, config.loss))
     parts = list(built.data.train_loader.batches(0, drop_last=False))
     structures = sum(int(batch.graph["ptr"].shape[0] - 1) for batch in parts)
     shared = 0.0
@@ -194,9 +194,9 @@ def test_weighing_by_share_of_structures_is_not_the_loss_of_the_whole_set(tmp_pa
 
 def test_a_loss_written_from_scratch_is_refused(tmp_path):
     config, built = built_task(tmp_path, optimizer=LBFGS)
-    optimizer = build_optimizer(built.model, config.training)
+    optimizer = build_optimizer(built.engine, config.training)
     with pytest.raises(TypeError, match="TermwiseLoss"):
-        full_batch_step(built.model, lambda: [], torch.nn.MSELoss(), optimizer)
+        full_batch_step(built.engine, lambda: [], torch.nn.MSELoss(), optimizer)
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ def test_a_loss_written_from_scratch_is_refused(tmp_path):
 def test_an_epoch_is_one_step_through_a_closure_over_everything(tmp_path, monkeypatch):
     config, built = built_task(tmp_path, optimizer=LBFGS)
     loss = build_loss(built.outputs, config.loss)
-    optimizer = build_optimizer(built.model, config.training)
+    optimizer = build_optimizer(built.engine, config.training)
     steps, passes = [], []
     step = optimizer.step
 
@@ -223,24 +223,24 @@ def test_an_epoch_is_one_step_through_a_closure_over_everything(tmp_path, monkey
         passes.append(1)
         return loader.batches(0, drop_last=False)
 
-    before = [p.detach().clone() for p in built.model.parameters()]
-    full_batch_step(built.model, batches, loss, optimizer)
+    before = [p.detach().clone() for p in built.engine.parameters()]
+    full_batch_step(built.engine, batches, loss, optimizer)
     assert len(steps) == 1
     # One pass to count the set, then one per evaluation: the line search takes
     # several, which is why a missing broadcast diverges ranks.
     assert len(passes) > 2
     assert any(
         not torch.equal(a, b)
-        for a, b in zip(before, built.model.parameters(), strict=True)
+        for a, b in zip(before, built.engine.parameters(), strict=True)
     )
 
 
 def test_lbfgs_is_built_over_what_trains_with_its_own_step_length(tmp_path):
     config, built = built_task(tmp_path, optimizer=LBFGS)
-    optimizer = build_optimizer(built.model, config.training)
+    optimizer = build_optimizer(built.engine, config.training)
     assert isinstance(optimizer, torch.optim.LBFGS)
     (group,) = optimizer.param_groups
-    trainable = [p for p in built.model.parameters() if p.requires_grad]
+    trainable = [p for p in built.engine.parameters() if p.requires_grad]
     assert {id(p) for p in group["params"]} == {id(p) for p in trainable}
     assert (group["lr"], group["history_size"], group["max_iter"]) == (1.0, 200, 20)
     assert group["line_search_fn"] == "strong_wolfe"
@@ -253,7 +253,7 @@ def test_a_partial_learning_rate_factor_is_refused_under_lbfgs(tmp_path):
         scheduler={"kind": "constant", "group_factors": {"readouts": 0.5}},
     )
     with pytest.raises(ValueError, match="readouts"):
-        build_optimizer(built.model, config.training)
+        build_optimizer(built.engine, config.training)
 
 
 # ---------------------------------------------------------------------------
@@ -357,16 +357,16 @@ def test_an_averaged_run_continued_under_lbfgs_continues_from_the_average(tmp_pa
     assert latest is not None
 
     _, averaged = built_task(tmp_path, ema={"enabled": True, "decay": 0.9})
-    adam = build_optimizer(averaged.model, config.training)
-    ema = ExponentialMovingAverage(averaged.model.parameters(), 0.9)
-    read_run_checkpoint(latest, model=averaged.model, optimizer=adam, ema=ema)
+    adam = build_optimizer(averaged.engine, config.training)
+    ema = ExponentialMovingAverage(averaged.engine.parameters(), 0.9)
+    read_run_checkpoint(latest, model=averaged.engine, optimizer=adam, ema=ema)
 
     lbfgs_config, resumed = built_task(tmp_path, optimizer=LBFGS)
-    lbfgs = build_optimizer(resumed.model, lbfgs_config.training)
-    outcome = read_run_checkpoint(latest, model=resumed.model, optimizer=lbfgs)
+    lbfgs = build_optimizer(resumed.engine, lbfgs_config.training)
+    outcome = read_run_checkpoint(latest, model=resumed.engine, optimizer=lbfgs)
     assert outcome.optimizer_state == "reinitialized"
     assert outcome.reason is not None and "averaged weights" in outcome.reason
-    trainable = [p for p in resumed.model.parameters() if p.requires_grad]
+    trainable = [p for p in resumed.engine.parameters() if p.requires_grad]
     for parameter, average in zip(trainable, ema.shadow, strict=True):
         assert torch.equal(parameter.detach(), average)
 
@@ -384,6 +384,6 @@ def test_an_averaged_run_resumed_with_the_same_optimizer_still_has_to_average(
     latest = latest_run_checkpoint(tmp_path, "model")
     assert latest is not None
     plain_config, plain = built_task(tmp_path)
-    adam = build_optimizer(plain.model, plain_config.training)
+    adam = build_optimizer(plain.engine, plain_config.training)
     with pytest.raises(CheckpointError, match="averaged"):
-        read_run_checkpoint(latest, model=plain.model, optimizer=adam)
+        read_run_checkpoint(latest, model=plain.engine, optimizer=adam)

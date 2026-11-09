@@ -312,7 +312,7 @@ def transfer_weights(legacy_model, model, correlation: int) -> None:
 
     transfer_backbone_weights(legacy_model, model, correlation)
     with torch.no_grad():
-        head = model.outputs.heads["energy"]
+        head = model.outputs.readouts["energy"]
         for index, source in enumerate(legacy_model.readouts):
             destination = head.readouts[index]
             if hasattr(source, "linear_1"):

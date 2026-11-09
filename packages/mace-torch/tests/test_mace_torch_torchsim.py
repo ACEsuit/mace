@@ -131,7 +131,7 @@ def polar_artifact(tmp_path, request):
         tmp_path, profile=getattr(request, "param", "molecular")
     )
     _, model = built(config)
-    write_model(tmp_path / "polar", model.model, model.metadata)
+    write_model(tmp_path / "polar", model.engine, model.metadata)
     return tmp_path / "polar.json"
 
 
@@ -340,7 +340,7 @@ def test_declared_atomic_moments_and_magnetic_diagnostics(tmp_path):
     from test_mace_torch_magnetic_model import configuration, iron_cluster
 
     _, model = built(configuration(tmp_path))
-    path = write_model(tmp_path / "magnetic", model.model, model.metadata)
+    path = write_model(tmp_path / "magnetic", model.engine, model.metadata)
     runtime = adapter(
         path,
         compute_stress=False,

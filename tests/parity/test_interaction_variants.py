@@ -241,14 +241,14 @@ def test_each_first_block_is_built_as_named(
     first, block, density, fp64, isolated, tmp_path
 ):
     imported = converted(legacy_model(first), tmp_path)
-    built = imported.engine.backbone.backbone.interactions[0]
+    built = imported.engine.model.backbone.interactions[0]
     assert isinstance(built, block)
     assert (built.body.density_mlp is not None) is density
 
 
 def test_the_nonlinear_first_block_is_built_as_named(fp64, isolated, tmp_path):
     imported = converted(legacy_model(NONLINEAR), tmp_path)
-    built = imported.engine.backbone.backbone.interactions[0]
+    built = imported.engine.model.backbone.interactions[0]
     assert isinstance(built, NonLinearInteractionBlock)
 
 

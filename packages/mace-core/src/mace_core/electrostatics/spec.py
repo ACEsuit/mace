@@ -1,6 +1,6 @@
 """What a long-range electrostatics solve is, before any solver agrees to it.
 
-A descriptor is the complete statement of one solve: enough for a solver to
+A solver specification is the complete statement of one solve: enough for a solver to
 answer whether it can do it, and enough to build it. It carries numbers and
 names only, so it is hashable, comparable and can be written into a
 checkpoint. Dtypes are names, as everywhere in this package.
@@ -11,20 +11,23 @@ in ``forward``.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, get_args
+from dataclasses import asdict, field
+from typing import Annotated, Any, Literal, get_args
+
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass
 
 from mace_core.kernels.precision import Precision
 
 __all__ = [
     "PERIODICITY_PROFILES",
     "REALSPACE_METHODS",
-    "ElectrostaticsSolverDescriptor",
+    "ElectrostaticsSpec",
     "FeatureProjection",
     "PeriodicityProfile",
     "RealspaceMethod",
     "ScfSpec",
-    "descriptor_record",
+    "solver_spec_record",
 ]
 
 #: Which systems a solve is set up for.
@@ -59,8 +62,22 @@ RealspaceMethod = Literal["finite_difference"]
 
 REALSPACE_METHODS: tuple[str, ...] = get_args(RealspaceMethod)
 
+# These constraints are shared by configuration files and direct solver calls.
+PositiveFinite = Annotated[float, Field(gt=0, allow_inf_nan=False)]
+NonNegativeInteger = Annotated[int, Field(ge=0, strict=True)]
+SlabNormal = Annotated[int, Field(ge=0, le=2, strict=True)]
 
-@dataclass(frozen=True)
+
+def validate_slab_normal(profile: PeriodicityProfile, normal: int | None) -> None:
+    """A slab declares an axis; other periodicity profiles do not."""
+    if (profile == "z_slab") != (normal is not None):
+        raise ValueError(
+            f"slab_normal is {normal!r} under periodicity_profile {profile!r}; "
+            "a slab needs its normal axis, and other profiles take none"
+        )
+
+
+@dataclass(frozen=True, config=ConfigDict(extra="forbid"))
 class FeatureProjection:
     """The potential of the source density, projected onto Gaussians per atom.
 
@@ -79,20 +96,11 @@ class FeatureProjection:
             the quadrupole correction as well as the monopole and dipole ones.
     """
 
-    max_l: int
-    widths: tuple[float, ...]
+    max_l: NonNegativeInteger
+    widths: Annotated[tuple[PositiveFinite, ...], Field(min_length=1)]
     normalization: Literal["receiver", "multipoles"] = "receiver"
     include_self_interaction: bool = False
     quadrupole_corrections: bool = False
-
-    def __post_init__(self) -> None:
-        if self.max_l < 0:
-            raise ValueError(f"max_l is {self.max_l}; it is at least 0.")
-        if not self.widths or any(width <= 0 for width in self.widths):
-            raise ValueError(
-                f"widths is {self.widths}; at least one is needed and each has "
-                f"to be positive."
-            )
 
     @property
     def dimension(self) -> int:
@@ -100,7 +108,7 @@ class FeatureProjection:
         return (self.max_l + 1) ** 2 * len(self.widths)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, config=ConfigDict(extra="forbid"))
 class ScfSpec:
     """The self-consistent loop a charge-aware model closes around the solve.
 
@@ -115,9 +123,9 @@ class ScfSpec:
             mixing is unused by the reference Newton solve.
     """
 
-    max_iters: int = 50
-    tolerance: float = 1e-6
-    mixing: float = 1.0
+    max_iters: Annotated[int, Field(ge=1, strict=True)] = 50
+    tolerance: PositiveFinite = 1e-6
+    mixing: Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)] = 1.0
     method: Literal[
         "fixed_point",
         "qeq",
@@ -128,27 +136,9 @@ class ScfSpec:
         "nonlinear_fixed_fermi",
     ] = "fixed_point"
 
-    def __post_init__(self) -> None:
-        if self.method not in (
-            "fixed_point",
-            "qeq",
-            "qeq_nonperiodic",
-            "affine_fixed_charge",
-            "affine_fixed_fermi",
-            "nonlinear_fixed_charge",
-            "nonlinear_fixed_fermi",
-        ):
-            raise ValueError(f"unknown self-consistent solve method {self.method!r}")
-        if self.max_iters < 1:
-            raise ValueError(f"max_iters is {self.max_iters}; at least one is needed.")
-        if self.tolerance <= 0:
-            raise ValueError(f"tolerance is {self.tolerance}; it has to be positive.")
-        if not 0.0 < self.mixing <= 1.0:
-            raise ValueError(f"mixing is {self.mixing}; it lies in (0, 1].")
 
-
-@dataclass(frozen=True)
-class ElectrostaticsSolverDescriptor:
+@dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class ElectrostaticsSpec:
     """One long-range solve, as a solver is asked to build it.
 
     Attributes:
@@ -171,10 +161,10 @@ class ElectrostaticsSolverDescriptor:
     """
 
     periodicity_profile: PeriodicityProfile
-    multipole_max_l: int
-    kspace_cutoff: float
-    smearing_width: float
-    slab_normal: int | None = None
+    multipole_max_l: NonNegativeInteger
+    kspace_cutoff: PositiveFinite
+    smearing_width: PositiveFinite
+    slab_normal: SlabNormal | None = None
     scf_spec: ScfSpec | None = None
     features: FeatureProjection | None = None
     realspace_method: RealspaceMethod = "finite_difference"
@@ -182,38 +172,10 @@ class ElectrostaticsSolverDescriptor:
     precision: Precision = "float64"
 
     def __post_init__(self) -> None:
-        if self.periodicity_profile not in PERIODICITY_PROFILES:
-            raise ValueError(
-                f"{self.periodicity_profile!r} is not a periodicity profile. "
-                f"They are {list(PERIODICITY_PROFILES)}."
-            )
-        if (self.periodicity_profile == "z_slab") != (self.slab_normal is not None):
-            raise ValueError(
-                f"slab_normal is {self.slab_normal!r} under the profile "
-                f"{self.periodicity_profile!r}. A slab needs the axis its "
-                f"correction acts along, and nothing else takes one."
-            )
-        if self.slab_normal is not None and self.slab_normal not in (0, 1, 2):
-            raise ValueError(
-                f"slab_normal is {self.slab_normal}; it is an axis, 0, 1 or 2."
-            )
-        if self.multipole_max_l < 0:
-            raise ValueError(
-                f"multipole_max_l is {self.multipole_max_l}; it is at least 0."
-            )
-        if self.realspace_method not in REALSPACE_METHODS:
-            raise ValueError(
-                f"{self.realspace_method!r} is not a real-space method. They "
-                f"are {list(REALSPACE_METHODS)}."
-            )
-        if self.kspace_cutoff <= 0 or self.smearing_width <= 0:
-            raise ValueError(
-                f"kspace_cutoff is {self.kspace_cutoff} and smearing_width is "
-                f"{self.smearing_width}; both have to be positive."
-            )
+        validate_slab_normal(self.periodicity_profile, self.slab_normal)
 
 
-def descriptor_record(descriptor: ElectrostaticsSolverDescriptor) -> dict[str, Any]:
+def solver_spec_record(solver_spec: ElectrostaticsSpec) -> dict[str, Any]:
     """The solve as plain JSON data: sets sorted, tuples as lists.
 
     What a checkpoint records, and what a rebuilt model's solve is compared
@@ -230,4 +192,4 @@ def descriptor_record(descriptor: ElectrostaticsSolverDescriptor) -> dict[str, A
             return [plain(item) for item in value]
         return value
 
-    return plain(asdict(descriptor))
+    return plain(asdict(solver_spec))

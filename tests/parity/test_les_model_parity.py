@@ -398,8 +398,8 @@ def test_energy_foundation_transfer_matches_legacy(tmp_path, fp64, isolated):
         max_L=0,
     )
     transfer_foundation(
-        foundation.engine.backbone,
-        native.engine.backbone,
+        foundation.engine.model,
+        native.engine.model,
         foundation_elements=numbers,
         elements=numbers,
         foundation_heads=foundation.heads,

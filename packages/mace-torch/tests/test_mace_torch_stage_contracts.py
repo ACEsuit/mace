@@ -86,7 +86,7 @@ def test_the_boundary_objects_are_immutable():
         bundle().heads = ("other",)  # ty: ignore[invalid-assignment]
     with pytest.raises(dataclasses.FrozenInstanceError):
         EpochRecord(epoch=0, train_loss=1.0).epoch = 1  # ty: ignore[invalid-assignment]
-    trained = TrainedModel(model=nn.Identity(), metadata=metadata())
+    trained = TrainedModel(engine=nn.Identity(), metadata=metadata())
     with pytest.raises(dataclasses.FrozenInstanceError):
         trained.best_epoch = 3  # ty: ignore[invalid-assignment]
 
@@ -95,7 +95,7 @@ def test_there_is_one_statistics_object_and_the_model_reads_the_bundle_s():
     """Recomputing is what this identity check exists to forbid."""
     data = bundle()
     built = BuiltModel(
-        model=nn.Identity(),
+        engine=nn.Identity(),
         outputs=RequestedOutputs(observables=(), derivatives=(), inputs=()),
         data=data,
         metadata=metadata(),
@@ -107,7 +107,7 @@ def test_the_bundle_travels_with_the_model_rather_than_beside_it():
     """The training stage takes one argument, so it cannot be given a bundle
     the model was not built from."""
     built = BuiltModel(
-        model=nn.Identity(),
+        engine=nn.Identity(),
         outputs=RequestedOutputs(observables=(), derivatives=(), inputs=()),
         data=bundle(),
         metadata=metadata(),
@@ -132,12 +132,12 @@ def test_the_best_epoch_is_found_by_its_number_not_its_position():
         EpochRecord(epoch=8, train_loss=0.8, valid_loss=0.7),
     )
     trained = TrainedModel(
-        model=nn.Identity(), metadata=metadata(), history=history, best_epoch=8
+        engine=nn.Identity(), metadata=metadata(), history=history, best_epoch=8
     )
     assert trained.best is not None
     assert trained.best.train_loss == 0.8
 
 
 def test_a_run_that_never_evaluated_has_no_best_epoch():
-    trained = TrainedModel(model=nn.Identity(), metadata=metadata())
+    trained = TrainedModel(engine=nn.Identity(), metadata=metadata())
     assert trained.best is None

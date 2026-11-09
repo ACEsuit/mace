@@ -9,22 +9,22 @@ import pytest
 from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
-from mace_core.kernels.capabilities import UnsupportedDescriptorError
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
-)
+from mace_core.kernels.capabilities import UnsupportedKernelSpecError
 from mace_core.kernels.protocol import (
     DISPATCHED_OPS,
     REFERENCE_ONLY_OPS,
     InternalWeights,
     KernelBackend,
+)
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
 )
 from mace_jax.kernels.reference import ReferenceBackend
 
@@ -38,14 +38,12 @@ def backend():
 def test_protocol_and_raw_linear_skip_weights(backend):
     assert isinstance(backend, KernelBackend)
     assert backend.capabilities().ops == DISPATCHED_OPS | REFERENCE_ONLY_OPS
-    linear = backend.make_linear(LinearDescriptor(irreps_in="2x0e", irreps_out="0e"))
+    linear = backend.make_linear(LinearSpec(irreps_in="2x0e", irreps_out="0e"))
     assert isinstance(linear, InternalWeights)
     linear.load_canonical({"weight": np.asarray([2.0, 3.0]), "bias": np.empty(0)})
     np.testing.assert_allclose(linear(jnp.asarray([[4.0, 5.0]])), [[23 / math.sqrt(2)]])
     skip = backend.make_fully_connected_tp(
-        FullyConnectedTPDescriptor(
-            irreps_in1="2x0e", irreps_in2="3x0e", irreps_out="0e"
-        )
+        FullyConnectedTPSpec(irreps_in1="2x0e", irreps_in2="3x0e", irreps_out="0e")
     )
     skip.load_canonical({"weight": np.asarray([[2.0, 3.0], [4.0, 5.0], [6.0, 7.0]])})
     np.testing.assert_allclose(
@@ -56,18 +54,18 @@ def test_protocol_and_raw_linear_skip_weights(backend):
 
 
 def test_empty_edge_reductions_keep_explicit_node_count(backend):
-    reduction = backend.make_segment_reduce(SegmentReduceDescriptor())
+    reduction = backend.make_segment_reduce(SegmentReduceSpec())
     np.testing.assert_array_equal(
         reduction(jnp.zeros((0, 2)), jnp.zeros(0, dtype=int), 4), np.zeros((4, 2))
     )
-    descriptor = ChannelwiseTPConvDescriptor(
+    kernel_spec = ChannelwiseTPConvSpec(
         irreps_node="0e", irreps_edge="0e+1o", irreps_out="0e+1o", num_features=2
     )
-    convolution = backend.make_channelwise_tp_conv(descriptor)
+    convolution = backend.make_channelwise_tp_conv(kernel_spec)
     result = convolution(
         jnp.ones((4, 2)),
         jnp.empty((0, 4)),
-        jnp.empty((0, len(descriptor.paths), 2)),
+        jnp.empty((0, len(kernel_spec.paths), 2)),
         jnp.empty(0, dtype=int),
         jnp.empty(0, dtype=int),
         4,
@@ -80,14 +78,14 @@ def test_empty_edge_reductions_keep_explicit_node_count(backend):
 
 
 def test_compressed_contraction_matches_dense_couplings_and_gradient(backend):
-    descriptor = SymmetricContractionDescriptor(
+    kernel_spec = SymmetricContractionSpec(
         irreps_in="0e+1o",
         irreps_out="0e",
         correlation=3,
         num_elements=1,
         num_features=1,
     )
-    contraction = backend.make_symmetric_contraction(descriptor)
+    contraction = backend.make_symmetric_contraction(kernel_spec)
     contraction.initialize_weights(42)
     weights = np.asarray(contraction.to_canonical()["weight"])[0, :, 0]
     features = np.asarray([0.7, -0.2, 0.5, 1.1])
@@ -120,7 +118,7 @@ def test_compressed_contraction_matches_dense_couplings_and_gradient(backend):
 @pytest.mark.parametrize("normalize", [False, True])
 def test_spherical_harmonic_normalization_and_parity(backend, normalize):
     harmonic = backend.make_spherical_harmonics(
-        SphericalHarmonicsDescriptor(lmax=3, normalize=normalize)
+        SphericalHarmonicsSpec(lmax=3, normalize=normalize)
     )
     x = jnp.asarray([[0.3, 0.8, -0.4]])
     positive, negative = harmonic(x), harmonic(-x)
@@ -136,30 +134,30 @@ def test_spherical_harmonic_normalization_and_parity(backend, normalize):
 
 
 @pytest.mark.parametrize(
-    "descriptor,factory",
+    "kernel_spec,factory",
     [
-        (LinearDescriptor(precision="float32", accumulate="float64"), "make_linear"),
-        (SegmentReduceDescriptor(reduction="mean"), "make_segment_reduce"),
-        (SegmentReduceDescriptor(reduction="max"), "make_segment_reduce"),
-        (RadialBasisDescriptor(kind="gaussian", num_basis=4), "make_radial_basis"),
+        (LinearSpec(precision="float32", accumulate="float64"), "make_linear"),
+        (SegmentReduceSpec(reduction="mean"), "make_segment_reduce"),
+        (SegmentReduceSpec(reduction="max"), "make_segment_reduce"),
+        (RadialBasisSpec(kind="gaussian", num_basis=4), "make_radial_basis"),
         (
-            RadialMLPDescriptor(kind="layer_norm_silu", channels=(2, 3)),
+            RadialMLPSpec(kind="layer_norm_silu", channels=(2, 3)),
             "make_radial_mlp",
         ),
-        (SymmetricContractionDescriptor(basis="full"), "make_symmetric_contraction"),
-        (FullyConnectedTPDescriptor(irreps_in2="1o"), "make_fully_connected_tp"),
+        (SymmetricContractionSpec(basis="full"), "make_symmetric_contraction"),
+        (FullyConnectedTPSpec(irreps_in2="1o"), "make_fully_connected_tp"),
     ],
 )
 def test_capability_and_factory_refuse_the_same_unsupported_descriptor(
-    backend, descriptor, factory
+    backend, kernel_spec, factory
 ):
-    assert not backend.capabilities().supports(descriptor)
-    with pytest.raises(UnsupportedDescriptorError):
-        getattr(backend, factory)(descriptor)
+    assert not backend.capabilities().supports(kernel_spec)
+    with pytest.raises(UnsupportedKernelSpecError):
+        getattr(backend, factory)(kernel_spec)
 
 
 def test_radial_origin_and_cutoff_have_finite_derivatives(backend):
-    radial = backend.make_radial_basis(RadialBasisDescriptor(num_basis=4, cutoff=5.0))
+    radial = backend.make_radial_basis(RadialBasisSpec(num_basis=4, cutoff=5.0))
 
     def function(radius):
         return jnp.sum(radial(jnp.asarray([[radius]])))
@@ -173,10 +171,10 @@ def test_radial_origin_and_cutoff_have_finite_derivatives(backend):
 def test_radial_accepts_the_raw_distance_envelope(backend, apply_cutoff):
     from dataclasses import replace
 
-    descriptor = RadialBasisDescriptor(num_basis=4, cutoff=5.0, apply_cutoff=False)
+    kernel_spec = RadialBasisSpec(num_basis=4, cutoff=5.0, apply_cutoff=False)
     lengths = jnp.asarray([[0.7], [1.2]])
     envelope = jnp.asarray([[0.3], [0.8]])
-    bare = backend.make_radial_basis(descriptor)(lengths)
-    radial = backend.make_radial_basis(replace(descriptor, apply_cutoff=apply_cutoff))
+    bare = backend.make_radial_basis(kernel_spec)(lengths)
+    radial = backend.make_radial_basis(replace(kernel_spec, apply_cutoff=apply_cutoff))
     actual = radial(lengths, envelope=envelope)
     np.testing.assert_array_equal(actual, bare * envelope if apply_cutoff else bare)
