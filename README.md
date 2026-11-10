@@ -1,8 +1,8 @@
 # MACE V1 reference implementation
 
 > **AI-generated prototype — reference only.** `v1-reference` is preserved to
-> help the team understand the proposed implementation and review PRs. This
-> branch will not be maintained. The reviewed implementation is being developed
+> help the team understand the proposed implementation and review PRs.
+> The reviewed implementation is being developed
 > on `mace-reforge` through one PR per ticket; releases will come from that work.
 
 MACE builds equivariant machine-learning interatomic potentials. Model hosting
