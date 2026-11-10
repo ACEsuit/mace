@@ -1,189 +1,18 @@
-# The MACE v1 packages
+# Native workspace
 
-Three packages, one direction of dependency:
+| Distribution | Import | Responsibility |
+| --- | --- | --- |
+| mace-core | mace_core | Configuration, schemas, data and kernel contracts |
+| mace-torch | mace_torch | PyTorch models, training, calculators and the mace CLI |
+| mace-jax | mace_jax | JAX implementation and the mace-jax CLI |
+| mace-backend-example | mace_backend_example | Independently installable backend example |
 
-```
-mace-core            contract + pure math; no torch, no jax, no e3nn
-   ^        ^
-   |        |
-mace-torch  mace-jax
-```
+Install siblings together from this checkout. The root is a virtual workspace,
+not another distribution. Python 3.11 supports core/torch; JAX needs 3.12+.
+There is no mace-launcher distribution or runtime import named mace.
 
-`mace_torch` and `mace_jax` are two implementations of one contract. Neither
-imports the other, and neither imports the legacy `mace` package, which stays
-in the tree as a frozen numerical oracle until it is retired.
-
-`mace_core` holds what both frameworks agree on: the configuration schema, the
-data layer, the declared observables, the Clebsch-Gordan basis, the kernel and
-solver contracts, and the metadata a model carries. `mace_torch` is the full
-implementation: models, training, deployment. `mace_jax` is inference only and
-covers three foundation architectures. [Navigating the tree](#navigating-the-tree) says what is in
-every file.
-
-Until the first public V1 release, all V1 contracts and artifact schemas use
-version `1.0`. Changes update that initial format directly: intermediate V1
-versions are neither accepted nor migrated. Legacy artifacts enter through the
-explicit legacy converter. This policy does not change dependency versions or
-the frozen legacy reference formats.
-
-## Names
-
-| Directory | Distribution | Import name | Tag prefix |
-|---|---|---|---|
-| `packages/mace-core` | `mace-core` | `mace_core` | `mace-core-v*` |
-| `packages/mace-torch` | `mace-torch-v1` | `mace_torch` | `mace-torch-v*` |
-| `packages/mace-jax` | `mace-jax` | `mace_jax` | `mace-jax-v*` |
-| `packages/mace-launcher` | `mace-launcher` | `mace_launcher` | `mace-launcher-v*` |
-| `packages/mace-backend-example` | `mace-backend-example` | `mace_backend_example` | `mace-backend-example-v*` |
-
-The import names never collide with the legacy import name `mace`, so both
-stacks live in one process.
-
-The distribution names cannot all match their import names. The legacy package
-holds the `mace-torch` distribution name, and two distributions cannot both
-hold one name in a single environment, so the v1 PyTorch package ships as
-**`mace-torch-v1`** while keeping the `mace_torch` import name.
-
-**`mace-torch-v1` is never published to PyPI.** It exists so the two stacks can
-be installed side by side while both are in the tree. `mace-torch` on PyPI is
-frozen at its final v0.3.x release and stays dormant for the whole rewrite, so
-the name is free the moment legacy leaves the tree: RET-6 renames the
-distribution to `mace-torch`, and the v1.0.0 release publishes under that name.
-PyPI has no rename operation, so publishing `mace-torch-v1` even once would
-turn that switch from a no-op into a permanent user migration.
-
-Tag prefixes are keyed on the directory rather than the distribution name, so
-each package versions independently from git tags and the RET-6 rename touches
-only the `name` field.
-
-The launcher owns `mace` and the `mace_*` console scripts. The JAX distribution
-owns `mace-jax` for XYZ inference and installs independently. Each script name
-has a single owner so uninstalling one distribution preserves the other's
-commands.
-
-The launcher is also the only place the two stacks meet. It picks one with
-`--engine {legacy,v1}` or `MACE_ENGINE`, defaulting to `legacy`, and installs a
-runtime guard that fails if a v1 module imports the frozen legacy package.
-
-**`mace-launcher` is never published either, and unlike `mace-torch-v1` it does
-not survive under another name.** It exists to choose between two engines, so it
-has nothing left to do once the legacy package is deleted. RET-6 removes the
-package and moves its `[project.scripts]` table into `mace-torch`, pointed at
-`mace_torch.cli.*`. Single ownership survives that move: exactly one installed
-distribution still declares each `mace_*` script, and from then on it is
-`mace-torch`. The v1.0.0 release therefore publishes three distributions, not
-four.
-
-**`mace-backend-example` is never published.** It is a kernel backend shaped
-like a third party's wheel, depending on `mace-core` and torch alone and
-registered only through its entry point, and it exists to be checked: CI runs
-the whole conformance suite over it on every change, and nothing in the other
-four packages may name it. Its README is the template for writing a backend.
-
-## Checkpoints
-
-V1 writes checkpoint format **1.0**, with raw linear and skip weights and the
-canonical component identities. Unpublished V1 formats have no compatibility
-layer or migration path. Legacy pickle models enter through the explicit
-converter.
-
-Model settings now use `radial_basis.num_basis` and `cutoff.polynomial_order`;
-interactions are named `plain`, `residual`, `density`, `density_residual` or
-`nonlinear`. Legacy CLI flags still pass through the configuration translator.
-
-Models take `ModelConfig` as their architecture description; element tables,
-head counts and measured neighbour statistics are runtime inputs. Feature
-tensors use the agreed `mul_ir` layout throughout. The calculator collates a
-structure once and uses the same tensor padding as training.
-
-See [configuration examples](../docs/reforge/configuration.md) for training,
-fine-tuning and configuration-only validation. Loss and scheduler variants put
-one string `kind` beside their parameters.
-
-Configuration sections and their nested dictionaries and lists are immutable.
-Use `model_copy(update={...})` for a validated change; invalid values and unknown
-keys are rejected there as they are during initial construction. Exported
-dictionaries remain editable, and copies preserve which fields the user supplied.
-
-Custom properties are declared in the optional `catalogue` section of the
-training configuration, using `ObservableCatalogue` and `ObservableSpec`.
-List the desired names in `model.observables` and their weights in `loss.weights`.
-The data reader reads each custom label under its declared name, from the
-per-atom or per-graph store the spec selects. Energy is optional for standard
-models; repulsion, polar and magnetic energy models still require it. The
-catalogue travels with the checkpoint, so loading needs no separate declaration.
-
-Model and block classes bind stable checkpoint roles to their children through
-`canonical_components()`. Plain containers retain their registered child names;
-an empty role makes an implementation wrapper transparent. These roles identify
-tensors in the 1.0 checkpoint format independently of Python attribute names.
-An undeclared component with canonical state is rejected when saving or loading.
-
-The public names distinguish construction specifications from numerical features:
-`KernelSpec` (for example `LinearSpec`) describes an operator;
-`ElectrostaticsSpec` describes a long-range solve. Operators expose `kernel_spec`,
-and electrostatic models expose `solver_spec`. Neither is a feature vector.
-`MACEBackbone.atomic_descriptors()` and `MACECalculator.get_atomic_descriptors()`
-return per-atom vectors; `Foundation.structure_descriptors()` returns one row per
-structure. FPS can read these rows from `subselect.structure_descriptors_file`.
-
-A `head` selects a level of theory. `ObservableReadout` produces an observable
-for those heads; `EnergyReadout` combines the energy terms. `backbone` denotes
-the feature extractor, `model` the complete physical model, and `engine` its
-derivative wrapper. Both `BuiltModel` and `TrainedModel` expose `engine`.
-The wrapper takes one composed model. RNG identities are independent of Python
-attribute names so API renames do not redraw weights for an unchanged seed.
-
-## Source attribution
-
-When code adapts or is strongly inspired by another project, add a nearby
-comment naming the project and the relevant function or module, with a source
-link (prefer a tag or commit). State whether the relationship is an adaptation,
-API inspiration, or compatibility with a convention. Preserve upstream authorship
-and license notices. A shared mathematical formula alone does not establish that
-an implementation was copied.
-
-## Installing alongside the legacy package
-
-Both stacks in one environment, from a fresh venv at the repository root:
-
-```bash
-python -m venv .venv-v1 && source .venv-v1/bin/activate
-pip install -e packages/mace-core -e packages/mace-torch \
-            -e packages/mace-jax -e packages/mace-launcher
-pip install -e .
-```
-
-One `pip install` for the packages, not one each: `mace-torch-v1` and
-`mace-jax` require `mace-core`, which is not on PyPI, so pip has to see it as a
-local requirement in the same resolution.
-
-Then, in one process:
-
-```bash
-python -c "import mace, mace_core, mace_torch, mace_jax; print('coexist ok')"
-```
-
-The legacy install is the same `pip install -e .` it has always been. Nothing
-about it changes, and the scaffold cannot enter the legacy wheel: its build
-discovers packages with `setuptools.find_packages()`, which prunes any path
-component that is not a Python identifier, and every directory here is
-hyphenated. `tests/architecture/test_packaging_isolation.py` asserts that
-rather than trusting it.
-
-## Test file names
-
-Test files are collected from several packages in one pytest run, under one
-rootdir, and none of the `tests/` directories is an importable package. Two
-files sharing a basename therefore collide on import. Prefix each test module
-with its package: `test_mace_core_scaffold.py`, not `test_scaffold.py`.
-
-## Dependencies
-
-`mace-core` depends on numpy, ase, pydantic, pyyaml, tomli, matscipy and
-safetensors, and on no array framework. `mace-torch-v1` adds torch and scipy,
-with optional extensions. `mace-jax` uses JAX, Flax, safetensors and the core
-matscipy extra. The launcher runs whichever engine is installed.
+See [contributing](../CONTRIBUTING.md), [migration](../docs/reforge/migration.md)
+and each package's CLAUDE.md for ownership and checks.
 
 ## Navigating the tree
 
@@ -222,7 +51,6 @@ packages/
     physics/                     forces, stress and fixed points, around the model
     train/                       the three stages and the training loop
   mace-jax/src/mace_jax/         inference only; native JAX kernels and canonical checkpoint loading
-  mace-launcher/src/mace_launcher/  console scripts, engine dispatch, import audit
 ```
 
 ### Where to start
@@ -394,6 +222,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/backends/cueq.py` | The cuEquivariance backend: linear, convolution, contraction and skip on NVIDIA's kernels. |
 | `mace_torch/backends/oeq.py` | The OpenEquivariance backend: the fused convolution. |
 | `mace_torch/backends/precision.py` | A backend whose ops are built at the precision configured for each, with casts at the boundary of those that differ. |
+| `mace_torch/calculators/native.py` | ASE adapter for the complete periodic CUDA evaluation graph. |
 | `mace_torch/calculators/__init__.py` | The calculators, re-exported. |
 | `mace_torch/calculators/ase_calculator.py` | `MACECalculator` for ASE: results, committees, Hessian, units. |
 | `mace_torch/calculators/foundations.py` | Five native foundation loaders, shared registry resolution and MP dispersion options. |
@@ -410,8 +239,8 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/cli/legacy_flags.py` | Legacy flag spellings and parser grammar at the input boundary. |
 | `mace_torch/cli/eval_configs.py` | Batch extxyz evaluation, atomic/structure descriptors and physical outputs. |
 | `mace_torch/cli/convert_legacy.py` | `mace_convert_legacy`: a legacy checkpoint into a v1 one. |
-| `mace_torch/cli/polar_density_cube.py` | `mace_polar_density_cube --engine v1`: a charge-aware model's density as cube files. |
-| `mace_torch/cli/run_train.py` | `mace_run_train --engine v1`: training from a configuration file. |
+| `mace_torch/cli/polar_density_cube.py` | `mace_polar_density_cube`: a charge-aware model's density as cube files. |
+| `mace_torch/cli/run_train.py` | `mace_run_train`: training from a configuration file. |
 | `mace_torch/data/__init__.py` | Graph building and batching, re-exported. |
 | `mace_torch/data/augmentation.py` | Registered training-data augmentations, drawn on every read, and the magnetic-moment one. |
 | `mace_torch/data/batch.py` | `TrainingBatch`, collation, the lazy graph dataset and its loader. |
@@ -427,6 +256,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/deploy/torchsim.py` | TorchSim ModelInterface, declared state inputs/outputs, shared graph padding and static compile buckets. |
 | `mace_torch/deploy/grouped_skip.py` | Lower scalar residual connections to fixed-shape per-species matrix products for native export. |
 | `mace_torch/deploy/native.py` | Compile owned site energies and edge gradients for native LAMMPS and libmace, with explicit halo exchanges. |
+| `mace_torch/deploy/periodic.py` | Native Polar export for a complete periodic system at fixed cell, with total energy, forces and virial. |
 | `mace_torch/deploy/manifest.py` | Deployment schema, selected head and halo exchange contract. |
 | `mace_torch/deploy/mliap.py` | ML-IAP callback, first-order ghost exchange and owned-site edge derivatives. |
 | `mace_torch/deploy/loader.py` | `load_deployed`: a checkpoint rebuilt for evaluation. |
@@ -523,18 +353,17 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/graph/padding.py` | Pad batches using the shared schema and isolated dummy graph. |
 | `mace_torch/kernels/contraction.py` | Fused monomial contraction with differentiable backward and canonical paths. |
 | `mace_torch/neighbors/__init__.py` | Resolve neighbour backends for PyTorch data construction. |
+| `mace_torch/neighbors/native_cuda.py` | Periodic CUDA neighbour lists loaded from the optional native library. |
 | `mace_torch/neighbors/providers.py` | Torch provider protocols, discovery, batch search and edge-plan resolution. |
 | `mace_torch/neighbors/vesin_backend.py` | The vesin neighbour-list adapter. |
 | `mace_torch/nn/edges.py` | Edge geometry and envelope preparation. |
 | `mace_torch/nn/gate.py` | Scalar gates for grouped equivariant features. |
 
-### `mace-jax` and `mace-launcher`
+### `mace-jax`
 
 | File | What is in it |
 |---|---|
 | `mace_jax/__init__.py` | The installed package version; the JAX inference distribution. |
-| `mace_launcher/__init__.py` | The `mace_*` console scripts, dispatching on `--engine` or `MACE_ENGINE`. |
-| `mace_launcher/audit.py` | The runtime guard that fails when a v1 module imports the legacy package. |
 
 | `mace_jax/neighbors.py` | Resolve framework-neutral neighbour backends for JAX. |
 | `mace_jax/cli/__init__.py` | Inference command namespace. |
@@ -570,5 +399,6 @@ Each package's `tests/` directory tests that package alone; `mace-core`'s run
 with no torch installed. Three directories at the repository root test across
 packages: `tests/architecture` holds the fitness functions (import direction,
 packaging isolation, legacy-flag coverage, this guide), `tests/parity`
-compares v1 with the frozen legacy model in one process, and `tests/golden`
-holds the committed reference values both stacks are measured against.
+checks native implementations against frozen numerical artifacts, and `tests/golden`
+holds the committed reference values. `tests/retirement` checks the native
+anchors and their all-parameter training-gradient digests.

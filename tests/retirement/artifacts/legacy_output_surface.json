@@ -1,0 +1,293 @@
+{
+  "calculator": {
+    "keys": {
+      "mace/calculators/mace.py::MACECalculator": [
+        "LES_alphas",
+        "LES_kappas",
+        "bec",
+        "charges",
+        "density_coefficients",
+        "dipole",
+        "dipole_comm",
+        "dipole_var",
+        "electron_energy",
+        "electrostatic_energy",
+        "energies",
+        "energy",
+        "energy_comm",
+        "energy_var",
+        "forces",
+        "forces_comm",
+        "forces_var",
+        "free_energy",
+        "fukui_functions",
+        "interaction_energy",
+        "node_energy",
+        "polarizability",
+        "polarizability_sh",
+        "spin_charge_density",
+        "spins",
+        "stress",
+        "stress_comm",
+        "stress_var",
+        "stresses",
+        "virials"
+      ],
+      "mace/calculators/mace.py::MagneticMACECalculator": [
+        "MACE_magmoms",
+        "dipole",
+        "dipole_var",
+        "energies",
+        "energy",
+        "energy_var",
+        "forces",
+        "forces_comm",
+        "free_energy",
+        "node_energy",
+        "stress",
+        "stress_var"
+      ]
+    },
+    "unresolved": []
+  },
+  "model": {
+    "keys": {
+      "mace/calculators/lammps_mace.py::LAMMPS_MACE": [
+        "forces",
+        "node_energy",
+        "total_energy_local",
+        "virials"
+      ],
+      "mace/calculators/mace_torchsim.py::MaceTorchSimModel": [
+        "energy",
+        "forces",
+        "stress"
+      ],
+      "mace/modules/extensions.py::MACELES": [
+        "BEC",
+        "atomic_stresses",
+        "atomic_virials",
+        "displacement",
+        "edge_forces",
+        "energy",
+        "forces",
+        "hessian",
+        "latent_alphas",
+        "latent_charges",
+        "latent_dipoles",
+        "latent_kappas",
+        "latent_quads",
+        "les_energy",
+        "node_energy",
+        "node_feats",
+        "stress",
+        "virials"
+      ],
+      "mace/modules/extensions.py::PolarMACE": [
+        "atomic_stresses",
+        "atomic_virials",
+        "charges",
+        "charges_history",
+        "density_coefficients",
+        "dipole",
+        "displacement",
+        "edge_forces",
+        "electron_energy",
+        "electrostatic_energy",
+        "electrostatic_potentials",
+        "energy",
+        "external_field",
+        "fermi_level",
+        "forces",
+        "fukui_functions",
+        "hessian",
+        "interaction_energy",
+        "node_energy",
+        "node_feats",
+        "spin_charge_density",
+        "spin_density",
+        "spins",
+        "stress",
+        "total_charge",
+        "virials"
+      ],
+      "mace/modules/extensions.py::MagneticScaleShiftMACE": [
+        "atomic_stresses",
+        "atomic_virials",
+        "displacement",
+        "edge_forces",
+        "energy",
+        "forces",
+        "hessian",
+        "interaction_energy",
+        "magforces",
+        "node_energy",
+        "node_feats",
+        "stress",
+        "virials"
+      ],
+      "mace/modules/extensions.py::MagneticSCFMACE": [
+        "equilibrated_magmom",
+        "scf_energy_history",
+        "scf_steps"
+      ],
+      "mace/modules/models.py::MACE": [
+        "atomic_stresses",
+        "atomic_virials",
+        "contributions",
+        "displacement",
+        "edge_forces",
+        "energy",
+        "forces",
+        "hessian",
+        "node_energy",
+        "node_feats",
+        "stress",
+        "virials"
+      ],
+      "mace/modules/models.py::ScaleShiftMACE": [
+        "atomic_stresses",
+        "atomic_virials",
+        "displacement",
+        "edge_forces",
+        "energy",
+        "forces",
+        "hessian",
+        "interaction_energy",
+        "node_energy",
+        "node_feats",
+        "stress",
+        "virials"
+      ],
+      "mace/modules/models.py::AtomicDipolesMACE": [
+        "atomic_dipoles",
+        "dipole"
+      ],
+      "mace/modules/models.py::AtomicDielectricMACE": [
+        "atomic_dipoles",
+        "charges",
+        "dalpha_dr",
+        "dipole",
+        "dmu_dr",
+        "polarizability",
+        "polarizability_sh"
+      ],
+      "mace/modules/models.py::EnergyDipolesMACE": [
+        "atomic_dipoles",
+        "contributions",
+        "dipole",
+        "displacement",
+        "energy",
+        "forces",
+        "node_energy",
+        "stress",
+        "virials"
+      ]
+    },
+    "unresolved": [
+      "mace/calculators/mace_torchsim.py:717: results[key] = v.clone() if self._use_cudagraphs else v"
+    ]
+  },
+  "eval": [
+    {
+      "keys": {
+        "mace/cli/eval_configs.py": [
+          "BEC",
+          "BO_contributions",
+          "descriptors",
+          "energy",
+          "forces",
+          "latent_alphas",
+          "latent_charges",
+          "latent_dipoles",
+          "latent_kappas",
+          "latent_quads",
+          "magforces",
+          "node_energies",
+          "stress"
+        ]
+      },
+      "unresolved": []
+    },
+    {
+      "energy": "info",
+      "forces": "arrays",
+      "magforces": "arrays",
+      "stress": "info",
+      "BEC": "arrays",
+      "latent_charges": "arrays",
+      "latent_dipoles": "arrays",
+      "latent_kappas": "arrays",
+      "latent_alphas": "arrays",
+      "latent_quads": "arrays",
+      "BO_contributions": "info",
+      "node_energies": "arrays",
+      "descriptors": "info+arrays"
+    }
+  ],
+  "input": {
+    "stores": {
+      "total_charge": "info",
+      "virials": "info",
+      "head": "info",
+      "stress": "info",
+      "energy": "info",
+      "elec_temp": "info",
+      "dipole": "info",
+      "polarizability": "info",
+      "total_spin": "info",
+      "forces": "arrays",
+      "magforces": "arrays",
+      "magmom": "arrays",
+      "charges": "arrays",
+      "external_field": "info"
+    },
+    "spellings": {
+      "total_charge": [
+        "charge",
+        "total_charge"
+      ],
+      "virials": [
+        "REF_virials"
+      ],
+      "head": [
+        "head"
+      ],
+      "stress": [
+        "REF_stress"
+      ],
+      "energy": [
+        "REF_energy"
+      ],
+      "elec_temp": [
+        "elec_temp"
+      ],
+      "dipole": [
+        "dipole"
+      ],
+      "polarizability": [
+        "polarizability"
+      ],
+      "total_spin": [
+        "spin",
+        "total_spin"
+      ],
+      "forces": [
+        "REF_forces"
+      ],
+      "magforces": [
+        "REF_magforces"
+      ],
+      "magmom": [
+        "REF_magmom"
+      ],
+      "charges": [
+        "Qs",
+        "REF_charges"
+      ],
+      "external_field": [
+        "external_field"
+      ]
+    }
+  }
+}

@@ -107,7 +107,7 @@ def run(args: argparse.Namespace) -> int:
         precision=PrecisionConfig(model=args.default_dtype),
     )
     recorded_dtype = ResolvedConfig.from_dict(
-        deployed.metadata.config.resolved
+        deployed.source_metadata.config.resolved
     ).precision.model
     if args.default_dtype != recorded_dtype:
         logging.getLogger(__name__).warning(

@@ -59,16 +59,11 @@ jobs:
               - 'tests/conftest.py'
               - '.github/workflows/ci-integrations.yaml'
             lammps:
-              - 'setup.cfg'
               - 'pyproject.toml'
               - 'tests/conftest.py'
               - 'tests/helpers.py'
               - '.github/workflows/ci-integrations.yaml'
               - '.github/actions/setup-mace/**'
-              - 'mace/modules/**'
-              - 'mace/cli/create_lammps_model.py'
-              - 'mace/cli/select_head.py'
-              - 'mace/calculators/lammps_*.py'
               - 'tests/integrations/**'
               - 'tests/parity/test_mliap.py'
               - 'packages/mace-core/**'
@@ -97,8 +92,6 @@ jobs:
           extras: dev, cueq
       - run: python -m pip install -e packages/mace-core -e packages/mace-torch
       - name: Run LAMMPS contract tests (no binary)
-        env:
-          MACE_REQUIRE_CAPS: cueq
         run: |
           pytest -v tests/integrations -m "not bin_lammps" --timeout=600
           pytest -v tests/parity/test_mliap.py -m "not bin_lammps and not gpu" --timeout=600

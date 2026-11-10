@@ -3,12 +3,12 @@
 Three rules of the flat graph contract that only a whole-tree scan can hold:
 
 * ``torch_geometric`` is imported nowhere under ``packages/``, vendored or not;
-* ``validate_graph`` and ``GraphView`` run at boundaries. No module that defines
-  a ``forward`` names either, and the modules that do name them are listed
+* ``validate_graph`` runs at boundaries. No module that defines
+  a ``forward`` names it, and the modules that do name it are listed
   here, so a new caller is a reviewed edit;
 * the host tuples ``structure_sizes``, ``structure_periodic`` and
   ``structure_padding`` are read outside compiled regions only. Modules with
-  a ``forward`` may name them only in the explicit preparation boundaries
+  a ``forward`` may name it only in the explicit preparation boundaries
   below. A compiled frame would guard on their values and recompile per batch.
 
 The scan is over syntax trees, so docstrings do not count.
@@ -22,7 +22,7 @@ from tests.architecture.test_no_legacy_leak import names_used
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
 
-BOUNDARY_ONLY = frozenset({"validate_graph", "GraphView"})
+BOUNDARY_ONLY = frozenset({"validate_graph"})
 HOST_KEYS = frozenset({"structure_sizes", "structure_periodic", "structure_padding"})
 
 # Called before the compiled model by DerivativeEngine; the prepared plan is
@@ -95,7 +95,7 @@ def test_no_forward_reaches_the_graph_validator():
         if _defines_forward(ast.parse(source)) and names_used(source) & BOUNDARY_ONLY:
             offenders.append(str(path.relative_to(REPO_ROOT)))
     assert not offenders, (
-        f"{offenders} define a forward and name validate_graph or GraphView. "
+        f"{offenders} define a forward and name validate_graph. "
         f"Validation runs at boundaries, never inside a model call."
     )
 

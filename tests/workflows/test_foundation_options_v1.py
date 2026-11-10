@@ -2,6 +2,9 @@
 
 import copy
 import json
+import subprocess
+
+from tests.helpers import v1_command
 
 import numpy as np
 import pytest
@@ -92,7 +95,10 @@ def test_nonempty_foundation_options_are_refused_with_native_fields(foundation_t
         arguments = ['--config', str(config)]
     else:
         arguments = [item for key, value in values.items() for item in (f'--{key}', str(value))]
-    done = on_v1(*arguments)
+    if source == 'legacy_yaml':
+        done = subprocess.run(v1_command('model', 'migrate', '--output', str(tmp_path/'migrated.yaml'), '--', str(config)),capture_output=True,text=True,check=False)
+    else:
+        done = on_v1(*arguments)
     assert done.returncode != 0
     for field in ('--foundation_model_kwargs', 'runtime.device', 'precision.model',
                   'model.backend', 'data.heads.<name>.readout_from'):

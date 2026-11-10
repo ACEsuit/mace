@@ -10,6 +10,28 @@ target_compile_features(mace_openmm PUBLIC cxx_std_17)
 target_include_directories(mace_openmm PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
   "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/mace>" "${OPENMM_INCLUDE_DIR}")
 target_link_libraries(mace_openmm PUBLIC mace::mace "${OPENMM_LIBRARY}")
+option(MACE_OPENMM_CUDA "Exchange coordinates and forces directly with OpenMM CUDA" OFF)
+if(MACE_OPENMM_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  get_filename_component(openmm_lib_dir "${OPENMM_LIBRARY}" DIRECTORY)
+  find_library(OPENMM_CUDA_LIBRARY NAMES OpenMMCUDA
+    HINTS "${openmm_lib_dir}/plugins" REQUIRED)
+  # OpenMM platform plugins share private symbol names. Linking a platform into
+  # the main library exposes them globally and corrupts other loaded platforms.
+  # Keep the CUDA adapter, and its platform dependency, in a local dlopen scope.
+  add_library(mace_openmm_cuda MODULE CudaMaceForce.cpp)
+  target_compile_features(mace_openmm_cuda PRIVATE cxx_std_17)
+  target_include_directories(mace_openmm_cuda PRIVATE "${OPENMM_INCLUDE_DIR}")
+  target_link_libraries(mace_openmm_cuda PRIVATE mace::mace "${OPENMM_LIBRARY}"
+    "${OPENMM_CUDA_LIBRARY}" CUDA::cuda_driver)
+  set_target_properties(mace_openmm_cuda PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+  target_sources(mace_openmm PRIVATE CudaMaceForceLoader.cpp)
+  target_compile_definitions(mace_openmm PRIVATE MACE_OPENMM_CUDA
+    MACE_OPENMM_CUDA_MODULE="$<TARGET_FILE_NAME:mace_openmm_cuda>")
+  target_link_libraries(mace_openmm PRIVATE ${CMAKE_DL_LIBS})
+  add_dependencies(mace_openmm mace_openmm_cuda)
+  install(TARGETS mace_openmm_cuda LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+endif()
 set_target_properties(mace_openmm PROPERTIES EXPORT_NAME openmm INSTALL_RPATH_USE_LINK_PATH TRUE)
 add_library(mace::openmm ALIAS mace_openmm)
 install(TARGETS mace_openmm EXPORT mace-openmm-targets LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")

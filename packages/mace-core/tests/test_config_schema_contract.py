@@ -50,7 +50,7 @@ def _check_section_fields(section: type[ConfigSection]) -> None:
 def test_production_config_sections_preserve_validation_and_round_trips():
     for module in iter_modules(mace_core.config.__path__):
         import_module(f"mace_core.config.{module.name}")
-    pending = [ConfigSection]
+    pending: list[type[ConfigSection]] = [ConfigSection]
     seen = set()
     while pending:
         section = pending.pop()

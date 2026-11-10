@@ -41,6 +41,13 @@ The native package owns dtype/device/backend/head selection. Atomic numbers
 are read from its metadata. Node capacity includes one padding atom. Overflow and
 unknown elements fail explicitly; there is no Python or scripted fallback.
 
+For Polar, add `--structure water.xyz --no-halo-exchange` and give the exact
+atom count as the node capacity. The structure fixes the fully periodic cell,
+charge, spin multiplicity and field; changing the cell or count requires a new
+export. `total_energy`, forces and virial include electrostatics, while
+`node_energy` is the local readout. See the
+[native Polar contract](../../../docs/reforge/integration_support.md#native-polar-at-fixed-cell).
+
 C arrays use row-vector cells and `[n_atoms,3]` positions; Fortran uses
 column-vector cells and `(3,n_atoms)`. Units are Å, eV and eV/Å. Virials are in
 eV, ordered `xx, yy, zz, xy, xz, yz`, with `virial = -V * stress`. A disabled
@@ -81,3 +88,57 @@ reader actually executed a scripted model. The no-TorchScript replacement
 therefore consumes V1's existing `native.pt2`, compiled from canonical reduced
 weights. It needs neither another checkpoint format nor a full-basis expansion.
 The separate full-basis export remains available for external implementations.
+
+## Periodic CUDA neighbours and device input
+
+A CUDA/cuEq build also installs `libmace_cuda_neighbors.so`. Periodic native
+packages use its deterministic cell list with double precision distance tests,
+including float32 models. CPU calls retain the pinned upstream neighbour code.
+Both paths enforce the same strict squared-distance cutoff.
+
+C++ GPU clients can call `MACE::calculate_cuda(cell, device_positions, numbers)`
+with a contiguous `[N,3]` float64 CUDA buffer in Angstrom. The returned
+`DeviceCalculation` owns its contiguous CUDA force buffer; `forces()` does not
+copy it to the host. `energy()` transfers a scalar, and `to_host()` explicitly
+materializes a normal `CalculationResult`. Device work uses the current ATen
+stream on visible GPU 0. Clients using a separate CUDA context must synchronize
+before handing over buffers and before consuming results.
+
+ASE can use the same cell list through the registered `native_cuda` provider:
+
+```python
+from mace_core.neighbors import NeighborListConfig
+neighbors = NeighborListConfig(
+    kind="native_cuda",
+    settings={"library": "/path/to/install/lib64/libmace_cuda_neighbors.so"},
+)
+calculator = MACECalculator(models=model, device="cuda", neighbor_list=neighbors)
+```
+
+This provider requires full periodicity. It returns graph arrays on CUDA and
+reads back only the edge count for an exact allocation. ASE's integrator and
+atom storage remain host based. The provider is explicit; it does not replace
+the portable default on installations without the native CUDA library.
+
+To execute the complete compiled Polar graph from ASE, use the same artifact
+as the native engines:
+
+```python
+from mace_torch.calculators import NativeMACECalculator
+atoms.calc = NativeMACECalculator(
+    "polar-96/native.pt2",
+    neighbor_library="/path/to/install/lib64/libmace_cuda_neighbors.so",
+)
+```
+
+This calculator executes AOT-compiled energy, forces and virial, with a fixed
+edge capacity and CUDA neighbour construction. It does not rebuild the model
+or invoke eager autograd. The package fixes the fully periodic cell, atom count,
+charge, spin and field. Changing these requires a new export; conflicting ASE
+`info` inputs are rejected even when only cached properties are requested.
+ASE positions, integration and returned arrays remain on the host.
+
+`tests/parity/test_native_cuda_neighbors.py` compares exact neighbour sets with
+ASE in orthogonal, triclinic, rotated, unwrapped and multiple-image geometries,
+checks the strict cutoff boundary, reproducibility and capacity failure, and
+exercises the torch provider including empty edge sets.

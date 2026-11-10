@@ -1,0 +1,17 @@
+{
+  "gpu": "guide/backends.md",
+  "cueq": "guide/backends.md",
+  "oeq": "guide/backends.md",
+  "polar": "guide/electrostatics.md",
+  "les": "guide/electrostatics.md",
+  "magnetic": "guide/magnetic.md",
+  "torchsim": "guide/deployment.md",
+  "schedulefree": "guide/backends.md",
+  "wandb": "guide/backends.md",
+  "bin_lammps": "guide/deployment.md",
+  "bin_openmm": "guide/deployment.md",
+  "bin_openmm_native": "guide/deployment.md",
+  "bin_libmace": "guide/deployment.md",
+  "bin_gromacs": "guide/deployment.md",
+  "network": "guide/backends.md"
+}

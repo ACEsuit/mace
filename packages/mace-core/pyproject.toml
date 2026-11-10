@@ -65,8 +65,8 @@ lmdb = "mace_core.data.backends.lmdb:ASEDBBackend"
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
 
-# The framework-free registry implements command discovery; mace-launcher owns
-# the executable and engine selection. Implementations register in mace.commands.
+# The framework-free registry implements command discovery. mace-torch owns
+# the executable; implementations register in mace.commands.
 
 [tool.hatch.version]
 source = "vcs"

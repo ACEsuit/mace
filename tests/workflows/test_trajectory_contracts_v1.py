@@ -13,7 +13,7 @@ from ase.io import write
 
 from tests.golden.harness import FP64_CPU_REFERENCE
 from tests.workflows.test_replay_elements_v1 import published_small
-from tests.workflows.test_run_train_dipole_polar import fixture_fitting_configs
+from tests.workflows.dielectric_fixtures import fixture_fitting_configs
 from tests.workflows.test_run_train_v1 import needs_the_v1_engine, on_v1, training_records
 
 pytestmark = needs_the_v1_engine

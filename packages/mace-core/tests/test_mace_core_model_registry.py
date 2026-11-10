@@ -23,7 +23,7 @@ from mace_core.model_registry import (
 
 @pytest.mark.parametrize(
     "source",
-    [entry for entry in ROSTER if entry.family],
+    [entry for entry in ROSTER if entry.architecture],
     ids=lambda entry: f"{entry.loader}-{entry.name}",
 )
 def test_every_retained_alias_warns_and_has_one_canonical_target(source):

@@ -11,11 +11,13 @@ from mace_torch.calculators.foundations import (
     mace_omol,
     mace_polar,
 )
+from mace_torch.calculators.native import NativeMACECalculator
 
 __all__ = [
     "AutoPadding",
     "FixedPadding",
     "MACECalculator",
+    "NativeMACECalculator",
     "NoPadding",
     "PaddingPolicy",
     "load_foundation",

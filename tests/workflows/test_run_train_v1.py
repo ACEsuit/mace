@@ -24,9 +24,8 @@ from tests.helpers import cli_command, run_train
 #: engine and the v1 stack is what it chooses. The legacy-only CI jobs install
 #: neither, and there these tests are not a failure, they are absent.
 needs_the_v1_engine = pytest.mark.skipif(
-    importlib.util.find_spec("mace_launcher") is None
-    or importlib.util.find_spec("mace_torch") is None,
-    reason="the launcher or the v1 stack is not installed in this environment",
+    importlib.util.find_spec("mace_torch") is None,
+    reason="the native stack is not installed in this environment",
 )
 
 #: The two references the isolated atoms carry, and the geometry the molecules
@@ -107,15 +106,9 @@ def variant(config: Path, settings: dict) -> Path:
 
 
 def on_v1(*arguments: str) -> subprocess.CompletedProcess:
-    """One command line on the v1 engine, launched the way every test does.
-
-    The argv prefix comes from the shared runner rather than being written
-    here, so the launcher stays known in one module. The engine is named
-    explicitly instead of taken from `MACE_ENGINE`: this file is about the v1
-    side specifically, not about whichever side the suite is being re-run on.
-    """
+    """Run the native training command through the shared CLI adapter."""
     return subprocess.run(
-        [*cli_command(run_train), "--engine", "v1", *arguments],
+        [*cli_command(run_train), *arguments],
         capture_output=True,
         text=True,
         check=False,

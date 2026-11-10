@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mace-torch-v1"
+name = "mace-torch"
 dynamic = ["version"]
 description = "The PyTorch stack for MACE v1: models, training, kernel backends, deployment."
 readme = "README.md"
@@ -50,6 +50,9 @@ dependencies = [
 # A framework-free provider: it returns numpy, but importing vesin also imports
 # torch whenever torch is installed, so it is registered from here.
 vesin = "mace_torch.neighbors.vesin_backend:VesinBackend"
+
+[project.entry-points."mace.neighbor_backends.torch"]
+native_cuda = "mace_torch.neighbors.native_cuda:NativeCudaBackend"
 
 [project.optional-dependencies]
 # Use the solver revision recorded by the LES goldens and requirements/les.txt.
@@ -108,9 +111,16 @@ eval = "mace_torch.cli.commands:EVAL"
 [project.urls]
 Homepage = "https://github.com/ACEsuit/mace"
 
-# No [project.scripts]. Every mace_* console entry point is owned by one
-# distribution, mace-launcher; two distributions declaring the same script name
-# is undefined behaviour in pip.
+[project.scripts]
+mace = "mace_torch.cli:main"
+mace_run_train = "mace_torch.cli:run_train_main"
+mace_eval_configs = "mace_torch.cli:eval_configs_main"
+mace_prepare_data = "mace_torch.cli:prepare_data_main"
+mace_finetuning_select = "mace_torch.cli:finetuning_select_main"
+mace_plot_train = "mace_torch.cli:plot_train_main"
+mace_convert_device = "mace_torch.cli:convert_device_main"
+mace_select_head = "mace_torch.cli:select_head_main"
+mace_polar_density_cube = "mace_torch.cli:polar_density_cube_main"
 
 [tool.hatch.metadata]
 # LES is distributed from its Git repository.
@@ -150,3 +160,11 @@ packages = ["src/mace_torch"]
 "openmm/MaceForce.cpp" = "mace_torch/deploy/openmm-native/MaceForce.cpp"
 "openmm/CMakeLists.txt" = "mace_torch/deploy/openmm-native/CMakeLists.txt"
 "openmm/mace-openmm-config.cmake.in" = "mace_torch/deploy/openmm-native/mace-openmm-config.cmake.in"
+"native/cuda_neighbors.h" = "mace_torch/deploy/native/cuda_neighbors.h"
+"native/cuda_neighbors.cu" = "mace_torch/deploy/native/cuda_neighbors.cu"
+"native/cuda_neighbors_op.cpp" = "mace_torch/deploy/native/cuda_neighbors_op.cpp"
+"lammps/kokkos_neighbors.h" = "mace_torch/deploy/lammps/kokkos_neighbors.h"
+"lammps/kokkos_neighbors.cpp" = "mace_torch/deploy/lammps/kokkos_neighbors.cpp"
+"openmm/CudaMaceForce.h" = "mace_torch/deploy/openmm-native/CudaMaceForce.h"
+"openmm/CudaMaceForce.cpp" = "mace_torch/deploy/openmm-native/CudaMaceForce.cpp"
+"openmm/CudaMaceForceLoader.cpp" = "mace_torch/deploy/openmm-native/CudaMaceForceLoader.cpp"

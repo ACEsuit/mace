@@ -41,7 +41,6 @@ def test_the_scan_reaches_the_v1_packages():
         "mace_backend_example",
         "mace_core",
         "mace_jax",
-        "mace_launcher",
         "mace_torch",
     ], (
         f"the v1 import roots found under packages/ are "
@@ -144,7 +143,7 @@ class ExampleMACE(Module):
     def __init__(self, config: ModelConfig) -> None:
         self.config = config
 
-    def forward(self, graph: GraphView) -> MACEOutput:
+    def forward(self, graph: dict[str, Tensor]) -> MACEOutput:
         return MACEOutput(energy=None)
 '''
 
@@ -282,21 +281,7 @@ def test_the_torchscript_detector_accepts_torch_compile():
     assert not v1_surface.torchscript_violations(source, "clean.py")
 
 
-def test_the_torchscript_detector_finds_the_legacy_tree_it_describes():
-    """The detector against the code the debt rows are about.
 
-    The strongest available evidence that these detectors work is the frozen
-    tree, which is full of what they look for: if a scan of `mace/modules/`
-    came back clean, the detector would be broken rather than the tree
-    surprising. It doubles as the count the `DEBT-JIT-MODULES` row quotes.
-    """
-    roots = [v1_surface.REPO_ROOT / "mace" / "modules"]
-    problems, scanned = v1_surface.scan(v1_surface.torchscript_violations, roots)
-    assert scanned > 10
-    assert len(problems) > 50, (
-        f"only {len(problems)} TorchScript uses found in mace/modules/, which "
-        f"has 52 @compile_mode decorators alone: the detector is broken"
-    )
 
 
 @pytest.mark.parametrize(
@@ -342,12 +327,7 @@ def test_the_precision_detector_accepts_a_configured_dtype():
     assert not v1_surface.precision_violations(source, "clean.py")
 
 
-def test_the_precision_detector_finds_safe_double():
-    """The frozen tree's one hardcoded cast is the function this rule replaces,
-    and it is in the tree the rule is written against."""
-    roots = [v1_surface.REPO_ROOT / "mace" / "modules"]
-    problems, _ = v1_surface.scan(v1_surface.precision_violations, roots)
-    assert any(problem.startswith("mace/modules/utils.py") for problem in problems)
+
 
 
 def test_config_construction_accepts_explicit_runtime_dependencies():

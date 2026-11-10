@@ -271,7 +271,7 @@ def _metadata(config: ResolvedConfig, data: DataBundle) -> ModelMetadata:
     reads_energy = "energy" in config.model.observables
     return ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(versions={"mace-torch-v1": __version__}),
+        provenance=Provenance(versions={"mace-torch": __version__}),
         elements=[int(z) for z in data.z_table.zs],
         heads={
             head: HeadSummary(

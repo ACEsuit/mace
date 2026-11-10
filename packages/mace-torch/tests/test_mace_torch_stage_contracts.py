@@ -20,7 +20,7 @@ from mace_core.observables import RequestedOutputs
 from mace_torch.train.contracts import BuiltModel, DataBundle, EpochRecord, TrainedModel
 from mace_torch.train.loaders import TrainingLoader
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 Z_TABLE = AtomicNumberTable([1, 8])
 
@@ -34,10 +34,21 @@ STATISTICS = DatasetStatistics(
 )
 
 
+class IntegerDataset(Dataset):
+    def __init__(self, values):
+        self.values = values
+
+    def __len__(self):
+        return len(self.values)
+
+    def __getitem__(self, index):
+        return self.values[index]
+
+
 def metadata() -> ModelMetadata:
     return ModelMetadata(
         config=ConfigRecord(),
-        provenance=Provenance(versions={"mace-torch-v1": "0.0.0"}),
+        provenance=Provenance(versions={"mace-torch": "0.0.0"}),
     )
 
 
@@ -49,8 +60,8 @@ def bundle() -> DataBundle:
         e0_provenance={"default": E0Provenance(kind="table")},
         statistics=STATISTICS,
         train_loader=Mock(spec=TrainingLoader),
-        valid_loaders={"default": DataLoader([3])},
-        train_eval_loaders={"default": DataLoader([1, 2])},
+        valid_loaders={"default": DataLoader(IntegerDataset([3]))},
+        train_eval_loaders={"default": DataLoader(IntegerDataset([1, 2]))},
     )
 
 

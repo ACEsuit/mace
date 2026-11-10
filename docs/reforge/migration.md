@@ -2,10 +2,9 @@
 
 This guide describes the V1 checkout as of 2026-11-09. It is a migration guide
 for implemented contracts, not an announcement that V1 or its native foundation
-artifacts have been published. The legacy package remains frozen in this tree.
+artifacts have been published. The legacy implementation has been retired from this tree.
 Installed v0.3 binaries do not announce V1 replacements; this guide is the
-migration signpost. Use `mace --engine v1` explicitly: the transition launcher still defaults to
-legacy. No TorchScript path is supported in V1.
+migration signpost. Use the native `mace` command; no engine selector is needed. No TorchScript path is supported in V1.
 
 ## Start with the checkpoint
 
@@ -44,9 +43,9 @@ covers every DROP/MERGE decision and every training destination, including
 renamed KEEP fields. Those tables are also the portable migration skill's
 references, so corrections have one home.
 
-1. Run the documented `mace --engine v1 model migrate` recipe on the old training
+1. Run the documented `mace model migrate` recipe on the old training
    command or YAML file, writing a new output file.
-2. Inspect the result and run `mace --engine v1 config validate --config ...`.
+2. Inspect the result and run `mace config validate --config ...`.
    This checks the schema, not the contents of a dataset or checkpoint.
 3. Run the migrated workflow on a small representative dataset. Compare labels,
    head selection, predictions, gradients and resumed training with the existing
@@ -180,6 +179,6 @@ EnergyFunctionalSCF as being prepared. It is not an available implementation.
 V0.3 remains on `main` until V1 release and then at its final pinned release.
 There is no separate maintenance branch or announced end-of-life deadline.
 During the transition use the launcher explicitly to select the desired engine.
-The development distribution `mace-torch-v1` is temporary; the intended final
+The development distribution `mace-torch` is temporary; the intended final
 package identity is `mace-torch` after retirement, not a package rename users
 should assume has already happened on PyPI.

@@ -208,4 +208,10 @@ class MaceTorchSimModel(ModelInterface):
             catalogue=self.output_catalogue,
             extra_observables=self.extra_observables,
         )
-        return {name: output.get(name).detach() for name in output.names()}
+        results = {}
+        for name in output.names():
+            value = output.get(name)
+            if value is None:
+                raise RuntimeError(f"Declared TorchSim output {name!r} is missing")
+            results[name] = value.detach()
+        return results

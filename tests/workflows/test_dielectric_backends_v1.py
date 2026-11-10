@@ -10,7 +10,7 @@ from ase.io import write
 from tests.golden.harness import FP64_ACCELERATED_BACKEND
 from tests.workflows.test_data_sources_v1 import launch
 # Reuse the historical structures and labels, including isolated atoms.
-from tests.workflows.test_run_train_dipole_polar import fixture_fitting_configs
+from tests.workflows.dielectric_fixtures import fixture_fitting_configs
 from tests.workflows.test_run_train_v1 import needs_the_v1_engine, training_records
 
 pytestmark = [needs_the_v1_engine, pytest.mark.gpu, pytest.mark.cueq]

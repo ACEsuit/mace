@@ -59,7 +59,7 @@ def _trajectory(directory):
 def test_native_trajectory_after_neighbor_changes_and_migration(
     device, backend, dtype, tmp_path, fp64, isolated
 ):
-    from mace.calculators import MACECalculator as FrozenCalculator
+    from mace_torch.calculators import MACECalculator as FrozenCalculator
 
     lmp, plugin = os.getenv("MACE_NATIVE_LMP"), os.getenv("MACE_NATIVE_PLUGIN")
     if not (lmp or plugin):
@@ -78,8 +78,8 @@ def test_native_trajectory_after_neighbor_changes_and_migration(
     )
     assert DeployManifest.read(bundle / "deploy.json").target == "lammps-native"
     reference = FrozenCalculator(
-        model_paths=ROOT / "tests/golden/models/tiny_scaleshift.model",
-        default_dtype="float64",
+        model_paths=ROOT / "tests/retirement/artifacts/tiny_scaleshift.json",
+        precision="float64",
         device="cpu",
     )
     row = FP64_CPU_REFERENCE if dtype == "float64" else FP32

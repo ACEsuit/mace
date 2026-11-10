@@ -1,6 +1,7 @@
 """Contract doubles composed exclusively from the existing reference modules."""
 
 from dataclasses import replace
+from typing import Any
 
 import torch
 from mace_core.config import AgnesiTransformConfig, SoftTransformConfig
@@ -30,7 +31,7 @@ from torch import nn
 
 
 def product_spec(layout="mul_ir", residual=True, readout=True):
-    policy = dict(
+    policy: dict[str, Any] = dict(
         precision=str(torch.get_default_dtype()).removeprefix("torch."),
         activation_layout=layout,
     )
@@ -56,7 +57,9 @@ def interaction_spec(
     layout="mul_ir", residual=True, density=False, cutoff=True, transform=None
 ):
     product = product_spec(layout, residual)
-    policy = dict(precision=product.linear.precision, activation_layout=layout)
+    policy: dict[str, Any] = dict(
+        precision=product.linear.precision, activation_layout=layout
+    )
     convolution = ChannelwiseTPConvSpec(
         irreps_node="0e+1o",
         irreps_edge="0e+1o",

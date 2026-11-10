@@ -169,9 +169,9 @@ def check_descriptors(calc, atoms):
     rotated = atoms.copy()
     rotated.rotate(90, "x", rotate_cell=True)
     for invariant, width in ((True, 4), (False, 16)):
-        first = calc.get_descriptors(atoms, invariants_only=invariant, num_layers=1)
-        full = calc.get_descriptors(atoms, invariants_only=invariant)
-        other = calc.get_descriptors(rotated, invariants_only=invariant)
+        first = calc.get_atomic_descriptors(atoms, invariants_only=invariant, num_layers=1)
+        full = calc.get_atomic_descriptors(atoms, invariants_only=invariant)
+        other = calc.get_atomic_descriptors(rotated, invariants_only=invariant)
         assert first.shape == (3, width)
         assert full.shape == (3, width + 4)
         close(first, full[:, :width])
@@ -212,8 +212,8 @@ def test_trained_descriptors_on_cueq(trained_calculators, tmp_path):
         check_descriptors(calc, atoms)
         for invariant in (True, False):
             for layers in (1, -1):
-                close(calc.get_descriptors(atoms, invariants_only=invariant, num_layers=layers),
-                      reference.get_descriptors(atoms, invariants_only=invariant, num_layers=layers),
+                close(calc.get_atomic_descriptors(atoms, invariants_only=invariant, num_layers=layers),
+                      reference.get_atomic_descriptors(atoms, invariants_only=invariant, num_layers=layers),
                       FP64_ACCELERATED_BACKEND)
     finally:
         for hook in hooks:

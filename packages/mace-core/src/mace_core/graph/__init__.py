@@ -39,7 +39,6 @@ from mace_core.graph.schema import (
 from mace_core.graph.validation import (
     GraphInfo,
     GraphValidationError,
-    GraphView,
     validate_graph,
 )
 
@@ -56,7 +55,6 @@ __all__ = [
     "FixedPadding",
     "GraphInfo",
     "GraphValidationError",
-    "GraphView",
     "NoPadding",
     "PadValue",
     "PaddingBudget",

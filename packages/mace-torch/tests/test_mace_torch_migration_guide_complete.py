@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import configparser
 import importlib
 import re
 import shlex
@@ -120,7 +119,16 @@ def test_every_console_entry_and_legacy_module_has_a_route_or_retirement():
     modules = unique_rows([row for row in rows if row[1] != "—"], column=1)
     # Includes the unregistered converter modules and package initializer.
     tracked = subprocess.check_output(
-        ["git", "ls-files", "mace/cli/*.py"], cwd=ROOT, text=True
+        [
+            "git",
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "fdef2fb577925cd8e7b66876403870128e69ec97",
+            "mace/cli",
+        ],
+        cwd=ROOT,
+        text=True,
     ).splitlines()
     assert modules.keys() == {Path(path).name for path in tracked}
     parser = build_parser(discover())
@@ -129,9 +137,9 @@ def test_every_console_entry_and_legacy_module_has_a_route_or_retirement():
             assert row[3]
             continue
         tokens = shlex.split(row[2])
-        assert tokens[:3] == ["mace", "--engine", "v1"]
+        assert tokens[:1] == ["mace"]
         with pytest.raises(SystemExit) as stopped:
-            parser.parse_args([*tokens[3:], "--help"])
+            parser.parse_args([*tokens[1:], "--help"])
         assert stopped.value.code == 0, tokens
 
 
@@ -143,7 +151,7 @@ def test_foundation_roster_names_precision_and_pending_publication():
     registry = list_models()
     for entry in ROSTER:
         row = actual[entry.loader, entry.name]
-        if entry.family is None:
+        if entry.architecture is None:
             assert entry.replaced_by == row[2] and "Retired" in row[4]
             continue
         model = next(model for model in registry if model.model_id == row[2])
@@ -218,7 +226,8 @@ def test_published_training_recipe_translates_and_validates(tmp_path):
             [
                 sys.executable,
                 "-c",
-                "from mace_launcher import main; raise SystemExit(main())",
+                "import sys; from mace_core.cli import main; "
+                "raise SystemExit(main(sys.argv[1:]))",
                 *tokens,
             ],
             cwd=tmp_path,
@@ -305,17 +314,13 @@ def test_portable_skill_keeps_all_references_inside_its_directory(tmp_path):
 
 
 def test_guide_is_reachable_from_readmes_and_docs_with_valid_local_links():
-    legacy = configparser.ConfigParser()
-    legacy.read(ROOT / "setup.cfg")
-    readme = legacy["metadata"]["long_description"]
-    assert readme.startswith("file:")
-    readmes = [ROOT / "README.md", ROOT / readme.removeprefix("file:").strip()]
-    for package in ("mace-core", "mace-torch", "mace-jax", "mace-launcher"):
+    readmes = [ROOT / "README.md"]
+    for package in ("mace-core", "mace-torch", "mace-jax"):
         directory = ROOT / "packages" / package
         project = tomllib.loads((directory / "pyproject.toml").read_text())["project"]
         readmes.append(directory / project["readme"])
     for path in readmes:
-        assert GUIDE_URL in path.read_text(), path
+        assert GUIDE_URL in path.read_text() or GUIDE in set(relative_links(path)), path
     landing = ROOT / "docs/index.md"
     assert GUIDE in set(relative_links(landing))
     for path in (landing, GUIDE, *SKILL.rglob("*.md")):

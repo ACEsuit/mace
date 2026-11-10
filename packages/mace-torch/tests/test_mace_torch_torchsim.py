@@ -4,6 +4,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+from importlib import import_module
 
 import numpy as np
 import pytest
@@ -38,7 +39,7 @@ def close(actual, expected, dtype=torch.float64):
 
 
 def state_of(atoms, dtype=torch.float64):
-    from torch_sim.io import atoms_to_state
+    atoms_to_state = import_module("torch_sim.io").atoms_to_state
 
     return atoms_to_state(atoms, device=torch.device("cpu"), dtype=dtype)
 
@@ -50,7 +51,7 @@ def adapter(path, **kwargs):
 
 
 def compare_ase(path, state, result):
-    from torch_sim.io import state_to_atoms
+    state_to_atoms = import_module("torch_sim.io").state_to_atoms
 
     offset = 0
     for index, atoms in enumerate(state_to_atoms(state)):
@@ -204,7 +205,8 @@ def test_polar_one_compile_for_changing_real_atoms(polar_artifact):
 
 @fp64_only
 def test_real_torchsim_trajectory_from_bundle_matches_ase(artifact, monkeypatch):
-    from torch_sim.integrators.nve import nve_init, nve_step
+    integrator = import_module("torch_sim.integrators.nve")
+    nve_init, nve_step = integrator.nve_init, integrator.nve_step
 
     def refuse_script(*args, **kwargs):
         raise AssertionError("TorchSim deployment must not use serialized code")
@@ -375,7 +377,7 @@ def test_joint_dipole_preserves_supplied_fixed_charges(tmp_path):
     metadata = ModelMetadata(
         elements=[1],
         config=ConfigRecord.from_config(config),
-        provenance=Provenance(versions={"mace-torch-v1": "test"}),
+        provenance=Provenance(versions={"mace-torch": "test"}),
         heads={
             "default": HeadSummary(e0=E0Details(source="explicit", values={"H": 0.0}))
         },

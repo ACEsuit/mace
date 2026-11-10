@@ -54,7 +54,7 @@ def test_asking_for_a_client_that_is_not_installed_names_the_extra(monkeypatch):
     """The import is made to fail rather than the package uninstalled, so the
     message is asserted wherever the suite runs."""
     monkeypatch.setitem(sys.modules, "wandb", None)
-    with pytest.raises(ImportError, match=r"mace-torch-v1\[wandb\]"):
+    with pytest.raises(ImportError, match=r"mace-torch\[wandb\]"):
         open_tracker(configuration(enabled=True))
 
 

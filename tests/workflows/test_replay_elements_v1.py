@@ -126,7 +126,7 @@ def test_element_scope_survives_finetuning_and_reload(replay_foundation, tmp_pat
     expected = parent.engine(parent_batch.graph, compute=("forces",))
     for name, loader in built.data.valid_loaders.items():
         batch = next(iter(loader))
-        actual = built.model(batch.graph, compute=("forces",))
+        actual = built.engine(batch.graph, compute=("forces",))
         close(actual.total_energy.detach(), expected.total_energy.detach())
         close(actual.forces.detach(), expected.forces.detach())
         assert built.data.e0s.values[name] == {number: ENERGIES[number] for number in elements}
@@ -215,7 +215,7 @@ def test_prepared_replay_explicitly_skips_the_ratio_guard(replay_foundation, tmp
 
 
 @pytest.fixture(scope="module")
-def published_small(tmp_path_factory):
+def published_small(tmp_path_factory, legacy_python):
     from mace_core.artifacts import resolve_artifact
     from mace_core.observables import DEFAULT_CATALOGUE
     from mace_torch.deploy.legacy import convert_legacy
@@ -225,7 +225,7 @@ def published_small(tmp_path_factory):
     source = resolve_artifact(artifact.origin)
     assert hashlib.sha256(source.read_bytes()).hexdigest() == artifact.sha256
     destination = tmp_path_factory.mktemp("published-small") / "foundation"
-    converted = convert_legacy(source, destination, DEFAULT_CATALOGUE, python=sys.executable)
+    converted = convert_legacy(source, destination, DEFAULT_CATALOGUE, python=legacy_python)
     path = converted.checkpoint.with_suffix(".safetensors")
     del converted
     gc.collect()

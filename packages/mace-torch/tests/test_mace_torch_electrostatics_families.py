@@ -18,7 +18,7 @@ from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.models import EnergyReadout, ScaleShiftSpec
 from mace_torch.models.electrostatics import LocalChargeModel
-from mace_torch.models.registry import registered_models
+from mace_torch.models.registry import registered_architectures
 from mace_torch.physics import DerivativeEngine
 from mace_torch.serialization import canonical_state, load_canonical_state
 from mace_torch_engine_fixtures import ENERGY, build_graph, molecule
@@ -37,28 +37,31 @@ ENERGY_STRESS = ENERGY.model_copy(
 
 
 @fp64_only
-def test_registration_refuses_an_electrostatic_family_without_a_solver(monkeypatch):
+def test_registration_refuses_an_electrostatic_architecture_without_a_solver(
+    monkeypatch,
+):
     from mace_torch.models import registry
     from mace_torch.models.base import MACEModel
 
-    monkeypatch.setattr(registry, "MODEL_REGISTRY", {})
+    monkeypatch.setattr(registry, "MODEL_ARCHITECTURES", {})
 
     class MissingSolver(MACEModel):
         pass
 
-    with pytest.raises(TypeError, match="must define solver_spec"):
+    with pytest.raises(TypeError, match="must define make_solver_spec"):
         registry.register_model("missing_solver", electrostatics=True)(MissingSolver)
-    assert "missing_solver" not in registry.MODEL_REGISTRY
+    assert registry.MODEL_ARCHITECTURES is not None
+    assert "missing_solver" not in registry.MODEL_ARCHITECTURES
 
 
 @fp64_only
 def test_builtin_model_names_cannot_be_overwritten():
-    from mace_torch.models.registry import model_family, register_model
+    from mace_torch.models.registry import model_architecture, register_model
 
-    original = model_family("scale_shift")
+    original = model_architecture("scale_shift")
     with pytest.raises(ValueError, match="already registered"):
         register_model("scale_shift")(LocalChargeModel)
-    assert model_family("scale_shift") is original
+    assert model_architecture("scale_shift") is original
 
 
 def model_for(
@@ -103,7 +106,7 @@ def model_for(
         PrecisionConfig(model=precision),
         widen_node_energy=False,
     )
-    model = cast(type[LocalChargeModel], registered_models()[kind].model)(
+    model = cast(type[LocalChargeModel], registered_architectures()[kind].model)(
         backend or ReferenceBackend(),
         config,
         [1, 8],

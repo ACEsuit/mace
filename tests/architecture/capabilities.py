@@ -13,8 +13,8 @@ Vocabulary, and why there are two kinds in one file:
 * a **probe** is an optional requirement of a test (a device, an optional
   dependency, a binary, network access). The set is exactly the keys of
   ``CAPABILITY_PROBES`` in ``tests/conftest.py``.
-* an **axis** is a functional slice of the product. An axis is what
-  ``--engine`` selects, so an axis has a default to flip and a probe does not.
+* an **axis** is a functional slice of the product, linked to the RET ticket
+  that removed its legacy implementation.
 
 Both migrate, so both are here, and the meta-tests hold each to its own rules.
 """

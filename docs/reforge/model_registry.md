@@ -23,6 +23,11 @@ A release must fill in the native URL after publication. V1 bundles no model;
 the first published load downloads a JSON/safetensors pair into the shared XDG
 cache. See [artifact resolution](artifacts.md) for offline use and cache reuse.
 
+A `FoundationFamily` names a published collection such as `mace_mp` or
+`mace_off`. A `ModelArchitecture` in `mace_torch.models.registry` names a
+constructor and its energy policies, such as `scale_shift` or `polar`. The
+legacy artifact roster records the target as `RosterEntry.architecture`.
+
 ## Names and compatibility
 
 Every retained legacy alias resolves within its loader family and warns with
@@ -89,6 +94,12 @@ extension. MP and Polar retain `float32` defaults; OFF, OMOL and MDP retain
 Pass `precision=PrecisionConfig(...)` to select an operator policy. Both the
 calculator and the raw module read checkpoint tensors directly in the selected
 precisions. `load_foundation` also records that policy in the resolved metadata.
+
+`loaded.config` is the effective configuration. `loaded.metadata` derives the
+record to save with the current weights from that configuration and solver;
+`loaded.source_metadata` retains the source record before runtime overrides.
+Saving `loaded.engine` with `loaded.metadata` preserves precision overrides on
+reload, including policies for individual operations.
 
 OMOL requires its `omol` head. Multi-head MH retains all heads and requires the
 caller to choose one explicitly. MDP warns that it predicts dipoles and

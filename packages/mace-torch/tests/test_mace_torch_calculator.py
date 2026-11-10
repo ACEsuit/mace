@@ -287,6 +287,7 @@ def test_the_environment_selects_a_fixed_budget(checkpoints, monkeypatch):
     monkeypatch.setenv("MACE_ASE_PAD_NUM_ATOMS", "8")
     monkeypatch.setenv("MACE_ASE_PAD_NUM_EDGES", "256")
     policy = MACECalculator(model_paths=checkpoints["a"]).padding
+    assert isinstance(policy, FixedPadding)
     assert (policy.kind, policy.nodes_budget, policy.edges_budget) == ("fixed", 9, 256)
 
 
@@ -332,8 +333,10 @@ def test_padding_leaves_the_real_structure_s_results_as_they_were(
     )
     padded = evaluate(calculator, water(periodic))
     if route == "overflow":
+        assert calculator._padding_budget is not None
         assert calculator._padding_budget.edges > 1
     else:
+        assert isinstance(calculator.padding, FixedPadding)
         expected = (10, 3100) if route == "environment" else (9, 3000)
         assert (
             calculator.padding.nodes_budget,
@@ -519,6 +522,39 @@ def test_a_head_the_model_does_not_have_is_refused(checkpoints):
         MACECalculator(model_paths=checkpoints["a"], head="DFT")
 
 
+@pytest.mark.parametrize("override", ["load", "in_memory"])
+@pytest.mark.parametrize("mixed", [False, True])
+@pytest.mark.parametrize("backend", ["reference", "example"])
+def test_precision_override_survives_checkpoint_roundtrip(
+    checkpoints, tmp_path, override, mixed, backend
+):
+    from mace_core.config.precision import PrecisionPolicy
+    from mace_torch.serialization import write_model
+
+    policy = PrecisionConfig(
+        model="float32",
+        ops={"linear": PrecisionPolicy.uniform("float64")} if mixed else {},
+    )
+    original = load_deployed(checkpoints["a"], backend=backend)
+    converted = (
+        load_deployed(checkpoints["a"], precision=policy, backend=backend)
+        if override == "load"
+        else original.with_precision(policy, device="cpu")
+    )
+    source_record = original.source_metadata.model_dump(mode="json")
+    path = write_model(tmp_path / "converted", converted.engine, converted.metadata)
+    restored = load_deployed(path)
+    assert restored.config.precision == policy
+    assert restored.config.model.backend == backend
+    assert restored.metadata.config.resolved == converted.config.to_resolved_dict()
+    assert converted.source_metadata.model_dump(mode="json") == source_record
+    assert original.config.precision.model == "float64"
+    before = evaluate(MACECalculator(models=converted), water(True))
+    after = evaluate(MACECalculator(models=restored), water(True))
+    for name in ("energy", "forces", "stress"):
+        np.testing.assert_array_equal(after[name], before[name])
+
+
 @pytest.mark.parametrize("source", ["paths", "models"])
 @pytest.mark.parametrize("setting", ["default_dtype", "precision"])
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
@@ -566,7 +602,8 @@ def test_calculator_precision_is_instance_local(checkpoints, source, setting, de
         assert next(original.model.parameters()).dtype == torch.float64
         assert converted.config.precision.model == "float32"
         assert original.config.precision.model == "float64"
-        assert converted.metadata.config == original.metadata.config
+        assert converted.source_metadata.config == original.source_metadata.config
+        assert converted.metadata.config.resolved == converted.config.to_resolved_dict()
         after = canonical_state(original.engine)
         for path, tensors in state.items():
             for name, value in tensors.items():

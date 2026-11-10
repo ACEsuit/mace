@@ -229,9 +229,12 @@ class NonPeriodicFeatureCorrections(torch.nn.Module):
         )
         is_molecule = correction_node_masks["is_molecule_node"]
         is_slab = correction_node_masks["is_slab_node"]
-        node_fields = torch.zeros_like(node_fields_molecule)
-        node_fields[is_molecule] = node_fields_molecule[is_molecule]
-        node_fields[is_slab] = node_fields_slab[is_slab]
+        node_fields = torch.where(
+            is_molecule[:, None],
+            node_fields_molecule,
+            torch.zeros_like(node_fields_molecule),
+        )
+        node_fields = torch.where(is_slab[:, None], node_fields_slab, node_fields)
 
         return self.displaced_interactions(
             batch=batch,
@@ -747,7 +750,10 @@ class GTOElectrostaticFeatures(torch.nn.Module):
         is_slab_graph = pbc_bool[:, 0] & pbc_bool[:, 1] & (~pbc_bool[:, 2])
         if is_slab_graph.any():
             total_dipole_z = _get_total_dipole_z(
-                source_feats, cache["node_positions"], cache["batch"]
+                source_feats,
+                cache["node_positions"],
+                cache["batch"],
+                n_graphs=cache["volumes"].numel(),
             )
             field_z = FIELD_CONSTANT * total_dipole_z / cache["volumes"]
             spread_field_z = torch.index_select(field_z, 0, cache["batch"])

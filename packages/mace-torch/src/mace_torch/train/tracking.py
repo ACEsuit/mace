@@ -80,7 +80,7 @@ class WandbTracker:
         except ImportError as missing:
             raise ImportError(
                 "tracking is enabled and wandb is not installed. Install it "
-                "with `pip install mace-torch-v1[wandb]`, or set "
+                "with `pip install mace-torch[wandb]`, or set "
                 "`runtime.wandb.enabled = false`."
             ) from missing
         settings = config.runtime.wandb

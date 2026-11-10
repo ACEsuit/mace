@@ -1,4 +1,4 @@
-"""Real native OpenMM MD and geometry updates against frozen legacy."""
+"""Real native OpenMM MD and geometry updates against native eager inference."""
 
 import os
 import re
@@ -9,10 +9,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 from ase.io import read
+
 from tests.golden.harness import FP32, FP64_CPU_REFERENCE
 from tests.integrations.libmace._harness import geometry_text
-from tests.parity.test_libmace import native_package
-from tests.parity.test_fm_convert_legacy import GOLDEN, FIXTURES
+from tests.retirement.anchors import ARTIFACTS, FIXTURES
 
 pytestmark = [pytest.mark.bin_openmm_native, pytest.mark.slow]
 
@@ -49,11 +49,9 @@ def run(package, frames, directory, platform="Reference", steps=0):
 
 
 def compare(rows, frames, name, tolerance):
-    from mace.calculators import MACECalculator
+    from mace_torch.calculators import MACECalculator
 
-    calculator = MACECalculator(
-        model_paths=GOLDEN / "models" / f"{name}.model", default_dtype="float64"
-    )
+    calculator = MACECalculator(model_paths=ARTIFACTS / f"{name}.json")
     assert len(rows) == len(frames)
     maxima = {"energy": 0.0, "forces": 0.0}
     for values, source in zip(rows, frames, strict=True):

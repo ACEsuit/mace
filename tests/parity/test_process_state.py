@@ -28,20 +28,14 @@ from tests.parity.process_state import (
 ANCHORS = Path(__file__).resolve().parents[1] / "golden/models"
 
 
-def run_legacy_once():
-    """Load and evaluate a frozen anchor, the way a parity test would.
+def run_native_once():
+    from mace_torch.deploy.loader import load_deployed
 
-    Deliberately written the careless way, with no restoration of its own: what
-    is being tested is that the harness cleans up after code like this.
-    """
-    os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-    torch.set_default_dtype(torch.float64)
-    model = torch.load(
-        ANCHORS / "tiny_scaleshift.model", map_location="cpu", weights_only=False
-    )
-    torch.randn(4)
-    np.random.random(4)
-    return model
+    from tests.retirement.anchors import ARTIFACTS
+
+    # Deliberate state disturbance proves that the fixture restores it.
+    torch.manual_seed(293)
+    return load_deployed(ARTIFACTS / "tiny_scaleshift.json")
 
 
 def test_the_detector_sees_each_global_move():
@@ -84,7 +78,7 @@ def test_a_clean_snapshot_reports_nothing():
     assert state_differences(first, capture_state()) == []
 
 
-def test_the_harness_restores_the_process_after_a_legacy_run(isolated):
+def test_the_harness_restores_the_process_after_a_native_run(isolated):
     """The requirement itself, exercised on a real load and evaluation.
 
     The fixture asserts the restoration on its way out; what this adds is that
@@ -92,7 +86,7 @@ def test_the_harness_restores_the_process_after_a_legacy_run(isolated):
     being congratulated for a no-op.
     """
     before = capture_state()
-    model = run_legacy_once()
+    model = run_native_once()
 
     assert model is not None
     moved = state_differences(before, capture_state())
@@ -121,10 +115,10 @@ def test_an_absent_environment_variable_comes_back_absent():
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_the_default_dtype_survives_a_legacy_run(dtype, isolated):
+def test_the_default_dtype_survives_a_native_run(dtype, isolated):
     """A foreign default dtype is a known live hazard in the frozen tree."""
     torch.set_default_dtype(dtype)
     inner = capture_state()
-    run_legacy_once()
+    run_native_once()
     restore_state(inner)
     assert torch.get_default_dtype() == dtype

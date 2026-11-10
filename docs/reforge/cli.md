@@ -1,19 +1,19 @@
 # V1 command line
 
-Use `mace --engine v1` or set `MACE_ENGINE=v1`. The launcher retains the legacy
-engine as its default. Help discovers commands without importing torch, JAX or
-legacy MACE.
+The native `mace` command is owned by the `mace-torch` distribution.
+There is no engine selector or separate launcher. Help discovers commands
+without importing torch or JAX.
 
 ```sh
-mace --engine v1 train --config run.yaml --device cpu
-mace --engine v1 eval --model run.json --configs structures.xyz --output predicted.xyz --compute_stress
-mace --engine v1 model select-head run.json --head pbe --output pbe.safetensors
-mace --engine v1 model export-config run.json --output resolved.yaml
-mace --engine v1 data prepare --train_file train.xyz --output prepared --compute_statistics
-mace --engine v1 data select --config finetune.yaml --head replay --output selected.xyz
-mace --engine v1 data pseudolabel --config finetune.yaml --head replay --output labels
-mace --engine v1 plot training --path results/run.jsonl --output learning.png
-mace --engine v1 model migrate --output migrated.yaml -- mace_run_train --train_file train.xyz --num_channels 32
+mace train --config run.yaml --device cpu
+mace eval --model run.json --configs structures.xyz --output predicted.xyz --compute_stress
+mace model select-head run.json --head pbe --output pbe.safetensors
+mace model export-config run.json --output resolved.yaml
+mace data prepare --train_file train.xyz --output prepared --compute_statistics
+mace data select --config finetune.yaml --head replay --output selected.xyz
+mace data pseudolabel --config finetune.yaml --head replay --output labels
+mace plot training --path results/run.jsonl --output learning.png
+mace model migrate --output migrated.yaml -- mace_run_train --train_file train.xyz --num_channels 32
 ```
 
 ## Configuration and migration
@@ -71,7 +71,7 @@ citations from foundation models. Train and eval print them. `CITATION.cff`
 provides the software and preferred paper references.
 
 ```sh
-mace --engine v1 model convert full.json --to-basis reduced --output reduced.json \
+mace model convert full.json --to-basis reduced --output reduced.json \
   --reference reference.json --fixtures fixtures
 ```
 

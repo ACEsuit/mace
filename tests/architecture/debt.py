@@ -233,12 +233,8 @@ def problems() -> list[str]:
     except ValueError as error:
         return found + [str(error)]
 
-    if not book:
-        found.append(
-            "the ledger is empty. An empty debt book means either the "
-            "migration is finished or nobody is writing the rows down, and "
-            "the two look identical from here"
-        )
+    if not book and (REPO_ROOT / "mace").exists():
+        found.append("legacy still exists but the debt ledger is empty")
 
     defined = defined_test_functions()
     for debt_id, row in book.items():

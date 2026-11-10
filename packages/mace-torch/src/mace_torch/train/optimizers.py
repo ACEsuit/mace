@@ -206,7 +206,7 @@ def build_optimizer(model: nn.Module, config: TrainingConfig) -> Optimizer:
         if AdamWScheduleFree is None:
             raise ImportError(
                 "training.optimizer.kind='schedulefree' requires schedulefree. "
-                "Install mace-torch-v1[schedulefree]."
+                "Install mace-torch[schedulefree]."
             )
         return AdamWScheduleFree(
             groups,

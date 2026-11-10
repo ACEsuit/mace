@@ -32,7 +32,6 @@ __all__ = [
     "FLOAT_DTYPES",
     "GraphInfo",
     "GraphValidationError",
-    "GraphView",
     "validate_graph",
 ]
 
@@ -336,36 +335,3 @@ def _check_indices(data: Mapping[str, Any], sizes: dict[str, int]) -> None:
                 f"'structure_periodic' is {list(data['structure_periodic'])}; "
                 f"'pbc' gives {periodic}."
             )
-
-
-class GraphView:
-    """Attribute access over a validated graph dict, without copying it.
-
-    ``view.positions`` is ``data["positions"]`` and ``view.info.num_graphs``
-    the graph count. Sugar for code outside the model: a forward takes the
-    dict itself.
-
-    Args:
-        data: The graph. It is validated once, here.
-        float_dtype: The model's floating dtype name.
-    """
-
-    __slots__ = ("_data", "info")
-
-    def __init__(self, data: Mapping[str, Any], *, float_dtype: str = "float64"):
-        self.info = validate_graph(data, float_dtype=float_dtype)
-        self._data = data
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
-            raise AttributeError(name)
-        if name not in self._data:
-            known = "a schema key" if name in GRAPH_SCHEMA else "not a schema key"
-            raise AttributeError(f"this graph has no {name!r} ({known}).")
-        return self._data[name]
-
-    def __getitem__(self, name: str) -> Any:
-        return self._data[name]
-
-    def __contains__(self, name: object) -> bool:
-        return name in self._data

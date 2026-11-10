@@ -9,7 +9,7 @@ Nothing is decided here. A default belongs to the schema, a refusal belongs to
 the stage that can explain it, and this module is what connects them, which is
 why it is short enough to read in one go.
 
-Both ``mace train`` and ``mace_run_train --engine v1`` accept structured
+Both ``mace train`` and ``mace_run_train`` accept structured
 configuration files and explicit flags. Legacy spellings are translated at the
 CLI boundary; the stages receive only the agreed V1 configuration.
 """

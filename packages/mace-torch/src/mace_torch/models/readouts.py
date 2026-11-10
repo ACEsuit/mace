@@ -1,13 +1,13 @@
-"""One head per declared observable.
+"""One readout per declared observable.
 
 The frozen tree has ten readout blocks and three model classes that exist only
 to select among them. Six of the ten are reachable by name; the dipole pair and
 the latent-charge pair are chosen by the owning model class instead, which is
-the coupling this replaces. Here a head is built from an
+the coupling this replaces. Here a readout is built from an
 :class:`~mace_core.observables.ObservableSpec`: the declaration says the irreps
 and whether the value is per atom, and that is enough to build the readout.
 
-A head reads the node features of every layer, not only the last. That is the
+A readout reads the node features of every layer, not only the last. That is the
 frozen tree's behaviour and it is not incidental: the site energy is a sum of
 per-layer contributions, so a readout that saw only the final layer would be a
 different model.
@@ -208,7 +208,7 @@ def _check_reachable(spec: ObservableSpec, hidden_irreps: str) -> None:
 
     An equivariant map connects an irrep only to the same irrep, so a readout
     cannot produce a degree the features do not already have. Built anyway, the
-    head returns **exactly zero** on those components, with no error anywhere:
+    readout returns **exactly zero** on those components, with no error anywhere:
     a polarizability read out of scalar-and-vector features is a column of
     zeros that trains to a loss it can never reduce. The declaration is checked
     against the features instead.
@@ -297,7 +297,7 @@ class ObservableReadout(nn.Module):
 
     Args:
         backend: The kernel backend. Consulted at construction only.
-        spec: The declaration this head exists to satisfy.
+        spec: The declaration this readout exists to satisfy.
         layer_irreps: One channel's node-feature declaration **per layer**.
             They differ: the last layer of a trained model carries only its
             invariants, which is why its width is not the others'.
@@ -419,7 +419,7 @@ class ObservableReadout(nn.Module):
         """This observable's contribution from each layer, unsummed.
 
         The energy path needs the terms apart, because the sum over layers and
-        the sum over atoms are two different reductions and the energy head
+        the sum over atoms are two different reductions and the energy readout
         keeps them separate on purpose.
 
         Args:

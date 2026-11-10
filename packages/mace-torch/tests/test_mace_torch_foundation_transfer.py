@@ -378,7 +378,7 @@ def test_a_checkpoint_recording_no_heads_is_refused(tmp_path):
     )
     record = ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(versions={"mace-torch-v1": "0"}),
+        provenance=Provenance(versions={"mace-torch": "0"}),
     )
     (tmp_path / "missing_heads.json").write_text(
         json.dumps(

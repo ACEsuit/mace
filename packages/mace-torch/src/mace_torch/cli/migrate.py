@@ -7,18 +7,18 @@ import shlex
 from pathlib import Path
 
 COMMAND_MAP = {
-    "mace_run_train": "mace --engine v1 train",
-    "mace_eval_configs": "mace --engine v1 eval",
-    "mace_select_head": "mace --engine v1 model select-head",
-    "mace_convert_device": "mace --engine v1 model convert-device",
+    "mace_run_train": "mace train",
+    "mace_eval_configs": "mace eval",
+    "mace_select_head": "mace model select-head",
+    "mace_convert_device": "mace model convert-device",
     "mace_e3nn_cueq": None,
     "mace_cueq_to_e3nn": None,
-    "mace_create_lammps_model": "mace --engine v1 export lammps",
-    "mace_finetuning_select": "mace --engine v1 data select",
-    "mace_prepare_data": "mace --engine v1 data prepare",
-    "mace_plot_train": "mace --engine v1 plot training",
+    "mace_create_lammps_model": "mace export lammps",
+    "mace_finetuning_select": "mace data select",
+    "mace_prepare_data": "mace data prepare",
+    "mace_plot_train": "mace plot training",
     "mace_active_learning_md": None,
-    "mace_polar_density_cube": "mace --engine v1 eval density-cube",
+    "mace_polar_density_cube": "mace eval density-cube",
 }
 
 

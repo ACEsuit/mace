@@ -59,6 +59,7 @@ def test_the_wheel_ships_the_extraction_script(tmp_path):
         [
             "uv",
             "build",
+            "--no-build-isolation", "--python", sys.executable,
             "--wheel",
             "--quiet",
             str(REPO_ROOT / "packages" / "mace-torch"),

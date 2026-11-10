@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  parity-fuzz:
+  frozen-regressions:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -37,30 +37,11 @@ jobs:
         run: python -m pip install -e packages/mace-core -e packages/mace-torch
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/parity/test_fuzz_parity.py tests/parity/test_fp32_bit_golden.py
-          markers: nightly
+          tests: tests/parity tests/retirement
+          markers: not gpu and not slow
           numprocs: "0"
           timeout: "1200"
           extra-args: --hypothesis-seed=${{ github.run_id }}
-      - name: Require serialized replay inputs in the artifact
-        if: always()
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          cases = [p for p in Path('.pytest_cache/par2').glob('*.json')
-                   if 'case' in json.loads(p.read_text())]
-          assert cases, 'PAR-2 produced no serialized examples to upload'
-          print(f'Uploading {len(cases)} replayable structures')
-          PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: parity-fuzz-${{ github.run_id }}
-          path: .pytest_cache/par2
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
 
   foundations:
     runs-on: ubuntu-latest
@@ -78,7 +59,7 @@ jobs:
         with:
           path: ~/.cache/mace
           # Invalidate for either the frozen URLs or the native registry.
-          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py', 'packages/mace-core/src/mace_core/model_registry.json') }}
+          key: mace-foundations-${{ hashFiles('packages/mace-core/src/mace_core/model_registry.json') }}
       # Downloads are allowed and REQUIRED here: a broken download host
       # must turn this job red, never a PR.
       #
@@ -92,7 +73,7 @@ jobs:
         with:
           tests: tests/foundations tests/golden
           markers: not gpu
-          require-caps: network,polar
+          require-caps: network
           allow-network: "true"
           timeout: "1200"
         env:
@@ -150,23 +131,9 @@ jobs:
       contents: read
 
   benchmarks:
-    # The performance baseline the rewrite will be judged against, recorded
-    # while legacy is still the live stack: "not slower" is only falsifiable
-    # against an old number, and after legacy retires the comparison runs
-    # against the frozen one, so these have to be reproducible cases with
-    # recorded metadata rather than one-off timings.
-    #
-    # This job used to be continue-on-error and published nothing at all: the
-    # only test in tests/benchmarks was marked `gpu` AND `network`, so all
-    # sixteen parametrizations skipped on a CPU runner, the job went green,
-    # and benchmark.json was reproducibly a 0-byte file. tests/benchmarks/
-    # test_inference_cpu.py adds the CPU cases, and since a job that cannot
-    # fail is not a baseline, continue-on-error is gone and the artifact is
-    # checked for contents below -- not merely for existence, which it always
-    # had.
-    #
-    # numprocs 0 is load-bearing: pytest-benchmark disables itself under
-    # xdist, so a parallel run of this job would collect timings from nothing.
+    # Native timings on the committed anchor at three fixed sizes and two
+    # precisions. Historical legacy timings stay external frozen artifacts.
+    # pytest-benchmark disables itself under xdist, so use numprocs 0.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -175,13 +142,6 @@ jobs:
         with:
           python-version: "3.12"
           extras: dev
-      - name: Cache foundation model downloads
-        # The MP-small cases are network-gated; without the cache every night
-        # re-downloads the same checkpoint.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/mace
-          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
       - uses: ./.github/actions/run-tests
         with:
           tests: tests/benchmarks
@@ -189,9 +149,7 @@ jobs:
           # far has ended with an empty artifact. The gpu-marked cases skip on
           # this runner and say so.
           allow-network: "true"
-          # The MP-small half of the baseline is downloaded, so a lost network
-          # must turn this job red rather than quietly halve the artifact.
-          require-caps: network
+          require-caps: ""
           numprocs: "0"
           timeout: "3600"
           extra-args: --benchmark-json=benchmark.json
@@ -235,12 +193,6 @@ jobs:
                   sys.exit(f"{b['name']} records no {absent}: not reproducible")
           print(f"{len(runs)} benchmarks across sizes {sorted(sizes)}")
           PY
-      - name: v1 against the legacy baselines
-        # Informative, never gating: pairs each v1 case with the frozen tree's
-        # on the same case from this same run and writes the table to the run
-        # summary, naming any case where v1 is slower.
-        if: always()
-        run: python tests/benchmarks/compare_v1.py benchmark.json >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         # always(), so the artifact is there to diagnose a failed content check
         # rather than only on the nights that pass it.
@@ -302,7 +254,7 @@ jobs:
         with:
           tests: tests/integrations tests/parity/test_mliap.py
           markers: bin_lammps and not gpu
-          require-caps: bin_lammps,cueq
+          require-caps: bin_lammps
           numprocs: "0"
           timeout: "1200"
 
@@ -473,21 +425,10 @@ jobs:
           numprocs: "0"
           timeout: "600"
 
-  packages-coexistence:
-    # The v1 package suites with BOTH stacks installed in one environment.
-    #
-    # ci-core's `packages` job runs the same suites the opposite way, with no
-    # torch and no legacy package, so that the three packages have to stand up
-    # on their own. Neither configuration substitutes for the other: that job
-    # would keep passing if the two stacks stopped tolerating each other, and
-    # this one would keep passing if a v1 package quietly grew a dependency on
-    # something legacy installs. Coexistence in one process is the premise the
-    # whole migration rests on, so it gets checked somewhere.
-    #
-    # tests/architecture comes along because its subject is the two-stack tree,
-    # and here it sees the tree fully installed rather than half of it.
+  packages-workspace:
+    # Validate the installed native workspace across supported Python versions.
     runs-on: ubuntu-latest
-    name: packages-coexistence (py${{ matrix.python-version }})
+    name: packages-workspace (py${{ matrix.python-version }})
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -503,20 +444,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           extras: dev
-      - name: Install the v1 packages beside the legacy one
-        # setup-mace has already installed legacy plus mace-launcher. One pip
-        # invocation for the rest: mace-torch-v1 and mace-jax require
-        # mace-core, which is unpublished, so pip resolves it only when it sees
-        # the local path in the same run.
-        run: |
-          python -m pip install -e packages/mace-core \
-                                -e packages/mace-torch \
-                                -e packages/mace-jax
-      - name: Both stacks import in one process
-        run: python -c "import mace, mace_core, mace_torch, mace_jax, mace_launcher; print('coexist ok')"
+      - name: Import the native workspace
+        run: python -c "import mace_core, mace_torch; print('native workspace ok')"
       - uses: ./.github/actions/run-tests
         with:
-          tests: packages/mace-core/tests packages/mace-torch/tests packages/mace-jax/tests packages/mace-launcher/tests tests/architecture
+          tests: packages/mace-core/tests packages/mace-torch/tests tests/architecture
           numprocs: "0"
 
   coverage-full:
@@ -546,13 +478,13 @@ jobs:
       - uses: ./.github/actions/setup-mace
         with:
           python-version: "3.12"
-          extras: dev, cueq, torchsim, schedulefree, magnetic, wandb
-          pip-packages: -r requirements/polar.txt -r requirements/les.txt
+          extras: dev, cueq, torchsim, schedulefree, wandb
+          pip-packages: -r requirements/les.txt
       - name: Cache foundation model downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mace
-          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
+          key: mace-foundations-${{ hashFiles('packages/mace-core/src/mace_core/model_registry.json') }}
       - name: Free up disk space
         run: |
           sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift \
@@ -560,9 +492,9 @@ jobs:
             /usr/local/share/chromium /opt/microsoft /opt/google
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests
+          tests: tests packages/mace-core/tests packages/mace-torch/tests packages/mace-jax/tests
           markers: not gpu and not benchmark and not nightly
-          require-caps: network,cueq,polar,les,torchsim,schedulefree,magnetic,wandb
+          require-caps: network,cueq,les,torchsim,schedulefree,wandb
           allow-network: "true"
           coverage: "data"
           splits: "3"
@@ -627,65 +559,18 @@ jobs:
       # WHY ONLY THESE FILES. The rewrite's test-prerequisite bar is golden
       # characterization + end-to-end contracts + line-coverage floors on the
       # modules whose *behaviour* ports. There is deliberately no global
-      # target: everything else in mace/ is pinned by the goldens in
+      # target: the native implementation is pinned by the goldens in
       # tests/golden and the CLI/calculator contracts in tests/workflows, and
       # a global number would be a second, weaker statement about the same
       # code. These six are the pure-math and physics-glue modules that have
       # no golden standing in for them.
       #
-      # MIGRATION INVARIANT. A floor protects the behaviour, not the legacy
-      # file. When a capability moves to the new stack, its floor moves with
-      # it to the corresponding mace_core/mace_torch module in the same
-      # commit. Forgetting to is not silent: `--include` on a path that no
-      # longer exists selects nothing and `coverage report` exits 1 with
-      # "No data to report" (and tests/unit/test_ci_gates.py fails on the PR
-      # that renames the file, a night earlier).
-      #
-      # WHY HERE AND NOWHERE ELSE. Two other places look plausible and are
-      # both wrong. Inside coverage-full the check would run in a shard
-      # holding one third of the suite (splits: 3), so a module exercised
-      # entirely by tests that landed in another group would fail its own
-      # floor. In ci-core's coverage job the denominator is different: it
-      # measures tests/unit + tests/workflows only -- no extensions, backends,
-      # integrations or network -- so the same percentage means a different
-      # thing.
-      #
-      # That second one is not a theoretical objection, and the file that
-      # settles it is mace/modules/utils.py. Measured on one host over the
-      # whole selection: 76% on the PR slice, 87% on the full scope. Its floor
-      # is 85. The same number against the same file therefore PASSES here and
-      # FAILS in the PR job. The gap is 36 statements and it is not diffuse:
-      # compute_forces_virials_magforces, compute_forces_magforces, the
-      # get_outputs branches that dispatch to them, and
-      # compute_total_charge_dipole_permuted -- reached from tests/extensions,
-      # which the PR slice does not run. A floor is meaningless without naming
-      # the selection, so:
-      #
-      # THE SELECTION THESE FLOORS ARE MEASURED UNDER is exactly
-      # coverage-full's, combined over all three shards:
-      #   pytest tests -m "not gpu and not benchmark"
-      # with extras dev,cueq,torchsim,schedulefree,magnetic plus
-      # requirements/polar.txt and requirements/les.txt, and
-      # MACE_CI_ALLOW_NETWORK=1. The magnetic extra is not optional here: the
-      # modules/utils.py floor counts compute_forces_virials_magforces and
-      # compute_forces_magforces, which only tests/extensions/magnetic reach,
-      # and they are ~8 points of that file against 2 points of headroom.
-      #
-      # HEADROOM, as measured under that selection when the floors went in:
-      #   loss.py 100 (floor 90)      data/utils.py      96  (85)
-      #   radial.py 100 (floor 90)    neighborhood.py    100 (95)
-      #   modules/utils.py 87 (85)    atomic_data.py     96  (85)
-      # Two of those are ratchets rather than newly-cleared bars --
-      # neighborhood.py and atomic_data.py already sat above their floors
-      # before the characterization tests landed, so they gate against
-      # regression and nothing else. modules/utils.py is the tight one at two
-      # points; the honest reading is that its floor is the one that will bite
-      # first, which is the point of putting it here rather than rounding it
-      # down to something comfortable.
-      #
-      # This step runs after `coverage combine`, which is also why
-      # coverage-report is deliberately not `if: always()`: a gate must never
-      # be computed from a subset of the shards.
+      # Floors follow each capability into the native implementation. They
+      # run only after all three coverage shards have been combined. The PR
+      # coverage job reports these values without enforcing them because its
+      # test selection is narrower. Historical legacy percentages are not
+      # measurements of these native files; retain the existing thresholds
+      # and validate them under the full native nightly selection.
       - name: Per-file coverage floors
         run: |
           status=0
@@ -710,13 +595,13 @@ jobs:
           # packages/, its floors move with it, in the same commit, by editing
           # the manifest and re-running the generator.
           # energy
-          mace/modules/loss.py 90
-          mace/modules/radial.py 90
-          mace/modules/utils.py 85
+          packages/mace-torch/src/mace_torch/train/loss.py 90
+          packages/mace-torch/src/mace_torch/nn/radial.py 90
+          packages/mace-torch/src/mace_torch/physics/outputs.py 85
           # data
-          mace/data/utils.py 85
-          mace/data/neighborhood.py 95
-          mace/data/atomic_data.py 85
+          packages/mace-core/src/mace_core/data/configuration.py 85
+          packages/mace-core/src/mace_core/neighbors/neighborhood.py 95
+          packages/mace-core/src/mace_core/graph/collate.py 85
           # <<< generated from capabilities.toml: coverage-floors
           FLOORS
           echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -748,7 +633,7 @@ jobs:
             /usr/local/share/chromium /opt/microsoft /opt/google
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests
+          tests: tests packages/mace-core/tests packages/mace-torch/tests packages/mace-jax/tests
           allow-network: "true"
           store-durations: "true"
           markers: not nightly

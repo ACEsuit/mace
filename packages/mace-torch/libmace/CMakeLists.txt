@@ -22,7 +22,13 @@ add_library(mace SHARED mace.cpp c_api.cpp "${LIBMACE_SOURCE_DIR}/src/neighbour_
 target_include_directories(mace PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
   "$<INSTALL_INTERFACE:include>" PRIVATE "${LIBMACE_SOURCE_DIR}/src")
 mace_link_torch(mace PUBLIC)
-set_target_properties(mace PROPERTIES INSTALL_RPATH "${torch_root}/lib"
+mace_add_cuda_neighbors(mace)
+set(mace_runtime_paths "${torch_root}/lib")
+if(CUEQ_OPS_DIR)
+  # The installed CUDA neighbour library lives beside libmace.
+  list(APPEND mace_runtime_paths "$ORIGIN")
+endif()
+set_target_properties(mace PROPERTIES INSTALL_RPATH "${mace_runtime_paths}"
   INSTALL_RPATH_USE_LINK_PATH TRUE)
 add_library(mace::mace ALIAS mace)
 install(TARGETS mace EXPORT mace-targets LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
@@ -74,4 +80,15 @@ if(MACE_TEST_DRIVER_DIR)
     add_executable(mace_libmace_fortran "${MACE_TEST_DRIVER_DIR}/driver.f90")
     target_link_libraries(mace_libmace_fortran PRIVATE mace_fortran)
   endif()
+endif()
+
+if(MACE_TEST_DRIVER_DIR AND CUEQ_OPS_DIR)
+  add_executable(mace_cuda_neighbor_driver "${MACE_TEST_DRIVER_DIR}/cuda_neighbors.cpp")
+  target_compile_features(mace_cuda_neighbor_driver PRIVATE cxx_std_20)
+  target_compile_definitions(mace_cuda_neighbor_driver PRIVATE _GLIBCXX_USE_CXX11_ABI=${torch_abi})
+  target_include_directories(mace_cuda_neighbor_driver PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native" "${torch_root}/include"
+    "${torch_root}/include/torch/csrc/api/include")
+  target_link_libraries(mace_cuda_neighbor_driver PRIVATE mace mace_cuda_neighbors
+    "${torch_root}/lib/libtorch_cpu.so" "${torch_root}/lib/libc10.so")
 endif()

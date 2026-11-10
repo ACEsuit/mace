@@ -1,0 +1,58 @@
+{
+  "name": "mace",
+  "version": 1,
+  "skills": [
+    {
+      "name": "mace-build-package",
+      "path": ".claude/skills/mace-build-package/SKILL.md"
+    },
+    {
+      "name": "mace-convert-export",
+      "path": ".claude/skills/mace-convert-export/SKILL.md"
+    },
+    {
+      "name": "mace-eval",
+      "path": ".claude/skills/mace-eval/SKILL.md"
+    },
+    {
+      "name": "mace-frozen-parity",
+      "path": ".claude/skills/mace-frozen-parity/SKILL.md"
+    },
+    {
+      "name": "mace-migrate",
+      "path": ".claude/skills/mace-migrate/SKILL.md"
+    },
+    {
+      "name": "mace-preprocess",
+      "path": ".claude/skills/mace-preprocess/SKILL.md"
+    },
+    {
+      "name": "mace-reforge",
+      "path": ".claude/skills/mace-reforge/SKILL.md"
+    },
+    {
+      "name": "mace-reforge-backend",
+      "path": ".claude/skills/mace-reforge-backend/SKILL.md"
+    },
+    {
+      "name": "mace-reforge-goldens",
+      "path": ".claude/skills/mace-reforge-goldens/SKILL.md"
+    },
+    {
+      "name": "mace-reforge-numerics",
+      "path": ".claude/skills/mace-reforge-numerics/SKILL.md"
+    },
+    {
+      "name": "mace-reforge-ticket",
+      "path": ".claude/skills/mace-reforge-ticket/SKILL.md"
+    },
+    {
+      "name": "mace-test",
+      "path": ".claude/skills/mace-test/SKILL.md"
+    },
+    {
+      "name": "mace-train",
+      "path": ".claude/skills/mace-train/SKILL.md"
+    }
+  ]
+}

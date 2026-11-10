@@ -1,22 +1,21 @@
-"""Actual GROMACS native MD/rerun against frozen legacy, without Python in mdrun."""
+"""Native deployment against eager and frozen numerical references."""
 
 import numpy as np
 import pytest
 from ase.io import read
+
 from tests.golden.harness import FP64_CPU_REFERENCE
 from tests.integrations.gromacs._harness import prepare, run, write_g96
-from tests.parity.test_fm_convert_legacy import GOLDEN, FIXTURES
-from tests.parity.test_libmace import native_package, virial_of
+from tests.parity.test_libmace import virial_of
+from tests.retirement.anchors import ARTIFACTS, FIXTURES
 
 pytestmark = [pytest.mark.bin_gromacs, pytest.mark.slow]
 
 
 def compare(result, frames, name, row=FP64_CPU_REFERENCE):
-    from mace.calculators import MACECalculator
+    from mace_torch.calculators import MACECalculator
 
-    oracle = MACECalculator(
-        model_paths=GOLDEN / "models" / f"{name}.model", default_dtype="float64"
-    )
+    oracle = MACECalculator(model_paths=ARTIFACTS / f"{name}.json")
     maxima = {}
     assert len(result["energy"]) == len(frames)
     for step, original in enumerate(frames):
@@ -113,8 +112,10 @@ def test_native_gromacs_xy_slab(native_package, tmp_path, fp64, isolated):
 @pytest.mark.cueq
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
 def test_cuda_gromacs_cueq(dtype, tmp_path, fp64, isolated):
-    from mace_torch.deploy.bundle import export_lammps
     from pathlib import Path
+
+    from mace_torch.deploy.bundle import export_lammps
+
     from tests.golden.harness import FP32
 
     checkpoint = (

@@ -46,9 +46,20 @@ accepted by the native exporter. Additional charge/field inputs and hybrid
 particle subsets are not introduced by this interface. The Python callback
 remains available for its broader declared-input contract.
 
-The CustomCPPForce interface transfers geometry and forces through host arrays.
-Native execution does not imply that the whole step stays on the GPU. Timings
-must include those transfers. No Force XML serializer is supplied: build the
+For periodic Polar CUDA packages, build with `-D MACE_OPENMM_CUDA=ON`.
+This path reads OpenMM's CUDA position buffer, restores particle order and
+periodic image offsets, constructs neighbours in CUDA and adds the native
+forces directly to OpenMM's CUDA force buffer. Only requested energy scalars
+and changed image counters cross the host boundary. Separate OpenMM and ATen
+CUDA contexts are synchronized explicitly. The log reports
+`MACE_OPENMM_DEVICE_IO cuda`; absence of that line means this route is not active.
+The build installs a companion `libmace_openmm_cuda` module beside
+`libmace_openmm`. Keep both files together. The adapter loads its CUDA platform
+dependency with local symbol visibility, as OpenMM does for its own plugins;
+other installed platforms can remain enabled.
+
+CPU and local-energy packages use the CustomCPPForce host-array path. Complete
+step timings include the transfers and synchronization used by the selected path. No Force XML serializer is supplied: build the
 System force again from the same native artifact before restoring a State.
 
 ## Verification
@@ -60,6 +71,8 @@ Set `MACE_OPENMM_DRIVER` to the resulting executable and run:
 MACE_REQUIRE_CAPS=bin_openmm_native pytest tests/parity/test_openmm_native.py -m 'not gpu'
 # On a CUDA host with cuEq and OpenMM's CUDA plugin:
 MACE_REQUIRE_CAPS=bin_openmm_native,gpu,cueq pytest tests/parity/test_openmm_native.py -m gpu
+# Polar device buffers: charged triclinic cells, image offsets, double/mixed precision:
+MACE_REQUIRE_CAPS=bin_openmm_native,gpu,cueq pytest tests/parity/test_native_polar.py -m gpu
 ```
 
 The executable runs actual integration steps and geometry updates. Both frozen

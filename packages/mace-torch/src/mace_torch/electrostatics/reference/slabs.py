@@ -11,33 +11,19 @@ from scipy.constants import pi
 from .utils import CUBIC_MADELUNG, FIELD_CONSTANT, scatter_sum
 
 
-def _is_batch1(batch: torch.Tensor) -> bool:
-    compiler = getattr(torch, "compiler", None)
-    if compiler is not None and compiler.is_compiling():
-        # The local compiled macetools test path is specialized to batch size 1.
-        # Avoid converting batch.max() to a Python scalar inside Dynamo.
-        return True
-    if batch.numel() == 0:
-        return True
-    return int(batch.max()) == 0
-
-
 def _get_total_dipole_z(
     source_feats: torch.Tensor,
     node_positions: torch.Tensor,
     batch: torch.Tensor,
-    n_graphs: int | None = None,
+    n_graphs: int,
 ) -> torch.Tensor:
-    """Per-graph total z-dipole of the given charges.
+    """Per-graph total z-dipole, including zero rows for graphs without sources.
 
-    ``n_graphs`` has to be supplied whenever ``batch`` may not reach every graph.
-    That is the ordinary situation in the source-target setting, where a graph
-    can hold targets but no sources and the result still needs a (zero) row for
-    it.  Left as ``None`` the count is inferred from ``batch``, which is correct
-    when the sources cover every graph, as they always do when source == target.
+    The explicit graph count avoids extracting a host scalar from ``batch``
+    during compilation and keeps the single-graph reduction order unchanged.
     """
     charges = source_feats[:, 0]
-    if _is_batch1(batch) and (n_graphs is None or n_graphs == 1):
+    if n_graphs == 1:
         total_dipole_z = (node_positions[:, 2] * charges).sum().unsqueeze(0)
         if source_feats.shape[-1] > 1:
             local_dipoles = source_feats[:, 1:4]
@@ -85,7 +71,9 @@ def slab_dipole_correction_node_fields(
     volumes: torch.Tensor,
     batch: torch.Tensor,
 ):
-    total_dipole_z = _get_total_dipole_z(source_feats, node_positions, batch)
+    total_dipole_z = _get_total_dipole_z(
+        source_feats, node_positions, batch, n_graphs=volumes.numel()
+    )
     A = FIELD_CONSTANT / (4 * pi)
     total_field_z = A * 4 * pi * total_dipole_z / volumes
     spread_total_field_z = torch.index_select(total_field_z, 0, batch)

@@ -1,0 +1,3191 @@
+[
+  {
+    "label": "entry points",
+    "prefix": "ep.",
+    "noun": "entry points",
+    "decls": {
+      "mace": {
+        "key": "mace",
+        "detail": "mace_launcher:main",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_active_learning_md": {
+        "key": "mace_active_learning_md",
+        "detail": "mace_launcher:active_learning_md",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_create_lammps_model": {
+        "key": "mace_create_lammps_model",
+        "detail": "mace_launcher:create_lammps_model",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_eval_configs": {
+        "key": "mace_eval_configs",
+        "detail": "mace_launcher:eval_configs",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_plot_train": {
+        "key": "mace_plot_train",
+        "detail": "mace_launcher:plot_train",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_run_train": {
+        "key": "mace_run_train",
+        "detail": "mace_launcher:run_train",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_prepare_data": {
+        "key": "mace_prepare_data",
+        "detail": "mace_launcher:prepare_data",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_finetuning_select": {
+        "key": "mace_finetuning_select",
+        "detail": "mace_launcher:finetuning_select",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_convert_device": {
+        "key": "mace_convert_device",
+        "detail": "mace_launcher:convert_device",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_select_head": {
+        "key": "mace_select_head",
+        "detail": "mace_launcher:select_head",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_e3nn_cueq": {
+        "key": "mace_e3nn_cueq",
+        "detail": "mace_launcher:e3nn_cueq",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_cueq_to_e3nn": {
+        "key": "mace_cueq_to_e3nn",
+        "detail": "mace_launcher:cueq_to_e3nn",
+        "site": "packages/mace-launcher/pyproject.toml"
+      },
+      "mace_polar_density_cube": {
+        "key": "mace_polar_density_cube",
+        "detail": "mace_launcher:polar_density_cube",
+        "site": "packages/mace-launcher/pyproject.toml"
+      }
+    }
+  },
+  {
+    "label": "mace_run_train dests",
+    "prefix": "train.",
+    "noun": "dests",
+    "decls": {
+      "name": {
+        "key": "name",
+        "detail": "--name",
+        "site": "mace/tools/arg_parser.py:34"
+      },
+      "seed": {
+        "key": "seed",
+        "detail": "--seed",
+        "site": "mace/tools/arg_parser.py:35"
+      },
+      "work_dir": {
+        "key": "work_dir",
+        "detail": "--work_dir",
+        "site": "mace/tools/arg_parser.py:39"
+      },
+      "log_dir": {
+        "key": "log_dir",
+        "detail": "--log_dir",
+        "site": "mace/tools/arg_parser.py:45"
+      },
+      "model_dir": {
+        "key": "model_dir",
+        "detail": "--model_dir",
+        "site": "mace/tools/arg_parser.py:48"
+      },
+      "checkpoints_dir": {
+        "key": "checkpoints_dir",
+        "detail": "--checkpoints_dir",
+        "site": "mace/tools/arg_parser.py:51"
+      },
+      "results_dir": {
+        "key": "results_dir",
+        "detail": "--results_dir",
+        "site": "mace/tools/arg_parser.py:57"
+      },
+      "downloads_dir": {
+        "key": "downloads_dir",
+        "detail": "--downloads_dir",
+        "site": "mace/tools/arg_parser.py:60"
+      },
+      "device": {
+        "key": "device",
+        "detail": "--device",
+        "site": "mace/tools/arg_parser.py:65"
+      },
+      "default_dtype": {
+        "key": "default_dtype",
+        "detail": "--default_dtype",
+        "site": "mace/tools/arg_parser.py:72"
+      },
+      "distributed": {
+        "key": "distributed",
+        "detail": "--distributed",
+        "site": "mace/tools/arg_parser.py:79"
+      },
+      "launcher": {
+        "key": "launcher",
+        "detail": "--launcher",
+        "site": "mace/tools/arg_parser.py:85"
+      },
+      "log_level": {
+        "key": "log_level",
+        "detail": "--log_level",
+        "site": "mace/tools/arg_parser.py:90"
+      },
+      "plot": {
+        "key": "plot",
+        "detail": "--plot",
+        "site": "mace/tools/arg_parser.py:93"
+      },
+      "plot_frequency": {
+        "key": "plot_frequency",
+        "detail": "--plot_frequency",
+        "site": "mace/tools/arg_parser.py:100"
+      },
+      "plot_interaction_e": {
+        "key": "plot_interaction_e",
+        "detail": "--plot_interaction_e",
+        "site": "mace/tools/arg_parser.py:107"
+      },
+      "error_table": {
+        "key": "error_table",
+        "detail": "--error_table",
+        "site": "mace/tools/arg_parser.py:114"
+      },
+      "model": {
+        "key": "model",
+        "detail": "--model",
+        "site": "mace/tools/arg_parser.py:134"
+      },
+      "r_max": {
+        "key": "r_max",
+        "detail": "--r_max",
+        "site": "mace/tools/arg_parser.py:151"
+      },
+      "radial_type": {
+        "key": "radial_type",
+        "detail": "--radial_type",
+        "site": "mace/tools/arg_parser.py:154"
+      },
+      "num_radial_basis": {
+        "key": "num_radial_basis",
+        "detail": "--num_radial_basis",
+        "site": "mace/tools/arg_parser.py:161"
+      },
+      "num_cutoff_basis": {
+        "key": "num_cutoff_basis",
+        "detail": "--num_cutoff_basis",
+        "site": "mace/tools/arg_parser.py:167"
+      },
+      "pair_repulsion": {
+        "key": "pair_repulsion",
+        "detail": "--pair_repulsion",
+        "site": "mace/tools/arg_parser.py:173"
+      },
+      "distance_transform": {
+        "key": "distance_transform",
+        "detail": "--distance_transform",
+        "site": "mace/tools/arg_parser.py:179"
+      },
+      "apply_cutoff": {
+        "key": "apply_cutoff",
+        "detail": "--apply_cutoff",
+        "site": "mace/tools/arg_parser.py:185"
+      },
+      "use_last_readout_only": {
+        "key": "use_last_readout_only",
+        "detail": "--use_last_readout_only",
+        "site": "mace/tools/arg_parser.py:191"
+      },
+      "use_embedding_readout": {
+        "key": "use_embedding_readout",
+        "detail": "--use_embedding_readout",
+        "site": "mace/tools/arg_parser.py:197"
+      },
+      "interaction": {
+        "key": "interaction",
+        "detail": "--interaction",
+        "site": "mace/tools/arg_parser.py:203"
+      },
+      "interaction_first": {
+        "key": "interaction_first",
+        "detail": "--interaction_first",
+        "site": "mace/tools/arg_parser.py:219"
+      },
+      "max_ell": {
+        "key": "max_ell",
+        "detail": "--max_ell",
+        "site": "mace/tools/arg_parser.py:234"
+      },
+      "correlation": {
+        "key": "correlation",
+        "detail": "--correlation",
+        "site": "mace/tools/arg_parser.py:237"
+      },
+      "use_reduced_cg": {
+        "key": "use_reduced_cg",
+        "detail": "--use_reduced_cg",
+        "site": "mace/tools/arg_parser.py:240"
+      },
+      "use_so3": {
+        "key": "use_so3",
+        "detail": "--use_so3",
+        "site": "mace/tools/arg_parser.py:246"
+      },
+      "use_agnostic_product": {
+        "key": "use_agnostic_product",
+        "detail": "--use_agnostic_product",
+        "site": "mace/tools/arg_parser.py:252"
+      },
+      "num_interactions": {
+        "key": "num_interactions",
+        "detail": "--num_interactions",
+        "site": "mace/tools/arg_parser.py:258"
+      },
+      "MLP_irreps": {
+        "key": "MLP_irreps",
+        "detail": "--MLP_irreps",
+        "site": "mace/tools/arg_parser.py:261"
+      },
+      "radial_MLP": {
+        "key": "radial_MLP",
+        "detail": "--radial_MLP",
+        "site": "mace/tools/arg_parser.py:267"
+      },
+      "hidden_irreps": {
+        "key": "hidden_irreps",
+        "detail": "--hidden_irreps",
+        "site": "mace/tools/arg_parser.py:273"
+      },
+      "edge_irreps": {
+        "key": "edge_irreps",
+        "detail": "--edge_irreps",
+        "site": "mace/tools/arg_parser.py:279"
+      },
+      "use_edge_irreps_first": {
+        "key": "use_edge_irreps_first",
+        "detail": "--use_edge_irreps_first",
+        "site": "mace/tools/arg_parser.py:285"
+      },
+      "num_channels": {
+        "key": "num_channels",
+        "detail": "--num_channels",
+        "site": "mace/tools/arg_parser.py:292"
+      },
+      "max_L": {
+        "key": "max_L",
+        "detail": "--max_L",
+        "site": "mace/tools/arg_parser.py:298"
+      },
+      "gate": {
+        "key": "gate",
+        "detail": "--gate",
+        "site": "mace/tools/arg_parser.py:304"
+      },
+      "kspace_cutoff_factor": {
+        "key": "kspace_cutoff_factor",
+        "detail": "--kspace_cutoff_factor",
+        "site": "mace/tools/arg_parser.py:311"
+      },
+      "atomic_multipoles_max_l": {
+        "key": "atomic_multipoles_max_l",
+        "detail": "--atomic_multipoles_max_l",
+        "site": "mace/tools/arg_parser.py:317"
+      },
+      "atomic_multipoles_smearing_width": {
+        "key": "atomic_multipoles_smearing_width",
+        "detail": "--atomic_multipoles_smearing_width",
+        "site": "mace/tools/arg_parser.py:323"
+      },
+      "field_feature_max_l": {
+        "key": "field_feature_max_l",
+        "detail": "--field_feature_max_l",
+        "site": "mace/tools/arg_parser.py:329"
+      },
+      "field_feature_widths": {
+        "key": "field_feature_widths",
+        "detail": "--field_feature_widths",
+        "site": "mace/tools/arg_parser.py:335"
+      },
+      "field_feature_norms": {
+        "key": "field_feature_norms",
+        "detail": "--field_feature_norms",
+        "site": "mace/tools/arg_parser.py:341"
+      },
+      "num_recursion_steps": {
+        "key": "num_recursion_steps",
+        "detail": "--num_recursion_steps",
+        "site": "mace/tools/arg_parser.py:347"
+      },
+      "field_si": {
+        "key": "field_si",
+        "detail": "--field_si",
+        "site": "mace/tools/arg_parser.py:353"
+      },
+      "include_electrostatic_self_interaction": {
+        "key": "include_electrostatic_self_interaction",
+        "detail": "--include_electrostatic_self_interaction",
+        "site": "mace/tools/arg_parser.py:359"
+      },
+      "add_local_electron_energy": {
+        "key": "add_local_electron_energy",
+        "detail": "--add_local_electron_energy",
+        "site": "mace/tools/arg_parser.py:365"
+      },
+      "quadrupole_feature_corrections": {
+        "key": "quadrupole_feature_corrections",
+        "detail": "--quadrupole_feature_corrections",
+        "site": "mace/tools/arg_parser.py:371"
+      },
+      "return_electrostatic_potentials": {
+        "key": "return_electrostatic_potentials",
+        "detail": "--return_electrostatic_potentials",
+        "site": "mace/tools/arg_parser.py:377"
+      },
+      "field_norm_factor": {
+        "key": "field_norm_factor",
+        "detail": "--field_norm_factor",
+        "site": "mace/tools/arg_parser.py:383"
+      },
+      "fixedpoint_update_config": {
+        "key": "fixedpoint_update_config",
+        "detail": "--fixedpoint_update_config",
+        "site": "mace/tools/arg_parser.py:389"
+      },
+      "field_readout_config": {
+        "key": "field_readout_config",
+        "detail": "--field_readout_config",
+        "site": "mace/tools/arg_parser.py:395"
+      },
+      "scaling": {
+        "key": "scaling",
+        "detail": "--scaling",
+        "site": "mace/tools/arg_parser.py:401"
+      },
+      "avg_num_neighbors": {
+        "key": "avg_num_neighbors",
+        "detail": "--avg_num_neighbors",
+        "site": "mace/tools/arg_parser.py:408"
+      },
+      "compute_avg_num_neighbors": {
+        "key": "compute_avg_num_neighbors",
+        "detail": "--compute_avg_num_neighbors",
+        "site": "mace/tools/arg_parser.py:414"
+      },
+      "compute_stress": {
+        "key": "compute_stress",
+        "detail": "--compute_stress",
+        "site": "mace/tools/arg_parser.py:420"
+      },
+      "compute_forces": {
+        "key": "compute_forces",
+        "detail": "--compute_forces",
+        "site": "mace/tools/arg_parser.py:426"
+      },
+      "compute_polarizability": {
+        "key": "compute_polarizability",
+        "detail": "--compute_polarizability",
+        "site": "mace/tools/arg_parser.py:432"
+      },
+      "compute_atomic_dipole": {
+        "key": "compute_atomic_dipole",
+        "detail": "--compute_atomic_dipole",
+        "site": "mace/tools/arg_parser.py:438"
+      },
+      "compute_magforces": {
+        "key": "compute_magforces",
+        "detail": "--compute_magforces",
+        "site": "mace/tools/arg_parser.py:444"
+      },
+      "train_file": {
+        "key": "train_file",
+        "detail": "--train_file",
+        "site": "mace/tools/arg_parser.py:452"
+      },
+      "valid_file": {
+        "key": "valid_file",
+        "detail": "--valid_file",
+        "site": "mace/tools/arg_parser.py:458"
+      },
+      "valid_fraction": {
+        "key": "valid_fraction",
+        "detail": "--valid_fraction",
+        "site": "mace/tools/arg_parser.py:465"
+      },
+      "test_file": {
+        "key": "test_file",
+        "detail": "--test_file",
+        "site": "mace/tools/arg_parser.py:472"
+      },
+      "test_dir": {
+        "key": "test_dir",
+        "detail": "--test_dir",
+        "site": "mace/tools/arg_parser.py:477"
+      },
+      "multi_processed_test": {
+        "key": "multi_processed_test",
+        "detail": "--multi_processed_test",
+        "site": "mace/tools/arg_parser.py:484"
+      },
+      "num_workers": {
+        "key": "num_workers",
+        "detail": "--num_workers",
+        "site": "mace/tools/arg_parser.py:491"
+      },
+      "pin_memory": {
+        "key": "pin_memory",
+        "detail": "--pin_memory",
+        "site": "mace/tools/arg_parser.py:497"
+      },
+      "atomic_numbers": {
+        "key": "atomic_numbers",
+        "detail": "--atomic_numbers",
+        "site": "mace/tools/arg_parser.py:503"
+      },
+      "mean": {
+        "key": "mean",
+        "detail": "--mean",
+        "site": "mace/tools/arg_parser.py:510"
+      },
+      "std": {
+        "key": "std",
+        "detail": "--std",
+        "site": "mace/tools/arg_parser.py:517"
+      },
+      "statistics_file": {
+        "key": "statistics_file",
+        "detail": "--statistics_file",
+        "site": "mace/tools/arg_parser.py:524"
+      },
+      "les_arguments": {
+        "key": "les_arguments",
+        "detail": "--les_arguments",
+        "site": "mace/tools/arg_parser.py:531"
+      },
+      "E0s": {
+        "key": "E0s",
+        "detail": "--E0s",
+        "site": "mace/tools/arg_parser.py:538"
+      },
+      "pseudolabel_replay": {
+        "key": "pseudolabel_replay",
+        "detail": "--pseudolabel_replay",
+        "site": "mace/tools/arg_parser.py:547"
+      },
+      "pseudolabel_replay_compute_stress": {
+        "key": "pseudolabel_replay_compute_stress",
+        "detail": "--pseudolabel_replay_compute_stress",
+        "site": "mace/tools/arg_parser.py:553"
+      },
+      "heads": {
+        "key": "heads",
+        "detail": "--heads",
+        "site": "mace/tools/arg_parser.py:559"
+      },
+      "multiheads_finetuning": {
+        "key": "multiheads_finetuning",
+        "detail": "--multiheads_finetuning",
+        "site": "mace/tools/arg_parser.py:566"
+      },
+      "foundation_head": {
+        "key": "foundation_head",
+        "detail": "--foundation_head",
+        "site": "mace/tools/arg_parser.py:572"
+      },
+      "weight_pt_head": {
+        "key": "weight_pt_head",
+        "detail": "--weight_pt_head",
+        "site": "mace/tools/arg_parser.py:579"
+      },
+      "real_pt_data_ratio_threshold": {
+        "key": "real_pt_data_ratio_threshold",
+        "detail": "--real_pt_data_ratio_threshold",
+        "site": "mace/tools/arg_parser.py:585"
+      },
+      "num_samples_pt": {
+        "key": "num_samples_pt",
+        "detail": "--num_samples_pt",
+        "site": "mace/tools/arg_parser.py:591"
+      },
+      "force_mh_ft_lr": {
+        "key": "force_mh_ft_lr",
+        "detail": "--force_mh_ft_lr",
+        "site": "mace/tools/arg_parser.py:597"
+      },
+      "subselect_pt": {
+        "key": "subselect_pt",
+        "detail": "--subselect_pt",
+        "site": "mace/tools/arg_parser.py:603"
+      },
+      "filter_type_pt": {
+        "key": "filter_type_pt",
+        "detail": "--filter_type_pt",
+        "site": "mace/tools/arg_parser.py:609"
+      },
+      "allow_random_padding_pt": {
+        "key": "allow_random_padding_pt",
+        "detail": "--disallow_random_padding_pt",
+        "site": "mace/tools/arg_parser.py:615"
+      },
+      "pt_train_file": {
+        "key": "pt_train_file",
+        "detail": "--pt_train_file",
+        "site": "mace/tools/arg_parser.py:621"
+      },
+      "pt_valid_file": {
+        "key": "pt_valid_file",
+        "detail": "--pt_valid_file",
+        "site": "mace/tools/arg_parser.py:627"
+      },
+      "foundation_model_elements": {
+        "key": "foundation_model_elements",
+        "detail": "--foundation_model_elements",
+        "site": "mace/tools/arg_parser.py:633"
+      },
+      "keep_isolated_atoms": {
+        "key": "keep_isolated_atoms",
+        "detail": "--keep_isolated_atoms",
+        "site": "mace/tools/arg_parser.py:639"
+      },
+      "lora": {
+        "key": "lora",
+        "detail": "--lora",
+        "site": "mace/tools/arg_parser.py:645"
+      },
+      "lora_rank": {
+        "key": "lora_rank",
+        "detail": "--lora_rank",
+        "site": "mace/tools/arg_parser.py:651"
+      },
+      "lora_alpha": {
+        "key": "lora_alpha",
+        "detail": "--lora_alpha",
+        "site": "mace/tools/arg_parser.py:657"
+      },
+      "energy_key": {
+        "key": "energy_key",
+        "detail": "--energy_key",
+        "site": "mace/tools/arg_parser.py:665"
+      },
+      "forces_key": {
+        "key": "forces_key",
+        "detail": "--forces_key",
+        "site": "mace/tools/arg_parser.py:671"
+      },
+      "virials_key": {
+        "key": "virials_key",
+        "detail": "--virials_key",
+        "site": "mace/tools/arg_parser.py:677"
+      },
+      "stress_key": {
+        "key": "stress_key",
+        "detail": "--stress_key",
+        "site": "mace/tools/arg_parser.py:683"
+      },
+      "dipole_key": {
+        "key": "dipole_key",
+        "detail": "--dipole_key",
+        "site": "mace/tools/arg_parser.py:689"
+      },
+      "polarizability_key": {
+        "key": "polarizability_key",
+        "detail": "--polarizability_key",
+        "site": "mace/tools/arg_parser.py:695"
+      },
+      "magmom_key": {
+        "key": "magmom_key",
+        "detail": "--magmom_key",
+        "site": "mace/tools/arg_parser.py:701"
+      },
+      "magforces_key": {
+        "key": "magforces_key",
+        "detail": "--magforces_key",
+        "site": "mace/tools/arg_parser.py:707"
+      },
+      "head_key": {
+        "key": "head_key",
+        "detail": "--head_key",
+        "site": "mace/tools/arg_parser.py:713"
+      },
+      "charges_key": {
+        "key": "charges_key",
+        "detail": "--charges_key",
+        "site": "mace/tools/arg_parser.py:719"
+      },
+      "elec_temp_key": {
+        "key": "elec_temp_key",
+        "detail": "--elec_temp_key",
+        "site": "mace/tools/arg_parser.py:725"
+      },
+      "total_spin_key": {
+        "key": "total_spin_key",
+        "detail": "--total_spin_key",
+        "site": "mace/tools/arg_parser.py:731"
+      },
+      "total_charge_key": {
+        "key": "total_charge_key",
+        "detail": "--total_charge_key",
+        "site": "mace/tools/arg_parser.py:737"
+      },
+      "embedding_specs": {
+        "key": "embedding_specs",
+        "detail": "--embedding_specs",
+        "site": "mace/tools/arg_parser.py:743"
+      },
+      "skip_evaluate_heads": {
+        "key": "skip_evaluate_heads",
+        "detail": "--skip_evaluate_heads",
+        "site": "mace/tools/arg_parser.py:766"
+      },
+      "loss": {
+        "key": "loss",
+        "detail": "--loss",
+        "site": "mace/tools/arg_parser.py:774"
+      },
+      "forces_weight": {
+        "key": "forces_weight",
+        "detail": "--forces_weight",
+        "site": "mace/tools/arg_parser.py:792"
+      },
+      "swa_forces_weight": {
+        "key": "swa_forces_weight",
+        "detail": "--swa_forces_weight --stage_two_forces_weight",
+        "site": "mace/tools/arg_parser.py:795"
+      },
+      "magforces_weight": {
+        "key": "magforces_weight",
+        "detail": "--magforces_weight",
+        "site": "mace/tools/arg_parser.py:803"
+      },
+      "swa_magforces_weight": {
+        "key": "swa_magforces_weight",
+        "detail": "--swa_magforces_weight --stage_two_magforces_weight",
+        "site": "mace/tools/arg_parser.py:809"
+      },
+      "energy_weight": {
+        "key": "energy_weight",
+        "detail": "--energy_weight",
+        "site": "mace/tools/arg_parser.py:817"
+      },
+      "swa_energy_weight": {
+        "key": "swa_energy_weight",
+        "detail": "--swa_energy_weight --stage_two_energy_weight",
+        "site": "mace/tools/arg_parser.py:820"
+      },
+      "virials_weight": {
+        "key": "virials_weight",
+        "detail": "--virials_weight",
+        "site": "mace/tools/arg_parser.py:828"
+      },
+      "swa_virials_weight": {
+        "key": "swa_virials_weight",
+        "detail": "--swa_virials_weight --stage_two_virials_weight",
+        "site": "mace/tools/arg_parser.py:831"
+      },
+      "stress_weight": {
+        "key": "stress_weight",
+        "detail": "--stress_weight",
+        "site": "mace/tools/arg_parser.py:839"
+      },
+      "swa_stress_weight": {
+        "key": "swa_stress_weight",
+        "detail": "--swa_stress_weight --stage_two_stress_weight",
+        "site": "mace/tools/arg_parser.py:842"
+      },
+      "dipole_weight": {
+        "key": "dipole_weight",
+        "detail": "--dipole_weight",
+        "site": "mace/tools/arg_parser.py:850"
+      },
+      "swa_dipole_weight": {
+        "key": "swa_dipole_weight",
+        "detail": "--swa_dipole_weight --stage_two_dipole_weight",
+        "site": "mace/tools/arg_parser.py:853"
+      },
+      "swa_polarizability_weight": {
+        "key": "swa_polarizability_weight",
+        "detail": "--swa_polarizability_weight --stage_two_polarizability_weight",
+        "site": "mace/tools/arg_parser.py:861"
+      },
+      "polarizability_weight": {
+        "key": "polarizability_weight",
+        "detail": "--polarizability_weight",
+        "site": "mace/tools/arg_parser.py:869"
+      },
+      "config_type_weights": {
+        "key": "config_type_weights",
+        "detail": "--config_type_weights",
+        "site": "mace/tools/arg_parser.py:875"
+      },
+      "huber_delta": {
+        "key": "huber_delta",
+        "detail": "--huber_delta",
+        "site": "mace/tools/arg_parser.py:881"
+      },
+      "optimizer": {
+        "key": "optimizer",
+        "detail": "--optimizer",
+        "site": "mace/tools/arg_parser.py:887"
+      },
+      "beta": {
+        "key": "beta",
+        "detail": "--beta",
+        "site": "mace/tools/arg_parser.py:894"
+      },
+      "beta1_schedulefree": {
+        "key": "beta1_schedulefree",
+        "detail": "--beta1_schedulefree",
+        "site": "mace/tools/arg_parser.py:900"
+      },
+      "beta2_schedulefree": {
+        "key": "beta2_schedulefree",
+        "detail": "--beta2_schedulefree",
+        "site": "mace/tools/arg_parser.py:906"
+      },
+      "warmup_steps_schedulefree": {
+        "key": "warmup_steps_schedulefree",
+        "detail": "--warmup_steps_schedulefree",
+        "site": "mace/tools/arg_parser.py:912"
+      },
+      "batch_size": {
+        "key": "batch_size",
+        "detail": "--batch_size",
+        "site": "mace/tools/arg_parser.py:917"
+      },
+      "valid_batch_size": {
+        "key": "valid_batch_size",
+        "detail": "--valid_batch_size",
+        "site": "mace/tools/arg_parser.py:919"
+      },
+      "lr": {
+        "key": "lr",
+        "detail": "--lr",
+        "site": "mace/tools/arg_parser.py:922"
+      },
+      "swa_lr": {
+        "key": "swa_lr",
+        "detail": "--swa_lr --stage_two_lr",
+        "site": "mace/tools/arg_parser.py:925"
+      },
+      "weight_decay": {
+        "key": "weight_decay",
+        "detail": "--weight_decay",
+        "site": "mace/tools/arg_parser.py:933"
+      },
+      "lr_params_factors": {
+        "key": "lr_params_factors",
+        "detail": "--lr_params_factors",
+        "site": "mace/tools/arg_parser.py:936"
+      },
+      "freeze": {
+        "key": "freeze",
+        "detail": "--freeze",
+        "site": "mace/tools/arg_parser.py:942"
+      },
+      "amsgrad": {
+        "key": "amsgrad",
+        "detail": "--amsgrad",
+        "site": "mace/tools/arg_parser.py:948"
+      },
+      "scheduler": {
+        "key": "scheduler",
+        "detail": "--scheduler",
+        "site": "mace/tools/arg_parser.py:954"
+      },
+      "lr_factor": {
+        "key": "lr_factor",
+        "detail": "--lr_factor",
+        "site": "mace/tools/arg_parser.py:957"
+      },
+      "scheduler_patience": {
+        "key": "scheduler_patience",
+        "detail": "--scheduler_patience",
+        "site": "mace/tools/arg_parser.py:960"
+      },
+      "lr_scheduler_gamma": {
+        "key": "lr_scheduler_gamma",
+        "detail": "--lr_scheduler_gamma",
+        "site": "mace/tools/arg_parser.py:963"
+      },
+      "swa": {
+        "key": "swa",
+        "detail": "--swa --stage_two",
+        "site": "mace/tools/arg_parser.py:969"
+      },
+      "start_swa": {
+        "key": "start_swa",
+        "detail": "--start_swa --start_stage_two",
+        "site": "mace/tools/arg_parser.py:977"
+      },
+      "lbfgs": {
+        "key": "lbfgs",
+        "detail": "--lbfgs",
+        "site": "mace/tools/arg_parser.py:985"
+      },
+      "ema": {
+        "key": "ema",
+        "detail": "--ema",
+        "site": "mace/tools/arg_parser.py:991"
+      },
+      "ema_decay": {
+        "key": "ema_decay",
+        "detail": "--ema_decay",
+        "site": "mace/tools/arg_parser.py:997"
+      },
+      "max_num_epochs": {
+        "key": "max_num_epochs",
+        "detail": "--max_num_epochs",
+        "site": "mace/tools/arg_parser.py:1003"
+      },
+      "patience": {
+        "key": "patience",
+        "detail": "--patience",
+        "site": "mace/tools/arg_parser.py:1006"
+      },
+      "foundation_model": {
+        "key": "foundation_model",
+        "detail": "--foundation_model",
+        "site": "mace/tools/arg_parser.py:1012"
+      },
+      "foundation_model_kwargs": {
+        "key": "foundation_model_kwargs",
+        "detail": "--foundation_model_kwargs",
+        "site": "mace/tools/arg_parser.py:1018"
+      },
+      "foundation_model_readout": {
+        "key": "foundation_model_readout",
+        "detail": "--foundation_model_readout",
+        "site": "mace/tools/arg_parser.py:1024"
+      },
+      "finetune_dipoles_polarizabilities": {
+        "key": "finetune_dipoles_polarizabilities",
+        "detail": "--finetune_dipoles_polarizabilities",
+        "site": "mace/tools/arg_parser.py:1058"
+      },
+      "eval_interval": {
+        "key": "eval_interval",
+        "detail": "--eval_interval",
+        "site": "mace/tools/arg_parser.py:1064"
+      },
+      "keep_checkpoints": {
+        "key": "keep_checkpoints",
+        "detail": "--keep_checkpoints",
+        "site": "mace/tools/arg_parser.py:1067"
+      },
+      "save_all_checkpoints": {
+        "key": "save_all_checkpoints",
+        "detail": "--save_all_checkpoints",
+        "site": "mace/tools/arg_parser.py:1073"
+      },
+      "restart_latest": {
+        "key": "restart_latest",
+        "detail": "--restart_latest",
+        "site": "mace/tools/arg_parser.py:1079"
+      },
+      "save_cpu": {
+        "key": "save_cpu",
+        "detail": "--save_cpu",
+        "site": "mace/tools/arg_parser.py:1085"
+      },
+      "clip_grad": {
+        "key": "clip_grad",
+        "detail": "--clip_grad",
+        "site": "mace/tools/arg_parser.py:1091"
+      },
+      "dry_run": {
+        "key": "dry_run",
+        "detail": "--dry_run",
+        "site": "mace/tools/arg_parser.py:1097"
+      },
+      "enable_cueq": {
+        "key": "enable_cueq",
+        "detail": "--enable_cueq",
+        "site": "mace/tools/arg_parser.py:1104"
+      },
+      "only_cueq": {
+        "key": "only_cueq",
+        "detail": "--only_cueq",
+        "site": "mace/tools/arg_parser.py:1110"
+      },
+      "enable_oeq": {
+        "key": "enable_oeq",
+        "detail": "--enable_oeq",
+        "site": "mace/tools/arg_parser.py:1117"
+      },
+      "wandb": {
+        "key": "wandb",
+        "detail": "--wandb",
+        "site": "mace/tools/arg_parser.py:1125"
+      },
+      "wandb_dir": {
+        "key": "wandb_dir",
+        "detail": "--wandb_dir",
+        "site": "mace/tools/arg_parser.py:1131"
+      },
+      "wandb_project": {
+        "key": "wandb_project",
+        "detail": "--wandb_project",
+        "site": "mace/tools/arg_parser.py:1137"
+      },
+      "wandb_entity": {
+        "key": "wandb_entity",
+        "detail": "--wandb_entity",
+        "site": "mace/tools/arg_parser.py:1143"
+      },
+      "wandb_name": {
+        "key": "wandb_name",
+        "detail": "--wandb_name",
+        "site": "mace/tools/arg_parser.py:1149"
+      },
+      "wandb_log_hypers": {
+        "key": "wandb_log_hypers",
+        "detail": "--wandb_log_hypers",
+        "site": "mace/tools/arg_parser.py:1155"
+      },
+      "num_mag_radial_basis_one_body": {
+        "key": "num_mag_radial_basis_one_body",
+        "detail": "--num_mag_radial_basis_one_body",
+        "site": "mace/tools/arg_parser.py:1175"
+      },
+      "m_max": {
+        "key": "m_max",
+        "detail": "--m_max",
+        "site": "mace/tools/arg_parser.py:1181"
+      },
+      "max_m_ell": {
+        "key": "max_m_ell",
+        "detail": "--max_m_ell",
+        "site": "mace/tools/arg_parser.py:1193"
+      },
+      "num_mag_radial_basis": {
+        "key": "num_mag_radial_basis",
+        "detail": "--num_mag_radial_basis",
+        "site": "mace/tools/arg_parser.py:1199"
+      },
+      "use_magmom_one_body": {
+        "key": "use_magmom_one_body",
+        "detail": "--use_magmom_one_body",
+        "site": "mace/tools/arg_parser.py:1205"
+      },
+      "train_one_body_contribution": {
+        "key": "train_one_body_contribution",
+        "detail": "--train_one_body_contribution",
+        "site": "mace/tools/arg_parser.py:1211"
+      },
+      "data_aug_magmom": {
+        "key": "data_aug_magmom",
+        "detail": "--data_aug_magmom",
+        "site": "mace/tools/arg_parser.py:1218"
+      },
+      "data_aug_magmom_mode": {
+        "key": "data_aug_magmom_mode",
+        "detail": "--data_aug_magmom_mode",
+        "site": "mace/tools/arg_parser.py:1224"
+      },
+      "config": {
+        "key": "config",
+        "detail": "--config",
+        "site": "mace/tools/arg_parser.py:23"
+      }
+    }
+  },
+  {
+    "label": "mace_prepare_data dests",
+    "prefix": "prep.",
+    "noun": "dests",
+    "decls": {
+      "train_file": {
+        "key": "train_file",
+        "detail": "--train_file",
+        "site": "mace/tools/arg_parser.py:1258"
+      },
+      "valid_file": {
+        "key": "valid_file",
+        "detail": "--valid_file",
+        "site": "mace/tools/arg_parser.py:1265"
+      },
+      "num_process": {
+        "key": "num_process",
+        "detail": "--num_process",
+        "site": "mace/tools/arg_parser.py:1272"
+      },
+      "valid_fraction": {
+        "key": "valid_fraction",
+        "detail": "--valid_fraction",
+        "site": "mace/tools/arg_parser.py:1278"
+      },
+      "test_file": {
+        "key": "test_file",
+        "detail": "--test_file",
+        "site": "mace/tools/arg_parser.py:1285"
+      },
+      "work_dir": {
+        "key": "work_dir",
+        "detail": "--work_dir",
+        "site": "mace/tools/arg_parser.py:1292"
+      },
+      "h5_prefix": {
+        "key": "h5_prefix",
+        "detail": "--h5_prefix",
+        "site": "mace/tools/arg_parser.py:1298"
+      },
+      "r_max": {
+        "key": "r_max",
+        "detail": "--r_max",
+        "site": "mace/tools/arg_parser.py:1304"
+      },
+      "config_type_weights": {
+        "key": "config_type_weights",
+        "detail": "--config_type_weights",
+        "site": "mace/tools/arg_parser.py:1307"
+      },
+      "energy_key": {
+        "key": "energy_key",
+        "detail": "--energy_key",
+        "site": "mace/tools/arg_parser.py:1313"
+      },
+      "forces_key": {
+        "key": "forces_key",
+        "detail": "--forces_key",
+        "site": "mace/tools/arg_parser.py:1319"
+      },
+      "virials_key": {
+        "key": "virials_key",
+        "detail": "--virials_key",
+        "site": "mace/tools/arg_parser.py:1325"
+      },
+      "stress_key": {
+        "key": "stress_key",
+        "detail": "--stress_key",
+        "site": "mace/tools/arg_parser.py:1331"
+      },
+      "dipole_key": {
+        "key": "dipole_key",
+        "detail": "--dipole_key",
+        "site": "mace/tools/arg_parser.py:1337"
+      },
+      "polarizability_key": {
+        "key": "polarizability_key",
+        "detail": "--polarizability_key",
+        "site": "mace/tools/arg_parser.py:1343"
+      },
+      "charges_key": {
+        "key": "charges_key",
+        "detail": "--charges_key",
+        "site": "mace/tools/arg_parser.py:1349"
+      },
+      "atomic_numbers": {
+        "key": "atomic_numbers",
+        "detail": "--atomic_numbers",
+        "site": "mace/tools/arg_parser.py:1355"
+      },
+      "compute_statistics": {
+        "key": "compute_statistics",
+        "detail": "--compute_statistics",
+        "site": "mace/tools/arg_parser.py:1362"
+      },
+      "batch_size": {
+        "key": "batch_size",
+        "detail": "--batch_size",
+        "site": "mace/tools/arg_parser.py:1368"
+      },
+      "scaling": {
+        "key": "scaling",
+        "detail": "--scaling",
+        "site": "mace/tools/arg_parser.py:1375"
+      },
+      "E0s": {
+        "key": "E0s",
+        "detail": "--E0s",
+        "site": "mace/tools/arg_parser.py:1382"
+      },
+      "shuffle": {
+        "key": "shuffle",
+        "detail": "--shuffle",
+        "site": "mace/tools/arg_parser.py:1389"
+      },
+      "seed": {
+        "key": "seed",
+        "detail": "--seed",
+        "site": "mace/tools/arg_parser.py:1395"
+      },
+      "head_key": {
+        "key": "head_key",
+        "detail": "--head_key",
+        "site": "mace/tools/arg_parser.py:1401"
+      },
+      "heads": {
+        "key": "heads",
+        "detail": "--heads",
+        "site": "mace/tools/arg_parser.py:1407"
+      },
+      "config": {
+        "key": "config",
+        "detail": "--config",
+        "site": "mace/tools/arg_parser.py:1248"
+      }
+    }
+  },
+  {
+    "label": "mace/cli parser dests",
+    "prefix": "cli.",
+    "noun": "dests",
+    "decls": {
+      "active_learning_md.config": {
+        "key": "active_learning_md.config",
+        "detail": "--config",
+        "site": "mace/cli/active_learning_md.py:20"
+      },
+      "active_learning_md.config_index": {
+        "key": "active_learning_md.config_index",
+        "detail": "--config_index",
+        "site": "mace/cli/active_learning_md.py:22"
+      },
+      "active_learning_md.error_threshold": {
+        "key": "active_learning_md.error_threshold",
+        "detail": "--error_threshold",
+        "site": "mace/cli/active_learning_md.py:25"
+      },
+      "active_learning_md.temperature_K": {
+        "key": "active_learning_md.temperature_K",
+        "detail": "--temperature_K",
+        "site": "mace/cli/active_learning_md.py:27"
+      },
+      "active_learning_md.friction": {
+        "key": "active_learning_md.friction",
+        "detail": "--friction",
+        "site": "mace/cli/active_learning_md.py:28"
+      },
+      "active_learning_md.timestep": {
+        "key": "active_learning_md.timestep",
+        "detail": "--timestep",
+        "site": "mace/cli/active_learning_md.py:29"
+      },
+      "active_learning_md.nsteps": {
+        "key": "active_learning_md.nsteps",
+        "detail": "--nsteps",
+        "site": "mace/cli/active_learning_md.py:30"
+      },
+      "active_learning_md.nprint": {
+        "key": "active_learning_md.nprint",
+        "detail": "--nprint",
+        "site": "mace/cli/active_learning_md.py:32"
+      },
+      "active_learning_md.nsave": {
+        "key": "active_learning_md.nsave",
+        "detail": "--nsave",
+        "site": "mace/cli/active_learning_md.py:35"
+      },
+      "active_learning_md.ncheckerror": {
+        "key": "active_learning_md.ncheckerror",
+        "detail": "--ncheckerror",
+        "site": "mace/cli/active_learning_md.py:38"
+      },
+      "active_learning_md.model": {
+        "key": "active_learning_md.model",
+        "detail": "--model",
+        "site": "mace/cli/active_learning_md.py:42"
+      },
+      "active_learning_md.output": {
+        "key": "active_learning_md.output",
+        "detail": "--output",
+        "site": "mace/cli/active_learning_md.py:47"
+      },
+      "active_learning_md.device": {
+        "key": "active_learning_md.device",
+        "detail": "--device",
+        "site": "mace/cli/active_learning_md.py:49"
+      },
+      "active_learning_md.default_dtype": {
+        "key": "active_learning_md.default_dtype",
+        "detail": "--default_dtype",
+        "site": "mace/cli/active_learning_md.py:56"
+      },
+      "active_learning_md.compute_stress": {
+        "key": "active_learning_md.compute_stress",
+        "detail": "--compute_stress",
+        "site": "mace/cli/active_learning_md.py:63"
+      },
+      "active_learning_md.info_prefix": {
+        "key": "active_learning_md.info_prefix",
+        "detail": "--info_prefix",
+        "site": "mace/cli/active_learning_md.py:69"
+      },
+      "convert_cueq_e3nn.input_model": {
+        "key": "convert_cueq_e3nn.input_model",
+        "detail": "input_model",
+        "site": "mace/cli/convert_cueq_e3nn.py:284"
+      },
+      "convert_cueq_e3nn.output_model": {
+        "key": "convert_cueq_e3nn.output_model",
+        "detail": "--output_model",
+        "site": "mace/cli/convert_cueq_e3nn.py:286"
+      },
+      "convert_cueq_e3nn.device": {
+        "key": "convert_cueq_e3nn.device",
+        "detail": "--device",
+        "site": "mace/cli/convert_cueq_e3nn.py:288"
+      },
+      "convert_cueq_e3nn.return_model": {
+        "key": "convert_cueq_e3nn.return_model",
+        "detail": "--return_model",
+        "site": "mace/cli/convert_cueq_e3nn.py:290"
+      },
+      "convert_device.target_device": {
+        "key": "convert_device.target_device",
+        "detail": "--target_device -t",
+        "site": "mace/cli/convert_device.py:9"
+      },
+      "convert_device.output_file": {
+        "key": "convert_device.output_file",
+        "detail": "--output_file -o",
+        "site": "mace/cli/convert_device.py:15"
+      },
+      "convert_device.model_file": {
+        "key": "convert_device.model_file",
+        "detail": "model_file",
+        "site": "mace/cli/convert_device.py:19"
+      },
+      "convert_e3nn_cueq.input_model": {
+        "key": "convert_e3nn_cueq.input_model",
+        "detail": "input_model",
+        "site": "mace/cli/convert_e3nn_cueq.py:282"
+      },
+      "convert_e3nn_cueq.output_model": {
+        "key": "convert_e3nn_cueq.output_model",
+        "detail": "--output_model",
+        "site": "mace/cli/convert_e3nn_cueq.py:284"
+      },
+      "convert_e3nn_cueq.device": {
+        "key": "convert_e3nn_cueq.device",
+        "detail": "--device",
+        "site": "mace/cli/convert_e3nn_cueq.py:288"
+      },
+      "convert_e3nn_cueq.return_model": {
+        "key": "convert_e3nn_cueq.return_model",
+        "detail": "--return_model",
+        "site": "mace/cli/convert_e3nn_cueq.py:290"
+      },
+      "convert_e3nn_hybrid.input_model": {
+        "key": "convert_e3nn_hybrid.input_model",
+        "detail": "input_model",
+        "site": "mace/cli/convert_e3nn_hybrid.py:143"
+      },
+      "convert_e3nn_hybrid.output_model": {
+        "key": "convert_e3nn_hybrid.output_model",
+        "detail": "--output_model",
+        "site": "mace/cli/convert_e3nn_hybrid.py:145"
+      },
+      "convert_e3nn_hybrid.device": {
+        "key": "convert_e3nn_hybrid.device",
+        "detail": "--device",
+        "site": "mace/cli/convert_e3nn_hybrid.py:149"
+      },
+      "convert_e3nn_hybrid.return_model": {
+        "key": "convert_e3nn_hybrid.return_model",
+        "detail": "--return_model",
+        "site": "mace/cli/convert_e3nn_hybrid.py:150"
+      },
+      "convert_e3nn_oeq.input_model": {
+        "key": "convert_e3nn_oeq.input_model",
+        "detail": "input_model",
+        "site": "mace/cli/convert_e3nn_oeq.py:69"
+      },
+      "convert_e3nn_oeq.output_model": {
+        "key": "convert_e3nn_oeq.output_model",
+        "detail": "--output_model",
+        "site": "mace/cli/convert_e3nn_oeq.py:71"
+      },
+      "convert_e3nn_oeq.device": {
+        "key": "convert_e3nn_oeq.device",
+        "detail": "--device",
+        "site": "mace/cli/convert_e3nn_oeq.py:75"
+      },
+      "convert_e3nn_oeq.return_model": {
+        "key": "convert_e3nn_oeq.return_model",
+        "detail": "--return_model",
+        "site": "mace/cli/convert_e3nn_oeq.py:77"
+      },
+      "convert_oeq_e3nn.input_model": {
+        "key": "convert_oeq_e3nn.input_model",
+        "detail": "input_model",
+        "site": "mace/cli/convert_oeq_e3nn.py:58"
+      },
+      "convert_oeq_e3nn.output_model": {
+        "key": "convert_oeq_e3nn.output_model",
+        "detail": "--output_model",
+        "site": "mace/cli/convert_oeq_e3nn.py:60"
+      },
+      "convert_oeq_e3nn.device": {
+        "key": "convert_oeq_e3nn.device",
+        "detail": "--device",
+        "site": "mace/cli/convert_oeq_e3nn.py:62"
+      },
+      "convert_oeq_e3nn.return_model": {
+        "key": "convert_oeq_e3nn.return_model",
+        "detail": "--return_model",
+        "site": "mace/cli/convert_oeq_e3nn.py:64"
+      },
+      "create_lammps_model.model_path": {
+        "key": "create_lammps_model.model_path",
+        "detail": "model_path",
+        "site": "mace/cli/create_lammps_model.py:21"
+      },
+      "create_lammps_model.head": {
+        "key": "create_lammps_model.head",
+        "detail": "--head",
+        "site": "mace/cli/create_lammps_model.py:26"
+      },
+      "create_lammps_model.dtype": {
+        "key": "create_lammps_model.dtype",
+        "detail": "--dtype",
+        "site": "mace/cli/create_lammps_model.py:33"
+      },
+      "create_lammps_model.format": {
+        "key": "create_lammps_model.format",
+        "detail": "--format",
+        "site": "mace/cli/create_lammps_model.py:40"
+      },
+      "eval_configs.configs": {
+        "key": "eval_configs.configs",
+        "detail": "--configs",
+        "site": "mace/cli/eval_configs.py:30"
+      },
+      "eval_configs.model": {
+        "key": "eval_configs.model",
+        "detail": "--model",
+        "site": "mace/cli/eval_configs.py:31"
+      },
+      "eval_configs.output": {
+        "key": "eval_configs.output",
+        "detail": "--output",
+        "site": "mace/cli/eval_configs.py:32"
+      },
+      "eval_configs.device": {
+        "key": "eval_configs.device",
+        "detail": "--device",
+        "site": "mace/cli/eval_configs.py:34"
+      },
+      "eval_configs.enable_cueq": {
+        "key": "eval_configs.enable_cueq",
+        "detail": "--enable_cueq",
+        "site": "mace/cli/eval_configs.py:41"
+      },
+      "eval_configs.default_dtype": {
+        "key": "eval_configs.default_dtype",
+        "detail": "--default_dtype",
+        "site": "mace/cli/eval_configs.py:47"
+      },
+      "eval_configs.batch_size": {
+        "key": "eval_configs.batch_size",
+        "detail": "--batch_size",
+        "site": "mace/cli/eval_configs.py:53"
+      },
+      "eval_configs.compute_stress": {
+        "key": "eval_configs.compute_stress",
+        "detail": "--compute_stress",
+        "site": "mace/cli/eval_configs.py:55"
+      },
+      "eval_configs.compute_bec": {
+        "key": "eval_configs.compute_bec",
+        "detail": "--compute_bec",
+        "site": "mace/cli/eval_configs.py:61"
+      },
+      "eval_configs.return_contributions": {
+        "key": "eval_configs.return_contributions",
+        "detail": "--return_contributions",
+        "site": "mace/cli/eval_configs.py:67"
+      },
+      "eval_configs.return_descriptors": {
+        "key": "eval_configs.return_descriptors",
+        "detail": "--return_descriptors",
+        "site": "mace/cli/eval_configs.py:73"
+      },
+      "eval_configs.descriptor_num_layers": {
+        "key": "eval_configs.descriptor_num_layers",
+        "detail": "--descriptor_num_layers",
+        "site": "mace/cli/eval_configs.py:79"
+      },
+      "eval_configs.descriptor_aggregation_method": {
+        "key": "eval_configs.descriptor_aggregation_method",
+        "detail": "--descriptor_aggregation_method",
+        "site": "mace/cli/eval_configs.py:85"
+      },
+      "eval_configs.descriptor_invariants_only": {
+        "key": "eval_configs.descriptor_invariants_only",
+        "detail": "--descriptor_invariants_only",
+        "site": "mace/cli/eval_configs.py:91"
+      },
+      "eval_configs.return_node_energies": {
+        "key": "eval_configs.return_node_energies",
+        "detail": "--return_node_energies",
+        "site": "mace/cli/eval_configs.py:97"
+      },
+      "eval_configs.info_prefix": {
+        "key": "eval_configs.info_prefix",
+        "detail": "--info_prefix",
+        "site": "mace/cli/eval_configs.py:103"
+      },
+      "eval_configs.head": {
+        "key": "eval_configs.head",
+        "detail": "--head",
+        "site": "mace/cli/eval_configs.py:109"
+      },
+      "eval_configs.magmom_key": {
+        "key": "eval_configs.magmom_key",
+        "detail": "--magmom_key",
+        "site": "mace/cli/eval_configs.py:116"
+      },
+      "eval_configs.return_magforces": {
+        "key": "eval_configs.return_magforces",
+        "detail": "--return_magforces",
+        "site": "mace/cli/eval_configs.py:123"
+      },
+      "fine_tuning_select.configs_pt": {
+        "key": "fine_tuning_select.configs_pt",
+        "detail": "--configs_pt",
+        "site": "mace/cli/fine_tuning_select.py:94"
+      },
+      "fine_tuning_select.configs_ft": {
+        "key": "fine_tuning_select.configs_ft",
+        "detail": "--configs_ft",
+        "site": "mace/cli/fine_tuning_select.py:99"
+      },
+      "fine_tuning_select.num_samples": {
+        "key": "fine_tuning_select.num_samples",
+        "detail": "--num_samples",
+        "site": "mace/cli/fine_tuning_select.py:105"
+      },
+      "fine_tuning_select.subselect": {
+        "key": "fine_tuning_select.subselect",
+        "detail": "--subselect",
+        "site": "mace/cli/fine_tuning_select.py:112"
+      },
+      "fine_tuning_select.model": {
+        "key": "fine_tuning_select.model",
+        "detail": "--model",
+        "site": "mace/cli/fine_tuning_select.py:119"
+      },
+      "fine_tuning_select.output": {
+        "key": "fine_tuning_select.output",
+        "detail": "--output",
+        "site": "mace/cli/fine_tuning_select.py:121"
+      },
+      "fine_tuning_select.descriptors": {
+        "key": "fine_tuning_select.descriptors",
+        "detail": "--descriptors",
+        "site": "mace/cli/fine_tuning_select.py:123"
+      },
+      "fine_tuning_select.device": {
+        "key": "fine_tuning_select.device",
+        "detail": "--device",
+        "site": "mace/cli/fine_tuning_select.py:126"
+      },
+      "fine_tuning_select.default_dtype": {
+        "key": "fine_tuning_select.default_dtype",
+        "detail": "--default_dtype",
+        "site": "mace/cli/fine_tuning_select.py:133"
+      },
+      "fine_tuning_select.head_pt": {
+        "key": "fine_tuning_select.head_pt",
+        "detail": "--head_pt",
+        "site": "mace/cli/fine_tuning_select.py:140"
+      },
+      "fine_tuning_select.head_ft": {
+        "key": "fine_tuning_select.head_ft",
+        "detail": "--head_ft",
+        "site": "mace/cli/fine_tuning_select.py:146"
+      },
+      "fine_tuning_select.filtering_type": {
+        "key": "fine_tuning_select.filtering_type",
+        "detail": "--filtering_type",
+        "site": "mace/cli/fine_tuning_select.py:152"
+      },
+      "fine_tuning_select.weight_ft": {
+        "key": "fine_tuning_select.weight_ft",
+        "detail": "--weight_ft",
+        "site": "mace/cli/fine_tuning_select.py:159"
+      },
+      "fine_tuning_select.weight_pt": {
+        "key": "fine_tuning_select.weight_pt",
+        "detail": "--weight_pt",
+        "site": "mace/cli/fine_tuning_select.py:165"
+      },
+      "fine_tuning_select.filter_atomic_numbers_pt": {
+        "key": "fine_tuning_select.filter_atomic_numbers_pt",
+        "detail": "--filter_atomic_numbers_pt",
+        "site": "mace/cli/fine_tuning_select.py:171"
+      },
+      "fine_tuning_select.allow_random_padding": {
+        "key": "fine_tuning_select.allow_random_padding",
+        "detail": "--disallow_random_padding",
+        "site": "mace/cli/fine_tuning_select.py:177"
+      },
+      "fine_tuning_select.seed": {
+        "key": "fine_tuning_select.seed",
+        "detail": "--seed",
+        "site": "mace/cli/fine_tuning_select.py:182"
+      },
+      "fine_tuning_select.config": {
+        "key": "fine_tuning_select.config",
+        "detail": "--config",
+        "site": "mace/cli/fine_tuning_select.py:83"
+      },
+      "plot_train.path": {
+        "key": "plot_train.path",
+        "detail": "--path",
+        "site": "mace/cli/plot_train.py:78"
+      },
+      "plot_train.min_epoch": {
+        "key": "plot_train.min_epoch",
+        "detail": "--min_epoch",
+        "site": "mace/cli/plot_train.py:81"
+      },
+      "plot_train.start_swa": {
+        "key": "plot_train.start_swa",
+        "detail": "--start_stage_two --start_swa",
+        "site": "mace/cli/plot_train.py:84"
+      },
+      "plot_train.linear": {
+        "key": "plot_train.linear",
+        "detail": "--linear",
+        "site": "mace/cli/plot_train.py:93"
+      },
+      "plot_train.error_bars": {
+        "key": "plot_train.error_bars",
+        "detail": "--error_bars",
+        "site": "mace/cli/plot_train.py:100"
+      },
+      "plot_train.keys": {
+        "key": "plot_train.keys",
+        "detail": "--keys",
+        "site": "mace/cli/plot_train.py:107"
+      },
+      "plot_train.output_format": {
+        "key": "plot_train.output_format",
+        "detail": "--output_format",
+        "site": "mace/cli/plot_train.py:115"
+      },
+      "plot_train.heads": {
+        "key": "plot_train.heads",
+        "detail": "--heads",
+        "site": "mace/cli/plot_train.py:123"
+      },
+      "polar_density_cube.configs": {
+        "key": "polar_density_cube.configs",
+        "detail": "--configs",
+        "site": "mace/cli/polar_density_cube.py:511"
+      },
+      "polar_density_cube.model": {
+        "key": "polar_density_cube.model",
+        "detail": "--model",
+        "site": "mace/cli/polar_density_cube.py:513"
+      },
+      "polar_density_cube.output": {
+        "key": "polar_density_cube.output",
+        "detail": "--output",
+        "site": "mace/cli/polar_density_cube.py:517"
+      },
+      "polar_density_cube.index": {
+        "key": "polar_density_cube.index",
+        "detail": "--index",
+        "site": "mace/cli/polar_density_cube.py:518"
+      },
+      "polar_density_cube.quantity": {
+        "key": "polar_density_cube.quantity",
+        "detail": "--quantity",
+        "site": "mace/cli/polar_density_cube.py:520"
+      },
+      "polar_density_cube.grid": {
+        "key": "polar_density_cube.grid",
+        "detail": "--grid",
+        "site": "mace/cli/polar_density_cube.py:526"
+      },
+      "polar_density_cube.device": {
+        "key": "polar_density_cube.device",
+        "detail": "--device",
+        "site": "mace/cli/polar_density_cube.py:533"
+      },
+      "polar_density_cube.default_dtype": {
+        "key": "polar_density_cube.default_dtype",
+        "detail": "--default_dtype",
+        "site": "mace/cli/polar_density_cube.py:535"
+      },
+      "polar_density_cube.sigma": {
+        "key": "polar_density_cube.sigma",
+        "detail": "--sigma",
+        "site": "mace/cli/polar_density_cube.py:537"
+      },
+      "polar_density_cube.kspace_cutoff": {
+        "key": "polar_density_cube.kspace_cutoff",
+        "detail": "--kspace_cutoff",
+        "site": "mace/cli/polar_density_cube.py:538"
+      },
+      "polar_density_cube.backend": {
+        "key": "polar_density_cube.backend",
+        "detail": "--backend",
+        "site": "mace/cli/polar_density_cube.py:540"
+      },
+      "polar_density_cube.realspace_cutoff_factor": {
+        "key": "polar_density_cube.realspace_cutoff_factor",
+        "detail": "--realspace_cutoff_factor",
+        "site": "mace/cli/polar_density_cube.py:546"
+      },
+      "polar_density_cube.chunk_size": {
+        "key": "polar_density_cube.chunk_size",
+        "detail": "--chunk_size",
+        "site": "mace/cli/polar_density_cube.py:552"
+      },
+      "polar_density_cube.subtract_total_charge": {
+        "key": "polar_density_cube.subtract_total_charge",
+        "detail": "--subtract_total_charge",
+        "site": "mace/cli/polar_density_cube.py:558"
+      },
+      "polar_density_cube.external_field": {
+        "key": "polar_density_cube.external_field",
+        "detail": "--external_field",
+        "site": "mace/cli/polar_density_cube.py:563"
+      },
+      "polar_density_cube.fermi_level": {
+        "key": "polar_density_cube.fermi_level",
+        "detail": "--fermi_level",
+        "site": "mace/cli/polar_density_cube.py:570"
+      },
+      "polar_density_cube.write_potential": {
+        "key": "polar_density_cube.write_potential",
+        "detail": "--write_potential",
+        "site": "mace/cli/polar_density_cube.py:576"
+      },
+      "polar_density_cube.quality_report": {
+        "key": "polar_density_cube.quality_report",
+        "detail": "--quality_report",
+        "site": "mace/cli/polar_density_cube.py:581"
+      },
+      "select_head.head_name": {
+        "key": "select_head.head_name",
+        "detail": "--head_name -n",
+        "site": "mace/cli/select_head.py:12"
+      },
+      "select_head.list_heads": {
+        "key": "select_head.list_heads",
+        "detail": "--list_heads -l",
+        "site": "mace/cli/select_head.py:18"
+      },
+      "select_head.target_device": {
+        "key": "select_head.target_device",
+        "detail": "--target_device -d",
+        "site": "mace/cli/select_head.py:24"
+      },
+      "select_head.output_file": {
+        "key": "select_head.output_file",
+        "detail": "--output_file -o",
+        "site": "mace/cli/select_head.py:29"
+      },
+      "select_head.model_file": {
+        "key": "select_head.model_file",
+        "detail": "model_file",
+        "site": "mace/cli/select_head.py:33"
+      }
+    }
+  },
+  {
+    "label": "--model choices",
+    "prefix": "choice.",
+    "noun": "choices",
+    "decls": {
+      "BOTNet": {
+        "key": "BOTNet",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:138"
+      },
+      "MACE": {
+        "key": "MACE",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:139"
+      },
+      "ScaleShiftMACE": {
+        "key": "ScaleShiftMACE",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:140"
+      },
+      "PolarMACE": {
+        "key": "PolarMACE",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:141"
+      },
+      "MACELES": {
+        "key": "MACELES",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:142"
+      },
+      "ScaleShiftBOTNet": {
+        "key": "ScaleShiftBOTNet",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:143"
+      },
+      "AtomicDipolesMACE": {
+        "key": "AtomicDipolesMACE",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:144"
+      },
+      "AtomicDielectricMACE": {
+        "key": "AtomicDielectricMACE",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:145"
+      },
+      "EnergyDipolesMACE": {
+        "key": "EnergyDipolesMACE",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:146"
+      },
+      "MagneticScaleShiftMACE": {
+        "key": "MagneticScaleShiftMACE",
+        "detail": "--model choice",
+        "site": "mace/tools/arg_parser.py:147"
+      }
+    }
+  },
+  {
+    "label": "model-level classes",
+    "prefix": "model.",
+    "noun": "classes",
+    "decls": {
+      "MACE": {
+        "key": "MACE",
+        "detail": "",
+        "site": "mace/modules/models.py:47"
+      },
+      "ScaleShiftMACE": {
+        "key": "ScaleShiftMACE",
+        "detail": "",
+        "site": "mace/modules/models.py:447"
+      },
+      "AtomicDipolesMACE": {
+        "key": "AtomicDipolesMACE",
+        "detail": "",
+        "site": "mace/modules/models.py:632"
+      },
+      "AtomicDielectricMACE": {
+        "key": "AtomicDielectricMACE",
+        "detail": "",
+        "site": "mace/modules/models.py:848"
+      },
+      "EnergyDipolesMACE": {
+        "key": "EnergyDipolesMACE",
+        "detail": "",
+        "site": "mace/modules/models.py:1205"
+      },
+      "MACELES": {
+        "key": "MACELES",
+        "detail": "",
+        "site": "mace/modules/extensions.py:142"
+      },
+      "PolarMACE": {
+        "key": "PolarMACE",
+        "detail": "",
+        "site": "mace/modules/extensions.py:666"
+      },
+      "SHModule": {
+        "key": "SHModule",
+        "detail": "",
+        "site": "mace/modules/extensions.py:1357"
+      },
+      "ChebyshevBasisGeneral": {
+        "key": "ChebyshevBasisGeneral",
+        "detail": "",
+        "site": "mace/modules/extensions.py:1380"
+      },
+      "MagneticMACE": {
+        "key": "MagneticMACE",
+        "detail": "",
+        "site": "mace/modules/extensions.py:1434"
+      },
+      "MagneticScaleShiftMACE": {
+        "key": "MagneticScaleShiftMACE",
+        "detail": "",
+        "site": "mace/modules/extensions.py:1712"
+      },
+      "MagneticSCFMACE": {
+        "key": "MagneticSCFMACE",
+        "detail": "",
+        "site": "mace/modules/extensions.py:1976"
+      },
+      "TimeReversalSymmetrizedMACE": {
+        "key": "TimeReversalSymmetrizedMACE",
+        "detail": "",
+        "site": "mace/modules/extensions.py:2116"
+      }
+    }
+  },
+  {
+    "label": "registry entries",
+    "prefix": "reg.",
+    "noun": "entries",
+    "decls": {
+      "RealAgnosticResidualInteractionBlock": {
+        "key": "RealAgnosticResidualInteractionBlock",
+        "detail": "interaction_classes",
+        "site": "mace/modules/__init__.py:72"
+      },
+      "RealAgnosticAttResidualInteractionBlock": {
+        "key": "RealAgnosticAttResidualInteractionBlock",
+        "detail": "interaction_classes",
+        "site": "mace/modules/__init__.py:73"
+      },
+      "RealAgnosticInteractionBlock": {
+        "key": "RealAgnosticInteractionBlock",
+        "detail": "interaction_classes",
+        "site": "mace/modules/__init__.py:74"
+      },
+      "RealAgnosticDensityInteractionBlock": {
+        "key": "RealAgnosticDensityInteractionBlock",
+        "detail": "interaction_classes",
+        "site": "mace/modules/__init__.py:75"
+      },
+      "RealAgnosticDensityResidualInteractionBlock": {
+        "key": "RealAgnosticDensityResidualInteractionBlock",
+        "detail": "interaction_classes",
+        "site": "mace/modules/__init__.py:76"
+      },
+      "RealAgnosticResidualNonLinearInteractionBlock": {
+        "key": "RealAgnosticResidualNonLinearInteractionBlock",
+        "detail": "interaction_classes",
+        "site": "mace/modules/__init__.py:77"
+      },
+      "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock": {
+        "key": "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+        "detail": "interaction_classes",
+        "site": "mace/modules/__init__.py:78"
+      },
+      "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock": {
+        "key": "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
+        "detail": "interaction_classes",
+        "site": "mace/modules/__init__.py:79"
+      },
+      "LinearReadoutBlock": {
+        "key": "LinearReadoutBlock",
+        "detail": "readout_classes",
+        "site": "mace/modules/__init__.py:83"
+      },
+      "LinearDipoleReadoutBlock": {
+        "key": "LinearDipoleReadoutBlock",
+        "detail": "readout_classes",
+        "site": "mace/modules/__init__.py:84"
+      },
+      "NonLinearDipoleReadoutBlock": {
+        "key": "NonLinearDipoleReadoutBlock",
+        "detail": "readout_classes",
+        "site": "mace/modules/__init__.py:85"
+      },
+      "NonLinearReadoutBlock": {
+        "key": "NonLinearReadoutBlock",
+        "detail": "readout_classes",
+        "site": "mace/modules/__init__.py:86"
+      },
+      "NonLinearBiasReadoutBlock": {
+        "key": "NonLinearBiasReadoutBlock",
+        "detail": "readout_classes",
+        "site": "mace/modules/__init__.py:87"
+      },
+      "GeneralNonLinearBiasReadoutBlock": {
+        "key": "GeneralNonLinearBiasReadoutBlock",
+        "detail": "readout_classes",
+        "site": "mace/modules/__init__.py:88"
+      },
+      "std_scaling": {
+        "key": "std_scaling",
+        "detail": "scaling_classes",
+        "site": "mace/modules/__init__.py:92"
+      },
+      "rms_forces_scaling": {
+        "key": "rms_forces_scaling",
+        "detail": "scaling_classes",
+        "site": "mace/modules/__init__.py:93"
+      },
+      "rms_dipoles_scaling": {
+        "key": "rms_dipoles_scaling",
+        "detail": "scaling_classes",
+        "site": "mace/modules/__init__.py:94"
+      },
+      "abs": {
+        "key": "abs",
+        "detail": "gate_dict",
+        "site": "mace/modules/__init__.py:98"
+      },
+      "tanh": {
+        "key": "tanh",
+        "detail": "gate_dict",
+        "site": "mace/modules/__init__.py:99"
+      },
+      "silu": {
+        "key": "silu",
+        "detail": "gate_dict",
+        "site": "mace/modules/__init__.py:100"
+      },
+      "None": {
+        "key": "None",
+        "detail": "gate_dict",
+        "site": "mace/modules/__init__.py:101"
+      }
+    }
+  },
+  {
+    "label": "radial classes",
+    "prefix": "radial.",
+    "noun": "classes",
+    "decls": {
+      "BesselBasis": {
+        "key": "BesselBasis",
+        "detail": "",
+        "site": "mace/modules/radial.py:18"
+      },
+      "ChebychevBasis": {
+        "key": "ChebychevBasis",
+        "detail": "",
+        "site": "mace/modules/radial.py:61"
+      },
+      "GaussianBasis": {
+        "key": "GaussianBasis",
+        "detail": "",
+        "site": "mace/modules/radial.py:89"
+      },
+      "PolynomialCutoff": {
+        "key": "PolynomialCutoff",
+        "detail": "",
+        "site": "mace/modules/radial.py:113"
+      },
+      "ZBLBasis": {
+        "key": "ZBLBasis",
+        "detail": "",
+        "site": "mace/modules/radial.py:149"
+      },
+      "AgnesiTransform": {
+        "key": "AgnesiTransform",
+        "detail": "",
+        "site": "mace/modules/radial.py:225"
+      },
+      "SoftTransform": {
+        "key": "SoftTransform",
+        "detail": "",
+        "site": "mace/modules/radial.py:285"
+      },
+      "RadialMLP": {
+        "key": "RadialMLP",
+        "detail": "",
+        "site": "mace/modules/radial.py:361"
+      }
+    }
+  },
+  {
+    "label": "block classes",
+    "prefix": "block.",
+    "noun": "classes",
+    "decls": {
+      "LinearNodeEmbeddingBlock": {
+        "key": "LinearNodeEmbeddingBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:45"
+      },
+      "LinearReadoutBlock": {
+        "key": "LinearReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:65"
+      },
+      "NonLinearReadoutBlock": {
+        "key": "NonLinearReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:87"
+      },
+      "NonLinearBiasReadoutBlock": {
+        "key": "NonLinearBiasReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:123"
+      },
+      "LinearDipoleReadoutBlock": {
+        "key": "LinearDipoleReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:163"
+      },
+      "NonLinearDipoleReadoutBlock": {
+        "key": "NonLinearDipoleReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:185"
+      },
+      "LinearDipolePolarReadoutBlock": {
+        "key": "LinearDipolePolarReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:233"
+      },
+      "NonLinearDipolePolarReadoutBlock": {
+        "key": "NonLinearDipolePolarReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:262"
+      },
+      "GeneralNonLinearBiasReadoutBlock": {
+        "key": "GeneralNonLinearBiasReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:314"
+      },
+      "AtomicEnergiesBlock": {
+        "key": "AtomicEnergiesBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:364"
+      },
+      "RadialEmbeddingBlock": {
+        "key": "RadialEmbeddingBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:395"
+      },
+      "EquivariantProductBasisBlock": {
+        "key": "EquivariantProductBasisBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:440"
+      },
+      "EquivariantProductBasisWithSelfMagmomBlock": {
+        "key": "EquivariantProductBasisWithSelfMagmomBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:517"
+      },
+      "InteractionBlock": {
+        "key": "InteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:639"
+      },
+      "RealAgnosticInteractionBlock": {
+        "key": "RealAgnosticInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:835"
+      },
+      "RealAgnosticResidualInteractionBlock": {
+        "key": "RealAgnosticResidualInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:938"
+      },
+      "RealAgnosticDensityInteractionBlock": {
+        "key": "RealAgnosticDensityInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1041"
+      },
+      "RealAgnosticDensityResidualInteractionBlock": {
+        "key": "RealAgnosticDensityResidualInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1162"
+      },
+      "RealAgnosticAttResidualInteractionBlock": {
+        "key": "RealAgnosticAttResidualInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1286"
+      },
+      "RealAgnosticResidualNonLinearInteractionBlock": {
+        "key": "RealAgnosticResidualNonLinearInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1412"
+      },
+      "MagneticInteractionBlock": {
+        "key": "MagneticInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1602"
+      },
+      "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock": {
+        "key": "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1632"
+      },
+      "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock": {
+        "key": "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1785"
+      },
+      "ScaleShiftBlock": {
+        "key": "ScaleShiftBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1942"
+      },
+      "LinearLesReadoutBlock": {
+        "key": "LinearLesReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:1974"
+      },
+      "NonLinearLesReadoutBlock": {
+        "key": "NonLinearLesReadoutBlock",
+        "detail": "",
+        "site": "mace/modules/blocks.py:2084"
+      },
+      "GatedEquivariantBlock": {
+        "key": "GatedEquivariantBlock",
+        "detail": "",
+        "site": "mace/modules/gate.py:39"
+      }
+    }
+  },
+  {
+    "label": "contraction classes",
+    "prefix": "contraction.",
+    "noun": "classes",
+    "decls": {
+      "SymmetricContraction": {
+        "key": "SymmetricContraction",
+        "detail": "",
+        "site": "mace/modules/symmetric_contraction.py:26"
+      },
+      "Contraction": {
+        "key": "Contraction",
+        "detail": "",
+        "site": "mace/modules/symmetric_contraction.py:91"
+      },
+      "EmptyParam": {
+        "key": "EmptyParam",
+        "detail": "",
+        "site": "mace/modules/symmetric_contraction.py:269"
+      }
+    }
+  },
+  {
+    "label": "data transforms",
+    "prefix": "transform.",
+    "noun": "transforms",
+    "decls": {
+      "Random3DRotation": {
+        "key": "Random3DRotation",
+        "detail": "",
+        "site": "mace/data/augmentation.py:24"
+      }
+    }
+  },
+  {
+    "label": "calculator classes",
+    "prefix": "calc.class.",
+    "noun": "classes",
+    "decls": {
+      "MACECalculator": {
+        "key": "MACECalculator",
+        "detail": "",
+        "site": "mace/calculators/mace.py:77"
+      },
+      "MagneticMACECalculator": {
+        "key": "MagneticMACECalculator",
+        "detail": "",
+        "site": "mace/calculators/mace.py:1001"
+      },
+      "LAMMPS_MACE": {
+        "key": "LAMMPS_MACE",
+        "detail": "",
+        "site": "mace/calculators/lammps_mace.py:10"
+      },
+      "MACELammpsConfig": {
+        "key": "MACELammpsConfig",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:22"
+      },
+      "MACEEdgeForcesWrapper": {
+        "key": "MACEEdgeForcesWrapper",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:59"
+      },
+      "LAMMPS_MLIAP_MACE": {
+        "key": "LAMMPS_MLIAP_MACE",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:125"
+      },
+      "MaceTorchSimModel": {
+        "key": "MaceTorchSimModel",
+        "detail": "",
+        "site": "mace/calculators/mace_torchsim.py:52"
+      }
+    }
+  },
+  {
+    "label": "loss classes",
+    "prefix": "loss.",
+    "noun": "classes",
+    "decls": {
+      "WeightedEnergyForcesLoss": {
+        "key": "WeightedEnergyForcesLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:246"
+      },
+      "WeightedForcesLoss": {
+        "key": "WeightedForcesLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:272"
+      },
+      "WeightedEnergyForcesStressLoss": {
+        "key": "WeightedEnergyForcesStressLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:290"
+      },
+      "WeightedHuberEnergyForcesStressLoss": {
+        "key": "WeightedHuberEnergyForcesStressLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:325"
+      },
+      "UniversalLoss": {
+        "key": "UniversalLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:391"
+      },
+      "WeightedEnergyForcesVirialsLoss": {
+        "key": "WeightedEnergyForcesVirialsLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:506"
+      },
+      "DipoleSingleLoss": {
+        "key": "DipoleSingleLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:543"
+      },
+      "DipolePolarLoss": {
+        "key": "DipolePolarLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:563"
+      },
+      "WeightedEnergyForcesDipoleLoss": {
+        "key": "WeightedEnergyForcesDipoleLoss",
+        "detail": "",
+        "site": "mace/modules/loss.py:601"
+      },
+      "WeightedEnergyForcesL1L2Loss": {
+        "key": "WeightedEnergyForcesL1L2Loss",
+        "detail": "",
+        "site": "mace/modules/loss.py:636"
+      }
+    }
+  },
+  {
+    "label": "calculator params",
+    "prefix": "calc.param.",
+    "noun": "params",
+    "decls": {
+      "model_paths": {
+        "key": "model_paths",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:98"
+      },
+      "models": {
+        "key": "models",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:99"
+      },
+      "device": {
+        "key": "device",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:100"
+      },
+      "energy_units_to_eV": {
+        "key": "energy_units_to_eV",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:101"
+      },
+      "length_units_to_A": {
+        "key": "length_units_to_A",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:102"
+      },
+      "default_dtype": {
+        "key": "default_dtype",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:103"
+      },
+      "charges_key": {
+        "key": "charges_key",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:104"
+      },
+      "info_keys": {
+        "key": "info_keys",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:105"
+      },
+      "arrays_keys": {
+        "key": "arrays_keys",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:106"
+      },
+      "model_type": {
+        "key": "model_type",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:107"
+      },
+      "compile_mode": {
+        "key": "compile_mode",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:108"
+      },
+      "fullgraph": {
+        "key": "fullgraph",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:109"
+      },
+      "enable_cueq": {
+        "key": "enable_cueq",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:110"
+      },
+      "enable_oeq": {
+        "key": "enable_oeq",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:111"
+      },
+      "pad_num_atoms": {
+        "key": "pad_num_atoms",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:112"
+      },
+      "pad_num_edges": {
+        "key": "pad_num_edges",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:113"
+      },
+      "compute_bec": {
+        "key": "compute_bec",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:114"
+      },
+      "external_field": {
+        "key": "external_field",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:115"
+      },
+      "eps_infty": {
+        "key": "eps_infty",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:116"
+      },
+      "electric_field_unit": {
+        "key": "electric_field_unit",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:117"
+      },
+      "keep_neutral": {
+        "key": "keep_neutral",
+        "detail": "MACECalculator",
+        "site": "mace/calculators/mace.py:118"
+      },
+      "model_path": {
+        "key": "model_path",
+        "detail": "MACECalculator (**kwargs)",
+        "site": "mace/calculators/mace.py:161"
+      },
+      "head": {
+        "key": "head",
+        "detail": "MACECalculator (**kwargs)",
+        "site": "mace/calculators/mace.py:320"
+      },
+      "compute_atomic_stresses": {
+        "key": "compute_atomic_stresses",
+        "detail": "MACECalculator (**kwargs)",
+        "site": "mace/calculators/mace.py:224"
+      },
+      "magmom_key": {
+        "key": "magmom_key",
+        "detail": "MagneticMACECalculator",
+        "site": "mace/calculators/mace.py:1026"
+      }
+    }
+  },
+  {
+    "label": "calculator exports",
+    "prefix": "calc.export.",
+    "noun": "exports",
+    "decls": {
+      "MACECalculator": {
+        "key": "MACECalculator",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      },
+      "MagneticMACECalculator": {
+        "key": "MagneticMACECalculator",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      },
+      "LAMMPS_MACE": {
+        "key": "LAMMPS_MACE",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      },
+      "mace_mp": {
+        "key": "mace_mp",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      },
+      "mace_mdp": {
+        "key": "mace_mdp",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      },
+      "mace_off": {
+        "key": "mace_off",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      },
+      "mace_anicc": {
+        "key": "mace_anicc",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      },
+      "mace_omol": {
+        "key": "mace_omol",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      },
+      "mace_polar": {
+        "key": "mace_polar",
+        "detail": "",
+        "site": "mace/calculators/__init__.py:12"
+      }
+    }
+  },
+  {
+    "label": "optional extras",
+    "prefix": "extra.",
+    "noun": "extras",
+    "decls": {
+      "wandb": {
+        "key": "wandb",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "fpsample": {
+        "key": "fpsample",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "test": {
+        "key": "test",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "dev": {
+        "key": "dev",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "schedulefree": {
+        "key": "schedulefree",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "magnetic": {
+        "key": "magnetic",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "torchsim": {
+        "key": "torchsim",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "cueq": {
+        "key": "cueq",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "oeq": {
+        "key": "oeq",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "cueq-cuda-12": {
+        "key": "cueq-cuda-12",
+        "detail": "",
+        "site": "setup.cfg"
+      },
+      "cueq-cuda-13": {
+        "key": "cueq-cuda-13",
+        "detail": "",
+        "site": "setup.cfg"
+      }
+    }
+  },
+  {
+    "label": "model output keys",
+    "prefix": "out.model.",
+    "noun": "keys",
+    "decls": {
+      "energy": {
+        "key": "energy",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:431"
+      },
+      "node_energy": {
+        "key": "node_energy",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:432"
+      },
+      "contributions": {
+        "key": "contributions",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:433"
+      },
+      "forces": {
+        "key": "forces",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:434"
+      },
+      "edge_forces": {
+        "key": "edge_forces",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:435"
+      },
+      "virials": {
+        "key": "virials",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:436"
+      },
+      "stress": {
+        "key": "stress",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:437"
+      },
+      "atomic_virials": {
+        "key": "atomic_virials",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:438"
+      },
+      "atomic_stresses": {
+        "key": "atomic_stresses",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:439"
+      },
+      "displacement": {
+        "key": "displacement",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:440"
+      },
+      "hessian": {
+        "key": "hessian",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:441"
+      },
+      "node_feats": {
+        "key": "node_feats",
+        "detail": "MACE",
+        "site": "mace/modules/models.py:442"
+      },
+      "interaction_energy": {
+        "key": "interaction_energy",
+        "detail": "ScaleShiftMACE",
+        "site": "mace/modules/models.py:618"
+      },
+      "dipole": {
+        "key": "dipole",
+        "detail": "AtomicDipolesMACE",
+        "site": "mace/modules/models.py:841"
+      },
+      "atomic_dipoles": {
+        "key": "atomic_dipoles",
+        "detail": "AtomicDipolesMACE",
+        "site": "mace/modules/models.py:842"
+      },
+      "charges": {
+        "key": "charges",
+        "detail": "AtomicDielectricMACE",
+        "site": "mace/modules/models.py:1193"
+      },
+      "polarizability": {
+        "key": "polarizability",
+        "detail": "AtomicDielectricMACE",
+        "site": "mace/modules/models.py:1196"
+      },
+      "polarizability_sh": {
+        "key": "polarizability_sh",
+        "detail": "AtomicDielectricMACE",
+        "site": "mace/modules/models.py:1197"
+      },
+      "dmu_dr": {
+        "key": "dmu_dr",
+        "detail": "AtomicDielectricMACE",
+        "site": "mace/modules/models.py:1198"
+      },
+      "dalpha_dr": {
+        "key": "dalpha_dr",
+        "detail": "AtomicDielectricMACE",
+        "site": "mace/modules/models.py:1199"
+      },
+      "les_energy": {
+        "key": "les_energy",
+        "detail": "MACELES",
+        "site": "mace/modules/extensions.py:651"
+      },
+      "latent_charges": {
+        "key": "latent_charges",
+        "detail": "MACELES",
+        "site": "mace/modules/extensions.py:652"
+      },
+      "latent_dipoles": {
+        "key": "latent_dipoles",
+        "detail": "MACELES",
+        "site": "mace/modules/extensions.py:653"
+      },
+      "latent_kappas": {
+        "key": "latent_kappas",
+        "detail": "MACELES",
+        "site": "mace/modules/extensions.py:654"
+      },
+      "latent_alphas": {
+        "key": "latent_alphas",
+        "detail": "MACELES",
+        "site": "mace/modules/extensions.py:655"
+      },
+      "latent_quads": {
+        "key": "latent_quads",
+        "detail": "MACELES",
+        "site": "mace/modules/extensions.py:656"
+      },
+      "BEC": {
+        "key": "BEC",
+        "detail": "MACELES",
+        "site": "mace/modules/extensions.py:657"
+      },
+      "density_coefficients": {
+        "key": "density_coefficients",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1337"
+      },
+      "spin_density": {
+        "key": "spin_density",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1338"
+      },
+      "charges_history": {
+        "key": "charges_history",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1339"
+      },
+      "fermi_level": {
+        "key": "fermi_level",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1342"
+      },
+      "external_field": {
+        "key": "external_field",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1343"
+      },
+      "spins": {
+        "key": "spins",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1345"
+      },
+      "total_charge": {
+        "key": "total_charge",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1347"
+      },
+      "electrostatic_energy": {
+        "key": "electrostatic_energy",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1348"
+      },
+      "electron_energy": {
+        "key": "electron_energy",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1349"
+      },
+      "electrostatic_potentials": {
+        "key": "electrostatic_potentials",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1350"
+      },
+      "spin_charge_density": {
+        "key": "spin_charge_density",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1351"
+      },
+      "fukui_functions": {
+        "key": "fukui_functions",
+        "detail": "PolarMACE",
+        "site": "mace/modules/extensions.py:1352"
+      },
+      "magforces": {
+        "key": "magforces",
+        "detail": "MagneticScaleShiftMACE",
+        "site": "mace/modules/extensions.py:1959"
+      },
+      "scf_energy_history": {
+        "key": "scf_energy_history",
+        "detail": "MagneticSCFMACE",
+        "site": "mace/modules/extensions.py:2107"
+      },
+      "scf_steps": {
+        "key": "scf_steps",
+        "detail": "MagneticSCFMACE",
+        "site": "mace/modules/extensions.py:2110"
+      },
+      "equilibrated_magmom": {
+        "key": "equilibrated_magmom",
+        "detail": "MagneticSCFMACE",
+        "site": "mace/modules/extensions.py:2111"
+      }
+    }
+  },
+  {
+    "label": "calculator result keys",
+    "prefix": "out.calc.",
+    "noun": "keys",
+    "decls": {
+      "energy_comm": {
+        "key": "energy_comm",
+        "detail": "committee",
+        "site": "mace/calculators/mace.py:729"
+      },
+      "energy_var": {
+        "key": "energy_var",
+        "detail": "committee",
+        "site": "mace/calculators/mace.py:729"
+      },
+      "forces_comm": {
+        "key": "forces_comm",
+        "detail": "committee",
+        "site": "mace/calculators/mace.py:729"
+      },
+      "forces_var": {
+        "key": "forces_var",
+        "detail": "committee",
+        "site": "mace/calculators/mace.py:729"
+      },
+      "stress_comm": {
+        "key": "stress_comm",
+        "detail": "committee",
+        "site": "mace/calculators/mace.py:729"
+      },
+      "stress_var": {
+        "key": "stress_var",
+        "detail": "committee",
+        "site": "mace/calculators/mace.py:729"
+      },
+      "dipole_comm": {
+        "key": "dipole_comm",
+        "detail": "committee",
+        "site": "mace/calculators/mace.py:729"
+      },
+      "dipole_var": {
+        "key": "dipole_var",
+        "detail": "committee",
+        "site": "mace/calculators/mace.py:729"
+      },
+      "energy": {
+        "key": "energy",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:731"
+      },
+      "node_energy": {
+        "key": "node_energy",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:732"
+      },
+      "forces": {
+        "key": "forces",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:733"
+      },
+      "stress": {
+        "key": "stress",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:734"
+      },
+      "stresses": {
+        "key": "stresses",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:735"
+      },
+      "virials": {
+        "key": "virials",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:740"
+      },
+      "dipole": {
+        "key": "dipole",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:745"
+      },
+      "charges": {
+        "key": "charges",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:746"
+      },
+      "polarizability": {
+        "key": "polarizability",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:747"
+      },
+      "polarizability_sh": {
+        "key": "polarizability_sh",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:748"
+      },
+      "free_energy": {
+        "key": "free_energy",
+        "detail": "self.results[...]",
+        "site": "mace/calculators/mace.py:801"
+      },
+      "energies": {
+        "key": "energies",
+        "detail": "self.results[...]",
+        "site": "mace/calculators/mace.py:803"
+      },
+      "LES_alphas": {
+        "key": "LES_alphas",
+        "detail": "self.results[...]",
+        "site": "mace/calculators/mace.py:832"
+      },
+      "LES_kappas": {
+        "key": "LES_kappas",
+        "detail": "self.results[...]",
+        "site": "mace/calculators/mace.py:836"
+      },
+      "bec": {
+        "key": "bec",
+        "detail": "self.results[...]",
+        "site": "mace/calculators/mace.py:840"
+      },
+      "fukui_functions": {
+        "key": "fukui_functions",
+        "detail": "implemented_properties",
+        "site": "mace/calculators/mace.py:228"
+      },
+      "interaction_energy": {
+        "key": "interaction_energy",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:753"
+      },
+      "electrostatic_energy": {
+        "key": "electrostatic_energy",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:758"
+      },
+      "electron_energy": {
+        "key": "electron_energy",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:763"
+      },
+      "spins": {
+        "key": "spins",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:764"
+      },
+      "density_coefficients": {
+        "key": "density_coefficients",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:765"
+      },
+      "spin_charge_density": {
+        "key": "spin_charge_density",
+        "detail": "results_map",
+        "site": "mace/calculators/mace.py:766"
+      },
+      "MACE_magmoms": {
+        "key": "MACE_magmoms",
+        "detail": "self.results[...]",
+        "site": "mace/calculators/mace.py:1444"
+      }
+    }
+  },
+  {
+    "label": "eval_configs output keys",
+    "prefix": "out.eval.",
+    "noun": "keys",
+    "decls": {
+      "energy": {
+        "key": "energy",
+        "detail": "atoms.info",
+        "site": "mace/cli/eval_configs.py:423"
+      },
+      "forces": {
+        "key": "forces",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:424"
+      },
+      "magforces": {
+        "key": "magforces",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:427"
+      },
+      "stress": {
+        "key": "stress",
+        "detail": "atoms.info",
+        "site": "mace/cli/eval_configs.py:430"
+      },
+      "BEC": {
+        "key": "BEC",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:433"
+      },
+      "latent_charges": {
+        "key": "latent_charges",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:437"
+      },
+      "latent_dipoles": {
+        "key": "latent_dipoles",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:439"
+      },
+      "latent_kappas": {
+        "key": "latent_kappas",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:441"
+      },
+      "latent_alphas": {
+        "key": "latent_alphas",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:443"
+      },
+      "latent_quads": {
+        "key": "latent_quads",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:447"
+      },
+      "BO_contributions": {
+        "key": "BO_contributions",
+        "detail": "atoms.info",
+        "site": "mace/cli/eval_configs.py:452"
+      },
+      "node_energies": {
+        "key": "node_energies",
+        "detail": "atoms.arrays",
+        "site": "mace/cli/eval_configs.py:472"
+      },
+      "descriptors": {
+        "key": "descriptors",
+        "detail": "atoms.info",
+        "site": "mace/cli/eval_configs.py:466"
+      }
+    }
+  },
+  {
+    "label": "MACE_* env vars",
+    "prefix": "env.",
+    "noun": "variables",
+    "decls": {
+      "MACE_TIME": {
+        "key": "MACE_TIME",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:26"
+      },
+      "MACE_PROFILE": {
+        "key": "MACE_PROFILE",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:27"
+      },
+      "MACE_ALLOW_CPU": {
+        "key": "MACE_ALLOW_CPU",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:30"
+      },
+      "MACE_FORCE_CPU": {
+        "key": "MACE_FORCE_CPU",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:31"
+      },
+      "MACE_PROFILE_START": {
+        "key": "MACE_PROFILE_START",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:28"
+      },
+      "MACE_PROFILE_END": {
+        "key": "MACE_PROFILE_END",
+        "detail": "",
+        "site": "mace/calculators/lammps_mliap_mace.py:29"
+      },
+      "MACE_ASE_PAD_NUM_ATOMS": {
+        "key": "MACE_ASE_PAD_NUM_ATOMS",
+        "detail": "",
+        "site": "mace/calculators/mace.py:423"
+      },
+      "MACE_ASE_PAD_NUM_EDGES": {
+        "key": "MACE_ASE_PAD_NUM_EDGES",
+        "detail": "",
+        "site": "mace/calculators/mace.py:425"
+      },
+      "MACE_USE_CUEQ_CG": {
+        "key": "MACE_USE_CUEQ_CG",
+        "detail": "",
+        "site": "mace/tools/cg.py:23"
+      }
+    }
+  },
+  {
+    "label": "pytest markers",
+    "prefix": "marker.",
+    "noun": "markers",
+    "decls": {
+      "slow": {
+        "key": "slow",
+        "detail": "",
+        "site": "pyproject.toml:22"
+      },
+      "gpu": {
+        "key": "gpu",
+        "detail": "",
+        "site": "pyproject.toml:23"
+      },
+      "network": {
+        "key": "network",
+        "detail": "",
+        "site": "pyproject.toml:24"
+      },
+      "cueq": {
+        "key": "cueq",
+        "detail": "",
+        "site": "pyproject.toml:25"
+      },
+      "oeq": {
+        "key": "oeq",
+        "detail": "",
+        "site": "pyproject.toml:26"
+      },
+      "polar": {
+        "key": "polar",
+        "detail": "",
+        "site": "pyproject.toml:27"
+      },
+      "les": {
+        "key": "les",
+        "detail": "",
+        "site": "pyproject.toml:28"
+      },
+      "magnetic": {
+        "key": "magnetic",
+        "detail": "",
+        "site": "pyproject.toml:29"
+      },
+      "torchsim": {
+        "key": "torchsim",
+        "detail": "",
+        "site": "pyproject.toml:30"
+      },
+      "schedulefree": {
+        "key": "schedulefree",
+        "detail": "",
+        "site": "pyproject.toml:31"
+      },
+      "wandb": {
+        "key": "wandb",
+        "detail": "",
+        "site": "pyproject.toml:32"
+      },
+      "benchmark": {
+        "key": "benchmark",
+        "detail": "",
+        "site": "pyproject.toml:33"
+      },
+      "bin_lammps": {
+        "key": "bin_lammps",
+        "detail": "",
+        "site": "pyproject.toml:34"
+      },
+      "bin_openmm": {
+        "key": "bin_openmm",
+        "detail": "",
+        "site": "pyproject.toml:35"
+      },
+      "bin_openmm_native": {
+        "key": "bin_openmm_native",
+        "detail": "",
+        "site": "pyproject.toml:36"
+      },
+      "bin_libmace": {
+        "key": "bin_libmace",
+        "detail": "",
+        "site": "pyproject.toml:37"
+      },
+      "bin_gromacs": {
+        "key": "bin_gromacs",
+        "detail": "",
+        "site": "pyproject.toml:38"
+      },
+      "timeout": {
+        "key": "timeout",
+        "detail": "",
+        "site": "pyproject.toml:39"
+      },
+      "nightly": {
+        "key": "nightly",
+        "detail": "",
+        "site": "pyproject.toml:40"
+      }
+    }
+  },
+  {
+    "label": "default property keys",
+    "prefix": "key.",
+    "noun": "keys",
+    "decls": {
+      "ENERGY": {
+        "key": "ENERGY",
+        "detail": "REF_energy",
+        "site": "mace/tools/default_keys.py:7"
+      },
+      "FORCES": {
+        "key": "FORCES",
+        "detail": "REF_forces",
+        "site": "mace/tools/default_keys.py:8"
+      },
+      "STRESS": {
+        "key": "STRESS",
+        "detail": "REF_stress",
+        "site": "mace/tools/default_keys.py:9"
+      },
+      "VIRIALS": {
+        "key": "VIRIALS",
+        "detail": "REF_virials",
+        "site": "mace/tools/default_keys.py:10"
+      },
+      "DIPOLE": {
+        "key": "DIPOLE",
+        "detail": "dipole",
+        "site": "mace/tools/default_keys.py:11"
+      },
+      "POLARIZABILITY": {
+        "key": "POLARIZABILITY",
+        "detail": "polarizability",
+        "site": "mace/tools/default_keys.py:12"
+      },
+      "HEAD": {
+        "key": "HEAD",
+        "detail": "head",
+        "site": "mace/tools/default_keys.py:13"
+      },
+      "CHARGES": {
+        "key": "CHARGES",
+        "detail": "REF_charges",
+        "site": "mace/tools/default_keys.py:14"
+      },
+      "TOTAL_CHARGE": {
+        "key": "TOTAL_CHARGE",
+        "detail": "total_charge",
+        "site": "mace/tools/default_keys.py:15"
+      },
+      "TOTAL_SPIN": {
+        "key": "TOTAL_SPIN",
+        "detail": "total_spin",
+        "site": "mace/tools/default_keys.py:16"
+      },
+      "ELEC_TEMP": {
+        "key": "ELEC_TEMP",
+        "detail": "elec_temp",
+        "site": "mace/tools/default_keys.py:17"
+      },
+      "MAGMOM": {
+        "key": "MAGMOM",
+        "detail": "REF_magmom",
+        "site": "mace/tools/default_keys.py:18"
+      },
+      "MAGFORCES": {
+        "key": "MAGFORCES",
+        "detail": "REF_magforces",
+        "site": "mace/tools/default_keys.py:19"
+      }
+    }
+  }
+]

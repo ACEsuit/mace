@@ -17,7 +17,7 @@ pytestmark = needs_the_v1_engine
 
 def prepare(*arguments):
     done = subprocess.run(
-        [*cli_command(preprocess_data), '--engine', 'v1', *arguments],
+        [*cli_command(preprocess_data), *arguments],
         capture_output=True, text=True, check=False)
     assert done.returncode == 0, done.stdout + done.stderr
 

@@ -2,7 +2,7 @@
 
 Every artifact the frozen tree's loaders reach is listed here once, by the
 loader and the name that reach it and the URL it is published at, with the
-family it converts onto. One is not converted: MACE-ANI-CC, superseded by
+architecture it converts onto. One is not converted: MACE-ANI-CC, superseded by
 MACE-OFF23 for organic chemistry, is listed as dropped so that a lookup of it
 finds a reason and a replacement rather than nothing.
 
@@ -18,7 +18,7 @@ from typing import Literal
 
 __all__ = ["ROSTER", "RosterEntry", "roster_entry"]
 
-Family = Literal["scale_shift", "polar", "dielectric"]
+ConvertedArchitecture = Literal["scale_shift", "polar", "dielectric"]
 
 _MP = "https://github.com/ACEsuit/mace-mp/releases/download"
 _FOUNDATIONS = "https://github.com/ACEsuit/mace-foundations/releases/download"
@@ -33,7 +33,7 @@ class RosterEntry:
         loader: The frozen tree's loader that reaches it.
         name: The name that loader takes for it.
         url: Where it is published.
-        family: What it converts onto, or ``None`` when it is not converted.
+        architecture: What it converts onto, or ``None`` when it is not converted.
         replaced_by: For an artifact that is not converted, what to use
             instead.
         reason: For an artifact that is not converted, why.
@@ -42,12 +42,12 @@ class RosterEntry:
     loader: str
     name: str
     url: str
-    family: Family | None
+    architecture: ConvertedArchitecture | None
     replaced_by: str | None = None
     reason: str | None = None
 
     def __post_init__(self) -> None:
-        dropped = self.family is None
+        dropped = self.architecture is None
         if dropped != (self.replaced_by is not None and self.reason is not None):
             raise ValueError(
                 f"{self.loader}({self.name!r}) is "

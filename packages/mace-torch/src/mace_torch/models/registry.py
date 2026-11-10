@@ -1,4 +1,4 @@
-"""Build-time registry of built-in and additional model families."""
+"""Build-time registry of built-in and additional model architectures."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -19,7 +19,7 @@ ModelType = TypeVar("ModelType", bound=type[MACEModel])
 
 @runtime_checkable
 class ElectrostaticModelFactory(Protocol):
-    """The solver specification supplied by an electrostatic model family."""
+    """The solver specification supplied by an electrostatic model architecture."""
 
     @staticmethod
     def make_solver_spec(
@@ -28,8 +28,8 @@ class ElectrostaticModelFactory(Protocol):
 
 
 @dataclass(frozen=True)
-class ModelFamily:
-    """Constructor and physical energy policies for one named model family."""
+class ModelArchitecture:
+    """Constructor and physical energy policies for one named model architecture."""
 
     model: type[MACEModel | MagneticModel]
     zbl_in_scale_shift: bool = True
@@ -37,7 +37,7 @@ class ModelFamily:
     electrostatics: bool = False
 
 
-def _builtins() -> dict[str, ModelFamily]:
+def _builtins() -> dict[str, ModelArchitecture]:
     from mace_torch.models.dipoles import DipoleModel
     from mace_torch.models.electrostatics import (
         FixedPointSCFModel,
@@ -49,17 +49,17 @@ def _builtins() -> dict[str, ModelFamily]:
     from mace_torch.models.les import LatentEwaldModel
 
     return {
-        "scale_shift": ModelFamily(MACEModel),
-        "plain": ModelFamily(
+        "scale_shift": ModelArchitecture(MACEModel),
+        "plain": ModelArchitecture(
             MACEModel, zbl_in_scale_shift=False, widen_node_energy=False
         ),
-        "les": ModelFamily(LatentEwaldModel),
-        "polar": ModelFamily(PolarModel, electrostatics=True),
-        "magnetic": ModelFamily(MagneticModel, widen_node_energy=False),
-        "dipole": ModelFamily(DipoleModel),
-        "dielectric": ModelFamily(DipoleModel),
+        "les": ModelArchitecture(LatentEwaldModel),
+        "polar": ModelArchitecture(PolarModel, electrostatics=True),
+        "magnetic": ModelArchitecture(MagneticModel, widen_node_energy=False),
+        "dipole": ModelArchitecture(DipoleModel),
+        "dielectric": ModelArchitecture(DipoleModel),
         **{
-            name: ModelFamily(
+            name: ModelArchitecture(
                 model,
                 zbl_in_scale_shift=False,
                 widen_node_energy=False,
@@ -75,31 +75,31 @@ def _builtins() -> dict[str, ModelFamily]:
     }
 
 
-MODEL_REGISTRY: dict[str, ModelFamily] | None = None
+MODEL_ARCHITECTURES: dict[str, ModelArchitecture] | None = None
 
 
-def registered_models() -> dict[str, ModelFamily]:
-    """One registry for built-in and explicitly registered model families."""
-    global MODEL_REGISTRY
-    if MODEL_REGISTRY is None:
-        MODEL_REGISTRY = _builtins()
-    return MODEL_REGISTRY
+def registered_architectures() -> dict[str, ModelArchitecture]:
+    """One registry for built-in and explicitly registered model architectures."""
+    global MODEL_ARCHITECTURES
+    if MODEL_ARCHITECTURES is None:
+        MODEL_ARCHITECTURES = _builtins()
+    return MODEL_ARCHITECTURES
 
 
-def model_family(name: str) -> ModelFamily:
-    families = registered_models()
-    if name not in families:
+def model_architecture(name: str) -> ModelArchitecture:
+    architectures = registered_architectures()
+    if name not in architectures:
         raise ValueError(
             f"model.model {name!r} is not a registered model; "
-            f"choose from {sorted(families)}"
+            f"choose from {sorted(architectures)}"
         )
-    return families[name]
+    return architectures[name]
 
 
 def model_inputs(config: ModelConfig) -> tuple[InputSpec, ...]:
     """Resolve all model inputs without constructing its operators or weights."""
     return with_embedded_inputs(
-        config, model_family(config.model).model.declared_inputs(config)
+        config, model_architecture(config.model).model.declared_inputs(config)
     )
 
 
@@ -113,12 +113,14 @@ def register_model(
     """Register a constructor and its energy policies, rejecting name collisions."""
 
     def register(model: ModelType) -> ModelType:
-        families = registered_models()
-        if name in families:
+        architectures = registered_architectures()
+        if name in architectures:
             raise ValueError(f"model {name!r} is already registered")
         if electrostatics and not isinstance(model, ElectrostaticModelFactory):
-            raise TypeError(f"electrostatic model {name!r} must define solver_spec")
-        families[name] = ModelFamily(
+            raise TypeError(
+                f"electrostatic model {name!r} must define make_solver_spec"
+            )
+        architectures[name] = ModelArchitecture(
             model, zbl_in_scale_shift, widen_node_energy, electrostatics
         )
         return model

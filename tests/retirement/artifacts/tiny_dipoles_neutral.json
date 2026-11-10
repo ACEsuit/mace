@@ -1,0 +1,386 @@
+{
+  "config": {
+    "MLP_irreps": "8x0e",
+    "apply_cutoff": true,
+    "atomic_numbers": [
+      1,
+      6,
+      8
+    ],
+    "avg_num_neighbors": 8.0,
+    "correlation": 3,
+    "cueq_config": null,
+    "distance_transform": null,
+    "edge_irreps": null,
+    "embedding_specs": null,
+    "gate": null,
+    "heads": [
+      "default"
+    ],
+    "hidden_irreps": "16x0e+16x1o",
+    "interaction_cls": "RealAgnosticResidualInteractionBlock",
+    "interaction_cls_first": "RealAgnosticInteractionBlock",
+    "max_ell": 2,
+    "num_bessel": 8,
+    "num_elements": 3,
+    "num_interactions": 2,
+    "num_polynomial_cutoff": 5,
+    "pair_repulsion": false,
+    "r_max": 3.5,
+    "radial_MLP": [
+      64,
+      64,
+      64
+    ],
+    "radial_type": "bessel",
+    "readout_cls": "NonLinearDipoleReadoutBlock",
+    "use_agnostic_product": false,
+    "use_edge_irreps_first": false,
+    "use_embedding_readout": false,
+    "use_last_readout_only": false,
+    "use_reduced_cg": false,
+    "use_so3": false
+  },
+  "derived": {
+    "interactions.0.conv_tp.output_mask": "the edge tensor product holds no weights of its own; its coupling constants and masks are rebuilt from the irreps",
+    "interactions.0.conv_tp.weight": "the edge tensor product holds no weights of its own; its coupling constants and masks are rebuilt from the irreps",
+    "interactions.0.linear.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "interactions.0.linear_up.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "interactions.0.skip_tp.output_mask": "rebuilt from the irreps",
+    "interactions.1.conv_tp._compiled_main_left_right._w3j_1_1_2": "the edge tensor product holds no weights of its own; its coupling constants and masks are rebuilt from the irreps",
+    "interactions.1.conv_tp._compiled_main_left_right._w3j_1_2_1": "the edge tensor product holds no weights of its own; its coupling constants and masks are rebuilt from the irreps",
+    "interactions.1.conv_tp.output_mask": "the edge tensor product holds no weights of its own; its coupling constants and masks are rebuilt from the irreps",
+    "interactions.1.conv_tp.weight": "the edge tensor product holds no weights of its own; its coupling constants and masks are rebuilt from the irreps",
+    "interactions.1.linear.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "interactions.1.linear_up.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "interactions.1.skip_tp.output_mask": "rebuilt from the irreps",
+    "node_embedding.linear.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "products.0.linear.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "products.1.linear.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "radial_embedding.bessel_fn.r_max": "the cutoff, carried in the configuration",
+    "radial_embedding.cutoff_fn.r_max": "the cutoff, carried in the configuration",
+    "readouts.0.linear.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "readouts.1.linear_1.output_mask": "which outputs a path reaches, rebuilt from the irreps",
+    "readouts.1.linear_2.output_mask": "which outputs a path reaches, rebuilt from the irreps"
+  },
+  "dtype": "float64",
+  "family": "dipole",
+  "format": "mace-neutral",
+  "heads": [
+    "default"
+  ],
+  "ops": {
+    "cutoff": {
+      "kernel_spec": {
+        "p": 5,
+        "r_max": 3.5
+      },
+      "op_kind": "polynomial_cutoff",
+      "schema_version": "1.0",
+      "tensors": []
+    },
+    "interactions.0": {
+      "kernel_spec": {
+        "avg_num_neighbors": 8.0,
+        "class": "RealAgnosticInteractionBlock"
+      },
+      "op_kind": "interaction",
+      "schema_version": "1.0",
+      "tensors": []
+    },
+    "interactions.0.linear": {
+      "kernel_spec": {
+        "irreps_in": "16x0e+16x1o+16x2e",
+        "irreps_out": "16x0e+16x1o+16x2e"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "interactions.0.linear_up": {
+      "kernel_spec": {
+        "irreps_in": "16x0e",
+        "irreps_out": "16x0e"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "interactions.0.radial": {
+      "kernel_spec": {
+        "activation": "silu",
+        "widths": [
+          8,
+          64,
+          64,
+          64,
+          48
+        ]
+      },
+      "op_kind": "radial_mlp",
+      "schema_version": "1.0",
+      "tensors": [
+        "layer_0",
+        "layer_1",
+        "layer_2",
+        "layer_3"
+      ]
+    },
+    "interactions.0.skip": {
+      "kernel_spec": {
+        "irreps_in": "16x0e+16x1o+16x2e",
+        "irreps_out": "16x0e+16x1o+16x2e",
+        "num_elements": 3
+      },
+      "op_kind": "element_linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "weight"
+      ]
+    },
+    "interactions.1": {
+      "kernel_spec": {
+        "avg_num_neighbors": 8.0,
+        "class": "RealAgnosticResidualInteractionBlock"
+      },
+      "op_kind": "interaction",
+      "schema_version": "1.0",
+      "tensors": []
+    },
+    "interactions.1.linear": {
+      "kernel_spec": {
+        "irreps_in": "16x0e+16x0e+16x1o+16x1o+16x1o+16x2e+16x2e",
+        "irreps_out": "16x0e+16x1o+16x2e"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "interactions.1.linear_up": {
+      "kernel_spec": {
+        "irreps_in": "16x0e+16x1o",
+        "irreps_out": "16x0e+16x1o"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "interactions.1.radial": {
+      "kernel_spec": {
+        "activation": "silu",
+        "widths": [
+          8,
+          64,
+          64,
+          64,
+          112
+        ]
+      },
+      "op_kind": "radial_mlp",
+      "schema_version": "1.0",
+      "tensors": [
+        "layer_0",
+        "layer_1",
+        "layer_2",
+        "layer_3"
+      ]
+    },
+    "interactions.1.skip": {
+      "kernel_spec": {
+        "irreps_in": "16x0e+16x1o",
+        "irreps_out": "16x1o",
+        "num_elements": 3
+      },
+      "op_kind": "element_linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "weight"
+      ]
+    },
+    "node_embedding": {
+      "kernel_spec": {
+        "irreps_in": "3x0e",
+        "irreps_out": "16x0e"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "products.0.contraction.0e": {
+      "clebsch_gordan_basis": "full",
+      "kernel_spec": {
+        "basis_rebuilt_at_float64": [],
+        "correlation": 3,
+        "irreps_in": "0e+1o+2e",
+        "target": "0e",
+        "zeroed": {
+          "1": false,
+          "2": false,
+          "3": false
+        }
+      },
+      "op_kind": "symmetric_contraction",
+      "parametrization": "nested",
+      "schema_version": "1.0",
+      "tensors": [
+        "basis.1",
+        "basis.2",
+        "basis.3",
+        "weights.1",
+        "weights.2",
+        "weights.3"
+      ]
+    },
+    "products.0.contraction.1o": {
+      "clebsch_gordan_basis": "full",
+      "kernel_spec": {
+        "basis_rebuilt_at_float64": [],
+        "correlation": 3,
+        "irreps_in": "0e+1o+2e",
+        "target": "1o",
+        "zeroed": {
+          "1": false,
+          "2": false,
+          "3": false
+        }
+      },
+      "op_kind": "symmetric_contraction",
+      "parametrization": "nested",
+      "schema_version": "1.0",
+      "tensors": [
+        "basis.1",
+        "basis.2",
+        "basis.3",
+        "weights.1",
+        "weights.2",
+        "weights.3"
+      ]
+    },
+    "products.0.linear": {
+      "kernel_spec": {
+        "irreps_in": "16x0e+16x1o",
+        "irreps_out": "16x0e+16x1o"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "products.1.contraction.1o": {
+      "clebsch_gordan_basis": "full",
+      "kernel_spec": {
+        "basis_rebuilt_at_float64": [],
+        "correlation": 3,
+        "irreps_in": "0e+1o+2e",
+        "target": "1o",
+        "zeroed": {
+          "1": false,
+          "2": false,
+          "3": false
+        }
+      },
+      "op_kind": "symmetric_contraction",
+      "parametrization": "nested",
+      "schema_version": "1.0",
+      "tensors": [
+        "basis.1",
+        "basis.2",
+        "basis.3",
+        "weights.1",
+        "weights.2",
+        "weights.3"
+      ]
+    },
+    "products.1.linear": {
+      "kernel_spec": {
+        "irreps_in": "16x1o",
+        "irreps_out": "16x1o"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "radial_basis": {
+      "kernel_spec": {
+        "num_basis": 8,
+        "r_max": 3.5
+      },
+      "op_kind": "bessel_basis",
+      "schema_version": "1.0",
+      "tensors": [
+        "prefactor",
+        "weights"
+      ]
+    },
+    "readouts.0": {
+      "kernel_spec": {
+        "irreps_in": "16x0e+16x1o",
+        "irreps_out": "1x1o"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "readouts.1.first": {
+      "kernel_spec": {
+        "gate_sections": {
+          "gated": "",
+          "gates": "",
+          "scalars": ""
+        },
+        "irreps_in": "16x1o",
+        "irreps_out": ""
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    },
+    "readouts.1.second": {
+      "kernel_spec": {
+        "irreps_in": "8x0e",
+        "irreps_out": "1x1o"
+      },
+      "op_kind": "linear",
+      "schema_version": "1.0",
+      "tensors": [
+        "bias",
+        "weight"
+      ]
+    }
+  },
+  "provenance": {
+    "converter_version": "1.0",
+    "headless": true,
+    "source_class": "AtomicDipolesMACE",
+    "source_file": "tiny_dipoles.model",
+    "source_sha256": "bdda566dc0e2e3a5f2958406c3ad59329d7a7f704b494c88a4cf9801e6747a9a",
+    "source_version": "0.3.17"
+  },
+  "version": "1.0"
+}

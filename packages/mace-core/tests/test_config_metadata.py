@@ -42,7 +42,7 @@ SETTINGS = {
 def record(config: ResolvedConfig) -> ModelMetadata:
     return ModelMetadata(
         config=ConfigRecord.from_config(config),
-        provenance=Provenance(versions={"mace-torch-v1": "0.0.0"}),
+        provenance=Provenance(versions={"mace-torch": "0.0.0"}),
     )
 
 

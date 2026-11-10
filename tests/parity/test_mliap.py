@@ -11,13 +11,10 @@ import torch
 from ase import Atoms, units
 from mace_torch.deploy.bundle import export_lammps
 from mace_torch.deploy.mliap import MACEMLIAPUnified
-from mace_torch.train import write_model
 
 from tests.golden.harness import FP32, FP64_CPU_REFERENCE
-from tests.integrations.lammps._harness import model_batch
-from tests.parity.test_fm_convert_families import converted
 from tests.parity.test_native_lammps import ROOT, TINY, _trajectory
-from tests.parity.test_output_variants import legacy_model
+from tests.retirement.anchors import model_checkpoint
 
 
 class DeviceData(SimpleNamespace):
@@ -46,7 +43,9 @@ def test_real_mliap_accumulates_ghost_centered_pair_forces():
 
     class PairForceProbe(MLIAPUnified):
         def __init__(self):
-            super().__init__(element_types=["H"], ndescriptors=1, nparams=1, rcutfac=1.0)
+            super().__init__(
+                element_types=["H"], ndescriptors=1, nparams=1, rcutfac=1.0
+            )
 
         def compute_gradients(self, data):
             pass
@@ -102,9 +101,7 @@ def test_real_mliap_accumulates_ghost_centered_pair_forces():
 
 
 def _bundle(model, directory, **options):
-    imported, _ = converted(model, directory)
-    checkpoint = write_model(directory / "v1", imported.engine, imported.metadata)
-    return export_lammps(checkpoint, directory / "bundle", **options)
+    return export_lammps(model, directory / "bundle", **options)
 
 
 @pytest.mark.parametrize("scale_shift", [False, True])
@@ -117,52 +114,56 @@ def _bundle(model, directory, **options):
         pytest.param("cueq", "cuda", marks=[pytest.mark.gpu, pytest.mark.cueq]),
     ],
 )
-def test_callback_pair_forces_and_halo_adjoint_match_legacy(
+def test_callback_pair_forces_and_halo_adjoint_match_eager(
     fp64, isolated, tmp_path, monkeypatch, scale_shift, dtype, layers, backend, device
 ):
-    from mace.calculators.lammps_mliap_mace import LAMMPS_MLIAP_MACE
+    from mace_torch.calculators import MACECalculator
 
     monkeypatch.setenv("MACE_ALLOW_CPU", "true")
-    legacy = legacy_model(scale_shift, num_interactions=layers)
+    checkpoint = model_checkpoint(tmp_path, scale_shift, layers)
     bundle = _bundle(
-        legacy,
+        checkpoint,
         tmp_path,
         halo_exchange=True,
         compile_regions=False,
         dtype=dtype,
         backend=backend,
     )
-    current = MACEMLIAPUnified(bundle)
-    frozen = LAMMPS_MLIAP_MACE(legacy.to(dtype=getattr(torch, dtype)))
+    adapter = MACEMLIAPUnified(bundle)
+    reference = MACECalculator(checkpoint)
     row = FP64_CPU_REFERENCE if dtype == "float64" else FP32
     for distance in (0.9, 1.4, 6.0):
         atoms = Atoms("HOH", positions=[[distance, 0, 0], [0, 0, 0], [0, 1, 0]])
-        graph = model_batch(legacy, atoms)
+        graph, _ = reference._graph(atoms, padded=False)
         j, i = graph["edge_index"]
         vectors = graph["positions"][j] - graph["positions"][i] - graph["shifts"]
-        # Deliberately interleave senders; both couplings receive exactly this order.
         order = torch.arange(len(j) - 1, -1, -1)
-        values = []
-        for adapter, where in ((frozen, "cpu"), (current, device)):
-            data = DeviceData(
-                nlocal=3,
-                ntotal=6,
-                nlistatoms=3,
-                natomneigh=3,
-                npairs=len(j),
-                elems=graph["node_attrs"].argmax(-1).repeat(2).to(where),
-                pair_i=i[order].to(where),
-                pair_j=(j[order] + 3).to(where),
-                rij=vectors[order].to(where),
-                iatoms=torch.arange(3, device=where),
-                eatoms=torch.empty(3, dtype=torch.float64, device=where),
-                forward_calls=0,
-                reverse_calls=0,
-            )
-            adapter.compute_forces(data)
-            assert data.forward_calls == data.reverse_calls == layers - 1
-            values.append((data.energy, data.eatoms.cpu().numpy(), data.pair_forces))
-        for actual, expected in zip(values[1], values[0], strict=True):
+        data = DeviceData(
+            nlocal=3,
+            ntotal=6,
+            nlistatoms=3,
+            natomneigh=3,
+            npairs=len(j),
+            elems=graph["node_attrs"].argmax(-1).repeat(2).to(device),
+            pair_i=i[order].to(device),
+            pair_j=(j[order] + 3).to(device),
+            rij=vectors[order].to(device=device, dtype=getattr(torch, dtype)),
+            iatoms=torch.arange(3, device=device),
+            eatoms=torch.empty(3, dtype=torch.float64, device=device),
+            forward_calls=0,
+            reverse_calls=0,
+        )
+        adapter.compute_forces(data)
+        assert data.forward_calls == data.reverse_calls == layers - 1
+        forces = np.zeros((3, 3))
+        np.add.at(forces, data.pair_i.cpu().numpy() % 3, data.pair_forces)
+        np.add.at(forces, data.pair_j.cpu().numpy() % 3, -data.pair_forces)
+        reference.calculate(atoms)
+        for actual, expected in (
+            (data.energy, reference.results["energy"]),
+            (data.eatoms.cpu().numpy(), reference.results["energies"]),
+            (forces, reference.results["forces"]),
+        ):
             np.testing.assert_allclose(actual, expected, atol=row.atol, rtol=row.rtol)
 
 
@@ -175,15 +176,14 @@ def test_real_mliap_energy_forces_and_stress(
 ):
     from lammps import lammps
     from lammps.mliap import activate_mliappy, load_unified
+    from mace_torch.calculators import MACECalculator as FrozenCalculator
 
-    from mace.calculators import MACECalculator as FrozenCalculator
-
-    legacy = legacy_model(True, num_interactions=layers)
+    legacy = model_checkpoint(tmp_path, True, layers)
     bundle = _bundle(
         legacy, tmp_path, halo_exchange=halo, compile_regions=compiled, dtype=dtype
     )
     adapter = MACEMLIAPUnified(bundle)
-    reference = FrozenCalculator(models=legacy, default_dtype="float64", device="cpu")
+    reference = FrozenCalculator(model_paths=legacy, device="cpu")
     row = FP64_CPU_REFERENCE if dtype == "float64" else FP32
     atoms = Atoms(
         "HOH",
@@ -245,7 +245,7 @@ def test_real_mliap_energy_forces_and_stress(
                     reference.results[key],
                     atol=row.atol,
                     rtol=row.rtol,
-                    err_msg=key,
+                    err_msg=f"x={x}, {key}",
                 )
     if compiled:
         assert all(
@@ -272,7 +272,7 @@ def test_real_mliap_compiled_cpu(fp64, isolated, tmp_path):
 def test_kokkos_mpi_neighbor_changes_and_atom_migration(
     fp64, isolated, tmp_path, dtype, compiled
 ):
-    from mace.calculators import MACECalculator as FrozenCalculator
+    from mace_torch.calculators import MACECalculator as FrozenCalculator
 
     if not os.getenv("MACE_MLIAP_KOKKOS"):
         pytest.skip("set MACE_MLIAP_KOKKOS=1 with CUDA KOKKOS/ML-IAP")
@@ -285,8 +285,8 @@ def test_kokkos_mpi_neighbor_changes_and_atom_migration(
         compile_regions=compiled,
     )
     reference = FrozenCalculator(
-        model_paths=ROOT / "tests/golden/models/tiny_scaleshift.model",
-        default_dtype="float64",
+        model_paths=ROOT / "tests/retirement/artifacts/tiny_scaleshift.json",
+        precision="float64",
         device="cpu",
     )
     row = FP64_CPU_REFERENCE if dtype == "float64" else FP32

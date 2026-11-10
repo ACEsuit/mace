@@ -148,7 +148,6 @@ def test_backend_converter_arguments_cannot_rewrite_a_canonical_artifact(
 
 @fp64_only
 def test_lammps_export_requires_a_v1_checkpoint(tmp_path, capsys, monkeypatch):
-    import mace_launcher
 
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ImportError):
@@ -156,12 +155,7 @@ def test_lammps_export_requires_a_v1_checkpoint(tmp_path, capsys, monkeypatch):
     with pytest.raises(SystemExit) as missing:
         main(["export", "lammps"])
     assert missing.value.code == 2
-    monkeypatch.setattr(
-        sys, "argv", ["mace_create_lammps_model", "--engine", "v1", "missing.model"]
-    )
-    with pytest.raises(SystemExit) as rejected:
-        mace_launcher.create_lammps_model()
-    assert rejected.value.code == 2
+    assert main(["export", "lammps", "missing.model"]) == 2
     assert "V1 .safetensors" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
 
@@ -169,12 +163,12 @@ def test_lammps_export_requires_a_v1_checkpoint(tmp_path, capsys, monkeypatch):
 @fp64_only
 def test_retired_foundation_has_a_replacement_and_no_singular_loader():
     entry = roster_entry("mace_anicc", "default")
-    assert entry.family is None
+    assert entry.architecture is None
     assert entry.replaced_by == "MACE-OFF23"
     assert entry.reason is not None
     assert "superseded" in entry.reason
     replacement = roster_entry("mace_off", "small")
-    assert replacement.family == "scale_shift" and replacement.replaced_by is None
+    assert replacement.architecture == "scale_shift" and replacement.replaced_by is None
     with pytest.raises(ImportError):
         exec("from mace_torch.calculators import mace_anicc", {})
 

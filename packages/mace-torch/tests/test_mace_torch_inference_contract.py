@@ -1,6 +1,7 @@
 """Prepared inference changes execution state, never canonical model state."""
 
 from dataclasses import replace
+from typing import Any
 
 import pytest
 import torch
@@ -114,6 +115,7 @@ def test_snapshot_is_independent_and_repreparation_uses_new_weights():
     source = composition(spec)
     backend = CompositionBackend()
     old = prepare_inference(backend, spec, region_weights(source))
+    assert old is not None
     arguments = inputs(spec)
     before = old(arguments)
     with torch.no_grad():
@@ -121,6 +123,7 @@ def test_snapshot_is_independent_and_repreparation_uses_new_weights():
     for actual, expected in zip(old(arguments), before, strict=True):
         assert torch.equal(actual, expected)
     new = prepare_inference(backend, spec, region_weights(source))
+    assert new is not None
     assert backend.calls == 2
     assert not torch.equal(new(arguments)[0], before[0])
     run_inference_conformance(new, source, [arguments], precision=spec.linear.precision)
@@ -134,6 +137,7 @@ def test_terminal_readout_can_omit_unused_features():
     spec = replace(product_spec(), return_features=False)
     source = composition(spec)
     prepared = prepare_inference(CompositionBackend(), spec, region_weights(source))
+    assert prepared is not None
     assert prepared.spec.output_names == ("readout",)
     run_inference_conformance(
         prepared, source, [inputs(spec)], precision=spec.interface_dtype
@@ -163,6 +167,8 @@ def test_optional_extension_and_decline_do_not_change_existing_backends():
     assert prepare_inference(ReferenceBackend(), spec, weights) is None
 
     class Declining:
+        name = "declining"
+
         def prepare_inference(self, spec, weights):
             return None
 
@@ -179,6 +185,7 @@ def test_composite_and_precision_wrappers_preserve_the_optional_factory():
         PrecisionBackend(primary, PrecisionConfig()), ReferenceBackend()
     )
     prepared = prepare_inference(backend, spec, region_weights(source))
+    assert prepared is not None
     assert prepared is not None and primary.calls == 1
     assert prepared.spec is spec
     run_inference_conformance(
@@ -200,6 +207,8 @@ def test_preparer_cannot_mutate_the_canonical_source():
     original = source.linear.weight.clone()
 
     class Mutating:
+        name = "mutating"
+
         def prepare_inference(self, spec, weights):
             weights["linear"][""]["weight"].zero_()
             return None
@@ -213,6 +222,7 @@ def test_preparation_in_inference_mode_preserves_later_input_derivatives():
     source = composition(spec)
     with torch.inference_mode():
         prepared = prepare_inference(CompositionBackend(), spec, region_weights(source))
+        assert prepared is not None
     assert not any(tensor.is_inference() for tensor in prepared.buffers())
     run_inference_conformance(
         prepared, source, [inputs(spec)], precision=spec.interface_dtype
@@ -249,6 +259,7 @@ def test_input_gradients_are_required_even_for_inference_only():
     spec = product_spec()
     source = composition(spec)
     prepared = prepare_inference(CompositionBackend(), spec, region_weights(source))
+    assert prepared is not None
 
     class Detached(nn.Module):
         capabilities = SpanCapabilities(False, False)
@@ -272,7 +283,8 @@ def test_prepared_region_compiles_and_exports_with_live_inputs(tmp_path, make_sp
     spec = make_spec()
     source = composition(spec)
     prepared = prepare_inference(CompositionBackend(), spec, region_weights(source))
-    compiled = torch.compile(prepared, backend="eager", fullgraph=True)
+    assert prepared is not None
+    compiled: Any = torch.compile(prepared, backend="eager", fullgraph=True)
     for count in (3, 5):
         arguments = inputs(spec, count)
         for actual, expected in zip(

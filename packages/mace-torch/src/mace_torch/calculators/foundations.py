@@ -16,9 +16,8 @@ from ase import units
 from ase.calculators.mixing import SumCalculator
 from mace_core.artifacts import ArtifactRef, resolve_checkpoint
 from mace_core.config.precision import PrecisionConfig
-from mace_core.metadata import ConfigRecord
 from mace_core.model_registry import (
-    Family,
+    FoundationFamily,
     family_default_dtype,
     published_reference,
     resolve_model,
@@ -40,7 +39,7 @@ _MODEL_TYPES = {
 def load_foundation(
     model: str | Path | None,
     *,
-    family: Family = "mace_mp",
+    family: FoundationFamily = "mace_mp",
     device: str = "",
     default_dtype: str | None = None,
     precision: PrecisionConfig | None = None,
@@ -84,17 +83,6 @@ def load_foundation(
             f"{family} requires {sorted(expected)}; checkpoint declares "
             f"{loaded.config.model.model!r}"
         )
-    loaded = replace(
-        loaded,
-        metadata=loaded.metadata.model_copy(
-            update={
-                "config": ConfigRecord(
-                    user=loaded.metadata.config.user,
-                    resolved=loaded.config.to_resolved_dict(),
-                ),
-            }
-        ),
-    )
     if entry is not None:
         if entry.hyperparameters() != loaded.config.model:
             raise ValueError(
@@ -114,7 +102,7 @@ def load_foundation(
         # discovery from the registry without editing the cached sidecar.
         loaded = replace(
             loaded,
-            metadata=loaded.metadata.model_copy(
+            source_metadata=loaded.source_metadata.model_copy(
                 update={
                     "doi": entry.metadata.doi or loaded.metadata.doi,
                     "citations": list(
@@ -133,7 +121,7 @@ def load_foundation(
 
 
 def _calculator(
-    family: Family,
+    family: FoundationFamily,
     model: str | Path | None,
     device: str,
     default_dtype: str | None,

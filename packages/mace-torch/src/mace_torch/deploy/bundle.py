@@ -25,9 +25,12 @@ def export_lammps(
     pad_spec: PaddingPolicy | None = None,
     native_capacity: tuple[int, int] | None = None,
     device: str = "cpu",
+    structure: str | Path | None = None,
 ) -> Path:
     """Publish a complete local bundle. Preserve weights and head row ordering."""
     if native_capacity is None:
+        if structure is not None:
+            raise DeployError("structure applies only to native Polar export")
         if device != "cpu":
             raise DeployError("--device only applies when compiling a native package")
     else:
@@ -59,10 +62,23 @@ def export_lammps(
         # Export is portable even when the training backend is unavailable here.
         model = load_deployed(bundle / "model.json", backend="reference")
         family = model.config.model
-        if family.model not in {"plain", "scale_shift"}:
+        if family.model not in {"plain", "scale_shift", "polar"}:
             raise DeployError(
-                f"expected plain or scale_shift for LAMMPS, got {family.model!r}"
+                f"expected plain, scale_shift or polar for LAMMPS, got {family.model!r}"
             )
+        if family.model == "polar":
+            if native_capacity is None or structure is None:
+                raise DeployError(
+                    "Polar requires --native and --structure "
+                    "for a fixed periodic system"
+                )
+            if halo_exchange:
+                raise DeployError(
+                    "Polar native export evaluates a complete system; "
+                    "use --no-halo-exchange"
+                )
+        elif structure is not None:
+            raise DeployError("structure applies only to native Polar export")
         if family.graph_features:
             raise DeployError(
                 "this checkpoint requires extra inputs unavailable from ML-IAP"
@@ -95,6 +111,7 @@ def export_lammps(
                 nodes=native_capacity[0],
                 edges=native_capacity[1],
                 device=device,
+                structure=structure,
             )
         bundle.rename(target)
     return target

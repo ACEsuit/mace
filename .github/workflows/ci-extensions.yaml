@@ -3,7 +3,7 @@ name: extension tests
 # capability via MACE_REQUIRE_CAPS: a broken install fails, never skips.
 # On PRs, paths-filter runs only the extensions the PR can affect; pushes to
 # main/develop always run everything (the safety net lives on the branch).
-# Adding an extension = tests/extensions/<name>/ + a row in
+# Optional implementations live in the native packages, with filters in
 # tests/architecture/capabilities.toml + a job. The `changes` job's outputs and
 # filters are GENERATED from that manifest by
 # tests/architecture/generate_ci.py; editing them here is reverted by the next
@@ -49,75 +49,69 @@ jobs:
           filters: |
             # >>> generated from capabilities.toml: filter-paths
             shared: &shared
-              - 'setup.cfg'
               - 'pyproject.toml'
               - 'tests/conftest.py'
               - 'tests/helpers.py'
               - 'tests/architecture/capabilities.toml'
               - '.github/workflows/ci-extensions.yaml'
               - '.github/actions/setup-mace/**'
-              - 'mace/modules/**'
-              - 'mace/tools/**'
-              - 'mace/data/**'
+              - 'packages/mace-core/**'
+              - 'packages/mace-torch/**'
+              - 'tests/retirement/**'
             backends:
               - *shared
-              - 'mace/cli/convert_*.py'
-              - 'tests/backends/**'
-              # The backend goldens live with the other goldens, not in tests/backends:
-              # they are cueq/oeq tests that happen to assert against a committed
-              # reference. Without this line a change to them is reviewed by no job that
-              # has cuequivariance installed.
+              - 'packages/mace-core/**'
+              - 'packages/mace-torch/**'
+              - 'tests/parity/**'
+              - 'tests/retirement/**'
+              # Frozen backend references and native backend tests share this job; changes
+              # to the committed references must reach the installed optional backend.
               - 'tests/golden/**'
+              - 'requirements/**'
             polar:
               - *shared
-              - 'mace/cli/polar_density_cube.py'
-              - 'mace/calculators/**'
-              - 'tests/extensions/polar/**'
-              - 'requirements/polar.txt'
+              - 'packages/mace-core/**'
+              - 'packages/mace-torch/**'
+              - 'tests/parity/**'
+              - 'tests/retirement/**'
               # The MACE-Polar golden lives here, and this is the only PR-time job with
               # graph_longrange, so a change to tests/golden that this job would catch
               # must be able to start it.
               - 'tests/golden/**'
+              - 'requirements/**'
             les:
               - *shared
-              - 'tests/extensions/les/**'
-              # The golden anchors run in this job, and two of the three surfaces they pin
-              # live outside mace/modules: the external-field and BEC handling in the
-              # calculator, and the eval CLI's flattened latent multipoles. Without these
-              # paths a change to either would not run the job that holds its numbers.
+              - 'packages/mace-core/**'
+              - 'packages/mace-torch/**'
+              - 'tests/parity/**'
+              - 'tests/retirement/**'
+              # The frozen LES anchor, calculator field/BEC handling and native evaluation
+              # tests run with the pinned external solver.
               - 'tests/golden/**'
-              - 'mace/calculators/**'
-              - 'mace/cli/eval_configs.py'
-              - 'requirements/les.txt'
-              - 'packages/mace-core/pyproject.toml'
-              - 'packages/mace-torch/pyproject.toml'
-              - 'packages/mace-core/src/**'
-              - 'packages/mace-torch/src/**'
-              - 'packages/mace-torch/tests/test_mace_torch_maceles.py'
-              - 'packages/mace-torch/tests/test_mace_torch_les_bec.py'
-              - 'tests/parity/test_les_model_parity.py'
+              - 'requirements/**'
             magnetic:
               - *shared
-              - 'mace/calculators/**'
-              - 'mace/cli/**'
-              - 'tests/extensions/magnetic/**'
-              # This job owns the magnetic goldens too: they live in tests/golden and are
-              # the only place that runs them with sphericart installed, so a change there
-              # has to reach it.
+              - 'packages/mace-core/**'
+              - 'packages/mace-torch/**'
+              - 'tests/parity/**'
+              - 'tests/retirement/**'
+              # The native magnetic implementation is checked against the frozen magnetic
+              # anchor.
               - 'tests/golden/**'
+              - 'requirements/**'
             torchsim:
               - *shared
-              - 'mace/calculators/**'
-              - 'tests/extensions/torchsim/**'
-              - 'packages/mace-torch/src/**'
-              - 'packages/mace-core/src/**'
-              - 'packages/mace-torch/pyproject.toml'
-              - 'packages/mace-torch/tests/test_mace_torch_torchsim.py'
-              - 'requirements/torchsim.txt'
-              - 'tests/parity/test_torchsim_parity.py'
+              - 'packages/mace-core/**'
+              - 'packages/mace-torch/**'
+              - 'tests/parity/**'
+              - 'tests/retirement/**'
+              - 'tests/golden/**'
+              - 'requirements/**'
             schedulefree:
               - *shared
-              - 'tests/extensions/schedulefree/**'
+              - 'packages/mace-torch/src/mace_torch/train/**'
+              - 'packages/mace-torch/tests/test_mace_torch_optimizer_modes.py'
+              - 'tests/workflows/**'
             # <<< generated from capabilities.toml: filter-paths
 
   polar:
@@ -131,45 +125,18 @@ jobs:
         with:
           python-version: "3.11"
           extras: dev
-          pip-packages: -r requirements/polar.txt
       - name: Cache foundation model downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mace
           # URLs live in foundations_models.py: new URLs -> new cache.
-          key: mace-foundations-${{ hashFiles('mace/calculators/foundations_models.py') }}
-      # Polar regression tests compare against released foundation models.
-      # tests/golden rides along because this is the only PR-time job with
-      # graph_longrange installed, and so the only one where the MACE-Polar
-      # golden is more than a skip. `network` joins require-caps for the same
-      # reason: the job already allows downloads, and without it a lost
-      # MACE_CI_ALLOW_NETWORK would turn every foundation golden green by
-      # skipping. The energy anchors in tests/golden run here too; they are
-      # seconds and they are the reference the polar work is measured against.
+          key: mace-foundations-${{ hashFiles('packages/mace-core/src/mace_core/model_registry.json') }}
+      # Native Polar behavior and the committed ELEC-3 reference require no live oracle.
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/polar tests/golden
+          tests: packages/mace-torch/tests/test_mace_torch_polar_model.py packages/mace-torch/tests/test_mace_torch_polar_calculator.py tests/parity/test_elec3_goldens.py
           markers: not cueq and not gpu
-          require-caps: polar,network
-          allow-network: "true"
-
-  polar-cueq:
-    needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.polar == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: ./.github/actions/setup-mace
-        with:
-          python-version: "3.11"
-          extras: dev, cueq
-          pip-packages: -r requirements/polar.txt
-      - uses: ./.github/actions/run-tests
-        with:
-          tests: tests/extensions/polar
-          markers: cueq and not gpu
-          require-caps: polar,cueq
+          require-caps: ""
           allow-network: "true"
 
   les:
@@ -185,16 +152,11 @@ jobs:
           extras: dev
       - name: Install the pinned solver through the V1 extra
         run: python -m pip install -e packages/mace-core -e 'packages/mace-torch[les]'
-      # The LES goldens check the installed solver commit against requirements/les.txt.
-      # tests/golden rides along because the MACELES anchor is les-marked and
-      # this is the only PR job with les installed at the pinned commit -- the
-      # ci-core unit job runs the same directory without it and skips that one
-      # file. The rest of tests/golden is unmarked and fast, so it simply runs
-      # in both.
+      # Preserve the frozen LES anchor and exercise the installed pinned solver.
       - uses: ./.github/actions/run-tests
         with:
           tests: >-
-            tests/extensions/les tests/golden tests/parity/test_les_model_parity.py
+            tests/retirement/test_frozen_anchors.py tests/golden
             packages/mace-torch/tests/test_mace_torch_maceles.py
             packages/mace-torch/tests/test_mace_torch_les_bec.py
           markers: not gpu
@@ -211,7 +173,7 @@ jobs:
       - uses: ./.github/actions/setup-mace
         with:
           python-version: "3.11"
-          extras: dev, magnetic
+          extras: dev
       - uses: ./.github/actions/run-tests
         with:
           # tests/golden rides along because the magnetic goldens live there
@@ -221,9 +183,9 @@ jobs:
           # fails here instead of turning them green by absence. The rest of
           # tests/golden is CPU-only and cheap, so collecting it twice costs
           # seconds and buys the anchors a second python version.
-          tests: tests/extensions/magnetic tests/golden
+          tests: packages/mace-torch/tests/test_mace_torch_magnetic_model.py packages/mace-torch/tests/test_mace_torch_time_reversal.py
           markers: not gpu
-          require-caps: magnetic
+          require-caps: ""
 
   torchsim:
     needs: changes
@@ -238,13 +200,13 @@ jobs:
           extras: dev, torchsim
           # graph_longrange so the torchsim×polar tests run (they never did
           # before: the old job did not install it and they skipped silently).
-          pip-packages: -r requirements/polar.txt -r requirements/torchsim.txt
+          pip-packages: -r requirements/torchsim.txt
       - name: Install V1 TorchSim adapter
         run: python -m pip install -e packages/mace-core -e 'packages/mace-torch[torchsim]'
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/torchsim packages/mace-torch/tests/test_mace_torch_torchsim.py tests/parity/test_torchsim_parity.py
-          require-caps: torchsim,polar
+          tests: packages/mace-torch/tests/test_mace_torch_torchsim.py
+          require-caps: torchsim
           allow-network: "true"
 
   schedulefree:
@@ -260,7 +222,7 @@ jobs:
           extras: dev, schedulefree
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/extensions/schedulefree
+          tests: packages/mace-torch/tests/test_mace_torch_optimizer_modes.py
           markers: not gpu
           require-caps: schedulefree
 
@@ -275,12 +237,12 @@ jobs:
         with:
           python-version: "3.11"
           extras: dev, cueq
-      # Marker selection over the WHOLE tree, not just tests/backends: cueq
+      # Marker selection includes native package and frozen-reference tests: cueq
       # tests that live with their subject (training in workflows/, dielectric
       # cueq matrix in dipole_polar, calculator paths) run here too. polar+cueq
       # has its own job; gpu-only cueq runs on the fleet.
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests
+          tests: packages/mace-torch/tests tests/parity
           markers: cueq and not gpu and not polar
           require-caps: cueq

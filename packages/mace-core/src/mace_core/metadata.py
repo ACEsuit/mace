@@ -71,7 +71,7 @@ _Magnitude = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 
 
 class ConfigRecord(_Record):
-    """Record of the training config, as written and as resolved."""
+    """User configuration and the effective configuration needed to rebuild a model."""
 
     user: dict[str, Any] = Field(default_factory=dict)
     resolved: dict[str, Any] = Field(default_factory=dict)

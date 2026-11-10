@@ -5,7 +5,7 @@ them into the declared observables and returns them as the typed dataclass, not
 as a dict whose keys every consumer has to know by heart.
 
 The point of the shape is what it makes cheap. Adding a new spherical-tensor
-observable is a line of configuration: the spec drives the head, the reduction
+observable is a line of configuration: the spec drives the readout, the reduction
 follows from ``per_atom``, and the value lands either on its own field of
 :class:`~mace_core.outputs.MACEOutput` or in ``extras`` under its own name. No
 file in this package is edited, and no new model class appears. The frozen tree
@@ -59,7 +59,7 @@ def fixed_charge_dipole(
     )
 
 
-#: The one observable whose head is not a plain readout. Its site energies go
+#: The one observable whose output is not a plain readout. Its site energies go
 #: through the energy readout, which owns the isolated-atom energies, the scale and
 #: shift, and the two-reduction structure.
 ENERGY_OBSERVABLE = "energy"
@@ -78,7 +78,7 @@ class MACEOutputs(nn.Module):
 
     Args:
         backend: The kernel backend. Consulted at construction only.
-        observables: The declarations. One head is built per entry.
+        observables: The declarations. One readout is built per entry.
         layer_irreps: One channel's node-feature declaration per layer, as the
             backbone reports them.
         num_features: The channel width.
@@ -217,7 +217,7 @@ class MACEOutputs(nn.Module):
 
         Raises:
             KeyError: Naming both the observable and the key that is missing.
-                Without this the run trains a head against nothing and reports
+                Without this the run trains a readout against nothing and reports
                 a loss that looks fine, because the term is simply absent.
         """
         present = set(available)

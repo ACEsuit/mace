@@ -263,10 +263,22 @@ def test_a_solver_that_changes_the_numbers_is_not_swapped_in(trained, registered
 
 
 @fp64_only
-def test_two_solvers_with_the_reference_s_numbers_swap_freely(trained, registered):
+def test_two_solvers_with_the_reference_s_numbers_swap_freely(
+    trained, registered, tmp_path
+):
+    from mace_torch.serialization import write_model
+
     reference = load_deployed(trained)
     twin = load_deployed(trained, solver="twin")
     assert twin.model.solver == "twin"
+    path = write_model(tmp_path / "twin", twin.engine, twin.metadata)
+    restored = load_deployed(path)
+    assert restored.model.solver == "twin"
+    restored_record = restored.metadata.electrostatics
+    source_record = twin.source_metadata.electrostatics
+    assert restored_record is not None and source_record is not None
+    assert restored_record.solver == "twin"
+    assert source_record.solver == "reference"
     structure = build_graph(WATER + 5.0, [8, 1, 1])
     structure["element_index"] = torch.tensor([1, 0, 0])
     structure.update(
@@ -276,10 +288,12 @@ def test_two_solvers_with_the_reference_s_numbers_swap_freely(trained, registere
     )
     energies = [
         model.compute(dict(structure), compute=()).total_energy
-        for model in (reference, twin)
+        for model in (reference, twin, restored)
     ]
-    assert energies[0] is not None and energies[1] is not None
-    assert torch.equal(energies[0], energies[1])
+    assert energies[0] is not None
+    for energy in energies[1:]:
+        assert energy is not None
+        assert torch.equal(energies[0], energy)
 
 
 @fp64_only

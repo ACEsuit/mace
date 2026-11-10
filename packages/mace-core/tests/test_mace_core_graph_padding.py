@@ -82,7 +82,7 @@ def test_unpadding_diagnostics_can_echo_a_differentiable_input():
                 irreps="0e",
                 per_atom=False,
                 units="eV",
-                derivatives=("external_field",),
+                derivatives=({"wrt": "external_field"},),
             ),
         ),
     )
@@ -122,6 +122,7 @@ def test_retained_budget_grows_once_and_never_shrinks(policy):
     assert budgets[1] != budgets[2]
     assert budgets[2] == budgets[3] == budgets[4]
     if isinstance(policy, AutoPadding):
+        assert budgets[2] is not None
         assert budgets[2].edges == 640
 
 

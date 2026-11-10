@@ -16,7 +16,6 @@ from mace_core.graph import (
     LABEL_KEYS,
     GraphInfo,
     GraphValidationError,
-    GraphView,
     collate,
     graph_sample,
     presence_key,
@@ -284,14 +283,6 @@ def test_a_labelled_structure_cannot_be_padding():
     graph["positions"][2:] = 0.0
     with pytest.raises(GraphValidationError, match="energy_present"):
         validate_graph(graph)
-
-
-def test_the_view_reads_the_dict_without_copying(graph):
-    view = GraphView(graph)
-    assert view.positions is graph["positions"]
-    assert view.info.num_graphs == 2
-    with pytest.raises(AttributeError, match="density_coefficients"):
-        _ = view.density_coefficients
 
 
 # --- the numpy reference collation --------------------------------------------------

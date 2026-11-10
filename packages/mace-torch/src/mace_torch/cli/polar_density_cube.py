@@ -1,6 +1,6 @@
 """Writing a charge-aware model's density as cube files, from a command line.
 
-``mace_polar_density_cube --engine v1``: one structure is evaluated with a v1
+``mace_polar_density_cube``: one structure is evaluated with a v1
 charge-aware model, and the density of its charge, of its spin, or of either
 spin channel is sampled on a grid and written as a Gaussian cube, with an
 optional potential and a JSON report of how faithful the grid is.
@@ -30,7 +30,7 @@ __all__ = ["build_parser", "load_calculator", "main", "run"]
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mace_polar_density_cube --engine v1",
+        prog="mace_polar_density_cube",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=(
             "Write a charge-aware model's charge or spin density as cube files."

@@ -49,6 +49,7 @@ def test_closed_shapes_declare_boundaries_and_canonical_roles():
     assert hash(spec)
     with pytest.raises(FrozenInstanceError):
         spec.product = None
+    assert spec.product is not None
     assert spec.product.input_names == ("message", "element", "residual")
     assert spec.output_names == ("features", "readout")
     assert "normalization" in spec.weight_roles

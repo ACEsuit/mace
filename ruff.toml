@@ -1,12 +1,4 @@
-# The declared floor (setup.cfg: python_requires >= 3.11).
 target-version = "py311"
-
-# `mace/**` is owned by black + isort + pylint + mypy and is never reformatted:
-# it is byte-frozen as the numerical oracle. The vendored trees inside it were
-# always excluded from every toolchain.
-extend-exclude = [
-    "./mace",
-]
 
 [lint]
 # The standard for new code.

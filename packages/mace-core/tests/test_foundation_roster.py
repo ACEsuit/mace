@@ -13,8 +13,8 @@ def test_each_published_model_is_listed_once():
 
 
 def test_the_roster_is_the_twenty_four_converted_and_one_dropped():
-    converted = [entry for entry in ROSTER if entry.family is not None]
-    dropped = [entry for entry in ROSTER if entry.family is None]
+    converted = [entry for entry in ROSTER if entry.architecture is not None]
+    dropped = [entry for entry in ROSTER if entry.architecture is None]
     assert len(converted) == 24
     assert [(entry.loader, entry.replaced_by) for entry in dropped] == [
         ("mace_anicc", "MACE-OFF23")
@@ -23,21 +23,21 @@ def test_the_roster_is_the_twenty_four_converted_and_one_dropped():
 
 def test_a_dropped_model_says_why_and_what_instead():
     entry = roster_entry("mace_anicc", "default")
-    assert entry.family is None
+    assert entry.architecture is None
     assert entry.reason
 
 
 @pytest.mark.parametrize(
-    ("family", "replaced_by", "reason"),
+    ("architecture", "replaced_by", "reason"),
     [(None, None, None), ("scale_shift", "MACE-OFF23", "superseded")],
     ids=["dropped-without-a-reason", "converted-with-a-replacement"],
 )
 def test_an_entry_is_either_converted_or_dropped_with_its_reason(
-    family, replaced_by, reason
+    architecture, replaced_by, reason
 ):
     with pytest.raises(ValueError, match="dropped artifact names its replacement"):
         RosterEntry(
-            "mace_mp", "x", "https://example.org/x", family, replaced_by, reason
+            "mace_mp", "x", "https://example.org/x", architecture, replaced_by, reason
         )
 
 

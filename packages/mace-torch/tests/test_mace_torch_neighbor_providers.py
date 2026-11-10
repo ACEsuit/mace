@@ -16,7 +16,9 @@ from mace_core.neighbors import (
     NeighborBackendNotAvailableError,
     NeighborListConfig,
     available_neighbor_backends,
+    get_neighbor_backend,
     get_neighborhood,
+    neighbor_capabilities,
     search_geometry,
 )
 from mace_torch.graph import apply_edge_plan, build_batch, collate, pad_batch
@@ -63,9 +65,23 @@ def providers(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("case", CASES)
-def test_every_registered_provider_matches_the_oracle(providers, case):
+def test_default_cpu_providers_match_the_oracle(providers, case):
     positions, cutoff, pbc, cell = case
+    tested = set()
     for entry in available_neighbor_backends("torch"):
+        if not entry.loaded:
+            continue
+        section = getattr(entry.factory, "settings_section", None)
+        if section is not None and any(
+            field.is_required() for field in section.model_fields.values()
+        ):
+            # Configured native CUDA libraries have dedicated device parity tests.
+            continue
+        backend = get_neighbor_backend(entry.name, framework="torch")
+        capabilities = neighbor_capabilities(backend, entry.name)
+        if entry.framework is not None and "cpu" not in capabilities.devices:
+            continue
+        tested.add(entry.name)
         provider = resolve_neighbor_provider(NeighborListConfig(kind=entry.name))
         for motion in [0.0, 0.03]:
             moved = positions.copy()
@@ -82,6 +98,7 @@ def test_every_registered_provider_matches_the_oracle(providers, case):
             assert torch.equal(result.cell, torch.tensor(expected.cell)), entry.name
             if "sorted_by_sender" in provider.capabilities.features:
                 assert torch.all(result.edge_index[0, 1:] >= result.edge_index[0, :-1])
+    assert {"all_pairs", "vesin", "device", "batch", "stateful"} <= tested
 
 
 @pytest.mark.parametrize("enabled", tuple(itertools.product((False, True), repeat=3)))

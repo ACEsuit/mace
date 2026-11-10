@@ -19,70 +19,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  legacy-size:
-    # GATE-3: retirement may shrink the oracle, but new code belongs in packages/.
+  retirement:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-      - name: The tracked legacy tree cannot grow
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - name: Legacy cannot return
         run: |
-          base_ref=${BASE_SHA:-HEAD^}
-          # A new branch push has an all-zero 'before'; dispatch has no 'before'.
-          if [[ "$base_ref" =~ ^0+$ ]]; then base_ref=HEAD^; fi
-          base_count=$(git ls-tree -r --name-only "$base_ref" -- mace/ | wc -l)
-          head_count=$(git ls-files -- mace/ | wc -l)
-          printf 'Tracked legacy files: base=%s current=%s\n' "$base_count" "$head_count"
-          if (( head_count > base_count )); then
-            echo 'Legacy grew. Put new implementation in packages/.' >&2
-            exit 1
-          fi
-
-  legacy-lint:
-    # The frozen tree's toolchain: black + isort + pylint, plus mypy against a
-    # committed baseline. It runs the hooks scoped to mace/** in
-    # .pre-commit-config.yaml, so a violation in packages/** cannot fail it.
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: ./.github/actions/setup-mace
-        with:
-          # 3.11, the version .mypy.ini declares. mypy parses third-party stubs
-          # against python_version, and numpy 2.5's are PEP 695, so on a newer
-          # interpreter the run stops at a parse error and checks nothing. The
-          # hooks pass identically on 3.11.
-          python-version: "3.11"
-          extras: dev
-          # The pylint hook is `language: system`: packages the linted code
-          # imports must be importable in this environment.
-          pip-packages: wandb
-      - name: Install the v1 packages
-        # pylint resolves imports against this environment, and the seams
-        # import the new packages, so both trees have to be present even
-        # though this job only lints one of them.
-        run: |
-          python -m pip install -e packages/mace-core \
-                                -e packages/mace-torch
-      - name: Legacy hooks
-        # `pre-commit run` takes at most one hook id, so the new toolchain's
-        # hooks are skipped by name instead. That is what keeps a packages/**
-        # violation out of this job: the hooks are path-scoped, but running
-        # them here at all would report the other tree's failures as this
-        # tree's.
-        env:
-          SKIP: ruff-check,ruff-format,ty
-        run: pre-commit run --all-files --show-diff-on-failure
-      - name: mypy against the committed baseline
-        # mypy has never run here, so the frozen tree carries a backlog it is
-        # not this migration's job to fix: the tree is the numerical oracle and
-        # editing it moves the oracle. Only a new error fails.
-        run: python tests/architecture/check_mypy_baseline.py
+          test ! -e mace
+          test ! -e packages/mace-launcher
+          test ! -e setup.cfg
 
   packages-lint:
     # The new tree's toolchain: ruff lint, ruff format and ty, scoped to
@@ -106,7 +51,6 @@ jobs:
           python -m pip install -e packages/mace-core \
                                 -e "packages/mace-torch[schedulefree]" \
                                 -e packages/mace-jax \
-                                -e packages/mace-launcher \
                                 -e packages/mace-backend-example
           # Pinned to the same versions as the dev extra and the
           # ruff-pre-commit rev, so this job and a developer's machine
@@ -123,7 +67,7 @@ jobs:
         # by PAR-1 and ruff errors on a path that does not exist yet, so it
         # joins the set the moment it appears.
         run: |
-          paths=(packages/ tests/conftest.py)
+          paths=(packages/ tests/conftest.py tests/retirement/)
           if [[ -d tests/parity ]]; then paths+=(tests/parity/); fi
           echo "checking: ${paths[*]}"
           ruff check "${paths[@]}"
@@ -147,7 +91,7 @@ jobs:
     # naming a tag resolves nothing for the packages that ship a different one:
     # the runner's own tags are the only set that is right for all of them.
     #
-    # The list is read out of `setup.cfg`, not written here, so an extras group
+    # The list is read out of `packages/mace-torch/pyproject.toml`, not written here, so an extras group
     # added or retired there needs no edit in this file to be covered.
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -159,20 +103,20 @@ jobs:
       - name: Resolve every cueq extra
         run: |
           python -m pip install -U pip
-          extras=$(python -c 'import configparser; c = configparser.ConfigParser(); c.read("setup.cfg", encoding="utf-8"); print(" ".join(n for n in c["options.extras_require"] if n.startswith("cueq")))')
+          extras=$(python -c 'import tomllib; c = tomllib.load(open("packages/mace-torch/pyproject.toml", "rb")); print(" ".join(n for n in c["project"]["optional-dependencies"] if n.startswith("cueq")))')
           echo "resolving: $extras"
           # A derived list can come back empty -- a renamed section, a changed
           # prefix, a parse that failed -- and an empty `for` runs no pip at all,
           # so the job would exit green having measured nothing.
           if [ -z "$extras" ]; then
-            echo "no cueq extra found in setup.cfg: the derivation above is broken" >&2
+            echo "no cueq extra found in packages/mace-torch/pyproject.toml: the derivation above is broken" >&2
             exit 1
           fi
           status=0
           echo '## cueq wheel extras' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           for extra in $extras; do
-            if report=$(python -m pip install --dry-run --quiet ".[$extra]" 2>&1); then
+            if report=$(python -m pip install --dry-run --quiet "packages/mace-torch[$extra]" 2>&1); then
               verdict=ok
             else
               verdict='DOES NOT RESOLVE'
@@ -186,13 +130,13 @@ jobs:
 
   unit:
     # The only full-matrix suite on pull requests: python-version bugs are
-    # import/API-shaped and this suite is cheap. No pytest-split: if tests/unit
+    # import/API-shaped and this suite is cheap. No pytest-split: if tests/retirement
     # needs sharding, the tests are misclassified.
     #
     # Every other leg resolves the newest torch, so the min-torch leg is the
-    # only job that exercises the torch floor setup.cfg declares. Keep the two
+    # only job that exercises the torch floor packages/mace-torch/pyproject.toml declares. Keep the two
     # in sync.
-    needs: [ legacy-lint, packages-lint ]
+    needs: [ retirement, packages-lint ]
     runs-on: ubuntu-latest
     name: unit (py${{ matrix.python-version }}${{ matrix.torch && format(', torch {0}', matrix.torch) || '' }})
     timeout-minutes: 60
@@ -226,7 +170,7 @@ jobs:
           # tests/architecture is NOT here: it moved to the `architecture` job
           # below, which is the only one that installs both trees editable and
           # can therefore run the import contracts alongside it.
-          tests: tests/unit tests/golden
+          tests: tests/retirement tests/golden
           markers: not slow
           numprocs: auto
 
@@ -282,7 +226,7 @@ jobs:
           # This environment installs both console-script owners.
           tests: >-
             tests/architecture
-            tests/workflows/test_launcher_engine_parity.py::test_exactly_one_distribution_provides_each_console_script
+            tests/architecture/test_packaging_isolation.py
           numprocs: "0"
 
   parity:
@@ -323,18 +267,18 @@ jobs:
 
   packages:
     # The v1 stack under packages/. It installs no legacy package and no
-    # torch, and that is the point rather than a saving: mace_core, mace_torch
+    # e3nn; each distribution declares its own runtime dependencies. mace_core, mace_torch
     # and mace_jax have to stand up on their own, and a job that installed the
     # legacy environment first would keep passing on the day one of them grows
     # a dependency on it.
     #
     # Same versions as the unit job, for the same reason: what breaks
     # across python versions here is import- and packaging-shaped, and the job
-    # takes seconds.
-    needs: [ legacy-lint, packages-lint ]
+    # includes the full native correctness suite.
+    needs: [ retirement, packages-lint ]
     runs-on: ubuntu-latest
     name: packages (py${{ matrix.python-version }})
-    timeout-minutes: 15
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -351,7 +295,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install the v1 packages
-        # One pip invocation, not four: mace-torch-v1 and mace-jax require
+        # One pip invocation, not four: mace-torch and mace-jax require
         # mace-core, which is not published, so pip only resolves it when it
         # sees the local path in the same run.
         run: |
@@ -363,10 +307,9 @@ jobs:
           fi
           python -m pip install -e packages/mace-core \
                                 -e packages/mace-torch \
-                                -e packages/mace-launcher "${jax_package[@]}"
-          # Test dependencies only. numpy comes from mace-core, which declares
-          # it as a runtime dependency.
-          python -m pip install pytest
+                                "${jax_package[@]}"
+          # The native suites use the shared test dependency group.
+          python -m pip install --group test
       - name: The example backend does not exist before its wheel is installed
         # The claim the example proves is that a backend in its own wheel
         # needs no edit to MACE. Here the four MACE packages are installed and
@@ -381,7 +324,7 @@ jobs:
           suites=(packages/*/tests)
           if [[ '${{ matrix.python-version }}' == '3.11' ]]; then
             suites=(packages/mace-core/tests packages/mace-torch/tests
-                    packages/mace-launcher/tests packages/mace-backend-example/tests)
+                    packages/mace-backend-example/tests)
           fi
           python -m pytest "${suites[@]}" -v
 
@@ -438,7 +381,7 @@ jobs:
     # End-to-end CLI trainings via subprocess — the expensive suite. PRs run
     # the python-version frontier (min+max); pushes run the full matrix, and
     # nightly.yaml repeats it with network tests enabled.
-    needs: [ legacy-lint, packages-lint ]
+    needs: [ retirement, packages-lint ]
     runs-on: ubuntu-latest
     name: workflows (py${{ matrix.python-version }}, group ${{ matrix.split-group }})
     timeout-minutes: 90
@@ -457,16 +400,6 @@ jobs:
           # installed here the whole file skips and the flags go back to being
           # covered by nothing.
           extras: dev, wandb
-
-      - name: Install the v1 stack so the engine that is not the default runs
-        # The launcher is installed for every job, and on its own it can only
-        # dispatch to legacy: a `--engine v1` test would skip, and a skipped
-        # end-to-end test is a green tick for a stack that was never run. One
-        # pip invocation, because mace-torch requires the unpublished
-        # mace-core and pip resolves it only from the same command line.
-        run: |
-          python -m pip install --retries 5 -e packages/mace-core \
-                                            -e packages/mace-torch
 
       # Training tests can leave large files around until the run ends.
       - name: Free up disk space
@@ -489,7 +422,7 @@ jobs:
   coverage:
     # Informative (no threshold gate yet): summary + artifact. Nightly runs
     # the network-inclusive variant.
-    needs: [ legacy-lint, packages-lint ]
+    needs: [ retirement, packages-lint ]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -507,14 +440,14 @@ jobs:
             /usr/local/share/chromium /opt/microsoft /opt/google
       - uses: ./.github/actions/run-tests
         with:
-          tests: tests/unit tests/workflows
+          tests: tests/retirement tests/workflows
           require-caps: wandb
           coverage: "true"
       - name: Coverage summary
         if: always()
         run: |
           {
-            echo '## Coverage (tests/unit + tests/workflows, no network)'
+            echo '## Coverage (tests/retirement + tests/workflows, no network)'
             echo '```'
             coverage report --skip-covered --sort=cover | tail -40
             echo '```'
@@ -529,7 +462,7 @@ jobs:
         run: |
           # >>> generated from capabilities.toml: coverage-floors-informative
           # Generated by tests/architecture/generate_ci.py from tests/architecture/capabilities.toml.
-          # Informative only: this job measures tests/unit + tests/workflows, a
+          # Informative only: this job measures core/package + workflow, a
           # narrower denominator than the nightly gate the floors are calibrated
           # against, so it reports the two numbers and gates on neither.
           echo "## Per-file coverage floors (informative: narrower selection than the nightly gate)" >> "$GITHUB_STEP_SUMMARY"
@@ -541,13 +474,13 @@ jobs:
               >> "$GITHUB_STEP_SUMMARY"
           done <<'FLOORS'
           # energy
-          mace/modules/loss.py 90
-          mace/modules/radial.py 90
-          mace/modules/utils.py 85
+          packages/mace-torch/src/mace_torch/train/loss.py 90
+          packages/mace-torch/src/mace_torch/nn/radial.py 90
+          packages/mace-torch/src/mace_torch/physics/outputs.py 85
           # data
-          mace/data/utils.py 85
-          mace/data/neighborhood.py 95
-          mace/data/atomic_data.py 85
+          packages/mace-core/src/mace_core/data/configuration.py 85
+          packages/mace-core/src/mace_core/neighbors/neighborhood.py 95
+          packages/mace-core/src/mace_core/graph/collate.py 85
           FLOORS
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           # <<< generated from capabilities.toml: coverage-floors-informative
@@ -557,3 +490,31 @@ jobs:
           name: coverage-html
           path: htmlcov/
           retention-days: 14
+
+  tutorials:
+    needs: packages-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements/tutorials.txt
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tutorials/tests examples/tests
+          numprocs: "0"
+          require-caps: ""
+
+  documentation:
+    needs: packages-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-python@e9d6f990972a57673cdb72ec29e19d42ba28880f
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r docs/requirements.txt
+      - run: python -m sphinx -b html -W --keep-going docs docs/_build/html

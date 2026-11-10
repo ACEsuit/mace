@@ -15,6 +15,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+import sys
 from zipfile import ZipFile
 
 import pytest
@@ -83,7 +84,7 @@ def test_wheels_ship_no_model_artifact(tmp_path, package):
     if shutil.which("uv") is None:
         pytest.skip("building the wheel needs uv")
     completed = subprocess.run(
-        ["uv", "build", "--wheel", "--quiet", str(PACKAGES / package), "-o", str(tmp_path)],
+        ["uv", "build", "--no-build-isolation", "--python", sys.executable, "--wheel", "--quiet", str(PACKAGES / package), "-o", str(tmp_path)],
         capture_output=True, text=True, check=False,
     )
     assert completed.returncode == 0, completed.stderr

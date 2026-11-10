@@ -10,6 +10,7 @@ tests, where there is a model to evaluate.
 from __future__ import annotations
 
 import pytest
+from mace_core.graph import FixedPadding
 from mace_torch.calculators.padding import requested_padding
 
 # ---------------------------------------------------------------------------
@@ -24,6 +25,7 @@ def test_nothing_is_padded_unless_asked():
 
 def test_a_budget_selects_the_fixed_regime():
     policy = requested_padding(10, 400, environ={})
+    assert isinstance(policy, FixedPadding)
     assert (policy.kind, policy.nodes_budget, policy.edges_budget) == ("fixed", 11, 400)
 
 
@@ -31,6 +33,7 @@ def test_the_environment_supplies_a_budget_the_arguments_leave_out():
     policy = requested_padding(
         environ={"MACE_ASE_PAD_NUM_ATOMS": "12", "MACE_ASE_PAD_NUM_EDGES": "640"}
     )
+    assert isinstance(policy, FixedPadding)
     assert (policy.kind, policy.nodes_budget, policy.edges_budget) == ("fixed", 13, 640)
 
 
@@ -38,6 +41,7 @@ def test_an_argument_wins_over_the_environment():
     policy = requested_padding(
         20, environ={"MACE_ASE_PAD_NUM_ATOMS": "12", "MACE_ASE_PAD_NUM_EDGES": "640"}
     )
+    assert isinstance(policy, FixedPadding)
     assert (policy.nodes_budget, policy.edges_budget) == (21, 640)
 
 

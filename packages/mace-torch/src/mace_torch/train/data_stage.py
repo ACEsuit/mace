@@ -252,11 +252,19 @@ def run_data_stage(
             )
         except Exception as failure:
             raise DataStageError(f"data.statistics_file {path}: {failure}") from failure
-        expected = dict(
+        expected: dict[str, object] = dict(
             r_max=config.model.r_max,
             atomic_numbers=list(z_table.zs),
             atomic_energies=energies,
         )
+        # Legacy statistics do not record their method. An unused scale does
+        # not constrain the run, but a known scale must match how it is used.
+        if (
+            measured != "none"
+            and config.model.scaling != "none"
+            and statistics.normalization_method is not None
+        ):
+            expected["normalization_method"] = measured
         for name, value in expected.items():
             if getattr(statistics, name) != value:
                 raise DataStageError(

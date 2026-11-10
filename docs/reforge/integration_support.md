@@ -10,7 +10,7 @@ implementations. It is not another model checkpoint.
 | ASE | Energy, response and magnetic models, units, padding and compiled execution | See the per-family parity records |
 | LAMMPS native | Python-free torch.export/AOTInductor, reference/cuEq, changing neighbours and MPI migration on one/two GPUs | Performance results are recorded separately from correctness |
 | ML-IAP | Direct callback, reference/cuEq, eager/compiled regions, one/two MPI ranks | Python callback is required by this compatibility interface |
-| OpenMM | Native C++/AOTInductor on CPU and CUDA/cuEq float32/float64; molecular and periodic trajectories, current triclinic cells, frozen legacy energy/force parity | Whole-System energy models; host transfers remain. The direct Python callback also supports declared inputs |
+| OpenMM | Native C++/AOTInductor on CPU and CUDA/cuEq float32/float64; molecular and periodic trajectories, current triclinic cells, frozen legacy energy/force parity | Whole-System models; local-energy packages use host arrays. Periodic Polar supports direct CUDA buffers. The direct Python callback also supports declared inputs |
 | Symmetrix | General 0.3.0 source inspected at `fc7e532`; native JSON consumer and legacy extractor are public | V1 exporter, architecture checks, parity and benchmark sweep remain pending |
 | libmace | Native AOTInductor C/C++, Fortran on two MPI ranks, changing geometry, legacy E/F/virial parity; installed clients with cuEq float32/float64 on Blackwell | Full-structure root evaluation; spatial decomposition and model scaling across GPUs remain outside this adapter |
 | GROMACS native | Pinned 2026.3 NNPot adapter over libmace; CPU and B200 cuEq float32/float64 E/F/virial parity, changing cells/neighbours, two MPI domains, XY slabs | Whole-system model on the main rank; `pbc=no` is rejected by upstream Verlet. Hybrid embedding and model scaling across GPUs remain outside this adapter |
@@ -21,6 +21,66 @@ record the 512/4096-atom B200 results, the libmace neighbour-radius correction,
 native OpenMM checks, and the remaining host/MPI costs. Symmetrix's general
 interface is now public; its V1 adapter and validation remain pending. The
 two Polar float32 rows retain their existing open status and precision contract.
+
+## Native Polar at fixed cell
+
+The native exporter accepts Polar through a complete-system interface carrying
+positions, the periodic cell and integer lattice shifts for local neighbours. The reciprocal-space
+selection is prepared at export. Its cell derivatives remain in the graph,
+so the shared V1 derivative engine produces both electrostatic forces and the full
+virial. Edge vectors are formed inside the model in its selected precision.
+The same artifact serves native LAMMPS, libmace, OpenMM and GROMACS.
+
+```sh
+mace export lammps polar-medium.json --native 96 16384 \
+  --structure water-96.xyz --no-halo-exchange \
+  --device cuda --backend cueq --dtype float32 --output polar-96
+```
+
+For Polar, the first capacity is the exact atom count, with no padding atom.
+The edge capacity includes unused edges. The XYZ must be fully periodic with
+a right-handed cell; its `total_charge`, `total_spin` and `external_field`
+metadata fix those inputs for the artifact. Defaults are zero charge, spin
+multiplicity one and zero field. The electrostatics solver is `reference`;
+`cueq` selects the equivariant kernels independently.
+
+Every runtime checks the cell and atom count before evaluation. Changing either
+requires another export; this path supports fixed-cell dynamics, including NVE
+and NVT. NPT, partial periodicity and runtime charge/field updates remain outside
+this native Polar interface. The ASE and direct OpenMM Python interfaces retain
+their existing dynamic inputs.
+
+LAMMPS runs Polar with one MPI rank and atom IDs, using its periodic ghost
+images only to build local edges. It rejects per-atom energy and virial requests
+because Polar has no complete per-atom electrostatic partition. libmace's
+`node_energy` retains V1's local readout; callers must use `total_energy` for
+the energy including electrostatics. Global forces and virials include all terms.
+The ML-IAP callback continues to accept only the local energy architectures.
+
+For CUDA neighbour construction, build LAMMPS with `PKG_KOKKOS=ON`,
+`Kokkos_ENABLE_CUDA=ON`, `KOKKOS_PREC=double` and `KOKKOS_LAYOUT=legacy`.
+Build the plugin with `MACE_WITH_KOKKOS=ON`, pointing `CMAKE_PREFIX_PATH` at
+that LAMMPS installation so it finds the matching Kokkos package. Select the
+GPU architecture for both builds. The adapter is compiled as a separate CUDA
+translation unit; the PyTorch runtime remains ordinary C++. Keep
+`mace_native.so` and its companion `libmace_kokkos_neighbors.so` together when
+copying the plugin. Both use the Kokkos runtime already owned by LAMMPS.
+
+Run `lmp -k on g 1 -sf kk -pk kokkos neigh full newton off -in run.in`, with
+`pair_style mace/native/kk /path/to/native.pt2`. The log must report a
+`kokkos_device` neighbour list. This route currently accepts periodic CUDA
+packages on one rank. The adapter consumes Kokkos's device neighbour list,
+maps ghost images to their real owners on the GPU and writes forces back to
+Kokkos's device array. Only requested global energy and virial values are
+copied to the host. Complete-step timings include synchronization. Merely enabling `-k on` with
+the ordinary `mace/native` style does not select GPU neighbours.
+
+`tests/parity/test_native_polar.py` checks float32/float64 values and derivatives,
+strict export capture, real C/C++ calls and rejection of changed cells.
+`tests/benchmarks/deployment/polar_engines.py` runs the four-engine correctness
+gates and complete-step measurements on repeated periodic water cells. All four
+timed paths execute the same native AOT artifact. ASE uses
+`NativeMACECalculator`; eager inference is used only for numerical checks.
 
 ## Native OpenMM
 
@@ -34,9 +94,10 @@ float32 and float64 use the precision selected at export.
 
 [Build and CMake client instructions](../../tests/integrations/openmm/native.md)
 cover installation, the required CUDA plugin and the whole-System scope.
-Geometry and forces pass through host arrays in this public C++ interface.
-The measured deployment results separate this cost from GPU evaluation and
-include complete MD steps. Additional charge/field inputs remain available
+With `MACE_OPENMM_CUDA=ON`, periodic Polar packages exchange positions and
+forces directly with OpenMM's CUDA buffers and use the shared CUDA cell list.
+CPU and local-energy packages use the CustomCPPForce host-array path. Timings
+include the complete MD step for the selected route. Additional charge/field inputs remain available
 through the direct callback below.
 
 ## OpenMM direct PyTorch interface
@@ -158,7 +219,9 @@ reader is not linked, and the published upstream binary is not claimed to load V
 
 The public C ABI and Fortran geometry/units convention are preserved; C++
 applications rebuild against the framework-free header. The pinned neighbour
-builder remains unchanged. The Fortran module retains its API and root-only
+builder remains unchanged for CPU calls. Periodic CUDA packages use the shared
+CUDA cell list, including calls through the C/Fortran API. The Fortran module
+retains its API and root-only
 evaluation with MPI broadcasts. Its derived build source corrects an uninitialized
 non-root pointer and a factor-of-1000 error in the barrier's sleep interval.
 These change neither the model nor numerical results. MPI here does not mean
@@ -246,7 +309,9 @@ weight layout or model implementation is added.
 [Build and input instructions](../../tests/integrations/gromacs/README.md)
 define the supported whole-system scope, units and restrictions. GROMACS
 collects the full model input on its main rank and distributes forces to the
-owning domains. The direct virial is included once with GROMACS's `-W/2`
+owning domains. This upstream NNPot interface exposes host arrays; the MACE
+CUDA runtime builds its neighbours on the GPU after uploading positions. The
+direct virial is included once with GROMACS's `-W/2`
 convention. CPU and cuEq float32/float64 MD and rerun cases compare against
 the frozen legacy model. The full Dais B200 selection passed all 17 tests
 using external MPI; macOS additionally verifies thread-MPI. There is no

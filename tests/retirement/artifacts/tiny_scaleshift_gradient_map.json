@@ -1,0 +1,281 @@
+[
+  {
+    "source": "node_embedding.linear.weight",
+    "target": "model.backbone.node_embedding.weight",
+    "shape": [
+      48
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_0"
+  },
+  {
+    "source": "interactions.0.linear_up.weight",
+    "target": "model.backbone.interactions.0.body.linear_up.weight",
+    "shape": [
+      256
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_1"
+  },
+  {
+    "source": "interactions.0.linear.weight",
+    "target": "model.backbone.interactions.0.body.linear.weight",
+    "shape": [
+      768
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_2"
+  },
+  {
+    "source": "interactions.0.skip_tp.weight",
+    "target": "model.backbone.interactions.0.skip.weight",
+    "shape": [
+      2304
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_3"
+  },
+  {
+    "source": "interactions.0.conv_tp_weights.layer0.weight",
+    "target": "model.backbone.interactions.0.body.radial_mlp.weights.0",
+    "shape": [
+      8,
+      64
+    ],
+    "kind": "identity"
+  },
+  {
+    "source": "interactions.0.conv_tp_weights.layer1.weight",
+    "target": "model.backbone.interactions.0.body.radial_mlp.weights.1",
+    "shape": [
+      64,
+      64
+    ],
+    "kind": "identity"
+  },
+  {
+    "source": "interactions.0.conv_tp_weights.layer2.weight",
+    "target": "model.backbone.interactions.0.body.radial_mlp.weights.2",
+    "shape": [
+      64,
+      64
+    ],
+    "kind": "identity"
+  },
+  {
+    "source": "interactions.0.conv_tp_weights.layer3.weight",
+    "target": "model.backbone.interactions.0.body.radial_mlp.weights.3",
+    "shape": [
+      64,
+      48
+    ],
+    "kind": "identity"
+  },
+  {
+    "source": "interactions.1.linear_up.weight",
+    "target": "model.backbone.interactions.1.body.linear_up.weight",
+    "shape": [
+      512
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_8"
+  },
+  {
+    "source": "interactions.1.linear.weight",
+    "target": "model.backbone.interactions.1.body.linear.weight",
+    "shape": [
+      1792
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_9"
+  },
+  {
+    "source": "interactions.1.skip_tp.weight",
+    "target": "model.backbone.interactions.1.skip.weight",
+    "shape": [
+      768
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_10"
+  },
+  {
+    "source": "interactions.1.conv_tp_weights.layer0.weight",
+    "target": "model.backbone.interactions.1.body.radial_mlp.weights.0",
+    "shape": [
+      8,
+      64
+    ],
+    "kind": "identity"
+  },
+  {
+    "source": "interactions.1.conv_tp_weights.layer1.weight",
+    "target": "model.backbone.interactions.1.body.radial_mlp.weights.1",
+    "shape": [
+      64,
+      64
+    ],
+    "kind": "identity"
+  },
+  {
+    "source": "interactions.1.conv_tp_weights.layer2.weight",
+    "target": "model.backbone.interactions.1.body.radial_mlp.weights.2",
+    "shape": [
+      64,
+      64
+    ],
+    "kind": "identity"
+  },
+  {
+    "source": "interactions.1.conv_tp_weights.layer3.weight",
+    "target": "model.backbone.interactions.1.body.radial_mlp.weights.3",
+    "shape": [
+      64,
+      112
+    ],
+    "kind": "identity"
+  },
+  {
+    "source": "products.0.linear.weight",
+    "target": "model.backbone.products.0.linear.weight",
+    "shape": [
+      512
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_15"
+  },
+  {
+    "source": "products.0.symmetric_contractions.contractions.0.weights_max",
+    "target": "model.backbone.products.0.contraction.weights.2",
+    "shape": [
+      3,
+      11,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_16"
+  },
+  {
+    "source": "products.0.symmetric_contractions.contractions.0.weights.0",
+    "target": "model.backbone.products.0.contraction.weights.1",
+    "shape": [
+      3,
+      3,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_17"
+  },
+  {
+    "source": "products.0.symmetric_contractions.contractions.0.weights.1",
+    "target": "model.backbone.products.0.contraction.weights.0",
+    "shape": [
+      3,
+      1,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_18"
+  },
+  {
+    "source": "products.0.symmetric_contractions.contractions.1.weights_max",
+    "target": "model.backbone.products.0.contraction.weights.5",
+    "shape": [
+      3,
+      21,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_19"
+  },
+  {
+    "source": "products.0.symmetric_contractions.contractions.1.weights.0",
+    "target": "model.backbone.products.0.contraction.weights.4",
+    "shape": [
+      3,
+      4,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_20"
+  },
+  {
+    "source": "products.0.symmetric_contractions.contractions.1.weights.1",
+    "target": "model.backbone.products.0.contraction.weights.3",
+    "shape": [
+      3,
+      1,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_21"
+  },
+  {
+    "source": "products.1.linear.weight",
+    "target": "model.backbone.products.1.linear.weight",
+    "shape": [
+      256
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_22"
+  },
+  {
+    "source": "products.1.symmetric_contractions.contractions.0.weights_max",
+    "target": "model.backbone.products.1.contraction.weights.2",
+    "shape": [
+      3,
+      11,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_23"
+  },
+  {
+    "source": "products.1.symmetric_contractions.contractions.0.weights.0",
+    "target": "model.backbone.products.1.contraction.weights.1",
+    "shape": [
+      3,
+      3,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_24"
+  },
+  {
+    "source": "products.1.symmetric_contractions.contractions.0.weights.1",
+    "target": "model.backbone.products.1.contraction.weights.0",
+    "shape": [
+      3,
+      1,
+      16
+    ],
+    "kind": "contraction",
+    "tensor": "mapping_25"
+  },
+  {
+    "source": "readouts.0.linear.weight",
+    "target": "model.outputs.readouts.energy.readouts.0.weight",
+    "shape": [
+      16
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_26"
+  },
+  {
+    "source": "readouts.1.linear_1.weight",
+    "target": "model.outputs.readouts.energy.readouts.1.first.weight",
+    "shape": [
+      128
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_27"
+  },
+  {
+    "source": "readouts.1.linear_2.weight",
+    "target": "model.outputs.readouts.energy.readouts.1.second.weight",
+    "shape": [
+      8
+    ],
+    "kind": "permutation",
+    "tensor": "mapping_28"
+  }
+]

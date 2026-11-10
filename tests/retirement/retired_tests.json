@@ -1,0 +1,3743 @@
+{
+  "source_revision": "fdef2fb577925cd8e7b66876403870128e69ec97",
+  "reason": "Legacy implementation tests and live differential harnesses are retired. Frozen values and inputs remain unchanged. Native pins are live; historical pins are provenance.",
+  "retired_files": [
+    "tests/architecture/check_mypy_baseline.py",
+    "tests/backends/backend_parity.py",
+    "tests/backends/test_cueq.py",
+    "tests/backends/test_oeq.py",
+    "tests/benchmarks/test_benchmark.py",
+    "tests/benchmarks/test_inference_cpu.py",
+    "tests/extensions/les/test_maceles.py",
+    "tests/extensions/magnetic/test_magmace.py",
+    "tests/extensions/magnetic/test_magmom_augmentation.py",
+    "tests/extensions/magnetic/test_magnetic_interaction_variants.py",
+    "tests/extensions/magnetic/test_time_reversal.py",
+    "tests/extensions/polar/test_polar_block_configs.py",
+    "tests/extensions/polar/test_polar_cueq.py",
+    "tests/extensions/polar/test_polar_density_cube.py",
+    "tests/extensions/polar/test_polar_models.py",
+    "tests/extensions/polar/test_polar_output_keys.py",
+    "tests/extensions/schedulefree/test_schedulefree.py",
+    "tests/extensions/torchsim/test_torchsim.py",
+    "tests/foundations/test_calculator_foundations.py",
+    "tests/foundations/test_foundations.py",
+    "tests/foundations/test_hessian.py",
+    "tests/golden/test_anchor_builders.py",
+    "tests/golden/test_backend_parity_golden.py",
+    "tests/golden/test_foundation_goldens.py",
+    "tests/golden/test_foundation_roster_goldens.py",
+    "tests/golden/test_mdp_foundation.py",
+    "tests/golden/test_off_medium_periodic.py",
+    "tests/golden/test_polar_foundation.py",
+    "tests/golden/test_tiny_anchors.py",
+    "tests/golden/test_tiny_dielectric.py",
+    "tests/golden/test_tiny_dipoles.py",
+    "tests/golden/test_tiny_maceles.py",
+    "tests/golden/test_tiny_magnetic.py",
+    "tests/golden/test_tiny_magnetic_scf.py",
+    "tests/golden/test_train_step_gradient.py",
+    "tests/integrations/lammps/_harness.py",
+    "tests/integrations/lammps/test_export.py",
+    "tests/integrations/lammps/test_export_golden.py",
+    "tests/integrations/lammps/test_ghost_parity.py",
+    "tests/integrations/lammps/test_lammps_real.py",
+    "tests/integrations/lammps/test_mliap_buffer_dtype.py",
+    "tests/integrations/lammps/test_mliap_env_config.py",
+    "tests/integrations/lammps/test_mliap_exchange.py",
+    "tests/integrations/lammps/test_mliap_writeback.py",
+    "tests/parity/dipole_convert.py",
+    "tests/parity/fm00_convert.py",
+    "tests/parity/fm00_projection.py",
+    "tests/parity/fp32_reductions.py",
+    "tests/parity/fuzz_cases.py",
+    "tests/parity/fuzz_parity.py",
+    "tests/parity/independent_basis.py",
+    "tests/parity/legacy_weights.py",
+    "tests/parity/magnetic_convert.py",
+    "tests/parity/polar_convert.py",
+    "tests/parity/polar_precision.py",
+    "tests/parity/test_accelerated_backend_goldens.py",
+    "tests/parity/test_anchor_as_foundation.py",
+    "tests/parity/test_backbone_parity.py",
+    "tests/parity/test_black_box_routing.py",
+    "tests/parity/test_block_weight_parity.py",
+    "tests/parity/test_calculator_families_parity.py",
+    "tests/parity/test_calculator_parity.py",
+    "tests/parity/test_clebsch_gordan_parity.py",
+    "tests/parity/test_cli_commands_parity.py",
+    "tests/parity/test_collate_parity.py",
+    "tests/parity/test_data_backend_parity.py",
+    "tests/parity/test_data_controls_parity.py",
+    "tests/parity/test_data_sources_parity.py",
+    "tests/parity/test_density_cube_cli_parity.py",
+    "tests/parity/test_deployment_output_parity.py",
+    "tests/parity/test_device_workflows_parity.py",
+    "tests/parity/test_dielectric_finetune_parity.py",
+    "tests/parity/test_dipole_parity.py",
+    "tests/parity/test_distance_transform.py",
+    "tests/parity/test_edge_force_parity.py",
+    "tests/parity/test_element_table_parity.py",
+    "tests/parity/test_energy_dipole_parity.py",
+    "tests/parity/test_energy_outputs_parity.py",
+    "tests/parity/test_error_table_parity.py",
+    "tests/parity/test_fm00_keystone.py",
+    "tests/parity/test_fm00_projection.py",
+    "tests/parity/test_fm00_training_step.py",
+    "tests/parity/test_fm_convert_dielectric.py",
+    "tests/parity/test_fm_convert_families.py",
+    "tests/parity/test_fm_convert_legacy.py",
+    "tests/parity/test_fm_convert_projection.py",
+    "tests/parity/test_fm_convert_venv_mode.py",
+    "tests/parity/test_foundation_gpu.py",
+    "tests/parity/test_foundation_release.py",
+    "tests/parity/test_foundation_roster.py",
+    "tests/parity/test_foundation_roster_record.py",
+    "tests/parity/test_fp32_bit_golden.py",
+    "tests/parity/test_full_basis_export.py",
+    "tests/parity/test_full_batch_loss.py",
+    "tests/parity/test_fuzz_parity.py",
+    "tests/parity/test_interaction_variants.py",
+    "tests/parity/test_launcher_environment_parity.py",
+    "tests/parity/test_les_model_parity.py",
+    "tests/parity/test_linear_layout_parity.py",
+    "tests/parity/test_lora_controls_parity.py",
+    "tests/parity/test_loss_composition.py",
+    "tests/parity/test_magnetic_parity.py",
+    "tests/parity/test_metrics_parity.py",
+    "tests/parity/test_missing_labels_parity.py",
+    "tests/parity/test_multihead_parity.py",
+    "tests/parity/test_neighbor_parity.py",
+    "tests/parity/test_node_energy_dtype_parity.py",
+    "tests/parity/test_optimizer_controls.py",
+    "tests/parity/test_optimizer_parity.py",
+    "tests/parity/test_optional_selection_parity.py",
+    "tests/parity/test_output_side_parity.py",
+    "tests/parity/test_output_variants.py",
+    "tests/parity/test_plot_selection.py",
+    "tests/parity/test_polar_controls_parity.py",
+    "tests/parity/test_polar_density_cube_parity.py",
+    "tests/parity/test_polar_density_snapshot.py",
+    "tests/parity/test_polar_field_surface.py",
+    "tests/parity/test_polar_output_absence.py",
+    "tests/parity/test_polar_parity.py",
+    "tests/parity/test_polar_solver_precision.py",
+    "tests/parity/test_preprocessing_parity.py",
+    "tests/parity/test_pseudolabel_parity.py",
+    "tests/parity/test_radial_mlp_parity.py",
+    "tests/parity/test_radial_parity.py",
+    "tests/parity/test_readout_activations.py",
+    "tests/parity/test_reduction_order.py",
+    "tests/parity/test_reference_backend_parity.py",
+    "tests/parity/test_replay_workflows_parity.py",
+    "tests/parity/test_spherical_harmonics_parity.py",
+    "tests/parity/test_subselect_parity.py",
+    "tests/parity/test_time_reversal_parity.py",
+    "tests/parity/test_torchsim_parity.py",
+    "tests/parity/test_training_ema_parity.py",
+    "tests/parity/test_training_statistics_parity.py",
+    "tests/unit/test_arg_parser.py",
+    "tests/unit/test_augmentation.py",
+    "tests/unit/test_avg_num_neighbors_buffer.py",
+    "tests/unit/test_calculator_charges_key.py",
+    "tests/unit/test_calculator_dtype_scope.py",
+    "tests/unit/test_calculator_info_keys_and_state.py",
+    "tests/unit/test_calculator_mdp.py",
+    "tests/unit/test_calculator_units_and_spread.py",
+    "tests/unit/test_cg.py",
+    "tests/unit/test_checkpoint_retention_and_clipping.py",
+    "tests/unit/test_ci_gates.py",
+    "tests/unit/test_compile.py",
+    "tests/unit/test_convert_e3nn_cueq.py",
+    "tests/unit/test_data.py",
+    "tests/unit/test_data_utils.py",
+    "tests/unit/test_default_dtype_scope.py",
+    "tests/unit/test_download_cache.py",
+    "tests/unit/test_download_urls.py",
+    "tests/unit/test_e0s_characterization.py",
+    "tests/unit/test_error_table_heads.py",
+    "tests/unit/test_finetuning_utils.py",
+    "tests/unit/test_first_interaction_block.py",
+    "tests/unit/test_foundation_readout_flag.py",
+    "tests/unit/test_foundations_models.py",
+    "tests/unit/test_gate.py",
+    "tests/unit/test_gate_registry.py",
+    "tests/unit/test_interaction_variants.py",
+    "tests/unit/test_lmdb_database.py",
+    "tests/unit/test_logging_setup.py",
+    "tests/unit/test_lora.py",
+    "tests/unit/test_loss.py",
+    "tests/unit/test_models.py",
+    "tests/unit/test_modules.py",
+    "tests/unit/test_multihead_tools.py",
+    "tests/unit/test_optimizer_flags.py",
+    "tests/unit/test_optimizer_param_groups.py",
+    "tests/unit/test_padding.py",
+    "tests/unit/test_physics_glue.py",
+    "tests/unit/test_radial.py",
+    "tests/unit/test_readout_and_directory_flags.py",
+    "tests/unit/test_scale_shift_dtype.py",
+    "tests/unit/test_stage_two_weights.py",
+    "tests/unit/test_stress_mask_call_sites.py",
+    "tests/unit/test_tools.py",
+    "tests/unit/test_valid_err_log.py",
+    "tests/unit/test_visualise_train.py",
+    "tests/unit/test_worker_start_method.py",
+    "tests/workflows/test_calculator.py",
+    "tests/workflows/test_checkpoint_retention.py",
+    "tests/workflows/test_cli_contracts.py",
+    "tests/workflows/test_compiled_export_failure.py",
+    "tests/workflows/test_contract_discipline.py",
+    "tests/workflows/test_distributed.py",
+    "tests/workflows/test_embedding_train.py",
+    "tests/workflows/test_eval_configs_shapes_and_dtype.py",
+    "tests/workflows/test_finetuning_contracts.py",
+    "tests/workflows/test_finetuning_pseudolabels.py",
+    "tests/workflows/test_finetuning_select.py",
+    "tests/workflows/test_finetuning_select_cli.py",
+    "tests/workflows/test_foundation_kwargs.py",
+    "tests/workflows/test_freeze.py",
+    "tests/workflows/test_launcher_engine_parity.py",
+    "tests/workflows/test_launcher_v1.py",
+    "tests/workflows/test_mdp_finetune.py",
+    "tests/workflows/test_multi_processed_test_layout.py",
+    "tests/workflows/test_multifiles.py",
+    "tests/workflows/test_per_head_reporting.py",
+    "tests/workflows/test_plot_train.py",
+    "tests/workflows/test_preprocess.py",
+    "tests/workflows/test_preprocess_keys.py",
+    "tests/workflows/test_run_train.py",
+    "tests/workflows/test_run_train_allkeys.py",
+    "tests/workflows/test_run_train_dipole_polar.py",
+    "tests/workflows/test_small_training_set.py",
+    "tests/workflows/test_train_work_dir_and_workers.py",
+    "tests/workflows/test_training_plots.py",
+    "tests/workflows/test_wandb_logging.py"
+  ],
+  "files": [
+    {
+      "path": "tests/architecture/check_mypy_baseline.py",
+      "source_test_nodes": [],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/backends/backend_parity.py",
+      "source_test_nodes": [],
+      "coverage_group": "backend",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/backends/test_cueq.py",
+      "source_test_nodes": [
+        "test_cueq_cuda_multihead_matches_e3nn"
+      ],
+      "coverage_group": "backend",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/backends/test_oeq.py",
+      "source_test_nodes": [],
+      "coverage_group": "backend",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/benchmarks/test_benchmark.py",
+      "source_test_nodes": [
+        "test_inference"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/benchmarks/test_inference_cpu.py",
+      "source_test_nodes": [
+        "test_inference_latency"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/les/test_maceles.py",
+      "source_test_nodes": [
+        "test_run_train",
+        "test_run_train_with_mp",
+        "test_run_train_maceles_cueq",
+        "test_run_eval_with_bec",
+        "test_run_eval_fail_with_wrong_model",
+        "test_run_eval_no_bec",
+        "test_les_readout_equivariance",
+        "test_les_readout_layout_invariance",
+        "test_keep_neutral_does_not_mutate_stored_bec"
+      ],
+      "coverage_group": "les",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_maceles.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/magnetic/test_magmace.py",
+      "source_test_nodes": [
+        "test_run_train_magnetic_mace",
+        "test_run_eval_magnetic_mace",
+        "test_run_magnetic_scf",
+        "test_extract_config_magnetic_round_trip",
+        "test_inherit_magnetic_hyperparameters_from_foundation",
+        "test_resolve_m_max_dict_form",
+        "test_resolve_m_max_fast_path_float_list",
+        "test_resolve_m_max_legacy_string_tokens",
+        "test_resolve_m_max_single_float_broadcast",
+        "test_resolve_m_max_none_passthrough",
+        "test_resolve_m_max_wrong_length_raises",
+        "test_resolve_m_max_extra_dict_keys_ignored",
+        "test_resolve_m_max_numpy_atomic_numbers",
+        "test_magnetic_mace_rotation_equivariance",
+        "test_magnetic_mace_inversion_parity",
+        "test_magnetic_mace_registers_all_trainable_parameters",
+        "test_magnetic_calculator_rejects_hybrid_backends",
+        "test_magnetic_calculator_reports_missing_backend",
+        "test_magnetic_calculator_converts_to_cueq_once",
+        "test_magnetic_committee_rmax_mismatch_reports_values",
+        "test_magnetic_check_state_tracks_magmoms",
+        "test_eval_configs_unwraps_scf_wrapped_models",
+        "test_eval_configs_refuses_magforces_for_scf_models",
+        "test_random_rotation_loader_over_real_atomic_data",
+        "test_scf_wrapper_delegates_inner_model_attributes",
+        "test_scf_wrapper_keeps_its_own_forward_and_still_raises",
+        "test_eval_configs_descriptors_for_scf_wrapped_models",
+        "test_hessian_refused_for_scf_wrapped_models",
+        "test_hessian_still_works_for_plain_magnetic_models",
+        "test_magnetic_calculator_does_not_change_the_global_dtype",
+        "test_magnetic_calculator_runs_under_a_foreign_global_dtype",
+        "test_committee_stress_follows_the_first_member_not_the_last"
+      ],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py",
+        "packages/mace-torch/tests/test_mace_torch_time_reversal.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/magnetic/test_magmom_augmentation.py",
+      "source_test_nodes": [
+        "test_moment_magnitudes_are_preserved",
+        "test_non_soc_mode_samples_the_full_o3",
+        "test_soc_mode_applies_only_a_sign_flip",
+        "test_magforces_follow_the_moments",
+        "test_samples_without_moments_pass_through",
+        "test_unknown_mode_is_rejected"
+      ],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_augmentation.py::test_the_moments_and_their_forces_turn_by_one_transform",
+        "packages/mace-torch/tests/test_mace_torch_magnetic_augmentation.py::test_the_orientations_are_uniform",
+        "packages/mace-torch/tests/test_mace_torch_magnetic_augmentation.py::test_with_spin_orbit_coupling_only_the_reversal_is_drawn"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/magnetic/test_magnetic_interaction_variants.py",
+      "source_test_nodes": [
+        "test_the_residual_soc_interaction_builds_and_runs",
+        "test_the_residual_soc_interaction_is_not_the_plain_one"
+      ],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py",
+        "packages/mace-torch/tests/test_mace_torch_time_reversal.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/magnetic/test_time_reversal.py",
+      "source_test_nodes": [
+        "test_wrapped_energy_equals_explicit_two_evaluation_average",
+        "test_energy_is_invariant_under_global_moment_reversal",
+        "test_a_time_reversal_odd_contribution_is_removed",
+        "test_spatial_forces_are_even_under_moment_reversal",
+        "test_magnetic_forces_are_odd_under_moment_reversal",
+        "test_returned_derivatives_agree_with_autograd_of_the_wrapped_energy",
+        "test_stress_and_virials_are_even_under_moment_reversal",
+        "test_energy_gradient_matches_magforces_for_calculator_style_input",
+        "test_tensor_values_are_preserved_even_though_requires_grad_is_enabled",
+        "test_axial_o3_transformation_law",
+        "test_input_batch_is_not_mutated",
+        "test_supported_dtypes",
+        "test_runs_on_cuda",
+        "test_existing_derivative_flags_are_respected",
+        "test_checkpoint_can_be_loaded_then_wrapped",
+        "test_wrapper_exposes_base_model_attributes",
+        "test_double_wrapping_is_rejected",
+        "test_wrapping_scf_is_rejected_with_the_correct_order_documented",
+        "test_stack_time_reversed_builds_two_disconnected_copies",
+        "test_stack_time_reversed_does_not_mutate_the_input",
+        "test_both_modes_agree",
+        "test_unstack_inverts_stack_for_an_even_and_an_odd_quantity",
+        "test_unstack_passes_through_tensors_that_were_not_doubled",
+        "test_multi_structure_batch_of_differing_sizes",
+        "test_stacking_passes_scalar_tensors_through",
+        "test_config_extraction_targets_the_unwrapped_model",
+        "test_edge_forces_and_hessian_keep_their_undoubled_shapes",
+        "test_attribute_lookup_does_not_recurse_before_the_model_is_set",
+        "test_wrapped_model_survives_a_pickle_round_trip"
+      ],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py",
+        "packages/mace-torch/tests/test_mace_torch_time_reversal.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/polar/test_polar_block_configs.py",
+      "source_test_nodes": [
+        "test_an_absent_config_is_none_however_it_is_spelled",
+        "test_a_dict_literal_becomes_a_dict",
+        "test_a_value_that_is_not_a_literal_is_refused",
+        "test_neither_flag_given_builds_the_default_blocks",
+        "test_the_registries_name_the_defaults",
+        "test_the_flags_reach_the_model_as_dicts",
+        "test_a_class_valued_key_chooses_the_block_it_names",
+        "test_nonlinearity_cls_is_accepted_and_ignored",
+        "test_a_block_the_registry_does_not_know_is_refused",
+        "test_an_unknown_key_is_discarded_without_a_word"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/polar/test_polar_cueq.py",
+      "source_test_nodes": [
+        "test_polar_models_run_with_and_without_cueq",
+        "test_polar_true_cueq_matches_e3nn",
+        "test_polar_2l_true_cueq_matches_e3nn_float64",
+        "TestPolarCueqParity::test_e3nn_cueq_parity"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/polar/test_polar_density_cube.py",
+      "source_test_nodes": [
+        "test_select_multipoles_from_calculator_results",
+        "test_auto_backend_selection",
+        "test_realspace_monopole_matches_analytic_gaussian",
+        "test_realspace_dipole_matches_analytic_gaussian_derivative",
+        "test_realspace_cube_integrates_to_coefficient_charge_and_dipole",
+        "test_cube_quality_metrics_detect_box_boundary_density",
+        "test_realspace_spin_channel_integrals_match_coefficients",
+        "test_realspace_integrated_charge_converges_with_grid",
+        "test_potential_interpolator_writes_cube",
+        "test_fourier_and_realspace_monopole_densities_agree_for_full_pbc",
+        "test_cli_run_writes_nonperiodic_cube_end_to_end",
+        "test_realspace_interpolator_supports_arbitrary_periodicity"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/polar/test_polar_models.py",
+      "source_test_nodes": [
+        "test_energy_invariance_under_rotation_and_translation",
+        "test_polar_cpu_cuda_parity",
+        "test_polar_slab_partial_pbc_cell_contract",
+        "test_polar_slab_electrostatics_converge_with_vacuum",
+        "test_polar_checkpoint_evaluates",
+        "test_polar_checkpoint_evaluates_float64",
+        "test_polar_checkpoint_energy_components",
+        "test_polar_calculator_returns_fukui_functions_by_default",
+        "test_polar_calculator_implements_dipole",
+        "test_water_energy_changes_with_charge_and_spin",
+        "test_run_train_polar_finetuning_from_checkpoint",
+        "test_run_train_polar_finetuning_foundation_model",
+        "test_run_train_polar_finetuning_energy_forces_dipole",
+        "test_run_train_polar_multihead_finetuning_foundation_model",
+        "test_polar_forces_match_finite_difference",
+        "test_polar_stress_matches_fd_large_periodic_boxes",
+        "test_polar_2l_regression_hardcoded_values",
+        "test_polar_mace_registers_all_trainable_parameters"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_calculator.py::test_every_polar_result_has_the_frozen_tree_s_name_and_shape",
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py::test_float32_fukui_projection_conserves_representable_spin_totals"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/polar/test_polar_output_keys.py",
+      "source_test_nodes": [
+        "test_the_electrostatic_keys_are_present_with_the_right_extent",
+        "test_the_density_keys_keep_their_rank",
+        "test_charges_and_spins_are_the_leading_multipole",
+        "test_electrostatic_potentials_are_absent_unless_asked_for"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py::test_reported_total_charge_sums_the_emitted_monopoles_in_the_floor"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/schedulefree/test_schedulefree.py",
+      "source_test_nodes": [
+        "test_can_load_checkpoint"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/extensions/torchsim/test_torchsim.py",
+      "source_test_nodes": [
+        "test_mace_torchsim_basic",
+        "test_mace_torchsim_no_stress",
+        "test_polar_torchsim_basic",
+        "test_polar_torchsim_with_extras",
+        "test_polar_torchsim_no_extras_vs_zero_extras",
+        "test_polar_torchsim_batched",
+        "test_polar_torchsim_batched_with_extras"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/foundations/test_calculator_foundations.py",
+      "source_test_nodes": [
+        "test_mace_mp",
+        "test_mace_polar_constructor",
+        "test_mace_off",
+        "test_mace_off_cueq",
+        "test_mace_mp_stresses",
+        "test_mace_mp_energies",
+        "test_mace_mh_1_cueq",
+        "test_mace_mh_1_cueq_cuda",
+        "test_mace_omol_cueq"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/foundations/test_foundations.py",
+      "source_test_nodes": [
+        "test_foundations",
+        "test_multi_reference",
+        "test_mace_omol_elements_subset_reproduces_energy_forces",
+        "test_mace_mh_1_elements_subset_reproduces_energy_forces",
+        "test_compile_foundation",
+        "test_extract_config",
+        "test_remove_pt_head",
+        "test_remove_pt_head_multihead",
+        "test_remove_pt_head_omol_multihead",
+        "test_load_foundations_elements_omol_multihead_pt_matches",
+        "test_polar_extract_config_roundtrip",
+        "test_polar_elements_subset_reproduces_energy_forces",
+        "test_polar_elements_subset_no_readout_finite",
+        "test_polar_elements_subset_dtype_float64",
+        "test_polar_multihead_finetuning_loads_correctly"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_foundations.py",
+        "tests/foundations/test_registry_badges.py::test_torch_registry_badge"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/foundations/test_hessian.py",
+      "source_test_nodes": [
+        "test_potential_energy_and_hessian",
+        "test_finite_difference_hessian"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_calculator.py::test_the_hessian_is_the_derivative_of_the_forces"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_anchor_builders.py",
+      "source_test_nodes": [
+        "test_the_output_path_has_no_default",
+        "test_calling_it_without_a_path_is_a_type_error",
+        "test_the_main_block_passes_the_committed_path",
+        "test_a_builder_still_builds_when_given_a_path"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_backend_parity_golden.py",
+      "source_test_nodes": [
+        "test_converted_model_reproduces_the_committed_cpu_reference",
+        "test_the_calculators_own_backend_flag_reaches_the_same_kernels",
+        "test_a_value_comparison_alone_cannot_tell_an_unaccelerated_model_apart",
+        "test_converting_for_the_cpu_leaves_cueq_unfused_and_the_audit_says_so",
+        "test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed",
+        "test_the_audit_accepts_a_well_formed_oeq_conversion_and_only_that",
+        "test_the_audit_fails_a_site_that_is_installed_and_never_called",
+        "test_the_conversion_whitelist_refuses_the_plain_anchor_and_both_converters_stop",
+        "test_the_tolerance_row_is_the_shared_accelerated_one"
+      ],
+      "coverage_group": "backend",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_foundation_goldens.py",
+      "source_test_nodes": [
+        "test_foundation_model_reproduces_its_reference",
+        "test_the_snapshot_came_from_the_pinned_artifact",
+        "test_the_registry_url_is_still_the_package_url",
+        "test_an_unqualified_mace_mp_is_mpa0_medium_and_reads_no_url",
+        "test_the_tracked_checkpoint_resolves_to_a_real_file_in_either_install",
+        "test_a_wheel_shaped_install_would_download_without_the_redirect",
+        "test_every_evaluated_fixture_is_within_the_model_element_table",
+        "test_the_loader_call_states_cpu_and_its_dtype",
+        "test_reference_carries_dtype_units_and_provenance",
+        "test_the_tracked_anicc_checkpoint_cannot_be_loaded_on_a_cpu_only_host",
+        "test_mh_0_carries_every_published_head_in_order",
+        "test_mh_0_refuses_to_load_without_a_head",
+        "test_the_head_selects_a_different_energy"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_foundations.py",
+        "tests/foundations/test_registry_badges.py::test_torch_registry_badge"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_foundation_roster_goldens.py",
+      "source_test_nodes": [
+        "test_published_roster_artifact_reproduces_its_reference"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_mdp_foundation.py",
+      "source_test_nodes": [
+        "test_mdp_foundation_reproduces_its_reference",
+        "test_the_calculator_agrees_with_the_direct_model_snapshot",
+        "test_the_calculator_surface_is_the_dipole_polarizability_one",
+        "test_implemented_properties_is_this_calculator_s_own",
+        "test_mace_mdp_refuses_another_model_type",
+        "test_mace_mdp_warns_that_it_is_not_an_energy_model",
+        "test_the_reference_pins_the_polarizability_and_its_derivatives",
+        "test_reference_carries_dtype_units_and_provenance"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/foundations/test_registry_badges.py::test_torch_registry_badge"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_off_medium_periodic.py",
+      "source_test_nodes": [
+        "test_periodic_reference_pins_source_and_nonzero_stress",
+        "test_frozen_off_medium_matches_periodic_reference"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_polar_foundation.py",
+      "source_test_nodes": [
+        "test_polar_foundation_reproduces_its_reference",
+        "test_the_loader_really_produced_a_float64_cpu_evaluation",
+        "test_polar_mace_emits_no_polarizability",
+        "test_the_reference_pins_the_electrostatics_and_not_only_the_energy",
+        "test_reference_carries_dtype_units_and_provenance"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "tests/foundations/test_registry_badges.py::test_torch_registry_badge"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_tiny_anchors.py",
+      "source_test_nodes": [
+        "test_anchor_reproduces_its_reference",
+        "test_anchor_is_the_class_it_claims_to_be",
+        "test_reference_carries_dtype_units_and_provenance",
+        "test_sidecar_records_how_the_anchor_was_built",
+        "test_the_repulsion_term_is_scaled_in_one_class_and_raw_in_the_other",
+        "test_the_plain_anchor_is_not_convertible_and_says_so",
+        "test_training_error_reference_carries_mae_rmse_and_loss",
+        "test_anchor_checkpoints_stay_small",
+        "test_the_two_per_atom_stress_routes_land_on_one_channel",
+        "test_the_two_per_atom_stress_routes_snapshot_identically",
+        "test_zero_edge_and_degenerate_cell_fixtures_produce_finite_numbers"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_tiny_dielectric.py",
+      "source_test_nodes": [
+        "test_tiny_dielectric_reproduces_its_reference",
+        "test_tiny_dielectric_recipe_and_nontrivial_response"
+      ],
+      "coverage_group": "dipole",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_tiny_dipoles.py",
+      "source_test_nodes": [
+        "test_anchor_reproduces_its_reference",
+        "test_anchor_is_the_class_it_claims_to_be",
+        "test_the_committed_anchor_carries_the_plain_e3nn_basis",
+        "test_the_fixed_charge_baseline_is_live",
+        "test_the_two_fixed_charge_baselines_do_not_share_a_unit",
+        "test_the_calculator_route_reaches_the_same_dipole",
+        "test_a_dipole_model_cannot_be_driven_through_an_ase_accessor",
+        "test_reference_carries_dtype_units_and_provenance",
+        "test_sidecar_records_how_the_anchor_was_built",
+        "test_anchor_checkpoint_stays_small"
+      ],
+      "coverage_group": "dipole",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_tiny_maceles.py",
+      "source_test_nodes": [
+        "test_the_reference_records_the_les_it_was_taken_with",
+        "test_the_reference_pin_is_the_one_requirements_asks_for",
+        "test_a_foreign_les_is_named_instead_of_producing_a_tolerance_failure",
+        "test_the_model_surface_reproduces_its_reference",
+        "test_the_field_surface_reproduces_its_reference",
+        "test_every_latent_quantity_is_present_and_above_the_tolerance_floor",
+        "test_the_isotropic_polarizability_is_squared",
+        "test_the_induced_charge_is_squared",
+        "test_keep_neutral_leaves_the_reported_bec_alone_and_repeats_identically",
+        "test_keep_neutral_removes_exactly_a_uniform_field_force",
+        "test_the_field_force_matches_the_documented_formula",
+        "test_the_field_path_refuses_a_cell_that_has_no_volume",
+        "test_padding_keeps_the_per_atom_les_outputs_aligned_with_the_real_atoms",
+        "test_padding_should_not_poison_the_forces",
+        "test_the_committed_les_arguments_are_what_the_cli_would_pass",
+        "test_the_eval_cli_lands_on_the_same_numbers_as_the_forward",
+        "test_the_anchor_is_a_maceles_built_from_the_committed_yaml",
+        "test_the_sidecar_records_how_the_anchor_was_built",
+        "test_the_reference_carries_dtype_units_and_provenance",
+        "test_the_field_reference_records_the_settings_that_are_not_channels",
+        "test_the_checkpoint_stays_small"
+      ],
+      "coverage_group": "les",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_maceles.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_tiny_magnetic.py",
+      "source_test_nodes": [
+        "test_anchor_reproduces_its_reference",
+        "test_reference_carries_dtype_units_and_provenance",
+        "test_sidecar_records_how_the_anchor_was_built",
+        "test_anchor_checkpoint_stays_small",
+        "test_every_fixture_records_its_moments_as_a_pinned_input",
+        "test_a_perturbed_moment_fails_the_comparison",
+        "test_ase_initial_moments_are_refused_rather_than_silently_ignored",
+        "test_dedm_is_well_defined_at_a_zero_moment",
+        "test_the_two_dimers_differ_only_in_their_spin_state",
+        "test_the_ferromagnetic_dimer_has_inequivalent_sites",
+        "test_the_one_body_magnetic_term_is_inside_the_reference",
+        "test_the_per_element_m_max_is_indexed_by_species",
+        "test_no_fixture_saturates_the_moment_clamp",
+        "test_magforces_reach_no_calculator_which_is_why_this_golden_is_model_route",
+        "test_the_calculator_agrees_with_the_reference_on_what_it_does_expose",
+        "test_the_eval_cli_reproduces_the_reference_including_magforces",
+        "test_compute_magforces_is_only_honoured_alongside_the_forces",
+        "test_a_joint_rotation_is_a_symmetry_and_a_spin_only_one_is_not",
+        "test_training_the_one_body_term_gives_it_its_own_parameter_group",
+        "test_not_training_it_requires_freezing_it_first",
+        "test_frozen_it_is_absent_from_the_optimizer_and_nothing_complains",
+        "test_the_flag_defaults_to_training_it"
+      ],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py::test_one_body_coefficients_that_are_not_trained_keep_their_values",
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py::test_the_derivative_at_a_zero_moment_is_the_finite_difference",
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py::test_the_one_body_term_reads_the_moment_length_alone"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_tiny_magnetic_scf.py",
+      "source_test_nodes": [
+        "test_the_fixed_point_reproduces_its_reference",
+        "test_the_reference_pins_the_state_and_only_records_the_trajectory",
+        "test_the_relaxation_lowers_the_energy_and_flattens_the_magnetic_forces",
+        "test_the_pinned_state_is_a_fixed_point_and_the_excluded_ones_are_not",
+        "test_the_relaxation_is_not_bounded_by_the_models_own_m_max",
+        "test_the_collinear_variant_moves_the_moments_only_along_z",
+        "test_the_wrapper_answers_for_the_model_it_wraps",
+        "test_the_wrapper_is_not_convertible_and_the_delegation_does_not_hide_it",
+        "test_cache_magmom_supplies_the_moments_when_the_batch_has_none",
+        "test_a_fresh_wrapper_with_no_moments_refuses",
+        "test_the_calculator_refuses_a_hessian_for_an_scf_wrapped_model",
+        "test_the_eval_cli_refuses_magforces_for_an_scf_wrapped_model",
+        "test_the_wrapper_is_deep_copyable_and_its_cache_travels"
+      ],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py",
+        "packages/mace-torch/tests/test_mace_torch_time_reversal.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/golden/test_train_step_gradient.py",
+      "source_test_nodes": [
+        "test_the_step_reproduces_its_committed_gradient",
+        "test_the_reference_records_what_produced_it",
+        "test_gradcheck_and_gradgradcheck_pass_on_the_tiny_fixtures",
+        "test_the_backward_ran_through_the_second_derivative_path",
+        "test_the_digest_resolves_a_weight_change_six_orders_below_the_weights",
+        "test_the_projection_is_what_catches_a_permuted_gradient"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/_harness.py",
+      "source_test_nodes": [],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/test_export.py",
+      "source_test_nodes": [
+        "test_export_libtorch",
+        "test_export_libtorch_float32",
+        "test_export_mliap"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/test_export_golden.py",
+      "source_test_nodes": [
+        "test_the_exported_artifact_reproduces_the_committed_numbers",
+        "test_the_exported_artifact_reproduces_the_periodic_calculation",
+        "test_the_golden_input_is_the_one_the_artifact_is_fed",
+        "test_the_package_import_stays_inside_the_regeneration_path",
+        "test_the_float32_export_is_single_precision",
+        "test_the_mliap_export_declares_the_committed_interface",
+        "test_the_mliap_export_refuses_a_multilayer_model_without_ghost_exchange"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/test_ghost_parity.py",
+      "source_test_nodes": [
+        "test_local_energy_matches_periodic",
+        "test_folded_forces_match_periodic",
+        "test_ghost_energies_excluded",
+        "test_torchscript_matches_eager",
+        "test_virials_path_runs"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_mliap.py",
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/test_lammps_real.py",
+      "source_test_nodes": [
+        "test_lammps_mliap_energy_matches_python"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/test_mliap_buffer_dtype.py",
+      "source_test_nodes": [
+        "test_the_wrapper_buffers_follow_the_model_dtype",
+        "test_a_float64_model_is_not_downgraded_by_a_float32_process",
+        "test_explicit_buffers_still_win"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_mliap.py",
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/test_mliap_env_config.py",
+      "source_test_nodes": [
+        "test_every_switch_is_off_by_default",
+        "test_the_profile_window_defaults_to_five_and_ten",
+        "test_the_accepted_spellings_turn_a_switch_on",
+        "test_everything_else_leaves_it_off",
+        "test_the_profile_window_is_read_from_the_environment",
+        "test_a_non_integer_window_is_refused_at_construction",
+        "test_the_timer_logs_when_it_is_enabled",
+        "test_the_timer_says_nothing_when_it_is_not",
+        "test_mace_time_reaches_the_timer",
+        "test_profiling_off_does_not_touch_the_profiler",
+        "test_the_profiler_starts_at_the_step_it_was_told",
+        "test_no_start_on_any_other_step",
+        "test_the_end_step_stops_the_profiler_and_exits",
+        "test_a_non_kokkos_coupling_always_runs_on_cpu",
+        "test_kokkos_with_host_tensors_is_refused_by_default",
+        "test_allow_cpu_lets_a_kokkos_run_proceed_on_the_host",
+        "test_force_cpu_skips_the_device_check_entirely",
+        "test_force_cpu_wins_over_allow_cpu_being_unset"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/test_mliap_exchange.py",
+      "source_test_nodes": [
+        "test_mliap_exchange_residual_nonlinear",
+        "test_mliap_exchange_density_residual",
+        "test_multilayer_without_forward_exchange_is_actionable",
+        "test_single_layer_needs_no_forward_exchange",
+        "test_multilayer_with_forward_exchange_is_accepted"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/integrations/lammps/test_mliap_writeback.py",
+      "source_test_nodes": [
+        "test_plain_coupling_writes_through_the_host_api",
+        "test_kokkos_coupling_copies_into_the_eatoms_view",
+        "test_float32_model_hands_lammps_float64",
+        "test_atom_count_mismatch_is_actionable"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_mliap.py",
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/dipole_convert.py",
+      "source_test_nodes": [],
+      "coverage_group": "dipole",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/fm00_convert.py",
+      "source_test_nodes": [],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/fm00_projection.py",
+      "source_test_nodes": [],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/fp32_reductions.py",
+      "source_test_nodes": [],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/fuzz_cases.py",
+      "source_test_nodes": [],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/fuzz_parity.py",
+      "source_test_nodes": [],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/independent_basis.py",
+      "source_test_nodes": [],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/legacy_weights.py",
+      "source_test_nodes": [],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/magnetic_convert.py",
+      "source_test_nodes": [],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py",
+        "packages/mace-torch/tests/test_mace_torch_time_reversal.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/polar_convert.py",
+      "source_test_nodes": [],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/polar_precision.py",
+      "source_test_nodes": [],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_accelerated_backend_goldens.py",
+      "source_test_nodes": [
+        "test_the_committed_cpu_reference_is_reproduced",
+        "test_eval_uses_recorded_backend_and_preserves_canonical_weights"
+      ],
+      "coverage_group": "backend",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_anchor_as_foundation.py",
+      "source_test_nodes": [
+        "test_the_checkpoint_read_back_is_the_anchor",
+        "test_a_fine_tune_from_the_anchor_trains_both_heads",
+        "test_the_replay_head_keeps_the_anchors_energies",
+        "test_the_replay_head_starts_as_the_anchor",
+        "test_foundation_selection_descriptors_match_legacy_element_means"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_backbone_parity.py",
+      "source_test_nodes": [
+        "test_the_backbone_reproduces_an_anchor_layer_by_layer",
+        "test_the_two_first_layer_spellings_are_two_models",
+        "test_the_backbone_reproduces_each_kept_variant",
+        "test_either_basis_reproduces_the_anchor",
+        "test_the_descriptors_are_the_legacy_calculators",
+        "test_the_aggregations_are_the_eval_command_lines"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/golden/test_harness.py::test_only_the_per_atom_descriptors_are_pinnable"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_black_box_routing.py",
+      "source_test_nodes": [
+        "test_the_scan_reaches_the_black_box_suite",
+        "test_no_new_file_launches_the_command_line_on_its_own",
+        "test_the_bypass_list_has_no_stale_entries",
+        "test_the_shared_runner_knows_about_both_engines",
+        "test_the_refusal_is_a_skip_whatever_the_caller_asked_for"
+      ],
+      "coverage_group": "architecture",
+      "native_successors": [
+        "tests/architecture/test_import_direction.py",
+        "tests/architecture/test_packaging_isolation.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_block_weight_parity.py",
+      "source_test_nodes": [
+        "test_the_skip_connection_converts_exactly",
+        "test_the_scale_on_the_skip_is_just_the_two_multiplicities",
+        "test_a_whole_product_block_converts_exactly",
+        "test_the_orders_are_a_sum_and_the_frozen_tree_evaluates_them_as_a_cascade"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_calculator_families_parity.py",
+      "source_test_nodes": [
+        "test_the_dielectric_surface_is_the_frozen_calculator_s",
+        "test_the_dipole_surface_is_the_frozen_calculator_s"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/architecture/test_calculator_surface.py::test_a_response_model_writes_the_frozen_tree_s_keys_and_no_energy"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_calculator_parity.py",
+      "source_test_nodes": [
+        "test_the_two_calculators_report_the_same_results",
+        "test_the_descriptors_agree",
+        "test_the_first_layer_s_descriptors_agree",
+        "test_the_hessians_agree"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_clebsch_gordan_parity.py",
+      "source_test_nodes": [
+        "test_the_real_3j_table_is_e3nn_up_to_one_sign_per_triple",
+        "test_the_sign_table_names_only_triples_that_exist",
+        "test_e3nn_harmonics_are_the_textbook_ones_at_z_x_y"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_cli_commands_parity.py",
+      "source_test_nodes": [
+        "test_flag_grammar_matches_frozen_parser",
+        "test_all_thirteen_output_columns_are_accounted_for",
+        "test_dipole_cli_presets_preserve_loss_and_gradient",
+        "test_conversion_and_eval_preserve_the_committed_anchor",
+        "test_hierarchical_entry_point_uses_the_launcher_without_framework_imports"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/golden/test_harness.py::test_only_the_per_atom_descriptors_are_pinnable",
+        "tests/golden/test_harness.py::test_the_eval_cli_flattens_the_born_charges_and_the_schema_unflattens_them"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_collate_parity.py",
+      "source_test_nodes": [
+        "test_collate_is_bit_exact_against_the_legacy_collater",
+        "test_collate_reproduces_the_legacy_structure_keys",
+        "test_collate_cell_is_the_legacy_one_viewed_per_graph",
+        "test_collate_rcell_and_volume_follow_legacy",
+        "test_collate_atomic_numbers_are_the_legacy_ones"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_data_backend_parity.py",
+      "source_test_nodes": [
+        "test_the_prepared_shards_read_as_the_frozen_reader_reads_them",
+        "test_auto_takes_the_prepared_directories_for_the_legacy_layout",
+        "test_the_prepared_statistics_parse_to_what_the_frozen_tree_evaluates",
+        "test_a_short_last_group_is_counted_where_the_frozen_reader_overstates",
+        "test_lmdb_rows_read_as_the_frozen_reader_reads_them",
+        "test_auto_takes_a_colon_joined_source_for_lmdb"
+      ],
+      "coverage_group": "backend",
+      "native_successors": [
+        "packages/mace-core/tests/test_data_backend_conformance.py::test_a_damaged_lmdb_row_raises_naming_its_database_and_index",
+        "packages/mace-core/tests/test_data_backend_conformance.py::test_an_lmdb_row_s_calculator_labels_become_its_properties",
+        "packages/mace-core/tests/test_data_backend_conformance.py::test_the_legacy_statistics_parse_follows_a_named_energies_file",
+        "packages/mace-core/tests/test_data_backend_conformance.py::test_uneven_shards_are_counted_exactly",
+        "packages/mace-core/tests/test_data_shard_format.py::test_every_field_and_property_round_trips",
+        "packages/mace-core/tests/test_data_shard_format.py::test_the_manifest_is_real_json_with_real_types"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_data_controls_parity.py",
+      "source_test_nodes": [
+        "test_validation_fraction_preserves_members_order_and_recorded_indices",
+        "test_type_weights_and_caller_head_match_legacy_on_every_split",
+        "test_type_weights_reach_the_loss_and_prediction_gradients",
+        "test_validation_batches_and_reported_loss_match_legacy"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_data_sources_parity.py",
+      "source_test_nodes": [
+        "test_mixed_file_lists_match_legacy_readers_and_train",
+        "test_test_directory_matches_frozen_hdf5_sets"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_density_cube_cli_parity.py",
+      "source_test_nodes": [
+        "test_density_cli_matches_frozen_files_and_reports",
+        "test_invalid_density_requests_write_no_files"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_deployment_output_parity.py",
+      "source_test_nodes": [
+        "test_magnetic_xyz_values_keys_and_batch_slicing",
+        "test_missing_custom_moments_are_refused_before_writing",
+        "test_polar_ase_values_shapes_units_and_padding",
+        "test_charges_key_controls_the_dipole_baseline",
+        "test_dipole_length_conversion_preserves_the_native_contract"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_device_workflows_parity.py",
+      "source_test_nodes": [
+        "test_device_command_preserves_all_state_without_rewriting",
+        "test_eval_device_and_precision_match_the_actual_legacy_cli",
+        "test_convert_device_does_not_accept_an_output_artifact"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_dielectric_finetune_parity.py",
+      "source_test_nodes": [
+        "test_the_data_s_table_is_the_frozen_tree_s_dielectric_transfer",
+        "test_the_foundation_s_table_computes_what_the_foundation_does",
+        "test_the_converted_foundation_drives_the_calculator",
+        "test_periodic_dielectric_rotation_matches_legacy"
+      ],
+      "coverage_group": "dipole",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_dielectric_finetune.py::test_a_dielectric_fine_tune_trains_from_the_foundation",
+        "packages/mace-torch/tests/test_mace_torch_dielectric_finetune.py::test_a_foundation_that_reads_out_no_dipole_is_refused"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_dipole_parity.py",
+      "source_test_nodes": [
+        "test_the_dipole_anchor_matches_the_live_legacy_model",
+        "test_the_dielectric_model_matches_the_live_legacy_model",
+        "test_training_gradients_follow_the_weight_conversion"
+      ],
+      "coverage_group": "dipole",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_distance_transform.py",
+      "source_test_nodes": [
+        "test_each_transform_matches_the_live_legacy_model",
+        "test_the_radii_are_the_model_s_own",
+        "test_the_radii_move_the_energy"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_edge_force_parity.py",
+      "source_test_nodes": [
+        "test_export_edge_force_matches_positive_finite_difference",
+        "test_polar_export_edges_preserve_values_and_training_derivatives"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_element_table_parity.py",
+      "source_test_nodes": [
+        "test_the_data_s_table_is_the_frozen_tree_s_sliced_model",
+        "test_the_frozen_tree_divides_the_rows_it_keeps",
+        "test_the_foundation_s_table_computes_what_the_anchor_does"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_energy_dipole_parity.py",
+      "source_test_nodes": [
+        "test_joint_values_and_derivatives_match_legacy",
+        "test_joint_shared_parameter_gradients_obey_the_conversion",
+        "test_joint_checkpoint_and_calculator_match_legacy",
+        "test_joint_geometry_transformations"
+      ],
+      "coverage_group": "dipole",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_energy_outputs_parity.py",
+      "source_test_nodes": [
+        "test_atomic_and_total_strain_outputs_match_legacy",
+        "test_external_displacement_matches_legacy_preparation_and_virial"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_error_table_parity.py",
+      "source_test_nodes": [
+        "test_all_table_cells_match_the_live_oracle"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fm00_keystone.py",
+      "source_test_nodes": [
+        "test_a_converted_anchor_matches_the_live_legacy_model",
+        "test_a_converted_anchor_survives_the_checkpoint",
+        "test_energy_forces_and_stress_match_on_every_tiny_fixture",
+        "test_the_converted_energy_differentiates_twice",
+        "test_a_model_without_the_pair_repulsion_converts_too"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fm00_projection.py",
+      "source_test_nodes": [
+        "test_the_reduced_basis_reproduces_the_full_one",
+        "test_the_rank_agrees_with_a_derivation_that_uses_no_coupling_coefficients",
+        "test_the_full_basis_matches_the_trained_anchor_path_counts",
+        "test_a_real_model_s_weights_keep_computing_the_same_function",
+        "test_weights_from_a_different_basis_are_refused",
+        "test_there_is_no_way_back"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fm00_training_step.py",
+      "source_test_nodes": [
+        "test_the_converted_model_takes_the_same_training_step",
+        "test_the_recorded_basis_is_read_and_not_guessed",
+        "test_the_converted_stress_path_differentiates_twice",
+        "test_a_basis_that_is_neither_is_refused"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fm_convert_dielectric.py",
+      "source_test_nodes": [
+        "test_fm_convert_dielectric_reference_and_exact_reload",
+        "test_fm_convert_dielectric_live_full_jacobians",
+        "test_fm_convert_dielectric_refuses_wrong_derivative_reference",
+        "test_fm_convert_dielectric_basis_validation_uses_checkpoint_precision"
+      ],
+      "coverage_group": "dipole",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fm_convert_families.py",
+      "source_test_nodes": [
+        "test_fm_convert_dipole_values_and_position_gradients",
+        "test_fm_convert_dipole_committed_reference",
+        "test_fm_convert_magnetic_base_scope",
+        "test_fm_convert_magnetic_goldens_and_live_legacy",
+        "test_fm_convert_family_checkpoint_and_neutral_roundtrips",
+        "test_fm_convert_family_unknown_weight_is_refused",
+        "test_fm_convert_magnetic_scf_preserves_configuration_and_goldens",
+        "test_fm_convert_magnetic_scf_precision_and_foundation",
+        "test_fm_convert_magnetic_scf_cached_state_requires_reset",
+        "test_fm_convert_magnetic_scf_nondefault_settings",
+        "test_fm_convert_magnetic_config_matches_legacy_keys",
+        "test_fm_convert_magnetic_wrapper_unknown_tensor_is_refused",
+        "test_fm_convert_magnetic_without_one_body_or_repulsion",
+        "test_fm_convert_dipole_gated_vectors",
+        "test_fm_convert_family_through_subprocess_and_native_loader"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fm_convert_legacy.py",
+      "source_test_nodes": [
+        "test_a_converted_anchor_reproduces_its_goldens",
+        "test_a_converted_anchor_matches_the_live_legacy_model",
+        "test_a_subprocess_extraction_writes_the_same_tensors",
+        "test_the_configuration_has_every_key_the_legacy_reader_gives",
+        "test_the_plain_class_has_the_same_keys_but_the_scale_and_shift",
+        "test_a_missing_field_fails_the_import",
+        "test_retired_attention_is_refused_at_the_neutral_boundary",
+        "test_a_field_the_import_does_not_map_fails_it",
+        "test_a_multi_head_checkpoint_keeps_every_head",
+        "test_a_headless_checkpoint_becomes_one_default_head",
+        "test_a_source_that_recorded_its_heads_says_so",
+        "test_each_unsupported_class_is_refused_by_name",
+        "test_the_charge_aware_class_still_converts_alongside_fm5_families",
+        "test_a_subclass_of_a_supported_class_is_refused",
+        "test_a_tensor_nothing_accounts_for_aborts_naming_it",
+        "test_a_reduced_artifact_takes_its_own_path_to_the_same_model",
+        "test_a_full_artifact_tagged_reduced_is_refused",
+        "test_a_reduced_artifact_tagged_full_is_refused",
+        "test_reduced_to_full_is_refused",
+        "test_a_body_order_held_at_zero_is_refused",
+        "test_the_radial_frequencies_are_carried",
+        "test_the_repulsion_constants_are_carried",
+        "test_an_injected_breach_fails_the_conversion",
+        "test_the_command_converts_verifies_and_writes",
+        "test_the_command_refuses_an_unsupported_class",
+        "test_the_converted_checkpoint_carries_its_record",
+        "test_a_dielectric_configuration_is_read_in_full",
+        "test_unused_legacy_edge_irreps_do_not_change_the_converted_model",
+        "test_a_dielectric_model_converts_and_reads_back_from_disk",
+        "test_a_checkpoint_from_before_the_neighbour_buffer_converts_the_same"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fm_convert_projection.py",
+      "source_test_nodes": [
+        "test_the_product_projection_keeps_a_trained_contraction"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fm_convert_venv_mode.py",
+      "source_test_nodes": [
+        "test_the_packaged_extraction_writes_the_development_tensors"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_foundation_gpu.py",
+      "source_test_nodes": [
+        "test_the_conversion_reproduces_the_committed_golden_on_gpu",
+        "test_deterministic_float32_reproduces_bit_for_bit",
+        "test_atomic_float32_sums_stay_inside_the_float32_row",
+        "test_rounded_foundation_matches_exact_legacy_bases_on_gpu"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_foundation_release.py",
+      "source_test_nodes": [
+        "test_foundation_release_covers_the_entire_retained_roster",
+        "test_foundation_release_roundtrip_and_full_parity"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_foundation_roster.py",
+      "source_test_nodes": [
+        "test_the_conversion_is_the_model_the_artifact_describes",
+        "test_polar_medium_conversion_near_a_spin_density_cancellation",
+        "test_the_conversion_is_the_model_as_published",
+        "test_the_conversion_reproduces_the_committed_golden",
+        "test_the_projection_removes_exactly_the_gauge_parameters",
+        "test_mace_mp_0b_medium_computes_its_pair_radii_in_float32",
+        "test_the_charge_aware_conversion_reproduces_its_committed_golden",
+        "test_the_dielectric_conversion_is_the_model_as_published",
+        "test_the_dielectric_conversion_reproduces_its_committed_golden"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_foundation_roster_record.py",
+      "source_test_nodes": [
+        "test_every_tabled_model_is_on_the_record_at_its_url",
+        "test_the_loaders_with_their_url_inline_download_the_recorded_one",
+        "test_the_record_holds_nothing_the_loaders_do_not_reach"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fp32_bit_golden.py",
+      "source_test_nodes": [
+        "test_reference_backend_reproduces_frozen_fp32_reductions",
+        "test_golden_agrees_with_independent_sequential_float32",
+        "test_machine_epsilon_gate_rejects_reordered_accumulation",
+        "test_fixed_order_matches_the_frozen_cpu_scatter"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_full_basis_export.py",
+      "source_test_nodes": [
+        "test_full_basis_export_reproduces_frozen_goldens"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_full_batch_loss.py",
+      "source_test_nodes": [
+        "test_chunked_loss_and_all_gradients_match_legacy_whole_set"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_fuzz_parity.py",
+      "source_test_nodes": [
+        "test_fuzz_parity",
+        "test_coverage_counters_reject_a_disabled_strategy",
+        "test_coverage_counters_accept_all_six",
+        "test_weak_input_failure_is_caught_and_replays",
+        "test_high_lmax_strategy_obeys_finite_capabilities",
+        "test_nightly_upload_keeps_hidden_replays_and_other_jobs_exclude_campaign"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_interaction_variants.py",
+      "source_test_nodes": [
+        "test_each_pairing_matches_the_live_legacy_model",
+        "test_the_nonlinear_block_matches_the_live_legacy_model",
+        "test_the_nonlinear_normalization_is_live",
+        "test_each_backbone_setting_matches_the_live_legacy_model",
+        "test_each_backbone_setting_changes_the_model",
+        "test_each_first_block_is_built_as_named",
+        "test_the_nonlinear_first_block_is_built_as_named",
+        "test_the_pairings_are_different_models"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_launcher_environment_parity.py",
+      "source_test_nodes": [
+        "test_rank_and_rendezvous_environment_match_legacy"
+      ],
+      "coverage_group": "architecture",
+      "native_successors": [
+        "tests/architecture/test_import_direction.py",
+        "tests/architecture/test_packaging_isolation.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_les_model_parity.py",
+      "source_test_nodes": [
+        "test_native_model_matches_legacy_and_keeps_every_parameter",
+        "test_ase_bec_field_and_unpadding",
+        "test_eval_writes_real_latents_and_bec_from_a_batch",
+        "test_inactive_atomwise_flag_survives_as_source_provenance",
+        "test_other_readout_paths_and_requested_bec",
+        "test_energy_foundation_transfer_matches_legacy",
+        "test_legacy_les_arguments_use_the_typed_section",
+        "test_cueq_force_training_and_checkpoint_on_cuda",
+        "test_les_precision_rows"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_linear_layout_parity.py",
+      "source_test_nodes": [
+        "test_a_trained_linear_converts_exactly",
+        "test_the_normalization_depends_on_the_fan_in"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_lora_controls_parity.py",
+      "source_test_nodes": [
+        "test_equivariant_adapters_match_values_gradients_and_merge",
+        "test_dense_adapter_matches_legacy_values_and_factor_gradients",
+        "test_readout_transfer_flag_matches_legacy_function_and_forces"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_loss_composition.py",
+      "source_test_nodes": [
+        "test_complete_cli_objective_and_prediction_gradients",
+        "test_missing_labels_keep_zero_gradient_without_mutating_the_batch",
+        "test_native_weighting_defaults_remain_linear_in_structure_and_property_weights",
+        "test_flags_legacy_yaml_and_resolved_json_select_the_same_objective",
+        "test_objective_and_all_mapped_model_gradients_match"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_magnetic_parity.py",
+      "source_test_nodes": [
+        "test_the_converted_model_matches_the_live_legacy_model",
+        "test_the_converted_model_reproduces_the_committed_reference",
+        "test_a_periodic_crystal_s_stress_matches_the_live_legacy_model",
+        "test_the_fixed_point_reproduces_the_committed_reference",
+        "test_the_fixed_point_is_the_live_wrapper_s",
+        "test_the_frozen_wrapper_stops_short_of_its_own_tolerance",
+        "test_the_calculator_gives_the_frozen_calculator_s_results",
+        "test_the_calculator_relaxes_the_moments_as_the_frozen_wrapper_does"
+      ],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py",
+        "packages/mace-torch/tests/test_mace_torch_time_reversal.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_metrics_parity.py",
+      "source_test_nodes": [
+        "test_every_shared_metric_agrees_on_a_fully_labelled_set",
+        "test_the_comparison_is_not_trivially_satisfied",
+        "test_the_totals_still_agree_when_a_structure_carries_no_label",
+        "test_the_per_atom_energy_error_differs",
+        "test_the_relative_force_error_differs",
+        "test_the_per_atom_error_is_the_labelled_structures_alone"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_missing_labels_parity.py",
+      "source_test_nodes": [
+        "test_missing_labels_preserve_loss_and_every_mapped_gradient",
+        "test_historical_key_selections_preserve_labels_through_preparation"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_multihead_parity.py",
+      "source_test_nodes": [
+        "test_every_head_of_the_converted_model_matches_the_live_one",
+        "test_the_two_heads_really_disagree",
+        "test_the_converted_model_holds_one_readout_per_head",
+        "test_multihead_training_gradients_follow_the_conversion"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_neighbor_parity.py",
+      "source_test_nodes": [
+        "test_the_matscipy_neighbor_list_is_the_legacy_one_exactly",
+        "test_neighbor_backend_reproduces_the_oracle",
+        "test_a_length_that_rounds_onto_the_cutoff_is_the_legacy_decision"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_node_energy_dtype_parity.py",
+      "source_test_nodes": [
+        "test_every_energy_family_has_a_frozen_counterpart",
+        "test_the_model_factory_widens_exactly_where_the_frozen_tree_does"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_optimizer_controls.py",
+      "source_test_nodes": [
+        "test_cli_optimizer_steps_and_state_match_legacy"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_optimizer_parity.py",
+      "source_test_nodes": [
+        "test_skip_weights_are_not_regularized",
+        "test_regularized_updates_match_in_the_same_coordinates"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_optional_selection_parity.py",
+      "source_test_nodes": [
+        "test_installed_fps_kernel_matches_legacy_after_aligning_start_state",
+        "test_absent_fpsample_uses_exact_farthest_points",
+        "test_installed_fpsample_failure_is_not_changed_to_a_random_draw",
+        "test_selection_cli_uses_the_installed_kernel_and_writes_its_structures"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_output_side_parity.py",
+      "source_test_nodes": [
+        "test_the_linear_readout_converts_exactly",
+        "test_the_nonlinear_readout_converts_exactly",
+        "test_the_short_range_repulsion_matches",
+        "test_the_energy_constants_transfer_without_conversion",
+        "test_a_model_without_a_scale_shift_block_reports_the_identity"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_output_variants.py",
+      "source_test_nodes": [
+        "test_each_setting_matches_the_live_legacy_model",
+        "test_each_setting_changes_the_model",
+        "test_the_embedded_inputs_are_read_per_structure",
+        "test_a_checkpoint_of_it_reads_back_as_the_same_model"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_plot_selection.py",
+      "source_test_nodes": [
+        "test_free_input_names_are_an_explicit_legacy_contract_change",
+        "test_minimum_epoch_matches_legacy_for_each_head",
+        "test_head_and_stage_filenames_follow_the_stage_contract_with_legacy_curves"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_polar_controls_parity.py",
+      "source_test_nodes": [
+        "test_polar_controls_and_outputs_match_legacy",
+        "test_all_polar_controls_build_train_and_survive_reload",
+        "test_invalid_polar_block_settings_are_not_discarded",
+        "test_the_legacy_nonlinearity_selector_is_inert",
+        "test_legacy_yaml_translates_all_polar_controls"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_polar_density_cube_parity.py",
+      "source_test_nodes": [
+        "test_the_reciprocal_space_density_and_potential_are_the_frozen_tree_s",
+        "test_the_real_space_density_is_the_frozen_tree_s"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_polar_density_snapshot.py",
+      "source_test_nodes": [
+        "test_final_density_recovers_the_complete_historical_snapshot"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_polar_field_surface.py",
+      "source_test_nodes": [
+        "test_polar_field_inputs_preserve_predictions_and_cache"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_polar_output_absence.py",
+      "source_test_nodes": [
+        "test_retired_potential_output_remains_absent_with_matching_predictions"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_polar_parity.py",
+      "source_test_nodes": [
+        "test_retired_polar_options_leave_legacy_predictions_unchanged",
+        "test_the_converted_model_matches_the_live_legacy_model",
+        "test_the_per_structure_profile_is_the_frozen_tree_on_each_structure",
+        "test_a_molecule_is_the_same_whatever_its_batch_holds",
+        "test_the_stress_is_the_derivative_of_the_energy_compared"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_polar_solver_precision.py",
+      "source_test_nodes": [
+        "test_polar_solver_reductions_match_high_precision_legacy"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_preprocessing_parity.py",
+      "source_test_nodes": [
+        "test_custom_labels_weights_and_missing_properties_survive_preparation",
+        "test_uneven_shard_statistics_match_the_frozen_whole_dataset"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_pseudolabel_parity.py",
+      "source_test_nodes": [
+        "test_the_labels_and_their_weights_are_the_frozen_tree_s"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_pseudolabels.py::test_a_failing_batch_stops_everything",
+        "packages/mace-torch/tests/test_mace_torch_pseudolabels.py::test_a_run_writes_its_labels_into_its_own_directory"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_radial_mlp_parity.py",
+      "source_test_nodes": [
+        "test_the_radial_network_reproduces_the_anchor",
+        "test_the_activation_scale_is_the_sampled_one_and_that_is_deliberate"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_radial_parity.py",
+      "source_test_nodes": [
+        "test_radial_embedding_block_parity",
+        "test_zbl_parity",
+        "test_chebyshev_basis_parity_at_the_magnetic_configuration",
+        "test_linear_node_embedding_parity_with_the_legacy_weight"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_readout_activations.py",
+      "source_test_nodes": [
+        "test_scalar_vector_tensor_gate_values_gradients_and_curvature",
+        "test_multihead_readout_values_and_training_gradients",
+        "test_converted_dielectric_preserves_readout_activation",
+        "test_converted_polar_preserves_energy_and_fukui_activation"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_reduction_order.py",
+      "source_test_nodes": [
+        "test_the_two_reductions_agree_bit_for_bit",
+        "test_the_case_is_hard_enough_to_see_an_order_difference",
+        "test_an_empty_segment_is_zero_in_both",
+        "test_the_order_matches_on_the_shape_a_model_actually_reduces"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_reference_backend_parity.py",
+      "source_test_nodes": [
+        "test_the_linear_map_matches_legacy_in_value_and_weight_gradient",
+        "test_the_skip_connection_matches_legacy_in_value_and_weight_gradient",
+        "test_the_convolution_matches_legacy_in_value_and_radial_gradient",
+        "test_the_paths_follow_legacy_order_where_both_parities_meet",
+        "test_a_scalar_node_passes_the_edge_harmonics_through",
+        "test_the_contraction_matches_legacy_in_value_and_weight_gradient",
+        "test_the_contraction_draw_has_the_legacy_spread_per_block",
+        "test_the_normalized_radial_mlp_is_e3nns_fully_connected_net",
+        "test_the_layer_norm_radial_mlp_is_the_legacy_radial_mlp",
+        "test_the_normalized_radial_mlp_draws_at_the_legacy_spread",
+        "test_the_layer_norm_radial_mlp_draws_where_torch_linear_does"
+      ],
+      "coverage_group": "backend",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_replay_workflows_parity.py",
+      "source_test_nodes": [
+        "test_multihead_element_transfer_preserves_the_frozen_foundation",
+        "test_replay_counts_match_the_frozen_training_pipeline"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_spherical_harmonics_parity.py",
+      "source_test_nodes": [
+        "test_values_match_on_unit_and_non_unit_vectors",
+        "test_first_and_second_derivatives_match",
+        "test_zero_vector_matches"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_subselect_parity.py",
+      "source_test_nodes": [
+        "test_a_random_selection_keeps_what_the_frozen_tree_keeps",
+        "test_precomputed_descriptor_rows_match_the_frozen_filtered_input"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_time_reversal_parity.py",
+      "source_test_nodes": [
+        "test_projection_matches_legacy_values_and_derivatives",
+        "test_projected_hessian_and_edge_forces_match_legacy",
+        "test_force_loss_parameter_gradients_match_legacy",
+        "test_projected_fixed_point_matches_legacy"
+      ],
+      "coverage_group": "magnetic",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_magnetic_model.py",
+        "packages/mace-torch/tests/test_mace_torch_time_reversal.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_torchsim_parity.py",
+      "source_test_nodes": [
+        "test_torchsim_bundle_matches_committed_legacy_goldens",
+        "test_torchsim_polar_inputs_and_outputs_match_legacy"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_torchsim.py::test_cold_import_and_trajectory_never_use_torchscript",
+        "packages/mace-torch/tests/test_mace_torch_torchsim.py::test_energy_batched_state_and_triclinic_cell"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_training_ema_parity.py",
+      "source_test_nodes": [
+        "test_averaged_weights_match_legacy_through_updates_and_resume",
+        "test_hard_frozen_training_matches_legacy_on_identical_batches"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/parity/test_training_statistics_parity.py",
+      "source_test_nodes": [
+        "test_rms_statistics_match_legacy",
+        "test_native_population_spread_and_zero_neighbor_atoms_are_explicit",
+        "test_e0_cli_sources_and_isolated_selection_match_legacy",
+        "test_statistics_reach_model_buffers_and_survive_reload",
+        "test_zero_spread_keeps_the_model_trainable_like_legacy",
+        "test_foundation_e0s_use_live_converted_predictions"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_arg_parser.py",
+      "source_test_nodes": [
+        "test_default_parser_builds_and_parses_minimal_command_line",
+        "test_default_parser_requires_name",
+        "test_default_parser_train_file_is_optional_at_parse_time",
+        "test_default_parser_critical_defaults",
+        "test_stage_two_alias_maps_to_swa_dest",
+        "test_yaml_config_values_are_applied",
+        "test_cli_flag_overrides_yaml_config",
+        "test_invalid_choice_raises_system_exit",
+        "test_preprocess_parser_smoke_and_defaults",
+        "test_preprocess_parser_requires_train_file",
+        "test_str2bool",
+        "test_check_float_or_none",
+        "test_read_yaml"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_augmentation.py",
+      "source_test_nodes": [
+        "test_rotation_keeps_magmom_and_magforces_consistent",
+        "test_rotation_samples_orientations_uniformly"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_avg_num_neighbors_buffer.py",
+      "source_test_nodes": [
+        "test_a_legacy_pickle_comes_back_with_the_buffer",
+        "test_a_legacy_pickle_can_be_torchscripted",
+        "test_the_promoted_buffer_keeps_the_value_at_the_models_precision",
+        "test_the_dtype_follows_the_model_not_the_process_default",
+        "test_the_promoted_buffer_lands_beside_the_weights",
+        "test_the_promoted_buffer_follows_a_map_location_onto_the_device",
+        "test_a_model_pickled_after_the_buffer_landed_is_untouched",
+        "test_promotion_reproduces_the_arithmetic_of_the_float_it_replaced"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_calculator_charges_key.py",
+      "source_test_nodes": [
+        "test_charges_key_selects_the_arrays_field",
+        "test_arrays_keys_maps_property_name_to_atoms_key",
+        "test_unconfigured_key_is_not_read",
+        "test_charges_reach_the_fixed_charge_dipole_baseline"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_calculator_dtype_scope.py",
+      "source_test_nodes": [
+        "test_every_forward_runs_under_the_calculator_dtype"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_foundations.py::test_explicit_precision_reads_weights_directly_from_the_checkpoint"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_calculator_info_keys_and_state.py",
+      "source_test_nodes": [
+        "test_the_default_info_keys_are_the_three_documented_ones",
+        "test_info_keys_maps_property_name_to_the_info_key",
+        "test_an_override_replaces_the_defaults_rather_than_extending_them",
+        "test_the_configured_info_key_is_the_one_read",
+        "test_the_default_key_is_not_read_once_it_has_been_remapped",
+        "test_nothing_changed_means_nothing_to_recompute",
+        "test_moving_an_atom_is_a_change",
+        "test_a_changed_info_entry_is_a_change",
+        "test_a_new_info_entry_is_a_change",
+        "test_an_array_valued_info_entry_is_not_compared"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_calculator_mdp.py",
+      "source_test_nodes": [
+        "test_mace_mdp_local_model",
+        "test_mace_mdp_download_uses_raw_githubusercontent_urls",
+        "test_extract_config_mace_mdp_local_model"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_foundations.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_calculator_units_and_spread.py",
+      "source_test_nodes": [
+        "test_the_energy_conversion_scales_the_energy_and_the_forces",
+        "test_the_length_conversion_divides_the_forces_and_cubes_for_the_stress",
+        "test_the_default_conversions_change_nothing",
+        "test_a_committee_reports_the_spread_of_the_members_it_averaged",
+        "test_the_spread_stays_the_spread_under_a_unit_conversion",
+        "test_the_variance_scales_as_the_square_and_the_members_linearly",
+        "test_a_single_model_reports_no_spread_at_all",
+        "test_a_committee_reports_the_stress_of_the_members_it_averaged",
+        "test_the_stress_spread_is_in_the_same_layout_as_the_stress",
+        "test_the_committee_axis_survives_the_voigt_conversion",
+        "test_the_members_are_symmetric_so_the_conversion_loses_nothing",
+        "test_the_stress_variance_scales_as_the_square_of_the_conversion",
+        "test_a_dipole_committee_reports_its_spread",
+        "test_the_dipole_spread_keeps_the_layout_of_the_dipole",
+        "test_a_single_dipole_model_reports_no_spread",
+        "test_implemented_properties_is_this_calculator_s_own",
+        "test_every_committee_key_written_is_also_advertised",
+        "test_a_single_model_advertises_no_committee_keys"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_cg.py",
+      "source_test_nodes": [
+        "test_U_matrix"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_checkpoint_retention_and_clipping.py",
+      "source_test_nodes": [
+        "test_without_keep_only_the_latest_checkpoint_survives",
+        "test_with_keep_every_epoch_is_kept",
+        "test_keep_last_spares_one_file_even_without_keep",
+        "test_the_saved_checkpoint_is_what_comes_back",
+        "test_clipping_shortens_a_gradient_that_is_too_long",
+        "test_clipping_leaves_a_short_gradient_alone",
+        "test_clipping_keeps_the_direction"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_ci_gates.py",
+      "source_test_nodes": [
+        "test_every_floor_names_a_file_that_exists",
+        "test_every_floor_is_a_usable_percentage",
+        "test_the_floors_are_enforced_after_the_shards_are_combined",
+        "test_the_floors_carry_their_reasoning_in_the_job_that_enforces_them",
+        "test_the_floor_gate_runs_only_when_every_shard_reported",
+        "test_every_declared_benchmark_size_has_a_cpu_runnable_case",
+        "test_the_nightly_benchmarks_job_selects_the_benchmarks_and_can_fail",
+        "test_an_empty_artifact_fails_the_benchmarks_job",
+        "test_a_size_hole_fails_the_benchmarks_job",
+        "test_a_result_without_its_metadata_fails_the_benchmarks_job",
+        "test_the_benchmark_cases_record_every_field_the_job_demands",
+        "test_benchmarks_never_gate_a_correctness_job",
+        "test_the_coverage_job_installs_every_capability_it_requires",
+        "test_every_capability_is_guaranteed_by_some_job",
+        "test_a_pr_job_resolves_the_cueq_extras",
+        "test_setup_cfg_declares_the_extras_the_job_resolves",
+        "test_the_job_fails_when_the_derived_list_is_empty",
+        "test_the_job_reads_the_extras_out_of_setup_cfg",
+        "test_the_job_needs_no_gpu",
+        "test_the_job_names_no_platform_tag",
+        "test_the_job_only_resolves_and_does_not_install",
+        "test_a_failure_to_resolve_fails_the_job"
+      ],
+      "coverage_group": "architecture",
+      "native_successors": [
+        "tests/architecture/test_import_direction.py",
+        "tests/architecture/test_packaging_isolation.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_compile.py",
+      "source_test_nodes": [
+        "test_mace",
+        "test_mace_compile_stress",
+        "test_eager_benchmark",
+        "test_compile_benchmark",
+        "test_graph_breaks"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_compile_padded.py::test_structures_under_one_budget_share_one_compile",
+        "packages/mace-torch/tests/test_compiled_eager_parity.py::test_compiled_padded_matches_eager_unpadded"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_convert_e3nn_cueq.py",
+      "source_test_nodes": [
+        "test_conversion_enables_convolution_fusion_for_cuda_devices"
+      ],
+      "coverage_group": "backend",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_data.py",
+      "source_test_nodes": [
+        "TestAtomicData::test_atomic_data",
+        "TestAtomicData::test_data_loader",
+        "TestAtomicData::test_to_atomic_data_dict",
+        "TestAtomicData::test_hdf5_dataloader",
+        "TestNeighborhood::test_basic",
+        "TestNeighborhood::test_signs",
+        "test_periodic_edge",
+        "test_half_periodic",
+        "test_nonperiodic_cell_is_extent_based",
+        "test_partial_pbc_neighbours_match_bruteforce_nonorthogonal",
+        "test_the_oracle_reproduces_known_coordination_numbers",
+        "test_the_oracle_rejects_a_list_that_is_wrong_by_one_edge",
+        "test_the_oracle_refuses_a_periodic_request_without_a_cell",
+        "test_canonical_edges_refuses_displacement_vectors",
+        "test_full_directed_edge_set_against_the_oracle",
+        "test_periodic_self_images_survive_the_self_edge_filter",
+        "test_true_self_interaction_is_dead",
+        "test_zero_edge_systems_are_legal",
+        "test_missing_or_all_zero_cell_becomes_the_identity_before_extension",
+        "test_returned_cell_regime_aperiodic_is_the_extended_search_cell",
+        "test_returned_cell_regime_periodic_is_the_physical_cell",
+        "test_returned_cell_regime_periodic_with_a_zero_row_is_patched",
+        "test_the_three_returned_cell_regimes_are_actually_three",
+        "test_shifts_are_unit_shifts_times_the_returned_cell",
+        "test_mixed_pbc_is_passed_through_per_axis",
+        "test_get_neighborhood_does_not_mutate_its_arguments",
+        "test_the_fixture_regime_table_agrees_with_the_golden_manifest",
+        "test_golden_fixture_neighbourhood_matches_the_oracle",
+        "test_oracle_and_matscipy_agree_on_displacement_vectors_too",
+        "TestAtomicDataContract::test_one_hot_follows_the_z_table_not_the_atomic_number",
+        "TestAtomicDataContract::test_shifts_are_unit_shifts_times_the_stored_cell",
+        "TestAtomicDataContract::test_voigt_stress_and_virials_expand_at_parse_time",
+        "TestAtomicDataContract::test_graph_level_inputs_reach_the_graph",
+        "TestAtomicDataContract::test_collating_two_graphs_offsets_the_edge_index",
+        "TestAtomicDataContract::test_the_collated_cell_is_stacked_rows_and_views_back"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "packages/mace-core/tests/test_mace_core_neighbors.py::test_every_registered_backend_reproduces_the_all_pairs_edge_set",
+        "packages/mace-core/tests/test_mace_core_neighbors.py::test_the_three_regimes_are_three_different_matrices",
+        "packages/mace-torch/tests/test_mace_torch_neighbor_providers.py::test_default_cpu_providers_match_the_oracle"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_data_utils.py",
+      "source_test_nodes": [
+        "test_keyspec_from_defaults",
+        "test_keyspec_update_merges_and_returns_self",
+        "test_update_keyspec_from_kwargs",
+        "test_update_keyspec_from_kwargs_embedding_specs",
+        "test_config_from_atoms_maps_custom_keys",
+        "test_config_from_atoms_missing_keys_get_zero_weight",
+        "test_config_from_atoms_config_type_and_weights",
+        "test_config_from_atoms_isolated_atom_nonperiodic",
+        "test_config_from_atoms_dipole_and_charges",
+        "test_config_from_atoms_list_matches_single",
+        "test_load_from_xyz_roundtrip",
+        "test_load_from_xyz_keep_isolated_atoms",
+        "test_load_from_xyz_no_extraction",
+        "test_load_from_xyz_head_name",
+        "test_load_from_xyz_missing_keys_raises",
+        "test_load_from_xyz_restores_keyspec",
+        "test_compute_average_E0s_exact_system",
+        "test_compute_average_E0s_least_squares_average",
+        "test_config_types_grouping",
+        "test_random_train_valid_split_small",
+        "test_random_train_valid_split_writes_indices_file",
+        "test_default_keys_are_exactly_these_thirteen",
+        "test_keydict_derives_one_cli_argument_per_member",
+        "test_every_default_key_reaches_the_keyspec",
+        "test_all_default_keys_survive_a_write_read_roundtrip",
+        "test_the_default_dipole_key_does_not_survive_extxyz",
+        "test_custom_property_keys_round_trip",
+        "test_config_type_and_per_property_weights_round_trip",
+        "test_isolated_atom_detection_needs_both_one_atom_and_the_config_type",
+        "test_isolated_atom_without_an_energy_contributes_zero",
+        "test_keep_isolated_atoms_keeps_them_and_still_extracts",
+        "test_random_train_valid_split_prefixes_the_indices_file",
+        "test_config_types_treats_a_missing_head_as_the_empty_string",
+        "test_save_dataset_as_hdf5_writes_one_group_per_graph"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_a_custom_file_key_reads_only_when_the_specification_names_it",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_all_twelve_default_keys_survive_a_write_and_a_read",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_an_embedding_feature_lands_in_the_half_its_per_names",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_an_embedding_feature_reads_through_a_real_file",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_the_default_dipole_key_is_read_back_from_the_calculator",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_the_default_keys_are_exactly_these_twelve",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_the_head_is_the_callers_and_is_stored_once",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_the_head_name_is_stamped_on_every_structure"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_default_dtype_scope.py",
+      "source_test_nodes": [
+        "test_the_scope_sets_the_dtype_it_was_given",
+        "test_a_clean_exit_restores_the_default",
+        "test_an_exception_restores_the_default_too",
+        "test_the_exception_still_reaches_the_caller",
+        "test_a_torch_dtype_is_accepted_as_well_as_a_string",
+        "test_nesting_unwinds_to_the_outer_dtype",
+        "test_nesting_unwinds_through_an_exception",
+        "test_the_decorator_restores_after_a_body_that_raises",
+        "test_the_decorator_restores_after_a_body_that_succeeds",
+        "test_the_decorator_keeps_the_wrapped_signature",
+        "test_every_converter_run_restores_the_default_dtype"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_download_cache.py",
+      "source_test_nodes": [
+        "test_html_response_leaves_no_cached_file",
+        "test_second_attempt_retries_instead_of_reusing_the_error_page",
+        "test_discard_is_quiet_when_the_file_is_already_gone"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_download_urls.py",
+      "source_test_nodes": [
+        "test_mace_off_download_uses_raw_githubusercontent_urls",
+        "test_normalize_github_download_url"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-core/tests/test_artifact_download.py::test_concurrent_transfers_only_publish_complete_files",
+        "packages/mace-core/tests/test_artifact_download.py::test_eof_with_the_wrong_length_is_not_committed",
+        "packages/mace-core/tests/test_artifact_download.py::test_the_cache_follows_xdg_cache_home",
+        "packages/mace-core/tests/test_mace_core_model_registry.py::test_every_retained_alias_warns_and_has_one_canonical_target"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_e0s_characterization.py",
+      "source_test_nodes": [
+        "test_isolated_atom_configs_become_exact_e0s",
+        "test_an_isolated_atom_that_carries_no_energy_becomes_zero_with_a_warning",
+        "test_keep_isolated_atoms_leaves_them_in_the_training_set",
+        "test_a_single_atom_without_the_tag_is_not_an_e0",
+        "test_average_e0s_are_exactly_a_least_squares_fit",
+        "test_average_e0s_reproduce_an_exactly_determined_system",
+        "test_an_element_absent_from_the_training_set_gets_zero_silently",
+        "test_a_nan_reference_energy_is_not_caught_by_the_linalgerror_fallback",
+        "test_e0s_average_goes_through_the_least_squares_fit",
+        "test_e0s_average_without_a_training_set_is_a_runtime_error",
+        "test_e0s_from_a_literal_dict_and_from_a_json_file",
+        "test_an_unparseable_e0s_string_is_a_runtime_error",
+        "test_no_e0s_at_all_is_a_runtime_error",
+        "test_estimated_e0s_are_the_foundation_e0s_plus_a_least_squares_correction",
+        "test_estimated_e0s_are_deterministic_at_cpu_float64",
+        "test_estimated_e0s_fall_back_to_the_foundation_when_nothing_has_an_energy",
+        "test_the_e0s_enter_the_total_energy_once_per_atom",
+        "test_the_e0_contribution_is_the_composition_dot_the_table",
+        "test_mean_and_std_together_override_the_dataset_statistics",
+        "test_mean_without_std_is_accepted_and_then_discarded",
+        "test_no_scaling_overrides_even_an_explicit_std",
+        "test_the_mean_and_std_scaling_is_the_per_atom_interaction_energy",
+        "test_the_rms_forces_scaling_is_the_root_mean_square_force_component",
+        "test_a_zero_spread_becomes_a_scale_of_one_with_a_warning",
+        "test_the_average_neighbour_count_skips_atoms_that_have_no_neighbours",
+        "test_compute_statistics_returns_three_numbers_and_the_third_is_not_a_std",
+        "test_the_dipole_scaling_entry_cannot_be_used_the_way_the_other_two_are",
+        "test_the_zero_spread_guard_only_works_on_arrays",
+        "test_the_per_batch_statistics_helpers_agree_with_the_loader_versions"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_error_table_heads.py",
+      "source_test_nodes": [
+        "test_every_loader_becomes_its_own_row",
+        "test_no_skip_list_evaluates_everything",
+        "test_a_skipped_head_loses_its_row",
+        "test_skipping_names_a_head_not_a_split",
+        "test_a_skip_list_naming_nothing_present_removes_nothing",
+        "test_several_heads_can_be_skipped_at_once",
+        "test_the_match_is_a_substring_and_not_the_head_name",
+        "test_a_skipped_head_says_so_in_the_log"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_finetuning_utils.py",
+      "source_test_nodes": [
+        "test_load_foundations_elements_node_embedding_rows",
+        "test_load_foundations_elements_scale_shift_and_neighbors",
+        "test_load_foundations_elements_hyperparams_coherent",
+        "test_load_foundations_elements_model_is_usable",
+        "test_load_foundations_elements_r_max_mismatch_raises",
+        "test_load_foundations_copies_matching_shapes_and_skips_readouts",
+        "test_load_foundations_include_readouts",
+        "test_avg_num_neighbors_is_checkpointed_and_cast",
+        "test_legacy_state_dict_without_avg_num_neighbors_loads_strictly",
+        "test_joint_embedding_head_columns_follow_the_model_layout",
+        "test_joint_embedding_matching_spec_weights_are_copied",
+        "test_joint_embedding_survives_the_blanket_state_dict_copy",
+        "test_joint_embedding_foundation_without_embeddings_initialises"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_first_interaction_block.py",
+      "source_test_nodes": [
+        "test_an_allowlisted_first_block_is_the_one_built",
+        "test_the_allowlist_has_exactly_these_three_entries",
+        "test_the_density_block_is_reachable_as_a_first_layer"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_foundation_readout_flag.py",
+      "source_test_nodes": [
+        "test_the_readout_is_transferred_by_default",
+        "test_the_flag_turns_the_transfer_off",
+        "test_the_deprecated_spelling_still_works",
+        "test_the_old_spelling_no_longer_has_a_dest_of_its_own",
+        "test_the_deprecated_help_says_so_and_says_what_it_does",
+        "test_the_configured_flag_is_what_the_loader_receives",
+        "test_loading_with_the_readout_copies_the_readout_weights",
+        "test_loading_without_it_leaves_them_alone",
+        "test_the_interactions_are_transferred_either_way",
+        "test_the_bare_flag_still_turns_the_transfer_off",
+        "test_an_explicit_value_is_taken_as_written",
+        "test_a_config_file_means_what_it_says",
+        "test_the_two_spellings_agree_from_a_config_file"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_foundations_models.py",
+      "source_test_nodes": [
+        "test_dispersion_damping_is_forwarded",
+        "test_legacy_damping_name_is_accepted",
+        "test_default_damping",
+        "test_dispersion_xc_is_forwarded",
+        "test_the_default_functional_is_pbe",
+        "test_dispersion_cutoff_is_forwarded",
+        "test_the_default_cutoff_is_forty_bohr_in_angstrom",
+        "test_the_two_cutoffs_are_separate_knobs",
+        "test_the_dispersion_arguments_do_not_reach_the_mace_calculator"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_foundations.py::test_released_dispersion_arguments"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_gate.py",
+      "source_test_nodes": [
+        "test_irreps_properties",
+        "test_forward_matches_e3nn",
+        "test_ir_mul_matches_mul_ir_via_transpose",
+        "test_backward_matches_e3nn",
+        "test_backward_ir_mul",
+        "test_second_derivative_matches_e3nn",
+        "test_no_graph_breaks",
+        "test_custom_activations",
+        "test_invalid_layout",
+        "test_repr",
+        "test_normalize2mom_caching"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_gate_registry.py",
+      "source_test_nodes": [
+        "test_the_registry_maps_every_cli_value_to_its_callable",
+        "test_a_model_builds_and_runs_with_every_gate",
+        "test_the_gate_changes_the_energy"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_interaction_variants.py",
+      "source_test_nodes": [
+        "test_the_attention_residual_interaction_builds_and_runs",
+        "test_the_attention_residual_interaction_is_not_the_plain_one"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_lmdb_database.py",
+      "source_test_nodes": [
+        "test_lmdb_dataset",
+        "test_lmdb_dataset_honors_key_specification",
+        "test_load_dataset_for_path_forwards_key_specification"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "packages/mace-core/tests/test_data_backend_conformance.py::test_a_damaged_lmdb_row_raises_naming_its_database_and_index",
+        "packages/mace-core/tests/test_data_backend_conformance.py::test_an_lmdb_row_s_calculator_labels_become_its_properties",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_a_custom_file_key_reads_only_when_the_specification_names_it",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_the_default_keys_are_exactly_these_twelve"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_logging_setup.py",
+      "source_test_nodes": [
+        "test_the_default_level_keeps_debug_out_of_the_main_log",
+        "test_debug_lets_it_through",
+        "test_the_debug_file_is_written_whatever_the_level",
+        "test_a_level_above_info_silences_the_main_log_without_silencing_the_run",
+        "test_only_rank_zero_logs"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_lora.py",
+      "source_test_nodes": [
+        "test_lora_trainable_parameter_count",
+        "test_lora_symmetry_equivariance",
+        "test_lora_merge_preserves_outputs",
+        "test_lora_merge_handles_o3_linear_bias_instructions",
+        "test_lora_merge_removes_wrappers",
+        "test_lora_merge_enables_gradients",
+        "test_lora_merge_preserves_equivariance",
+        "test_lora_evaluate_preserves_frozen_state"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_loss.py",
+      "source_test_nodes": [
+        "test_reduce_loss_is_plain_mean_without_ddp",
+        "test_mean_squared_error_energy",
+        "test_weighted_mean_squared_error_energy_per_atom_normalization",
+        "test_weighted_mean_squared_error_energy_config_weights",
+        "test_mean_squared_error_forces",
+        "test_weighted_mean_squared_stress",
+        "test_weighted_mean_squared_virials_per_atom_normalization",
+        "test_weighted_mean_squared_error_dipole",
+        "test_conditional_mse_forces_regimes",
+        "test_conditional_huber_forces",
+        "test_weighted_energy_forces_loss_zero",
+        "test_weighted_energy_forces_loss_hand_value",
+        "test_weighted_energy_forces_loss_global_weights_scale",
+        "test_weighted_energy_forces_loss_config_weight_scales_both_terms",
+        "test_weighted_forces_loss",
+        "test_weighted_energy_forces_stress_loss_zero_and_hand_value",
+        "test_weighted_energy_forces_virials_loss",
+        "test_weighted_huber_energy_forces_stress_loss",
+        "test_universal_loss",
+        "test_dipole_single_loss",
+        "test_dipole_polar_loss",
+        "test_weighted_energy_forces_dipole_loss",
+        "test_weighted_energy_forces_l1l2_loss",
+        "test_loss_repr_contains_weights",
+        "test_universal_loss_magforces_hand_value",
+        "test_universal_loss_magforces_per_config_weight_multiplies_the_arguments",
+        "test_universal_loss_drops_the_magforces_term_when_it_is_not_predicted",
+        "test_universal_loss_drops_the_magforces_term_when_the_reference_is_none",
+        "test_universal_loss_full_hand_value_over_all_four_terms",
+        "test_universal_loss_per_config_energy_weight_is_not_a_linear_factor",
+        "test_universal_loss_per_config_forces_weight_can_change_the_huber_regime",
+        "test_the_ddp_branch_is_the_same_arithmetic_without_a_process_group",
+        "test_is_ddp_enabled_is_false_without_a_process_group",
+        "test_reduce_loss_ddp_formula_in_a_world_of_one",
+        "test_weighted_mean_absolute_error_energy",
+        "test_mean_normed_error_forces_is_unweighted",
+        "test_weighted_mean_squared_error_polarizability_reshapes_only_the_reference",
+        "test_every_loss_class_renders_its_weights",
+        "test_every_cli_loss_name_reaches_its_class_with_its_weights",
+        "test_an_unknown_cli_loss_name_falls_back_instead_of_failing",
+        "test_a_zero_config_weight_dilutes_rather_than_renormalizing",
+        "test_the_weighted_huber_loss_ignores_config_and_property_weights"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_models.py",
+      "source_test_nodes": [
+        "test_mace",
+        "test_dipole_mace",
+        "test_dipole_polar_mace",
+        "test_energy_dipole_mace",
+        "test_mace_multi_reference",
+        "test_atomic_virials_stresses",
+        "test_stress_partial_pbc",
+        "test_stress_zero_without_pbc",
+        "test_use_edge_irreps_first_narrows_the_first_interaction_block",
+        "test_use_edge_irreps_first_survives_the_checkpoint_config_round_trip",
+        "test_non_linear_first_interaction_block_runs_and_is_equivariant",
+        "test_non_linear_first_interaction_block_cannot_be_torchscripted"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_modules.py",
+      "source_test_nodes": [
+        "test_weighted_loss",
+        "test_symmetric_contraction",
+        "test_symmetric_contraction_zeroes_the_unreachable_correlation_order",
+        "test_bessel_basis",
+        "test_polynomial_cutoff",
+        "test_atomic_energies",
+        "test_atomic_energies_multireference",
+        "test_compute_mean_rms_energy_forces_multi_head",
+        "test_compute_statistics"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_multihead_tools.py",
+      "source_test_nodes": [
+        "test_headconfig_is_dataclass_with_minimal_required_fields",
+        "test_headconfig_defaults_are_none",
+        "test_headconfig_stores_optional_fields",
+        "test_prepare_default_head_single_default_head",
+        "test_prepare_default_head_respects_custom_keys",
+        "test_dict_head_to_dataclass_head_overrides_args",
+        "test_dict_head_to_dataclass_falls_back_to_args",
+        "test_dict_head_to_dataclass_missing_train_file_raises",
+        "test_dict_head_to_dataclass_requires_key_specification",
+        "test_prepare_pt_head_foundation_mp_branch",
+        "test_prepare_pt_head_mp_branch_triggered_by_pt_train_file",
+        "test_prepare_pt_head_custom_replay_branch",
+        "test_pseudolabel_weight_is_a_floor_not_an_assignment",
+        "test_labels_generated_for_an_unlabelled_set_carry_a_usable_weight",
+        "test_a_deliberate_weight_survives_pseudolabelling",
+        "test_a_failed_batch_refuses_rather_than_mixing_label_provenance",
+        "test_a_failure_hands_the_model_back_with_its_gradients_intact",
+        "test_a_failure_on_valid_leaves_both_splits_on_their_original_labels",
+        "test_a_stress_pseudolabel_is_not_invented_by_default",
+        "test_forcing_it_adds_the_stress_the_model_predicts",
+        "test_the_replay_weight_defaults_to_one",
+        "test_weight_pt_head_is_the_weight_every_replay_config_carries",
+        "test_the_replay_configs_are_tagged_as_the_pretraining_head"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_pseudolabels.py::test_a_stress_keeps_the_weight_its_file_gave_it"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_optimizer_flags.py",
+      "source_test_nodes": [
+        "test_beta_is_the_first_adam_moment",
+        "test_amsgrad_reaches_the_optimizer",
+        "test_amsgrad_off_stays_off",
+        "test_the_learning_rate_reaches_every_group",
+        "test_weight_decay_applies_to_the_interaction_linears_and_the_products",
+        "test_weight_decay_is_kept_off_the_rest",
+        "test_a_zero_weight_decay_is_zero_everywhere",
+        "test_scheduler_patience_reaches_the_plateau_scheduler",
+        "test_the_exponential_scheduler_takes_the_gamma_instead",
+        "test_an_unknown_scheduler_is_refused",
+        "test_swa_lr_is_the_rate_the_second_stage_anneals_to",
+        "test_the_moving_average_takes_the_decay_it_is_given",
+        "test_the_average_lags_the_parameters",
+        "test_the_configured_decay_barely_matters_at_the_start",
+        "test_a_higher_decay_lags_further_once_the_warmup_is_past"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_optimizer_param_groups.py",
+      "source_test_nodes": [
+        "test_all_trainable_parameters_registered_in_optimizer",
+        "test_trainable_bessel_weights_get_their_own_group",
+        "test_unregistered_submodule_raises"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_padding.py",
+      "source_test_nodes": [
+        "TestBuildFakePaddingGraph::test_basic_shape",
+        "TestBuildFakePaddingGraph::test_edge_index_within_bounds",
+        "TestBuildFakePaddingGraph::test_zero_edges",
+        "TestBuildFakePaddingGraph::test_raises_on_zero_atoms",
+        "TestBuildFakePaddingGraph::test_cell_scale",
+        "TestBuildFakePaddingGraph::test_pbc_disabled",
+        "TestBuildFakePaddingGraph::test_batch_collation",
+        "TestBuildFakePaddingGraph::test_node_attrs_first_species_set",
+        "TestSliceRealOutputs::test_atom_level_keys_are_sliced",
+        "TestSliceRealOutputs::test_bec_forces_are_addable"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_compile_padded.py::test_a_structure_over_the_budget_recompiles_exactly_once",
+        "packages/mace-torch/tests/test_mace_torch_collate_golden.py::test_ptr_and_batch_are_the_legacy_collaters_bit_for_bit",
+        "packages/mace-torch/tests/test_mace_torch_padding.py::test_declared_extras_and_derivatives_are_stripped_by_their_declaration"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_physics_glue.py",
+      "source_test_nodes": [
+        "test_forces_are_minus_the_energy_gradient",
+        "test_the_reported_force_is_the_gradient_of_the_energy_the_model_returns",
+        "test_a_structure_with_no_edges_gets_zero_forces",
+        "test_compute_forces_returns_zeros_when_the_energy_is_unconnected",
+        "test_stress_is_the_strain_derivative_over_the_volume",
+        "test_virials_are_minus_the_stress_times_the_volume",
+        "test_the_sign_of_every_derivative_against_a_hand_differentiable_energy",
+        "test_an_unconnected_energy_gives_zero_forces_and_a_zero_virial",
+        "test_get_symmetric_displacement_invents_a_cell_when_there_is_none",
+        "test_a_blown_up_stress_component_is_silently_zeroed",
+        "test_prepare_graph_injects_a_differentiable_strain_handle",
+        "test_prepare_graph_without_stress_leaves_an_inert_displacement",
+        "test_prepare_graph_rewrites_the_callers_positions_and_shifts",
+        "test_prepare_graph_leaves_the_shifts_alone_without_a_strain",
+        "test_an_antisymmetric_strain_is_a_rotation_and_changes_no_energy",
+        "test_edge_vectors_are_the_periodic_images_they_claim_to_be",
+        "test_normalising_the_edge_vectors_divides_by_the_length_plus_eps",
+        "test_which_derivatives_a_flag_combination_produces",
+        "test_asking_for_a_virial_without_a_stress_still_divides_by_nothing"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_radial.py",
+      "source_test_nodes": [
+        "test_bessel_reference_values_are_the_closed_form",
+        "test_bessel_basis_values",
+        "test_bessel_buffers_and_trainability",
+        "test_bessel_shape_and_dtype_contract",
+        "test_chebychev_reference_values_are_the_recurrence",
+        "test_chebychev_basis_values",
+        "test_chebychev_ignores_r_max_and_diverges_outside_the_unit_interval",
+        "test_gaussian_reference_values_are_the_closed_form",
+        "test_gaussian_basis_values",
+        "test_gaussian_basis_is_not_zero_beyond_r_max",
+        "test_cutoff_reference_values_are_the_closed_form",
+        "test_polynomial_cutoff_values",
+        "test_polynomial_cutoff_is_exactly_zero_at_and_beyond_r_max",
+        "test_polynomial_cutoff_derivative_vanishes_at_and_beyond_r_max",
+        "test_polynomial_cutoff_meets_r_max_with_a_vanishing_slope",
+        "test_polynomial_cutoff_is_one_at_zero_for_every_p",
+        "test_zbl_reference_values_are_the_published_formula",
+        "test_zbl_matches_the_published_formula",
+        "test_zbl_is_exactly_zero_beyond_the_pair_covalent_radii",
+        "test_zbl_energy_is_scattered_onto_the_receiver",
+        "test_zbl_buffers_and_trainability",
+        "test_zbl_accepts_and_ignores_r_max",
+        "test_agnesi_reference_values_are_the_closed_form",
+        "test_agnesi_transform_values",
+        "test_agnesi_transform_is_monotone_decreasing",
+        "test_soft_reference_values_are_the_closed_form",
+        "test_soft_transform_values",
+        "test_soft_transform_clamps_below_p0_and_is_the_identity_above",
+        "test_soft_transform_is_monotone_only_above_the_clamp",
+        "test_transforms_are_trainable_on_request",
+        "test_every_module_has_a_repr_naming_its_parameters",
+        "test_radial_mlp_structure_and_shapes",
+        "test_radial_mlp_single_layer_has_no_activation",
+        "test_apply_cutoff_true_returns_the_product_and_no_envelope",
+        "test_apply_cutoff_false_defers_the_envelope_to_the_consumer",
+        "test_the_cutoff_is_computed_before_the_distance_transform",
+        "test_the_basis_sees_the_transformed_lengths",
+        "test_a_padding_edge_contributes_exactly_nothing"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_span_contract.py::test_live_member_weights_receive_force_loss_gradients"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_readout_and_directory_flags.py",
+      "source_test_nodes": [
+        "test_by_default_every_layer_gets_a_readout",
+        "test_the_flag_leaves_only_the_last_readout",
+        "test_the_flag_is_recorded_on_the_model",
+        "test_the_two_models_disagree_on_the_energy",
+        "test_no_embedding_readout_without_the_flag",
+        "test_the_flag_adds_a_readout_over_the_joint_embedding",
+        "test_it_needs_the_joint_embedding_to_read_from",
+        "test_the_downloads_directory_defaults_under_the_work_dir",
+        "test_an_explicit_downloads_directory_is_kept",
+        "test_it_follows_the_work_dir_it_is_given"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_scale_shift_dtype.py",
+      "source_test_nodes": [
+        "test_the_two_energies_come_back_in_the_dtypes_the_legacy_stack_gives_them",
+        "test_the_two_energies_agree_at_fp64_and_disagree_at_fp32",
+        "test_the_widening_survives_the_reduction_and_the_narrow_total_does_not",
+        "test_every_class_that_reports_a_node_energy_is_classified",
+        "test_the_widening_table_matches_the_source",
+        "test_safe_double_is_a_no_op_on_mps_by_construction",
+        "test_scatter_sum_exposes_a_float32_split_that_torch_sum_hides",
+        "test_the_e0_buffer_is_rounded_once_at_construction",
+        "test_the_forward_casts_the_buffer_to_the_inputs_dtype_in_both_directions",
+        "test_the_one_hot_matmul_is_bit_identical_to_a_gather",
+        "test_where_the_e0s_enter_the_model",
+        "test_a_full_pickle_round_trip_preserves_every_buffer_bit_for_bit",
+        "test_a_same_dtype_state_dict_resume_preserves_every_buffer",
+        "test_the_rebuild_dtype_wins_on_a_cross_dtype_state_dict_load",
+        "test_the_convert_device_cli_preserves_the_buffers",
+        "test_the_scale_shift_buffers_are_also_frozen_at_construction"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_stage_two_weights.py",
+      "source_test_nodes": [
+        "test_the_energy_and_forces_weights_reach_the_stage_two_loss",
+        "test_the_virials_weight_reaches_the_virials_loss",
+        "test_the_stress_weight_reaches_the_stress_loss",
+        "test_the_stage_two_weights_are_not_the_first_stage_ones",
+        "test_the_swap_epoch_is_the_one_requested",
+        "test_an_unset_swap_epoch_lands_three_quarters_in",
+        "test_a_swap_after_the_last_epoch_is_refused",
+        "test_stage_two_is_refused_with_a_forces_only_loss",
+        "test_the_dipole_and_polarizability_weights_reach_the_dipole_polar_loss",
+        "test_the_dipole_weight_also_reaches_the_energy_forces_dipole_loss",
+        "test_the_magforces_weight_reaches_the_universal_loss",
+        "test_every_stage_two_weight_is_distinct_in_these_tests"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_stress_mask_call_sites.py",
+      "source_test_nodes": [
+        "test_every_stress_call_site_passes_pbc"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_tools.py",
+      "source_test_nodes": [
+        "test_atomic_number_table",
+        "test_save_load",
+        "test_load_warns_and_resumes_on_optimizer_group_mismatch"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_valid_err_log.py",
+      "source_test_nodes": [
+        "test_every_line_names_the_head",
+        "test_the_initial_evaluation_names_the_head_too",
+        "test_the_head_reaches_the_metrics_logger_as_well",
+        "test_one_of_the_ten_tables_logs_no_validation_line",
+        "test_it_is_the_only_one",
+        "test_a_virials_run_prints_a_stress_of_None",
+        "test_a_stress_run_prints_its_stress",
+        "test_the_mae_branch_is_guarded_on_a_key_nothing_sets"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_visualise_train.py",
+      "source_test_nodes": [
+        "test_belongs_to_head"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/unit/test_worker_start_method.py",
+      "source_test_nodes": [
+        "test_no_workers_keeps_the_default",
+        "test_workers_fork_off_macos",
+        "test_macos_keeps_its_default",
+        "test_a_dataset_of_many_tensors_reaches_the_workers"
+      ],
+      "coverage_group": "numerics",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_calculator.py",
+      "source_test_nodes": [
+        "test_calculator_node_energy",
+        "test_calculator_forces",
+        "test_calculator_stress",
+        "test_calculator_committee",
+        "test_calculator_from_model",
+        "test_calculator_dtype_is_instance_local",
+        "test_calculator_dipole",
+        "test_calculator_energy_dipole",
+        "test_calculator_descriptor",
+        "test_calculator_descriptor_cueq",
+        "test_calculator_padding"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "packages/mace-torch/tests/test_compile_padded.py::test_a_structure_over_the_budget_recompiles_exactly_once",
+        "packages/mace-torch/tests/test_mace_torch_foundations.py::test_explicit_precision_reads_weights_directly_from_the_checkpoint",
+        "tests/architecture/test_calculator_surface.py::test_a_response_model_writes_the_frozen_tree_s_keys_and_no_energy"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_checkpoint_retention.py",
+      "source_test_nodes": [
+        "test_a_plain_run_leaves_one_checkpoint",
+        "test_save_all_checkpoints_leaves_one_per_evaluation",
+        "test_keep_checkpoints_accumulates_what_a_plain_run_deletes"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_cli_contracts.py",
+      "source_test_nodes": [
+        "test_training_reduces_the_validation_loss_and_writes_a_model",
+        "test_the_end_of_training_error_table_is_printed_and_parseable",
+        "test_restart_latest_continues_from_the_checkpoint_epoch",
+        "test_lbfgs_is_selectable_from_the_command_line_and_reduces_the_loss",
+        "test_lbfgs_takes_one_step_per_epoch_and_the_other_regime_one_per_batch",
+        "test_lbfgs_keeps_the_last_partial_batch_and_the_default_regime_drops_it",
+        "test_restart_latest_with_lbfgs_resumes_and_never_reaches_the_post_swap_reload",
+        "test_eval_configs_agrees_with_the_ase_calculator_on_every_fixture",
+        "test_eval_configs_reproduces_the_committed_anchor_reference",
+        "test_eval_batch_size_does_not_change_the_numbers",
+        "test_eval_compute_stress_writes_a_stress_and_omitting_it_does_not",
+        "test_eval_info_prefix_renames_every_written_key",
+        "test_eval_node_energies_sum_to_the_total_energy",
+        "test_eval_contributions_sum_to_the_total_energy_on_the_plain_model",
+        "test_eval_contributions_are_refused_for_the_scale_shift_model",
+        "test_eval_descriptors_land_per_atom_and_the_aggregations_reduce_them",
+        "test_eval_descriptor_layer_and_invariant_flags_change_the_width",
+        "test_eval_at_float32_reproduces_float64_within_the_fp32_row",
+        "test_eval_head_selects_a_head_and_refuses_one_the_model_does_not_have",
+        "test_select_head_lists_the_heads_of_a_multihead_model",
+        "test_select_head_writes_a_single_head_model_to_the_default_name",
+        "test_select_head_honours_output_file_and_target_device",
+        "test_select_head_and_the_multihead_model_agree_on_the_selected_head",
+        "test_the_calculator_returns_the_contract_keys_with_the_right_shapes",
+        "test_the_calculator_agrees_with_eval_configs",
+        "test_padding_through_the_constructor_does_not_change_a_single_number",
+        "test_padding_through_the_two_environment_variables_behaves_identically",
+        "test_a_constructor_argument_wins_over_the_environment_variable",
+        "test_padded_per_atom_arrays_come_back_with_exactly_len_atoms_rows",
+        "test_an_edge_budget_smaller_than_the_structure_is_raised_not_truncated"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "packages/mace-core/tests/test_precision_config.py::test_the_presets",
+        "packages/mace-torch/tests/test_mace_torch_cli_commands.py::test_multihead_selection_matches_selected_head",
+        "packages/mace-torch/tests/test_scale_shift_dtype_v1.py::test_each_family_hands_out_the_frozen_trees_dtypes",
+        "tests/golden/test_harness.py::test_only_the_per_atom_descriptors_are_pinnable",
+        "tests/golden/test_harness.py::test_tolerance_table_rows",
+        "tests/workflows/test_run_train_v1.py::test_explicit_training_flags_write_a_readable_v1_artifact"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_compiled_export_failure.py",
+      "source_test_nodes": [
+        "test_a_compiled_export_that_cannot_be_written_does_not_fail_the_run",
+        "test_the_failure_is_reported",
+        "test_the_report_names_the_reason",
+        "test_the_pickled_model_is_still_there",
+        "test_an_unobstructed_run_writes_both_and_warns_about_neither"
+      ],
+      "coverage_group": "deployment",
+      "native_successors": [
+        "tests/parity/test_mliap.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_contract_discipline.py",
+      "source_test_nodes": [
+        "test_a_contract_test_does_not_import_the_implementation",
+        "test_a_contract_test_names_no_implementation_module_in_a_string"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_distributed.py",
+      "source_test_nodes": [
+        "test_run_train_distributed_cpu"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_embedding_train.py",
+      "source_test_nodes": [
+        "test_run_train_with_elec_temp",
+        "test_run_train_with_atom_embed"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_a_custom_file_key_reads_only_when_the_specification_names_it",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_an_embedding_feature_lands_in_the_half_its_per_names",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_an_embedding_feature_reads_through_a_real_file",
+        "packages/mace-core/tests/test_mace_core_data_configuration.py::test_the_default_keys_are_exactly_these_twelve"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_eval_configs_shapes_and_dtype.py",
+      "source_test_nodes": [
+        "test_node_energies_are_written_per_structure_whatever_its_size",
+        "test_a_dtype_that_disagrees_with_the_checkpoint_is_converted_not_fatal"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_finetuning_contracts.py",
+      "source_test_nodes": [
+        "test_multihead_replay_finetuning_completes_and_carries_both_heads",
+        "test_finetuning_reduces_the_error_on_the_finetuning_set",
+        "test_pseudolabel_replay_relabels_the_replay_set_from_the_foundation_model",
+        "test_a_failing_pseudolabel_batch_keeps_the_file_labels_and_says_nothing",
+        "test_pseudolabel_replay_accepts_a_replay_set_with_no_labels_at_all",
+        "test_the_replay_selection_flags_exist_on_the_training_cli",
+        "test_disallow_random_padding_pt_is_a_bare_flag_on_the_training_cli",
+        "test_subselect_random_returns_exactly_the_requested_number",
+        "test_subselect_fps_uses_the_model_and_still_returns_the_requested_number",
+        "test_filtering_type_restricts_the_pool_to_the_target_elements",
+        "test_random_padding_tops_up_a_short_pool_and_disallowing_it_does_not"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_pseudolabels.py::test_a_failing_batch_stops_everything",
+        "packages/mace-torch/tests/test_mace_torch_pseudolabels.py::test_a_run_writes_its_labels_into_its_own_directory"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_finetuning_pseudolabels.py",
+      "source_test_nodes": [
+        "test_initial_metrics_replay_head_mh0",
+        "test_initial_metrics_replay_head_mh1",
+        "test_initial_metrics_replay_head_omol"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_finetuning_select.py",
+      "source_test_nodes": [
+        "test_filter_data",
+        "test_load_descriptors",
+        "test_select_samples_random",
+        "test_select_samples_ft_provided"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_finetuning_select_cli.py",
+      "source_test_nodes": [
+        "test_the_cli_writes_the_selection_and_the_combined_file",
+        "test_the_output_path_is_where_the_flag_says",
+        "test_an_output_that_is_not_extxyz_is_refused",
+        "test_the_same_seed_selects_the_same_configurations",
+        "test_a_different_seed_selects_differently",
+        "test_a_local_checkpoint_is_used_for_the_descriptors",
+        "test_a_model_path_that_does_not_exist_is_refused",
+        "test_the_descriptors_follow_the_requested_dtype",
+        "test_a_device_outside_the_choices_is_rejected",
+        "test_fps_without_fpsample_falls_back_and_says_so",
+        "test_the_yaml_config_is_read",
+        "test_the_pretraining_weight_is_written_onto_the_selection",
+        "test_the_selection_is_marked_as_pretraining",
+        "test_the_finetuning_weight_applies_to_the_finetuning_configs",
+        "test_the_default_weights_are_one",
+        "test_the_heads_label_each_half",
+        "test_no_head_key_is_written_when_none_is_given",
+        "test_the_atomic_number_filter_restricts_the_pool",
+        "test_without_the_filter_both_chemistries_are_available"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_foundation_kwargs.py",
+      "source_test_nodes": [
+        "test_the_default_is_an_empty_dict_and_a_run_survives_it",
+        "test_a_value_that_is_not_a_literal_stops_the_run",
+        "test_an_unparseable_value_stops_the_run",
+        "test_a_literal_that_is_not_a_dict_stops_the_run",
+        "test_the_kwargs_are_ignored_when_the_foundation_model_is_a_path"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_freeze.py",
+      "source_test_nodes": [
+        "test_run_train_freeze",
+        "test_run_train_soft_freeze"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_launcher_engine_parity.py",
+      "source_test_nodes": [
+        "test_the_launcher_reproduces_a_direct_call_flag_for_flag",
+        "test_the_launcher_is_transparent_to_the_config_file_path",
+        "test_exactly_one_distribution_provides_each_console_script"
+      ],
+      "coverage_group": "architecture",
+      "native_successors": [
+        "tests/architecture/test_import_direction.py",
+        "tests/architecture/test_packaging_isolation.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_launcher_v1.py",
+      "source_test_nodes": [
+        "test_installed_launcher_preserves_training"
+      ],
+      "coverage_group": "architecture",
+      "native_successors": [
+        "tests/architecture/test_import_direction.py",
+        "tests/architecture/test_packaging_isolation.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_mdp_finetune.py",
+      "source_test_nodes": [
+        "test_mdp_finetune_updates_params",
+        "test_mdp_finetune_wrong_model_type_raises"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_dielectric_finetune.py::test_a_dielectric_fine_tune_trains_from_the_foundation",
+        "packages/mace-torch/tests/test_mace_torch_dielectric_finetune.py::test_a_foundation_that_reads_out_no_dipole_is_refused"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_multi_processed_test_layout.py",
+      "source_test_nodes": [
+        "test_flat_files_are_found_without_the_flag",
+        "test_folders_of_shards_are_found_with_the_flag",
+        "test_a_sharded_directory_read_as_flat_files_yields_no_test_set",
+        "test_flat_files_read_as_folders_of_shards_stop_the_run"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "packages/mace-core/tests/test_data_backend_conformance.py::test_uneven_shards_are_counted_exactly"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_multifiles.py",
+      "source_test_nodes": [
+        "test_multifile_training",
+        "test_multiple_xyz_per_head",
+        "test_single_xyz_per_head",
+        "test_multihead_finetuning_different_formats"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_per_head_reporting.py",
+      "source_test_nodes": [
+        "test_every_head_is_validated_at_every_eval_epoch",
+        "test_the_validation_line_names_the_head",
+        "test_the_replay_head_is_validated_before_the_new_one",
+        "test_the_results_log_tags_every_row_with_its_head",
+        "test_the_final_table_has_a_row_per_split_of_the_new_head",
+        "test_the_replay_head_is_left_out_of_the_final_table",
+        "test_the_skipped_head_is_named_in_the_log"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_plot_train.py",
+      "source_test_nodes": [
+        "test_the_results_log_carries_the_columns_the_plot_reads",
+        "test_the_log_carries_a_string_column",
+        "test_a_real_results_log_becomes_a_plot",
+        "test_a_directory_is_searched_for_logs",
+        "test_the_same_input_gives_the_same_plot",
+        "test_the_output_format_is_honoured",
+        "test_each_flag_changes_the_plot",
+        "test_start_stage_two_is_the_same_flag_as_start_swa",
+        "test_heads_names_the_plot_after_the_head",
+        "test_a_filename_it_cannot_parse_is_refused",
+        "test_a_directory_without_logs_is_refused"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_cli_commands.py::test_training_writes_citations_config_and_plot"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_preprocess.py",
+      "source_test_nodes": [
+        "test_preprocess_data",
+        "test_preprocess_config"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "packages/mace-core/tests/test_data_backend_conformance.py::test_the_legacy_statistics_parse_follows_a_named_energies_file",
+        "packages/mace-core/tests/test_data_shard_format.py::test_every_field_and_property_round_trips",
+        "packages/mace-core/tests/test_data_shard_format.py::test_the_manifest_is_real_json_with_real_types",
+        "packages/mace-torch/tests/test_mace_torch_cli_commands.py::test_prepare_roundtrips_the_training_split"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_preprocess_keys.py",
+      "source_test_nodes": [
+        "test_the_energy_and_forces_keys_reach_the_shards",
+        "test_a_property_key_is_read_under_the_name_it_is_given",
+        "test_the_property_is_a_placeholder_when_no_key_is_given"
+      ],
+      "coverage_group": "data",
+      "native_successors": [
+        "tests/retirement/test_frozen_anchors.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_run_train.py",
+      "source_test_nodes": [
+        "test_run_train",
+        "test_run_train_missing_data",
+        "test_run_train_no_stress",
+        "test_run_train_multihead",
+        "test_run_train_foundation",
+        "test_run_train_foundation_multihead",
+        "test_run_train_foundation_multihead_json",
+        "test_run_train_multihead_replay_custom_finetuning",
+        "test_run_train_cueq",
+        "test_run_train_foundation_multihead_json_cueq",
+        "test_run_train_lbfgs",
+        "test_run_train_foundation_elements",
+        "test_run_train_foundation_elements_multihead",
+        "test_run_train_foundation_multihead_pseudolabeling",
+        "test_run_train_multihead_replay_filtered_pt_data",
+        "test_run_train_real_pt_data_ratio",
+        "test_run_train_omol_foundation",
+        "test_run_train_mh_foundation"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_run_train_allkeys.py",
+      "source_test_nodes": [
+        "test_key_specification_methods",
+        "test_multihead_finetuning_does_not_modify_default_keyspec"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_run_train_dipole_polar.py",
+      "source_test_nodes": [
+        "test_run_train_dipole",
+        "test_run_train_dipole_polar",
+        "test_run_train_dipole_polar_cueq_matrix"
+      ],
+      "coverage_group": "polar",
+      "native_successors": [
+        "packages/mace-torch/tests/test_mace_torch_polar_model.py",
+        "tests/parity/test_elec3_goldens.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_small_training_set.py",
+      "source_test_nodes": [
+        "test_a_set_smaller_than_the_batch_fails_naming_the_batch_size",
+        "test_keeping_the_partial_batch_still_trains",
+        "test_a_batch_that_fits_is_untouched",
+        "test_a_rank_with_no_data_blames_the_sampler_and_not_the_batch_size"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_train_work_dir_and_workers.py",
+      "source_test_nodes": [
+        "test_the_validation_indices_land_in_the_work_dir",
+        "test_without_the_flag_the_indices_do_not_appear_there",
+        "test_a_run_with_workers_trains",
+        "test_every_dataloader_is_given_the_worker_count",
+        "test_every_dataloader_is_given_the_worker_start_method",
+        "test_every_dataloader_is_told_whether_to_pin",
+        "test_the_flag_is_the_value_the_loaders_are_given",
+        "test_a_run_trains_either_way"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_training_plots.py",
+      "source_test_nodes": [
+        "test_a_default_run_draws_a_plot",
+        "test_the_plot_is_a_real_png",
+        "test_the_filename_names_the_head_and_the_stage",
+        "test_turning_it_off_draws_nothing",
+        "test_a_periodic_frequency_also_ends_with_a_plot",
+        "test_plotting_does_not_fail_the_run"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    },
+    {
+      "path": "tests/workflows/test_wandb_logging.py",
+      "source_test_nodes": [
+        "test_each_flag_lands_on_its_own_keyword",
+        "test_only_the_requested_hyperparameters_are_logged",
+        "test_a_narrower_hyperparameter_list_is_honoured",
+        "test_a_hyperparameter_that_is_not_an_argument_is_refused",
+        "test_the_full_arguments_are_recorded_as_json",
+        "test_a_training_run_with_wandb_writes_an_offline_run",
+        "test_a_run_without_the_flag_writes_nothing"
+      ],
+      "coverage_group": "training",
+      "native_successors": [
+        "tests/workflows/test_run_train_v1.py"
+      ],
+      "mapping": "Feature-inventory native pins where available; otherwise the family-level replacement gate. This is not a claim of literal test-for-test identity."
+    }
+  ]
+}

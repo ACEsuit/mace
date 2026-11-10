@@ -1,0 +1,75 @@
+{
+  "source_commit": "fdef2fb577925cd8e7b66876403870128e69ec97",
+  "purpose": "Convert existing frozen checkpoints; reference values and tolerances are unchanged.",
+  "artifacts": {
+    "tiny_scaleshift": {
+      "source": "tests/golden/models/tiny_scaleshift.model",
+      "source_sha256": "44bbe63f991e90593075f78cd85efebaa758924bf7a96eb74112a5186f16a98a",
+      "neutral": "tiny_scaleshift_neutral.json",
+      "native": "tiny_scaleshift.json"
+    },
+    "tiny_mace": {
+      "source": "tests/golden/models/tiny_mace.model",
+      "source_sha256": "db698112cd90a0d585de903a5846dd3fb4de2d4e3baea227a933314448f18463",
+      "neutral": "tiny_mace_neutral.json",
+      "native": "tiny_mace.json"
+    },
+    "tiny_dipoles": {
+      "source": "tests/golden/models/tiny_dipoles.model",
+      "source_sha256": "bdda566dc0e2e3a5f2958406c3ad59329d7a7f704b494c88a4cf9801e6747a9a",
+      "neutral": "tiny_dipoles_neutral.json",
+      "native": "tiny_dipoles.json"
+    },
+    "tiny_dielectric": {
+      "source": "tests/golden/models/tiny_dielectric.model",
+      "source_sha256": "5a18601814f3a6894b8cf9b2ff3908f2123505eb878fa47b20ac18391ea1d2c9",
+      "neutral": "tiny_dielectric_neutral.json",
+      "native": "tiny_dielectric.json"
+    },
+    "tiny_magnetic": {
+      "source": "tests/golden/models/tiny_magnetic.model",
+      "source_sha256": "86c7da2942db4d497d19c48a61a1be23247d71f2ba449a3e74dfa0060b487097",
+      "neutral": "tiny_magnetic_neutral.json",
+      "native": "tiny_magnetic.json"
+    },
+    "tiny_maceles": {
+      "source": "tests/golden/models/tiny_maceles.model",
+      "source_sha256": "0cd428ba8d8ed29ccf222ab16c9cb5c14a7e307e15edf1662820630fb2de26d1",
+      "neutral": "tiny_maceles_neutral.json",
+      "native": "tiny_maceles.json"
+    }
+  },
+  "sha256": {
+    "historical_pins.json": "7bc1f8a7b1878e8217d674fb60dcdc061336b7ec47b9e00f5621eb56cd2f7586",
+    "legacy_output_surface.json": "15f9c10cf1438ad236f05fc9a8aa81b7ea6936d5904045c1f7ffbf445cb20598",
+    "legacy_surface.json": "d97473fd0ca9db2f16cb145361e1412a44ae8f7dc22deb2c134d0c7179cdad56",
+    "tiny_dielectric.json": "8984fd6d5f4e34021d136e9f515bed68ebce5ab993952fc53ef79313ab8065b7",
+    "tiny_dielectric.safetensors": "4b1d89f123dd747da73afd262982c0ab4c5250055309dda5d68f8de4a966e637",
+    "tiny_dielectric_neutral.json": "30ac93ce7ca18cc0b0e31529653355a5dd7d655260ba84ede0a4af0fd5d4f0ed",
+    "tiny_dielectric_neutral.safetensors": "e68252e3eea79ecce78dc7c970608754f8177f542dbab2df1e7a964b51f1872d",
+    "tiny_dipoles.json": "a2fd8fd2f19bc9be35c0ce646bf6beb29397a99e5ff1f531b020326590579d85",
+    "tiny_dipoles.safetensors": "4b926e2d9011d71d1641917fc0a4b3e8b43064cb402e134928135d93dce4bbe3",
+    "tiny_dipoles_neutral.json": "161107d73cc84da9390dd893bc5339fb05cd72ece1a67b8e7b19eb8f337b0680",
+    "tiny_dipoles_neutral.safetensors": "77de69b92228259ecd40c2520f18e6ba23a896dd99ed764b7e1109a4abc8c840",
+    "tiny_mace.json": "6e868cbb2efac4ca2971eea8b919e91b66c0b51358136a1393bfead8492e5074",
+    "tiny_mace.safetensors": "5581f055870c6482f5e1096809e5c7990650fad6a98d9703032ba95f22818537",
+    "tiny_mace_gradient_map.json": "2cc02dd696f156ba2c5d8884d2756982d32f8f477ef037500e03cab5053da0ee",
+    "tiny_mace_gradient_map.safetensors": "90ddb9568f4059ab25141e85ec344432066d7ad3ec981a8ea747d9d2fbf9d0fc",
+    "tiny_mace_neutral.json": "e723dbc6e67854867a11539cb527026bc663e04d13b4412714b3084e05c532de",
+    "tiny_mace_neutral.safetensors": "a16636e1650a1dc72fd592f457261f2ca0b933fc78401bb36d6f9a1fc08bed2a",
+    "tiny_maceles.json": "92bfe8fe0429a8d01dc603ec7b9d49dc0774f037263f875d837aac24327c8c86",
+    "tiny_maceles.safetensors": "4ae468b3cbcf93583177ab1d04ced3b77865d41e3092351476ef579d2fc28323",
+    "tiny_maceles_neutral.json": "4ca77af50f250955906c44505e83bcaaec901e264a94f2969f0bcf84370dd584",
+    "tiny_maceles_neutral.safetensors": "f9cdb2cde9a6773131b0d69fc8a580588844e7af2602394fad62e104d03def73",
+    "tiny_magnetic.json": "a6dcfad8ac10b9188eb9e3e672d72c7b982c8467f0dca2e9b0dd4daa2353d0fd",
+    "tiny_magnetic.safetensors": "41ce4bfbf681b52a9a2f19e135abf9d54ba5d2b43f25948e7906aa5ba640e3f3",
+    "tiny_magnetic_neutral.json": "08d9836c0e47bc3dd00495324162a66d927c28ba20886f880cf301bf10674599",
+    "tiny_magnetic_neutral.safetensors": "3fe539b94eebfa305eaa260b9439fa30e8595f832ec03bc3b3349cafe35d13ae",
+    "tiny_scaleshift.json": "55b6b22e251df4a53fb2acfab5673f3f047fa917bd0fef2eb59a7768b9e150a2",
+    "tiny_scaleshift.safetensors": "f874804ee29ecfdaca32b7525c05a55b107feaf40be9531265492e97204fdb7f",
+    "tiny_scaleshift_gradient_map.json": "2cc02dd696f156ba2c5d8884d2756982d32f8f477ef037500e03cab5053da0ee",
+    "tiny_scaleshift_gradient_map.safetensors": "90ddb9568f4059ab25141e85ec344432066d7ad3ec981a8ea747d9d2fbf9d0fc",
+    "tiny_scaleshift_neutral.json": "8ceae4cceb2bb39f365064e452be573c4c5edaac5483dbe0992a7650ab7114ff",
+    "tiny_scaleshift_neutral.safetensors": "d3928af22cf0ef72b6e8125074983a0dced965341c0a3ca8ff14230c4024d6ad"
+  }
+}

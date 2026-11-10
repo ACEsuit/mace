@@ -409,7 +409,7 @@ def _resolve_document(document: dict[str, Any]) -> ResolvedConfig:
         )
     except UnknownObservableError as error:
         raise ConfigError(f"model.observables: {error}") from error
-    from mace_torch.models.registry import model_family
+    from mace_torch.models.registry import model_architecture
 
-    model_family(config.model.model)
+    model_architecture(config.model.model)
     return config

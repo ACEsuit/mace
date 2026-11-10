@@ -39,10 +39,26 @@ def test_shared_native_metadata_preserves_values_and_element_order(metadata_read
     ("mace_atomic_numbers", "1 6 119"), ("mace_atomic_numbers", "1 x 8"),
     ("mace_atomic_numbers", "1 6 8 999999999999999999999"),
     ("mace_species", "H H O"), ("mace_species", "H O"),
+    ("mace_evaluation", "unknown"), ("mace_evaluation", "periodic_system"),
 ])
 def test_shared_native_metadata_refuses_invalid_fields(metadata_reader, key, value):
     result = subprocess.run([str(metadata_reader), key, value], capture_output=True, text=True)
     assert result.returncode == 1 and result.stderr
+
+
+@pytest.mark.parametrize("cell,valid", [
+    ("6 0 0 0.2 7 0 0.1 -0.1 8", True),
+    ("6 0 0 0 7 0 0 0 0", False),
+    ("6 0 0 0 7 0 0 0 -8", False),
+    ("6 0 0 0 7 0 0 0 nan", False),
+    ("6 0 0 0 7 0 0 0 8 9", False),
+])
+def test_periodic_native_metadata_validates_cell(metadata_reader, cell, valid):
+    result = subprocess.run([
+        str(metadata_reader), "mace_evaluation", "periodic_system",
+        "mace_comm_width", "0", "mace_cell", cell,
+    ], capture_output=True, text=True)
+    assert (result.returncode == 0) == valid
 
 
 def test_native_package_declares_atomic_numbers_without_another_weight_format(

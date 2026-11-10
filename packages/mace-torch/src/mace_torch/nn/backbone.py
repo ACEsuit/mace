@@ -9,7 +9,7 @@ output layer is a separate class.
 Four things it does not do, each replacing something the frozen tree does:
 
 * It resolves no backend in ``forward``. Every op is built once from a
-  descriptor and held.
+  kernel specification and held.
 * It branches on no fusion attribute. A block asks the backend for a fused
   span once, at build, and the answer changes nothing it computes here.
 * It carries no LAMMPS partitioning through its blocks. Ghost atoms are

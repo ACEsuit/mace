@@ -15,7 +15,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
 EXAMPLE = PACKAGES / "mace-backend-example"
-CORE = ("mace-core", "mace-torch", "mace-jax", "mace-launcher")
+CORE = ("mace-core", "mace-torch", "mace-jax")
 NAMES = ("mace_backend_example", "mace-backend-example")
 
 

@@ -21,7 +21,7 @@ CONFIG = REPO_ROOT / ".importlinter"
 #: entry-point dispatcher and the runtime guard; `tests/parity/` is the harness
 #: that loads both stacks in one process to compare them numerically. A third
 #: entry defeats the guard, so the count is asserted rather than described.
-ALLOWED_DOUBLE_IMPORTERS = ("mace_launcher", "tests.parity")
+ALLOWED_DOUBLE_IMPORTERS = ()
 
 
 def test_the_config_exists():
@@ -29,37 +29,26 @@ def test_the_config_exists():
 
 
 def test_the_v1_packages_are_not_sources_of_a_legacy_import():
-    """`mace_launcher` must be absent from the forbidden contract's sources.
-
-    Its absence *is* the allowlist entry, which makes it easy to add by
-    accident and impossible to notice. Pinning it here means widening the
-    allowlist takes an edit to this test.
-    """
-    parser = ConfigParser()
-    parser.read(CONFIG, encoding="utf-8")
-    section = parser["importlinter:contract:no-legacy-from-v1"]
-    sources = set(section["source_modules"].split())
-    assert sources == {"mace_core", "mace_torch", "mace_jax", "mace_backend_example"}, (
-        f"the forbidden contract's sources are {sorted(sources)}. Every v1 "
-        f"package belongs there; the only module allowed out is the launcher, "
-        f"and any other omission is a hole in the guard."
-    )
-    assert "mace" in section["forbidden_modules"].split()
+    import ast
+    for path in (REPO_ROOT / "packages").glob("*/src/**/*.py"):
+        if "legacy-extractor" in path.parts:
+            continue  # Executed in an explicitly supplied external legacy interpreter.
+        for node in ast.walk(ast.parse(path.read_text())):
+            names = [node.module or ""] if isinstance(node, ast.ImportFrom) else [a.name for a in node.names] if isinstance(node, ast.Import) else []
+            assert not any(name.split(".")[0] in {"mace", "mace_launcher", "e3nn"} for name in names), path
 
 
 def test_exactly_two_modules_may_import_both_stacks():
-    assert len(ALLOWED_DOUBLE_IMPORTERS) == 2
+    assert len(ALLOWED_DOUBLE_IMPORTERS) == 0
 
 
 #: Every package the config declares as a root. import-linter resolves each on
 #: the filesystem, so one that is not installed is reported as a broken
 #: contract rather than as a missing install, which reads as a real violation.
 ROOT_PACKAGES = (
-    "mace",
     "mace_core",
     "mace_torch",
     "mace_jax",
-    "mace_launcher",
     "mace_backend_example",
 )
 
@@ -126,7 +115,7 @@ def test_import_direction_one_way():
         "there are no import contracts, so the direction is unguarded whatever "
         "the rest of this file asserts"
     )
-    assert len(ALLOWED_DOUBLE_IMPORTERS) == 2, ALLOWED_DOUBLE_IMPORTERS
+    assert len(ALLOWED_DOUBLE_IMPORTERS) == 0, ALLOWED_DOUBLE_IMPORTERS
 
     if shutil.which("lint-imports") is None or _missing_roots():
         pytest.skip(

@@ -70,9 +70,9 @@ def deployed(family: str, seed: int = 0) -> DeployedModel:
     return DeployedModel(
         engine=engine.eval(),
         config=config,
-        metadata=ModelMetadata(
+        source_metadata=ModelMetadata(
             config=ConfigRecord(),
-            provenance=Provenance(versions={"mace-torch-v1": "0"}, git_commit=None),
+            provenance=Provenance(versions={"mace-torch": "0"}, git_commit=None),
         ),
         z_table=AtomicNumberTable(NUMBERS),
         heads=("default",),

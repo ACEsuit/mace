@@ -22,6 +22,7 @@ build/
 *.txt
 !packages/mace-torch/lammps/CMakeLists.txt
 !requirements/*.txt
+!docs/requirements.txt
 *.log
 
 # Distribution

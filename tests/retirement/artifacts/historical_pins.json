@@ -1,0 +1,2137 @@
+{
+  "tests/architecture/test_artifacts_come_from_the_cache.py::test_no_model_file_is_part_of_any_package": {
+    "directory": false,
+    "node": "test_no_model_file_is_part_of_any_package",
+    "path": "tests/architecture/test_artifacts_come_from_the_cache.py"
+  },
+  "tests/architecture/test_artifacts_come_from_the_cache.py::test_wheels_ship_no_model_artifact": {
+    "directory": false,
+    "node": "test_wheels_ship_no_model_artifact",
+    "path": "tests/architecture/test_artifacts_come_from_the_cache.py"
+  },
+  "tests/architecture/test_calculator_surface.py::test_a_response_model_writes_the_frozen_tree_s_keys_and_no_energy": {
+    "directory": false,
+    "node": "test_a_response_model_writes_the_frozen_tree_s_keys_and_no_energy",
+    "path": "tests/architecture/test_calculator_surface.py"
+  },
+  "tests/backends/backend_parity.py::test_bidirectional_conversion": {
+    "directory": false,
+    "node": "test_bidirectional_conversion",
+    "path": "tests/backends/backend_parity.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[bin_gromacs]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[bin_gromacs]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[bin_lammps]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[bin_lammps]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[bin_libmace]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[bin_libmace]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[bin_openmm]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[bin_openmm]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[bin_openmm_native]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[bin_openmm_native]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[cueq]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[cueq]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[gpu]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[gpu]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[les]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[les]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[magnetic]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[magnetic]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[network]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[network]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[oeq]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[oeq]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[polar]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[polar]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[schedulefree]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[schedulefree]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[torchsim]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[torchsim]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::CAPABILITY_PROBES[wandb]": {
+    "directory": false,
+    "node": "CAPABILITY_PROBES[wandb]",
+    "path": "tests/conftest.py"
+  },
+  "tests/conftest.py::pytest_collection_modifyitems": {
+    "directory": false,
+    "node": "pytest_collection_modifyitems",
+    "path": "tests/conftest.py"
+  },
+  "tests/extensions/les": {
+    "directory": true,
+    "node": "",
+    "path": "tests/extensions/les"
+  },
+  "tests/extensions/les/test_maceles.py::test_keep_neutral_does_not_mutate_stored_bec": {
+    "directory": false,
+    "node": "test_keep_neutral_does_not_mutate_stored_bec",
+    "path": "tests/extensions/les/test_maceles.py"
+  },
+  "tests/extensions/les/test_maceles.py::test_les_readout_equivariance": {
+    "directory": false,
+    "node": "test_les_readout_equivariance",
+    "path": "tests/extensions/les/test_maceles.py"
+  },
+  "tests/extensions/les/test_maceles.py::test_run_eval_fail_with_wrong_model": {
+    "directory": false,
+    "node": "test_run_eval_fail_with_wrong_model",
+    "path": "tests/extensions/les/test_maceles.py"
+  },
+  "tests/extensions/les/test_maceles.py::test_run_eval_no_bec": {
+    "directory": false,
+    "node": "test_run_eval_no_bec",
+    "path": "tests/extensions/les/test_maceles.py"
+  },
+  "tests/extensions/les/test_maceles.py::test_run_eval_with_bec": {
+    "directory": false,
+    "node": "test_run_eval_with_bec",
+    "path": "tests/extensions/les/test_maceles.py"
+  },
+  "tests/extensions/magnetic": {
+    "directory": true,
+    "node": "",
+    "path": "tests/extensions/magnetic"
+  },
+  "tests/extensions/magnetic/test_magmace.py::test_magnetic_mace_registers_all_trainable_parameters": {
+    "directory": false,
+    "node": "test_magnetic_mace_registers_all_trainable_parameters",
+    "path": "tests/extensions/magnetic/test_magmace.py"
+  },
+  "tests/extensions/magnetic/test_magmace.py::test_run_magnetic_scf": {
+    "directory": false,
+    "node": "test_run_magnetic_scf",
+    "path": "tests/extensions/magnetic/test_magmace.py"
+  },
+  "tests/extensions/magnetic/test_magmace.py::test_run_train_magnetic_mace": {
+    "directory": false,
+    "node": "test_run_train_magnetic_mace",
+    "path": "tests/extensions/magnetic/test_magmace.py"
+  },
+  "tests/extensions/magnetic/test_magmom_augmentation.py::test_non_soc_mode_samples_the_full_o3": {
+    "directory": false,
+    "node": "test_non_soc_mode_samples_the_full_o3",
+    "path": "tests/extensions/magnetic/test_magmom_augmentation.py"
+  },
+  "tests/extensions/magnetic/test_magnetic_interaction_variants.py::test_the_residual_soc_interaction_builds_and_runs": {
+    "directory": false,
+    "node": "test_the_residual_soc_interaction_builds_and_runs",
+    "path": "tests/extensions/magnetic/test_magnetic_interaction_variants.py"
+  },
+  "tests/extensions/magnetic/test_time_reversal.py::test_energy_is_invariant_under_global_moment_reversal": {
+    "directory": false,
+    "node": "test_energy_is_invariant_under_global_moment_reversal",
+    "path": "tests/extensions/magnetic/test_time_reversal.py"
+  },
+  "tests/extensions/magnetic::test_run_magnetic_scf": {
+    "directory": true,
+    "node": "test_run_magnetic_scf",
+    "path": "tests/extensions/magnetic"
+  },
+  "tests/extensions/polar/test_polar_block_configs.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/extensions/polar/test_polar_block_configs.py"
+  },
+  "tests/extensions/polar/test_polar_density_cube.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/extensions/polar/test_polar_density_cube.py"
+  },
+  "tests/extensions/polar/test_polar_density_cube.py::test_realspace_spin_channel_integrals_match_coefficients": {
+    "directory": false,
+    "node": "test_realspace_spin_channel_integrals_match_coefficients",
+    "path": "tests/extensions/polar/test_polar_density_cube.py"
+  },
+  "tests/extensions/polar/test_polar_density_cube.py::test_select_multipoles_from_calculator_results": {
+    "directory": false,
+    "node": "test_select_multipoles_from_calculator_results",
+    "path": "tests/extensions/polar/test_polar_density_cube.py"
+  },
+  "tests/extensions/polar/test_polar_models.py::test_energy_invariance_under_rotation_and_translation": {
+    "directory": false,
+    "node": "test_energy_invariance_under_rotation_and_translation",
+    "path": "tests/extensions/polar/test_polar_models.py"
+  },
+  "tests/extensions/polar/test_polar_models.py::test_polar_calculator_returns_fukui_functions_by_default": {
+    "directory": false,
+    "node": "test_polar_calculator_returns_fukui_functions_by_default",
+    "path": "tests/extensions/polar/test_polar_models.py"
+  },
+  "tests/extensions/polar/test_polar_models.py::test_polar_checkpoint_energy_components": {
+    "directory": false,
+    "node": "test_polar_checkpoint_energy_components",
+    "path": "tests/extensions/polar/test_polar_models.py"
+  },
+  "tests/extensions/polar/test_polar_models.py::test_polar_mace_registers_all_trainable_parameters": {
+    "directory": false,
+    "node": "test_polar_mace_registers_all_trainable_parameters",
+    "path": "tests/extensions/polar/test_polar_models.py"
+  },
+  "tests/extensions/polar/test_polar_models.py::test_polar_slab_electrostatics_converge_with_vacuum": {
+    "directory": false,
+    "node": "test_polar_slab_electrostatics_converge_with_vacuum",
+    "path": "tests/extensions/polar/test_polar_models.py"
+  },
+  "tests/extensions/polar/test_polar_output_keys.py::test_electrostatic_potentials_are_absent_unless_asked_for": {
+    "directory": false,
+    "node": "test_electrostatic_potentials_are_absent_unless_asked_for",
+    "path": "tests/extensions/polar/test_polar_output_keys.py"
+  },
+  "tests/extensions/polar/test_polar_output_keys.py::test_the_density_keys_keep_their_rank": {
+    "directory": false,
+    "node": "test_the_density_keys_keep_their_rank",
+    "path": "tests/extensions/polar/test_polar_output_keys.py"
+  },
+  "tests/extensions/polar/test_polar_output_keys.py::test_the_electrostatic_keys_are_present_with_the_right_extent": {
+    "directory": false,
+    "node": "test_the_electrostatic_keys_are_present_with_the_right_extent",
+    "path": "tests/extensions/polar/test_polar_output_keys.py"
+  },
+  "tests/extensions/schedulefree": {
+    "directory": true,
+    "node": "",
+    "path": "tests/extensions/schedulefree"
+  },
+  "tests/extensions/schedulefree/test_schedulefree.py::test_can_load_checkpoint": {
+    "directory": false,
+    "node": "test_can_load_checkpoint",
+    "path": "tests/extensions/schedulefree/test_schedulefree.py"
+  },
+  "tests/foundations/test_foundations.py::test_mace_mh_1_elements_subset_reproduces_energy_forces": {
+    "directory": false,
+    "node": "test_mace_mh_1_elements_subset_reproduces_energy_forces",
+    "path": "tests/foundations/test_foundations.py"
+  },
+  "tests/foundations/test_foundations.py::test_mace_omol_elements_subset_reproduces_energy_forces": {
+    "directory": false,
+    "node": "test_mace_omol_elements_subset_reproduces_energy_forces",
+    "path": "tests/foundations/test_foundations.py"
+  },
+  "tests/foundations/test_foundations.py::test_polar_extract_config_roundtrip": {
+    "directory": false,
+    "node": "test_polar_extract_config_roundtrip",
+    "path": "tests/foundations/test_foundations.py"
+  },
+  "tests/foundations/test_hessian.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/foundations/test_hessian.py"
+  },
+  "tests/foundations/test_registry_badges.py::test_torch_registry_badge": {
+    "directory": false,
+    "node": "test_torch_registry_badge",
+    "path": "tests/foundations/test_registry_badges.py"
+  },
+  "tests/golden/anchors.py::ANCHORS[tiny_mace]": {
+    "directory": false,
+    "node": "ANCHORS[tiny_mace]",
+    "path": "tests/golden/anchors.py"
+  },
+  "tests/golden/anchors.py::ANCHORS[tiny_scaleshift]": {
+    "directory": false,
+    "node": "ANCHORS[tiny_scaleshift]",
+    "path": "tests/golden/anchors.py"
+  },
+  "tests/golden/references/mh_0_e3nn_cpu_fp64.json": {
+    "directory": false,
+    "node": "",
+    "path": "tests/golden/references/mh_0_e3nn_cpu_fp64.json"
+  },
+  "tests/golden/test_backend_parity_golden.py::test_converted_model_reproduces_the_committed_cpu_reference": {
+    "directory": false,
+    "node": "test_converted_model_reproduces_the_committed_cpu_reference",
+    "path": "tests/golden/test_backend_parity_golden.py"
+  },
+  "tests/golden/test_backend_parity_golden.py::test_converting_for_the_cpu_leaves_cueq_unfused_and_the_audit_says_so": {
+    "directory": false,
+    "node": "test_converting_for_the_cpu_leaves_cueq_unfused_and_the_audit_says_so",
+    "path": "tests/golden/test_backend_parity_golden.py"
+  },
+  "tests/golden/test_backend_parity_golden.py::test_the_audit_accepts_a_well_formed_oeq_conversion_and_only_that": {
+    "directory": false,
+    "node": "test_the_audit_accepts_a_well_formed_oeq_conversion_and_only_that",
+    "path": "tests/golden/test_backend_parity_golden.py"
+  },
+  "tests/golden/test_backend_parity_golden.py::test_the_audit_fails_a_site_that_is_installed_and_never_called": {
+    "directory": false,
+    "node": "test_the_audit_fails_a_site_that_is_installed_and_never_called",
+    "path": "tests/golden/test_backend_parity_golden.py"
+  },
+  "tests/golden/test_backend_parity_golden.py::test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed": {
+    "directory": false,
+    "node": "test_the_audits_verdict_tracks_whether_the_fused_ops_are_installed",
+    "path": "tests/golden/test_backend_parity_golden.py"
+  },
+  "tests/golden/test_backend_parity_golden.py::test_the_calculators_own_backend_flag_reaches_the_same_kernels": {
+    "directory": false,
+    "node": "test_the_calculators_own_backend_flag_reaches_the_same_kernels",
+    "path": "tests/golden/test_backend_parity_golden.py"
+  },
+  "tests/golden/test_backend_parity_golden.py::test_the_conversion_whitelist_refuses_the_plain_anchor_and_both_converters_stop": {
+    "directory": false,
+    "node": "test_the_conversion_whitelist_refuses_the_plain_anchor_and_both_converters_stop",
+    "path": "tests/golden/test_backend_parity_golden.py"
+  },
+  "tests/golden/test_foundation_goldens.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/golden/test_foundation_goldens.py"
+  },
+  "tests/golden/test_foundation_goldens.py::test_an_unqualified_mace_mp_is_mpa0_medium_and_reads_no_url": {
+    "directory": false,
+    "node": "test_an_unqualified_mace_mp_is_mpa0_medium_and_reads_no_url",
+    "path": "tests/golden/test_foundation_goldens.py"
+  },
+  "tests/golden/test_foundation_goldens.py::test_foundation_model_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_foundation_model_reproduces_its_reference",
+    "path": "tests/golden/test_foundation_goldens.py"
+  },
+  "tests/golden/test_foundation_goldens.py::test_the_loader_call_states_cpu_and_its_dtype": {
+    "directory": false,
+    "node": "test_the_loader_call_states_cpu_and_its_dtype",
+    "path": "tests/golden/test_foundation_goldens.py"
+  },
+  "tests/golden/test_foundation_goldens.py::test_the_registry_url_is_still_the_package_url": {
+    "directory": false,
+    "node": "test_the_registry_url_is_still_the_package_url",
+    "path": "tests/golden/test_foundation_goldens.py"
+  },
+  "tests/golden/test_harness.py::test_only_the_per_atom_descriptors_are_pinnable": {
+    "directory": false,
+    "node": "test_only_the_per_atom_descriptors_are_pinnable",
+    "path": "tests/golden/test_harness.py"
+  },
+  "tests/golden/test_harness.py::test_the_eval_cli_flattens_the_born_charges_and_the_schema_unflattens_them": {
+    "directory": false,
+    "node": "test_the_eval_cli_flattens_the_born_charges_and_the_schema_unflattens_them",
+    "path": "tests/golden/test_harness.py"
+  },
+  "tests/golden/test_harness.py::test_tolerance_table_rows": {
+    "directory": false,
+    "node": "test_tolerance_table_rows",
+    "path": "tests/golden/test_harness.py"
+  },
+  "tests/golden/test_mdp_foundation.py::test_mace_mdp_refuses_another_model_type": {
+    "directory": false,
+    "node": "test_mace_mdp_refuses_another_model_type",
+    "path": "tests/golden/test_mdp_foundation.py"
+  },
+  "tests/golden/test_mdp_foundation.py::test_mace_mdp_warns_that_it_is_not_an_energy_model": {
+    "directory": false,
+    "node": "test_mace_mdp_warns_that_it_is_not_an_energy_model",
+    "path": "tests/golden/test_mdp_foundation.py"
+  },
+  "tests/golden/test_mdp_foundation.py::test_mdp_foundation_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_mdp_foundation_reproduces_its_reference",
+    "path": "tests/golden/test_mdp_foundation.py"
+  },
+  "tests/golden/test_mdp_foundation.py::test_the_calculator_surface_is_the_dipole_polarizability_one": {
+    "directory": false,
+    "node": "test_the_calculator_surface_is_the_dipole_polarizability_one",
+    "path": "tests/golden/test_mdp_foundation.py"
+  },
+  "tests/golden/test_mdp_foundation.py::test_the_reference_pins_the_polarizability_and_its_derivatives": {
+    "directory": false,
+    "node": "test_the_reference_pins_the_polarizability_and_its_derivatives",
+    "path": "tests/golden/test_mdp_foundation.py"
+  },
+  "tests/golden/test_polar_foundation.py::test_polar_foundation_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_polar_foundation_reproduces_its_reference",
+    "path": "tests/golden/test_polar_foundation.py"
+  },
+  "tests/golden/test_polar_foundation.py::test_polar_mace_emits_no_polarizability": {
+    "directory": false,
+    "node": "test_polar_mace_emits_no_polarizability",
+    "path": "tests/golden/test_polar_foundation.py"
+  },
+  "tests/golden/test_polar_foundation.py::test_the_reference_pins_the_electrostatics_and_not_only_the_energy": {
+    "directory": false,
+    "node": "test_the_reference_pins_the_electrostatics_and_not_only_the_energy",
+    "path": "tests/golden/test_polar_foundation.py"
+  },
+  "tests/golden/test_tiny_anchors.py::test_anchor_is_the_class_it_claims_to_be": {
+    "directory": false,
+    "node": "test_anchor_is_the_class_it_claims_to_be",
+    "path": "tests/golden/test_tiny_anchors.py"
+  },
+  "tests/golden/test_tiny_anchors.py::test_anchor_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_anchor_reproduces_its_reference",
+    "path": "tests/golden/test_tiny_anchors.py"
+  },
+  "tests/golden/test_tiny_anchors.py::test_the_repulsion_term_is_scaled_in_one_class_and_raw_in_the_other": {
+    "directory": false,
+    "node": "test_the_repulsion_term_is_scaled_in_one_class_and_raw_in_the_other",
+    "path": "tests/golden/test_tiny_anchors.py"
+  },
+  "tests/golden/test_tiny_anchors.py::test_the_two_per_atom_stress_routes_land_on_one_channel": {
+    "directory": false,
+    "node": "test_the_two_per_atom_stress_routes_land_on_one_channel",
+    "path": "tests/golden/test_tiny_anchors.py"
+  },
+  "tests/golden/test_tiny_anchors.py::test_the_two_per_atom_stress_routes_snapshot_identically": {
+    "directory": false,
+    "node": "test_the_two_per_atom_stress_routes_snapshot_identically",
+    "path": "tests/golden/test_tiny_anchors.py"
+  },
+  "tests/golden/test_tiny_dielectric.py::test_tiny_dielectric_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_tiny_dielectric_reproduces_its_reference",
+    "path": "tests/golden/test_tiny_dielectric.py"
+  },
+  "tests/golden/test_tiny_dipoles.py::test_anchor_is_the_class_it_claims_to_be": {
+    "directory": false,
+    "node": "test_anchor_is_the_class_it_claims_to_be",
+    "path": "tests/golden/test_tiny_dipoles.py"
+  },
+  "tests/golden/test_tiny_dipoles.py::test_anchor_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_anchor_reproduces_its_reference",
+    "path": "tests/golden/test_tiny_dipoles.py"
+  },
+  "tests/golden/test_tiny_dipoles.py::test_the_committed_anchor_carries_the_plain_e3nn_basis": {
+    "directory": false,
+    "node": "test_the_committed_anchor_carries_the_plain_e3nn_basis",
+    "path": "tests/golden/test_tiny_dipoles.py"
+  },
+  "tests/golden/test_tiny_dipoles.py::test_the_fixed_charge_baseline_is_live": {
+    "directory": false,
+    "node": "test_the_fixed_charge_baseline_is_live",
+    "path": "tests/golden/test_tiny_dipoles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_every_latent_quantity_is_present_and_above_the_tolerance_floor": {
+    "directory": false,
+    "node": "test_every_latent_quantity_is_present_and_above_the_tolerance_floor",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_keep_neutral_leaves_the_reported_bec_alone_and_repeats_identically": {
+    "directory": false,
+    "node": "test_keep_neutral_leaves_the_reported_bec_alone_and_repeats_identically",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_keep_neutral_removes_exactly_a_uniform_field_force": {
+    "directory": false,
+    "node": "test_keep_neutral_removes_exactly_a_uniform_field_force",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_the_anchor_is_a_maceles_built_from_the_committed_yaml": {
+    "directory": false,
+    "node": "test_the_anchor_is_a_maceles_built_from_the_committed_yaml",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_the_eval_cli_lands_on_the_same_numbers_as_the_forward": {
+    "directory": false,
+    "node": "test_the_eval_cli_lands_on_the_same_numbers_as_the_forward",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_the_field_force_matches_the_documented_formula": {
+    "directory": false,
+    "node": "test_the_field_force_matches_the_documented_formula",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_the_field_reference_records_the_settings_that_are_not_channels": {
+    "directory": false,
+    "node": "test_the_field_reference_records_the_settings_that_are_not_channels",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_the_field_surface_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_the_field_surface_reproduces_its_reference",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_the_isotropic_polarizability_is_squared": {
+    "directory": false,
+    "node": "test_the_isotropic_polarizability_is_squared",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_maceles.py::test_the_model_surface_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_the_model_surface_reproduces_its_reference",
+    "path": "tests/golden/test_tiny_maceles.py"
+  },
+  "tests/golden/test_tiny_magnetic.py::test_a_joint_rotation_is_a_symmetry_and_a_spin_only_one_is_not": {
+    "directory": false,
+    "node": "test_a_joint_rotation_is_a_symmetry_and_a_spin_only_one_is_not",
+    "path": "tests/golden/test_tiny_magnetic.py"
+  },
+  "tests/golden/test_tiny_magnetic.py::test_anchor_reproduces_its_reference": {
+    "directory": false,
+    "node": "test_anchor_reproduces_its_reference",
+    "path": "tests/golden/test_tiny_magnetic.py"
+  },
+  "tests/golden/test_tiny_magnetic.py::test_compute_magforces_is_only_honoured_alongside_the_forces": {
+    "directory": false,
+    "node": "test_compute_magforces_is_only_honoured_alongside_the_forces",
+    "path": "tests/golden/test_tiny_magnetic.py"
+  },
+  "tests/golden/test_tiny_magnetic.py::test_not_training_it_requires_freezing_it_first": {
+    "directory": false,
+    "node": "test_not_training_it_requires_freezing_it_first",
+    "path": "tests/golden/test_tiny_magnetic.py"
+  },
+  "tests/golden/test_tiny_magnetic.py::test_the_eval_cli_reproduces_the_reference_including_magforces": {
+    "directory": false,
+    "node": "test_the_eval_cli_reproduces_the_reference_including_magforces",
+    "path": "tests/golden/test_tiny_magnetic.py"
+  },
+  "tests/golden/test_tiny_magnetic.py::test_the_one_body_magnetic_term_is_inside_the_reference": {
+    "directory": false,
+    "node": "test_the_one_body_magnetic_term_is_inside_the_reference",
+    "path": "tests/golden/test_tiny_magnetic.py"
+  },
+  "tests/golden/test_train_step_gradient.py::test_the_step_reproduces_its_committed_gradient": {
+    "directory": false,
+    "node": "test_the_step_reproduces_its_committed_gradient",
+    "path": "tests/golden/test_train_step_gradient.py"
+  },
+  "tests/integrations/lammps": {
+    "directory": true,
+    "node": "",
+    "path": "tests/integrations/lammps"
+  },
+  "tests/integrations/lammps/test_export_golden.py::test_the_exported_artifact_reproduces_the_committed_numbers": {
+    "directory": false,
+    "node": "test_the_exported_artifact_reproduces_the_committed_numbers",
+    "path": "tests/integrations/lammps/test_export_golden.py"
+  },
+  "tests/integrations/lammps/test_export_golden.py::test_the_float32_export_is_single_precision": {
+    "directory": false,
+    "node": "test_the_float32_export_is_single_precision",
+    "path": "tests/integrations/lammps/test_export_golden.py"
+  },
+  "tests/integrations/lammps/test_export_golden.py::test_the_mliap_export_declares_the_committed_interface": {
+    "directory": false,
+    "node": "test_the_mliap_export_declares_the_committed_interface",
+    "path": "tests/integrations/lammps/test_export_golden.py"
+  },
+  "tests/integrations/lammps/test_export_golden.py::test_the_mliap_export_refuses_a_multilayer_model_without_ghost_exchange": {
+    "directory": false,
+    "node": "test_the_mliap_export_refuses_a_multilayer_model_without_ghost_exchange",
+    "path": "tests/integrations/lammps/test_export_golden.py"
+  },
+  "tests/integrations/lammps/test_ghost_parity.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/integrations/lammps/test_ghost_parity.py"
+  },
+  "tests/integrations/lammps/test_ghost_parity.py::test_virials_path_runs": {
+    "directory": false,
+    "node": "test_virials_path_runs",
+    "path": "tests/integrations/lammps/test_ghost_parity.py"
+  },
+  "tests/integrations/lammps/test_mliap_buffer_dtype.py::test_the_wrapper_buffers_follow_the_model_dtype": {
+    "directory": false,
+    "node": "test_the_wrapper_buffers_follow_the_model_dtype",
+    "path": "tests/integrations/lammps/test_mliap_buffer_dtype.py"
+  },
+  "tests/integrations/lammps/test_mliap_env_config.py::test_allow_cpu_lets_a_kokkos_run_proceed_on_the_host": {
+    "directory": false,
+    "node": "test_allow_cpu_lets_a_kokkos_run_proceed_on_the_host",
+    "path": "tests/integrations/lammps/test_mliap_env_config.py"
+  },
+  "tests/integrations/lammps/test_mliap_env_config.py::test_force_cpu_skips_the_device_check_entirely": {
+    "directory": false,
+    "node": "test_force_cpu_skips_the_device_check_entirely",
+    "path": "tests/integrations/lammps/test_mliap_env_config.py"
+  },
+  "tests/integrations/lammps/test_mliap_env_config.py::test_mace_time_reaches_the_timer": {
+    "directory": false,
+    "node": "test_mace_time_reaches_the_timer",
+    "path": "tests/integrations/lammps/test_mliap_env_config.py"
+  },
+  "tests/integrations/lammps/test_mliap_env_config.py::test_profiling_off_does_not_touch_the_profiler": {
+    "directory": false,
+    "node": "test_profiling_off_does_not_touch_the_profiler",
+    "path": "tests/integrations/lammps/test_mliap_env_config.py"
+  },
+  "tests/integrations/lammps/test_mliap_env_config.py::test_the_end_step_stops_the_profiler_and_exits": {
+    "directory": false,
+    "node": "test_the_end_step_stops_the_profiler_and_exits",
+    "path": "tests/integrations/lammps/test_mliap_env_config.py"
+  },
+  "tests/integrations/lammps/test_mliap_env_config.py::test_the_profiler_starts_at_the_step_it_was_told": {
+    "directory": false,
+    "node": "test_the_profiler_starts_at_the_step_it_was_told",
+    "path": "tests/integrations/lammps/test_mliap_env_config.py"
+  },
+  "tests/integrations/lammps/test_mliap_exchange.py::test_mliap_exchange_density_residual": {
+    "directory": false,
+    "node": "test_mliap_exchange_density_residual",
+    "path": "tests/integrations/lammps/test_mliap_exchange.py"
+  },
+  "tests/integrations/lammps/test_mliap_writeback.py::test_atom_count_mismatch_is_actionable": {
+    "directory": false,
+    "node": "test_atom_count_mismatch_is_actionable",
+    "path": "tests/integrations/lammps/test_mliap_writeback.py"
+  },
+  "tests/parity/test_backbone_parity.py::test_either_basis_reproduces_the_anchor": {
+    "directory": false,
+    "node": "test_either_basis_reproduces_the_anchor",
+    "path": "tests/parity/test_backbone_parity.py"
+  },
+  "tests/parity/test_backbone_parity.py::test_the_aggregations_are_the_eval_command_lines": {
+    "directory": false,
+    "node": "test_the_aggregations_are_the_eval_command_lines",
+    "path": "tests/parity/test_backbone_parity.py"
+  },
+  "tests/parity/test_backbone_parity.py::test_the_backbone_reproduces_an_anchor_layer_by_layer": {
+    "directory": false,
+    "node": "test_the_backbone_reproduces_an_anchor_layer_by_layer",
+    "path": "tests/parity/test_backbone_parity.py"
+  },
+  "tests/parity/test_backbone_parity.py::test_the_backbone_reproduces_each_kept_variant": {
+    "directory": false,
+    "node": "test_the_backbone_reproduces_each_kept_variant",
+    "path": "tests/parity/test_backbone_parity.py"
+  },
+  "tests/parity/test_backbone_parity.py::test_the_descriptors_are_the_legacy_calculators": {
+    "directory": false,
+    "node": "test_the_descriptors_are_the_legacy_calculators",
+    "path": "tests/parity/test_backbone_parity.py"
+  },
+  "tests/parity/test_backbone_parity.py::test_the_two_first_layer_spellings_are_two_models": {
+    "directory": false,
+    "node": "test_the_two_first_layer_spellings_are_two_models",
+    "path": "tests/parity/test_backbone_parity.py"
+  },
+  "tests/parity/test_calculator_families_parity.py::test_the_dielectric_surface_is_the_frozen_calculator_s": {
+    "directory": false,
+    "node": "test_the_dielectric_surface_is_the_frozen_calculator_s",
+    "path": "tests/parity/test_calculator_families_parity.py"
+  },
+  "tests/parity/test_calculator_families_parity.py::test_the_dipole_surface_is_the_frozen_calculator_s": {
+    "directory": false,
+    "node": "test_the_dipole_surface_is_the_frozen_calculator_s",
+    "path": "tests/parity/test_calculator_families_parity.py"
+  },
+  "tests/parity/test_cli_commands_parity.py::test_all_thirteen_output_columns_are_accounted_for": {
+    "directory": false,
+    "node": "test_all_thirteen_output_columns_are_accounted_for",
+    "path": "tests/parity/test_cli_commands_parity.py"
+  },
+  "tests/parity/test_cli_commands_parity.py::test_conversion_and_eval_preserve_the_committed_anchor": {
+    "directory": false,
+    "node": "test_conversion_and_eval_preserve_the_committed_anchor",
+    "path": "tests/parity/test_cli_commands_parity.py"
+  },
+  "tests/parity/test_cli_commands_parity.py::test_hierarchical_entry_point_uses_the_launcher_without_framework_imports": {
+    "directory": false,
+    "node": "test_hierarchical_entry_point_uses_the_launcher_without_framework_imports",
+    "path": "tests/parity/test_cli_commands_parity.py"
+  },
+  "tests/parity/test_data_backend_parity.py::test_a_short_last_group_is_counted_where_the_frozen_reader_overstates": {
+    "directory": false,
+    "node": "test_a_short_last_group_is_counted_where_the_frozen_reader_overstates",
+    "path": "tests/parity/test_data_backend_parity.py"
+  },
+  "tests/parity/test_data_backend_parity.py::test_auto_takes_the_prepared_directories_for_the_legacy_layout": {
+    "directory": false,
+    "node": "test_auto_takes_the_prepared_directories_for_the_legacy_layout",
+    "path": "tests/parity/test_data_backend_parity.py"
+  },
+  "tests/parity/test_data_backend_parity.py::test_lmdb_rows_read_as_the_frozen_reader_reads_them": {
+    "directory": false,
+    "node": "test_lmdb_rows_read_as_the_frozen_reader_reads_them",
+    "path": "tests/parity/test_data_backend_parity.py"
+  },
+  "tests/parity/test_data_backend_parity.py::test_the_prepared_shards_read_as_the_frozen_reader_reads_them": {
+    "directory": false,
+    "node": "test_the_prepared_shards_read_as_the_frozen_reader_reads_them",
+    "path": "tests/parity/test_data_backend_parity.py"
+  },
+  "tests/parity/test_data_backend_parity.py::test_the_prepared_statistics_parse_to_what_the_frozen_tree_evaluates": {
+    "directory": false,
+    "node": "test_the_prepared_statistics_parse_to_what_the_frozen_tree_evaluates",
+    "path": "tests/parity/test_data_backend_parity.py"
+  },
+  "tests/parity/test_dielectric_finetune_parity.py::test_the_data_s_table_is_the_frozen_tree_s_dielectric_transfer": {
+    "directory": false,
+    "node": "test_the_data_s_table_is_the_frozen_tree_s_dielectric_transfer",
+    "path": "tests/parity/test_dielectric_finetune_parity.py"
+  },
+  "tests/parity/test_dipole_parity.py::test_the_dielectric_model_matches_the_live_legacy_model": {
+    "directory": false,
+    "node": "test_the_dielectric_model_matches_the_live_legacy_model",
+    "path": "tests/parity/test_dipole_parity.py"
+  },
+  "tests/parity/test_dipole_parity.py::test_the_dipole_anchor_matches_the_live_legacy_model": {
+    "directory": false,
+    "node": "test_the_dipole_anchor_matches_the_live_legacy_model",
+    "path": "tests/parity/test_dipole_parity.py"
+  },
+  "tests/parity/test_distance_transform.py::test_each_transform_matches_the_live_legacy_model": {
+    "directory": false,
+    "node": "test_each_transform_matches_the_live_legacy_model",
+    "path": "tests/parity/test_distance_transform.py"
+  },
+  "tests/parity/test_elec3_fixed_point_goldens.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/parity/test_elec3_fixed_point_goldens.py"
+  },
+  "tests/parity/test_elec3_goldens.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/parity/test_elec3_goldens.py"
+  },
+  "tests/parity/test_elec3_local_extensions_goldens.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/parity/test_elec3_local_extensions_goldens.py"
+  },
+  "tests/parity/test_elec3_qeq_goldens.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/parity/test_elec3_qeq_goldens.py"
+  },
+  "tests/parity/test_elec3_scf_nonlinear_goldens.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/parity/test_elec3_scf_nonlinear_goldens.py"
+  },
+  "tests/parity/test_element_table_parity.py::test_the_data_s_table_is_the_frozen_tree_s_sliced_model": {
+    "directory": false,
+    "node": "test_the_data_s_table_is_the_frozen_tree_s_sliced_model",
+    "path": "tests/parity/test_element_table_parity.py"
+  },
+  "tests/parity/test_element_table_parity.py::test_the_foundation_s_table_computes_what_the_anchor_does": {
+    "directory": false,
+    "node": "test_the_foundation_s_table_computes_what_the_anchor_does",
+    "path": "tests/parity/test_element_table_parity.py"
+  },
+  "tests/parity/test_fm_convert_dielectric.py::test_fm_convert_dielectric_reference_and_exact_reload": {
+    "directory": false,
+    "node": "test_fm_convert_dielectric_reference_and_exact_reload",
+    "path": "tests/parity/test_fm_convert_dielectric.py"
+  },
+  "tests/parity/test_fm_convert_families.py::test_fm_convert_dipole_committed_reference": {
+    "directory": false,
+    "node": "test_fm_convert_dipole_committed_reference",
+    "path": "tests/parity/test_fm_convert_families.py"
+  },
+  "tests/parity/test_fm_convert_families.py::test_fm_convert_dipole_values_and_position_gradients": {
+    "directory": false,
+    "node": "test_fm_convert_dipole_values_and_position_gradients",
+    "path": "tests/parity/test_fm_convert_families.py"
+  },
+  "tests/parity/test_fm_convert_families.py::test_fm_convert_magnetic_base_scope": {
+    "directory": false,
+    "node": "test_fm_convert_magnetic_base_scope",
+    "path": "tests/parity/test_fm_convert_families.py"
+  },
+  "tests/parity/test_fm_convert_families.py::test_fm_convert_magnetic_goldens_and_live_legacy": {
+    "directory": false,
+    "node": "test_fm_convert_magnetic_goldens_and_live_legacy",
+    "path": "tests/parity/test_fm_convert_families.py"
+  },
+  "tests/parity/test_fm_convert_families.py::test_fm_convert_magnetic_scf_preserves_configuration_and_goldens": {
+    "directory": false,
+    "node": "test_fm_convert_magnetic_scf_preserves_configuration_and_goldens",
+    "path": "tests/parity/test_fm_convert_families.py"
+  },
+  "tests/parity/test_foundation_release.py::test_foundation_release_roundtrip_and_full_parity": {
+    "directory": false,
+    "node": "test_foundation_release_roundtrip_and_full_parity",
+    "path": "tests/parity/test_foundation_release.py"
+  },
+  "tests/parity/test_fuzz_parity.py::test_nightly_upload_keeps_hidden_replays_and_other_jobs_exclude_campaign": {
+    "directory": false,
+    "node": "test_nightly_upload_keeps_hidden_replays_and_other_jobs_exclude_campaign",
+    "path": "tests/parity/test_fuzz_parity.py"
+  },
+  "tests/parity/test_magnetic_parity.py::test_the_calculator_gives_the_frozen_calculator_s_results": {
+    "directory": false,
+    "node": "test_the_calculator_gives_the_frozen_calculator_s_results",
+    "path": "tests/parity/test_magnetic_parity.py"
+  },
+  "tests/parity/test_magnetic_parity.py::test_the_calculator_relaxes_the_moments_as_the_frozen_wrapper_does": {
+    "directory": false,
+    "node": "test_the_calculator_relaxes_the_moments_as_the_frozen_wrapper_does",
+    "path": "tests/parity/test_magnetic_parity.py"
+  },
+  "tests/parity/test_magnetic_parity.py::test_the_converted_model_matches_the_live_legacy_model": {
+    "directory": false,
+    "node": "test_the_converted_model_matches_the_live_legacy_model",
+    "path": "tests/parity/test_magnetic_parity.py"
+  },
+  "tests/parity/test_magnetic_parity.py::test_the_converted_model_reproduces_the_committed_reference": {
+    "directory": false,
+    "node": "test_the_converted_model_reproduces_the_committed_reference",
+    "path": "tests/parity/test_magnetic_parity.py"
+  },
+  "tests/parity/test_magnetic_parity.py::test_the_fixed_point_is_the_live_wrapper_s": {
+    "directory": false,
+    "node": "test_the_fixed_point_is_the_live_wrapper_s",
+    "path": "tests/parity/test_magnetic_parity.py"
+  },
+  "tests/parity/test_magnetic_parity.py::test_the_fixed_point_reproduces_the_committed_reference": {
+    "directory": false,
+    "node": "test_the_fixed_point_reproduces_the_committed_reference",
+    "path": "tests/parity/test_magnetic_parity.py"
+  },
+  "tests/parity/test_magnetic_parity.py::test_the_frozen_wrapper_stops_short_of_its_own_tolerance": {
+    "directory": false,
+    "node": "test_the_frozen_wrapper_stops_short_of_its_own_tolerance",
+    "path": "tests/parity/test_magnetic_parity.py"
+  },
+  "tests/parity/test_mliap.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/parity/test_mliap.py"
+  },
+  "tests/parity/test_polar_solver_precision.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/parity/test_polar_solver_precision.py"
+  },
+  "tests/parity/test_pseudolabel_parity.py::test_the_labels_and_their_weights_are_the_frozen_tree_s": {
+    "directory": false,
+    "node": "test_the_labels_and_their_weights_are_the_frozen_tree_s",
+    "path": "tests/parity/test_pseudolabel_parity.py"
+  },
+  "tests/parity/test_radial_parity.py::test_chebyshev_basis_parity_at_the_magnetic_configuration": {
+    "directory": false,
+    "node": "test_chebyshev_basis_parity_at_the_magnetic_configuration",
+    "path": "tests/parity/test_radial_parity.py"
+  },
+  "tests/parity/test_radial_parity.py::test_linear_node_embedding_parity_with_the_legacy_weight": {
+    "directory": false,
+    "node": "test_linear_node_embedding_parity_with_the_legacy_weight",
+    "path": "tests/parity/test_radial_parity.py"
+  },
+  "tests/parity/test_radial_parity.py::test_radial_embedding_block_parity": {
+    "directory": false,
+    "node": "test_radial_embedding_block_parity",
+    "path": "tests/parity/test_radial_parity.py"
+  },
+  "tests/parity/test_radial_parity.py::test_zbl_parity": {
+    "directory": false,
+    "node": "test_zbl_parity",
+    "path": "tests/parity/test_radial_parity.py"
+  },
+  "tests/parity/test_torchsim_parity.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/parity/test_torchsim_parity.py"
+  },
+  "tests/unit/test_arg_parser.py::test_stage_two_alias_maps_to_swa_dest": {
+    "directory": false,
+    "node": "test_stage_two_alias_maps_to_swa_dest",
+    "path": "tests/unit/test_arg_parser.py"
+  },
+  "tests/unit/test_arg_parser.py::test_yaml_config_values_are_applied": {
+    "directory": false,
+    "node": "test_yaml_config_values_are_applied",
+    "path": "tests/unit/test_arg_parser.py"
+  },
+  "tests/unit/test_calculator_charges_key.py::test_arrays_keys_maps_property_name_to_atoms_key": {
+    "directory": false,
+    "node": "test_arrays_keys_maps_property_name_to_atoms_key",
+    "path": "tests/unit/test_calculator_charges_key.py"
+  },
+  "tests/unit/test_calculator_charges_key.py::test_charges_key_selects_the_arrays_field": {
+    "directory": false,
+    "node": "test_charges_key_selects_the_arrays_field",
+    "path": "tests/unit/test_calculator_charges_key.py"
+  },
+  "tests/unit/test_calculator_charges_key.py::test_charges_reach_the_fixed_charge_dipole_baseline": {
+    "directory": false,
+    "node": "test_charges_reach_the_fixed_charge_dipole_baseline",
+    "path": "tests/unit/test_calculator_charges_key.py"
+  },
+  "tests/unit/test_calculator_dtype_scope.py::test_every_forward_runs_under_the_calculator_dtype": {
+    "directory": false,
+    "node": "test_every_forward_runs_under_the_calculator_dtype",
+    "path": "tests/unit/test_calculator_dtype_scope.py"
+  },
+  "tests/unit/test_calculator_info_keys_and_state.py::test_a_changed_info_entry_is_a_change": {
+    "directory": false,
+    "node": "test_a_changed_info_entry_is_a_change",
+    "path": "tests/unit/test_calculator_info_keys_and_state.py"
+  },
+  "tests/unit/test_calculator_info_keys_and_state.py::test_info_keys_maps_property_name_to_the_info_key": {
+    "directory": false,
+    "node": "test_info_keys_maps_property_name_to_the_info_key",
+    "path": "tests/unit/test_calculator_info_keys_and_state.py"
+  },
+  "tests/unit/test_calculator_mdp.py::test_extract_config_mace_mdp_local_model": {
+    "directory": false,
+    "node": "test_extract_config_mace_mdp_local_model",
+    "path": "tests/unit/test_calculator_mdp.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_a_committee_reports_the_spread_of_the_members_it_averaged": {
+    "directory": false,
+    "node": "test_a_committee_reports_the_spread_of_the_members_it_averaged",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_a_committee_reports_the_stress_of_the_members_it_averaged": {
+    "directory": false,
+    "node": "test_a_committee_reports_the_stress_of_the_members_it_averaged",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_a_dipole_committee_reports_its_spread": {
+    "directory": false,
+    "node": "test_a_dipole_committee_reports_its_spread",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_the_default_conversions_change_nothing": {
+    "directory": false,
+    "node": "test_the_default_conversions_change_nothing",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_the_dipole_spread_keeps_the_layout_of_the_dipole": {
+    "directory": false,
+    "node": "test_the_dipole_spread_keeps_the_layout_of_the_dipole",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_the_members_are_symmetric_so_the_conversion_loses_nothing": {
+    "directory": false,
+    "node": "test_the_members_are_symmetric_so_the_conversion_loses_nothing",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_the_stress_spread_is_in_the_same_layout_as_the_stress": {
+    "directory": false,
+    "node": "test_the_stress_spread_is_in_the_same_layout_as_the_stress",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_the_stress_variance_scales_as_the_square_of_the_conversion": {
+    "directory": false,
+    "node": "test_the_stress_variance_scales_as_the_square_of_the_conversion",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_calculator_units_and_spread.py::test_the_variance_scales_as_the_square_and_the_members_linearly": {
+    "directory": false,
+    "node": "test_the_variance_scales_as_the_square_and_the_members_linearly",
+    "path": "tests/unit/test_calculator_units_and_spread.py"
+  },
+  "tests/unit/test_checkpoint_retention_and_clipping.py::test_clipping_shortens_a_gradient_that_is_too_long": {
+    "directory": false,
+    "node": "test_clipping_shortens_a_gradient_that_is_too_long",
+    "path": "tests/unit/test_checkpoint_retention_and_clipping.py"
+  },
+  "tests/unit/test_checkpoint_retention_and_clipping.py::test_without_keep_only_the_latest_checkpoint_survives": {
+    "directory": false,
+    "node": "test_without_keep_only_the_latest_checkpoint_survives",
+    "path": "tests/unit/test_checkpoint_retention_and_clipping.py"
+  },
+  "tests/unit/test_ci_gates.py::test_the_job_reads_the_extras_out_of_setup_cfg": {
+    "directory": false,
+    "node": "test_the_job_reads_the_extras_out_of_setup_cfg",
+    "path": "tests/unit/test_ci_gates.py"
+  },
+  "tests/unit/test_compile.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/unit/test_compile.py"
+  },
+  "tests/unit/test_data.py::test_full_directed_edge_set_against_the_oracle": {
+    "directory": false,
+    "node": "test_full_directed_edge_set_against_the_oracle",
+    "path": "tests/unit/test_data.py"
+  },
+  "tests/unit/test_data.py::test_the_three_returned_cell_regimes_are_actually_three": {
+    "directory": false,
+    "node": "test_the_three_returned_cell_regimes_are_actually_three",
+    "path": "tests/unit/test_data.py"
+  },
+  "tests/unit/test_data_utils.py::test_config_type_and_per_property_weights_round_trip": {
+    "directory": false,
+    "node": "test_config_type_and_per_property_weights_round_trip",
+    "path": "tests/unit/test_data_utils.py"
+  },
+  "tests/unit/test_data_utils.py::test_custom_property_keys_round_trip": {
+    "directory": false,
+    "node": "test_custom_property_keys_round_trip",
+    "path": "tests/unit/test_data_utils.py"
+  },
+  "tests/unit/test_data_utils.py::test_default_keys_are_exactly_these_thirteen": {
+    "directory": false,
+    "node": "test_default_keys_are_exactly_these_thirteen",
+    "path": "tests/unit/test_data_utils.py"
+  },
+  "tests/unit/test_data_utils.py::test_keydict_derives_one_cli_argument_per_member": {
+    "directory": false,
+    "node": "test_keydict_derives_one_cli_argument_per_member",
+    "path": "tests/unit/test_data_utils.py"
+  },
+  "tests/unit/test_data_utils.py::test_update_keyspec_from_kwargs_embedding_specs": {
+    "directory": false,
+    "node": "test_update_keyspec_from_kwargs_embedding_specs",
+    "path": "tests/unit/test_data_utils.py"
+  },
+  "tests/unit/test_download_urls.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/unit/test_download_urls.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_e0s_average_goes_through_the_least_squares_fit": {
+    "directory": false,
+    "node": "test_e0s_average_goes_through_the_least_squares_fit",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_e0s_from_a_literal_dict_and_from_a_json_file": {
+    "directory": false,
+    "node": "test_e0s_from_a_literal_dict_and_from_a_json_file",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_estimated_e0s_are_deterministic_at_cpu_float64": {
+    "directory": false,
+    "node": "test_estimated_e0s_are_deterministic_at_cpu_float64",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_estimated_e0s_are_the_foundation_e0s_plus_a_least_squares_correction": {
+    "directory": false,
+    "node": "test_estimated_e0s_are_the_foundation_e0s_plus_a_least_squares_correction",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_keep_isolated_atoms_leaves_them_in_the_training_set": {
+    "directory": false,
+    "node": "test_keep_isolated_atoms_leaves_them_in_the_training_set",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_mean_and_std_together_override_the_dataset_statistics": {
+    "directory": false,
+    "node": "test_mean_and_std_together_override_the_dataset_statistics",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_mean_without_std_is_accepted_and_then_discarded": {
+    "directory": false,
+    "node": "test_mean_without_std_is_accepted_and_then_discarded",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_no_scaling_overrides_even_an_explicit_std": {
+    "directory": false,
+    "node": "test_no_scaling_overrides_even_an_explicit_std",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_the_average_neighbour_count_skips_atoms_that_have_no_neighbours": {
+    "directory": false,
+    "node": "test_the_average_neighbour_count_skips_atoms_that_have_no_neighbours",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_the_dipole_scaling_entry_cannot_be_used_the_way_the_other_two_are": {
+    "directory": false,
+    "node": "test_the_dipole_scaling_entry_cannot_be_used_the_way_the_other_two_are",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_the_mean_and_std_scaling_is_the_per_atom_interaction_energy": {
+    "directory": false,
+    "node": "test_the_mean_and_std_scaling_is_the_per_atom_interaction_energy",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_e0s_characterization.py::test_the_rms_forces_scaling_is_the_root_mean_square_force_component": {
+    "directory": false,
+    "node": "test_the_rms_forces_scaling_is_the_root_mean_square_force_component",
+    "path": "tests/unit/test_e0s_characterization.py"
+  },
+  "tests/unit/test_error_table_heads.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/unit/test_error_table_heads.py"
+  },
+  "tests/unit/test_error_table_heads.py::test_every_loader_becomes_its_own_row": {
+    "directory": false,
+    "node": "test_every_loader_becomes_its_own_row",
+    "path": "tests/unit/test_error_table_heads.py"
+  },
+  "tests/unit/test_first_interaction_block.py::test_an_allowlisted_first_block_is_the_one_built": {
+    "directory": false,
+    "node": "test_an_allowlisted_first_block_is_the_one_built",
+    "path": "tests/unit/test_first_interaction_block.py"
+  },
+  "tests/unit/test_first_interaction_block.py::test_the_allowlist_has_exactly_these_three_entries": {
+    "directory": false,
+    "node": "test_the_allowlist_has_exactly_these_three_entries",
+    "path": "tests/unit/test_first_interaction_block.py"
+  },
+  "tests/unit/test_first_interaction_block.py::test_the_density_block_is_reachable_as_a_first_layer": {
+    "directory": false,
+    "node": "test_the_density_block_is_reachable_as_a_first_layer",
+    "path": "tests/unit/test_first_interaction_block.py"
+  },
+  "tests/unit/test_foundation_readout_flag.py::test_loading_without_it_leaves_them_alone": {
+    "directory": false,
+    "node": "test_loading_without_it_leaves_them_alone",
+    "path": "tests/unit/test_foundation_readout_flag.py"
+  },
+  "tests/unit/test_foundation_readout_flag.py::test_the_flag_turns_the_transfer_off": {
+    "directory": false,
+    "node": "test_the_flag_turns_the_transfer_off",
+    "path": "tests/unit/test_foundation_readout_flag.py"
+  },
+  "tests/unit/test_foundations_models.py::test_dispersion_cutoff_is_forwarded": {
+    "directory": false,
+    "node": "test_dispersion_cutoff_is_forwarded",
+    "path": "tests/unit/test_foundations_models.py"
+  },
+  "tests/unit/test_foundations_models.py::test_dispersion_damping_is_forwarded": {
+    "directory": false,
+    "node": "test_dispersion_damping_is_forwarded",
+    "path": "tests/unit/test_foundations_models.py"
+  },
+  "tests/unit/test_foundations_models.py::test_dispersion_xc_is_forwarded": {
+    "directory": false,
+    "node": "test_dispersion_xc_is_forwarded",
+    "path": "tests/unit/test_foundations_models.py"
+  },
+  "tests/unit/test_foundations_models.py::test_legacy_damping_name_is_accepted": {
+    "directory": false,
+    "node": "test_legacy_damping_name_is_accepted",
+    "path": "tests/unit/test_foundations_models.py"
+  },
+  "tests/unit/test_foundations_models.py::test_the_default_functional_is_pbe": {
+    "directory": false,
+    "node": "test_the_default_functional_is_pbe",
+    "path": "tests/unit/test_foundations_models.py"
+  },
+  "tests/unit/test_foundations_models.py::test_the_two_cutoffs_are_separate_knobs": {
+    "directory": false,
+    "node": "test_the_two_cutoffs_are_separate_knobs",
+    "path": "tests/unit/test_foundations_models.py"
+  },
+  "tests/unit/test_gate.py::test_custom_activations": {
+    "directory": false,
+    "node": "test_custom_activations",
+    "path": "tests/unit/test_gate.py"
+  },
+  "tests/unit/test_gate.py::test_forward_matches_e3nn": {
+    "directory": false,
+    "node": "test_forward_matches_e3nn",
+    "path": "tests/unit/test_gate.py"
+  },
+  "tests/unit/test_gate_registry.py::test_a_model_builds_and_runs_with_every_gate": {
+    "directory": false,
+    "node": "test_a_model_builds_and_runs_with_every_gate",
+    "path": "tests/unit/test_gate_registry.py"
+  },
+  "tests/unit/test_gate_registry.py::test_the_registry_maps_every_cli_value_to_its_callable": {
+    "directory": false,
+    "node": "test_the_registry_maps_every_cli_value_to_its_callable",
+    "path": "tests/unit/test_gate_registry.py"
+  },
+  "tests/unit/test_interaction_variants.py::test_the_attention_residual_interaction_builds_and_runs": {
+    "directory": false,
+    "node": "test_the_attention_residual_interaction_builds_and_runs",
+    "path": "tests/unit/test_interaction_variants.py"
+  },
+  "tests/unit/test_lmdb_database.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/unit/test_lmdb_database.py"
+  },
+  "tests/unit/test_lmdb_database.py::test_lmdb_dataset_honors_key_specification": {
+    "directory": false,
+    "node": "test_lmdb_dataset_honors_key_specification",
+    "path": "tests/unit/test_lmdb_database.py"
+  },
+  "tests/unit/test_logging_setup.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/unit/test_logging_setup.py"
+  },
+  "tests/unit/test_lora.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/unit/test_lora.py"
+  },
+  "tests/unit/test_loss.py::test_a_zero_config_weight_dilutes_rather_than_renormalizing": {
+    "directory": false,
+    "node": "test_a_zero_config_weight_dilutes_rather_than_renormalizing",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_conditional_huber_forces": {
+    "directory": false,
+    "node": "test_conditional_huber_forces",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_dipole_polar_loss": {
+    "directory": false,
+    "node": "test_dipole_polar_loss",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_dipole_single_loss": {
+    "directory": false,
+    "node": "test_dipole_single_loss",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_every_cli_loss_name_reaches_its_class_with_its_weights": {
+    "directory": false,
+    "node": "test_every_cli_loss_name_reaches_its_class_with_its_weights",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_universal_loss_full_hand_value_over_all_four_terms": {
+    "directory": false,
+    "node": "test_universal_loss_full_hand_value_over_all_four_terms",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_universal_loss_magforces_hand_value": {
+    "directory": false,
+    "node": "test_universal_loss_magforces_hand_value",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_universal_loss_magforces_per_config_weight_multiplies_the_arguments": {
+    "directory": false,
+    "node": "test_universal_loss_magforces_per_config_weight_multiplies_the_arguments",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_energy_forces_dipole_loss": {
+    "directory": false,
+    "node": "test_weighted_energy_forces_dipole_loss",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_energy_forces_l1l2_loss": {
+    "directory": false,
+    "node": "test_weighted_energy_forces_l1l2_loss",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_energy_forces_loss_global_weights_scale": {
+    "directory": false,
+    "node": "test_weighted_energy_forces_loss_global_weights_scale",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_energy_forces_loss_hand_value": {
+    "directory": false,
+    "node": "test_weighted_energy_forces_loss_hand_value",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_energy_forces_stress_loss_zero_and_hand_value": {
+    "directory": false,
+    "node": "test_weighted_energy_forces_stress_loss_zero_and_hand_value",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_energy_forces_virials_loss": {
+    "directory": false,
+    "node": "test_weighted_energy_forces_virials_loss",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_forces_loss": {
+    "directory": false,
+    "node": "test_weighted_forces_loss",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_huber_energy_forces_stress_loss": {
+    "directory": false,
+    "node": "test_weighted_huber_energy_forces_stress_loss",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_loss.py::test_weighted_mean_squared_error_polarizability_reshapes_only_the_reference": {
+    "directory": false,
+    "node": "test_weighted_mean_squared_error_polarizability_reshapes_only_the_reference",
+    "path": "tests/unit/test_loss.py"
+  },
+  "tests/unit/test_models.py::test_dipole_mace": {
+    "directory": false,
+    "node": "test_dipole_mace",
+    "path": "tests/unit/test_models.py"
+  },
+  "tests/unit/test_models.py::test_dipole_polar_mace": {
+    "directory": false,
+    "node": "test_dipole_polar_mace",
+    "path": "tests/unit/test_models.py"
+  },
+  "tests/unit/test_models.py::test_energy_dipole_mace": {
+    "directory": false,
+    "node": "test_energy_dipole_mace",
+    "path": "tests/unit/test_models.py"
+  },
+  "tests/unit/test_models.py::test_mace": {
+    "directory": false,
+    "node": "test_mace",
+    "path": "tests/unit/test_models.py"
+  },
+  "tests/unit/test_models.py::test_non_linear_first_interaction_block_cannot_be_torchscripted": {
+    "directory": false,
+    "node": "test_non_linear_first_interaction_block_cannot_be_torchscripted",
+    "path": "tests/unit/test_models.py"
+  },
+  "tests/unit/test_models.py::test_non_linear_first_interaction_block_runs_and_is_equivariant": {
+    "directory": false,
+    "node": "test_non_linear_first_interaction_block_runs_and_is_equivariant",
+    "path": "tests/unit/test_models.py"
+  },
+  "tests/unit/test_models.py::test_use_edge_irreps_first_narrows_the_first_interaction_block": {
+    "directory": false,
+    "node": "test_use_edge_irreps_first_narrows_the_first_interaction_block",
+    "path": "tests/unit/test_models.py"
+  },
+  "tests/unit/test_models.py::test_use_edge_irreps_first_survives_the_checkpoint_config_round_trip": {
+    "directory": false,
+    "node": "test_use_edge_irreps_first_survives_the_checkpoint_config_round_trip",
+    "path": "tests/unit/test_models.py"
+  },
+  "tests/unit/test_modules.py::test_atomic_energies": {
+    "directory": false,
+    "node": "test_atomic_energies",
+    "path": "tests/unit/test_modules.py"
+  },
+  "tests/unit/test_modules.py::test_bessel_basis": {
+    "directory": false,
+    "node": "test_bessel_basis",
+    "path": "tests/unit/test_modules.py"
+  },
+  "tests/unit/test_modules.py::test_polynomial_cutoff": {
+    "directory": false,
+    "node": "test_polynomial_cutoff",
+    "path": "tests/unit/test_modules.py"
+  },
+  "tests/unit/test_modules.py::test_symmetric_contraction": {
+    "directory": false,
+    "node": "test_symmetric_contraction",
+    "path": "tests/unit/test_modules.py"
+  },
+  "tests/unit/test_modules.py::test_symmetric_contraction_zeroes_the_unreachable_correlation_order": {
+    "directory": false,
+    "node": "test_symmetric_contraction_zeroes_the_unreachable_correlation_order",
+    "path": "tests/unit/test_modules.py"
+  },
+  "tests/unit/test_multihead_tools.py::test_forcing_it_adds_the_stress_the_model_predicts": {
+    "directory": false,
+    "node": "test_forcing_it_adds_the_stress_the_model_predicts",
+    "path": "tests/unit/test_multihead_tools.py"
+  },
+  "tests/unit/test_multihead_tools.py::test_prepare_default_head_single_default_head": {
+    "directory": false,
+    "node": "test_prepare_default_head_single_default_head",
+    "path": "tests/unit/test_multihead_tools.py"
+  },
+  "tests/unit/test_multihead_tools.py::test_weight_pt_head_is_the_weight_every_replay_config_carries": {
+    "directory": false,
+    "node": "test_weight_pt_head_is_the_weight_every_replay_config_carries",
+    "path": "tests/unit/test_multihead_tools.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_a_higher_decay_lags_further_once_the_warmup_is_past": {
+    "directory": false,
+    "node": "test_a_higher_decay_lags_further_once_the_warmup_is_past",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_amsgrad_reaches_the_optimizer": {
+    "directory": false,
+    "node": "test_amsgrad_reaches_the_optimizer",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_beta_is_the_first_adam_moment": {
+    "directory": false,
+    "node": "test_beta_is_the_first_adam_moment",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_scheduler_patience_reaches_the_plateau_scheduler": {
+    "directory": false,
+    "node": "test_scheduler_patience_reaches_the_plateau_scheduler",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_swa_lr_is_the_rate_the_second_stage_anneals_to": {
+    "directory": false,
+    "node": "test_swa_lr_is_the_rate_the_second_stage_anneals_to",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_the_average_lags_the_parameters": {
+    "directory": false,
+    "node": "test_the_average_lags_the_parameters",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_the_configured_decay_barely_matters_at_the_start": {
+    "directory": false,
+    "node": "test_the_configured_decay_barely_matters_at_the_start",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_weight_decay_applies_to_the_interaction_linears_and_the_products": {
+    "directory": false,
+    "node": "test_weight_decay_applies_to_the_interaction_linears_and_the_products",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_flags.py::test_weight_decay_is_kept_off_the_rest": {
+    "directory": false,
+    "node": "test_weight_decay_is_kept_off_the_rest",
+    "path": "tests/unit/test_optimizer_flags.py"
+  },
+  "tests/unit/test_optimizer_param_groups.py::test_trainable_bessel_weights_get_their_own_group": {
+    "directory": false,
+    "node": "test_trainable_bessel_weights_get_their_own_group",
+    "path": "tests/unit/test_optimizer_param_groups.py"
+  },
+  "tests/unit/test_padding.py::test_atom_level_keys_are_sliced": {
+    "directory": false,
+    "node": "test_atom_level_keys_are_sliced",
+    "path": "tests/unit/test_padding.py"
+  },
+  "tests/unit/test_padding.py::test_batch_collation": {
+    "directory": false,
+    "node": "test_batch_collation",
+    "path": "tests/unit/test_padding.py"
+  },
+  "tests/unit/test_padding.py::test_edge_index_within_bounds": {
+    "directory": false,
+    "node": "test_edge_index_within_bounds",
+    "path": "tests/unit/test_padding.py"
+  },
+  "tests/unit/test_physics_glue.py::test_forces_are_minus_the_energy_gradient": {
+    "directory": false,
+    "node": "test_forces_are_minus_the_energy_gradient",
+    "path": "tests/unit/test_physics_glue.py"
+  },
+  "tests/unit/test_physics_glue.py::test_prepare_graph_injects_a_differentiable_strain_handle": {
+    "directory": false,
+    "node": "test_prepare_graph_injects_a_differentiable_strain_handle",
+    "path": "tests/unit/test_physics_glue.py"
+  },
+  "tests/unit/test_physics_glue.py::test_prepare_graph_without_stress_leaves_an_inert_displacement": {
+    "directory": false,
+    "node": "test_prepare_graph_without_stress_leaves_an_inert_displacement",
+    "path": "tests/unit/test_physics_glue.py"
+  },
+  "tests/unit/test_physics_glue.py::test_stress_is_the_strain_derivative_over_the_volume": {
+    "directory": false,
+    "node": "test_stress_is_the_strain_derivative_over_the_volume",
+    "path": "tests/unit/test_physics_glue.py"
+  },
+  "tests/unit/test_physics_glue.py::test_virials_are_minus_the_stress_times_the_volume": {
+    "directory": false,
+    "node": "test_virials_are_minus_the_stress_times_the_volume",
+    "path": "tests/unit/test_physics_glue.py"
+  },
+  "tests/unit/test_physics_glue.py::test_which_derivatives_a_flag_combination_produces": {
+    "directory": false,
+    "node": "test_which_derivatives_a_flag_combination_produces",
+    "path": "tests/unit/test_physics_glue.py"
+  },
+  "tests/unit/test_radial.py::test_agnesi_transform_values": {
+    "directory": false,
+    "node": "test_agnesi_transform_values",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_apply_cutoff_false_defers_the_envelope_to_the_consumer": {
+    "directory": false,
+    "node": "test_apply_cutoff_false_defers_the_envelope_to_the_consumer",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_apply_cutoff_true_returns_the_product_and_no_envelope": {
+    "directory": false,
+    "node": "test_apply_cutoff_true_returns_the_product_and_no_envelope",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_bessel_basis_values": {
+    "directory": false,
+    "node": "test_bessel_basis_values",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_bessel_shape_and_dtype_contract": {
+    "directory": false,
+    "node": "test_bessel_shape_and_dtype_contract",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_chebychev_basis_values": {
+    "directory": false,
+    "node": "test_chebychev_basis_values",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_chebychev_ignores_r_max_and_diverges_outside_the_unit_interval": {
+    "directory": false,
+    "node": "test_chebychev_ignores_r_max_and_diverges_outside_the_unit_interval",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_gaussian_basis_values": {
+    "directory": false,
+    "node": "test_gaussian_basis_values",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_polynomial_cutoff_is_exactly_zero_at_and_beyond_r_max": {
+    "directory": false,
+    "node": "test_polynomial_cutoff_is_exactly_zero_at_and_beyond_r_max",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_polynomial_cutoff_is_one_at_zero_for_every_p": {
+    "directory": false,
+    "node": "test_polynomial_cutoff_is_one_at_zero_for_every_p",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_radial_mlp_structure_and_shapes": {
+    "directory": false,
+    "node": "test_radial_mlp_structure_and_shapes",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_soft_transform_values": {
+    "directory": false,
+    "node": "test_soft_transform_values",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_the_basis_sees_the_transformed_lengths": {
+    "directory": false,
+    "node": "test_the_basis_sees_the_transformed_lengths",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_the_cutoff_is_computed_before_the_distance_transform": {
+    "directory": false,
+    "node": "test_the_cutoff_is_computed_before_the_distance_transform",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_zbl_buffers_and_trainability": {
+    "directory": false,
+    "node": "test_zbl_buffers_and_trainability",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_radial.py::test_zbl_matches_the_published_formula": {
+    "directory": false,
+    "node": "test_zbl_matches_the_published_formula",
+    "path": "tests/unit/test_radial.py"
+  },
+  "tests/unit/test_readout_and_directory_flags.py::test_an_explicit_downloads_directory_is_kept": {
+    "directory": false,
+    "node": "test_an_explicit_downloads_directory_is_kept",
+    "path": "tests/unit/test_readout_and_directory_flags.py"
+  },
+  "tests/unit/test_readout_and_directory_flags.py::test_it_needs_the_joint_embedding_to_read_from": {
+    "directory": false,
+    "node": "test_it_needs_the_joint_embedding_to_read_from",
+    "path": "tests/unit/test_readout_and_directory_flags.py"
+  },
+  "tests/unit/test_readout_and_directory_flags.py::test_the_downloads_directory_defaults_under_the_work_dir": {
+    "directory": false,
+    "node": "test_the_downloads_directory_defaults_under_the_work_dir",
+    "path": "tests/unit/test_readout_and_directory_flags.py"
+  },
+  "tests/unit/test_readout_and_directory_flags.py::test_the_flag_adds_a_readout_over_the_joint_embedding": {
+    "directory": false,
+    "node": "test_the_flag_adds_a_readout_over_the_joint_embedding",
+    "path": "tests/unit/test_readout_and_directory_flags.py"
+  },
+  "tests/unit/test_readout_and_directory_flags.py::test_the_flag_leaves_only_the_last_readout": {
+    "directory": false,
+    "node": "test_the_flag_leaves_only_the_last_readout",
+    "path": "tests/unit/test_readout_and_directory_flags.py"
+  },
+  "tests/unit/test_readout_and_directory_flags.py::test_the_two_models_disagree_on_the_energy": {
+    "directory": false,
+    "node": "test_the_two_models_disagree_on_the_energy",
+    "path": "tests/unit/test_readout_and_directory_flags.py"
+  },
+  "tests/unit/test_scale_shift_dtype.py::test_a_full_pickle_round_trip_preserves_every_buffer_bit_for_bit": {
+    "directory": false,
+    "node": "test_a_full_pickle_round_trip_preserves_every_buffer_bit_for_bit",
+    "path": "tests/unit/test_scale_shift_dtype.py"
+  },
+  "tests/unit/test_scale_shift_dtype.py::test_the_convert_device_cli_preserves_the_buffers": {
+    "directory": false,
+    "node": "test_the_convert_device_cli_preserves_the_buffers",
+    "path": "tests/unit/test_scale_shift_dtype.py"
+  },
+  "tests/unit/test_scale_shift_dtype.py::test_the_scale_shift_buffers_are_also_frozen_at_construction": {
+    "directory": false,
+    "node": "test_the_scale_shift_buffers_are_also_frozen_at_construction",
+    "path": "tests/unit/test_scale_shift_dtype.py"
+  },
+  "tests/unit/test_stage_two_weights.py::test_the_dipole_and_polarizability_weights_reach_the_dipole_polar_loss": {
+    "directory": false,
+    "node": "test_the_dipole_and_polarizability_weights_reach_the_dipole_polar_loss",
+    "path": "tests/unit/test_stage_two_weights.py"
+  },
+  "tests/unit/test_stage_two_weights.py::test_the_energy_and_forces_weights_reach_the_stage_two_loss": {
+    "directory": false,
+    "node": "test_the_energy_and_forces_weights_reach_the_stage_two_loss",
+    "path": "tests/unit/test_stage_two_weights.py"
+  },
+  "tests/unit/test_stage_two_weights.py::test_the_magforces_weight_reaches_the_universal_loss": {
+    "directory": false,
+    "node": "test_the_magforces_weight_reaches_the_universal_loss",
+    "path": "tests/unit/test_stage_two_weights.py"
+  },
+  "tests/unit/test_stage_two_weights.py::test_the_stress_weight_reaches_the_stress_loss": {
+    "directory": false,
+    "node": "test_the_stress_weight_reaches_the_stress_loss",
+    "path": "tests/unit/test_stage_two_weights.py"
+  },
+  "tests/unit/test_stage_two_weights.py::test_the_virials_weight_reaches_the_virials_loss": {
+    "directory": false,
+    "node": "test_the_virials_weight_reaches_the_virials_loss",
+    "path": "tests/unit/test_stage_two_weights.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_committee": {
+    "directory": false,
+    "node": "test_calculator_committee",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_descriptor": {
+    "directory": false,
+    "node": "test_calculator_descriptor",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_dipole": {
+    "directory": false,
+    "node": "test_calculator_dipole",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_dtype_is_instance_local": {
+    "directory": false,
+    "node": "test_calculator_dtype_is_instance_local",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_energy_dipole": {
+    "directory": false,
+    "node": "test_calculator_energy_dipole",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_forces": {
+    "directory": false,
+    "node": "test_calculator_forces",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_from_model": {
+    "directory": false,
+    "node": "test_calculator_from_model",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_node_energy": {
+    "directory": false,
+    "node": "test_calculator_node_energy",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_calculator.py::test_calculator_padding": {
+    "directory": false,
+    "node": "test_calculator_padding",
+    "path": "tests/workflows/test_calculator.py"
+  },
+  "tests/workflows/test_checkpoint_retention.py::test_keep_checkpoints_accumulates_what_a_plain_run_deletes": {
+    "directory": false,
+    "node": "test_keep_checkpoints_accumulates_what_a_plain_run_deletes",
+    "path": "tests/workflows/test_checkpoint_retention.py"
+  },
+  "tests/workflows/test_checkpoint_retention.py::test_save_all_checkpoints_leaves_one_per_evaluation": {
+    "directory": false,
+    "node": "test_save_all_checkpoints_leaves_one_per_evaluation",
+    "path": "tests/workflows/test_checkpoint_retention.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_at_float32_reproduces_float64_within_the_fp32_row": {
+    "directory": false,
+    "node": "test_eval_at_float32_reproduces_float64_within_the_fp32_row",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_batch_size_does_not_change_the_numbers": {
+    "directory": false,
+    "node": "test_eval_batch_size_does_not_change_the_numbers",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_compute_stress_writes_a_stress_and_omitting_it_does_not": {
+    "directory": false,
+    "node": "test_eval_compute_stress_writes_a_stress_and_omitting_it_does_not",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_configs_agrees_with_the_ase_calculator_on_every_fixture": {
+    "directory": false,
+    "node": "test_eval_configs_agrees_with_the_ase_calculator_on_every_fixture",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_configs_reproduces_the_committed_anchor_reference": {
+    "directory": false,
+    "node": "test_eval_configs_reproduces_the_committed_anchor_reference",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_contributions_are_refused_for_the_scale_shift_model": {
+    "directory": false,
+    "node": "test_eval_contributions_are_refused_for_the_scale_shift_model",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_contributions_sum_to_the_total_energy_on_the_plain_model": {
+    "directory": false,
+    "node": "test_eval_contributions_sum_to_the_total_energy_on_the_plain_model",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_descriptor_layer_and_invariant_flags_change_the_width": {
+    "directory": false,
+    "node": "test_eval_descriptor_layer_and_invariant_flags_change_the_width",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_descriptors_land_per_atom_and_the_aggregations_reduce_them": {
+    "directory": false,
+    "node": "test_eval_descriptors_land_per_atom_and_the_aggregations_reduce_them",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_head_selects_a_head_and_refuses_one_the_model_does_not_have": {
+    "directory": false,
+    "node": "test_eval_head_selects_a_head_and_refuses_one_the_model_does_not_have",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_info_prefix_renames_every_written_key": {
+    "directory": false,
+    "node": "test_eval_info_prefix_renames_every_written_key",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_eval_node_energies_sum_to_the_total_energy": {
+    "directory": false,
+    "node": "test_eval_node_energies_sum_to_the_total_energy",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_lbfgs_is_selectable_from_the_command_line_and_reduces_the_loss": {
+    "directory": false,
+    "node": "test_lbfgs_is_selectable_from_the_command_line_and_reduces_the_loss",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_lbfgs_keeps_the_last_partial_batch_and_the_default_regime_drops_it": {
+    "directory": false,
+    "node": "test_lbfgs_keeps_the_last_partial_batch_and_the_default_regime_drops_it",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_lbfgs_takes_one_step_per_epoch_and_the_other_regime_one_per_batch": {
+    "directory": false,
+    "node": "test_lbfgs_takes_one_step_per_epoch_and_the_other_regime_one_per_batch",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_padded_per_atom_arrays_come_back_with_exactly_len_atoms_rows": {
+    "directory": false,
+    "node": "test_padded_per_atom_arrays_come_back_with_exactly_len_atoms_rows",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_padding_through_the_two_environment_variables_behaves_identically": {
+    "directory": false,
+    "node": "test_padding_through_the_two_environment_variables_behaves_identically",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_restart_latest_continues_from_the_checkpoint_epoch": {
+    "directory": false,
+    "node": "test_restart_latest_continues_from_the_checkpoint_epoch",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_select_head_and_the_multihead_model_agree_on_the_selected_head": {
+    "directory": false,
+    "node": "test_select_head_and_the_multihead_model_agree_on_the_selected_head",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_select_head_honours_output_file_and_target_device": {
+    "directory": false,
+    "node": "test_select_head_honours_output_file_and_target_device",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_select_head_lists_the_heads_of_a_multihead_model": {
+    "directory": false,
+    "node": "test_select_head_lists_the_heads_of_a_multihead_model",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_select_head_writes_a_single_head_model_to_the_default_name": {
+    "directory": false,
+    "node": "test_select_head_writes_a_single_head_model_to_the_default_name",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_the_calculator_returns_the_contract_keys_with_the_right_shapes": {
+    "directory": false,
+    "node": "test_the_calculator_returns_the_contract_keys_with_the_right_shapes",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_the_end_of_training_error_table_is_printed_and_parseable": {
+    "directory": false,
+    "node": "test_the_end_of_training_error_table_is_printed_and_parseable",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_cli_contracts.py::test_training_reduces_the_validation_loss_and_writes_a_model": {
+    "directory": false,
+    "node": "test_training_reduces_the_validation_loss_and_writes_a_model",
+    "path": "tests/workflows/test_cli_contracts.py"
+  },
+  "tests/workflows/test_distributed.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/workflows/test_distributed.py"
+  },
+  "tests/workflows/test_embedding_train.py::test_run_train_with_atom_embed": {
+    "directory": false,
+    "node": "test_run_train_with_atom_embed",
+    "path": "tests/workflows/test_embedding_train.py"
+  },
+  "tests/workflows/test_embedding_train.py::test_run_train_with_elec_temp": {
+    "directory": false,
+    "node": "test_run_train_with_elec_temp",
+    "path": "tests/workflows/test_embedding_train.py"
+  },
+  "tests/workflows/test_eval_configs_shapes_and_dtype.py::test_a_dtype_that_disagrees_with_the_checkpoint_is_converted_not_fatal": {
+    "directory": false,
+    "node": "test_a_dtype_that_disagrees_with_the_checkpoint_is_converted_not_fatal",
+    "path": "tests/workflows/test_eval_configs_shapes_and_dtype.py"
+  },
+  "tests/workflows/test_eval_configs_shapes_and_dtype.py::test_node_energies_are_written_per_structure_whatever_its_size": {
+    "directory": false,
+    "node": "test_node_energies_are_written_per_structure_whatever_its_size",
+    "path": "tests/workflows/test_eval_configs_shapes_and_dtype.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_a_failing_pseudolabel_batch_keeps_the_file_labels_and_says_nothing": {
+    "directory": false,
+    "node": "test_a_failing_pseudolabel_batch_keeps_the_file_labels_and_says_nothing",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_disallow_random_padding_pt_is_a_bare_flag_on_the_training_cli": {
+    "directory": false,
+    "node": "test_disallow_random_padding_pt_is_a_bare_flag_on_the_training_cli",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_filtering_type_restricts_the_pool_to_the_target_elements": {
+    "directory": false,
+    "node": "test_filtering_type_restricts_the_pool_to_the_target_elements",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_finetuning_reduces_the_error_on_the_finetuning_set": {
+    "directory": false,
+    "node": "test_finetuning_reduces_the_error_on_the_finetuning_set",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_multihead_replay_finetuning_completes_and_carries_both_heads": {
+    "directory": false,
+    "node": "test_multihead_replay_finetuning_completes_and_carries_both_heads",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_pseudolabel_replay_relabels_the_replay_set_from_the_foundation_model": {
+    "directory": false,
+    "node": "test_pseudolabel_replay_relabels_the_replay_set_from_the_foundation_model",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_random_padding_tops_up_a_short_pool_and_disallowing_it_does_not": {
+    "directory": false,
+    "node": "test_random_padding_tops_up_a_short_pool_and_disallowing_it_does_not",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_subselect_fps_uses_the_model_and_still_returns_the_requested_number": {
+    "directory": false,
+    "node": "test_subselect_fps_uses_the_model_and_still_returns_the_requested_number",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_subselect_random_returns_exactly_the_requested_number": {
+    "directory": false,
+    "node": "test_subselect_random_returns_exactly_the_requested_number",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_contracts.py::test_the_replay_selection_flags_exist_on_the_training_cli": {
+    "directory": false,
+    "node": "test_the_replay_selection_flags_exist_on_the_training_cli",
+    "path": "tests/workflows/test_finetuning_contracts.py"
+  },
+  "tests/workflows/test_finetuning_pseudolabels.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/workflows/test_finetuning_pseudolabels.py"
+  },
+  "tests/workflows/test_finetuning_select.py::test_filter_data": {
+    "directory": false,
+    "node": "test_filter_data",
+    "path": "tests/workflows/test_finetuning_select.py"
+  },
+  "tests/workflows/test_finetuning_select.py::test_load_descriptors": {
+    "directory": false,
+    "node": "test_load_descriptors",
+    "path": "tests/workflows/test_finetuning_select.py"
+  },
+  "tests/workflows/test_finetuning_select.py::test_select_samples_ft_provided": {
+    "directory": false,
+    "node": "test_select_samples_ft_provided",
+    "path": "tests/workflows/test_finetuning_select.py"
+  },
+  "tests/workflows/test_finetuning_select.py::test_select_samples_random": {
+    "directory": false,
+    "node": "test_select_samples_random",
+    "path": "tests/workflows/test_finetuning_select.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_a_device_outside_the_choices_is_rejected": {
+    "directory": false,
+    "node": "test_a_device_outside_the_choices_is_rejected",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_a_local_checkpoint_is_used_for_the_descriptors": {
+    "directory": false,
+    "node": "test_a_local_checkpoint_is_used_for_the_descriptors",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_fps_without_fpsample_falls_back_and_says_so": {
+    "directory": false,
+    "node": "test_fps_without_fpsample_falls_back_and_says_so",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_no_head_key_is_written_when_none_is_given": {
+    "directory": false,
+    "node": "test_no_head_key_is_written_when_none_is_given",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_the_atomic_number_filter_restricts_the_pool": {
+    "directory": false,
+    "node": "test_the_atomic_number_filter_restricts_the_pool",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_the_descriptors_follow_the_requested_dtype": {
+    "directory": false,
+    "node": "test_the_descriptors_follow_the_requested_dtype",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_the_finetuning_weight_applies_to_the_finetuning_configs": {
+    "directory": false,
+    "node": "test_the_finetuning_weight_applies_to_the_finetuning_configs",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_the_heads_label_each_half": {
+    "directory": false,
+    "node": "test_the_heads_label_each_half",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_the_output_path_is_where_the_flag_says": {
+    "directory": false,
+    "node": "test_the_output_path_is_where_the_flag_says",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_the_pretraining_weight_is_written_onto_the_selection": {
+    "directory": false,
+    "node": "test_the_pretraining_weight_is_written_onto_the_selection",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_the_same_seed_selects_the_same_configurations": {
+    "directory": false,
+    "node": "test_the_same_seed_selects_the_same_configurations",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_finetuning_select_cli.py::test_the_yaml_config_is_read": {
+    "directory": false,
+    "node": "test_the_yaml_config_is_read",
+    "path": "tests/workflows/test_finetuning_select_cli.py"
+  },
+  "tests/workflows/test_foundation_kwargs.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/workflows/test_foundation_kwargs.py"
+  },
+  "tests/workflows/test_freeze.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/workflows/test_freeze.py"
+  },
+  "tests/workflows/test_freeze.py::test_run_train_freeze": {
+    "directory": false,
+    "node": "test_run_train_freeze",
+    "path": "tests/workflows/test_freeze.py"
+  },
+  "tests/workflows/test_freeze.py::test_run_train_soft_freeze": {
+    "directory": false,
+    "node": "test_run_train_soft_freeze",
+    "path": "tests/workflows/test_freeze.py"
+  },
+  "tests/workflows/test_mdp_finetune.py::test_mdp_finetune_updates_params": {
+    "directory": false,
+    "node": "test_mdp_finetune_updates_params",
+    "path": "tests/workflows/test_mdp_finetune.py"
+  },
+  "tests/workflows/test_mdp_finetune.py::test_mdp_finetune_wrong_model_type_raises": {
+    "directory": false,
+    "node": "test_mdp_finetune_wrong_model_type_raises",
+    "path": "tests/workflows/test_mdp_finetune.py"
+  },
+  "tests/workflows/test_multi_processed_test_layout.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/workflows/test_multi_processed_test_layout.py"
+  },
+  "tests/workflows/test_multifiles.py::test_multifile_training": {
+    "directory": false,
+    "node": "test_multifile_training",
+    "path": "tests/workflows/test_multifiles.py"
+  },
+  "tests/workflows/test_multifiles.py::test_multiple_xyz_per_head": {
+    "directory": false,
+    "node": "test_multiple_xyz_per_head",
+    "path": "tests/workflows/test_multifiles.py"
+  },
+  "tests/workflows/test_multifiles.py::test_single_xyz_per_head": {
+    "directory": false,
+    "node": "test_single_xyz_per_head",
+    "path": "tests/workflows/test_multifiles.py"
+  },
+  "tests/workflows/test_per_head_reporting.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/workflows/test_per_head_reporting.py"
+  },
+  "tests/workflows/test_per_head_reporting.py::test_the_replay_head_is_left_out_of_the_final_table": {
+    "directory": false,
+    "node": "test_the_replay_head_is_left_out_of_the_final_table",
+    "path": "tests/workflows/test_per_head_reporting.py"
+  },
+  "tests/workflows/test_plot_train.py::test_a_directory_is_searched_for_logs": {
+    "directory": false,
+    "node": "test_a_directory_is_searched_for_logs",
+    "path": "tests/workflows/test_plot_train.py"
+  },
+  "tests/workflows/test_plot_train.py::test_a_real_results_log_becomes_a_plot": {
+    "directory": false,
+    "node": "test_a_real_results_log_becomes_a_plot",
+    "path": "tests/workflows/test_plot_train.py"
+  },
+  "tests/workflows/test_plot_train.py::test_each_flag_changes_the_plot": {
+    "directory": false,
+    "node": "test_each_flag_changes_the_plot",
+    "path": "tests/workflows/test_plot_train.py"
+  },
+  "tests/workflows/test_plot_train.py::test_heads_names_the_plot_after_the_head": {
+    "directory": false,
+    "node": "test_heads_names_the_plot_after_the_head",
+    "path": "tests/workflows/test_plot_train.py"
+  },
+  "tests/workflows/test_plot_train.py::test_start_stage_two_is_the_same_flag_as_start_swa": {
+    "directory": false,
+    "node": "test_start_stage_two_is_the_same_flag_as_start_swa",
+    "path": "tests/workflows/test_plot_train.py"
+  },
+  "tests/workflows/test_plot_train.py::test_the_output_format_is_honoured": {
+    "directory": false,
+    "node": "test_the_output_format_is_honoured",
+    "path": "tests/workflows/test_plot_train.py"
+  },
+  "tests/workflows/test_plot_train.py::test_the_results_log_carries_the_columns_the_plot_reads": {
+    "directory": false,
+    "node": "test_the_results_log_carries_the_columns_the_plot_reads",
+    "path": "tests/workflows/test_plot_train.py"
+  },
+  "tests/workflows/test_preprocess.py": {
+    "directory": false,
+    "node": "",
+    "path": "tests/workflows/test_preprocess.py"
+  },
+  "tests/workflows/test_preprocess.py::test_preprocess_config": {
+    "directory": false,
+    "node": "test_preprocess_config",
+    "path": "tests/workflows/test_preprocess.py"
+  },
+  "tests/workflows/test_preprocess.py::test_preprocess_data": {
+    "directory": false,
+    "node": "test_preprocess_data",
+    "path": "tests/workflows/test_preprocess.py"
+  },
+  "tests/workflows/test_preprocess_keys.py::test_a_property_key_is_read_under_the_name_it_is_given": {
+    "directory": false,
+    "node": "test_a_property_key_is_read_under_the_name_it_is_given",
+    "path": "tests/workflows/test_preprocess_keys.py"
+  },
+  "tests/workflows/test_run_train.py::test_run_train_foundation_elements": {
+    "directory": false,
+    "node": "test_run_train_foundation_elements",
+    "path": "tests/workflows/test_run_train.py"
+  },
+  "tests/workflows/test_run_train.py::test_run_train_foundation_elements_multihead": {
+    "directory": false,
+    "node": "test_run_train_foundation_elements_multihead",
+    "path": "tests/workflows/test_run_train.py"
+  },
+  "tests/workflows/test_run_train.py::test_run_train_foundation_multihead_json": {
+    "directory": false,
+    "node": "test_run_train_foundation_multihead_json",
+    "path": "tests/workflows/test_run_train.py"
+  },
+  "tests/workflows/test_run_train.py::test_run_train_lbfgs": {
+    "directory": false,
+    "node": "test_run_train_lbfgs",
+    "path": "tests/workflows/test_run_train.py"
+  },
+  "tests/workflows/test_run_train.py::test_run_train_mh_foundation": {
+    "directory": false,
+    "node": "test_run_train_mh_foundation",
+    "path": "tests/workflows/test_run_train.py"
+  },
+  "tests/workflows/test_run_train.py::test_run_train_multihead": {
+    "directory": false,
+    "node": "test_run_train_multihead",
+    "path": "tests/workflows/test_run_train.py"
+  },
+  "tests/workflows/test_run_train.py::test_run_train_multihead_replay_custom_finetuning": {
+    "directory": false,
+    "node": "test_run_train_multihead_replay_custom_finetuning",
+    "path": "tests/workflows/test_run_train.py"
+  },
+  "tests/workflows/test_run_train.py::test_run_train_real_pt_data_ratio": {
+    "directory": false,
+    "node": "test_run_train_real_pt_data_ratio",
+    "path": "tests/workflows/test_run_train.py"
+  },
+  "tests/workflows/test_run_train_v1.py::test_explicit_training_flags_write_a_readable_v1_artifact": {
+    "directory": false,
+    "node": "test_explicit_training_flags_write_a_readable_v1_artifact",
+    "path": "tests/workflows/test_run_train_v1.py"
+  },
+  "tests/workflows/test_train_work_dir_and_workers.py::test_every_dataloader_is_given_the_worker_count": {
+    "directory": false,
+    "node": "test_every_dataloader_is_given_the_worker_count",
+    "path": "tests/workflows/test_train_work_dir_and_workers.py"
+  },
+  "tests/workflows/test_train_work_dir_and_workers.py::test_every_dataloader_is_told_whether_to_pin": {
+    "directory": false,
+    "node": "test_every_dataloader_is_told_whether_to_pin",
+    "path": "tests/workflows/test_train_work_dir_and_workers.py"
+  },
+  "tests/workflows/test_train_work_dir_and_workers.py::test_the_validation_indices_land_in_the_work_dir": {
+    "directory": false,
+    "node": "test_the_validation_indices_land_in_the_work_dir",
+    "path": "tests/workflows/test_train_work_dir_and_workers.py"
+  },
+  "tests/workflows/test_training_plots.py::test_a_default_run_draws_a_plot": {
+    "directory": false,
+    "node": "test_a_default_run_draws_a_plot",
+    "path": "tests/workflows/test_training_plots.py"
+  },
+  "tests/workflows/test_training_plots.py::test_a_periodic_frequency_also_ends_with_a_plot": {
+    "directory": false,
+    "node": "test_a_periodic_frequency_also_ends_with_a_plot",
+    "path": "tests/workflows/test_training_plots.py"
+  },
+  "tests/workflows/test_training_plots.py::test_turning_it_off_draws_nothing": {
+    "directory": false,
+    "node": "test_turning_it_off_draws_nothing",
+    "path": "tests/workflows/test_training_plots.py"
+  },
+  "tests/workflows/test_wandb_logging.py::test_a_training_run_with_wandb_writes_an_offline_run": {
+    "directory": false,
+    "node": "test_a_training_run_with_wandb_writes_an_offline_run",
+    "path": "tests/workflows/test_wandb_logging.py"
+  },
+  "tests/workflows/test_wandb_logging.py::test_each_flag_lands_on_its_own_keyword": {
+    "directory": false,
+    "node": "test_each_flag_lands_on_its_own_keyword",
+    "path": "tests/workflows/test_wandb_logging.py"
+  },
+  "tests/workflows/test_wandb_logging.py::test_only_the_requested_hyperparameters_are_logged": {
+    "directory": false,
+    "node": "test_only_the_requested_hyperparameters_are_logged",
+    "path": "tests/workflows/test_wandb_logging.py"
+  }
+}

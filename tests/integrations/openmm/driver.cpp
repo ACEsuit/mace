@@ -1,6 +1,7 @@
 // Native OpenMM application, including real integration steps and force groups.
 #include "MaceForce.h"
 #include <chrono>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -73,8 +74,10 @@ int main(int argc, char **argv) {
         integrator = std::make_unique<OpenMM::VerletIntegrator>(0.0001);
         auto &platform = OpenMM::Platform::getPlatformByName(argv[2]);
         std::map<std::string, std::string> properties;
-        if (platform.getName() == "CUDA")
-          properties["Precision"] = "double";
+        if (platform.getName() == "CUDA") {
+          const char *precision = std::getenv("MACE_OPENMM_PRECISION");
+          properties["Precision"] = precision ? precision : "double";
+        }
         context = std::make_unique<OpenMM::Context>(*system, *integrator,
                                                     platform, properties);
         previousNumbers = numbers;

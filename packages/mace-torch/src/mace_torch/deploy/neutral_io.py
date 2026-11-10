@@ -1219,7 +1219,7 @@ def _metadata(
     origin = "recorded no heads" if provenance.headless else "recorded its heads"
     return ModelMetadata(
         config=ConfigRecord(resolved=config.model_dump(mode="json")),
-        provenance=Provenance(versions={"mace-torch-v1": __version__}),
+        provenance=Provenance(versions={"mace-torch": __version__}),
         conversion=BasisConversionRecord(projection_verified=True)
         if any(
             op.clebsch_gordan_basis == "full" for op in artifact.sidecar.ops.values()

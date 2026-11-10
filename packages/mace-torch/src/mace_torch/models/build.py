@@ -36,7 +36,7 @@ from mace_torch.models.dipoles import DipoleModel, DipoleSettings
 from mace_torch.models.electrostatics import POLAR_DIPOLE, PolarModel
 from mace_torch.models.magnetic import MagneticModel
 from mace_torch.models.normalization import ObservableNormalization
-from mace_torch.models.registry import ElectrostaticModelFactory, model_family
+from mace_torch.models.registry import ElectrostaticModelFactory, model_architecture
 from mace_torch.physics import DerivativeEngine
 
 logger = logging.getLogger(__name__)
@@ -90,10 +90,10 @@ def build_model(
             "read out nothing. Declare at least one under `model.observables`."
         )
     try:
-        family = model_family(config.model.model)
+        architecture = model_architecture(config.model.model)
     except ValueError as error:
         raise ModelBuildError(str(error)) from error
-    model_type = family.model
+    model_type = architecture.model
     if (
         _MAGNETIC_DERIVATIVE in requested.derivatives
         and config.model.model != "magnetic"
@@ -137,9 +137,9 @@ def build_model(
                 z_table,
                 _scale_shift(config, statistics, len(heads)),
                 precision,
-                zbl_in_scale_shift=family.zbl_in_scale_shift,
+                zbl_in_scale_shift=architecture.zbl_in_scale_shift,
                 supports_float64=supports_float64,
-                widen_node_energy=family.widen_node_energy,
+                widen_node_energy=architecture.widen_node_energy,
             )
             if (report := energy_readout.build_report()) is not None:
                 logger.warning(report)
@@ -174,7 +174,7 @@ def build_model(
             )
         else:
             model_options: dict[str, Any] = {}
-            if family.electrostatics:
+            if architecture.electrostatics:
                 assert energy_readout is not None
                 assert isinstance(model_type, ElectrostaticModelFactory)
                 model_options.update(
@@ -270,7 +270,7 @@ def _polar_model(
     """The charge-aware model, with its long-range ops from the named solver.
 
     Its dipole is the density's, so a declared ``dipole`` observable is read
-    off the model rather than given a head.
+    off the model rather than given a readout.
     """
     return PolarModel(
         backend,
@@ -407,7 +407,7 @@ def _refuse_unbuilt(config: ResolvedConfig) -> None:
     if model.model != "magnetic" and model.magnetic.time_reversal != "none":
         unbuilt.append("model.magnetic.time_reversal requires model.model='magnetic'")
     if model.pair_repulsion and (
-        model.model == "polar" or model_family(model.model).model is DipoleModel
+        model.model == "polar" or model_architecture(model.model).model is DipoleModel
     ):
         unbuilt.append(f"model.pair_repulsion is not supported by {model.model!r}")
     if model.model == "magnetic" and model.radial_basis.kind != "bessel":
@@ -432,7 +432,7 @@ def _check_electrostatics(config: ResolvedConfig) -> None:
             solver and its systems unsaid.
     """
     settings = config.electrostatics
-    polar = model_family(config.model.model).electrostatics
+    polar = model_architecture(config.model.model).electrostatics
     if settings.enabled and not polar:
         raise ModelBuildError(
             f"electrostatics.enabled is set and model.model is "

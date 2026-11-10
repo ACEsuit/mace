@@ -32,14 +32,13 @@ goldens to remove a mismatch.
 ## Commands and configuration
 
 Read [commands.md](references/commands.md) for the command/module map and the
-tested migration recipe. Use `mace --engine v1` explicitly while legacy is the
-launcher default. Read [changes.md](references/changes.md) for every DROP/MERGE
+tested migration recipe. Use the native `mace` command; the legacy launcher has been retired. Read [changes.md](references/changes.md) for every DROP/MERGE
 inventory row and every legacy training destination, including renamed KEEP
 fields. Rows are keyed by argparse destination, so aliases share a row.
 
-Use the existing `mace --engine v1 model migrate --output migrated.yaml -- ...` helper
+Use the existing `mace model migrate --output migrated.yaml -- ...` helper
 for training commands or legacy YAML. Inspect its result, then run
-`mace --engine v1 config validate --config migrated.yaml`. Validation checks
+`mace config validate --config migrated.yaml`. Validation checks
 schema and cross-section constraints; it does not open data or validate a model.
 For non-training commands the helper can retain old argument tokens in a
 manifest. Translate those arguments against current subcommand help before

@@ -1,5 +1,8 @@
 """OpenMM units and a real direct-PyTorch simulation, without serialized code."""
 
+from importlib import import_module
+from typing import Any
+
 import numpy as np
 import pytest
 import torch
@@ -32,6 +35,7 @@ def test_openmm_callback_units_and_changing_neighbors(artifact, dtype, periodic)
         cell = torch.tensor(current.cell.array / 10, dtype=dtype) if periodic else None
         current.positions = positions.double().numpy() * 10
         if periodic:
+            assert cell is not None
             current.cell = cell.double().numpy() * 10
         current.calc = MACECalculator(artifact)
         with torch.inference_mode():
@@ -48,7 +52,7 @@ def test_openmm_refuses_inconsistent_inputs(artifact):
     with pytest.raises(ValueError, match="species"):
         OpenMMEvaluator(artifact, [26])
     with pytest.raises(ValueError, match="integer"):
-        OpenMMEvaluator(artifact, [1.0])
+        OpenMMEvaluator(artifact, [1.0])  # ty: ignore[invalid-argument-type]  # Deliberately malformed species.
     with pytest.raises(ValueError, match="not declared"):
         OpenMMEvaluator(artifact, [1, 8], inputs={"unknown": 1})
     evaluator = OpenMMEvaluator(artifact, [8, 1, 1], periodic=True)
@@ -62,9 +66,9 @@ def test_openmm_refuses_inconsistent_inputs(artifact):
 @pytest.mark.bin_openmm
 @pytest.mark.parametrize("periodic", [False, True])
 def test_openmm_real_trajectory_matches_ase(artifact, periodic, monkeypatch):
-    import openmm
-    from openmm import unit
-    from openmmtorch import PythonTorchForce
+    openmm: Any = import_module("openmm")
+    unit = openmm.unit
+    PythonTorchForce = import_module("openmmtorch").PythonTorchForce
 
     def refuse_script(*args, **kwargs):
         raise AssertionError("OpenMM deployment must use the direct PyTorch interface")

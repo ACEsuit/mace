@@ -77,7 +77,7 @@ class LatentEwaldModel(MACEModel):
             solver_class = import_module("les").Les
         except ImportError as error:
             raise ImportError(
-                "model.model='les' requires the mace-torch-v1[les] extra"
+                "model.model='les' requires the mace-torch[les] extra"
             ) from error
 
         settings = config.les or LESConfig()

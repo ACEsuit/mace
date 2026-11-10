@@ -108,7 +108,9 @@ def _native_openmm_available() -> bool:
         result = subprocess.run(
             [binary, "--version"], capture_output=True, text=True, timeout=10
         )
-        return result.returncode == 0 and result.stdout.strip() == "mace-openmm-native-v1"
+        return (
+            result.returncode == 0 and result.stdout.strip() == "mace-openmm-native-v1"
+        )
     except (OSError, subprocess.TimeoutExpired):
         return False
 
@@ -151,7 +153,7 @@ def required_caps() -> set:
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_runtest_setup(item):
+def capability_runtest_setup(item):
     # tryfirst: must run before the builtin skipping plugin, so that a
     # required-but-unavailable capability fails even if a legacy
     # @pytest.mark.skipif on the same test would have skipped it.
@@ -193,7 +195,7 @@ _DIR_MARKERS = {
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_collection_modifyitems(config, items):  # pylint: disable=unused-argument
+def capability_collection_modifyitems(config, items):  # pylint: disable=unused-argument
     # tryfirst for two reasons, both silent when wrong: the directory-derived
     # markers below must exist before the builtin mark plugin applies `-m`,
     # and the zero-collection guard at the end must see the WHOLE collection,
@@ -221,7 +223,7 @@ def pytest_collection_modifyitems(config, items):  # pylint: disable=unused-argu
             )
 
 
-def pytest_configure(config):
+def configure_capabilities(config):
     """Validate MACE_REQUIRE_CAPS, isolate cache per xdist worker, and guard
     known plugin reseed issues."""
     unknown = required_caps() - set(CAPABILITY_PROBES)
@@ -266,72 +268,6 @@ def fixture_fitting_configs():
     from tests.helpers import make_fitting_configs
 
     return make_fitting_configs()
-
-
-@pytest.fixture(scope="session", name="trained_tiny_model_path")
-def fixture_trained_tiny_model_path(tmp_path_factory):
-    """Train a minimal MACE ONCE per session and return the .model path.
-
-    For tests whose subject is not training itself (export paths, integration
-    contracts, smoke tests): they share this artifact instead of each training
-    their own model.
-    """
-    import ase.io
-
-    from tests.helpers import base_mace_params, make_fitting_configs, run_mace_train
-
-    tmp = tmp_path_factory.mktemp("tiny_model")
-    ase.io.write(tmp / "fit.xyz", make_fitting_configs())
-    params = base_mace_params()
-    params.update(
-        {
-            "name": "tiny",
-            "hidden_irreps": "16x0e + 16x1o",
-            "checkpoints_dir": str(tmp),
-            "model_dir": str(tmp),
-            "train_file": str(tmp / "fit.xyz"),
-            "max_num_epochs": 6,
-            "start_swa": 4,
-        }
-    )
-    run_mace_train(params)
-    model_path = tmp / "tiny.model"
-    assert model_path.exists()
-    return model_path
-
-
-@pytest.fixture(scope="session", name="trained_tiny_1layer_model_path")
-def fixture_trained_tiny_1layer_model_path(tmp_path_factory):
-    """`trained_tiny_model_path` with a single interaction layer.
-
-    Same purpose and cost, one message-passing layer instead of two, so the
-    forward never asks LAMMPS to exchange ghost node features. That is what
-    makes the real-tier ML-IAP test runnable against a stock (non-KOKKOS)
-    LAMMPS build -- see `mace.calculators.lammps_mliap_mace`.
-    """
-    import ase.io
-
-    from tests.helpers import base_mace_params, make_fitting_configs, run_mace_train
-
-    tmp = tmp_path_factory.mktemp("tiny_1layer_model")
-    ase.io.write(tmp / "fit.xyz", make_fitting_configs())
-    params = base_mace_params()
-    params.update(
-        {
-            "name": "tiny1l",
-            "hidden_irreps": "16x0e + 16x1o",
-            "num_interactions": 1,
-            "checkpoints_dir": str(tmp),
-            "model_dir": str(tmp),
-            "train_file": str(tmp / "fit.xyz"),
-            "max_num_epochs": 6,
-            "start_swa": 4,
-        }
-    )
-    run_mace_train(params)
-    model_path = tmp / "tiny1l.model"
-    assert model_path.exists()
-    return model_path
 
 
 @pytest.fixture(name="pretraining_configs")

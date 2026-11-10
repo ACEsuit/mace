@@ -13,10 +13,25 @@
 
 struct CalculationResult {
   double total_energy = 0;
+  // Polar: local readout only; electrostatics is included in total_energy.
   std::vector<double> node_energy;
   std::vector<std::array<double, 3>> forces;
   // eV, in libmace order xx, yy, zz, xy, xz, yz; virial = -V * stress.
   std::array<double, 6> virial{};
+};
+
+// Owns CUDA outputs. Pointers remain valid for this object's lifetime. Calls
+// use the current stream on device 0; the caller must order external CUDA work.
+class DeviceCalculation {
+public:
+  const double *forces() const; // contiguous [N,3], eV/Angstrom, on CUDA
+  double energy() const;        // transfers one scalar to the host
+  CalculationResult to_host(bool calc_virial) const;
+
+private:
+  friend class MACE;
+  struct Outputs;
+  std::shared_ptr<Outputs> outputs_;
 };
 
 class MACE {
@@ -24,6 +39,15 @@ public:
   explicit MACE(const std::string &model_path);
   void reload();
   void print() const;
+  bool accepts_cuda_positions() const;
+  // Full periodic systems only. Device coordinates are contiguous float64 [N,3]
+  // in Angstrom and in atomic_numbers order, allocated in CUDA's primary
+  // context.
+  DeviceCalculation
+  calculate_cuda(const std::array<std::array<double, 3>, 3> &cell,
+                 const double *positions,
+                 const std::vector<int> &atomic_numbers);
+
   CalculationResult
   calculate(const std::array<std::array<double, 3>, 3> &cell,
             const std::array<bool, 3> &pbc,

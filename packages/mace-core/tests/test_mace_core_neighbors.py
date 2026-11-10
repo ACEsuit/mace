@@ -445,12 +445,27 @@ def test_a_backend_registered_through_an_entry_point_is_discovered(
     )
 
 
-def test_a_backend_returning_malformed_edges_is_refused():
+@pytest.mark.parametrize(
+    ("edges", "shifts", "message"),
+    [
+        (np.zeros((3, 1), np.int64), np.zeros((1, 3), np.int64), "edge_index of shape"),
+        (
+            np.zeros((2, 1), np.int64),
+            np.zeros((2, 3), np.int64),
+            "unit_shifts of shape",
+        ),
+        (np.array([[0.0], [1.5]]), np.zeros((1, 3), np.int64), "Expected integers"),
+        (np.array([[0], [1]]), np.array([[0.5, 0.0, 0.0]]), "Expected integers"),
+        (np.array([[0], [999]]), np.zeros((1, 3), np.int64), "edge to atom"),
+        (np.array([[-1], [0]]), np.zeros((1, 3), np.int64), "edge to atom"),
+    ],
+)
+def test_a_backend_returning_malformed_edges_is_refused(edges, shifts, message):
     class Broken(AllPairsBackend):
         def search(self, positions, cutoff, geometry):
-            return np.zeros((3, 1), np.int64), np.zeros((1, 3), np.int64)
+            return edges, shifts
 
-    with pytest.raises(ValueError, match="edge_index of shape"):
+    with pytest.raises(ValueError, match=message):
         get_neighborhood(_cluster(), 2.0, backend=Broken())
 
 

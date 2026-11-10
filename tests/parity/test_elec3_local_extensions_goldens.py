@@ -5,7 +5,7 @@ import json
 import pytest
 import torch
 
-from tests.golden.harness import FP32, FP64_CPU_REFERENCE, FP64_ACCELERATED_BACKEND
+from tests.golden.harness import FP32, FP64_ACCELERATED_BACKEND, FP64_CPU_REFERENCE
 from tests.parity.elec3 import PROFILES
 from tests.parity.elec3_local_extensions import (
     VARIANTS,

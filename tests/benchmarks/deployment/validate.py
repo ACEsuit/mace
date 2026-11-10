@@ -1,4 +1,4 @@
-"""Validate the measured native packages against the cached frozen MP-0 small.
+"""Validate the measured native packages against an explicit native eager oracle.
 
 Also measure MPI Allreduce elapsed time by rank. Non-root waiting includes the
 root's model evaluation, so these times are not isolated wire bandwidth.
@@ -27,16 +27,12 @@ parser.add_argument(
     required=True,
     metavar=("REPEAT", "NATIVE_PACKAGE"),
 )
+parser.add_argument("--oracle", type=Path, required=True, help="Native JSON/safetensors eager reference")
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
-source = Path.home() / ".cache/mace/20231210mace128L0_energy_epoch249model"
-assert (
-    hashlib.sha256(source.read_bytes()).hexdigest()
-    == "2ddb079cee0e131eaaf6912ba581b394551ead283e95c99cfe78c605d10b5736"
-)
-from mace.calculators import MACECalculator
+from mace_torch.calculators import MACECalculator
 
-oracle = MACECalculator(model_paths=source, device="cpu", default_dtype="float64")
+oracle = MACECalculator(model_paths=args.oracle, device="cpu")
 rows = []
 for repeats, native in args.case:
     repeat = int(repeats)
@@ -54,7 +50,7 @@ for repeats, native in args.case:
         expected = oracle.results[key]
         np.testing.assert_allclose(actual, expected, atol=FP32.atol, rtol=FP32.rtol)
         errors[key] = float(np.max(np.abs(actual - expected)))
-    record = {"atoms": len(atoms), "native_vs_legacy_max_errors": errors}
+    record = {"atoms": len(atoms), "native_vs_eager_max_errors": errors}
     prepare(directory, atoms, package, steps=30)
     mdp = directory / "run.mdp"
     mdp.write_text(mdp.read_text().replace("comm-mode = none", "comm-mode = Linear"))

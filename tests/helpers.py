@@ -3,14 +3,12 @@
 Consolidates the fixtures/utilities that used to be copy-pasted across test
 files:
 
-* ``run_mace_train`` — run ``mace/cli/run_train.py`` (or another CLI script)
+* ``run_mace_train`` — run the native train command (or another native CLI)
   in a subprocess with the repo prepended to ``PYTHONPATH``, replicating the
   historical pattern used throughout the suite.
 * canonical availability flags (``CUET_AVAILABLE`` & co.) — one definition
   each, preserving the semantics of the original per-file definitions
   (a real ``import`` where files did a real import, ``find_spec`` otherwise).
-* ``base_mace_params()`` — a fresh copy of the standard training params dict
-  from ``test_run_train.py``.
 
 Note: the shared ``fitting_configs`` / ``pretraining_configs`` fixtures live
 in ``tests/conftest.py``.
@@ -28,35 +26,22 @@ import torch
 
 REPO_ROOT = Path(__file__).parent.parent
 TESTS_ROOT = Path(__file__).parent
-run_train = REPO_ROOT / "mace" / "cli" / "run_train.py"
-preprocess_data = REPO_ROOT / "mace" / "cli" / "preprocess_data.py"
-
-# The launcher entry point each script path routes through, so a run can be
-# pointed at either engine. Keyed by path because the tests pass paths.
-CLI_DIRECTORY = REPO_ROOT / "mace" / "cli"
-LAUNCHER_ENTRY_POINTS = {
-    run_train: "run_train",
-    preprocess_data: "prepare_data",
-    CLI_DIRECTORY / "eval_configs.py": "eval_configs",
-    CLI_DIRECTORY / "select_head.py": "select_head",
-    CLI_DIRECTORY / "create_lammps_model.py": "create_lammps_model",
-    CLI_DIRECTORY / "convert_device.py": "convert_device",
-    CLI_DIRECTORY / "fine_tuning_select.py": "finetuning_select",
-    CLI_DIRECTORY / "plot_train.py": "plot_train",
+CLI_DIRECTORY = REPO_ROOT / "packages/mace-torch/src/mace_torch/cli"
+run_train = CLI_DIRECTORY / "run_train.py"
+preprocess_data = CLI_DIRECTORY / "preprocess_data.py"
+CLI_COMMANDS = {
+    "run_train.py": ("train",),
+    "preprocess_data.py": ("data", "prepare"),
+    "eval_configs.py": ("eval",),
+    "select_head.py": ("model", "select-head"),
+    "create_lammps_model.py": ("export", "lammps"),
+    "convert_device.py": ("model", "convert-device"),
+    "fine_tuning_select.py": ("data", "select"),
+    "plot_train.py": ("plot", "training"),
 }
-
-#: Which engine the black-box suite runs against. Read once, here, rather than
-#: in each test: the tests are not rewritten for v1, they are re-run against it.
-MACE_ENGINE = os.environ.get("MACE_ENGINE", "legacy")
-
-#: What the launcher says when a capability has not been migrated. It is a
-#: clean refusal rather than a crash, which is what lets the suite skip instead
-#: of failing, and matching on it is why it is quoted rather than described.
-NOT_MIGRATED = "not yet available on v1 engine"
 
 
 def v1_command(*command: str) -> list[str]:
-    """A native hierarchical command with no legacy console-script equivalent."""
     return [
         sys.executable,
         "-c",
@@ -66,53 +51,18 @@ def v1_command(*command: str) -> list[str]:
 
 
 def cli_command(script) -> list[str]:
-    """The argv prefix that runs a MACE command line on the selected engine.
-
-    Callers that need `Popen`, or that build their own argv for any other
-    reason, use this instead of writing `[sys.executable, str(script)]`. That
-    spelling hardcodes the legacy script and silently ignores `MACE_ENGINE`, so
-    a test using it reports a v1 result it never produced.
-
-    Args:
-        script: One of the script paths in `LAUNCHER_ENTRY_POINTS`, or any
-            other path, which is returned unrouted.
-    """
-    entry_point = LAUNCHER_ENTRY_POINTS.get(Path(script))
-    if entry_point is None or not launcher_available():
-        return [sys.executable, str(script)]
-    return [
-        sys.executable,
-        "-c",
-        f"from mace_launcher import {entry_point}; {entry_point}()",
-    ]
+    path = Path(script)
+    if path.parent == CLI_DIRECTORY:
+        return v1_command(*CLI_COMMANDS[path.name])
+    return [sys.executable, str(script)]
 
 
 def skip_if_not_migrated(output) -> None:
-    """Skip when the launcher refused because the capability is not migrated.
-
-    For callers that run the command themselves and hold its output. The
-    refusal is a clean one, so it is a skip rather than a failure, and reading
-    it is how a caller that bypasses `run_mace_train` still behaves like one.
-
-    Args:
-        output: The process's combined output, as text or bytes.
-    """
+    """An unavailable native command is a failure after retirement."""
     if isinstance(output, bytes):
         output = output.decode(errors="replace")
-    if NOT_MIGRATED in (output or ""):
-        import pytest
+    assert "not yet available on v1 engine" not in (output or ""), output
 
-        pytest.skip(f"the v1 engine does not carry this capability yet: {NOT_MIGRATED}")
-
-
-def launcher_available() -> bool:
-    """Whether `mace_launcher` can be imported in this environment.
-
-    The legacy-only CI jobs do not install it, and there the tests invoke the
-    script path exactly as they always did. Routing through the launcher is an
-    addition, not a replacement, so those jobs are unaffected.
-    """
-    return importlib.util.find_spec("mace_launcher") is not None
 
 # ---------------------------------------------------------------------------
 # Canonical availability flags.
@@ -162,44 +112,6 @@ LES_AVAILABLE = importlib.util.find_spec("les") is not None
 SCHEDULEFREE_AVAILABLE = importlib.util.find_spec("schedulefree") is not None
 
 CUDA_AVAILABLE = torch.cuda.is_available()
-
-
-# ---------------------------------------------------------------------------
-# Standard training params (verbatim copy of tests/test_run_train.py's
-# historical module-level ``_mace_params``).
-# ---------------------------------------------------------------------------
-
-_BASE_MACE_PARAMS = {
-    "name": "MACE",
-    "valid_fraction": 0.05,
-    "energy_weight": 1.0,
-    "forces_weight": 10.0,
-    "stress_weight": 1.0,
-    "model": "MACE",
-    "hidden_irreps": "128x0e",
-    "r_max": 3.5,
-    "batch_size": 5,
-    "max_num_epochs": 10,
-    "swa": None,
-    "start_swa": 5,
-    "ema": None,
-    "ema_decay": 0.99,
-    "amsgrad": None,
-    "restart_latest": None,
-    "device": "cpu",
-    "seed": 5,
-    "loss": "stress",
-    "energy_key": "REF_energy",
-    "forces_key": "REF_forces",
-    "stress_key": "REF_stress",
-    "eval_interval": 2,
-    "use_reduced_cg": False,
-}
-
-
-def base_mace_params() -> dict:
-    """Return a fresh copy of the standard ``mace_run_train`` params dict."""
-    return _BASE_MACE_PARAMS.copy()
 
 
 def make_fitting_configs():
@@ -266,7 +178,7 @@ def run_mace_train(
     Args:
         mace_params: mapping of CLI flag name -> value (``None`` => bare flag).
         extra_argv: extra raw arguments appended after the flags.
-        script: CLI script path (default: ``mace/cli/run_train.py``).
+        script: Native command adapter path (defaults to training).
         check / capture_output / text / cwd: passed to ``subprocess.run``.
         env_extra: extra environment variables set on top of the copied env.
 
@@ -279,12 +191,7 @@ def run_mace_train(
     run_env["PYTHONPATH"] = ":".join(sys.path)
     if env_extra:
         run_env.update(env_extra)
-    print("DEBUG subprocess PYTHONPATH", run_env["PYTHONPATH"])
 
-    if Path(script) in LAUNCHER_ENTRY_POINTS and launcher_available():
-        # One place, so the whole black-box suite can be pointed at either
-        # engine without a line changing in any test.
-        run_env.setdefault("MACE_ENGINE", MACE_ENGINE)
     cmd = cli_command(script)
     for k, v in mace_params.items():
         if v is None:
@@ -294,48 +201,6 @@ def run_mace_train(
     if extra_argv:
         cmd += [str(a) for a in extra_argv]
 
-    print("Running command:", cmd)
-    if run_env.get("MACE_ENGINE") == "v1":
-        # On the v1 engine a capability that has not been migrated is refused
-        # cleanly, and a refusal is a skip rather than a failure. Seeing it
-        # means reading stderr, so it is captured here whatever the caller
-        # asked for, and handed back in the shape the caller expects. The
-        # alternative is an xfail on every unmigrated capability, which goes
-        # green the day one of them breaks for a different reason.
-        #
-        # Every caller, not only the ones that let output through: a caller
-        # that captures output took the other branch and died on the refusal
-        # instead of skipping, which is how six plotting cases failed a run
-        # they should have sat out.
-        finished = subprocess.run(
-            cmd, env=run_env, check=False, capture_output=True, text=True, cwd=cwd
-        )
-        if not capture_output:
-            if finished.stdout:
-                print(finished.stdout)
-            if finished.stderr:
-                print(finished.stderr, file=sys.stderr)
-        if finished.returncode != 0 and NOT_MIGRATED in (finished.stderr or ""):
-            import pytest
-
-            pytest.skip(
-                f"the v1 engine does not carry this capability yet: "
-                f"{finished.stderr.strip().splitlines()[-1]}"
-            )
-        if check and finished.returncode != 0:
-            raise subprocess.CalledProcessError(
-                finished.returncode, cmd, finished.stdout, finished.stderr
-            )
-        if capture_output and not text:
-            # A caller that asked for bytes gets bytes, so `.stdout.decode()`
-            # keeps working.
-            return subprocess.CompletedProcess(
-                finished.args,
-                finished.returncode,
-                (finished.stdout or "").encode(),
-                (finished.stderr or "").encode(),
-            )
-        return finished
     return subprocess.run(
         cmd,
         env=run_env,

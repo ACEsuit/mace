@@ -71,7 +71,6 @@ def _calls_jit_compile(path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
-@debt.open_debt("DEBT-TOL-PARITY-FP64-CPU")
 def test_debt_parity_fp64_cpu_tolerance_is_gone():
     """The in-process legacy-vs-v1 comparison no longer exists to be toleranced.
 
@@ -104,7 +103,6 @@ def test_debt_parity_fp64_cpu_tolerance_is_gone():
     )
 
 
-@debt.open_debt("DEBT-TOL-PARITY-FP64-ACCEL")
 def test_debt_parity_fp64_accelerated_tolerance_is_gone():
     """The cross-layout term in the accelerated tolerance is gone.
 
@@ -130,23 +128,7 @@ def test_debt_parity_fp64_accelerated_tolerance_is_gone():
 
 
 def _axis_parameters():
-    """One parameter per axis, xfailed while its engine-default row is open.
-
-    The `open_debt` call is written with the f-string inline rather than
-    through a local, because `debt.debt_claims()` reads these ids out of the
-    syntax tree: the constant head `DEBT-ENGINE-DEFAULT-` is what tells the
-    meta-check that these six rows are claimed by a test.
-    """
-    book = debt.rows()
-    parameters = []
-    for name in capabilities.axes():
-        marks = (
-            [debt.open_debt(f"DEBT-ENGINE-DEFAULT-{name}")]
-            if f"DEBT-ENGINE-DEFAULT-{name}" in book
-            else []
-        )
-        parameters.append(pytest.param(name, marks=marks, id=name))
-    return parameters
+    return [pytest.param(name, id=name) for name in capabilities.axes()]
 
 
 @pytest.mark.parametrize("axis", _axis_parameters())
@@ -193,7 +175,6 @@ def test_every_axis_has_an_engine_default_row_or_none_at_all():
 # ---------------------------------------------------------------------------
 
 
-@debt.open_debt("DEBT-JIT-MODULES")
 def test_debt_no_compile_mode_in_legacy_modules():
     """`mace/modules/` carries no TorchScript decorator any more."""
     modules = REPO_ROOT / "mace" / "modules"
@@ -207,7 +188,6 @@ def test_debt_no_compile_mode_in_legacy_modules():
     )
 
 
-@debt.open_debt("DEBT-JIT-CALCULATORS")
 def test_debt_no_lammps_calculators():
     """Neither legacy LAMMPS calculator is in the tree."""
     surviving = [
@@ -221,7 +201,6 @@ def test_debt_no_lammps_calculators():
     assert not surviving, f"the legacy LAMMPS calculators remain: {surviving}"
 
 
-@debt.open_debt("DEBT-JIT-EXPORT")
 def test_debt_no_torchscript_lammps_export():
     """No call site in the tree scripts a model for LAMMPS."""
     export = REPO_ROOT / "mace" / "cli" / "create_lammps_model.py"
@@ -232,7 +211,6 @@ def test_debt_no_torchscript_lammps_export():
     )
 
 
-@debt.open_debt("DEBT-COMPILED-ARTIFACT-BEST-EFFORT")
 def test_debt_no_best_effort_compiled_artifact():
     """Training no longer emits a side artifact that may silently not appear.
 
@@ -410,9 +388,11 @@ def test_a_debt_that_has_been_burned_turns_the_row_red(tmp_path):
     assert "XPASS(strict)" in result.stdout, result.stdout
 
 
-def test_the_marker_this_module_applies_is_strict():
+def test_the_marker_this_module_applies_is_strict(monkeypatch):
     """The decorator has to carry `strict=True`, or the gate above is unused."""
-    marker = debt.open_debt("DEBT-JIT-MODULES").mark
+    row = debt.DebtRow("DEBT-JIT-MODULES", "synthetic debt", "RET-1 (#1597)", "synthetic condition", "test_synthetic")
+    monkeypatch.setattr(debt, "rows", lambda: {row.debt_id: row})
+    marker = debt.open_debt(row.debt_id).mark
     assert marker.name == "xfail"
     assert marker.kwargs.get("strict") is True
     assert "DEBT-JIT-MODULES" in marker.kwargs["reason"]

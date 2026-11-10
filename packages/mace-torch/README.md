@@ -1,4 +1,4 @@
-# mace-torch-v1
+# mace-torch
 
 The [v0.3 → V1 migration guide](https://github.com/ACEsuit/mace/blob/mace-reforge/docs/reforge/migration.md) covers commands,
 Python callers, supported checkpoint conversion and explicit pending work.
@@ -9,7 +9,7 @@ The PyTorch stack for MACE v1: models, training, kernel backends and
 deployment. It depends on `mace_core` and torch, and is the primary training
 and research backend.
 
-Distribution `mace-torch-v1`, import name `mace_torch`. The distribution name
+Distribution `mace-torch`, import name `mace_torch`. The distribution name
 carries a suffix only because the frozen legacy package holds `mace-torch`; it
 is never published and loses the suffix at RET-6.
 
@@ -45,7 +45,7 @@ cmake -S packages/mace-torch/lammps -B build/mace-native \
   -DLAMMPS_LIBRARY=/path/to/liblammps.so \
   -DPython3_EXECUTABLE="$(command -v python)"
 cmake --build build/mace-native
-mace --engine v1 export lammps model.safetensors --native 512 16000
+mace export lammps model.safetensors --native 512 16000
 ```
 
 The two capacities are per MPI rank. The node count includes owned atoms,
@@ -93,7 +93,7 @@ cmake -S packages/mace-torch/lammps -B build/mace-native \
   -DPython3_EXECUTABLE="$(command -v python)" \
   -DCUEQ_OPS_DIR="$(python -c 'import cuequivariance_ops as c; from pathlib import Path; print(Path(c.__file__).parent)')"
 cmake --build build/mace-native
-mace --engine v1 export lammps model.safetensors --native 512 16000 \
+mace export lammps model.safetensors --native 512 16000 \
   --backend cueq --device cuda --output model-cuda.mace-deploy
 ```
 
@@ -111,7 +111,7 @@ provides the Python-free MD loop. Both targets use the canonical checkpoint
 and the exported head and precision. V1 excludes TorchScript exports.
 
 ```bash
-mace --engine v1 export lammps model.safetensors --halo-exchange --backend cueq
+mace export lammps model.safetensors --halo-exchange --backend cueq
 ```
 
 Activate the coupling and register the object before setting the pair style.

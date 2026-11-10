@@ -92,7 +92,14 @@ class _SiteEnergy(nn.Module):
         return site.detach(), gradient.detach()
 
 
-def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None:
+def compile_native(
+    bundle: Path,
+    *,
+    nodes: int,
+    edges: int,
+    device: str,
+    structure: str | Path | None = None,
+) -> None:
     """Compile a fixed-capacity package, with one node reserved for padding.
 
     The native caller supplies receiver-minus-sender displacements [E,3] in Å.
@@ -120,50 +127,84 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
             raise DeployError(
                 "the native cuEq bindings require cuequivariance_ops 0.10.0"
             )
-    if not manifest.halo_exchange and manifest.num_interactions > 1:
+    periodic = deployed.config.model.model == "polar"
+    if not periodic and not manifest.halo_exchange and manifest.num_interactions > 1:
         raise DeployError("multi-layer native export requires --halo-exchange")
-    model = _SiteEnergy(deployed).to(device).eval().requires_grad_(False)
-    dtype = next(model.parameters()).dtype
-    # Keep the probe geometry independent of the rank capacity. Repeating a
-    # sub-Å bond thousands of times produces unphysical densities in trained
-    # models. Real LAMMPS steps put unused edges beyond the cutoff instead.
-    positions = (
-        torch.tensor(
-            [[0, 0, 0], [0.48, 0.02, 0.03], [0.12, 0.45, -0.05]],
-            dtype=dtype,
-            device=device,
-        )[: nodes - 1]
-        * manifest.r_max
-    )
-    pairs = torch.triu_indices(len(positions), len(positions), offset=1, device=device)
-    pairs = torch.stack((pairs, pairs.flip(0)), dim=2).flatten(1)[:, :edges]
-    index = torch.full((2, edges), nodes - 1, dtype=torch.long, device=device)
-    index[:, : pairs.shape[1]] = pairs
-    vectors = positions.new_zeros((edges, 3))
-    vectors[:, 0] = 2 * manifest.r_max
-    vectors[: pairs.shape[1]] = positions[pairs[1]] - positions[pairs[0]]
-    elements = torch.arange(nodes, device=device) % len(deployed.z_table.zs)
-    owned = (torch.arange(nodes, device=device) < len(positions)).to(dtype)
-    args = (vectors, index, elements, owned)
-    # A constant captured derivative could pass at its tracing geometry.
-    # Exercise a second geometry, species ordering and ownership mask too.
-    shifted = vectors.clone()
-    shifted[: pairs.shape[1]] *= vectors.new_tensor([-1.08, -0.94, -1.03])
-    partial = owned.clone()
-    partial[0] = 0
-    variants = (args, (shifted, index.flip(0), elements.roll(1), partial))
+    periodic_metadata: dict[str, str] = {}
+    if periodic:
+        from ase import Atoms
+        from ase.io import read
+
+        from mace_torch.deploy.periodic import periodic_export_inputs
+
+        if structure is None:
+            raise DeployError("Polar native export requires a periodic structure")
+        atoms = read(structure)
+        assert isinstance(atoms, Atoms)
+        model, variants = periodic_export_inputs(
+            deployed, atoms, nodes=nodes, edges=edges, device=device
+        )
+        periodic_metadata["mace_comm_width"] = "0"
+        periodic_metadata["mace_cell"] = " ".join(
+            format(x, ".17g") for x in atoms.cell.array.flat
+        )
+        periodic_metadata["mace_total_charge"] = str(float(model.total_charge.item()))
+        periodic_metadata["mace_total_spin"] = str(float(model.total_spin.item()))
+        periodic_metadata["mace_external_field"] = " ".join(
+            str(x) for x in model.external_field.flatten().tolist()
+        )
+        args = variants[0]
+        dtype = deployed.dtype
+    else:
+        model = _SiteEnergy(deployed).to(device).eval().requires_grad_(False)
+        dtype = next(model.parameters()).dtype
+        # Keep the probe geometry independent of the rank capacity. Repeating a
+        # sub-Å bond thousands of times produces unphysical densities in trained
+        # models. Real LAMMPS steps put unused edges beyond the cutoff instead.
+        positions = (
+            torch.tensor(
+                [[0, 0, 0], [0.48, 0.02, 0.03], [0.12, 0.45, -0.05]],
+                dtype=dtype,
+                device=device,
+            )[: nodes - 1]
+            * manifest.r_max
+        )
+        pairs = torch.triu_indices(
+            len(positions), len(positions), offset=1, device=device
+        )
+        pairs = torch.stack((pairs, pairs.flip(0)), dim=2).flatten(1)[:, :edges]
+        index = torch.full((2, edges), nodes - 1, dtype=torch.long, device=device)
+        index[:, : pairs.shape[1]] = pairs
+        vectors = positions.new_zeros((edges, 3))
+        vectors[:, 0] = 2 * manifest.r_max
+        vectors[: pairs.shape[1]] = positions[pairs[1]] - positions[pairs[0]]
+        elements = torch.arange(nodes, device=device) % len(deployed.z_table.zs)
+        owned = (torch.arange(nodes, device=device) < len(positions)).to(dtype)
+        args = (vectors, index, elements, owned)
+        # A constant captured derivative could pass at its tracing geometry.
+        # Exercise a second geometry, species ordering and ownership mask too.
+        shifted = vectors.clone()
+        shifted[: pairs.shape[1]] *= vectors.new_tensor([-1.08, -0.94, -1.03])
+        partial = owned.clone()
+        partial[0] = 0
+        variants = (args, (shifted, index.flip(0), elements.roll(1), partial))
+
     # Keep the original operator values and derivatives as a separate check
     # on the lowering before the strict eager-versus-capture check.
-    expected_samples = [
-        model(sample[0].detach().requires_grad_(), *sample[1:]) for sample in variants
-    ]
+    def with_grad(sample):
+        return tuple(x.detach().requires_grad_(x.is_floating_point()) for x in sample)
+
+    expected_samples = [model(*with_grad(sample)) for sample in variants]
     grouped_skips = lower_scalar_skips(model.model.backbone.interactions)
-    joint = make_fx(model)(vectors.detach().requires_grad_(), *args[1:])
+    joint = make_fx(model, tracing_mode="fake", _allow_non_fake_inputs=True)(
+        *with_grad(args)
+    )
     aten = make_fx(joint, decomposition_table=reference_lowerings())(*args)
     program = torch.export.export(aten, args, strict=True)
     names = {str(n.target) for n in program.graph.nodes if n.op == "call_function"}
     if (
-        manifest.num_interactions > 1
+        not periodic
+        and manifest.num_interactions > 1
         and not {"mace_native.halo.default", "mace_native.halo_adjoint.default"}
         <= names
     ):
@@ -183,20 +224,32 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
             f"native cuEq requires supported vendor operators; captured {vendor_ops}"
         )
     exported = program.module()
+    atol: float | None = None
+    rtol: float | None = None
+    if periodic and dtype == torch.float32:
+        # Global virials sum many float32 contributions. Repeated CUDA eager
+        # evaluations already differ at this scale; use the existing float32
+        # conformance row instead of torch.testing's generic dtype default.
+        from mace_torch.backends.conformance import TOLERANCES
+
+        atol, rtol = TOLERANCES["float32"]
     for sample, expected in zip(variants, expected_samples, strict=True):
         if grouped_skips:
-            lowered = model(sample[0].detach().requires_grad_(), *sample[1:])
+            lowered = model(*with_grad(sample))
             for value, original in zip(lowered, expected, strict=True):
                 # Site energies can be stored in float64 after a float32 skip.
                 # Compare the two contraction orders at their compute precision.
-                torch.testing.assert_close(value.to(dtype), original.to(dtype))
+                torch.testing.assert_close(
+                    value.to(dtype), original.to(dtype), atol=atol, rtol=rtol
+                )
             expected = lowered
         with torch.no_grad():
             actual = exported(*sample)
         for tensor, reference in zip(actual, expected, strict=True):
-            torch.testing.assert_close(tensor, reference)
+            torch.testing.assert_close(tensor, reference, atol=atol, rtol=rtol)
     metadata = {
         "mace_native_version": "1.0",
+        "mace_evaluation": "periodic_system" if periodic else "local_edges",
         "mace_nodes": str(nodes),
         "mace_edges": str(edges),
         "mace_cutoff": str(manifest.r_max),
@@ -217,6 +270,7 @@ def compile_native(bundle: Path, *, nodes: int, edges: int, device: str) -> None
             )
         ),
     }
+    metadata.update(periodic_metadata)
     torch._inductor.aoti_compile_and_package(
         program,
         package_path=str(bundle / "native.pt2"),

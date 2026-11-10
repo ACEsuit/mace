@@ -65,8 +65,7 @@ def replay_runs(tmp_path_factory, request):
     launch(tmp, document, 'one-go')
     original = config_file(tmp, document, 'select')
     selected = tmp / 'selected.xyz'
-    command([*cli_command(CLI_DIRECTORY / 'fine_tuning_select.py'), '--engine', 'v1',
-             '--config', str(original), '--head', 'memory', '--output', str(selected)])
+    command([*cli_command(CLI_DIRECTORY / 'fine_tuning_select.py'), '--config', str(original), '--head', 'memory', '--output', str(selected)])
     staged = copy.deepcopy(document)
     staged['data']['heads']['memory'].update(train_file=str(selected), subselect=None)
     path = config_file(tmp, staged, 'label')
@@ -144,8 +143,7 @@ def test_fps_selection_runs_from_a_native_checkpoint(replay_runs):
         subselect={'method': 'fps', 'num_samples': 4})
     path = config_file(tmp, document, 'fps')
     output = tmp / 'farthest.xyz'
-    command([*cli_command(CLI_DIRECTORY / 'fine_tuning_select.py'), '--engine', 'v1',
-             '--config', str(path), '--head', 'memory', '--output', str(output)])
+    command([*cli_command(CLI_DIRECTORY / 'fine_tuning_select.py'), '--config', str(path), '--head', 'memory', '--output', str(output)])
     frames = read(output, ':')
     assert len(frames) == 4
     assert len({tuple(atoms.positions.reshape(-1)) for atoms in frames}) == 4
@@ -162,11 +160,10 @@ def test_cli_cached_descriptors_do_not_load_a_foundation(replay_runs):
     np.save(matrix, np.arange(6, dtype=float).reshape(-1, 1))
     document['data']['heads']['memory'].update(
         train_file=str(source),
-        subselect={'method': 'fps', 'num_samples': 3, 'descriptors': str(matrix)})
+        subselect={'method': 'fps', 'num_samples': 3, 'structure_descriptors_file': str(matrix)})
     path = config_file(tmp, document, 'cached')
     output = tmp / 'cached.xyz'
-    command([*cli_command(CLI_DIRECTORY / 'fine_tuning_select.py'), '--engine', 'v1',
-             '--config', str(path), '--head', 'memory', '--output', str(output)])
+    command([*cli_command(CLI_DIRECTORY / 'fine_tuning_select.py'), '--config', str(path), '--head', 'memory', '--output', str(output)])
     frames = read(source, ':')
     for atoms, index in zip(read(output, ':'), (1, 5, 3), strict=True):
         np.testing.assert_array_equal(atoms.positions, frames[index].positions)
@@ -184,8 +181,7 @@ def test_selection_cli_refuses_invalid_execution_inputs(replay_runs, wrong):
     path = config_file(tmp, document, 'invalid-' + wrong)
     output = tmp / ('invalid-' + wrong + '.xyz')
     result = subprocess.run(
-        [*cli_command(CLI_DIRECTORY / 'fine_tuning_select.py'), '--engine', 'v1',
-         '--config', str(path), '--head', 'memory', '--output', str(output)],
+        [*cli_command(CLI_DIRECTORY / 'fine_tuning_select.py'), '--config', str(path), '--head', 'memory', '--output', str(output)],
         capture_output=True, text=True, check=False)
     assert result.returncode != 0
     assert ('device' if wrong == 'device' else 'missing') in result.stdout + result.stderr

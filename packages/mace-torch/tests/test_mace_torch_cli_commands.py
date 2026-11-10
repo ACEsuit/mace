@@ -472,16 +472,16 @@ def test_eval_descriptor_options_and_optional_columns(artifact, tmp_path):
 
 
 @pytest.mark.parametrize("requested_dtype", ["float32", "float64"])
-def test_eval_from_launcher_converts_precision(artifact, tmp_path, requested_dtype):
+def test_eval_cli_converts_precision(artifact, tmp_path, requested_dtype):
     source, target = tmp_path / "source.xyz", tmp_path / "float32.xyz"
     atoms = water(True)
     write(source, [atoms])
-    command = cli_command(REPO_ROOT / "mace/cli/eval_configs.py")
+    command = cli_command(
+        REPO_ROOT / "packages/mace-torch/src/mace_torch/cli/eval_configs.py"
+    )
     finished = subprocess.run(
         [
             *command,
-            "--engine",
-            "v1",
             "--model",
             str(artifact),
             "--configs",

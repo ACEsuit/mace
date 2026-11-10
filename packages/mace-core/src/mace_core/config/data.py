@@ -246,6 +246,7 @@ class DataConfig(ConfigSection):
         statistics_file: A precomputed statistics document. Statistics
             normally travel with the prepared shards; this is the path for a
             legacy `statistics.json` and for a dataset prepared elsewhere.
+            A recorded normalization method must match the scale the run uses.
         graph_input_keys: File keys of the declared graph-level inputs.
         embedding_specs: User-declared input features, by name. Declaring one
             is what makes a quantity that is neither a position nor a label

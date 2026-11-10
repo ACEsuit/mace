@@ -32,7 +32,7 @@ Row = check_inventory.Row
 SourceSet = check_inventory.SourceSet
 
 
-def _row(ident, disposition="KEEP", pinned="`tests/unit/test_compile.py`"):
+def _row(ident, disposition="KEEP", pinned="`tests/retirement/test_frozen_anchors.py`"):
     return Row(
         ident=ident,
         feature="`--thing`",
@@ -171,12 +171,12 @@ def test_row_hygiene_accepts_the_deliberate_escapes():
         # therefore worse than an honest ⚠️ gap marker.
         ("`tests/unit/test_not_here.py`", "does not exist on disk"),
         (
-            "`tests/workflows/test_run_train.py::test_never_written`",
+            "`tests/workflows/test_run_train_v1.py::test_never_written`",
             "no `test_never_written` exists",
         ),
         # Every path in a compound pin is claimed, not just the leading one.
         (
-            "`tests/unit/test_compile.py` + `tests/unit/test_gone.py`",
+            "`tests/retirement/test_frozen_anchors.py` + `tests/unit/test_gone.py`",
             "does not exist on disk",
         ),
         # And the hole the "must resolve" rule left open: a path that exists
@@ -187,7 +187,7 @@ def test_row_hygiene_accepts_the_deliberate_escapes():
         ("`tests/unit`", "the whole fast CPU tier"),
         ("`tests/workflows`", "the whole e2e tier"),
         ("`tests/extensions`", "the whole optional-dependency tier"),
-        ("`tests/unit/test_compile.py` + `tests/unit`", "the whole fast CPU tier"),
+        ("`tests/retirement/test_frozen_anchors.py` + `tests/unit`", "the whole fast CPU tier"),
     ],
 )
 def test_a_pin_that_resolves_to_nothing_is_rejected(pin, expected):
@@ -229,7 +229,7 @@ def test_a_v1_package_suite_is_as_coarse_a_pin_as_a_legacy_tier():
     suite has to be rejected the way a whole legacy tier is. The depth rule
     does that by itself, counting from the package's own `tests`.
     """
-    legacy = "`tests/unit/test_data_utils.py::test_default_keys_are_exactly_these_thirteen`"
+    legacy = "`tests/retirement/test_frozen_anchors.py::test_artifact_provenance`"
     coarse = f"{legacy} + `packages/mace-core/tests`"
     problems = check_inventory.check_pins([_row("x.a", pinned=coarse)])
     assert any("only 1 levels deep" in p for p in problems), problems
@@ -241,7 +241,7 @@ def test_a_v1_package_suite_is_as_coarse_a_pin_as_a_legacy_tier():
     assert check_inventory.check_pins([_row("x.a", pinned=specific)]) == []
 
 
-def test_a_v1_pin_may_not_stand_alone_in_a_cell():
+def test_a_native_pin_may_stand_alone_after_retirement():
     """The second pin is evidence that the capability exists on the other
     side, never a substitute for the first. This file is about what the frozen
     tree does, and a test in the rewrite cannot say whether the rewrite still
@@ -252,14 +252,14 @@ def test_a_v1_pin_may_not_stand_alone_in_a_cell():
         "::test_the_default_keys_are_exactly_these_twelve`"
     )
     problems = check_inventory.check_pins([_row("x.a", pinned=alone)])
-    assert any("free text" in p for p in problems), problems
+    assert problems == []
 
 
 def test_a_v1_pin_naming_a_test_that_does_not_exist_is_caught():
     """A path outside `tests/` used to be skipped, which would have made every
     v1 pin unverifiable -- coverage by assertion, which is what these rules
     exist to prevent."""
-    legacy = "`tests/unit/test_data_utils.py::test_default_keys_are_exactly_these_thirteen`"
+    legacy = "`tests/retirement/test_frozen_anchors.py::test_artifact_provenance`"
 
     missing = f"{legacy} + `packages/mace-core/tests/test_mace_core_data_configuration.py::test_nope`"
     problems = check_inventory.check_pins([_row("x.a", pinned=missing)])
@@ -275,13 +275,13 @@ def test_a_directory_pin_may_still_name_a_test_inside_it():
     makes even a coarse directory specific again."""
     assert (
         check_inventory.check_pins(
-            [_row("x.a", pinned="`tests/unit::test_run_train_lbfgs`")]
+            [_row("x.a", pinned="`tests/unit::test_the_tiny_task_trains_on_the_v1_engine`")]
         )
         != []
     ), "that test does not live under tests/unit, so this must still fail"
     assert (
         check_inventory.check_pins(
-            [_row("x.a", pinned="`tests/workflows::test_run_train_lbfgs`")]
+            [_row("x.a", pinned="`tests/workflows::test_the_tiny_task_trains_on_the_v1_engine`")]
         )
         == []
     )
@@ -290,14 +290,14 @@ def test_a_directory_pin_may_still_name_a_test_inside_it():
 @pytest.mark.parametrize(
     "pin",
     [
-        "`tests/unit/test_compile.py`; committee ⚠️ gap (§12.1)",
-        "⚠️ gap (add a case to `tests/workflows/test_cli_contracts.py`)",
+        "`tests/retirement/test_frozen_anchors.py`; committee ⚠️ gap (§12.1)",
+        "⚠️ gap (add a case to `tests/workflows/test_run_train_v1.py`)",
         "⚠️ gap (idem — spelled `--disallow_random_padding`, stored inverted)",
-        "`tests/unit/test_compile.py`",
+        "`tests/retirement/test_frozen_anchors.py`",
         "`tests/extensions/magnetic`",
-        "`tests/extensions/magnetic::test_run_magnetic_scf`",
-        "`tests/workflows/test_run_train.py::test_run_train_lbfgs`",
-        "`tests/extensions/les` + `tests/unit/test_compile.py`",
+        "`tests/retirement::test_artifact_provenance`",
+        "`tests/workflows/test_run_train_v1.py::test_the_tiny_task_trains_on_the_v1_engine`",
+        "`tests/extensions/les` + `tests/retirement/test_frozen_anchors.py`",
         "`tests/golden/anchors.py::ANCHORS[tiny_mace]`",
         "the suite itself",
         "the lint job itself",
@@ -558,7 +558,7 @@ def test_the_audit_says_nothing_about_a_row_nothing_covers():
 
 def test_a_pinned_row_is_not_audited():
     """Only gap rows are claims about the suite; a pin is checked by the gate."""
-    pinned = _gap_row("out.calc.energy_var", gap="`tests/unit/test_compile.py`")
+    pinned = _gap_row("out.calc.energy_var", gap="`tests/retirement/test_frozen_anchors.py`")
     assert check_inventory.audit_gaps([pinned]) == []
 
 

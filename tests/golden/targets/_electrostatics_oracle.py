@@ -13,7 +13,16 @@ PINS = {
 
 
 def run_capture(module: str):
-    root = Path(__file__).resolve().parents[3]
+    source = os.environ.get("MACE_GOLDEN_ORACLE_CHECKOUT")
+    if source is None:
+        raise RuntimeError(
+            "Recapture requires MACE_GOLDEN_ORACLE_CHECKOUT at the pre-retirement "
+            "revision fdef2fb577925cd8e7b66876403870128e69ec97; see docs/guide/goldens.md"
+        )
+    root = Path(source).resolve()
+    revision = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    if revision != "fdef2fb577925cd8e7b66876403870128e69ec97":
+        raise RuntimeError(f"Unexpected historical oracle revision: {revision}")
     sources = Path(os.environ.get("MACE_ELEC3_SOURCES", str(root / "scripts")))
     for name, revision in PINS.items():
         checkout = sources / name

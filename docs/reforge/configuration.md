@@ -122,10 +122,10 @@ training:
 ## Check before running
 
 ```sh
-mace --engine v1 config validate --config run.yaml
-mace --engine v1 config validate --config run.yaml --show minimal
-mace --engine v1 config validate --config run.yaml --show resolved
-mace --engine v1 train --config run.yaml
+mace config validate --config run.yaml
+mace config validate --config run.yaml --show minimal
+mace config validate --config run.yaml --show resolved
+mace train --config run.yaml
 ```
 
 Validation reads the configuration and checks the schema and cross-section
@@ -146,8 +146,8 @@ explanations and their configuration paths.
 Legacy files are converted explicitly before training:
 
 ```sh
-mace --engine v1 migrate --output run.yaml -- legacy.yaml
-mace --engine v1 train --config run.yaml
+mace migrate --output run.yaml -- legacy.yaml
+mace train --config run.yaml
 ```
 
 The training command reads the structured V1 schema. Existing explicit CLI flags

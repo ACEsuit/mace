@@ -18,7 +18,7 @@ import pytest
 from tests.golden.foundation_artifacts import ARTIFACTS
 from tests.golden.harness import FP32, FP64_CPU_REFERENCE
 from tests.workflows.test_data_sources_v1 import launch
-from tests.workflows.test_finetuning_pseudolabels import _make_small_real_head_dataset
+from tests.workflows.replay_fixtures import _make_small_real_head_dataset
 from tests.workflows.test_run_train_v1 import needs_the_v1_engine, training_records
 
 pytestmark = [needs_the_v1_engine, pytest.mark.network]
@@ -34,7 +34,7 @@ HEADS = {
 
 @pytest.mark.parametrize('device', ['cpu', pytest.param('cuda', marks=pytest.mark.gpu)])
 @pytest.mark.parametrize('name,seed,count', [('mh_0', 42, 3), ('mh_1', 43, 3), ('omol', 44, 5)])
-def test_published_foundation_replay_starts_at_zero_error(tmp_path, monkeypatch, name, seed, count, device):
+def test_published_foundation_replay_starts_at_zero_error(tmp_path, monkeypatch, name, seed, count, device, legacy_python):
     from mace_core.artifacts import resolve_artifact
     from mace_core.observables import DEFAULT_CATALOGUE
     from mace_torch.deploy.legacy import convert_legacy
@@ -53,7 +53,7 @@ def test_published_foundation_replay_starts_at_zero_error(tmp_path, monkeypatch,
     monkeypatch.setenv('PYTHONPATH', os.pathsep.join(
         [str(GOLDEN.parents[1]), os.environ.get('PYTHONPATH', '')]))
     conversion = convert_legacy(source, tmp_path / 'foundation', DEFAULT_CATALOGUE,
-                                python=sys.executable)
+                                python=legacy_python)
     assert conversion.model.heads == HEADS[name]
     foundation_path = conversion.checkpoint.with_suffix('.safetensors')
     del conversion
@@ -129,7 +129,7 @@ def test_published_foundation_replay_starts_at_zero_error(tmp_path, monkeypatch,
 
 @pytest.mark.parametrize('device', ['cpu', pytest.param('cuda', marks=pytest.mark.gpu)])
 @pytest.mark.parametrize('name', ['mh_1', 'omol'])
-def test_published_foundation_trains_updates_weights_and_reloads(tmp_path, monkeypatch, fitting_configs, name, device):
+def test_published_foundation_trains_updates_weights_and_reloads(tmp_path, monkeypatch, fitting_configs, name, device, legacy_python):
     import torch
     from ase.io import write
     from mace_core.artifacts import resolve_artifact
@@ -153,7 +153,7 @@ def test_published_foundation_trains_updates_weights_and_reloads(tmp_path, monke
     monkeypatch.setenv('PYTHONPATH', os.pathsep.join(
         [str(GOLDEN.parents[1]), os.environ.get('PYTHONPATH', '')]))
     conversion = convert_legacy(source, tmp_path / 'foundation', DEFAULT_CATALOGUE,
-                                python=sys.executable)
+                                python=legacy_python)
     foundation_path = conversion.checkpoint.with_suffix('.safetensors')
     del conversion
     gc.collect()

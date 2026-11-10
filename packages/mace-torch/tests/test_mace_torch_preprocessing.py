@@ -226,6 +226,7 @@ def test_explicit_statistics_are_consumed_without_recomputation(
         ("r_max", 9.0),
         ("atomic_numbers", [1]),
         ("atomic_energies", {1: 0.0, 8: 0.0}),
+        ("normalization_method", "std"),
         ("normalization_scale", -1.0),
         ("mean", float("nan")),
         ("avg_num_neighbors", -1.0),
@@ -241,6 +242,28 @@ def test_statistics_must_match_the_resolved_model_inputs(tmp_path, field, value)
     settings["data"]["statistics_file"] = str(path)
     with pytest.raises(DataStageError, match=field):
         run_data_stage(ResolvedConfig.model_validate(settings), CATALOGUE)
+
+
+def test_energy_spread_cannot_be_reused_as_force_rms(tmp_path):
+    config = configuration(tmp_path)
+    source = config.model_copy(
+        update={"model": config.model.model_copy(update={"scaling": "std"})}
+    )
+    measured = run_data_stage(source, CATALOGUE).statistics
+    path = tmp_path / "energy-statistics.json"
+    path.write_text(measured.to_json())
+    selected = config.model_copy(
+        update={"data": config.data.model_copy(update={"statistics_file": str(path)})}
+    )
+    assert selected.model.scaling == "rms_forces"
+    with pytest.raises(DataStageError, match="normalization_method"):
+        run_data_stage(selected, CATALOGUE)
+
+    # Disabling normalization still permits reuse of the neighbour count.
+    unscaled = selected.model_copy(
+        update={"model": selected.model.model_copy(update={"scaling": "none"})}
+    )
+    assert run_data_stage(unscaled, CATALOGUE).statistics == measured
 
 
 @pytest.mark.parametrize("scaling", ["no_scaling", "std_scaling", "rms_forces_scaling"])

@@ -12,10 +12,8 @@
 #                    routinely dropped from hand-written enumerations, and a
 #                    manifest missing one would be silently short.
 #   kind = "axis"    a functional slice of the product -- energy, data,
-#                    dipoles, deployment. An axis is what `--engine` selects
-#                    and therefore what has a default to flip; a probe does
-#                    not. Every axis maps 1:1 onto the RET-* ticket that
-#                    deletes its legacy half.
+#                    dipoles, deployment. Every axis maps 1:1 onto the RET-*
+#                    ticket that deleted its legacy half.
 #
 # STATE is the migration state, and the four values are ordered:
 #
@@ -24,9 +22,8 @@
 #   v1-default  --engine defaults to v1 for it; legacy kept as the oracle
 #   retired     the legacy half is deleted
 #
-# Everything is `legacy` today, which is the honest reading of an empty
-# packages/ scaffold and is what makes the fitness tests xfail rather than
-# pass by accident.
+# V1 has retired the legacy implementation. The historical state vocabulary
+# remains so migration provenance and retirement contracts can be checked.
 #
 # WHAT IS GENERATED FROM THIS FILE. Three pieces of CI configuration are
 # derived, never hand-maintained beside it:
@@ -59,91 +56,90 @@ probe_source = "tests/conftest.py::CAPABILITY_PROBES"
 # ---------------------------------------------------------------------------
 [shared_ci_paths]
 paths = [
-    "setup.cfg",
     "pyproject.toml",
     "tests/conftest.py",
     "tests/helpers.py",
     "tests/architecture/capabilities.toml",
     ".github/workflows/ci-extensions.yaml",
     ".github/actions/setup-mace/**",
-    "mace/modules/**",
-    "mace/tools/**",
-    "mace/data/**",
+    "packages/mace-core/**",
+    "packages/mace-torch/**",
+    "tests/retirement/**",
 ]
 
 # ===========================================================================
-# Functional axes -- one per RET-* ticket, and what `--engine` selects
+# Functional axes -- one per RET-* ticket
 # ===========================================================================
 
 [capabilities.energy]
 kind = "axis"
-state = "legacy"
+state = "retired"
 summary = "Energy, forces and stress: the MACE / ScaleShiftMACE family and the derivative engine around it."
 burn_step = "RET-1 (#1597)"
 legacy_surface = ["mace/modules/models.py", "mace/modules/blocks.py", "mace/modules/radial.py", "mace/modules/symmetric_contraction.py", "mace/modules/loss.py", "mace/modules/utils.py"]
 
 [[capabilities.energy.coverage_floors]]
-path = "mace/modules/loss.py"
+path = "packages/mace-torch/src/mace_torch/train/loss.py"
 floor = 90
 
 [[capabilities.energy.coverage_floors]]
-path = "mace/modules/radial.py"
+path = "packages/mace-torch/src/mace_torch/nn/radial.py"
 floor = 90
 
 [[capabilities.energy.coverage_floors]]
-path = "mace/modules/utils.py"
+path = "packages/mace-torch/src/mace_torch/physics/outputs.py"
 floor = 85
 
 [capabilities.data]
 kind = "axis"
-state = "legacy"
+state = "retired"
 summary = "The data layer: Configuration parsing, AtomicData, neighbour lists, HDF5/LMDB datasets and the vendored torch_geometric."
 burn_step = "RET-2 (#1598)"
 legacy_surface = ["mace/data/**", "mace/tools/torch_geometric/**"]
 
 [[capabilities.data.coverage_floors]]
-path = "mace/data/utils.py"
+path = "packages/mace-core/src/mace_core/data/configuration.py"
 floor = 85
 
 [[capabilities.data.coverage_floors]]
-path = "mace/data/neighborhood.py"
+path = "packages/mace-core/src/mace_core/neighbors/neighborhood.py"
 floor = 95
 
 [[capabilities.data.coverage_floors]]
-path = "mace/data/atomic_data.py"
+path = "packages/mace-core/src/mace_core/graph/collate.py"
 floor = 85
 
 [capabilities.backends]
 kind = "axis"
-state = "legacy"
+state = "retired"
 summary = "Accelerated kernel backends and the cross-layout weight conversions between them."
 burn_step = "RET-3 (#1599)"
 legacy_surface = ["mace/cli/convert_e3nn_cueq.py", "mace/cli/convert_cueq_e3nn.py", "mace/cli/convert_e3nn_oeq.py", "mace/cli/convert_oeq_e3nn.py", "mace/cli/convert_e3nn_hybrid.py", "mace/tools/cg_cueq_tools.py"]
 
 [capabilities.backends.ci]
 filter = "backends"
-paths = ["mace/cli/convert_*.py", "tests/backends/**", "tests/golden/**"]
+paths = ["packages/mace-core/**", "packages/mace-torch/**", "tests/parity/**", "tests/retirement/**", "tests/golden/**", "requirements/**"]
 
 [capabilities.backends.ci.path_notes]
-"tests/golden/**" = "The backend goldens live with the other goldens, not in tests/backends: they are cueq/oeq tests that happen to assert against a committed reference. Without this line a change to them is reviewed by no job that has cuequivariance installed."
+"tests/golden/**" = "Frozen backend references and native backend tests share this job; changes to the committed references must reach the installed optional backend."
 
 [capabilities.dipole]
 kind = "axis"
-state = "legacy"
+state = "retired"
 summary = "Non-energy observables: the dipole, dielectric, polar and magnetic model classes and extensions.py."
 burn_step = "RET-4 (#1600)"
 legacy_surface = ["mace/modules/extensions.py", "mace/modules/field_blocks.py"]
 
 [capabilities.lammps]
 kind = "axis"
-state = "legacy"
+state = "retired"
 summary = "Deployment to LAMMPS: the TorchScript export path and the two LAMMPS calculators."
 burn_step = "RET-5 (#1601)"
 legacy_surface = ["mace/cli/create_lammps_model.py", "mace/calculators/lammps_mace.py", "mace/calculators/lammps_mliap_mace.py"]
 
 [capabilities.training]
 kind = "axis"
-state = "legacy"
+state = "retired"
 summary = "The training entry point and the mace/tools god-module behind it: the loop, checkpointing, multihead and fine-tuning."
 burn_step = "RET-6 (#1602)"
 legacy_surface = ["mace/tools/**", "mace/cli/run_train.py"]
@@ -159,134 +155,134 @@ legacy_surface = ["mace/tools/**", "mace/cli/run_train.py"]
 
 [capabilities.gpu]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "A CUDA or ROCm device. Hardware rather than a dependency, and vendor-agnostic by design: tests write device=\"cuda\", which is valid on ROCm."
 owned_by = "energy"
 burn_step = "RET-1 (#1597)"
 
 [capabilities.cueq]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "cuEquivariance: NVIDIA's accelerated equivariant kernels, and the internal weight layout that comes with them."
 owned_by = "backends"
 burn_step = "RET-3 (#1599)"
 
 [capabilities.oeq]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "OpenEquivariance: the vendor-neutral accelerated kernel backend, JIT-compiled against a real toolkit."
 owned_by = "backends"
 burn_step = "RET-3 (#1599)"
 
 [capabilities.polar]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "graph_longrange: the k-space electrostatics behind PolarMACE."
 owned_by = "dipole"
 burn_step = "RET-4 (#1600)"
 
 [capabilities.polar.ci]
 filter = "polar"
-paths = ["mace/cli/polar_density_cube.py", "mace/calculators/**", "tests/extensions/polar/**", "requirements/polar.txt", "tests/golden/**"]
+paths = ["packages/mace-core/**", "packages/mace-torch/**", "tests/parity/**", "tests/retirement/**", "tests/golden/**", "requirements/**"]
 
 [capabilities.polar.ci.path_notes]
 "tests/golden/**" = "The MACE-Polar golden lives here, and this is the only PR-time job with graph_longrange, so a change to tests/golden that this job would catch must be able to start it."
 
 [capabilities.les]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "les: latent Ewald summation, an external long-range correction."
 owned_by = "dipole"
 burn_step = "RET-4 (#1600)"
 
 [capabilities.les.ci]
 filter = "les"
-paths = ["tests/extensions/les/**", "tests/golden/**", "mace/calculators/**", "mace/cli/eval_configs.py", "requirements/les.txt", "packages/mace-core/pyproject.toml", "packages/mace-torch/pyproject.toml", "packages/mace-core/src/**", "packages/mace-torch/src/**", "packages/mace-torch/tests/test_mace_torch_maceles.py", "packages/mace-torch/tests/test_mace_torch_les_bec.py", "tests/parity/test_les_model_parity.py"]
+paths = ["packages/mace-core/**", "packages/mace-torch/**", "tests/parity/**", "tests/retirement/**", "tests/golden/**", "requirements/**"]
 
 [capabilities.les.ci.path_notes]
-"tests/golden/**" = "The golden anchors run in this job, and two of the three surfaces they pin live outside mace/modules: the external-field and BEC handling in the calculator, and the eval CLI's flattened latent multipoles. Without these paths a change to either would not run the job that holds its numbers."
+"tests/golden/**" = "The frozen LES anchor, calculator field/BEC handling and native evaluation tests run with the pinned external solver."
 
 [capabilities.magnetic]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "sphericart: the spherical harmonics behind the MagneticMACE family and its two extra default property keys."
 owned_by = "dipole"
 burn_step = "RET-4 (#1600)"
 
 [capabilities.magnetic.ci]
 filter = "magnetic"
-paths = ["mace/calculators/**", "mace/cli/**", "tests/extensions/magnetic/**", "tests/golden/**"]
+paths = ["packages/mace-core/**", "packages/mace-torch/**", "tests/parity/**", "tests/retirement/**", "tests/golden/**", "requirements/**"]
 
 [capabilities.magnetic.ci.path_notes]
-"tests/golden/**" = "This job owns the magnetic goldens too: they live in tests/golden and are the only place that runs them with sphericart installed, so a change there has to reach it."
+"tests/golden/**" = "The native magnetic implementation is checked against the frozen magnetic anchor."
 
 [capabilities.torchsim]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "torch-sim-atomistic: an alternative MD runtime driving the calculator."
 owned_by = "training"
 burn_step = "RET-6 (#1602)"
 
 [capabilities.torchsim.ci]
 filter = "torchsim"
-paths = ["mace/calculators/**", "tests/extensions/torchsim/**", "packages/mace-torch/src/**", "packages/mace-core/src/**", "packages/mace-torch/pyproject.toml", "packages/mace-torch/tests/test_mace_torch_torchsim.py", "requirements/torchsim.txt", "tests/parity/test_torchsim_parity.py"]
+paths = ["packages/mace-core/**", "packages/mace-torch/**", "tests/parity/**", "tests/retirement/**", "tests/golden/**", "requirements/**"]
 
 [capabilities.schedulefree]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "schedulefree: the schedule-free optimizer variants selectable from the training CLI."
 owned_by = "training"
 burn_step = "RET-6 (#1602)"
 
 [capabilities.schedulefree.ci]
 filter = "schedulefree"
-paths = ["tests/extensions/schedulefree/**"]
+paths = ["packages/mace-torch/src/mace_torch/train/**", "packages/mace-torch/tests/test_mace_torch_optimizer_modes.py", "tests/workflows/**"]
 
 [capabilities.wandb]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "wandb: the experiment tracker the six --wandb flags configure."
 owned_by = "training"
 burn_step = "RET-6 (#1602)"
 
 [capabilities.bin_lammps]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "A working LAMMPS python module with ML-IAP python coupling. An external binary rather than an import, which is why its probe imports rather than probing a spec."
 owned_by = "lammps"
 burn_step = "RET-5 (#1601)"
 
 [capabilities.network]
 kind = "probe"
-state = "legacy"
+state = "retired"
 summary = "Outbound network access, for the foundation-model downloads. Never autodetected: an explicit opt-in via MACE_CI_ALLOW_NETWORK=1, so PR jobs stay deterministic."
 owned_by = "training"
 burn_step = "RET-6 (#1602)"
 
 [capabilities.bin_openmm]
 kind = "probe"
-state = "v1-default"
+state = "retired"
 summary = "OpenMM-Torch PythonTorchForce for the V1 energy-model callback. Real import checks the extension and its shared libraries."
 owned_by = "energy"
 burn_step = "DEP-3 (#1595), new V1 integration without a legacy implementation"
 
 [capabilities.bin_libmace]
 kind = "probe"
-state = "v1-default"
+state = "retired"
 summary = "The native libmace C++ driver loads its AOT runtime dependencies; Fortran cases additionally require the compatible MPI module."
 owned_by = "energy"
 burn_step = "DEP-3 (#1595), new V1 integration without a legacy implementation"
 
 [capabilities.bin_openmm_native]
 kind = "probe"
-state = "v1-default"
+state = "retired"
 summary = "Standalone OpenMM C++ driver over the native V1 libmace runtime, without Python."
 owned_by = "energy"
 burn_step = "DEP-3 (#1595), native implementation requested alongside the direct callback"
 
 [capabilities.bin_gromacs]
 kind = "probe"
-state = "v1-default"
+state = "retired"
 summary = "A working GROMACS binary identifying the native MACE AOTInductor integration. Stock TorchScript builds do not satisfy the probe."
 owned_by = "energy"
 burn_step = "New V1 native integration requested alongside DEP-3; no legacy GROMACS adapter"

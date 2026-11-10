@@ -23,7 +23,7 @@ import torch
 from mace_core.config.precision import PrecisionConfig
 from mace_core.config.resolved import ResolvedConfig
 from mace_core.elements import AtomicNumberTable
-from mace_core.metadata import ModelMetadata
+from mace_core.metadata import ElectrostaticsRecord, ModelMetadata
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
     ObservableCatalogue,
@@ -47,13 +47,15 @@ class DeployError(ValueError):
 
 @dataclass(frozen=True)
 class DeployedModel:
-    """A model ready to evaluate, with what its checkpoint says about it.
+    """A model ready to evaluate, with its source and effective configuration.
 
     Attributes:
         engine: The model inside its derivative engine, which is what computes
             forces and stress around it.
         config: The effective configuration, including deployment overrides.
-        metadata: The checkpoint's record.
+        source_metadata: The original checkpoint record, before runtime overrides.
+        metadata: The record to save with the current model, derived from its
+            effective configuration and solver.
         z_table: Its element table.
         heads: Its heads, in the order the model indexes them.
         e0s: Its isolated-atom energies per head, ``head -> Z -> eV``, as the
@@ -64,13 +66,26 @@ class DeployedModel:
 
     engine: nn.Module
     config: ResolvedConfig
-    metadata: ModelMetadata
+    source_metadata: ModelMetadata
     z_table: AtomicNumberTable
     heads: tuple[str, ...]
     e0s: Mapping[str, Mapping[int, float]]
     outputs: RequestedOutputs
     path: Path
     manifest: DeployManifest | None = None
+
+    @property
+    def metadata(self) -> ModelMetadata:
+        """The current model's checkpoint record; the source remains unchanged."""
+        updates: dict[str, Any] = {
+            "config": self.source_metadata.config.model_copy(
+                update={"resolved": self.config.to_resolved_dict()}
+            )
+        }
+        solver_record = getattr(self.model, "solver_record", None)
+        if callable(solver_record):
+            updates["electrostatics"] = ElectrostaticsRecord(**solver_record())
+        return self.source_metadata.model_copy(update=updates)
 
     def select_head(self, head: str | None = None) -> str:
         """The head this deployment evaluates, or the checkpoint default."""
@@ -179,13 +194,6 @@ class DeployedModel:
                 "model": self.config.model.model_copy(update={"magnetic": magnetic})
             }
         )
-        metadata = self.metadata.model_copy(
-            update={
-                "config": self.metadata.config.model_copy(
-                    update={"resolved": config.to_resolved_dict()}
-                )
-            }
-        )
         # Some backend FX modules reconstruct CPU coefficient buffers when
         # deep-copied. Restore the runtime device without casting op dtypes.
         engine = deepcopy(self.engine).to(next(self.engine.parameters()).device)
@@ -196,7 +204,7 @@ class DeployedModel:
         # A compiled callable may still close over the unprojected model.
         # Copy the actual operator policies/device, but compile the new forward anew.
         engine._compiled_model = None
-        return replace(self, engine=engine, config=config, metadata=metadata)
+        return replace(self, engine=engine, config=config)
 
 
 def load_deployed(
@@ -312,7 +320,7 @@ def load_deployed(
     return DeployedModel(
         engine=_with_fixed_point(engine, config),
         config=config,
-        metadata=metadata,
+        source_metadata=metadata,
         z_table=z_table,
         heads=heads,
         e0s=e0s,

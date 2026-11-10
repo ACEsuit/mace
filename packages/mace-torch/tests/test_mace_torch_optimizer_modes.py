@@ -20,7 +20,7 @@ def test_missing_schedulefree_dependency_has_an_install_hint(monkeypatch):
     monkeypatch.setattr(optimizers, "AdamWScheduleFree", None)
     model = nn.Module()
     model.node_embedding = nn.Linear(2, 2)
-    with pytest.raises(ImportError, match=r"mace-torch-v1\[schedulefree\]"):
+    with pytest.raises(ImportError, match=r"mace-torch\[schedulefree\]"):
         optimizers.build_optimizer(
             model, TrainingConfig(optimizer={"kind": "schedulefree"})
         )

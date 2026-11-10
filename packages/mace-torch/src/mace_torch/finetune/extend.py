@@ -336,7 +336,7 @@ def _metadata(
         )
     return parent.metadata.model_copy(
         update={
-            "provenance": Provenance(versions={"mace-torch-v1": __version__}),
+            "provenance": Provenance(versions={"mace-torch": __version__}),
             "heads": heads,
             "elements": [int(z) for z in sorted({*parent.z_table.zs, *added})],
             "parents": [

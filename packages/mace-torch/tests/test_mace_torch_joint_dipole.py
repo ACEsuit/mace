@@ -145,7 +145,7 @@ def test_scalar_final_layer_checkpoint_is_refused(tmp_path):
     metadata = ModelMetadata(
         elements=[1],
         config=ConfigRecord.from_config(config),
-        provenance=Provenance(versions={"mace-torch-v1": "before-joint-fix"}),
+        provenance=Provenance(versions={"mace-torch": "before-joint-fix"}),
         heads={
             "default": HeadSummary(
                 e0=e0_details(config.data.heads["default"].e0s, {"H": 0.0})

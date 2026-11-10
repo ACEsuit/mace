@@ -87,8 +87,6 @@ def both_ranks(
             subprocess.Popen(
                 [
                     *cli_command(run_train),
-                    "--engine",
-                    "v1",
                     "--config",
                     str(config),
                     *arguments,
@@ -170,7 +168,7 @@ def test_a_distributed_run_resumes_from_its_checkpoints(tmp_path, stop_epoch, la
     config = tiny_task(tmp_path)
     settings = {
         "training.ema.enabled": True,
-        "training.scheduler.kind": {"kind": "exponential", "gamma": 0.8},
+        "training.scheduler": {"kind": "exponential", "gamma": 0.8},
     }
     first = both_ranks(config, "--max_num_epochs", str(stop_epoch), settings=settings, launcher=launcher)
     for rank, finished in enumerate(first):

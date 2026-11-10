@@ -128,7 +128,10 @@ def test_every_axis_names_a_legacy_surface_that_exists():
     for name, cap in capabilities.axes().items():
         assert cap.legacy_surface, f"{name}: no legacy_surface recorded"
         for pattern in cap.legacy_surface:
-            if not list(REPO_ROOT.glob(pattern)):
+            present = list(REPO_ROOT.glob(pattern))
+            if cap.state == "retired":
+                assert not present, f"retired {name} still contains {pattern}"
+            elif not present:
                 missing.setdefault(name, []).append(pattern)
     assert not missing, (
         f"axes naming a legacy surface that does not resolve: {missing}. If it "

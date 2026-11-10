@@ -74,7 +74,7 @@ def _block(
             cutoff=PolynomialCutoffConfig(polynomial_order=6),
             apply_cutoff=apply_cutoff,
         ),
-        str(torch.get_default_dtype()).removeprefix("torch."),
+        ("float64" if torch.get_default_dtype() == torch.float64 else "float32"),
     )
 
 
@@ -90,7 +90,9 @@ def test_node_embedding_is_a_row_lookup_of_the_weight():
         LinearSpec(
             irreps_in="3x0e",
             irreps_out="5x0e",
-            precision=str(torch.get_default_dtype()).removeprefix("torch."),
+            precision=(
+                "float64" if torch.get_default_dtype() == torch.float64 else "float32"
+            ),
         )
     )
     block.initialize_weights(0)
@@ -112,7 +114,9 @@ def test_node_embedding_initialisation_scale():
         LinearSpec(
             irreps_in="16x0e",
             irreps_out="4096x0e",
-            precision=str(torch.get_default_dtype()).removeprefix("torch."),
+            precision=(
+                "float64" if torch.get_default_dtype() == torch.float64 else "float32"
+            ),
         )
     )
     block.initialize_weights(0)
@@ -227,7 +231,7 @@ def test_a_basis_config_builds_the_module_it_names(config, expected_module):
     built = build_radial_embedding(
         ReferenceBackend(),
         ModelConfig(r_max=EMBEDDING_R_MAX, radial_basis=config),
-        str(torch.get_default_dtype()).removeprefix("torch."),
+        ("float64" if torch.get_default_dtype() == torch.float64 else "float32"),
     ).radial.basis
     _assert_same_module(built, expected_module())
 
@@ -264,7 +268,7 @@ def test_the_cutoff_config_builds_the_envelope_at_the_given_radius():
     built = build_radial_embedding(
         ReferenceBackend(),
         ModelConfig(r_max=4.0, cutoff=PolynomialCutoffConfig(polynomial_order=3)),
-        str(torch.get_default_dtype()).removeprefix("torch."),
+        ("float64" if torch.get_default_dtype() == torch.float64 else "float32"),
     ).radial.cutoff
     _assert_same_module(built, PolynomialCutoff(r_max=4.0, polynomial_order=3))
 

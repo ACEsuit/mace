@@ -102,7 +102,7 @@ runs:
           # Measured with sysmon: 98s, and byte-identical totals. Ignored
           # without harm below 3.12, where sys.monitoring does not exist.
           export COVERAGE_CORE=sysmon
-          args+=( --cov=mace )
+          args+=( --cov=mace_core --cov=mace_torch --cov=mace_jax )
           if [ "$IN_COVERAGE" = "data" ]; then
             # Empty --cov-report: keep only .coverage, for the combining job.
             args+=( --cov-report= )

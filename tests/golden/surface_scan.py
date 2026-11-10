@@ -37,6 +37,7 @@ Three surfaces:
 from __future__ import annotations
 
 import ast
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
@@ -806,3 +807,43 @@ def _constructor_defaults(tree: ast.AST) -> Dict[str, Any]:
             if isinstance(default, ast.Constant) and isinstance(default.value, str):
                 out.setdefault(arg.arg, default.value)
     return out
+
+
+# Original output schema: captured by the extractors above before RET-6.
+# Explicit synthetic paths continue to exercise those extractors in test_harness.
+def _frozen_surface(name):
+    path = REPO_ROOT / "tests/retirement/artifacts/legacy_output_surface.json"
+    return json.loads(path.read_text())[name]
+
+
+_scan_calculator_source = scan_calculator_surface
+_scan_model_source = scan_model_surface
+_scan_eval_source = scan_eval_surface
+
+
+def scan_calculator_surface(paths=None):
+    if paths is not None and any(not path.is_relative_to(PACKAGE_ROOT) for path in paths):
+        return _scan_calculator_source(paths)
+    payload = _frozen_surface("calculator")
+    selected = payload["keys"] if paths is None else {key: value for key, value in payload["keys"].items() if any(key.startswith(str(path.relative_to(REPO_ROOT)) + "::") for path in paths)}
+    return Scan(keys={key: set(value) for key, value in selected.items()}, unresolved=payload["unresolved"])
+
+
+def scan_model_surface(paths=None):
+    if paths is not None and any(not path.is_relative_to(PACKAGE_ROOT) for path in paths):
+        return _scan_model_source(paths)
+    payload = _frozen_surface("model")
+    selected = payload["keys"] if paths is None else {key: value for key, value in payload["keys"].items() if any(key.startswith(str(path.relative_to(REPO_ROOT)) + "::") for path in paths)}
+    return Scan(keys={key: set(value) for key, value in selected.items()}, unresolved=payload["unresolved"])
+
+
+def scan_eval_surface(path=EVAL_CLI):
+    if path != EVAL_CLI:
+        return _scan_eval_source(path)
+    payload, stores = _frozen_surface("eval")
+    return Scan(keys={key: set(value) for key, value in payload["keys"].items()}, unresolved=payload["unresolved"]), stores
+
+
+def scan_input_surface():
+    payload = _frozen_surface("input")
+    return InputSurface(stores=payload["stores"], spellings={key: set(value) for key, value in payload["spellings"].items()})

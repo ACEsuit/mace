@@ -2,9 +2,14 @@
 // https://github.com/openmm/openmm/blob/8.6.1/openmmapi/include/openmm/internal/CustomCPPForceImpl.h
 // OpenMM owns force distribution, device context selection and force groups.
 #include "MaceForce.h"
+#ifdef MACE_OPENMM_CUDA
+#include "CudaMaceForce.h"
+#endif
 #include "mace.h"
+#include <iostream>
 #include <memory>
 #include <openmm/OpenMMException.h>
+#include <openmm/Platform.h>
 #include <openmm/System.h>
 #include <openmm/internal/ContextImpl.h>
 #include <openmm/internal/CustomCPPForceImpl.h>
@@ -20,8 +25,31 @@ public:
     if (context.getSystem().getNumParticles() != int(owner_.numbers_.size()))
       throw OpenMM::OpenMMException(
           "MaceForce atomic numbers must match all System particles");
+      // The base initialize registers asynchronous host callbacks on CUDA.
+      // Only initialize it when this force actually uses the host
+      // implementation.
+#ifdef MACE_OPENMM_CUDA
+    if (owner_.periodic_ && context.getPlatform().getName() == "CUDA")
+      cuda_ = create_cuda_force(context, owner_.package_, owner_.numbers_);
+    if (cuda_) {
+      std::clog << "MACE_OPENMM_DEVICE_IO cuda\n";
+      return;
+    }
+#endif
     model_ = std::make_unique<MACE>(owner_.package_);
     CustomCPPForceImpl::initialize(context);
+  }
+  double calcForcesAndEnergy(OpenMM::ContextImpl &context, bool includeForces,
+                             bool includeEnergy, int groups) override {
+#ifdef MACE_OPENMM_CUDA
+    if (cuda_) {
+      if ((groups & (1 << owner_.getForceGroup())) == 0)
+        return 0;
+      return cuda_->execute(context, includeForces, includeEnergy);
+    }
+#endif
+    return CustomCPPForceImpl::calcForcesAndEnergy(context, includeForces,
+                                                   includeEnergy, groups);
   }
   double computeForce(OpenMM::ContextImpl &context,
                       const std::vector<OpenMM::Vec3> &positions,
@@ -53,6 +81,9 @@ public:
 private:
   const MaceForce &owner_;
   std::unique_ptr<MACE> model_;
+#ifdef MACE_OPENMM_CUDA
+  std::unique_ptr<CudaMaceForce> cuda_;
+#endif
 };
 
 MaceForce::MaceForce(std::string package, std::vector<int> numbers,

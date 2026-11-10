@@ -127,15 +127,7 @@ def test_the_checker_leaves_a_mention_alone(snippet):
     assert not replay_branches(snippet), snippet
 
 
-def test_the_checker_finds_the_legacy_branches():
-    """The ticket counts at least four in legacy. A checker finding fewer
-    there would pass on v1 for the wrong reason."""
-    found = {
-        path.relative_to(REPO_ROOT).as_posix(): replay_branches(path.read_text())
-        for path in _sources(LEGACY)
-    }
-    found = {path: lines for path, lines in found.items() if lines}
-    assert sum(len(lines) for lines in found.values()) >= 4, found
+
 
 
 def test_there_are_v1_sources_to_check():

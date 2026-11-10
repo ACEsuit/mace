@@ -284,7 +284,7 @@ def test_this_package_declares_train_and_export_config():
     found = cli.discover()
     for path in (("train",), ("model", "export-config")):
         assert found[path].command is not None, found[path].reason
-        assert found[path].distribution == "mace-torch-v1"
+        assert found[path].distribution == "mace-torch"
 
 
 def test_the_training_flags_are_the_legacy_spellings_and_few():

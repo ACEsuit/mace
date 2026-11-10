@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CHARACTERIZATION = REPO_ROOT / "tests" / "unit" / "test_physics_glue.py"
+CHARACTERIZATION = REPO_ROOT / "tests" / "retirement" / "physics_conventions.py"
 UNITS = REPO_ROOT / "packages" / "mace-core" / "src" / "mace_core" / "units.py"
 
 #: The v1 constant holding each statement, and the bullet the characterization

@@ -1,12 +1,38 @@
 # MACE documentation
 
-- [Migrate v0.3 workflows to V1](reforge/migration.md): commands, Python API,
-  model conversion, compatibility decisions and pending publication.
-- [V1 configuration](reforge/configuration.md) and [command line](reforge/cli.md).
-- [Foundation registry](reforge/model_registry.md) and [artifact cache](reforge/artifacts.md).
-- [Deployment integrations](reforge/integration_support.md).
-- [Extend MACE](reforge/extending_mace.md) and [write a plugin](reforge/extending_plugin.md).
-- [Published v0.3 documentation](https://mace-docs.readthedocs.io/en/latest/).
+This is the in-tree V1 reference documentation. Model and package publication,
+external Read the Docs activation and deletion of the old remote docs branch
+remain pending. [Migration](reforge/migration.md) explains the v0.3 transition.
 
-This in-tree landing page is prepared on V1. Publishing it to the external docs
-site and consolidating that site's branches remain REL-3 work.
+```{toctree}
+:maxdepth: 2
+:caption: User guide
+
+guide/quickstart
+guide/data-training
+guide/evaluation
+guide/backends
+guide/electrostatics
+guide/magnetic
+guide/deployment
+guide/examples
+guide/capabilities
+guide/goldens
+guide/contributing
+guide/consolidation
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Native reference
+
+reforge/configuration
+reforge/cli
+reforge/migration
+reforge/model_registry
+reforge/artifacts
+reforge/integration_support
+reforge/extending_mace
+reforge/extending_plugin
+reforge/reference_branch
+```

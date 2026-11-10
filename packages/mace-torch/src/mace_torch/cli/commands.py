@@ -202,9 +202,15 @@ def _lammps_arguments(parser):
         help=(
             "Compile native.pt2 for the LAMMPS pair style. "
             "Node slots include ghosts and one padding atom."
+            " For Polar they equal the atom count in --structure."
         ),
     )
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument(
+        "--structure",
+        type=Path,
+        help="Polar: periodic XYZ fixing cell, atom count, charge, spin and field.",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--head")
     parser.add_argument("--dtype", choices=("float32", "float64"))
@@ -231,6 +237,7 @@ def _lammps(args):
             compile_regions=args.compile_regions,
             native_capacity=args.native,
             device=args.device,
+            structure=args.structure,
         )
     )
     return 0

@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import ast
 import configparser
+import json
+from functools import wraps
 import re
 import sys
 import tomllib
@@ -771,6 +773,43 @@ def source_default_keys() -> dict[str, Decl]:
     raise SystemExit("DefaultKeys not found — the extractor is stale")
 
 
+# RET-6: the enumerable legacy surface is a frozen specification. Runtime
+# markers remain live; generic AST extractors below still test synthetic inputs.
+_FROZEN_REPO = REPO
+
+def _historical_source(function, prefix):
+    @wraps(function)
+    def read():
+        if REPO != _FROZEN_REPO:
+            return function()
+        document = json.loads((REPO / "tests/retirement/artifacts/legacy_surface.json").read_text())
+        group = next(item for item in document if item["prefix"] == prefix)
+        return {key: Decl(**value) for key, value in group["decls"].items()}
+    return read
+
+source_entry_points = _historical_source(source_entry_points, 'ep.')
+source_train_dests = _historical_source(source_train_dests, 'train.')
+source_preprocess_dests = _historical_source(source_preprocess_dests, 'prep.')
+source_cli_dests = _historical_source(source_cli_dests, 'cli.')
+source_model_choices = _historical_source(source_model_choices, 'choice.')
+source_model_classes = _historical_source(source_model_classes, 'model.')
+source_registries = _historical_source(source_registries, 'reg.')
+source_radial_classes = _historical_source(source_radial_classes, 'radial.')
+source_block_classes = _historical_source(source_block_classes, 'block.')
+source_contraction_classes = _historical_source(source_contraction_classes, 'contraction.')
+source_data_transforms = _historical_source(source_data_transforms, 'transform.')
+source_calculator_classes = _historical_source(source_calculator_classes, 'calc.class.')
+source_loss_classes = _historical_source(source_loss_classes, 'loss.')
+source_calculator_params = _historical_source(source_calculator_params, 'calc.param.')
+source_calculator_exports = _historical_source(source_calculator_exports, 'calc.export.')
+source_extras = _historical_source(source_extras, 'extra.')
+source_model_output_keys = _historical_source(source_model_output_keys, 'out.model.')
+source_calculator_result_keys = _historical_source(source_calculator_result_keys, 'out.calc.')
+source_eval_output_keys = _historical_source(source_eval_output_keys, 'out.eval.')
+source_env_vars = _historical_source(source_env_vars, 'env.')
+source_default_keys = _historical_source(source_default_keys, 'key.')
+
+
 def collect_sources() -> list[SourceSet]:
     return [
         SourceSet("entry points", "ep.", "entry points", source_entry_points()),
@@ -934,6 +973,11 @@ def check_pins(rows: list[Row]) -> list[str]:
             # `tests` with no slash is caught here too: it resolves on disk,
             # so leaving it to the free-text rule below would reject it for
             # the wrong reason.
+            if span.startswith("historical:"):
+                historical = json.loads((REPO / "tests/retirement/artifacts/historical_pins.json").read_text())
+                if span.removeprefix("historical:") not in historical:
+                    problems.append(f"{row.ident}: unknown historical pin {span!r}")
+                continue
             legacy_path = span.rstrip("/") == "tests" or span.startswith("tests/")
             if not legacy_path and not V1_TEST_PATH.match(span):
                 continue  # flag and command names quoted inside gap prose
@@ -964,7 +1008,7 @@ def check_pins(rows: list[Row]) -> list[str]:
             continue
         if pin.startswith("⚠️"):
             continue
-        if re.match(r"`tests/", pin):
+        if re.match(r"`(?:tests/|historical:tests/)", pin) or V1_TEST_PATH.match(pin.lstrip("`")):
             continue
 
         problems.append(

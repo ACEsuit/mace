@@ -1,4 +1,4 @@
-"""Proves the install, import and test wiring of the mace-torch-v1 package."""
+"""Proves the install, import and test wiring of the mace-torch package."""
 
 import mace_torch
 

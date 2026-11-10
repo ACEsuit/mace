@@ -1,4 +1,4 @@
-"""Native C++/C and Fortran libmace against the frozen anchors."""
+"""Native deployment against eager and frozen numerical references."""
 
 import json
 import os
@@ -9,18 +9,10 @@ import numpy as np
 import pytest
 from ase.io import read
 from mace_torch.deploy.bundle import export_lammps
-from mace_torch.deploy.neutral_io import import_neutral
-from mace_torch.train import write_model
 
 from tests.golden.harness import FP32, FP64_CPU_REFERENCE
 from tests.integrations.libmace._harness import geometry_text, run_driver, unpack
-from tests.parity.test_fm_convert_legacy import (
-    CATALOGUE,
-    FIXTURES,
-    GOLDEN,
-    extract_here,
-    reference,
-)
+from tests.retirement.anchors import ARTIFACTS, FIXTURES, reference
 
 pytestmark = [pytest.mark.bin_libmace, pytest.mark.slow]
 
@@ -29,16 +21,11 @@ pytestmark = [pytest.mark.bin_libmace, pytest.mark.slow]
 def native_package(request, tmp_path_factory):
     import torch
 
-    directory = tmp_path_factory.mktemp("libmace")
     previous = torch.get_default_dtype()
     torch.set_default_dtype(torch.float64)
     try:
         name = request.param
-        neutral = extract_here(
-            GOLDEN / "models" / f"{name}.model", directory / "neutral"
-        )
-        imported = import_neutral(neutral, CATALOGUE)
-        checkpoint = write_model(directory / "v1", imported.engine, imported.metadata)
+        checkpoint = ARTIFACTS / f"{name}.json"
         bundle = export_lammps(
             checkpoint,
             halo_exchange=True,
@@ -68,26 +55,23 @@ def frames_for(name):
 
 
 def virial_of(calculator, atoms):
-    batch = calculator._atoms_to_batch(atoms)
-    output = calculator.models[0](batch.to_dict(), compute_virials=True)
-    matrix = output["virials"][0].detach().numpy()
+    graph, _ = calculator._graph(atoms, padded=False)
+    output = calculator.models[0].engine(graph, compute=("virials",), training=False)
+    matrix = output.derivatives["virials"][0].detach().numpy()
     matrix = 0.5 * (matrix + matrix.T)
     return matrix[[0, 1, 2, 0, 0, 1], [0, 1, 2, 1, 2, 2]]
 
 
 @pytest.mark.parametrize("interface", ["cpp", "c", "fortran"])
-def test_libmace_matches_legacy_and_committed_goldens(
+def test_libmace_matches_eager_and_committed_goldens(
     native_package, interface, tmp_path, fp64, isolated
 ):
     from mace_torch.calculators import MACECalculator
-
-    from mace.calculators import MACECalculator as FrozenCalculator
+    from mace_torch.calculators import MACECalculator as FrozenCalculator
 
     name, checkpoint, package = native_package
     frames, goldens = frames_for(name)
-    frozen = FrozenCalculator(
-        model_paths=GOLDEN / "models" / f"{name}.model", default_dtype="float64"
-    )
+    frozen = FrozenCalculator(model_paths=ARTIFACTS / f"{name}.json")
     current = MACECalculator(checkpoint)
     ranks = 2 if interface == "fortran" else 1
     results = run_driver(package, frames, tmp_path, interface=interface, ranks=ranks)
@@ -172,8 +156,8 @@ def test_libmace_rejects_unknown_elements_and_capacity_overflow(
 @pytest.mark.gpu
 @pytest.mark.cueq
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
-def test_cuda_libmace_cueq_matches_legacy(dtype, tmp_path, fp64, isolated):
-    from mace.calculators import MACECalculator as FrozenCalculator
+def test_cuda_libmace_cueq_matches_eager(dtype, tmp_path, fp64, isolated):
+    from mace_torch.calculators import MACECalculator as FrozenCalculator
 
     root = Path(__file__).resolve().parents[2]
     package = (
@@ -189,9 +173,7 @@ def test_cuda_libmace_cueq_matches_legacy(dtype, tmp_path, fp64, isolated):
         / "native.pt2"
     )
     frames, _ = frames_for("tiny_scaleshift")
-    reference_model = FrozenCalculator(
-        model_paths=GOLDEN / "models/tiny_scaleshift.model", default_dtype="float64"
-    )
+    reference_model = FrozenCalculator(model_paths=ARTIFACTS / "tiny_scaleshift.json")
     row = FP32 if dtype == "float32" else FP64_CPU_REFERENCE
     errors = {}
     for interface, ranks in (("c", 1), ("fortran", 2)):

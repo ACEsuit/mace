@@ -28,9 +28,11 @@ def test_reused_fixed_capacity_keeps_a_padding_atom(overflow):
     if overflow == "error":
         with pytest.raises(PaddingOverflowError, match="does not fit"):
             pipeline.prepare(graph)
+        assert pipeline.capacity is not None
         assert pipeline.capacity.nodes == 2
     else:
         padded, info = pipeline.prepare(graph)
+        assert pipeline.capacity is not None
         assert pipeline.capacity.nodes == 3
         assert padded["positions"].shape == (3, 3)
         assert info.n_real_nodes == 2
@@ -111,6 +113,7 @@ def test_auto_bucket_overflow_is_one_retrace_or_a_loud_error(overflow):
         assert pipeline.capacity == first
     else:
         pipeline(graphs["water_cluster"])
+        assert pipeline.capacity is not None
         assert pipeline.capacity is not None
         assert pipeline.capacity.nodes > first.nodes
         assert pipeline.capacity.edges % 8 == 0

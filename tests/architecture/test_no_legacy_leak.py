@@ -127,12 +127,10 @@ def package_sources() -> list[Path]:
     return sorted(path for path in PACKAGES.rglob("*.py") if path not in LEGACY_SIDE)
 
 
-def legacy_top_level_classes() -> set[str]:
-    found: set[str] = set()
-    for path in (LEGACY_MODELS, LEGACY_EXTENSIONS):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        found.update(n.name for n in tree.body if isinstance(n, ast.ClassDef))
-    return found - NOT_MODELS
+def legacy_top_level_classes():
+    from tests.golden.check_inventory import source_model_classes
+    return set(source_model_classes()) - NOT_MODELS
+
 
 
 def test_no_packages_file_names_a_legacy_symbol():
@@ -177,21 +175,10 @@ def test_the_denylist_covers_every_legacy_model_class():
 
 
 def test_the_denylist_covers_every_legacy_registry():
-    tree = ast.parse(LEGACY_REGISTRIES.read_text(encoding="utf-8"))
-    declared = set()
-    for node in tree.body:
-        target = None
-        if isinstance(node, ast.AnnAssign):
-            target = node.target
-        elif isinstance(node, ast.Assign) and node.targets:
-            target = node.targets[0]
-        name = getattr(target, "id", None)
-        if name and name.endswith(("_classes", "_dict")):
-            declared.add(name)
-    assert declared == LEGACY_REGISTRY_NAMES, (
-        f"registries in legacy: {sorted(declared)}; on the denylist: "
-        f"{sorted(LEGACY_REGISTRY_NAMES)}"
-    )
+    from tests.golden.check_inventory import source_registries
+    declared = {declaration.detail for declaration in source_registries().values()}
+    assert declared == LEGACY_REGISTRY_NAMES
+
 
 
 def test_names_v1_reuses_are_not_denied():

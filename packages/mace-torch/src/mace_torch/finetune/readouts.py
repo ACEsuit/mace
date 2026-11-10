@@ -107,7 +107,7 @@ def extend_readouts(
             "config": ConfigRecord(
                 user=parent.metadata.config.user, resolved=config.to_resolved_dict()
             ),
-            "provenance": Provenance(versions={"mace-torch-v1": __version__}),
+            "provenance": Provenance(versions={"mace-torch": __version__}),
             "parents": [
                 ParentModel(
                     role="initial_weights",

@@ -22,7 +22,7 @@ from mace_core.config.model import ModelConfig
 from mace_core.metadata import ModelMetadata
 
 logger = logging.getLogger(__name__)
-Family = Literal["mace_mp", "mace_off", "mace_omol", "mace_mdp", "mace_polar"]
+FoundationFamily = Literal["mace_mp", "mace_off", "mace_omol", "mace_mdp", "mace_polar"]
 # These published names have no size tier. The FM-3 naming exception preserves
 # them explicitly instead of assigning an invented medium/large classification.
 _UNSIZED_IDS = frozenset({"mace-mh-0", "mace-mh-1", "mace-mdp"})
@@ -64,7 +64,7 @@ class RegistryEntry(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     model_id: str
-    family: Family
+    family: FoundationFamily
     aliases: tuple[str, ...]
     default: bool = False
     default_dtype: Literal["float32", "float64"]
@@ -132,7 +132,7 @@ def list_models() -> tuple[RegistryEntry, ...]:
     return tuple(entry.model_copy(deep=True) for entry in _entries())
 
 
-def family_default_dtype(family: Family) -> str:
+def family_default_dtype(family: FoundationFamily) -> str:
     values = {entry.default_dtype for entry in _entries() if entry.family == family}
     if len(values) != 1:
         raise ValueError(f"{family}: registry must declare one default dtype")
@@ -150,7 +150,7 @@ def get_model(model_id: str) -> RegistryEntry:
     raise KeyError(f"unknown foundation model {model_id!r}; use list_models()")
 
 
-def resolve_model(model: str | None, *, family: Family) -> RegistryEntry:
+def resolve_model(model: str | None, *, family: FoundationFamily) -> RegistryEntry:
     """Resolve canonical names or legacy aliases; announce defaults and aliases."""
     if model in retired_models():
         raise RetiredModelError(f"{model} is retired; use {retired_models()[model]}")

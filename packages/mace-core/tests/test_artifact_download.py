@@ -320,7 +320,7 @@ def test_a_cached_artifact_is_read_with_no_network(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize(
     "entry",
-    [entry for entry in ROSTER if entry.family is not None],
+    [entry for entry in ROSTER if entry.architecture is not None],
     ids=lambda entry: f"{entry.loader}-{entry.name}",
 )
 def test_a_file_under_a_legacy_name_is_adopted_where_it_is(tmp_path, entry):
