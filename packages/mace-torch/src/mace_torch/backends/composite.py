@@ -194,6 +194,16 @@ class CompositeBackend:
         )
         return span
 
+    def prepare_inference(self, spec: Any, weights: Any) -> Any | None:
+        """Forward an explicit request made from the resolved member specs.
+
+        Preparation sees the loaded model's effective precisions and layout,
+        not a fresh dispatch or an implicit promotion of the region's policy.
+        The public preparation helper validates and owns the returned snapshot.
+        """
+        factory = getattr(self.primary, "prepare_inference", None)
+        return None if factory is None else factory(spec, weights)
+
     def decline_interaction_layer(self, reason: str) -> None:
         """Record a layer whose members cannot form a described span."""
         self.decisions.append(

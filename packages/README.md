@@ -340,6 +340,7 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_core/kernels/capabilities.py` | What a kernel backend declares it can build. |
 | `mace_core/kernels/specs.py` | Every dispatched op, described before a backend builds it. |
 | `mace_core/kernels/spans.py` | Closed edge-convolution span shape. |
+| `mace_core/kernels/inference.py` | Optional product/readout and complete interaction fusion shapes with canonical weight roles. |
 | `mace_core/kernels/paths.py` | The tensor-product paths of the convolution and their order. |
 | `mace_core/kernels/precision.py` | Dtype names, and which is wider. |
 | `mace_core/kernels/protocol.py` | The interface a kernel backend implements. |
@@ -387,6 +388,8 @@ compilation and CUDA replay. No accelerated span ships with this contract.
 | `mace_torch/backends/conformance.py` | The checks every kernel backend passes against the reference. |
 | `mace_torch/backends/spans.py` | Public stateless span call, capability declaration and build-time validation. |
 | `mace_torch/backends/span_conformance.py` | Span values, derivatives, symmetry, edge order, padding and compiler conformance. |
+| `mace_torch/backends/inference.py` | Optional preparation of canonical weights into independent inference snapshots. |
+| `mace_torch/backends/inference_conformance.py` | Prepared values, input adjoints, declared second derivatives and buffer immutability. |
 | `mace_torch/backends/layout.py` | Views of feature tensors in the agreed canonical `mul_ir` layout. |
 | `mace_torch/backends/cueq.py` | The cuEquivariance backend: linear, convolution, contraction and skip on NVIDIA's kernels. |
 | `mace_torch/backends/oeq.py` | The OpenEquivariance backend: the fused convolution. |

@@ -66,6 +66,119 @@ registry or a change to the stateless call signature. The shared conformance
 suite accepts explicit cases and checks outputs, live-weight gradients,
 second derivatives, equivariance, layouts, padding and both edge-run views.
 
+## Prepared inference regions
+
+`mace_core.kernels.inference` adds two optional shapes alongside the existing
+live-weight spans:
+
+- `ProductReadoutSpec`: symmetric contraction, channel mixing, optional residual
+  addition and optional linear readout. By default it returns node features as
+  well as the readout. A terminal caller needing only the readout can explicitly
+  set `return_features=False`, allowing the backend to avoid materializing an
+  unused intermediate. Keep features enabled for subsequent layers or consumers.
+- `InteractionFusionSpec`: input linear, radial/harmonic convolution, output
+  linear and normalization, species-dependent skip, product and optional linear
+  readout. The skip acts on the message for a plain interaction and on the input
+  features for a residual interaction. Density normalization and both cutoff
+  placements retain their existing algebra.
+
+These are closed descriptions of existing operations, not a general graph
+rewriter. The declarations validate the connected irreps, element tables and
+activation layout. Each member retains its explicit precision and product
+policy. `interface_dtype` separately records the floating input/output dtype;
+internal compute policies do not silently change boundary casts. All weights
+enter in canonical reduced form with the existing path
+normalization. Nonlinear readouts, conditioned nonlinear interactions and other
+unrepresented combinations continue through their existing operations. No
+model family loses a path because a backend declines a region.
+
+The optional Torch extension is
+`mace_torch.backends.inference.InferenceBackend.prepare_inference(spec, weights)`.
+An existing registered kernel backend may implement it without another registry.
+It is not a new required method on `KernelBackend`. The public
+`prepare_inference(backend, spec, weights)` helper returns `None` when the method
+is absent or the backend declines, or a `PreparedInference` snapshot on success.
+The caller retains the original operations on `None`; errors are not declines.
+Selection is explicit and happens outside execution. Existing model builders
+and native exporters do not automatically activate this optional API.
+The composite and precision wrappers preserve the optional factory. Build the
+request from the loaded model's resolved member specifications and interface
+dtype; preparation does not rerun precision negotiation or replace those policies.
+
+### Weight preparation and lifetime
+
+`weights` maps each name in `spec.weight_roles` to the existing
+`canonical_state(member)` mapping. This reuses canonical component paths and
+tensor names, including model constants. For example:
+
+```python
+from mace_torch.backends.inference import prepare_inference
+from mace_torch.serialization import canonical_state
+
+weights = {
+    "contraction": canonical_state(product.contraction),
+    "linear": canonical_state(product.linear),
+    "readout": canonical_state(readout),
+}
+prepared = prepare_inference(backend, product_readout_spec, weights)
+# If prepared is None, retain the existing product and readout operations.
+# Otherwise: features, values = prepared((message, element, residual))
+```
+
+For a complete interaction, `radial_basis` is the radial backend operator's
+canonical state; its specification carries the cutoff. `normalization` contains
+only the interaction body's root canonical state, `{"": {"neighbours": tensor}}`.
+This role is replaced by `density` when normalization is learned. Product roles
+are prefixed with `product.`. A distance transform has its own role when present.
+
+The helper gives the backend detached copies of the supplied canonical tensors.
+The backend returns `InferencePreparation(operation, tensors)`: a stateless
+operation and derived tensors. It can fold compatible linear maps, incorporate
+normalization or pack species tables during this preparation. The helper owns
+copies of the resulting tensors as nonpersistent buffers. Preparation never
+rewrites the canonical source and is not performed in `forward`.
+
+The prepared object is an independent snapshot, not a hidden cache of a live
+model. Reprepare after changing weights, device, dtype or specifications. Its
+`.train(True)`, device/dtype conversion and canonical checkpoint save are refused
+with a message directing the caller to the source model. Continue saving and
+training that model normally. A deployment artifact produced with `torch.export`
+may contain derived tensors; it is not a second canonical checkpoint format.
+
+### Runtime and validation
+
+The stateless operation receives `(inputs, tensors)` and returns a tensor tuple.
+Input and output ordering are declared by the shape. Geometry, atom indices and
+connectivity are live inputs, not weight preparation state. Outputs retain all
+nodes, including ghost slots; ownership masks, graph reductions and MPI exchanges
+stay outside the region. A region cannot cross a required communication boundary.
+
+`SpanCapabilities(False, False)` is sufficient for first-derivative inference;
+input adjoints are always required for forces and stress. A backend declaring
+double backward must also reproduce those derivatives. Training continues through
+the original operations; a caller requesting a Hessian selects a prepared region
+only if it declares that capability. No `no_grad` context encloses execution.
+
+GPU implementations must use the framework's current stream, leave tensors on
+device and preserve CUDA capture. Prepared weights and inputs are read-only.
+Backend execution scratch must not mutate shared prepared weights. The contract
+does not add a host callback to each operation, require a CPU transfer or make a
+new guarantee of zero overhead.
+
+`run_inference_conformance` compares values, input derivatives and declared
+second derivatives with independent reference operations at the existing backend
+tolerances. It also checks that prepared buffers stay unchanged. Concrete backends
+still need equivariance, compile/export, CUDA capture and native registration
+tests, as well as representative changing-neighbour and distributed cases. The
+contract fixtures compose existing reference operations; they provide no new
+accelerated kernels and establish no GPU performance result.
+
+Electrostatics continues through its separate solver contract below. Neither
+shape captures a solver or changes its numerical selection. Sharing GPU buffers
+with an external solver and binding a new backend into a native driver require
+their own adapter and validation; the contracts do not claim those integrations
+are already implemented.
+
 ## Long-range preparation
 
 `long_range_plan(graph, kernel_spec, ops)` selects discrete reciprocal indices,
