@@ -6,7 +6,7 @@ description: Shared working context for the MACE Reforge rewrite (MACE v1.0). Us
 # MACE Reforge on V1
 
 Read [CLAUDE.md](../../../CLAUDE.md), [contributing](../../../CONTRIBUTING.md)
-and [reference scope](../../../docs/reforge/reference_branch.md).
+and the [reference branch README](../../../README.md).
 
 The four distributions under packages/ are the implementation. Legacy mace/
 and mace-launcher are retired. Numerical reference values remain frozen in
@@ -19,6 +19,7 @@ the relevant frozen and architecture gates. Never change a tolerance or
 regenerate numerical references to make a mismatch pass. Consult the backend,
 numerics and goldens companion skills for their contracts.
 
-V1 is a local implementation reference. Symmetrix, EnergyFunctionalSCF, model
-hosting and releases remain pending. Do not publish from this branch or mark
-upstream tickets complete merely because a local implementation exists.
+`v1-reference` preserves an AI-generated prototype and will not be maintained.
+Reviewed implementation PRs target `mace-reforge`. Check the user-facing guides
+for unsupported model and deployment paths. Local validation does not establish
+upstream review or release readiness.

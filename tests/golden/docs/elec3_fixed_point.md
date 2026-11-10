@@ -46,5 +46,3 @@ python -m pytest tests/parity/test_elec3_fixed_point_goldens.py -m 'not gpu'
 MACE_REQUIRE_CAPS=gpu,cueq python -m pytest \
   tests/parity/test_elec3_fixed_point_goldens.py -m gpu
 ```
-
-See the [implementation and scope](../../../docs/reforge/gate3/2026-11-08/elec3-fixed-point.md).

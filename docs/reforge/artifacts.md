@@ -2,8 +2,8 @@
 
 `mace_core.artifacts.resolve_artifact` accepts an existing local path, an HTTPS
 URL or an `ArtifactRef`. It returns a local file path and imports no tensor
-framework. Replay data and JAX checkpoints use this resolver; FM-3's foundation
-loaders must use it too.
+framework. Replay data, JAX checkpoints and native foundation loaders use this
+resolver.
 
 Downloads live under `$XDG_CACHE_HOME/mace`, or `~/.cache/mace` when that variable
 is unset or empty. Training results belong to `--work_dir`. V1 rejects explicit
@@ -45,8 +45,6 @@ are test inputs and are excluded from the wheels.
 | `ani500k_large_CC.model` and `mace_anicc` | Retired; use MACE-OFF23. |
 
 These files were absent from the legacy wheel, so the bundled-model shortcut
-only existed in source/editable installs. The frozen legacy tree retains its
-files until its retirement tickets execute. For offline V1 use, populate the
-cache first or pass local converted checkpoints. This page supplies the FM-4
-migration notes for REL-1 and the future FM-3 registry; publication of the
-converted foundation roster remains separate work.
+only existed in source/editable installs. For offline V1 use, populate the
+cache first or pass local converted checkpoints. Publication of converted
+foundation models remains pending.

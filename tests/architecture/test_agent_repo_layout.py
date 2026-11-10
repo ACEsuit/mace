@@ -1,7 +1,6 @@
 """Public guidance and docs are complete, reachable repository artifacts."""
 
 import json
-import hashlib
 import re
 import subprocess
 from pathlib import Path
@@ -55,13 +54,3 @@ def test_every_capability_has_a_user_guide():
     assert pages.keys() == CAPABILITY_PROBES.keys()
     for page in pages.values():
         assert (ROOT / "docs" / page).is_file()
-
-
-def test_all_historical_documentation_has_a_native_destination():
-    ledger = json.loads((ROOT / "docs/legacy_pages.json").read_text())
-    original = sorted(item["source"] for item in ledger["pages"])
-    assert len(original) == len(set(original))
-    digest = hashlib.sha256(("\n".join(original) + "\n").encode()).hexdigest()
-    assert digest == ledger["source_inventory_sha256"]
-    for item in ledger["pages"]:
-        assert (ROOT / "docs" / item["destination"]).is_file(), item

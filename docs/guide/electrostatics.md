@@ -17,5 +17,5 @@ Frozen tests cover local sources, QEq and fixed-point SCF families. The
 EnergyFunctionalSCF reference is unavailable and its validation remains pending.
 Polar medium/large default-fp32 support has unresolved measured discrepancies;
 float64 evidence does not promote those failed precision badges. Native model
-URLs/DOIs remain unpublished. The [reference scope](../reforge/reference_branch.md)
-records these decisions and links the numerical investigations.
+URLs/DOIs remain unpublished. See the [model registry](../reforge/model_registry.md)
+for loading local converted checkpoints and checking their support status.

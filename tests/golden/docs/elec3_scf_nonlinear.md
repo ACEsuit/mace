@@ -45,6 +45,3 @@ python -m pytest tests/parity/test_elec3_scf_nonlinear_goldens.py -m 'not gpu'
 MACE_REQUIRE_CAPS=gpu,cueq python -m pytest \
   tests/parity/test_elec3_scf_nonlinear_goldens.py -m gpu
 ```
-
-The [implementation record](../../../docs/reforge/gate3/2026-11-08/elec3-fixed-point-nonlinear.md)
-describes the numerical contract and its limits.

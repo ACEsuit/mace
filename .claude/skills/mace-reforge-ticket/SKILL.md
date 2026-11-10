@@ -5,7 +5,8 @@ description: Take a MACE Reforge board ticket from start to a reviewable PR - se
 
 # mace-reforge-ticket
 
-Read the ticket and [reference scope](../../../docs/reforge/reference_branch.md).
+Read the ticket, [contribution guide](../../../CONTRIBUTING.md) and
+[reference branch README](../../../README.md).
 Keep changes reviewable and test every changed contract. Run the native package
 suite, relevant frozen gates, ruff and ty before preparing a PR. V1 changes
 are reference work; final PRs target mace-reforge. Publishing and remote ticket

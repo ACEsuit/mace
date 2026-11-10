@@ -32,9 +32,8 @@ legacy artifact roster records the target as `RosterEntry.architecture`.
 
 Every retained legacy alias resolves within its loader family and warns with
 its canonical replacement. Calling a loader without a model logs its default
-canonical ID. Polar still requires an explicit model. The user approved keeping
-`mace-mh-0`, `mace-mh-1` and `mace-mdp` as published, without assigning a size
-category; these are explicit exceptions to FM-3's size-suffix rule. MatPES uses
+canonical ID. Polar still requires an explicit model. `mace-mh-0`, `mace-mh-1`
+and `mace-mdp` keep their published names without a size suffix. MatPES uses
 `medium` and OMOL `extra-large`, matching their published descriptions.
 
 All retained entries remain recommended within their recorded scope. This label
@@ -172,6 +171,6 @@ python -m tests.foundations.registry_badges --framework jax \
 ```
 
 The candidate map assigns canonical IDs to local native checkpoint paths. For
-published validation, omit it and set `MACE_CI_ALLOW_NETWORK=1`. The
-[FM-3 evidence](gate3/2026-11-02/fm3.md) records current results and remaining
-publication and numerical restrictions.
+published validation, omit it and set `MACE_CI_ALLOW_NETWORK=1`. Native artifact
+publication is pending. Polar medium/large float32 support remains unresolved;
+local float64 validation does not establish float32 support.

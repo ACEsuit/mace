@@ -5,22 +5,20 @@ runtimes execute AOTInductor artifacts compiled from those same models.
 The full-basis weights export is a derived artifact for external contraction
 implementations. It is not another model checkpoint.
 
-| Integration | Verified scope | Remaining work |
+| Integration | Interface | Limits |
 | --- | --- | --- |
-| ASE | Energy, response and magnetic models, units, padding and compiled execution | See the per-family parity records |
-| LAMMPS native | Python-free torch.export/AOTInductor, reference/cuEq, changing neighbours and MPI migration on one/two GPUs | Performance results are recorded separately from correctness |
-| ML-IAP | Direct callback, reference/cuEq, eager/compiled regions, one/two MPI ranks | Python callback is required by this compatibility interface |
-| OpenMM | Native C++/AOTInductor on CPU and CUDA/cuEq float32/float64; molecular and periodic trajectories, current triclinic cells, frozen legacy energy/force parity | Whole-System models; local-energy packages use host arrays. Periodic Polar supports direct CUDA buffers. The direct Python callback also supports declared inputs |
-| Symmetrix | General 0.3.0 source inspected at `fc7e532`; native JSON consumer and legacy extractor are public | V1 exporter, architecture checks, parity and benchmark sweep remain pending |
-| libmace | Native AOTInductor C/C++, Fortran on two MPI ranks, changing geometry, legacy E/F/virial parity; installed clients with cuEq float32/float64 on Blackwell | Full-structure root evaluation; spatial decomposition and model scaling across GPUs remain outside this adapter |
-| GROMACS native | Pinned 2026.3 NNPot adapter over libmace; CPU and B200 cuEq float32/float64 E/F/virial parity, changing cells/neighbours, two MPI domains, XY slabs | Whole-system model on the main rank; `pbc=no` is rejected by upstream Verlet. Hybrid embedding and model scaling across GPUs remain outside this adapter |
-| torch-sim | CPU trajectory and legacy E/F/polar parity; static compile reuse; cuEq on H200 and RTX PRO 6000 Blackwell in float32/float64; measured B200 MD throughput | Host graph assembly remains; the complete step includes Python and host transfers |
+| ASE | Energy, response and magnetic models; padding and compiled execution | Family and precision restrictions apply |
+| LAMMPS native | AOTInductor artifacts; reference/cuEq; neighbour and MPI adapters | Native Polar uses a fixed cell and one rank |
+| ML-IAP | Python callback with reference/cuEq and eager/compiled regions | Requires compatible feature-exchange support for multiple layers |
+| OpenMM | Native C++/AOTInductor and a direct Python callback | Native whole-System models; local-energy packages use host arrays; periodic Polar supports CUDA buffers |
+| Symmetrix | No V1 adapter | Integration remains unimplemented |
+| libmace | Native C/C++ and Fortran interfaces over AOTInductor | Full-structure root evaluation; no spatial model decomposition |
+| GROMACS native | Pinned 2026.3 NNPot adapter over libmace | Whole-system main-rank evaluation; upstream Verlet rejects `pbc=no` |
+| TorchSim | Shared model loader with eager or compiled execution | Graph assembly still uses host data |
 
-[Deployment measurements and final validation](gate3/2026-11-07/deployment-completion.md)
-record the 512/4096-atom B200 results, the libmace neighbour-radius correction,
-native OpenMM checks, and the remaining host/MPI costs. Symmetrix's general
-interface is now public; its V1 adapter and validation remain pending. The
-two Polar float32 rows retain their existing open status and precision contract.
+Build instructions and executable contract tests accompany each adapter.
+Performance depends on the model, neighbour construction, hardware and runtime;
+use `tests/benchmarks/deployment` for complete-step measurements.
 
 ## Native Polar at fixed cell
 
@@ -163,59 +161,19 @@ point weight reconstruction is not a bit-exact identity. The source files,
 goldens and tolerances remain unchanged. Checkpoint readers reject the exported
 format, and `mace model convert --to-basis full` remains refused.
 
-The schema is implemented for review. External maintainer agreement on names
-and ordering, requested by DEP-3, has not taken place; this work has not sent
-messages or published artifacts. No consumer is declared compatible merely
-because the weight export exists.
+## Symmetrix
 
-## External consumer findings
+V1 has no Symmetrix adapter. The canonical checkpoint and full-basis weight
+export do not establish compatibility with an external consumer. A runtime or
+kernel-backend integration requires its own architecture checks and numerical
+validation.
 
-The intended target is now the published general source in
-[`wcwitt/symmetrix`](https://github.com/wcwitt/symmetrix/tree/fc7e53276baa7728f08bee0ddd865a20f82ff998),
-rechecked on 2026-11-09 at `fc7e53276baa7728f08bee0ddd865a20f82ff998`.
-Its `VERSION` declares 0.3.0. It includes the general and Polar implementations,
-native C++ consumers and LAMMPS pair styles. This removes the earlier dependency
-on publication of the general interface, not the need for a V1 adapter.
+## Native libmace
 
-The supplied `extract_mace_data` still uses `torch.load` and legacy MACE/e3nn
-classes. Its standard path requires two interactions and `l_max=3`, with
-separate nonlinear and Polar paths. The upstream instructions require the JSON
-producer and runtime to use the same Symmetrix version. V1 needs an exporter
-from its canonical checkpoint into that versioned consumer format, with explicit
-architecture checks and measured spline/conversion error. No legacy runtime
-import, Python MD callback or TorchScript artifact is needed in that design.
-Conversion, native parity and the performance sweep remain unimplemented here.
-
-V1 retains its canonical checkpoint and component/full-basis export. Symmetrix
-remains an optional external runtime; MACE owns export and parity checks.
-The following Polar-only and older general inspections are historical context,
-not claims of validation against 0.3.0.
-
-The previously inspected
-[`symmetrix-polar` branch](https://github.com/wcwitt/symmetrix-polar/tree/f8a23ea0f15dd036375dbaeae2e8542d85d964fc)
-identifies itself as 0.1.0, with model format 1.
-Its LAMMPS implementation supports fully periodic cells, charge and spin,
-direct sums or a particle-mesh solver, with a specialized CUDA model shape.
-Its own correctness report excludes stress, and per-atom virials are explicitly
-refused. These are observations about that branch, not requirements for the
-forthcoming general interface or evidence of V1 compatibility.
-
-The earlier inspection below concerns the original public implementation:
-
-Symmetrix revision `2aae0987ef63cc775f99f75b4fb45d8d0035a3ff` consumes an entire
-model JSON: radial splines, embeddings, contractions, residuals and readouts.
-Its supplied extractor reads a legacy model and imposes architecture limits,
-including two interactions and l_max=3. Matching coupling-tree labels alone is
-not a whole-model converter. The planned performance sweep must first verify
-that translation, including spline approximation, on the same model.
-
-libmace revision `e3413ae658530654894b6bac6a62a764a74c5115` loads
-`torch::jit::Module` in `src/mace.cpp`; its Fortran interface wraps that runtime.
-This differs from DEP-3's description of an independent full-basis contraction
-reader. V1 now supplies a compatible C/C++ runtime in
-`packages/mace-torch/libmace`, consuming the existing `native.pt2` artifact.
-Its compiled weights retain the canonical reduced basis. The upstream scripted
-reader is not linked, and the published upstream binary is not claimed to load V1.
+`packages/mace-torch/libmace` provides a C/C++ runtime for the `native.pt2`
+artifact. Its compiled weights retain the canonical reduced basis. Applications
+must build against this runtime; the legacy TorchScript reader cannot load V1
+artifacts.
 
 The public C ABI and Fortran geometry/units convention are preserved; C++
 applications rebuild against the framework-free header. The pinned neighbour
@@ -228,17 +186,11 @@ These change neither the model nor numerical results. MPI here does not mean
 spatial domain decomposition or GPU scaling.
 
 Build/export instructions are in
-[the libmace integration guide](../../tests/integrations/libmace/README.md),
-with measured scope in [the native runtime evidence](gate3/2026-11-07/dep3-libmace.md).
+[the libmace integration guide](../../tests/integrations/libmace/README.md).
 Installed clients use `find_package(mace CONFIG REQUIRED)` with `mace::mace`
 or `mace::fortran`. The runtime needs matching libtorch/backend shared libraries,
 but neither Python nor a scripted model. Fixed capacities are checked on every
 call; changed counts and neighbours within those budgets reuse the exported graph.
-
-Sources: [OpenMM-Torch](https://github.com/openmm/openmm-torch/tree/b6532900ad825cb3d12193817a1e34a7f46ae6a3),
-[Symmetrix](https://github.com/wcwitt/symmetrix/tree/2aae0987ef63cc775f99f75b4fb45d8d0035a3ff),
-[libmace](https://github.com/stenczelt/libmace/tree/e3413ae658530654894b6bac6a62a764a74c5115).
-
 
 ## TorchSim deployment
 
@@ -282,25 +234,15 @@ shared overflow policy. Edge requirements are materialized by the engine after
 padding. Changing a real count within the same capacities reuses the graph;
 changing a capacity or another compiler guard can compile another graph.
 
-The adapter currently uses the common host `Configuration`/graph builder.
-GPU evaluation therefore does not imply an entirely device-resident MD step:
-state metadata/positions are copied to the host during graph assembly. The B200
-throughput campaign measures complete NVE steps, host graph preparation and
-isolated compiled evaluation separately. The CPU tests cover a real NVE
-trajectory against ASE, both committed energy anchors, and eight polar comparisons
-with the frozen model (molecules, a charged field-driven system, crystal and slab,
-one and two systems). Polar stress uses V1 ASE's established strain convention;
-the previously reconciled frozen legacy stress bug is not reintroduced.
-
-The cuEq path passes eager-versus-Inductor checks on Dais H200 and RTX PRO 6000
-Blackwell GPUs, for energy and Polar models in both float32 and float64 while
-the real atom count changes. These are correctness checks, not throughput
-measurements. See [DEP-4 evidence](gate3/2026-11-07/dep4-torchsim.md).
+The adapter uses the common host `Configuration`/graph builder. Metadata and
+positions are copied to the host during graph assembly, so GPU evaluation still
+incurs host work. Measure complete MD steps separately from compiled evaluation.
+The integration tests compare real NVE trajectories with ASE and frozen energy
+and Polar references. Polar stress follows V1's strain convention.
 
 ## GROMACS native integration
 
-The user-authorized GROMACS work is additional to the original DEP-3 scope.
-It uses GROMACS 2026.3 at `121090014570a53a17ea391bcddae45e5ea05eb4`, with a
+The adapter uses GROMACS 2026.3 at `121090014570a53a17ea391bcddae45e5ea05eb4`, with a
 small source patch selecting a `MACE` NNPot implementation and linking the
 existing V1 native libmace runtime. The stock GROMACS TorchScript reader and
 its Python dependency are excluded from this build path. No checkpoint,
@@ -312,8 +254,6 @@ collects the full model input on its main rank and distributes forces to the
 owning domains. This upstream NNPot interface exposes host arrays; the MACE
 CUDA runtime builds its neighbours on the GPU after uploading positions. The
 direct virial is included once with GROMACS's `-W/2`
-convention. CPU and cuEq float32/float64 MD and rerun cases compare against
-the frozen legacy model. The full Dais B200 selection passed all 17 tests
-using external MPI; macOS additionally verifies thread-MPI. There is no
-existing in-tree GROMACS legacy wrapper. See the [measured results and
-scope](gate3/2026-11-07/gromacs-native.md).
+convention. The integration tests compare CPU and cuEq float32/float64 MD and
+rerun cases against frozen references, including changing cells, neighbours and
+MPI ownership. See the integration guide for executable capability requirements.

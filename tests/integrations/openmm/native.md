@@ -80,5 +80,5 @@ energy anchors are compared with legacy at the measured positions. Force group
 exclusion and library traces are checked in the real native process; the traces
 must contain OpenMM/libmace and must not contain Python or libtorch_python.
 
-[Measured CPU/GPU parity and complete-step performance](../../../docs/reforge/gate3/2026-11-07/deployment-completion.md)
-include the installed client, cuEq float32/float64 and the host-transfer costs.
+Use `tests/benchmarks/deployment` to measure complete MD steps, including
+host transfers, with the same model and geometry as the correctness checks.

@@ -24,7 +24,6 @@ environment; native inference reads JSON plus safetensors.
 - [Migration guide](docs/reforge/migration.md): old command and Python API mappings.
 - [Examples](examples/README.md) and [JAX teaching forward](tutorials/README.md).
 - [Contributing](CONTRIBUTING.md), [governance](GOVERNANCE.md), [agent guidance](CLAUDE.md).
-- [Reference-branch scope and deferred work](docs/reforge/reference_branch.md).
 
 Run `python -m pytest tests/retirement tests/architecture tests/golden` for the
 frozen numerical anchors and architecture gates. Package tests live beside
@@ -33,7 +32,7 @@ missing capabilities skip locally and fail when promised by CI.
 
 Install agent skills with `npx skills add ACEsuit/mace --list`; for this
 unpublished checkout, use `npx skills add .`. The tracked index is
-[skills.json](skills.json). See [MIT license](MIT.md) for licensing.
+[skills.json](skills.json). See [MIT license](LICENSE.md) for licensing.
 
 
 ## References
@@ -70,4 +69,4 @@ For bugs or feature requests, please use [GitHub Issues](https://github.com/ACEs
 
 ## License
 
-The MACE code is published and distributed under the [MIT License](MIT.md). (Note that some of the models linked above come with different licenses).
+The MACE code is published and distributed under the [MIT License](LICENSE.md). (Note that some of the models linked above come with different licenses).

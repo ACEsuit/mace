@@ -9,8 +9,7 @@ Read the [implementation guide](../../../docs/reforge/kernel_backends.md) for
 the current API and runnable checks. Start from the separately registered
 [example backend](../../../packages/mace-backend-example/README.md). For fusion,
 read [performance contracts](../../../docs/reforge/performance_contracts.md).
-These describe the API implemented in this V1 checkout; historical RFCs and
-feature-plugin sketches may describe interfaces that were never implemented.
+These describe the API implemented in this V1 checkout.
 
 ## Registration and dispatch
 

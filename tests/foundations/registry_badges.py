@@ -244,7 +244,7 @@ def evaluate_entry(entry, *, framework, device="cpu", local_artifact=None):
             [
                 "Polar stress retains the agreed long-range cell derivative "
                 "correction; "
-                "legacy stress is excluded (ELEC-2 evidence in gate3)."
+                "legacy stress is excluded from direct comparison."
             ]
             if entry.family == "mace_polar"
             else []

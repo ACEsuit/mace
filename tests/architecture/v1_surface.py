@@ -43,8 +43,7 @@ def package_roots() -> list[Path]:
 
 
 #: Where a top-level model lives, relative to a package's import root.
-#: `docs/reforge/target_layout.md` puts `MACEModel` in `models/base.py` and the
-#: factory in `models/build.py`.
+#: `MACEModel` lives in `models/base.py`, with its factory in `models/build.py`.
 MODEL_SUBDIRECTORY = "models"
 
 #: The typed return of a model's forward. Both spellings are accepted: CORE-1

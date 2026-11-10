@@ -18,11 +18,8 @@ verify the version DOI before announcing it.
 V1 is an unpublished reference branch. Its `release.yaml` is a manually
 triggered build and wheel-smoke check with read-only repository permissions;
 it creates no tag, GitHub Release, PyPI upload or DOI. The final publishing
-pipeline and model publication remain pending on `mace-reforge`. Previously,
-the tag workflow built and smoked the package and attached artifacts to a
-GitHub Release, which Zenodo could archive; PyPI publishing was not automated.
+pipeline and model publication remain pending on `mace-reforge`.
 
-Issue assignment automation, generated issue replies and a PR review bot are
-explicitly de-scoped from this reference branch (GOV-2b groups B and C).
-They must remain advisory if adopted later. A missing token or an unavailable
-service must not block contributions, close issues or supply final approval.
+Automated review and issue-management tools, if adopted, must remain advisory.
+A missing token or an unavailable service must not block contributions, close
+issues or supply final approval.

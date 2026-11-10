@@ -9,19 +9,7 @@ root_doc = "index"
 html_theme = "sphinx_book_theme"
 html_title = "MACE V1 reference"
 myst_enable_extensions = ["dollarmath", "colon_fence"]
-exclude_patterns = [
-    "_build",
-    "reforge/gate3/**",
-    "reforge/plan.md",
-    "reforge/target_layout.md",
-    "reforge/feature_inventory.md",
-    "reforge/run_train_rewrite.md",
-    "reforge/output_surface.md",
-    "reforge/new_species_initialization.md",
-]
-# Other technical notes are linked from reference pages rather than repeated
-# in the sidebar. They remain in the generated site.
-suppress_warnings = ["toc.not_included"]
+exclude_patterns = ["_build"]
 
 
 def link_supporting_sources(app, docname, source):

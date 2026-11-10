@@ -64,8 +64,13 @@ dist/
 coverage.xml
 htmlcov/
 
-# local planning docs (not for the public repo)
+# Local planning notes and validation reports stay out of the reference tree.
 /doc
+/docs/reforge/gate3/
+/docs/reforge/plan.md
+/docs/reforge/target_layout.md
+/docs/reforge/run_train_rewrite.md
+/docs/reforge/reference_branch.md
 
 # Claude Code: the shared skills under .claude/ are tracked; per-machine
 # settings and tool approvals are not.

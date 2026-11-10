@@ -2,8 +2,7 @@
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and the package entry document for the
 code you change. V1 is an unpublished reference; final implementation PRs land
-on `mace-reforge`. The [scope record](docs/reforge/reference_branch.md) distinguishes
-code work from deferred release and integration decisions.
+on `mace-reforge`. See the [README](README.md) for the reference branch status.
 
 | Distribution | Import | Purpose |
 |---|---|---|

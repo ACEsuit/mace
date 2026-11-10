@@ -109,6 +109,6 @@ loads libmace/libtorch and no Python library. Reference files and tolerance
 rows are unchanged. There is no in-tree legacy GROMACS adapter; the numerical
 oracle is the frozen legacy model evaluated at the GROMACS geometries.
 
-[Boundary validation and performance evidence](../../../docs/reforge/gate3/2026-11-07/deployment-completion.md)
-record XY slabs, the nonperiodic restriction, the neighbour-radius correction,
-and complete-step/host/MPI timings at 512 and 4096 atoms on Dais B200.
+Use `tests/benchmarks/deployment` for complete-step, host and MPI timing.
+Correctness checks must cover the chosen periodicity and neighbour cutoff before
+comparing throughput.

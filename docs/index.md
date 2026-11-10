@@ -1,8 +1,8 @@
 # MACE documentation
 
-This is the in-tree V1 reference documentation. Model and package publication,
-external Read the Docs activation and deletion of the old remote docs branch
-remain pending. [Migration](reforge/migration.md) explains the v0.3 transition.
+This documents the V1 prototype preserved on `v1-reference`. The reviewed
+implementation is developed on `mace-reforge`; this reference branch will not
+be maintained. [Migration](reforge/migration.md) explains the v0.3 transition.
 
 ```{toctree}
 :maxdepth: 2
@@ -19,7 +19,6 @@ guide/examples
 guide/capabilities
 guide/goldens
 guide/contributing
-guide/consolidation
 ```
 
 ```{toctree}
@@ -34,7 +33,6 @@ reforge/artifacts
 reforge/integration_support
 reforge/kernel_backends
 reforge/performance_contracts
-reforge/extending_mace
-reforge/extending_plugin
-reforge/reference_branch
+reforge/new_species_initialization
+reforge/output_surface
 ```

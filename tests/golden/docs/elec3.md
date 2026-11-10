@@ -57,7 +57,7 @@ MACE_REQUIRE_CAPS=gpu,cueq python -m pytest \
 ```
 
 The default source directory is the ignored repository `scripts/` directory.
-QEq has a [separate capture target](elec3_qeq.md). FixedPointSCF and
-EnergyFunctionalSCF remain pending.
-The [implementation record](../../../docs/reforge/gate3/2026-11-08/elec3-local-sources.md)
-lists supported options and the remaining ELEC-3 scope.
+QEq has a [separate capture target](elec3_qeq.md), as do
+[affine fixed-point SCF](elec3_fixed_point.md) and
+[nonlinear fixed-point SCF](elec3_scf_nonlinear.md).
+EnergyFunctionalSCF reference validation remains pending.

@@ -2,8 +2,8 @@
 
 V1 is an unpublished implementation reference. Reviewed implementation PRs land
 on `mace-reforge`; releases will be made from that work. See the
-[branch decisions](docs/reforge/reference_branch.md) and
-[governance](GOVERNANCE.md) for scope and approval responsibilities.
+[README](README.md) for the reference branch status and
+[governance](GOVERNANCE.md) for approval responsibilities.
 
 ## Pull request checklist
 
