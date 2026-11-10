@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from ase.io import read
+from mace_torch.calculators import MACECalculator
 from mace_torch.deploy.bundle import export_lammps
 
 from tests.golden.harness import FP32, FP64_CPU_REFERENCE
@@ -28,6 +29,7 @@ def native_package(request, tmp_path_factory):
         checkpoint = ARTIFACTS / f"{name}.json"
         bundle = export_lammps(
             checkpoint,
+            tmp_path_factory.mktemp(name) / "native.mace-deploy",
             halo_exchange=True,
             native_capacity=(32, 512),
         )
@@ -57,7 +59,8 @@ def frames_for(name):
 def virial_of(calculator, atoms):
     graph, _ = calculator._graph(atoms, padded=False)
     output = calculator.models[0].engine(graph, compute=("virials",), training=False)
-    matrix = output.derivatives["virials"][0].detach().numpy()
+    assert output.virials is not None
+    matrix = output.virials[0].detach().numpy()
     matrix = 0.5 * (matrix + matrix.T)
     return matrix[[0, 1, 2, 0, 0, 1], [0, 1, 2, 1, 2, 2]]
 
@@ -66,13 +69,9 @@ def virial_of(calculator, atoms):
 def test_libmace_matches_eager_and_committed_goldens(
     native_package, interface, tmp_path, fp64, isolated
 ):
-    from mace_torch.calculators import MACECalculator
-    from mace_torch.calculators import MACECalculator as FrozenCalculator
-
     name, checkpoint, package = native_package
     frames, goldens = frames_for(name)
-    frozen = FrozenCalculator(model_paths=ARTIFACTS / f"{name}.json")
-    current = MACECalculator(checkpoint)
+    reference_model = MACECalculator(checkpoint)
     ranks = 2 if interface == "fortran" else 1
     results = run_driver(package, frames, tmp_path, interface=interface, ranks=ranks)
     row = FP64_CPU_REFERENCE
@@ -82,21 +81,20 @@ def test_libmace_matches_eager_and_committed_goldens(
             zip(frames, values, strict=True)
         ):
             actual = unpack(values_at_step, atoms)
-            frozen.calculate(atoms)
-            current.calculate(atoms)
+            reference_model.calculate(atoms)
             for key in ("energy", "energies", "forces"):
-                for expected in (frozen.results[key], current.results[key]):
-                    np.testing.assert_allclose(
-                        actual[key], expected, atol=row.atol, rtol=row.rtol
-                    )
-                    errors[key] = max(
-                        errors.get(key, 0),
-                        float(np.max(np.abs(actual[key] - expected))),
-                    )
+                expected = reference_model.results[key]
+                np.testing.assert_allclose(
+                    actual[key], expected, atol=row.atol, rtol=row.rtol
+                )
+                errors[key] = max(
+                    errors.get(key, 0),
+                    float(np.max(np.abs(actual[key] - expected))),
+                )
             if index % 3 == 2:
                 np.testing.assert_array_equal(actual["virial"], 0)
             else:
-                expected_virial = virial_of(frozen, atoms)
+                expected_virial = virial_of(reference_model, atoms)
                 np.testing.assert_allclose(
                     actual["virial"], expected_virial, atol=row.atol, rtol=row.rtol
                 )
@@ -109,10 +107,10 @@ def test_libmace_matches_eager_and_committed_goldens(
             if index % 3 != 2 and atoms.pbc.any() and atoms.cell.rank == 3:
                 stress = -actual["virial"][[0, 1, 2, 5, 4, 3]] / atoms.get_volume()
                 np.testing.assert_allclose(
-                    stress, frozen.results["stress"], atol=row.atol, rtol=row.rtol
-                )
-                np.testing.assert_allclose(
-                    stress, current.results["stress"], atol=row.atol, rtol=row.rtol
+                    stress,
+                    reference_model.results["stress"],
+                    atol=row.atol,
+                    rtol=row.rtol,
                 )
             if index < len(goldens):
                 expected = list(goldens.values())[index]["outputs"]
@@ -157,8 +155,6 @@ def test_libmace_rejects_unknown_elements_and_capacity_overflow(
 @pytest.mark.cueq
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
 def test_cuda_libmace_cueq_matches_eager(dtype, tmp_path, fp64, isolated):
-    from mace_torch.calculators import MACECalculator as FrozenCalculator
-
     root = Path(__file__).resolve().parents[2]
     package = (
         export_lammps(
@@ -173,7 +169,7 @@ def test_cuda_libmace_cueq_matches_eager(dtype, tmp_path, fp64, isolated):
         / "native.pt2"
     )
     frames, _ = frames_for("tiny_scaleshift")
-    reference_model = FrozenCalculator(model_paths=ARTIFACTS / "tiny_scaleshift.json")
+    reference_model = MACECalculator(ARTIFACTS / "tiny_scaleshift.json")
     row = FP32 if dtype == "float32" else FP64_CPU_REFERENCE
     errors = {}
     for interface, ranks in (("c", 1), ("fortran", 2)):

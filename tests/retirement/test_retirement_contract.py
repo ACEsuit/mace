@@ -2,7 +2,6 @@
 
 import ast
 import json
-import subprocess
 import tomllib
 from pathlib import Path
 
@@ -29,13 +28,12 @@ def test_legacy_and_launcher_cannot_return():
 
 def test_deleted_test_inventory_and_successors_are_real():
     ledger = json.loads(Path(__file__).with_name("retired_tests.json").read_text())
-    revision = ledger["source_revision"]
-    old = subprocess.check_output(
-        ["git", "ls-tree", "-r", "--name-only", revision, "tests"], cwd=ROOT, text=True
-    ).splitlines()
-    deleted = {
-        name for name in old if name.endswith(".py") and not (ROOT / name).exists()
-    }
+    # The captured source inventory also works in shallow and filtered clones.
+    # source_revision records provenance without making that commit a runtime input.
+    old = ledger["source_files"]
+    assert old == sorted(set(old))
+    assert all(name.startswith("tests/") and name.endswith(".py") for name in old)
+    deleted = {name for name in old if not (ROOT / name).exists()}
     assert set(ledger["retired_files"]) == deleted
     assert {item["path"] for item in ledger["files"]} == deleted
     for item in ledger["files"]:

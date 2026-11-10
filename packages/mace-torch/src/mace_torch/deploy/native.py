@@ -100,10 +100,13 @@ def compile_native(
     device: str,
     structure: str | Path | None = None,
 ) -> None:
-    """Compile a fixed-capacity package, with one node reserved for padding.
+    """Compile a fixed-capacity local or complete periodic evaluation.
 
-    The native caller supplies receiver-minus-sender displacements [E,3] in Å.
-    The gradient of the owned site energies is in eV/Å in that same edge order.
+    Local packages reserve one padding node and accept receiver-minus-sender
+    displacements [E,3] in Å. Their site-energy gradients follow that edge order
+    in eV/Å. Polar packages use every node and accept positions, the fixed cell
+    and lattice shifts; they return total energy, local site energies, forces
+    and the full virial in eV, eV/Å and eV.
     """
     from torch.fx.experimental.proxy_tensor import make_fx
 
