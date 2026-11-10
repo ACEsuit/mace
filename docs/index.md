@@ -32,6 +32,8 @@ reforge/migration
 reforge/model_registry
 reforge/artifacts
 reforge/integration_support
+reforge/kernel_backends
+reforge/performance_contracts
 reforge/extending_mace
 reforge/extending_plugin
 reforge/reference_branch

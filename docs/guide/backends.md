@@ -17,4 +17,7 @@ The `gpu`, `cueq` and `oeq` markers describe test requirements. `network`
 permits downloads; `schedulefree` and `wandb` cover optional optimizer/tracking
 clients. A required capability unavailable on a CI host is an error. See
 [capabilities](capabilities.md) for the full marker-to-guide map and
-[backend contracts](../reforge/extending_plugin.md) when implementing a plugin.
+[implementing a kernel backend](../reforge/kernel_backends.md) for registration,
+factories and conformance. The separately installed example lives in
+`packages/mace-backend-example`; [performance contracts](../reforge/performance_contracts.md)
+describe live-weight spans and prepared inference regions.

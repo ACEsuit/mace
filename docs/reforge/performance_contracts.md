@@ -2,14 +2,17 @@
 
 V1 accepts accelerated implementations through its existing kernel, solver and
 neighbour registries. The implementation of each kernel remains in its owning
-backend. Checkpoints retain canonical weights and the reduced basis.
+backend. Checkpoints retain canonical weights and the model's selected basis
+(`reduced` by default, with explicit `full` also supported). Start with
+[implementing a kernel backend](kernel_backends.md) for registration, factories
+and individual-op conformance.
 
 ## Activation layouts and precision
 
 `BackendCapabilities.activation_layouts` declares accepted activation layouts;
 `native_activation_layout` names the preferred one. `KernelSpec.activation_layout`
 specifies the ordering of an operation's input and output features.
-`BackendCapabilities.weight_layouts` describes parameter storage; every backend
+`BackendCapabilities.weight_layouts` describes accepted weight layouts; every backend
 accepts canonical `mul_ir` weights. The composite resolves one activation layout
 for the chain at construction. The reference implements both `mul_ir` and `ir_mul`,
 so fallback operations follow cuEq's native `ir_mul` layout. Descriptors record
@@ -62,9 +65,13 @@ capabilities. Unsupported training paths use the member operations.
 
 Further radial families can define their own descriptors, shape matcher and
 member-tensor order under this tuple protocol. They do not need another backend
-registry or a change to the stateless call signature. The shared conformance
-suite accepts explicit cases and checks outputs, live-weight gradients,
-second derivatives, equivariance, layouts, padding and both edge-run views.
+registry or a change to the stateless call signature. The shared
+`run_span_conformance` helper checks its built-in cases for outputs, live-weight
+gradients, declared second derivatives, equivariance, layouts, padding and both
+edge-run views. It takes `backend_name`, `device`, `precision`,
+`activation_layout`, `training`, `compile_spans` and `cuda_graphs`; it has no
+`cases` argument. Additional descriptors need backend-owned tests. Inspect the
+returned `built` flags so a run that declines every case cannot count as coverage.
 
 ## Prepared inference regions
 
@@ -153,7 +160,8 @@ connectivity are live inputs, not weight preparation state. Outputs retain all
 nodes, including ghost slots; ownership masks, graph reductions and MPI exchanges
 stay outside the region. A region cannot cross a required communication boundary.
 
-`SpanCapabilities(False, False)` is sufficient for first-derivative inference;
+`SpanCapabilities(double_backward=False, weight_gradients=False)` is sufficient
+for first-derivative inference;
 input adjoints are always required for forces and stress. A backend declaring
 double backward must also reproduce those derivatives. Training continues through
 the original operations; a caller requesting a Hessian selects a prepared region
@@ -210,8 +218,9 @@ and ROCm use vesin. An absent optional provider leaves vesin selected. An
 import failure of the automatic CUDA choice is reported. Explicit provider
 names and settings are strict and do not fall back.
 
-The accelerated provider belongs to its external package. This contract does
-not ship a second neighbour kernel or claim acceleration when that provider is
-absent. A provider declaring `sorted_by_sender` must supply that ordering; the
-common edge-plan adapter builds any other requested views after collation and
-padding.
+The `nvalchemiops` provider belongs to its external package. V1 also registers
+`native_cuda` in `mace.neighbor_backends.torch` for explicit selection; it requires
+the optional native CUDA extension. Registration alone does not establish that
+the extension is available or faster for a workload. A provider declaring
+`sorted_by_sender` must supply that ordering; the common edge-plan adapter builds
+any other requested views after collation and padding.

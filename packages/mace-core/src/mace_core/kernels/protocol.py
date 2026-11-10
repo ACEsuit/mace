@@ -40,7 +40,8 @@ __all__ = [
 #: that this package cannot check.
 TensorT = TypeVar("TensorT")
 
-#: The ops a backend must implement to be usable at all.
+#: The primary dispatched op classes. A backend declares the subset it builds;
+#: the framework's composite supplies reference fallback for the rest.
 DISPATCHED_OPS: frozenset[str] = frozenset(
     {
         "linear",
@@ -172,10 +173,11 @@ class KernelBackend(Protocol):
         ...
 
     def make_interaction_layer(self, kernel_specs: tuple[Any, ...]) -> Any | None:
-        """A whole interaction layer in one kernel, or ``None``.
+        """A stateless fused span for the supplied specifications, or ``None``.
 
-        The optional span factory. A backend that can fuse further than one op
-        at a time says so here; ``None`` means the layer is built op by op, and
-        that is the normal answer.
+        ``EdgeConvolutionSpan`` describes the standard radial/harmonic/convolution
+        tuple. Unsupported tuples, including the empty tuple, return ``None``
+        so the caller retains the member operations. The framework's span
+        contract defines the call signature and live member weights.
         """
         ...

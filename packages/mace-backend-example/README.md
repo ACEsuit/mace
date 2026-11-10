@@ -1,86 +1,93 @@
 # mace-backend-example
 
-A MACE kernel backend in a distribution of its own, and the template for
-writing one. It computes every op MACE dispatches, in plain torch, on kernels
-it registers itself. Nothing in `mace-core` or `mace-torch` names it:
-installing this distribution is the only step that makes it exist.
+A separately installed Torch backend and a template for implementing one. It
+implements the five dispatched operation classes using its own Torch code and
+custom operators. Installing its entry point makes it discoverable without
+adding its name to MACE's implementation. This example distribution is never
+published; repository CI exercises it against the native packages.
 
-It is never published. It lives in the MACE repository so that CI checks it
-on every change, which is what keeps the claim that a backend needs no edit
-to MACE true rather than historical.
+The [V1 backend guide](../../docs/reforge/kernel_backends.md) describes the
+factory API, canonical weights, precision and validation. The
+[performance contracts](../../docs/reforge/performance_contracts.md) cover
+optional fusion APIs. This example implements individual operations and leaves
+fusion to the caller's fallback.
 
-## Writing a backend
+## Install and exercise locally
 
-A backend is three things: an object that answers the kernel contract, an
-entry point that registers it, and a run of the conformance suite that shows
-it computes what the reference computes.
+From the repository root, in an environment with a compatible Torch install:
 
-### 1. The contract
+```sh
+python -m pip install -e packages/mace-core -e packages/mace-torch -e packages/mace-backend-example
+python -m pytest packages/mace-backend-example/tests
+```
 
-`mace_core.kernels.protocol.KernelBackend` lists what the object provides:
+```python
+from mace_core.kernels import get_backend
+from mace_core.kernels.protocol import KernelBackend
+from mace_torch.backends.conformance import run_backend_conformance
 
-- `name`, and `capabilities()`: a `BackendCapabilities` saying which ops it
-  builds, on which devices and in which dtypes, and whether its ops can be
-  differentiated twice. Features use the canonical `mul_ir` layout.
-  Subclass it and override `supports`
-  when what the backend can build depends on the shape;
-  `ExampleCapabilities` declines a convolution over more than one copy of an
-  irrep, and a skip against anything but scalars.
-- One `make_<op>(kernel_spec)` per op in `DISPATCHED_OPS`. A kernel_spec is the
-  op's shape; it carries no weights. Returning `None` from
-  `make_spherical_harmonics` or `make_radial_basis` leaves them to the
-  reference, and so does `make_interaction_layer` for a fused span.
-- For the three ops that own weights, `to_canonical`, `load_canonical` and
-  `initialize_weights`, in the layout `mace_core.kernels.canonical` pins. That
-  layout is what a checkpoint holds, so a checkpoint written with any backend
-  loads into this one and back. A backend that holds its weights in another
-  order converts at these three methods and nowhere else; this one holds the
-  canonical order and they are views. Linear and skip weights are raw: their
-  fan-in normalization is applied during the forward, not stored in the weights.
+backend = get_backend("example", framework="torch")
+assert isinstance(backend, KernelBackend)
+results = run_backend_conformance(backend, precision="float64", compile_ops=True)
+assert results and all(result.built for result in results)
+```
 
-Import only the contract. `backend.py` imports `mace_core` and `torch`; the
-model calls the backend, never the other way round.
+CUDA capture is a separate opt-in check: pass `device="cuda", cuda_graphs=True`
+on a GPU runner. The package tests skip CUDA locally when unavailable and fail
+instead if `MACE_REQUIRE_CAPS` promises `gpu`.
 
-### 2. Your own kernels
+## Adapt the contract
 
-`ops.py` registers three `torch.library.custom_op`s, and each needs three
-registrations:
+`backend.py` depends on `mace_core`, Torch, NumPy and its own operators. Its
+runtime code imports no `mace_torch` implementation. Tests use the public Torch
+conformance and model helpers.
 
-- the forward;
-- `register_fake`, which returns an empty tensor of the right shape, so that
-  `torch.compile` can trace the op without running it. Sizes come from the
-  inputs and from host integers such as `num_nodes`; never read a size off a
-  device tensor, or every call is a new graph;
-- `register_autograd`, whose backward is written in differentiable torch
-  operations. Training on forces differentiates the backward, and a backward
-  that is right but not differentiable raises nothing: the forces just train
-  wrong. `gradgradcheck` in the suite is what catches that.
+- `KernelBackend` requires `name`, `capabilities()` and the five dispatched
+  `make_<op>(kernel_spec)` methods. It also includes `make_spherical_harmonics`,
+  `make_radial_basis`, `make_radial_mlp` and `make_interaction_layer`; this example
+  returns `None` from those four methods.
+- `BackendCapabilities` declares supported ops, devices, precisions, layouts,
+  bases and derivatives. This example uses `mul_ir` activations, supports both
+  `reduced` and `full`, and rejects convolution multiplicities and non-scalar
+  skip attributes that it cannot compute. Its `supports` override enforces
+  those shape limits; new backends can override `unsupported_reason` to also
+  supply a diagnostic. Direct unsupported requests raise
+  `UnsupportedKernelSpecError`.
+- A backend may accelerate only some ops. Declare that subset and use Torch's
+  `resolve_backend` for per-op reference fallback. `None` declines an optional
+  factory; `NotImplemented` is not supported. `get_backend` returns the raw
+  backend without fallback.
+- `INTERNAL_WEIGHT_OPS` lists four weight-owning classes: linear, symmetric
+  contraction, fully connected tensor product and radial MLP. The example
+  implements the first three and leaves the MLP to the reference. Weight owners
+  provide canonical save/load and seeded initialization. Linear/skip path
+  normalization is applied during computation, preserving raw checkpoint weights.
 
-### 3. The entry point
+## Register the implementation
 
 ```toml
 [project.entry-points."mace.kernel_backends.torch"]
 example = "mace_backend_example:ExampleBackend"
 ```
 
-A name is registered once. Two distributions registering the same name is an
-error, since which one a model got would depend on installation order.
+The target is a zero-argument factory; this class serves as one. Rename the
+distribution, import package, entry-point name and custom-op namespace for your
+backend. Conflicting targets registered under the same name raise an error;
+identical duplicate registrations are coalesced.
 
-### 4. The conformance suite
+## Implement and validate kernels
 
-```python
-from mace_torch.backends.conformance import run_backend_conformance
+`ops.py` registers custom operators for convolution, contraction and reduction.
+Each has a fake implementation with shapes derived from inputs/host metadata,
+and an autograd rule written in differentiable Torch operations. The linear and
+fully connected product modules use ordinary Torch operations, which need no
+additional custom-op registration. An opaque GPU implementation must preserve
+these compiler and derivative contracts.
 
-run_backend_conformance("example", precision="float64", compile_ops=True)
-```
-
-It builds each case the backend says it supports next to the reference, and
-checks the canonical weights both ways, the values, the first and second
-derivatives, equivariance, that a declined case is refused, that the op
-compiles whole and does not recompile for a new size, and, on CUDA, that it
-replays from a captured graph. The tolerances are fixed; a backend meets them.
-
-```bash
-pip install -e packages/mace-backend-example
-python -m pytest packages/mace-backend-example/tests
-```
+The conformance tests compare values, input/weight gradients, equivariance where
+applicable, canonical round-trips and declared unsupported cases. FP64 cases
+also run `gradgradcheck` when double backward is declared. Compile and CUDA
+capture checks run only when requested. The default cases cover the five
+dispatched op classes; optional helpers and additional shapes need their own
+tests. See the package tests for model-level energy, forces, stress and
+force-loss weight-gradient checks.

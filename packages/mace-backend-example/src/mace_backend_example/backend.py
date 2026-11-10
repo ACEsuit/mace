@@ -576,6 +576,10 @@ class ExampleBackend:
         """Left to the reference."""
         return None
 
+    def make_radial_mlp(self, kernel_spec: KernelSpec) -> None:
+        """Left to the reference, including its canonical weights."""
+        return None
+
     def make_interaction_layer(self, kernel_specs: Sequence[KernelSpec]) -> None:
         """No fused span: every op is built on its own."""
         return None

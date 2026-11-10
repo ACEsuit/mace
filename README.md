@@ -1,9 +1,12 @@
 # MACE V1 reference implementation
 
-MACE builds equivariant machine-learning interatomic potentials. This branch
-contains the native reference implementation used to develop reviewed PRs on
-`mace-reforge`. It is not a published release; model hosting and version
-publication remain pending.
+> **AI-generated prototype — reference only.** `v1-reference` is preserved to
+> help the team understand the proposed implementation and review PRs. This
+> branch will not be maintained. The reviewed implementation is being developed
+> on `mace-reforge` through one PR per ticket; releases will come from that work.
+
+MACE builds equivariant machine-learning interatomic potentials. Model hosting
+and version publication remain pending.
 
 Use Python 3.12+ for the complete workspace (core/torch also support 3.11):
 

@@ -16,6 +16,7 @@ import torch
 from mace_backend_example import ExampleBackend
 from mace_backend_example_models import engine, graph
 from mace_core.kernels import available_backends, get_backend
+from mace_core.kernels.protocol import KernelBackend
 from mace_core.kernels.specs import (
     ChannelwiseTPConvSpec,
     LinearSpec,
@@ -32,7 +33,9 @@ SOURCE = Path(__file__).resolve().parents[1] / "src" / "mace_backend_example"
 def test_it_is_discovered_through_its_entry_point():
     found = {backend.name: backend for backend in available_backends("torch")}
     assert found["example"].loaded, found["example"].reason
-    assert isinstance(get_backend("example"), ExampleBackend)
+    backend = get_backend("example")
+    assert isinstance(backend, ExampleBackend)
+    assert isinstance(backend, KernelBackend)
 
 
 def test_it_imports_only_the_contract():
