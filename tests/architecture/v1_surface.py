@@ -282,6 +282,37 @@ def torchscript_violations(source: str, path: str) -> list[str]:
     return sorted(set(problems))
 
 
+#: Where model code lives: the blocks and the composed models. The backends
+#: are outside it on purpose, since choosing between backends is their job.
+MODEL_CODE_DIRECTORIES = ("mace_torch/nn/", "mace_torch/models/")
+
+
+def reference_fallback_violations(source: str, path: str) -> list[str]:
+    """Model code builds every op through the backend it was given.
+
+    A block that asks its backend and then builds the reference's op when the
+    answer is ``None`` makes the choice between backends case by case, in the
+    one place that is supposed to know nothing about which backend runs. That
+    choice belongs to the composite backend, which makes it once, for every
+    op, with a reason in the build report. So no module under ``nn/`` or
+    ``models/`` names ``ReferenceBackend`` at all.
+    """
+    if not any(directory in path for directory in MODEL_CODE_DIRECTORIES):
+        return []
+    problems = []
+    tree = ast.parse(source, filename=path)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "ReferenceBackend":
+                    problems.append(f"{path}:{node.lineno}: imports ReferenceBackend")
+        elif isinstance(node, (ast.Name, ast.Attribute)):
+            name = node.id if isinstance(node, ast.Name) else node.attr
+            if name == "ReferenceBackend":
+                problems.append(f"{path}:{node.lineno}: names ReferenceBackend")
+    return sorted(set(problems))
+
+
 Detector = Callable[[str, str], list[str]]
 
 
