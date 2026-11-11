@@ -1,16 +1,21 @@
 """Collation against the frozen legacy collater, on the committed fixtures.
 
 ``ptr``, ``batch`` and ``shifts`` must equal the legacy vendored
-``Batch.from_data_list`` bit for bit, which is the data exit gate, and
-``cell`` value for value once the legacy ``[3 * n_graphs, 3]`` concatenation
-is viewed as ``[n_graphs, 3, 3]``.
+``Batch.from_data_list`` bit for bit, which is the data exit gate. ``cell`` is
+the legacy one value for value, once the legacy ``[3 * n_graphs, 3]``
+concatenation is viewed as ``[n_graphs, 3, 3]``, for every structure with a
+periodic axis and no all-zero row; elsewhere legacy carries a box built from
+the atom extent and v1 the parsed cell, a recorded difference. The element
+one-hot is no longer a key: the model forms it from ``node_atomic_numbers``,
+and doing so reproduces the legacy ``node_attrs``.
 """
 
 import json
 
 import pytest
 import torch
-from mace_core.data import AtomicNumberTable, KeySpecification, configuration_from_atoms
+from mace_core.data import KeySpecification, configuration_from_atoms
+from mace_core.graph import default_layout
 from mace_core.neighbors import get_neighbor_backend
 from mace_torch.graph import build_batch
 
@@ -58,44 +63,52 @@ def fixture_batches(default_dtype):
     legacy = torch_geometric.Batch.from_data_list(legacy_graphs)
 
     structures = [configuration_from_atoms(a, KeySpecification()) for a in atoms]
-    batch = build_batch(
+    batch, _, _ = build_batch(
         structures,
-        atomic_number_table=AtomicNumberTable(zs),
-        cutoff=R_MAX,
+        default_layout(zs, cutoff=R_MAX),
         neighbor_backend=get_neighbor_backend("matscipy"),
         dtype=default_dtype,
     )
-    return legacy, batch
+    return legacy, batch, zs
 
 
 @pytest.mark.parametrize("key", ["ptr", "batch", "shifts"])
 def test_collate_is_bit_exact_against_the_legacy_collater(batches, key):
-    legacy, batch = batches
+    legacy, batch, _ = batches
     assert batch[key].dtype == legacy[key].dtype
     assert torch.equal(batch[key], legacy[key])
 
 
-@pytest.mark.parametrize(
-    "key", ["edge_index", "unit_shifts", "positions", "node_attrs", "pbc"]
-)
+@pytest.mark.parametrize("key", ["edge_index", "unit_shifts", "positions", "pbc"])
 def test_collate_reproduces_the_legacy_structure_keys(batches, key):
-    legacy, batch = batches
+    legacy, batch, _ = batches
     assert torch.equal(batch[key], legacy[key])
 
 
-def test_collate_cell_is_the_legacy_one_viewed_per_graph(batches):
-    legacy, batch = batches
-    assert torch.equal(batch["cell"], legacy["cell"].view(-1, 3, 3))
+def test_collate_cell_is_the_legacy_one_wherever_legacy_keeps_the_parsed_cell(
+    batches,
+):
+    legacy, batch, _ = batches
+    legacy_cells = legacy["cell"].view(-1, 3, 3)
+    kept = batch["pbc"].any(dim=1) & batch["cell"].ne(0).any(dim=2).all(dim=1)
+    assert kept.any()
+    assert torch.equal(batch["cell"][kept], legacy_cells[kept])
+    if (~kept).any():
+        assert not torch.equal(batch["cell"][~kept], legacy_cells[~kept])
 
 
-def test_collate_rcell_and_volume_follow_legacy(batches):
-    legacy, batch = batches
-    torch.testing.assert_close(batch["volume"], legacy["volume"], rtol=0, atol=0)
-    torch.testing.assert_close(
-        batch["rcell"], legacy["rcell"].view(-1, 3, 3), rtol=0, atol=0
-    )
+def test_the_one_hot_formed_from_atomic_numbers_is_the_legacy_node_attrs(batches):
+    legacy, batch, zs = batches
+    index = torch.tensor([zs.index(int(z)) for z in batch["node_atomic_numbers"]])
+    one_hot = torch.nn.functional.one_hot(index, len(zs)).to(legacy["node_attrs"].dtype)
+    assert torch.equal(one_hot, legacy["node_attrs"])
+
+
+def test_the_batch_carries_none_of_the_legacy_derived_cell_keys(batches):
+    _, batch, _ = batches
+    assert not {"rcell", "volume", "node_attrs"} & set(batch)
 
 
 def test_collate_atomic_numbers_are_the_legacy_ones(batches):
-    legacy, batch = batches
+    legacy, batch, _ = batches
     assert torch.equal(batch["node_atomic_numbers"], legacy["atomic_numbers"])

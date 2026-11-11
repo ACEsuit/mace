@@ -3,13 +3,14 @@
 Three rules of the flat graph contract that only a whole-tree scan can hold:
 
 * ``torch_geometric`` is imported nowhere under ``packages/``, vendored or not;
-* ``validate_graph`` and ``GraphView`` run at boundaries. No module that defines
-  a ``forward`` names either, and the modules that do name them are listed
-  here, so a new caller is a reviewed edit;
-* the host tuples ``structure_sizes``, ``structure_periodic`` and
-  ``structure_padding`` are read outside compiled regions only, so no module
-  that defines a ``forward`` names them. A compiled frame would guard on their
-  values and recompile per batch.
+* the batch checks, ``check_layout``, ``check_batch_invariants`` and
+  ``GraphView``, run at boundaries. No module that defines a ``forward`` names
+  one, and the modules that do name them are listed here, so a new caller is a
+  reviewed edit;
+* the host values of a batch live in ``GraphInfo``, read outside compiled
+  regions only, so no module that defines a ``forward`` names ``GraphInfo``,
+  ``PaddingInfo`` or one of the per-structure fields that were once keys. A
+  compiled frame would guard on their values and recompile per batch.
 
 The scan is over syntax trees, so docstrings do not count.
 """
@@ -22,12 +23,20 @@ from tests.architecture.test_no_legacy_leak import names_used
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
 
-BOUNDARY_ONLY = frozenset({"validate_graph", "GraphView"})
-HOST_KEYS = frozenset({"structure_sizes", "structure_periodic", "structure_padding"})
+BOUNDARY_ONLY = frozenset({"check_layout", "check_batch_invariants", "GraphView"})
+HOST_VALUES = frozenset(
+    {
+        "GraphInfo",
+        "PaddingInfo",
+        "structure_sizes",
+        "structure_periodic",
+        "structure_padding",
+    }
+)
 
-#: The modules allowed to name the validator: the graph contract itself and the
-#: collation that produces a graph.
-VALIDATING_MODULES = frozenset(
+#: The modules allowed to name a batch check: the graph contract itself, and
+#: the collation that produces a batch.
+CHECKING_MODULES = frozenset(
     {
         "packages/mace-core/src/mace_core/graph/__init__.py",
         "packages/mace-core/src/mace_core/graph/collate.py",
@@ -79,38 +88,39 @@ def test_torch_geometric_is_imported_nowhere_in_packages():
     assert not offenders, f"torch_geometric is named in {offenders}"
 
 
-def test_no_forward_reaches_the_graph_validator():
+def test_no_forward_reaches_a_batch_check():
     offenders = []
     for path in _sources():
         source = path.read_text(encoding="utf-8")
         if _defines_forward(ast.parse(source)) and names_used(source) & BOUNDARY_ONLY:
             offenders.append(str(path.relative_to(REPO_ROOT)))
     assert not offenders, (
-        f"{offenders} define a forward and name validate_graph or GraphView. "
-        f"Validation runs at boundaries, never inside a model call."
+        f"{offenders} define a forward and name a batch check. Checks run at "
+        f"boundaries, never inside a model call."
     )
 
 
-def test_only_the_listed_boundaries_name_the_validator():
+def test_only_the_listed_boundaries_name_a_batch_check():
     naming = {
         str(path.relative_to(REPO_ROOT))
         for path in _sources()
-        if names_used(path.read_text(encoding="utf-8")) & {"validate_graph"}
+        if names_used(path.read_text(encoding="utf-8"))
+        & {"check_layout", "check_batch_invariants"}
     }
-    assert naming == VALIDATING_MODULES, (
-        f"validate_graph is named by {sorted(naming - VALIDATING_MODULES)} as "
-        f"well. If that module is a boundary, add it to VALIDATING_MODULES."
+    assert naming == CHECKING_MODULES, (
+        f"a batch check is named by {sorted(naming - CHECKING_MODULES)} as "
+        f"well. If that module is a boundary, add it to CHECKING_MODULES."
     )
 
 
-def test_no_forward_reads_the_host_keys():
+def test_no_forward_reads_a_host_value():
     offenders = []
     for path in _sources():
         source = path.read_text(encoding="utf-8")
-        hits = names_used(source) & HOST_KEYS
+        hits = names_used(source) & HOST_VALUES
         if _defines_forward(ast.parse(source)) and hits:
             offenders.append(f"{path.relative_to(REPO_ROOT)}: {sorted(hits)}")
     assert not offenders, (
-        f"{offenders}: a forward reads a host tuple. Branch on it outside the "
-        f"compiled region."
+        f"{offenders}: a forward reads a host value. Branch on GraphInfo outside "
+        f"the compiled region."
     )
