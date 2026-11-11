@@ -630,6 +630,16 @@ def test_a_declared_feature_that_is_not_a_real_number_is_refused():
         _sample(_water(spin_state=np.array(["up", "down", "up"])), layout, edges=False)
 
 
+@pytest.mark.parametrize("value", [np.nan, np.inf])
+def test_a_non_finite_feature_is_refused(value):
+    layout = default_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": "atom"})
+    spin_state = np.array([0.0, 1.0, value])
+    with pytest.raises(
+        SampleError, match="non-finite value in embedding feature 'spin_state'"
+    ):
+        _sample(_water(spin_state=spin_state), layout, edges=False)
+
+
 @pytest.mark.parametrize("properties", [{}, {"spin_state": None}])
 def test_a_declared_feature_the_structure_lacks_is_refused(properties):
     layout = default_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": "atom"})

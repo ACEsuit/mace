@@ -228,6 +228,10 @@ def _feature_value(
             f"{array.shape}; its first dimension must be the {n_atoms} atoms. It "
             f"is not reshaped."
         )
+    if not np.isfinite(array).all():
+        raise SampleError(
+            f"{where} has a non-finite value in embedding feature {name!r}."
+        )
     return array
 
 
