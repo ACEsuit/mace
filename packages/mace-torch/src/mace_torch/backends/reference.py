@@ -637,11 +637,13 @@ class ReferenceSphericalHarmonics(nn.Module):
 
 
 class ReferenceRadialBasis(nn.Module):
-    """The radial embedding, with the cutoff envelope already applied.
+    """The radial embedding, enveloped by the polynomial cutoff when the
+    specification applies it.
 
-    Built and computed in the kernel specification's precision, never in the process
-    default dtype, and enveloped by a polynomial cutoff of the kernel specification's
-    ``cutoff_order``.
+    Built and computed in the specification's precision, never in the process
+    default dtype. The envelope is a polynomial cutoff of the specification's
+    ``cutoff_order``, held as ``cutoff`` so that a caller can evaluate it on
+    lengths the basis does not see.
     """
 
     def __init__(self, kernel_spec: RadialBasisSpec) -> None:
@@ -650,14 +652,22 @@ class ReferenceRadialBasis(nn.Module):
         self.dtype = TORCH_DTYPES[kernel_spec.precision]
         if kernel_spec.kind == "bessel":
             self.basis = BesselBasis(
-                kernel_spec.cutoff, kernel_spec.num_basis, dtype=self.dtype
+                kernel_spec.cutoff,
+                kernel_spec.num_basis,
+                trainable=kernel_spec.trainable,
+                dtype=self.dtype,
             )
         elif kernel_spec.kind == "gaussian":
             self.basis = GaussianBasis(
-                kernel_spec.cutoff, kernel_spec.num_basis, dtype=self.dtype
+                kernel_spec.cutoff,
+                kernel_spec.num_basis,
+                trainable=kernel_spec.trainable,
+                dtype=self.dtype,
             )
         elif kernel_spec.kind == "chebyshev":
-            self.basis = ChebyshevBasis(kernel_spec.num_basis)
+            self.basis = ChebyshevBasis(
+                kernel_spec.num_basis, include_constant=kernel_spec.include_constant
+            )
         else:
             raise ValueError(
                 f"{kernel_spec.kind!r} is not a radial basis this backend builds. "
@@ -667,10 +677,23 @@ class ReferenceRadialBasis(nn.Module):
             kernel_spec.cutoff, kernel_spec.cutoff_order, dtype=self.dtype
         )
 
-    def forward(self, lengths: Tensor) -> Tensor:
-        """``[n_edges, 1]`` lengths in Angstrom -> ``[n_edges, num_basis]``."""
+    @property
+    def num_basis(self) -> int:
+        return self.kernel_spec.num_basis
+
+    def forward(self, lengths: Tensor, envelope: Tensor | None = None) -> Tensor:
+        """``[n_edges, 1]`` lengths in Angstrom -> ``[n_edges, num_basis]``.
+
+        ``envelope``, ``[n_edges, 1]``, is the cutoff already evaluated on the
+        raw lengths. A distance transform changes the lengths the basis sees
+        and never the cutoff's argument, so a caller that transformed them
+        hands the envelope in; without one it is evaluated on ``lengths``.
+        """
         lengths = lengths.to(self.dtype)
-        return self.basis(lengths) * self.cutoff(lengths)
+        features = self.basis(lengths)
+        if not self.kernel_spec.apply_cutoff:
+            return features
+        return features * (self.cutoff(lengths) if envelope is None else envelope)
 
 
 def _layer_widths(kernel_spec: RadialMLPSpec) -> list[tuple[int, int]]:

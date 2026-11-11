@@ -13,7 +13,12 @@ import numpy as np
 import pytest
 import torch
 from conftest import assert_close, fp64_only
-from mace_core.config import AgnesiTransformConfig, ModelConfig
+from mace_core.config import (
+    AgnesiTransformConfig,
+    BesselBasisConfig,
+    ChebyshevBasisConfig,
+    ModelConfig,
+)
 from mace_core.kernels import (
     BackendCapabilities,
     ChannelwiseTPConvSpec,
@@ -508,12 +513,41 @@ def test_every_block_asks_for_its_span_once_naming_every_member():
             assert required in kinds, required.__name__
 
 
-def test_a_convolution_with_an_unspecified_piece_does_not_ask():
-    """With the envelope after the radial networks, no specification states the
-    radial embedding, so the block builds op by op without asking."""
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"apply_cutoff": False},
+        {"radial_basis": ChebyshevBasisConfig(num_basis=8, include_constant=True)},
+        {"radial_basis": BesselBasisConfig(num_basis=8, trainable=True)},
+    ],
+    ids=["envelope-after-the-networks", "chebyshev-constant", "trainable-bessel"],
+)
+def test_the_span_request_states_every_option_of_the_radial_basis(options):
+    """The radial basis a span is asked about is the one the model built: an
+    option of the basis section that changed what it computes reaches the
+    specification, so a backend that does not handle it can decline."""
     backend = _Recording()
-    _backbone(backend, apply_cutoff=False)
-    assert "make_interaction_layer" not in backend.calls
+    model = _backbone(backend, **options)
+    asked = {
+        member
+        for members in backend.spans
+        for member in members
+        if isinstance(member, RadialBasisSpec)
+    }
+    assert asked == {model.radial_embedding.kernel_spec}
+    (spec,) = asked
+    assert spec.apply_cutoff == options.get("apply_cutoff", True)
+    basis = options.get("radial_basis")
+    assert spec.include_constant == getattr(basis, "include_constant", False)
+    assert spec.trainable == getattr(basis, "trainable", False)
+
+
+def test_the_radial_embedding_is_the_backends_op():
+    backend = _Recording()
+    model = _backbone(backend)
+    assert "make_radial_basis" in backend.calls
+    assert "make_spherical_harmonics" in backend.calls
+    assert model.radial_embedding.kernel_spec.cutoff == model.config.r_max
 
 
 def test_an_accepted_span_changes_nothing_the_reference_computes():
