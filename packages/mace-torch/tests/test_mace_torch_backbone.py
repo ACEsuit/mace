@@ -35,6 +35,7 @@ from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.nn import backbone as backbone_module
 from mace_torch.nn.backbone import (
+    GRAPH_KEYS,
     LocalityInfo,
     MACEBackbone,
     NodeFeatures,
@@ -128,14 +129,12 @@ def _graph(structures) -> dict[str, torch.Tensor]:
         batch.extend([index] * len(atomic_numbers))
         ptr.append(offset + len(atomic_numbers))
     atomic_numbers = torch.tensor(numbers, dtype=torch.int64)
-    columns = torch.tensor([ELEMENTS.index(z) for z in numbers])
     edge_index = torch.tensor(
         np.stack([np.concatenate(senders), np.concatenate(receivers)]),
         dtype=torch.int64,
     )
     return {
         "positions": torch.tensor(np.concatenate(positions), dtype=dtype),
-        "node_attrs": torch.nn.functional.one_hot(columns, len(ELEMENTS)).to(dtype),
         "node_atomic_numbers": atomic_numbers,
         "edge_index": edge_index,
         "shifts": torch.zeros(edge_index.shape[1], 3, dtype=dtype),
@@ -154,24 +153,21 @@ def _cluster(seed: int = 0, n_atoms: int = 6) -> dict[str, torch.Tensor]:
 def _padded(graph, n_atoms: int, n_edges: int) -> dict[str, torch.Tensor]:
     """``graph`` with inert padding appended, as the backbone's contract has it.
 
-    One padding structure of ``n_atoms`` atoms of the table's first element,
-    and ``n_edges`` self-loops among them whose shift puts them at twice the
+    One padding structure of ``n_atoms`` atoms of atomic number 0, and
+    ``n_edges`` self-loops among them whose shift puts them at twice the
     cutoff, where the envelope is exactly zero.
     """
     dtype = graph["positions"].dtype
     n_real = graph["positions"].shape[0]
     padding_nodes = n_real + torch.arange(n_edges) % n_atoms
-    first = torch.zeros(n_atoms, len(ELEMENTS), dtype=dtype)
-    first[:, 0] = 1.0
     shift = torch.zeros(n_edges, 3, dtype=dtype)
     shift[:, 0] = 2.0 * R_MAX
     return {
         "positions": torch.cat(
             [graph["positions"], torch.zeros(n_atoms, 3, dtype=dtype)]
         ),
-        "node_attrs": torch.cat([graph["node_attrs"], first]),
         "node_atomic_numbers": torch.cat(
-            [graph["node_atomic_numbers"], torch.full((n_atoms,), ELEMENTS[0])]
+            [graph["node_atomic_numbers"], torch.zeros(n_atoms, dtype=torch.int64)]
         ),
         "edge_index": torch.cat(
             [graph["edge_index"], torch.stack([padding_nodes, padding_nodes])], dim=1
@@ -289,7 +285,7 @@ def test_permuted_nodes_give_permuted_features(variant):
     permutation = torch.tensor([3, 0, 5, 1, 4, 2])
     inverse = torch.argsort(permutation)
     permuted = dict(graph)
-    for key in ("positions", "node_attrs", "node_atomic_numbers"):
+    for key in ("positions", "node_atomic_numbers"):
         permuted[key] = graph[key][permutation]
     permuted["edge_index"] = inverse[graph["edge_index"]]
     for ours, theirs in zip(model(permuted).layers, model(graph).layers, strict=True):
@@ -361,6 +357,69 @@ def test_the_forward_never_writes_into_the_graph():
     for key, (value, copy) in snapshot.items():
         assert graph[key] is value, key
         assert torch.equal(value, copy), key
+
+
+# ---------------------------------------------------------------------------
+# The element one-hot
+# ---------------------------------------------------------------------------
+
+
+def _table_one_hot(atomic_numbers: torch.Tensor) -> torch.Tensor:
+    columns = torch.tensor([ELEMENTS.index(int(z)) for z in atomic_numbers])
+    return torch.nn.functional.one_hot(columns, len(ELEMENTS)).to(
+        torch.get_default_dtype()
+    )
+
+
+def test_the_graph_carries_no_one_hot():
+    assert "node_attrs" not in GRAPH_KEYS
+    assert "node_attrs" not in _cluster()
+
+
+def test_the_one_hot_is_the_element_tables():
+    graph = _cluster()
+    features = _backbone()(graph)
+    assert torch.equal(
+        features.node_attrs, _table_one_hot(graph["node_atomic_numbers"])
+    )
+
+
+def test_the_one_hot_keeps_the_tables_width_without_its_last_element():
+    """Inferred from the batch, the width would be the largest index present
+    plus one, and a batch with no oxygen would get two columns."""
+    assert ELEMENTS[-1] == 8
+    graph = _graph([([1, 6, 1], [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])])
+    node_attrs = _backbone()(graph).node_attrs
+    assert node_attrs.shape == (3, len(ELEMENTS))
+    assert torch.equal(node_attrs, _table_one_hot(graph["node_atomic_numbers"]))
+
+
+def test_a_padding_atom_takes_the_first_element():
+    graph = _padded(_cluster(), n_atoms=2, n_edges=2)
+    node_attrs = _backbone()(graph).node_attrs
+    expected = torch.zeros(2, len(ELEMENTS), dtype=node_attrs.dtype)
+    expected[:, 0] = 1.0
+    assert torch.equal(node_attrs[-2:], expected)
+
+
+def test_the_one_hot_is_in_the_models_precision():
+    model = _backbone()
+    assert model(_cluster()).node_attrs.dtype == torch.get_default_dtype()
+
+
+@pytest.mark.parametrize(
+    "atomic_numbers",
+    [(0, 1), (1, 119), (1, 6, 1), (-1, 6)],
+    ids=["zero", "beyond-118", "repeated", "negative"],
+)
+def test_an_element_table_that_is_not_one_is_refused(atomic_numbers):
+    with pytest.raises(ValueError, match="element table"):
+        MACEBackbone(ReferenceBackend(), _config(), atomic_numbers)
+
+
+def test_the_element_lookup_is_not_saved():
+    """It is derived from the element table, which the model records."""
+    assert not any("element_index_of" in key for key in _backbone().state_dict())
 
 
 class _Recording:
@@ -642,8 +701,10 @@ def test_a_domain_with_ghosts_reproduces_its_local_atoms(variant):
     keep = graph["edge_index"][1] < 3
     local["edge_index"] = graph["edge_index"][:, keep]
     local["shifts"] = graph["shifts"][keep]
-    layers = domain(local, LocalityInfo(n_local=3, n_ghost=3)).layers
+    features = domain(local, LocalityInfo(n_local=3, n_ghost=3))
+    layers = features.layers
     assert calls == [0]
+    assert features.node_attrs.shape[0] == 3
     for ours, theirs in zip(layers, full_layers, strict=True):
         assert ours.shape[0] == 3
         assert_close(ours, theirs[:3], f"{variant} local atoms")
@@ -758,6 +819,8 @@ def test_the_backbone_compiles_whole(variant):
     compiled = torch.compile(model, backend=counter, fullgraph=True)
     result = compiled(graph)
     assert isinstance(result, NodeFeatures)
-    for ours, theirs in zip(result.layers, model(graph).layers, strict=True):
+    eager = model(graph)
+    for ours, theirs in zip(result.layers, eager.layers, strict=True):
         assert_close(ours, theirs, f"{variant} compiled")
+    assert torch.equal(result.node_attrs, eager.node_attrs)
     assert counter.frame_count == 1
