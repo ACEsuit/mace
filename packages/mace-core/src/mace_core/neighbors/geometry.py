@@ -1,40 +1,27 @@
 """The box a neighbour search bins into, and the cell the graph carries.
 
-These are two different matrices, and which one comes back with the graph is
-a decision with three outcomes. It is made here, by one pure function, so the
-graph builder and every neighbour-list backend read it from the same place and
-no backend can compute a regime of its own.
+These are two different matrices with different readers.
 
-**The search cell.** A binning search cannot bin along an axis that is not
-periodic, so every aperiodic row is replaced, for the search only, by an
-axis-aligned row sized from the atom extent along that axis::
+**The search cell** belongs to the search. A binning search cannot bin along an
+axis that is not periodic, so every aperiodic row is replaced, for the search
+only, by an axis-aligned row sized from the atom extent along that axis::
 
     search_cell[axis] = (extent + 2 * cutoff + 1) * e_axis
     extent            = max(positions[:, axis]) - min(positions[:, axis])
 
 The size depends on the extent and not on the absolute coordinates, so the
-same molecule placed far from the origin gets the same box. A box that grew
-with the origin is what made the long-range models' reciprocal space run out
-of memory.
+same molecule placed far from the origin gets the same box. A backend that
+bins may take this box from :func:`search_geometry`; it never leaves the
+search.
 
-**The returned cell**, the effective cell the graph carries and the stress and
-the reciprocal-space path divide by:
-
-=================================================  ==============================
-regime                                             returned cell
-=================================================  ==============================
-no axis periodic                                   the search cell
-some axis periodic, every physical row non-zero    the physical cell
-some axis periodic, an aperiodic row all zero      the physical cell, with that
-                                                   row taken from the search cell
-=================================================  ==============================
-
-A fully aperiodic structure has no meaningful stress, and a long-range model
-needs a non-degenerate box, so it gets the search cell. A structure with a
-periodic axis keeps its physical cell, because its stress divides by the cell
-volume and a vacuum row invented for the search would rescale it. The one
-exception is a physical row that is all zero, which would make the volume zero;
-that row alone is taken from the search cell.
+**The graph cell** is the cell as parsed. It is what the graph carries and what
+``shifts`` are measured in, :func:`graph_cell`. A structure with a periodic
+axis carries its lattice, an all-zero or missing lattice standing for the
+identity as the search reads it. A structure with no periodic axis carries its
+parsed cell, zero when it has none. No row is extended and none is patched:
+unit shifts along an aperiodic axis are zero, so the aperiodic rows never enter
+a shift, and nothing downstream divides by a volume it did not ask for. The
+cell therefore never depends on the positions.
 
 Neither matrix is ever written back to the
 :class:`~mace_core.data.configuration.Configuration` the positions came from.
@@ -48,28 +35,23 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["SearchGeometry", "search_geometry"]
+__all__ = ["SearchGeometry", "graph_cell", "search_geometry"]
 
 
 @dataclass(frozen=True)
 class SearchGeometry:
-    """Where a neighbour search looks, and the cell its graph carries.
+    """Where a neighbour search looks.
 
     Attributes:
         pbc: ``(3,)`` per-axis periodicity, as plain ``bool``.
         search_cell: ``[3, 3]`` row-vector lattice in Angstrom that the search
             bins into. Its periodic rows are the physical lattice vectors; every
             aperiodic row is axis-aligned and sized from the atom extent.
-        cell: ``[3, 3]`` the effective cell in Angstrom, chosen by the regime
-            table in this module's docstring. ``shifts`` are computed against
-            it, as ``unit_shifts @ cell``.
-
-    Both arrays are read-only copies.
+            Read-only.
     """
 
     pbc: tuple[bool, bool, bool]
     search_cell: np.ndarray
-    cell: np.ndarray
 
 
 def search_geometry(
@@ -78,7 +60,7 @@ def search_geometry(
     pbc: Any = None,
     cell: Any = None,
 ) -> SearchGeometry:
-    """The search box and the effective cell for one structure.
+    """The search box for one structure.
 
     Args:
         positions: ``[n_atoms, 3]`` Cartesian positions in Angstrom.
@@ -123,17 +105,37 @@ def search_geometry(
             )
             search_cell[axis] = (extent + 2 * cutoff + 1) * np.eye(3)[axis]
 
-    if any(periodic):
-        effective_cell = lattice.copy()
-        for axis in range(3):
-            if not periodic[axis] and not effective_cell[axis].any():
-                effective_cell[axis] = search_cell[axis]
-    else:
-        effective_cell = search_cell.copy()
-
     search_cell.setflags(write=False)
-    effective_cell.setflags(write=False)
-    return SearchGeometry(pbc=periodic, search_cell=search_cell, cell=effective_cell)
+    return SearchGeometry(pbc=periodic, search_cell=search_cell)
+
+
+def graph_cell(pbc: Any = None, cell: Any = None) -> np.ndarray:
+    """The cell a structure's graph carries, ``[3, 3]`` float64 in Angstrom.
+
+    With a periodic axis it is the lattice the search repeats: the cell as
+    given, or the identity when the cell is missing or all zero. With no
+    periodic axis it is the cell as given, or zero when there is none. No row
+    is ever extended or patched, so a slab whose aperiodic row is zero keeps
+    that row and a cell of zero volume.
+
+    Raises:
+        ValueError: if ``pbc`` or ``cell`` has the wrong form (see
+            :func:`search_geometry`).
+    """
+    periodic = _periodicity(pbc)
+    if any(periodic):
+        carried = _lattice(cell)
+    elif cell is None:
+        carried = np.zeros((3, 3), dtype=np.float64)
+    else:
+        carried = np.array(cell, dtype=np.float64, copy=True)
+        if carried.shape != (3, 3):
+            raise ValueError(
+                f"cell has shape {carried.shape}. Expected [3, 3], lattice "
+                f"vectors as rows."
+            )
+    carried.setflags(write=False)
+    return carried
 
 
 def _distance(cutoff: Any) -> float:

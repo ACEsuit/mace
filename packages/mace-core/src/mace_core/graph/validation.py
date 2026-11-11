@@ -1,96 +1,136 @@
-"""Checking a flat graph dict against the schema, and reading it back typed.
+"""Checking a batch, split by what each check costs.
 
-:func:`validate_graph` runs at boundaries only: on the output of collation and
-padding, in a backend adapter, at a calculator's entry. Never inside a model
-forward, which takes the dict as it is. It is ``O(n_nodes + n_edges)``.
+* :func:`check_layout` runs on **every batch** and reads no value: it compares
+  the batch's signature, ``{key: (shape, dtype)}``, with the one the layout
+  gives once the dimensions are bound from ``ptr``, ``positions``,
+  ``edge_index`` and the requirements' own dimensions. Only on a mismatch does
+  it work out which key is missing, undeclared or misshapen, so the message
+  names the key. The expected signature is cached, so a padded batch of a
+  fixed budget computes it once.
+* The **per-sample value checks** run in
+  :func:`~mace_core.graph.build.graph_sample`, on every structure, in the
+  worker that builds it.
+* :func:`check_batch_invariants` reads the index arrays: ``edge_index`` in
+  range, ``ptr`` monotone from 0 to ``n_nodes``, ``batch`` consistent with
+  ``ptr``, no edge between structures. Every value it reads is written by
+  collation, padding or a provider, so it runs in their test suites and in a
+  provider's conformance, and on a hand-built dict through ``validate=True``,
+  never in the training loop.
 
-It reads arrays of any framework without importing one. Shapes come from
-``.shape`` and dtypes from the name of ``.dtype`` (``torch.float64`` and numpy's
-``float64`` both read as ``float64``). The value checks copy the index arrays
-to the host once.
+Nothing here imports a framework. Shapes come from ``.shape`` and dtypes from
+the name of ``.dtype``, so ``torch.float64`` and numpy's ``float64`` both read
+as ``float64``. None of it runs inside a forward.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
 
+from mace_core.graph.info import GraphInfo
+from mace_core.graph.layout import GraphLayout
 from mace_core.graph.schema import (
+    ANY_TRAILING,
+    EDGE_KEYS,
     FLOAT,
-    GRAPH_SCHEMA,
-    LABEL_KEYS,
     NOT_KEYS,
-    PRESENCE_SUFFIX,
     FieldSpec,
-    presence_key,
 )
 
 __all__ = [
     "FLOAT_DTYPES",
-    "GraphInfo",
     "GraphValidationError",
     "GraphView",
-    "validate_graph",
+    "check_batch_invariants",
+    "check_layout",
+    "dtype_name",
 ]
 
 #: The dtype names a model's floating dtype can take.
 FLOAT_DTYPES: frozenset[str] = frozenset({"float16", "bfloat16", "float32", "float64"})
 
+_FIXED_DIMS = ("n_nodes", "n_edges", "n_graphs", "n_graphs_plus_one")
+
 
 class GraphValidationError(ValueError):
-    """A graph dict that does not satisfy the schema. The message names the key."""
+    """A batch that does not satisfy its layout. The message names the key."""
 
 
-@dataclass(frozen=True)
-class GraphInfo:
-    """The sizes of a graph, derived from its arrays.
-
-    Attributes:
-        num_graphs: ``len(ptr) - 1``, the only sanctioned derivation.
-        num_nodes: ``positions.shape[0]``; padding slots included.
-        num_edges: ``edge_index.shape[1]``; padding slots included.
-    """
-
-    num_graphs: int
-    num_nodes: int
-    num_edges: int
+def dtype_name(value: Any) -> str:
+    """The dtype name of an array of any framework: ``torch.float64`` is
+    ``float64``."""
+    name = str(getattr(value, "dtype", type(value).__name__))
+    return name.removeprefix("torch.")
 
 
-def validate_graph(
-    data: Mapping[str, Any],
+def _shape(value: Any) -> tuple[int, ...] | None:
+    shape = getattr(value, "shape", None)
+    if shape is None:
+        return None
+    try:
+        return tuple(int(n) for n in shape)
+    except TypeError:
+        return None
+
+
+def _expected_dtype(spec: FieldSpec, float_dtype: str) -> str:
+    return float_dtype if spec.dtype == FLOAT else spec.dtype
+
+
+@lru_cache(maxsize=256)
+def _expected_signature(
+    layout: GraphLayout,
+    keys: frozenset[str],
+    sizes: tuple[tuple[str, int], ...],
+    float_dtype: str,
+) -> tuple[tuple[str, tuple[int, ...], str], ...]:
+    """The signature of a batch with these keys and sizes, sorted by key.
+    A shape closed by :data:`ANY_TRAILING` keeps only its leading dimension."""
+    bound = dict(sizes)
+    fields = layout.graph_fields()
+    signature = []
+    for key in sorted(keys):
+        spec = fields[key]
+        shape = []
+        for dimension in spec.shape:
+            if dimension == ANY_TRAILING:
+                break
+            shape.append(dimension if isinstance(dimension, int) else bound[dimension])
+        signature.append((key, tuple(shape), _expected_dtype(spec, float_dtype)))
+    return tuple(signature)
+
+
+def _actual_signature(
+    graph: Mapping[str, Any], fields: Mapping[str, FieldSpec]
+) -> tuple[tuple[str, tuple[int, ...], str], ...]:
+    signature = []
+    for key in sorted(graph):
+        shape = _shape(graph[key]) or ()
+        spec = fields.get(key)
+        if spec is not None and spec.shape and spec.shape[-1] == ANY_TRAILING:
+            shape = shape[: len(spec.shape) - 1]
+        signature.append((key, shape, dtype_name(graph[key])))
+    return tuple(signature)
+
+
+def check_layout(
+    graph: Mapping[str, Any],
+    layout: GraphLayout,
+    info: GraphInfo,
     *,
-    require_labels: bool = False,
-    allow_extra: bool = True,
     float_dtype: str = "float64",
-) -> GraphInfo:
-    """Check ``data`` against :data:`~mace_core.graph.schema.GRAPH_SCHEMA`.
+) -> None:
+    """Check that ``graph`` carries exactly the keys ``layout`` declares, each
+    with its shape and dtype, and agrees with ``info``. Reads no value.
 
-    Checked: every required key is present; every schema key has its shape,
-    with each symbolic dimension the same size wherever it appears; dtype names
-    match, :data:`~mace_core.graph.schema.FLOAT` being ``float_dtype``;
-    ``edge_index`` stays in ``[0, n_nodes)``; ``ptr`` starts at 0, never
-    decreases and ends at ``n_nodes``; ``batch`` is
-    ``repeat_interleave(arange(n_graphs), diff(ptr))``; each label travels with
-    its presence flag; the host tuples agree with ``ptr`` and ``pbc``; and the
-    padding structures, if any, come last, are aperiodic, keep their atoms at
-    the origin and carry no present label.
-
-    Args:
-        data: The graph.
-        require_labels: Also require at least one label to be present in at
-            least one structure, as a training batch must have.
-        allow_extra: Accept keys the schema does not name. They are carried as
-            they are and nothing is inferred about their shape. A key the
-            schema forbids (:data:`~mace_core.graph.schema.NOT_KEYS`) or a
-            presence flag for an unknown label is refused either way.
-        float_dtype: The model's floating dtype name, one of
-            :data:`FLOAT_DTYPES`.
-
-    Returns:
-        The sizes of the graph.
+    Required: the structural core and every declared input. The edge keys
+    come all together or not at all, the latter while a device search has
+    still to join its edges, and so do the fields of the batch requirements,
+    which are built on the padded batch after collation. ``head`` and
+    ``displacement`` may be present.
 
     Raises:
         GraphValidationError: naming the first key that breaks a rule.
@@ -100,238 +140,216 @@ def validate_graph(
         raise ValueError(
             f"float_dtype is {float_dtype!r}; use one of {sorted(FLOAT_DTYPES)}."
         )
-    missing = sorted(k for k, s in GRAPH_SCHEMA.items() if s.required and k not in data)
-    if missing:
-        raise GraphValidationError(f"the graph is missing the required keys {missing}.")
-    for key in data:
-        if key in GRAPH_SCHEMA:
-            continue
-        if key in NOT_KEYS:
-            raise GraphValidationError(
-                f"{key!r} is derived, not stored: read it from GraphInfo or "
-                f"compute it inside the forward. Remove the key."
-            )
-        if key.endswith(PRESENCE_SUFFIX):
-            raise GraphValidationError(
-                f"{key!r} is a presence flag for {key[: -len(PRESENCE_SUFFIX)]!r}, "
-                f"which is not a label of the schema. The labels are "
-                f"{sorted(LABEL_KEYS)}."
-            )
-        if not allow_extra:
-            raise GraphValidationError(
-                f"{key!r} is not a key of the graph schema, and extra keys are "
-                f"not allowed here."
-            )
-
-    # ptr fixes n_graphs, positions n_nodes and edge_index n_edges, so those
-    # three are checked first and every other key is measured against them.
-    sizes: dict[str, int] = {}
-    _check_array("ptr", data["ptr"], GRAPH_SCHEMA["ptr"], sizes, float_dtype)
-    sizes["n_graphs"] = sizes["n_graphs_plus_one"] - 1
-    if sizes["n_graphs"] < 0:
-        raise GraphValidationError("ptr is empty; it holds n_graphs + 1 offsets.")
-    ordered = [
-        "positions",
-        "edge_index",
-        *(k for k in data if k not in ("ptr", "positions", "edge_index")),
-    ]
-    for key in ordered:
-        spec = GRAPH_SCHEMA.get(key)
-        if spec is None:
-            continue
-        if spec.kind == "host":
-            _check_host(key, data[key], spec, sizes["n_graphs"])
-        else:
-            _check_array(key, data[key], spec, sizes, float_dtype)
-
-    for label in LABEL_KEYS:
-        flag = presence_key(label)
-        if (label in data) != (flag in data):
-            have, lack = (label, flag) if label in data else (flag, label)
-            raise GraphValidationError(
-                f"{have!r} is present without {lack!r}. A label and its "
-                f"presence flag travel together."
-            )
-    if require_labels and not any(
-        _host_array(data[presence_key(label)]).any()
-        for label in LABEL_KEYS
-        if label in data
+    fields = layout.graph_fields()
+    sizes = _bound_sizes(graph, fields)
+    keys = frozenset(graph)
+    built = frozenset(layout.requirement_fields())
+    if keys - set(fields) or not _required(fields, keys, built) <= keys:
+        _explain_keys(graph, fields, keys, built)
+    expected = _expected_signature(
+        layout, keys, tuple(sorted(sizes.items())), float_dtype
+    )
+    if _actual_signature(graph, fields) != expected:
+        _explain_signature(graph, fields, expected)
+    if (info.num_graphs, info.num_nodes, info.num_edges) != (
+        sizes["n_graphs"],
+        sizes["n_nodes"],
+        sizes["n_edges"],
     ):
         raise GraphValidationError(
-            f"no structure of the graph carries a present label, and labels are "
-            f"required here. The labels are {sorted(LABEL_KEYS)}."
+            f"the batch has {sizes['n_graphs']} structures, {sizes['n_nodes']} "
+            f"nodes and {sizes['n_edges']} edges, but its GraphInfo says "
+            f"{info.num_graphs}, {info.num_nodes} and {info.num_edges}."
         )
 
-    _check_indices(data, sizes)
-    return GraphInfo(
-        num_graphs=sizes["n_graphs"],
-        num_nodes=sizes["n_nodes"],
-        num_edges=sizes["n_edges"],
-    )
+
+def _required(
+    fields: Mapping[str, FieldSpec], keys: frozenset[str], built: frozenset[str]
+) -> set[str]:
+    """The keys this batch must carry. The edge keys and the requirement fields
+    each come as a group, all or none: none while a device search has still to
+    join the edges, or before the requirements are built on the padded batch."""
+    required = {key for key, spec in fields.items() if spec.required}
+    if not keys & EDGE_KEYS:
+        required -= EDGE_KEYS
+    if not keys & built:
+        required -= built
+    return required
 
 
-def _dtype_name(value: Any) -> str:
-    name = str(getattr(value, "dtype", type(value).__name__))
-    return name.removeprefix("torch.")
+def _bound_sizes(
+    graph: Mapping[str, Any], fields: Mapping[str, FieldSpec]
+) -> dict[str, int]:
+    """Every symbolic dimension of the batch, bound from the arrays."""
+    for key in ("ptr", "positions"):
+        if key not in graph:
+            raise GraphValidationError(
+                f"the batch is missing the required key {key!r}."
+            )
+    ptr, positions = _shape(graph["ptr"]), _shape(graph["positions"])
+    if ptr is None or len(ptr) != 1 or ptr[0] < 1:
+        raise GraphValidationError(
+            f"'ptr' has shape {ptr}; it holds n_graphs + 1 offsets."
+        )
+    if positions is None or len(positions) != 2:
+        raise GraphValidationError(
+            f"'positions' has shape {positions}; the layout gives [n_nodes, 3]."
+        )
+    edges = _shape(graph["edge_index"]) if "edge_index" in graph else (2, 0)
+    if edges is None or len(edges) != 2:
+        raise GraphValidationError(
+            f"'edge_index' has shape {edges}; the layout gives [2, n_edges]."
+        )
+    sizes = {
+        "n_graphs_plus_one": ptr[0],
+        "n_graphs": ptr[0] - 1,
+        "n_nodes": positions[0],
+        "n_edges": edges[1],
+    }
+    for key, spec in fields.items():
+        if key not in graph:
+            continue
+        shape = _shape(graph[key])
+        if shape is None:
+            continue
+        for size, dimension in zip(shape, spec.shape, strict=False):
+            if isinstance(dimension, str) and dimension not in (
+                *_FIXED_DIMS,
+                ANY_TRAILING,
+            ):
+                sizes.setdefault(dimension, size)
+    return sizes
 
 
-def _check_array(
-    key: str, value: Any, spec: FieldSpec, sizes: dict[str, int], float_dtype: str
+def _explain_keys(
+    graph: Mapping[str, Any],
+    fields: Mapping[str, FieldSpec],
+    keys: frozenset[str],
+    built: frozenset[str],
 ) -> None:
-    shape = getattr(value, "shape", None)
-    if shape is None:
-        raise GraphValidationError(
-            f"{key!r} is a {type(value).__name__}; the schema stores it as an array."
-        )
-    try:
-        shape = tuple(int(n) for n in shape)
-    except TypeError:
-        raise GraphValidationError(
-            f"{key!r} has shape {shape!r}, which is not a sequence of sizes."
-        ) from None
-    if len(shape) != len(spec.shape):
-        raise GraphValidationError(
-            f"{key!r} has shape {list(shape)}; the schema gives {list(spec.shape)}."
-        )
-    for size, dimension in zip(shape, spec.shape, strict=True):
-        if isinstance(dimension, int):
-            expected = dimension
-        else:
-            expected = sizes.setdefault(dimension, size)
-        if size != expected:
+    for key in sorted(keys - set(fields)):
+        if key in NOT_KEYS:
             raise GraphValidationError(
-                f"{key!r} has shape {list(shape)}; the schema gives "
-                f"{list(spec.shape)} and {dimension} is {expected} in this graph."
+                f"{key!r} is never a key of the graph: it is derived from the "
+                f"arrays, computed in the forward, or kept in GraphInfo. Remove it."
             )
-    expected_dtype = float_dtype if spec.dtype == FLOAT else spec.dtype
-    if _dtype_name(value) != expected_dtype:
         raise GraphValidationError(
-            f"{key!r} has dtype {_dtype_name(value)}; the schema gives "
-            f"{expected_dtype}."
+            f"{key!r} is not declared by the layout. Declare it as an input, a "
+            f"feature or a requirement field, or leave it out of the batch."
         )
+    present_edges = keys & EDGE_KEYS
+    if present_edges and present_edges != EDGE_KEYS:
+        raise GraphValidationError(
+            f"the batch carries {sorted(present_edges)} but not "
+            f"{sorted(EDGE_KEYS - present_edges)}. The edge keys come together."
+        )
+    missing = sorted(_required(fields, keys, built) - keys)
+    raise GraphValidationError(f"the batch is missing the required keys {missing}.")
 
 
-def _check_host(key: str, value: Any, spec: FieldSpec, n_graphs: int) -> None:
-    if not isinstance(value, tuple):
-        raise GraphValidationError(
-            f"{key!r} is a {type(value).__name__}. It is a host value: a tuple "
-            f"with one entry per structure, never an array."
-        )
-    if len(value) != n_graphs:
-        raise GraphValidationError(
-            f"{key!r} has {len(value)} entries for {n_graphs} structures."
-        )
-    kind = bool if spec.dtype == "bool" else int
-    for entry in value:
-        if type(entry) is not kind:
+def _explain_signature(
+    graph: Mapping[str, Any],
+    fields: Mapping[str, FieldSpec],
+    expected: tuple[tuple[str, tuple[int, ...], str], ...],
+) -> None:
+    actual = {
+        key: (shape, dtype) for key, shape, dtype in _actual_signature(graph, fields)
+    }
+    for key, shape, dtype in expected:
+        have_shape, have_dtype = actual[key]
+        if have_shape != shape:
             raise GraphValidationError(
-                f"{key!r} holds {entry!r}; each entry is a Python {kind.__name__}."
+                f"{key!r} has shape {list(_shape(graph[key]) or ())}; the layout "
+                f"gives {list(fields[key].shape)}, which is {list(shape)} in this "
+                f"batch."
+            )
+        if have_dtype != dtype:
+            raise GraphValidationError(
+                f"{key!r} has dtype {have_dtype}; the layout gives {dtype}."
             )
 
 
-def _host_array(value: Any) -> np.ndarray:
+def _host(value: Any) -> np.ndarray:
     """A host numpy copy of an array of any framework."""
     if hasattr(value, "detach"):
         value = value.detach().cpu()
     return np.asarray(value)
 
 
-def _check_indices(data: Mapping[str, Any], sizes: dict[str, int]) -> None:
-    n_nodes, n_graphs = sizes["n_nodes"], sizes["n_graphs"]
-    edge_index = _host_array(data["edge_index"])
-    if edge_index.size and (edge_index.min() < 0 or edge_index.max() >= n_nodes):
-        raise GraphValidationError(
-            f"'edge_index' holds values in [{int(edge_index.min())}, "
-            f"{int(edge_index.max())}]; they must be in [0, {n_nodes})."
-        )
-    ptr = _host_array(data["ptr"])
+def check_batch_invariants(
+    graph: Mapping[str, Any], info: GraphInfo | None = None
+) -> None:
+    """Check the values collation, padding and providers write. Copies the
+    index arrays to the host, so it belongs in tests and at a hand-built
+    boundary, never in the training loop.
+
+    Raises:
+        GraphValidationError: naming the array that breaks a rule.
+    """
+    ptr = _host(graph["ptr"])
+    n_nodes = len(_host(graph["positions"]))
     if ptr[0] != 0 or ptr[-1] != n_nodes or np.any(np.diff(ptr) < 0):
         raise GraphValidationError(
-            f"'ptr' is {ptr.tolist()}; it starts at 0, never decreases and "
-            f"ends at n_nodes = {n_nodes}."
+            f"'ptr' is {ptr.tolist()}; it starts at 0, never decreases and ends "
+            f"at n_nodes = {n_nodes}."
         )
-    sizes_per_graph = np.diff(ptr)
-    batch = _host_array(data["batch"])
-    if not np.array_equal(batch, np.repeat(np.arange(n_graphs), sizes_per_graph)):
+    batch = _host(graph["batch"])
+    sizes = np.diff(ptr)
+    if not np.array_equal(batch, np.repeat(np.arange(len(sizes)), sizes)):
         raise GraphValidationError(
-            "'batch' does not match 'ptr': node n belongs to graph g exactly "
-            "when ptr[g] <= n < ptr[g + 1]."
+            "'batch' does not match 'ptr': node n belongs to graph g exactly when "
+            "ptr[g] <= n < ptr[g + 1]."
         )
-    if "structure_sizes" in data and list(data["structure_sizes"]) != (
-        sizes_per_graph.tolist()
-    ):
-        raise GraphValidationError(
-            f"'structure_sizes' is {list(data['structure_sizes'])}; 'ptr' gives "
-            f"{sizes_per_graph.tolist()}."
-        )
-    padding = list(data["structure_padding"])
-    first_padding = padding.index(True) if True in padding else len(padding)
-    if not all(padding[first_padding:]):
-        raise GraphValidationError(
-            f"'structure_padding' is {padding}; padding structures are appended, "
-            f"so every structure after the first padding one is padding too."
-        )
-    if _host_array(data["pbc"])[first_padding:].any():
-        raise GraphValidationError(
-            f"'structure_padding' is {padding} but a padding structure is "
-            f"periodic in 'pbc'; padding structures are aperiodic."
-        )
-    if first_padding < n_graphs:
-        first_padding_atom = int(ptr[first_padding])
-        if _host_array(data["positions"])[first_padding_atom:].any():
+    if "edge_index" in graph:
+        edge_index = _host(graph["edge_index"])
+        if edge_index.size and (edge_index.min() < 0 or edge_index.max() >= n_nodes):
             raise GraphValidationError(
-                f"'structure_padding' is {padding} but an atom of a padding "
-                f"structure is away from the origin; padding atoms sit at 0."
+                f"'edge_index' holds values in [{int(edge_index.min())}, "
+                f"{int(edge_index.max())}]; they must be in [0, {n_nodes})."
             )
-        for label in sorted(LABEL_KEYS):
-            if label not in data:
-                continue
-            flag = presence_key(label)
-            flags = _host_array(data[flag])
-            per_atom = GRAPH_SCHEMA[flag].shape[0] == "n_nodes"
-            start = first_padding_atom if per_atom else first_padding
-            if flags[start:].any():
-                raise GraphValidationError(
-                    f"{presence_key(label)!r} is true on a padding structure; "
-                    f"padding carries no label."
-                )
-    if "structure_periodic" in data:
-        periodic = _host_array(data["pbc"]).any(axis=1).tolist()
-        if list(data["structure_periodic"]) != periodic:
+        if edge_index.size and np.any(batch[edge_index[0]] != batch[edge_index[1]]):
             raise GraphValidationError(
-                f"'structure_periodic' is {list(data['structure_periodic'])}; "
-                f"'pbc' gives {periodic}."
+                "'edge_index' has an edge between two structures; every edge "
+                "joins two atoms of one structure."
             )
+    if info is not None and tuple(sizes.tolist()) != info.structure_sizes:
+        raise GraphValidationError(
+            f"GraphInfo.structure_sizes is {list(info.structure_sizes)}; 'ptr' "
+            f"gives {sizes.tolist()}."
+        )
 
 
 class GraphView:
-    """Attribute access over a validated graph dict, without copying it.
+    """Attribute access over a checked graph dict, without copying it.
 
-    ``view.positions`` is ``data["positions"]`` and ``view.info.num_graphs``
+    ``view.positions`` is ``graph["positions"]`` and ``view.info.num_graphs``
     the graph count. Sugar for code outside the model: a forward takes the
     dict itself.
-
-    Args:
-        data: The graph. It is validated once, here.
-        float_dtype: The model's floating dtype name.
     """
 
-    __slots__ = ("_data", "info")
+    __slots__ = ("_graph", "info")
 
-    def __init__(self, data: Mapping[str, Any], *, float_dtype: str = "float64"):
-        self.info = validate_graph(data, float_dtype=float_dtype)
-        self._data = data
+    def __init__(
+        self,
+        graph: Mapping[str, Any],
+        layout: GraphLayout,
+        info: GraphInfo,
+        *,
+        float_dtype: str = "float64",
+    ):
+        check_layout(graph, layout, info, float_dtype=float_dtype)
+        self._graph = graph
+        self.info = info
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(name)
-        if name not in self._data:
-            known = "a schema key" if name in GRAPH_SCHEMA else "not a schema key"
-            raise AttributeError(f"this graph has no {name!r} ({known}).")
-        return self._data[name]
+        if name not in self._graph:
+            raise AttributeError(f"this graph has no {name!r}.")
+        return self._graph[name]
 
     def __getitem__(self, name: str) -> Any:
-        return self._data[name]
+        return self._graph[name]
 
     def __contains__(self, name: object) -> bool:
-        return name in self._data
+        return name in self._graph

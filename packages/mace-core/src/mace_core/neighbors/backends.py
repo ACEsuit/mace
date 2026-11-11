@@ -2,8 +2,8 @@
 
 A backend finds the edges and nothing else. It receives the
 :class:`~mace_core.neighbors.geometry.SearchGeometry` the graph builder already
-computed and returns ``(edge_index, unit_shifts)``; the effective cell and the
-shifts are filled in afterwards by
+computed and returns ``(edge_index, unit_shifts)``; the shifts, measured in the
+cell the graph carries, are filled in afterwards by
 :func:`~mace_core.neighbors.neighborhood.get_neighborhood`, the same way
 whichever backend ran. Swapping backends is therefore a choice about speed and
 robustness and never about the numbers: every registered backend has to

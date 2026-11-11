@@ -30,8 +30,10 @@ What is here so far:
   names no backend gets the framework's default through
   `resolve_neighbor_backend`: vesin for mace-torch, matscipy for mace-jax,
   all_pairs without a framework. A named backend is used as named, or
-  refused. The search box and the effective cell the graph carries are
-  decided once, by `search_geometry`, whichever backend runs.
-- `mace_core.graph` — the flat graph dict a model is handed: `GRAPH_SCHEMA`
-  as data, `validate_graph` for the boundaries, the numpy reference `collate`,
-  and `graph_sample` from a `Configuration`.
+  refused. A backend that bins may take its box from `search_geometry`; the
+  graph carries the parsed cell, `graph_cell`, whichever backend runs.
+- `mace_core.graph` — the flat graph dict a model is handed: the structural
+  core `GRAPH_CORE`, the per-run `GraphLayout` of inputs, targets and batch
+  requirements, the `GraphInfo` kept beside a batch, `check_layout` and the
+  other checks split by cost, the numpy reference `collate`, and
+  `structure_graph` and `graph_sample` from a `Configuration`.

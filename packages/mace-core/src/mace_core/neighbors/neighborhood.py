@@ -1,4 +1,4 @@
-"""The neighbour list of one structure: the edge set and the cell it is measured in.
+"""The neighbour list of one structure: its edge set, recorded with its cutoff.
 
 :func:`get_neighborhood` is a pure function. It copies what it needs and never
 writes into its arguments, so a caller has nothing to protect with a copy of
@@ -16,9 +16,10 @@ directly:
 * a structure with **no edges** is legal and returns empty arrays;
 * ``pbc=None`` means no axis is periodic, and a missing or all-zero cell
   stands for the identity before any aperiodic row is extended;
-* the **effective cell** is one of three regimes, decided by
-  :func:`~mace_core.neighbors.geometry.search_geometry` before the backend runs
-  and never by the backend.
+* images exist only along periodic axes, so every unit shift is zero along an
+  aperiodic one, and ``shifts`` are measured in the cell the graph carries,
+  :func:`~mace_core.neighbors.geometry.graph_cell`. The box a backend searches
+  in is its own and never comes back.
 """
 
 from __future__ import annotations
@@ -29,23 +30,24 @@ from typing import Any
 import numpy as np
 
 from mace_core.neighbors.backends import NeighborListBackend
-from mace_core.neighbors.geometry import search_geometry
+from mace_core.neighbors.geometry import graph_cell, search_geometry
 
 __all__ = ["NeighborList", "get_neighborhood"]
 
 
 @dataclass(frozen=True)
 class NeighborList:
-    """The edges of one structure, and the cell their shifts are measured in.
+    """The edges of one structure, and the cutoff they were searched with.
 
     Attributes:
         edge_index: ``[2, n_edges]`` int64; row 0 the sender, row 1 the receiver.
-        unit_shifts: ``[n_edges, 3]`` int64 lattice-vector counts. The edge
-            vector is ``positions[receiver] - positions[sender] + shifts``.
+        unit_shifts: ``[n_edges, 3]`` int64 lattice-vector counts, zero along
+            every aperiodic axis. The edge vector is
+            ``positions[receiver] - positions[sender] + shifts``.
         shifts: ``[n_edges, 3]`` float64 displacements in Angstrom, exactly
-            ``unit_shifts @ cell`` with the **returned** cell.
-        cell: ``[3, 3]`` float64, the effective cell (see
-            :mod:`mace_core.neighbors.geometry` for its three regimes).
+            ``unit_shifts @ graph_cell(pbc, cell)``.
+        cutoff: The strict distance bound the list was searched with, in
+            Angstrom. A list is only valid for a model of the same cutoff.
 
     Every array is read-only.
     """
@@ -53,7 +55,7 @@ class NeighborList:
     edge_index: np.ndarray
     unit_shifts: np.ndarray
     shifts: np.ndarray
-    cell: np.ndarray
+    cutoff: float
 
 
 def get_neighborhood(
@@ -64,7 +66,7 @@ def get_neighborhood(
     *,
     backend: NeighborListBackend,
 ) -> NeighborList:
-    """Every directed edge shorter than ``cutoff``, and the effective cell.
+    """Every directed edge shorter than ``cutoff``.
 
     Args:
         positions: ``[n_atoms, 3]`` Cartesian positions in Angstrom.
@@ -77,25 +79,32 @@ def get_neighborhood(
     Raises:
         ValueError: if an input has the wrong shape (see
             :func:`~mace_core.neighbors.geometry.search_geometry`), or if the
-            backend returns arrays of the wrong shape or non-integer shifts.
+            backend returns arrays of the wrong shape, non-integer shifts, or
+            an image along an aperiodic axis.
     """
     positions = np.array(positions, dtype=np.float64, copy=True)
     positions.setflags(write=False)
     geometry = search_geometry(positions, cutoff, pbc, cell)
     edge_index, unit_shifts = backend.search(positions, float(cutoff), geometry)
     edge_index, unit_shifts = _checked_edges(edge_index, unit_shifts, len(positions))
+    aperiodic = [axis for axis in range(3) if not geometry.pbc[axis]]
+    if unit_shifts[:, aperiodic].any():
+        raise ValueError(
+            f"the neighbour backend returned an image along the aperiodic axes "
+            f"{aperiodic}. Images exist only along periodic axes."
+        )
 
     true_self_edge = (edge_index[0] == edge_index[1]) & np.all(unit_shifts == 0, axis=1)
     edge_index = edge_index[:, ~true_self_edge]
     unit_shifts = unit_shifts[~true_self_edge]
-    shifts = np.dot(unit_shifts, geometry.cell)
+    shifts = np.dot(unit_shifts, graph_cell(geometry.pbc, cell))
     for array in (edge_index, unit_shifts, shifts):
         array.setflags(write=False)
     return NeighborList(
         edge_index=edge_index,
         unit_shifts=unit_shifts,
         shifts=shifts,
-        cell=geometry.cell,
+        cutoff=float(cutoff),
     )
 
 

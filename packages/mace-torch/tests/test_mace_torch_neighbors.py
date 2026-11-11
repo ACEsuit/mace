@@ -67,7 +67,6 @@ def test_vesin_reproduces_the_all_pairs_edge_set(name):
     vesin = get_neighborhood(positions, cutoff, pbc, cell, backend=VesinBackend())
     pairs = get_neighborhood(positions, cutoff, pbc, cell, backend=AllPairsBackend())
     assert _edges(vesin) == _edges(pairs)
-    assert np.array_equal(vesin.cell, pairs.cell)
 
 
 def test_vesin_takes_its_thread_count_from_the_settings():
