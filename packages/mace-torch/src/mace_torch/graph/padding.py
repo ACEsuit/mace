@@ -1,13 +1,16 @@
 """Padding a batched torch graph to a budget, and stripping it from outputs.
 
-The contract is :mod:`mace_core.graph.padding`'s: the padded dict is a valid
-graph whose padding structures, atoms and edges are physically inert, and the
-real sizes travel beside it in a :class:`~mace_core.graph.PaddingInfo`.
-Nothing is reordered, so :func:`unpad_outputs` keeps the leading real slots of
-each output and that is the whole inverse.
+The contract is :mod:`mace_core.graph.padding`'s: padding is a structure. The
+padding structures of :func:`~mace_core.graph.padding_samples` are collated
+and appended after the real ones, exactly as ``collate([*real, *padding])``
+would batch them, and the real sizes travel in the returned
+:class:`~mace_core.graph.GraphInfo`. Nothing is reordered, so
+:func:`unpad_outputs` keeps the leading real slots of each output and that is
+the whole inverse.
 
-:func:`pad_batch` does not validate its output, since a device-resident batch
-would have to be copied to the host to do so. A caller at a boundary validates.
+:func:`pad_batch` checks its output with
+:func:`~mace_core.graph.check_layout`, which reads no value, so a batch already
+on the device is not copied back.
 """
 
 from __future__ import annotations
@@ -17,26 +20,26 @@ from collections.abc import Mapping
 from typing import Any, overload
 
 import torch
-from mace_core.elements import AtomicNumberTable
-from mace_core.elements.default_keys import Storage
 from mace_core.graph import (
-    GRAPH_SCHEMA,
+    ANY_TRAILING,
     AutoPadding,
     FixedPadding,
+    GraphInfo,
+    GraphLayout,
     NoPadding,
     PaddingBudget,
     PaddingInfo,
+    check_layout,
     padding_budget,
-    padding_length,
+    padding_samples,
 )
-from mace_core.graph.collate import feature_levels
 from mace_core.graph.schema import EDGE_LEVEL, GRAPH_LEVEL, NODE_LEVEL, level_of
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
 from mace_core.outputs import CORE_FIELD_NAMES, MACEOutput
 
-from mace_torch.graph.collate import derived_cell_quantities
+from mace_torch.graph.collate import collate, dtype_name
 
-__all__ = ["pad_batch", "unpad_outputs"]
+__all__ = ["pad_batch", "pad_targets", "unpad_outputs"]
 
 logger = logging.getLogger(__name__)
 
@@ -52,39 +55,51 @@ _CORE_FIELD_PER_ATOM = {
 
 
 def pad_batch(
-    data: Mapping[str, Any],
+    graph: Mapping[str, torch.Tensor],
+    info: GraphInfo,
     policy: NoPadding | FixedPadding | AutoPadding,
     r_max: float,
-    *,
-    atomic_number_table: AtomicNumberTable,
-    features: Mapping[str, Storage] | None = None,
-) -> tuple[dict[str, Any], PaddingInfo]:
-    """``data`` padded to the budget ``policy`` gives, and its real sizes.
+    layout: GraphLayout,
+) -> tuple[dict[str, torch.Tensor], GraphInfo]:
+    """``graph`` padded to the budget ``policy`` gives, and its new info.
 
     Args:
-        data: A collated graph dict. Not modified.
+        graph: A collated, unpadded graph dict. Not modified.
+        info: Its :class:`~mace_core.graph.GraphInfo`.
         policy: The padding policy.
         r_max: The model's cutoff, Angstrom; sets the padding edge length and
             the padding cell.
-        atomic_number_table: The model's element table. Padding atoms are its
-            first element, in the one-hot and in ``node_atomic_numbers``.
-        features: The declared embedding features, padded with zeros.
+        layout: What the run batches.
+
+    Returns:
+        The padded graph, on the device and in the dtype of ``graph``, and a
+        ``GraphInfo`` whose ``padding`` holds the real sizes.
 
     Raises:
         PaddingOverflowError: for a fixed budget the batch does not fit, when
             the policy says ``error``.
-        ValueError: for a key whose level is unknown and that is not a tuple,
-            since it cannot be padded without guessing its shape.
+        ValueError: for a batch that is padded already, or that carries the
+            field of a batch requirement, which is built after padding.
     """
-    n_nodes = int(data["positions"].shape[0])
-    n_edges = int(data["edge_index"].shape[1])
-    n_graphs = int(data["ptr"].shape[0]) - 1
-    info = PaddingInfo(
-        n_real_nodes=n_nodes, n_real_edges=n_edges, n_real_graphs=n_graphs
+    if info.padding is not None:
+        raise ValueError("the batch is padded already; pad a batch once.")
+    built = sorted(set(graph) & set(layout.requirement_fields()))
+    if built:
+        raise ValueError(
+            f"the batch carries the batch-requirement fields {built}. Pad first, "
+            f"then build the requirements on the padded batch."
+        )
+    real = PaddingInfo(
+        n_real_nodes=info.num_nodes,
+        n_real_edges=info.num_edges,
+        n_real_graphs=info.num_graphs,
     )
-    budget = padding_budget(policy, n_nodes=n_nodes, n_edges=n_edges, n_graphs=n_graphs)
-    if budget is None or budget == PaddingBudget(n_nodes, n_edges, n_graphs):
-        return dict(data), info
+    budget = padding_budget(
+        policy, n_nodes=info.num_nodes, n_edges=info.num_edges, n_graphs=info.num_graphs
+    )
+    unpadded = PaddingBudget(info.num_nodes, info.num_edges, info.num_graphs)
+    if budget is None or budget == unpadded:
+        return dict(graph), _with_padding(info, real)
     if isinstance(policy, FixedPadding) and budget != PaddingBudget(
         policy.nodes_budget, policy.edges_budget, policy.graphs_budget
     ):
@@ -92,128 +107,130 @@ def pad_batch(
             "the batch of %d nodes, %d edges and %d structures exceeds the "
             "padding budget; padding to %d, %d and %d instead, which recompiles "
             "a compiled model once",
-            n_nodes,
-            n_edges,
-            n_graphs,
+            info.num_nodes,
+            info.num_edges,
+            info.num_graphs,
             budget.nodes,
             budget.edges,
             budget.graphs,
         )
 
-    padding = _Padding(
-        nodes=budget.nodes - n_nodes,
-        edges=budget.edges - n_edges,
-        graphs=budget.graphs - n_graphs,
-        budget=budget,
-        length=padding_length(r_max),
-        element_zero=atomic_number_table.index_to_z(0),
+    positions = graph["positions"]
+    dtype, device = positions.dtype, positions.device
+    samples = padding_samples(
+        budget,
+        real,
+        r_max,
+        layout,
+        with_edges="edge_index" in graph,
+        feature_shapes=_feature_shapes(graph, layout),
     )
-    feature_level = feature_levels(features)
-    padded: dict[str, Any] = {}
-    for key, value in data.items():
-        if key == "ptr":
-            padded[key] = torch.cat((value, padding.ptr_tail(value)))
-        elif key in GRAPH_SCHEMA and GRAPH_SCHEMA[key].kind == "host":
-            padded[key] = value + padding.host_tail(key)
-        elif key in GRAPH_SCHEMA:
-            level = level_of(GRAPH_SCHEMA[key])
-            padded[key] = padding.extend(key, value, level, GRAPH_SCHEMA[key].pad_value)
-        elif key in feature_level:
-            padded[key] = padding.extend(key, value, feature_level[key], "zero")
-        elif isinstance(value, tuple):
-            padded[key] = value + (None,) * padding.graphs
-        else:
+    padding, padding_info = collate(samples, layout, dtype=dtype, device=device)
+    padded = _append(graph, padding, info, layout)
+    padded_info = GraphInfo(
+        num_graphs=budget.graphs,
+        num_nodes=budget.nodes,
+        num_edges=budget.edges if "edge_index" in graph else 0,
+        structure_sizes=info.structure_sizes + padding_info.structure_sizes,
+        padding=real,
+    )
+    check_layout(padded, layout, padded_info, float_dtype=dtype_name(dtype))
+    return padded, padded_info
+
+
+def _with_padding(info: GraphInfo, real: PaddingInfo) -> GraphInfo:
+    return GraphInfo(
+        num_graphs=info.num_graphs,
+        num_nodes=info.num_nodes,
+        num_edges=info.num_edges,
+        structure_sizes=info.structure_sizes,
+        padding=real,
+    )
+
+
+def _feature_shapes(
+    graph: Mapping[str, torch.Tensor], layout: GraphLayout
+) -> dict[str, tuple[int, ...]]:
+    """The trailing sizes of each embedding feature, as the batch carries them."""
+    shapes: dict[str, tuple[int, ...]] = {}
+    for name, spec in layout.inputs.items():
+        if spec.shape[-1] == ANY_TRAILING:
+            shapes[name] = tuple(int(n) for n in graph[name].shape[1:])
+    return shapes
+
+
+def _append(
+    graph: Mapping[str, torch.Tensor],
+    padding: Mapping[str, torch.Tensor],
+    info: GraphInfo,
+    layout: GraphLayout,
+) -> dict[str, torch.Tensor]:
+    """``padding`` batched after ``graph``, as one collation of both would."""
+    fields = layout.graph_fields()
+    graphs = len(padding["ptr"]) - 1
+    joined: dict[str, torch.Tensor] = {}
+    for key, value in graph.items():
+        if key not in fields:
             raise ValueError(
-                f"{key!r} is neither a schema key nor a declared feature, so "
-                f"pad_batch cannot tell which dimension to pad. Declare it in "
-                f"`features`, or leave it out of the batch."
+                f"{key!r} is not declared by the layout, so pad_batch cannot tell "
+                f"which dimension to pad. Declare it, or leave it out of the batch."
             )
-    return padded, info
+        if key in padding:
+            extra = padding[key]
+        elif level_of(fields[key]) == GRAPH_LEVEL:
+            # A per-structure key the caller adds, such as ``displacement``:
+            # padding structures carry zero.
+            extra = value.new_zeros((graphs, *value.shape[1:]))
+        else:
+            raise ValueError(f"{key!r} has no level padding extends.")
+        if key == "edge_index":
+            joined[key] = torch.cat((value, extra + info.num_nodes), dim=1)
+        elif key == "batch":
+            joined[key] = torch.cat((value, extra + info.num_graphs))
+        elif key == "ptr":
+            joined[key] = torch.cat((value, extra[1:] + info.num_nodes))
+        elif key in fields and level_of(fields[key]) in (
+            NODE_LEVEL,
+            EDGE_LEVEL,
+            GRAPH_LEVEL,
+        ):
+            joined[key] = torch.cat((value, extra.to(value.dtype)))
+        else:
+            raise ValueError(f"{key!r} has no level padding extends.")
+    return joined
 
 
-class _Padding:
-    """The padding rows of one batch, by key."""
+def pad_targets(
+    targets: Mapping[str, torch.Tensor], info: GraphInfo, layout: GraphLayout
+) -> dict[str, torch.Tensor]:
+    """Targets extended to a padded batch: zero labels, false presence flags and
+    zero weights on every padding slot, so a loss over the padded batch counts
+    nothing there.
 
-    def __init__(
-        self,
-        *,
-        nodes: int,
-        edges: int,
-        graphs: int,
-        budget: PaddingBudget,
-        length: float,
-        element_zero: int,
-    ) -> None:
-        self.nodes, self.edges, self.graphs = nodes, edges, graphs
-        self.budget = budget
-        self.length = length
-        self.element_zero = element_zero
-
-    def count(self, level: str | None) -> int:
-        if level == NODE_LEVEL:
-            return self.nodes
-        if level == EDGE_LEVEL:
-            return self.edges
-        if level == GRAPH_LEVEL:
-            return self.graphs
-        raise ValueError(f"{level!r} is not a level padding extends.")
-
-    def extend(
-        self, key: str, value: torch.Tensor, level: str | None, pad_value: str
-    ) -> torch.Tensor:
-        axis = 1 if key == "edge_index" else 0
-        shape = list(value.shape)
-        shape[axis] = self.count(level)
-        rows = torch.zeros(shape, dtype=value.dtype, device=value.device)
-        if pad_value in ("one", "true"):
-            rows.fill_(1)
-        elif pad_value == "element_zero_one_hot":
-            rows[:, 0] = 1
-        elif pad_value == "element_zero_atomic_number":
-            rows.fill_(self.element_zero)
-        elif pad_value == "self_loop":
-            rows.fill_(self.budget.nodes - 1)
-        elif pad_value == "padding_shift":
-            rows[:, 0] = self.length
-        elif pad_value == "unit_x":
-            rows[:, 0] = 1
-        elif pad_value == "padding_cell":
-            rows[:] = self._cells(rows)
-        elif pad_value == "padding_reciprocal_cell":
-            rows[:] = derived_cell_quantities(self._cells(rows))[0]
-        elif pad_value == "padding_volume":
-            rows[:] = derived_cell_quantities(self._cells(rows[:, None, None]))[1]
-        elif pad_value == "padding_graph_id":
-            rows.fill_(self.budget.graphs - 1)
-        elif pad_value not in ("zero", "false"):
-            raise ValueError(f"{key!r} has the pad value {pad_value!r}, unknown here.")
-        return torch.cat((value, rows), dim=axis)
-
-    def _cells(self, like: torch.Tensor) -> torch.Tensor:
-        """``len(like)`` padding cells in ``like``'s dtype and device."""
-        eye = torch.eye(3, dtype=like.dtype, device=like.device)
-        return (self.length * eye).expand(len(like), 3, 3)
-
-    def ptr_tail(self, ptr: torch.Tensor) -> torch.Tensor:
-        """Empty padding structures, then the last one holding every padding atom."""
-        tail = torch.full(
-            (self.graphs,), int(ptr[-1]), dtype=ptr.dtype, device=ptr.device
+    Raises:
+        ValueError: if ``info`` is not a padded batch's.
+    """
+    if info.padding is None:
+        raise ValueError("pad_targets needs the GraphInfo pad_batch returned.")
+    extra = {
+        NODE_LEVEL: info.num_nodes - info.padding.n_real_nodes,
+        GRAPH_LEVEL: info.num_graphs - info.padding.n_real_graphs,
+    }
+    fields = layout.target_fields()
+    padded: dict[str, torch.Tensor] = {}
+    for key, value in targets.items():
+        rows = extra[level_of(fields[key]) or GRAPH_LEVEL]
+        tail = torch.zeros(
+            (rows, *value.shape[1:]), dtype=value.dtype, device=value.device
         )
-        tail[-1] = self.budget.nodes
-        return tail
-
-    def host_tail(self, key: str) -> tuple[Any, ...]:
-        if key == "structure_sizes":
-            return (0,) * (self.graphs - 1) + (self.nodes,)
-        if key == "structure_periodic":
-            return (False,) * self.graphs
-        return (True,) * self.graphs
+        padded[key] = torch.cat((value, tail))
+    return padded
 
 
 @overload
 def unpad_outputs(
     outputs: MACEOutput,
-    info: PaddingInfo,
+    info: GraphInfo,
     *,
     catalogue: ObservableCatalogue = ...,
 ) -> MACEOutput: ...
@@ -222,7 +239,7 @@ def unpad_outputs(
 @overload
 def unpad_outputs(
     outputs: Mapping[str, Any],
-    info: PaddingInfo,
+    info: GraphInfo,
     *,
     catalogue: ObservableCatalogue = ...,
 ) -> dict[str, Any]: ...
@@ -230,7 +247,7 @@ def unpad_outputs(
 
 def unpad_outputs(
     outputs: MACEOutput | Mapping[str, Any],
-    info: PaddingInfo,
+    info: GraphInfo,
     *,
     catalogue: ObservableCatalogue = DEFAULT_CATALOGUE,
 ) -> MACEOutput | dict[str, Any]:
@@ -244,7 +261,8 @@ def unpad_outputs(
     Args:
         outputs: A :class:`~mace_core.outputs.MACEOutput`, or a mapping from
             observable name to tensor. ``None`` values are kept.
-        info: What :func:`pad_batch` returned.
+        info: What :func:`pad_batch` returned. An unpadded batch's info keeps
+            every slot.
         catalogue: The declared observables of the model.
 
     Returns:
@@ -253,18 +271,23 @@ def unpad_outputs(
     Raises:
         KeyError: for a value the catalogue does not declare.
     """
+    real = info.padding or PaddingInfo(
+        n_real_nodes=info.num_nodes,
+        n_real_edges=info.num_edges,
+        n_real_graphs=info.num_graphs,
+    )
     if isinstance(outputs, MACEOutput):
         unpadded: MACEOutput = MACEOutput()
         for name in CORE_FIELD_NAMES:
             value = getattr(outputs, name)
-            setattr(unpadded, name, _keep_real(value, _CORE_FIELD_PER_ATOM[name], info))
+            setattr(unpadded, name, _keep_real(value, _CORE_FIELD_PER_ATOM[name], real))
         unpadded.extras = {
-            name: _keep_real(value, _per_atom(name, catalogue), info)
+            name: _keep_real(value, _per_atom(name, catalogue), real)
             for name, value in outputs.extras.items()
         }
         return unpadded
     return {
-        name: _keep_real(value, _per_atom(name, catalogue), info)
+        name: _keep_real(value, _per_atom(name, catalogue), real)
         for name, value in outputs.items()
     }
 
@@ -284,7 +307,7 @@ def _per_atom(name: str, catalogue: ObservableCatalogue) -> bool:
     )
 
 
-def _keep_real(value: Any, per_atom: bool, info: PaddingInfo) -> Any:
+def _keep_real(value: Any, per_atom: bool, real: PaddingInfo) -> Any:
     if value is None:
         return None
-    return value[: info.n_real_nodes] if per_atom else value[: info.n_real_graphs]
+    return value[: real.n_real_nodes] if per_atom else value[: real.n_real_graphs]

@@ -1,25 +1,44 @@
-"""The static-shape padding contract: a padded batch is a valid batch.
+"""The static-shape padding contract: a padded batch is a valid batch, because
+padding is a structure.
 
 The cases of the legacy ``tests/unit/test_padding.py`` are ported here as
-properties of :func:`pad_batch` and :func:`unpad_outputs`: the padding atoms
-take the first element, the padding cell is ``eye(3) * max(2 * r_max, 1)`` and
-not periodic, padding edges stay in bounds, zero padding edges is legal, the
-padded batch keeps the real structures first, and every per-atom output is
-stripped of its padding rows.
+properties of :func:`pad_batch`, :func:`pad_targets` and
+:func:`unpad_outputs`: the padding atoms carry Z = 0 and sit at the origin,
+the padding cell is ``eye(3) * max(2 * r_max, 1)`` and not periodic, padding
+edges stay in bounds and are inert under the cutoff, zero padding edges is
+legal, the padded batch keeps the real structures first, and every per-atom
+output is stripped of its padding rows. A padded batch is also compared key by
+key with the numpy reference ``collate([*real, *padding])``.
 """
+
+from __future__ import annotations
+
+import dataclasses
+import logging
 
 import numpy as np
 import pytest
 import torch
-from mace_core.data import AtomicNumberTable, Configuration
+from mace_core.data import Configuration
 from mace_core.graph import (
+    EDGE_KEYS,
     AutoPadding,
+    FieldSpec,
     FixedPadding,
+    GraphInfo,
+    GraphValidationError,
     NoPadding,
+    PaddingBudget,
     PaddingInfo,
     PaddingOverflowError,
-    validate_graph,
+    check_batch_invariants,
+    check_layout,
+    default_layout,
+    graph_sample,
+    padding_samples,
+    structure_graph,
 )
+from mace_core.graph import collate as reference_collate
 from mace_core.neighbors import get_neighbor_backend
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
@@ -30,122 +49,161 @@ from mace_core.observables import (
 )
 from mace_core.outputs import MACEOutput
 from mace_torch.backends.radial import polynomial_envelope
-from mace_torch.graph import build_batch, dtype_name, pad_batch, unpad_outputs
-from mace_torch.graph.collate import derived_cell_quantities
+from mace_torch.graph import (
+    build_batch,
+    collate,
+    collate_targets,
+    dtype_name,
+    pad_batch,
+    pad_targets,
+    unpad_outputs,
+)
 
 R_MAX = 3.5
-TABLE = AtomicNumberTable([1, 8])
+ELEMENTS = (1, 8)
+LAYOUT = default_layout(ELEMENTS, cutoff=R_MAX)
 MATSCIPY = get_neighbor_backend("matscipy")
+BUDGET = FixedPadding(nodes_budget=10, edges_budget=64, graphs_budget=4)
 
 
-def _water(offset=0.0, periodic=False):
+def _water(offset=0.0, periodic=False, **properties):
     return Configuration(
         atomic_numbers=np.array([8, 1, 1]),
         positions=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
         + offset,
         cell=np.eye(3) * 6.0 if periodic else None,
         pbc=(True, True, True) if periodic else None,
-        properties={"energy": -1.0, "forces": np.ones((3, 3)), "total_spin": None},
+        properties={
+            "energy": -1.0,
+            "forces": np.ones((3, 3)),
+            "total_spin": None,
+            **properties,
+        },
         property_weights={"energy": 1.0, "forces": 1.0},
     )
 
 
+def _structures():
+    return [_water(periodic=True), _water(0.1)]
+
+
+def _samples(structures, layout=LAYOUT, *, edges=True):
+    return [
+        graph_sample(
+            structure,
+            structure_graph(structure, layout.cutoff, MATSCIPY) if edges else None,
+            layout,
+        )
+        for structure in structures
+    ]
+
+
+def _collated(structures, layout, dtype, *, edges=True):
+    pairs = _samples(structures, layout, edges=edges)
+    graph, info = collate([graph for graph, _ in pairs], layout, dtype=dtype)
+    targets = collate_targets([targets for _, targets in pairs], layout, dtype=dtype)
+    return graph, targets, info
+
+
 @pytest.fixture(name="batch")
 def fixture_batch(dtype):
-    return build_batch(
-        [_water(periodic=True), _water(0.1)],
-        atomic_number_table=TABLE,
-        cutoff=R_MAX,
-        dtype=dtype,
-        neighbor_backend=MATSCIPY,
-    )
+    """``(graph, targets, info)`` of one periodic and one open water."""
+    return build_batch(_structures(), LAYOUT, neighbor_backend=MATSCIPY, dtype=dtype)
 
 
 @pytest.fixture(name="padded")
 def fixture_padded(batch):
-    policy = FixedPadding(nodes_budget=10, edges_budget=64, graphs_budget=4)
-    return pad_batch(batch, policy, R_MAX, atomic_number_table=TABLE)
+    graph, _, info = batch
+    return pad_batch(graph, info, BUDGET, R_MAX, LAYOUT)
 
 
-def test_the_padded_batch_passes_validation_unchanged(padded, dtype):
-    data, _ = padded
-    info = validate_graph(data, float_dtype=dtype_name(dtype))
+# --- a padded batch is a valid batch --------------------------------------------------
+
+
+def test_the_padded_batch_passes_the_layout_check_unchanged(padded, dtype):
+    graph, info = padded
+    check_layout(graph, LAYOUT, info, float_dtype=dtype_name(dtype))
+    check_batch_invariants(graph, info)
     assert (info.num_nodes, info.num_edges, info.num_graphs) == (10, 64, 4)
 
 
-def test_the_padding_info_holds_the_real_sizes(batch, padded):
-    _, info = padded
-    assert info == PaddingInfo(
+def test_the_padded_batch_is_the_reference_collation_of_real_and_padding_samples(
+    batch, padded
+):
+    """Padding has no per-key rule: it is the numpy reference collate over the
+    real samples followed by the padding structures."""
+    _, _, info = batch
+    graph, padded_info = padded
+    real = [sample for sample, _ in _samples(_structures())]
+    padding = padding_samples(
+        PaddingBudget(nodes=10, edges=64, graphs=4),
+        padded_info.padding,
+        R_MAX,
+        LAYOUT,
+    )
+    reference, reference_info = reference_collate([*real, *padding], LAYOUT)
+    assert set(graph) == set(reference)
+    for key, value in graph.items():
+        expected = torch.as_tensor(reference[key])
+        if expected.is_floating_point():
+            expected = expected.to(value.dtype)
+        assert value.dtype == expected.dtype, key
+        assert torch.equal(value, expected), key
+    assert reference_info.structure_sizes == padded_info.structure_sizes
+    assert info.structure_sizes == padded_info.structure_sizes[: info.num_graphs]
+
+
+def test_the_graph_info_holds_the_real_sizes_and_marks_the_padding(batch, padded):
+    _, _, info = batch
+    _, padded_info = padded
+    assert padded_info.padding == PaddingInfo(
         n_real_nodes=6,
-        n_real_edges=int(batch["edge_index"].shape[1]),
+        n_real_edges=info.num_edges,
         n_real_graphs=2,
     )
+    assert padded_info.structure_sizes == (3, 3, 0, 4)
+    assert padded_info.is_padding == (False, False, True, True)
+    assert info.is_padding == (False, False)
 
 
 def test_padding_only_appends(batch, padded):
-    data, info = padded
-    for key, value in batch.items():
-        if isinstance(value, tuple):
-            assert data[key][: info.n_real_graphs] == value, key
-        elif key == "edge_index":
-            assert torch.equal(data[key][:, : info.n_real_edges], value)
-        elif key == "ptr":
-            assert torch.equal(data[key][: info.n_real_graphs + 1], value)
+    graph, _, info = batch
+    data, _ = padded
+    for key, value in graph.items():
+        if key == "edge_index":
+            assert torch.equal(data[key][:, : info.num_edges], value)
         else:
             assert torch.equal(data[key][: value.shape[0]], value), key
 
 
 def test_padding_atoms_belong_to_the_last_structure(padded):
     data, info = padded
-    assert data["batch"][info.n_real_nodes :].tolist() == [3] * 4
+    assert data["batch"][info.padding.n_real_nodes :].tolist() == [3] * 4
     assert data["ptr"].tolist() == [0, 3, 6, 6, 10]
-    assert data["structure_sizes"] == (3, 3, 0, 4)
-    assert data["structure_padding"] == (False, False, True, True)
-    assert data["structure_periodic"] == (True, False, False, False)
 
 
-def test_padding_atoms_take_the_first_element(padded):
+def test_the_padding_structure_holds_every_padding_atom_at_the_origin_with_z_zero(
+    padded,
+):
     data, info = padded
-    one_hot = data["node_attrs"][info.n_real_nodes :]
-    assert torch.equal(one_hot[:, 0], torch.ones(4, dtype=one_hot.dtype))
-    assert not one_hot[:, 1:].any()
-    assert data["node_atomic_numbers"][info.n_real_nodes :].tolist() == [1] * 4
-    assert not data["positions"][info.n_real_nodes :].any()
+    real_nodes = info.padding.n_real_nodes
+    assert data["node_atomic_numbers"][real_nodes:].tolist() == [0] * 4
+    assert not data["positions"][real_nodes:].any()
+    assert info.structure_sizes[-1] == info.num_nodes - real_nodes
 
 
 def test_the_padding_cell_is_scaled_identity_and_not_periodic(padded, dtype):
     data, info = padded
     expected = torch.eye(3, dtype=dtype) * max(2 * R_MAX, 1.0)
-    for graph in range(info.n_real_graphs, 4):
+    for graph in range(info.padding.n_real_graphs, info.num_graphs):
         assert torch.equal(data["cell"][graph], expected)
         assert not data["pbc"][graph].any()
-        assert data["volume"][graph] == (2 * R_MAX) ** 3
-
-
-def test_the_padding_rcell_and_volume_are_derived_from_the_padding_cell(padded):
-    """As for any structure, so a padded batch is a valid batch here too."""
-    data, _ = padded
-    rcell, volume = derived_cell_quantities(data["cell"])
-    assert torch.equal(data["rcell"], rcell)
-    assert torch.equal(data["volume"], volume)
-
-
-def test_every_structure_has_a_finite_reciprocal_space_extent(padded):
-    """The reciprocal-space grid is sized per lattice direction as
-    ``cutoff / (rcell . a / |a|)`` and then maximised over the batch, so one
-    structure with a zero ``rcell`` makes the grid of every structure
-    unbounded."""
-    data, _ = padded
-    cell = data["cell"]
-    directions = cell / torch.linalg.norm(cell, dim=-1, keepdim=True)
-    spacing = torch.einsum("gij,gij->gi", data["rcell"], directions)
-    assert torch.all(spacing > 0)
-    assert torch.all(torch.isfinite(6.0 / spacing))
+        assert data["head"][graph] == 0
 
 
 def test_padding_edges_are_self_loops_on_the_last_padding_atom(padded):
     data, info = padded
-    padding_edges = data["edge_index"][:, info.n_real_edges :]
+    padding_edges = data["edge_index"][:, info.padding.n_real_edges :]
     assert padding_edges.unique().tolist() == [9]
     assert data["edge_index"].max() < 10
     assert data["edge_index"].min() >= 0
@@ -155,17 +213,18 @@ def test_the_cutoff_is_exactly_zero_on_a_padding_edge(padded, dtype):
     """An exact float fact, not a tolerance: the edge is 2 * r_max long and the
     envelope is masked to zero at r >= r_max."""
     data, info = padded
-    sender, receiver = data["edge_index"][:, info.n_real_edges :]
+    real_edges = info.padding.n_real_edges
+    sender, receiver = data["edge_index"][:, real_edges:]
     vectors = (
         data["positions"][receiver]
         - data["positions"][sender]
-        + data["shifts"][info.n_real_edges :]
+        + data["shifts"][real_edges:]
     )
     lengths = torch.linalg.norm(vectors, dim=-1)
     assert torch.equal(lengths, torch.full_like(lengths, 2 * R_MAX))
     envelope = polynomial_envelope(lengths, torch.tensor(R_MAX, dtype=dtype), 6)
     assert torch.equal(envelope, torch.zeros_like(envelope))
-    unit_shifts = data["unit_shifts"][info.n_real_edges :]
+    unit_shifts = data["unit_shifts"][real_edges:]
     assert torch.equal(
         unit_shifts, torch.tensor([[1.0, 0.0, 0.0]] * len(unit_shifts), dtype=dtype)
     )
@@ -173,119 +232,294 @@ def test_the_cutoff_is_exactly_zero_on_a_padding_edge(padded, dtype):
 
 def test_padding_shifts_are_unit_shifts_times_the_padding_cell(padded):
     data, info = padded
-    padding_shifts = data["shifts"][info.n_real_edges :]
-    padding_cell = data["cell"][-1]
+    real_edges = info.padding.n_real_edges
     assert torch.equal(
-        padding_shifts, data["unit_shifts"][info.n_real_edges :] @ padding_cell
+        data["shifts"][real_edges:],
+        data["unit_shifts"][real_edges:] @ data["cell"][-1],
     )
 
 
-def test_total_spin_pads_to_one_and_labels_to_absent(padded):
+def test_total_spin_pads_to_one_and_the_other_inputs_to_zero(padded):
     data, info = padded
-    assert data["total_spin"][info.n_real_graphs :].tolist() == [1.0, 1.0]
-    assert not data["energy_present"][info.n_real_graphs :].any()
-    assert not data["forces_present"][info.n_real_nodes :].any()
-    assert not data["energy_weight"][info.n_real_graphs :].any()
-    assert not data["weight"][info.n_real_graphs :].any()
+    real_graphs, real_nodes = info.padding.n_real_graphs, info.padding.n_real_nodes
+    assert data["total_spin"][real_graphs:].tolist() == [1.0, 1.0]
+    assert not data["total_charge"][real_graphs:].any()
+    assert not data["external_field"][real_graphs:].any()
+    assert not data["magmom"][real_nodes:].any()
 
 
 def test_no_mask_tensor_appears_in_the_padded_dict(batch, padded):
+    graph, _, _ = batch
     data, _ = padded
-    assert set(data) == set(batch)
+    assert set(data) == set(graph)
 
 
-def test_zero_padding_edges_is_legal(batch, dtype):
-    n_edges = int(batch["edge_index"].shape[1])
-    policy = FixedPadding(nodes_budget=9, edges_budget=n_edges, graphs_budget=3)
-    data, info = pad_batch(batch, policy, R_MAX, atomic_number_table=TABLE)
-    assert data["edge_index"].shape[1] == info.n_real_edges
-    assert data["node_attrs"].shape[0] == 9
-    validate_graph(data, float_dtype=dtype_name(dtype))
-
-
-def test_an_edge_budget_with_no_room_for_a_padding_atom_grows_the_nodes(batch, dtype):
-    policy = FixedPadding(nodes_budget=6, edges_budget=64, graphs_budget=2)
-    data, info = pad_batch(batch, policy, R_MAX, atomic_number_table=TABLE)
-    assert data["positions"].shape[0] == info.n_real_nodes + 1
-    assert data["ptr"].shape[0] == info.n_real_graphs + 2
-    validate_graph(data, float_dtype=dtype_name(dtype))
-
-
-def test_an_overflowing_fixed_budget_can_refuse_instead(batch):
-    policy = FixedPadding(
-        nodes_budget=4, edges_budget=64, graphs_budget=4, on_overflow="error"
-    )
-    with pytest.raises(PaddingOverflowError, match="does not fit"):
-        pad_batch(batch, policy, R_MAX, atomic_number_table=TABLE)
-
-
-def test_auto_padding_rounds_the_edges_up_with_headroom(batch, dtype):
-    n_edges = int(batch["edge_index"].shape[1])
-    data, _ = pad_batch(batch, AutoPadding(), R_MAX, atomic_number_table=TABLE)
-    expected = -(-int(n_edges * 1.25) // 64) * 64
-    assert data["edge_index"].shape[1] == expected
-    assert data["positions"].shape[0] == 7
-    validate_graph(data, float_dtype=dtype_name(dtype))
-
-
-def test_no_padding_returns_the_batch_as_it_is(batch):
-    data, info = pad_batch(batch, NoPadding(), R_MAX, atomic_number_table=TABLE)
-    assert data.keys() == batch.keys()
-    assert all(data[k] is batch[k] for k in batch)
-    assert info.n_real_graphs == 2
+def test_the_padded_batch_keeps_the_device_and_dtype_of_the_batch(batch, padded):
+    graph, _, _ = batch
+    data, _ = padded
+    for key, value in graph.items():
+        assert data[key].dtype == value.dtype, key
+        assert data[key].device == value.device, key
 
 
 def test_padding_does_not_modify_the_batch(batch):
-    before = {k: v.clone() for k, v in batch.items() if isinstance(v, torch.Tensor)}
-    pad_batch(
-        batch,
-        FixedPadding(nodes_budget=10, edges_budget=64, graphs_budget=4),
-        R_MAX,
-        atomic_number_table=TABLE,
-    )
+    graph, _, info = batch
+    before = {key: value.clone() for key, value in graph.items()}
+    pad_batch(graph, info, BUDGET, R_MAX, LAYOUT)
+    assert set(graph) == set(before)
     for key, value in before.items():
-        assert torch.equal(batch[key], value), key
+        assert torch.equal(graph[key], value), key
 
 
 def test_a_padded_cell_scale_has_a_floor_of_one(dtype):
-    batch = build_batch(
-        [_water()],
-        atomic_number_table=TABLE,
-        cutoff=0.3,
-        dtype=dtype,
-        neighbor_backend=MATSCIPY,
+    layout = default_layout(ELEMENTS, cutoff=0.3)
+    graph, _, info = build_batch(
+        [_water()], layout, neighbor_backend=MATSCIPY, dtype=dtype
     )
     data, _ = pad_batch(
-        batch,
+        graph,
+        info,
         FixedPadding(nodes_budget=4, edges_budget=2, graphs_budget=2),
         0.3,
-        atomic_number_table=TABLE,
+        layout,
     )
-    assert torch.equal(data["cell"][-1], torch.eye(3, dtype=data["cell"].dtype))
+    assert torch.equal(data["cell"][-1], torch.eye(3, dtype=dtype))
+
+
+# --- budgets ------------------------------------------------------------------------
+
+
+def test_zero_padding_edges_is_legal(batch, dtype):
+    graph, _, info = batch
+    policy = FixedPadding(nodes_budget=9, edges_budget=info.num_edges, graphs_budget=3)
+    data, padded_info = pad_batch(graph, info, policy, R_MAX, LAYOUT)
+    assert data["edge_index"].shape[1] == info.num_edges
+    assert data["positions"].shape[0] == 9
+    check_layout(data, LAYOUT, padded_info, float_dtype=dtype_name(dtype))
+    check_batch_invariants(data, padded_info)
+
+
+def test_an_edge_budget_with_no_room_for_a_padding_atom_grows_the_nodes(
+    batch, dtype, caplog
+):
+    graph, _, info = batch
+    policy = FixedPadding(nodes_budget=6, edges_budget=64, graphs_budget=2)
+    with caplog.at_level(logging.WARNING, logger="mace_torch.graph.padding"):
+        data, padded_info = pad_batch(graph, info, policy, R_MAX, LAYOUT)
+    assert data["positions"].shape[0] == info.num_nodes + 1
+    assert data["ptr"].shape[0] == info.num_graphs + 2
+    assert "exceeds the padding budget" in caplog.text
+    check_layout(data, LAYOUT, padded_info, float_dtype=dtype_name(dtype))
+    check_batch_invariants(data, padded_info)
+
+
+@pytest.mark.parametrize(
+    ("budget", "named"),
+    [
+        ({"nodes_budget": 4}, r"in nodes \(\d+ needed, budget 4\)"),
+        ({"edges_budget": 1}, r"in edges \(\d+ needed, budget 1\)"),
+        ({"graphs_budget": 1}, r"in structures \(\d+ needed, budget 1\)"),
+    ],
+)
+def test_a_batch_over_a_fixed_budget_can_refuse_naming_the_dimension(
+    batch, budget, named
+):
+    graph, _, info = batch
+    sizes = {"nodes_budget": 10, "edges_budget": 64, "graphs_budget": 4, **budget}
+    policy = FixedPadding(
+        nodes_budget=sizes["nodes_budget"],
+        edges_budget=sizes["edges_budget"],
+        graphs_budget=sizes["graphs_budget"],
+        on_overflow="error",
+    )
+    with pytest.raises(PaddingOverflowError, match=named):
+        pad_batch(graph, info, policy, R_MAX, LAYOUT)
+
+
+def test_auto_padding_rounds_the_edges_up_with_headroom(batch, dtype):
+    graph, _, info = batch
+    data, padded_info = pad_batch(graph, info, AutoPadding(), R_MAX, LAYOUT)
+    expected = -(-int(info.num_edges * 1.25) // 64) * 64
+    assert data["edge_index"].shape[1] == expected
+    assert data["positions"].shape[0] == info.num_nodes + 1
+    assert padded_info.structure_sizes == (*info.structure_sizes, 1)
+    check_layout(data, LAYOUT, padded_info, float_dtype=dtype_name(dtype))
+    check_batch_invariants(data, padded_info)
+
+
+def test_auto_padding_follows_its_own_edge_multiple(batch):
+    graph, _, info = batch
+    data, _ = pad_batch(graph, info, AutoPadding(edge_multiple=7), R_MAX, LAYOUT)
+    assert data["edge_index"].shape[1] % 7 == 0
+    assert data["edge_index"].shape[1] >= info.num_edges
+
+
+def test_no_padding_returns_the_batch_as_it_is(batch):
+    graph, _, info = batch
+    data, padded_info = pad_batch(graph, info, NoPadding(), R_MAX, LAYOUT)
+    assert data.keys() == graph.keys()
+    assert all(data[key] is graph[key] for key in graph)
+    assert padded_info.padding == PaddingInfo(
+        n_real_nodes=info.num_nodes,
+        n_real_edges=info.num_edges,
+        n_real_graphs=info.num_graphs,
+    )
+    assert padded_info.is_padding == (False, False)
+
+
+def test_padding_a_batch_twice_is_refused(padded):
+    data, info = padded
+    with pytest.raises(ValueError, match="padded already"):
+        pad_batch(data, info, BUDGET, R_MAX, LAYOUT)
+
+
+@dataclasses.dataclass(frozen=True)
+class NodeDegrees:
+    """A batch requirement declaring one per-atom field."""
+
+    def fields(self):
+        return {
+            "node_degree": FieldSpec(
+                ("n_nodes",), "int64", True, "requirement", "Edges per node."
+            )
+        }
+
+
+def test_a_batch_carrying_a_requirement_field_is_refused(dtype):
+    layout = default_layout(ELEMENTS, cutoff=R_MAX, requirements=[NodeDegrees()])
+    samples = [sample for sample, _ in _samples(_structures(), layout)]
+    for sample in samples:
+        sample["node_degree"] = np.bincount(
+            sample["edge_index"][1], minlength=len(sample["positions"])
+        )
+    graph, info = collate(samples, layout, dtype=dtype)
+    with pytest.raises(ValueError, match="node_degree"):
+        pad_batch(graph, info, BUDGET, R_MAX, layout)
+
+
+# --- what padding extends besides the full graph --------------------------------------
+
+
+def test_a_batch_without_edges_pads_nodes_and_graphs_only(dtype):
+    graph, _, info = _collated(_structures(), LAYOUT, dtype, edges=False)
+    data, padded_info = pad_batch(graph, info, BUDGET, R_MAX, LAYOUT)
+    assert not set(data) & EDGE_KEYS
+    assert (padded_info.num_nodes, padded_info.num_edges, padded_info.num_graphs) == (
+        10,
+        0,
+        4,
+    )
+    assert padded_info.padding == PaddingInfo(6, 0, 2)
+    check_layout(data, LAYOUT, padded_info, float_dtype=dtype_name(dtype))
+    check_batch_invariants(data, padded_info)
+
+
+def test_embedding_features_pad_with_zeros_at_their_own_trailing_sizes(dtype):
+    layout = default_layout(
+        ELEMENTS, cutoff=R_MAX, features={"spin_state": "atom", "phase": "graph"}
+    )
+    structures = [
+        _water(periodic=True, spin_state=np.ones((3, 2)), phase=np.ones(3)),
+        _water(0.1, spin_state=np.full((3, 2), 2.0), phase=np.full(3, 2.0)),
+    ]
+    graph, _, info = _collated(structures, layout, dtype)
+    data, padded_info = pad_batch(graph, info, BUDGET, R_MAX, layout)
+    assert data["spin_state"].shape == (10, 2)
+    assert data["phase"].shape == (4, 3)
+    assert torch.equal(data["spin_state"][:6], graph["spin_state"])
+    assert not data["spin_state"][6:].any()
+    assert not data["phase"][2:].any()
+    check_layout(data, layout, padded_info, float_dtype=dtype_name(dtype))
+
+
+def test_pad_targets_gives_zero_labels_false_flags_and_zero_weights_on_padding(
+    batch, padded
+):
+    _, targets, _ = batch
+    _, info = padded
+    padded_targets = pad_targets(targets, info, LAYOUT)
+    assert set(padded_targets) == set(targets)
+    fields = LAYOUT.target_fields()
+    for key, value in padded_targets.items():
+        if fields[key].shape[0] == "n_nodes":
+            rows, real = info.num_nodes, info.padding.n_real_nodes
+        else:
+            rows, real = info.num_graphs, info.padding.n_real_graphs
+        assert value.shape[0] == rows, key
+        assert value.dtype == targets[key].dtype, key
+        assert torch.equal(value[:real], targets[key]), key
+        assert not value[real:].any(), key
+    assert padded_targets["forces"].shape == (10, 3)
+    assert padded_targets["forces_present"].shape == (10,)
+    assert padded_targets["energy_present"].tolist() == [True, True, False, False]
+    assert padded_targets["dipole_weight"].shape == (4, 3)
+    assert padded_targets["polarizability_weight"].shape == (4, 3, 3)
+    assert padded_targets["weight"].tolist() == [1.0, 1.0, 0.0, 0.0]
+
+
+def test_pad_targets_needs_the_info_of_a_padded_batch(batch):
+    _, targets, info = batch
+    with pytest.raises(ValueError, match="pad_batch"):
+        pad_targets(targets, info, LAYOUT)
+
+
+def test_a_declared_per_atom_observable_pads_as_a_target_with_no_new_code(dtype):
+    born_charges = ObservableSpec(
+        name="born_charges", irreps="0e+1e+2e", per_atom=True, units="e"
+    )
+    layout = default_layout(ELEMENTS, cutoff=R_MAX, targets=[born_charges])
+    structures = [_water(periodic=True, born_charges=np.ones((3, 9))), _water(0.1)]
+    graph, targets, info = _collated(structures, layout, dtype)
+    _, padded_info = pad_batch(graph, info, BUDGET, R_MAX, layout)
+    padded_targets = pad_targets(targets, padded_info, layout)
+    assert padded_targets["born_charges"].shape == (10, 9)
+    assert padded_targets["born_charges_present"].tolist() == [True] * 3 + [False] * 7
+    assert padded_targets["born_charges_weight"].tolist() == [1.0, 0.0, 0.0, 0.0]
+    assert not padded_targets["born_charges"][3:].any()
+
+
+# --- unpadding outputs ----------------------------------------------------------------
 
 
 def test_unpad_after_pad_is_the_identity_on_real_slots(batch, padded):
-    data, info = padded
+    _, targets, _ = batch
+    _, info = padded
+    padded_targets = pad_targets(targets, info, LAYOUT)
     outputs = {
-        "energy": data["energy"] * 2,
-        "forces": data["forces"] * 3,
-        "stress": torch.zeros(4, 3, 3, dtype=data["energy"].dtype),
+        "energy": padded_targets["energy"] * 2,
+        "forces": padded_targets["forces"] * 3,
+        "stress": torch.zeros(4, 3, 3, dtype=padded_targets["energy"].dtype),
     }
     real = unpad_outputs(outputs, info)
-    assert torch.equal(real["energy"], batch["energy"] * 2)
-    assert torch.equal(real["forces"], batch["forces"] * 3)
+    assert torch.equal(real["energy"], targets["energy"] * 2)
+    assert torch.equal(real["forces"], targets["forces"] * 3)
     assert real["stress"].shape == (2, 3, 3)
 
 
+def test_unpadding_an_unpadded_batch_keeps_every_slot(batch):
+    _, targets, info = batch
+    real = unpad_outputs({"energy": targets["energy"]}, info)
+    assert torch.equal(real["energy"], targets["energy"])
+
+
+#: A batch of one real structure of four atoms and one padding structure of five.
+PADDED_INFO = GraphInfo(
+    num_graphs=2,
+    num_nodes=9,
+    num_edges=0,
+    structure_sizes=(4, 5),
+    padding=PaddingInfo(n_real_nodes=4, n_real_edges=0, n_real_graphs=1),
+)
+
+
 def test_every_per_atom_output_is_stripped_of_its_padding_rows():
-    info = PaddingInfo(n_real_nodes=4, n_real_edges=0, n_real_graphs=1)
     output = MACEOutput(
         total_energy=torch.zeros(2),
         node_energies=torch.zeros(9),
         forces=torch.zeros(9, 3),
         stress=torch.zeros(2, 3, 3),
     )
-    real = unpad_outputs(output, info)
+    real = unpad_outputs(output, PADDED_INFO)
     shapes = {
         name: None if value is None else tuple(value.shape)
         for name, value in (
@@ -306,31 +540,11 @@ def test_every_per_atom_output_is_stripped_of_its_padding_rows():
 
 
 def test_an_output_the_catalogue_does_not_declare_is_refused():
-    info = PaddingInfo(n_real_nodes=4, n_real_edges=0, n_real_graphs=1)
     with pytest.raises(KeyError, match="latent_charges"):
         unpad_outputs(
-            {"latent_charges": torch.zeros(9)}, info, catalogue=DEFAULT_CATALOGUE
-        )
-
-
-def test_an_undeclared_tensor_cannot_be_padded(batch):
-    batch = dict(batch)
-    batch["mystery"] = torch.zeros(6)
-    with pytest.raises(ValueError, match="mystery"):
-        pad_batch(batch, AutoPadding(), R_MAX, atomic_number_table=TABLE)
-
-
-def test_a_misspelled_feature_storage_is_refused_when_padding(batch):
-    batch = dict(batch)
-    batch["spin_state"] = torch.zeros(6)
-    misspelled: dict = {"spin_state": "atoms"}
-    with pytest.raises(ValueError, match="use 'atom' or 'graph'"):
-        pad_batch(
-            batch,
-            AutoPadding(),
-            R_MAX,
-            atomic_number_table=TABLE,
-            features=misspelled,
+            {"latent_charges": torch.zeros(9)},
+            PADDED_INFO,
+            catalogue=DEFAULT_CATALOGUE,
         )
 
 
@@ -359,18 +573,17 @@ def _electrostatic_catalogue():
 def test_declared_extras_and_derivatives_are_stripped_by_their_declaration():
     catalogue = _electrostatic_catalogue()
     born_charges = catalogue.derivative("dipole", "pos").name
-    info = PaddingInfo(n_real_nodes=4, n_real_edges=0, n_real_graphs=1)
     output = MACEOutput(total_energy=torch.zeros(2), forces=torch.zeros(9, 3))
     output.extras = {
         "latent_charges": torch.zeros(9),
         born_charges: torch.zeros(9, 3, 3),
     }
-    real = unpad_outputs(output, info, catalogue=catalogue)
+    real = unpad_outputs(output, PADDED_INFO, catalogue=catalogue)
     assert real.extras["latent_charges"].shape == (4,)
     assert real.extras[born_charges].shape == (4, 3, 3)
     mapping = unpad_outputs(
         {"dipole": torch.zeros(2, 3), born_charges: torch.zeros(9, 3, 3)},
-        info,
+        PADDED_INFO,
         catalogue=catalogue,
     )
     assert mapping["dipole"].shape == (1, 3)
@@ -382,12 +595,43 @@ def test_born_charge_forces_add_to_the_forces_after_unpadding():
     stripped of the same padding rows."""
     catalogue = _electrostatic_catalogue()
     born_charges = catalogue.derivative("dipole", "pos").name
-    info = PaddingInfo(n_real_nodes=4, n_real_edges=0, n_real_graphs=1)
     real = unpad_outputs(
         {"forces": torch.zeros(9, 3), born_charges: torch.ones(9, 3, 3)},
-        info,
+        PADDED_INFO,
         catalogue=catalogue,
     )
     field = torch.tensor([0.1, 0.0, 0.0], dtype=real["forces"].dtype)
     total = real["forces"] + torch.einsum("nij,i->nj", real[born_charges], field)
     assert total.shape == (4, 3)
+
+
+def test_a_caller_supplied_displacement_pads_with_zero_strain(dtype):
+    graph, _, info = _collated(_structures(), LAYOUT, dtype)
+    graph["displacement"] = torch.full((info.num_graphs, 3, 3), 0.5, dtype=dtype)
+    padded, padded_info = pad_batch(graph, info, BUDGET, R_MAX, LAYOUT)
+    assert padded["displacement"].shape == (padded_info.num_graphs, 3, 3)
+    assert torch.all(padded["displacement"][: info.num_graphs] == 0.5)
+    assert not padded["displacement"][info.num_graphs :].any()
+
+
+def test_a_key_the_layout_does_not_declare_is_refused_by_name(dtype):
+    graph, _, info = _collated(_structures(), LAYOUT, dtype)
+    graph["mystery"] = torch.zeros(info.num_nodes, dtype=dtype)
+    with pytest.raises(ValueError, match="'mystery' is not declared"):
+        pad_batch(graph, info, BUDGET, R_MAX, LAYOUT)
+
+
+def test_requirement_fields_are_built_after_padding_and_checked_once_built(dtype):
+    """Collation and padding run before the requirements exist; once they are
+    built, the layout check holds every field to its declaration."""
+    layout = default_layout(ELEMENTS, cutoff=R_MAX, requirements=[NodeDegrees()])
+    graph, _, info = _collated(_structures(), layout, dtype)
+    padded, padded_info = pad_batch(graph, info, BUDGET, R_MAX, layout)
+    built = dict(padded)
+    built["node_degree"] = torch.bincount(
+        padded["edge_index"][1], minlength=padded_info.num_nodes
+    )
+    check_layout(built, layout, padded_info, float_dtype=dtype_name(dtype))
+    built["node_degree"] = built["node_degree"][:-1]
+    with pytest.raises(GraphValidationError, match="node_degree"):
+        check_layout(built, layout, padded_info, float_dtype=dtype_name(dtype))

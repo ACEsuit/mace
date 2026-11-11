@@ -1,40 +1,52 @@
-"""Padding a batch to fixed sizes: the policy, the budget and the sidecar.
+"""Padding a batch to fixed sizes: the policy, the budget and the padding structure.
 
-**A padded batch is a valid batch.** Padding is expressed inside the schema as
-physically inert structures, atoms and edges, never as a mask the forward has
-to read, so the model, its kernels and a compiler all stay unaware of it:
+**A padded batch is a valid batch, because padding is a structure.** Padding is
+expressed inside the graph as physically inert structures, never as a mask the
+forward has to read, so the model, its kernels and a compiler all stay unaware
+of it. :func:`padding_sample` builds one: an aperiodic structure whose atoms
+have Z = 0 and sit at the origin, whose cell is ``eye(3) * max(2 * r_max, 1)``,
+whose edges are self loops on its last atom with unit shift ``(1, 0, 0)``, so
+every padding edge is ``max(2 * r_max, 1)`` long and the polynomial cutoff is
+exactly zero on it, and whose declared inputs carry their absent value
+(``total_spin`` 1). Padding is then ``collate([*real, *padding])``:
 
 * real graphs, nodes and edges come first and keep their order and indices;
   padding only appends;
-* every padding atom belongs to the last padding structure. Its element is the
-  first of the element table, its position is the origin, it is not periodic,
-  and its cell is ``eye(3) * max(2 * r_max, 1)``, with the ``rcell`` and
-  ``volume`` derived from that cell as for any structure, so nothing that
-  divides by a volume meets a zero;
-* every padding edge is a self loop on the last padding atom with unit shift
-  ``(1, 0, 0)`` and shift ``max(2 * r_max, 1)`` on x, so its length is at least
-  ``2 * r_max`` and the polynomial cutoff is exactly zero on it;
-* ``total_spin`` pads to 1, everything else to its schema pad value;
-* ``batch`` and ``ptr`` cover the padded sizes, so ``num_nodes`` and
-  ``num_graphs`` are the padded counts a compiler sees. A padding structure
-  other than the last holds no atoms.
+* ``batch`` and ``ptr`` cover the padded sizes by construction, so
+  ``num_nodes`` and ``num_graphs`` are the padded counts a compiler sees;
+* when more than one padding structure is needed, the extra ones are empty
+  and the last holds every padding atom.
 
-The real counts are kept beside the dict, in :class:`PaddingInfo`, never in it.
+So under :class:`FixedPadding` the padding structure holds every padding atom,
+all at the origin. A consumer that works per structure reads the
+:class:`~mace_core.graph.info.PaddingInfo` in the batch's ``GraphInfo`` and
+skips padding structures; whatever rows it must write for one are self-pairs on
+one padding atom. Classifying it from ``pbc`` alone would see a large open
+structure with every pair at ``r = 0``.
 
-**The policy** is a config section, a union discriminated on ``kind``:
-``none`` (training's default, dynamic shapes), ``fixed`` (explicit budgets) and
-``auto`` (budgets sized from the batch, edges rounded up with headroom).
+**The policy** is a config section, a union discriminated on ``kind``, and it
+follows the regime. ``none`` is eager training's, with dynamic shapes.
+``fixed`` is compiled training's, with budgets computed once before the first
+step and identical on every DDP rank, and ``on_overflow: error``. ``auto``,
+which grows its budget with one recompile per growth, is the calculator's: it
+suits one system that changes little, and over a training stream it recompiles
+again and again.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
+import numpy as np
 from pydantic import Field, field_validator
 
 from mace_core.config.base import ConfigSection
+from mace_core.graph.info import PaddingInfo
+from mace_core.graph.layout import GraphLayout
+from mace_core.graph.schema import ANY_TRAILING, NODE_LEVEL
 
 __all__ = [
     "AutoPadding",
@@ -46,22 +58,9 @@ __all__ = [
     "PaddingPolicy",
     "padding_budget",
     "padding_length",
+    "padding_sample",
+    "padding_samples",
 ]
-
-
-@dataclass(frozen=True)
-class PaddingInfo:
-    """The real sizes of a padded batch. Real slots come first in each.
-
-    Attributes:
-        n_real_nodes: Nodes before the first padding atom.
-        n_real_edges: Edges before the first padding edge.
-        n_real_graphs: Structures before the first padding structure.
-    """
-
-    n_real_nodes: int
-    n_real_edges: int
-    n_real_graphs: int
 
 
 @dataclass(frozen=True)
@@ -181,12 +180,100 @@ def padding_budget(
         graphs=policy.graphs_budget,
     )
     if grown != asked and policy.on_overflow == "error":
+        over = [
+            f"{name} ({needed} needed, budget {budget})"
+            for name, needed, budget in (
+                ("nodes", grown.nodes, asked.nodes),
+                ("edges", grown.edges, asked.edges),
+                ("structures", grown.graphs, asked.graphs),
+            )
+            if needed > budget
+        ]
         raise PaddingOverflowError(
             f"a batch of {n_nodes} nodes, {n_edges} edges and {n_graphs} "
-            f"structures does not fit the budget of {asked.nodes} nodes, "
-            f"{asked.edges} edges and {asked.graphs} structures; it needs "
-            f"{grown.nodes}, {grown.edges} and {grown.graphs}, counting one "
-            f"padding structure and one padding atom whenever anything is "
+            f"structures is over its fixed budget in {', '.join(over)}, counting "
+            f"one padding structure and one padding atom whenever anything is "
             f"padded. Raise the budget, or set on_overflow to 'grow'."
         )
     return grown
+
+
+def padding_sample(
+    n_atoms: int,
+    n_edges: int | None,
+    r_max: float,
+    layout: GraphLayout,
+    *,
+    feature_shapes: Mapping[str, tuple[int, ...]] | None = None,
+) -> dict[str, Any]:
+    """One padding structure, as a graph sample :func:`collate` batches.
+
+    Args:
+        n_atoms: Its atoms, at the origin with Z = 0.
+        n_edges: Its edges, self loops on its last atom, or ``None`` for a
+            sample without edge keys, as a batch a device search completes.
+        r_max: The model's cutoff, Angstrom.
+        layout: What the run batches; every declared input takes its absent
+            value, every embedding feature zero.
+        feature_shapes: The trailing sizes of each embedding feature, whose
+            shape is the data's own, as the batch being padded carries them.
+
+    Raises:
+        ValueError: for edges without an atom to loop on, or an embedding
+            feature whose trailing sizes are not given.
+    """
+    if n_edges and not n_atoms:
+        raise ValueError(
+            f"a padding structure with {n_edges} edges and no atom: a padding "
+            f"edge is a self loop on one."
+        )
+    length = padding_length(r_max)
+    sample: dict[str, Any] = {
+        "positions": np.zeros((n_atoms, 3)),
+        "node_atomic_numbers": np.zeros(n_atoms, dtype=np.int64),
+        "cell": np.eye(3) * length,
+        "pbc": np.zeros(3, dtype=bool),
+        "head": np.int64(0),
+    }
+    if n_edges is not None:
+        unit_shifts = np.zeros((n_edges, 3))
+        unit_shifts[:, 0] = 1.0
+        sample["edge_index"] = np.full((2, n_edges), n_atoms - 1, dtype=np.int64)
+        sample["unit_shifts"] = unit_shifts
+        sample["shifts"] = unit_shifts * length
+    for name, spec in layout.inputs.items():
+        if spec.shape[-1] == ANY_TRAILING:
+            if feature_shapes is None or name not in feature_shapes:
+                raise ValueError(
+                    f"feature {name!r} has trailing sizes that are the data's "
+                    f"own; give them in feature_shapes, as the batch carries them."
+                )
+            trailing = tuple(feature_shapes[name])
+        else:
+            trailing = tuple(int(n) for n in spec.shape[1:])
+        rows = (n_atoms,) if spec.shape[0] == NODE_LEVEL else ()
+        sample[name] = np.full((*rows, *trailing), spec.absent_value)
+    return sample
+
+
+def padding_samples(
+    budget: PaddingBudget,
+    real: PaddingInfo,
+    r_max: float,
+    layout: GraphLayout,
+    *,
+    with_edges: bool = True,
+    feature_shapes: Mapping[str, tuple[int, ...]] | None = None,
+) -> list[dict[str, Any]]:
+    """The padding structures that take a batch of ``real`` sizes to
+    ``budget``: empty ones first, then the one holding every padding atom."""
+    graphs = budget.graphs - real.n_real_graphs
+    nodes = budget.nodes - real.n_real_nodes
+    edges = budget.edges - real.n_real_edges if with_edges else None
+    if graphs <= 0:
+        return []
+    empty = padding_sample(
+        0, 0 if with_edges else None, r_max, layout, feature_shapes=feature_shapes
+    )
+    last = padding_sample(nodes, edges, r_max, layout, feature_shapes=feature_shapes)
+    return [*(dict(empty) for _ in range(graphs - 1)), last]
