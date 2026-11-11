@@ -3,7 +3,7 @@
 import pytest
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels import (
-    ChannelwiseTPConvDescriptor,
+    ChannelwiseTPConvSpec,
     channelwise_paths,
     path_irreps,
 )
@@ -30,18 +30,18 @@ def test_odd_comes_before_even_at_one_degree():
     assert [str(p.irrep) for p in paths] == ["1o", "1e"]
 
 
-def test_the_descriptor_declares_its_message_one_term_per_path():
-    descriptor = ChannelwiseTPConvDescriptor(
+def test_the_kernel_spec_declares_its_message_one_term_per_path():
+    kernel_spec = ChannelwiseTPConvSpec(
         irreps_node="0e+1o", irreps_edge="0e+1o+2e", irreps_out="0e+1o+2e"
     )
-    assert len(Irreps.parse(descriptor.irreps_paths).terms) == len(descriptor.paths)
+    assert len(Irreps.parse(kernel_spec.irreps_paths).terms) == len(kernel_spec.paths)
 
 
 def test_a_node_multiplicity_is_refused_in_favour_of_the_channel_count():
     with pytest.raises(ValueError, match="num_features"):
-        ChannelwiseTPConvDescriptor(irreps_node="2x0e", irreps_edge="0e")
+        ChannelwiseTPConvSpec(irreps_node="2x0e", irreps_edge="0e")
 
 
 def test_a_channel_count_below_one_is_refused():
     with pytest.raises(ValueError, match="num_features"):
-        ChannelwiseTPConvDescriptor(num_features=0)
+        ChannelwiseTPConvSpec(num_features=0)

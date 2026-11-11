@@ -57,7 +57,7 @@ packages/mace-core/
 │   ├── kernels/
 │   │   ├── protocol.py                 # KernelBackend Protocol, generic over TensorT: make_* factories + capabilities (§3.1)
 │   │   ├── precision.py                # Precision = Literal["float64","float32",…] — dtype NAMES, never torch.dtype
-│   │   ├── descriptors.py              # IrrepsDescriptor, TPDescriptor, ContractionDescriptor (irreps+instructions, no weights)
+│   │   ├── specs.py                    # kernel specifications: LinearSpec, ChannelwiseTPConvSpec, SymmetricContractionSpec, ... (irreps + instructions, no weights)
 │   │   ├── registry.py                 # get_backend(name, framework) via entry_points('mace.kernel_backends.{torch,jax}')
 │   │   ├── spans.py                    # typed span shapes (EdgeConvolutionSpan): the member descriptors a backend may replace as one unit
 │   │   └── canonical.py               # canonical weight layout + to_canonical/load_canonical spec (kills the 5 convert_* modules)
@@ -416,19 +416,19 @@ model, change by change), see [`extending_mace.md`](extending_mace.md).
   ```python
   class KernelBackend(Protocol):
       name: str
-      def capabilities(self) -> BackendCapabilities: ...   # .supports(OpDescriptor) -> bool is authoritative;
+      def capabilities(self) -> BackendCapabilities: ...   # .supports(KernelSpec) -> bool is authoritative;
                                                            # .supports_double_backward / .bases drive hard-reject rules
-      # factories: descriptor -> op instance, resolved ONCE at model build time
-      def make_linear(self, d: LinearDescriptor) -> LinearOp: ...
-      def make_channelwise_tp_conv(self, d: ChannelwiseTPConvDescriptor) -> ChannelwiseTPConv: ...  # ALWAYS node-level; there is no per-edge variant
-      def make_symmetric_contraction(self, d: SymmetricContractionDescriptor) -> SymmetricContractionOp: ...
-      def make_fully_connected_tp(self, d: FullyConnectedTPDescriptor) -> FullyConnectedTPOp: ...
-      def make_segment_reduce(self, d: SegmentReduceDescriptor) -> SegmentReduceOp: ...
-      def make_spherical_harmonics(self, d: SphericalHarmonicsDescriptor) -> SphericalHarmonicsOp: ...  # reference-only, may decline
-      def make_radial_basis(self, d: RadialBasisDescriptor) -> RadialBasisOp: ...                        # reference-only, may decline
+      # factories: kernel specification -> op instance, resolved ONCE at model build time
+      def make_linear(self, d: LinearSpec) -> LinearOp: ...
+      def make_channelwise_tp_conv(self, d: ChannelwiseTPConvSpec) -> ChannelwiseTPConv: ...  # ALWAYS node-level; there is no per-edge variant
+      def make_symmetric_contraction(self, d: SymmetricContractionSpec) -> SymmetricContractionOp: ...
+      def make_fully_connected_tp(self, d: FullyConnectedTPSpec) -> FullyConnectedTPOp: ...
+      def make_segment_reduce(self, d: SegmentReduceSpec) -> SegmentReduceOp: ...
+      def make_spherical_harmonics(self, d: SphericalHarmonicsSpec) -> SphericalHarmonicsOp: ...  # reference-only, may decline
+      def make_radial_basis(self, d: RadialBasisSpec) -> RadialBasisOp: ...                        # reference-only, may decline
       # optional span factory: a backend MAY replace a span of the interaction layer as one stateless module
       # (the edge convolution, BKD-5); None builds the layer op by op
-      def make_interaction_layer(self, descriptors: tuple[Descriptor, ...]) -> "InteractionSpan | None": ...
+      def make_interaction_layer(self, kernel_specs: tuple[KernelSpec, ...]) -> "InteractionSpan | None": ...
   ```
 
   Internal-weight ops (`linear`, `symmetric_contraction`, `fully_connected_tp`) additionally implement `to_canonical()` / `load_canonical()`, applied only at the checkpoint save/load boundary, never on the forward path.
