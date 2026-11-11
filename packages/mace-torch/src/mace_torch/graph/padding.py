@@ -97,16 +97,16 @@ def pad_batch(
     budget = padding_budget(
         policy, n_nodes=info.num_nodes, n_edges=info.num_edges, n_graphs=info.num_graphs
     )
-    unpadded = PaddingBudget(info.num_nodes, info.num_edges, info.num_graphs)
-    if budget is None or budget == unpadded:
-        return dict(graph), _with_padding(info, real)
-    if isinstance(policy, FixedPadding) and budget != PaddingBudget(
-        policy.nodes_budget, policy.edges_budget, policy.graphs_budget
+    if (
+        isinstance(policy, FixedPadding)
+        and budget is not None
+        and budget
+        != PaddingBudget(policy.nodes_budget, policy.edges_budget, policy.graphs_budget)
     ):
         logger.warning(
             "the batch of %d nodes, %d edges and %d structures exceeds the "
-            "padding budget; padding to %d, %d and %d instead, which recompiles "
-            "a compiled model once",
+            "padding budget; batching it at %d, %d and %d instead, which "
+            "recompiles a compiled model once",
             info.num_nodes,
             info.num_edges,
             info.num_graphs,
@@ -114,6 +114,9 @@ def pad_batch(
             budget.edges,
             budget.graphs,
         )
+    unpadded = PaddingBudget(info.num_nodes, info.num_edges, info.num_graphs)
+    if budget is None or budget == unpadded:
+        return dict(graph), _with_padding(info, real)
 
     positions = graph["positions"]
     dtype, device = positions.dtype, positions.device

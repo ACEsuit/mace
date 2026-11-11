@@ -313,6 +313,24 @@ def test_an_edge_budget_with_no_room_for_a_padding_atom_grows_the_nodes(
     check_batch_invariants(data, padded_info)
 
 
+def test_a_batch_over_every_fixed_budget_warns_though_nothing_is_padded(
+    batch, dtype, caplog
+):
+    graph, _, info = batch
+    policy = FixedPadding(
+        nodes_budget=info.num_nodes - 1,
+        edges_budget=info.num_edges - 1,
+        graphs_budget=info.num_graphs - 1,
+    )
+    with caplog.at_level(logging.WARNING, logger="mace_torch.graph.padding"):
+        data, padded_info = pad_batch(graph, info, policy, R_MAX, LAYOUT)
+    assert data["positions"].shape[0] == info.num_nodes
+    assert data["edge_index"].shape[1] == info.num_edges
+    assert padded_info.num_graphs == info.num_graphs
+    assert "exceeds the padding budget" in caplog.text
+    check_layout(data, LAYOUT, padded_info, float_dtype=dtype_name(dtype))
+
+
 @pytest.mark.parametrize(
     ("budget", "named"),
     [
