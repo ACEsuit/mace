@@ -47,7 +47,7 @@ from mace_core.kernels.specs import (
 from torch import Tensor, nn
 
 from mace_torch.backends.layout import expanded_irreps
-from mace_torch.backends.reference import TORCH_DTYPES, ReferenceBackend
+from mace_torch.backends.reference import TORCH_DTYPES
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.gate import Gate, gate_input_irreps
 
@@ -71,18 +71,6 @@ _INITIAL_ALPHA = 20.0
 #: The spread of the nonlinear block's element embeddings at the start, so that
 #: the radial networks begin nearly blind to the elements.
 _ELEMENT_EMBEDDING_BOUND = 1e-3
-
-
-def _radial_network(backend, kernel_spec: RadialMLPSpec) -> nn.Module:
-    """The backend's radial MLP, or the reference's when it declines.
-
-    A reference-only op: declining is a normal answer, and the weights are
-    canonical whoever builds them.
-    """
-    built = backend.make_radial_mlp(kernel_spec)
-    if built is None:
-        built = ReferenceBackend().make_radial_mlp(kernel_spec)
-    return built
 
 
 def _ask_for_span(backend, members: tuple[KernelSpec, ...] | None) -> object | None:
@@ -152,7 +140,7 @@ class _Convolution(nn.Module):
             kind="normalized_silu",
             precision=precision,
         )
-        self.radial_mlp = _radial_network(backend, weights)
+        self.radial_mlp = backend.make_radial_mlp(weights)
         self.linear = backend.make_linear(
             LinearSpec(
                 irreps_in=expanded_irreps(convolution.irreps_paths, num_features),
@@ -172,9 +160,7 @@ class _Convolution(nn.Module):
             if learned_density
             else None
         )
-        self.density_mlp = (
-            None if density is None else _radial_network(backend, density)
-        )
+        self.density_mlp = None if density is None else backend.make_radial_mlp(density)
         self.reduce = backend.make_segment_reduce(
             SegmentReduceSpec(reduction="sum", num_features=1, precision=precision)
         )
@@ -471,8 +457,8 @@ class NonLinearInteractionBlock(nn.Module):
             kind=kind,
             precision=precision,
         )
-        self.radial_mlp = _radial_network(backend, weights)
-        self.density_mlp = _radial_network(backend, density)
+        self.radial_mlp = backend.make_radial_mlp(weights)
+        self.density_mlp = backend.make_radial_mlp(density)
         self.reduce = backend.make_segment_reduce(
             SegmentReduceSpec(reduction="sum", num_features=1, precision=precision)
         )

@@ -107,6 +107,20 @@ def test_no_jit_in_live_v1_path():
     assert not problems, "\n".join(problems)
 
 
+def test_model_code_builds_through_its_backend():
+    """No block or model falls back to the reference backend by itself.
+
+    Every op a block holds is what its backend returned. When the configured
+    backend does not build an op, the composite backend builds the reference's
+    instead, for every op alike; a model that did the same in its own code
+    would hold a second backend that no build report mentions.
+    """
+    problems, _ = v1_surface.scan(
+        v1_surface.reference_fallback_violations, v1_surface.package_roots()
+    )
+    assert not problems, "\n".join(problems)
+
+
 # ---------------------------------------------------------------------------
 # The detectors, tested against source they should reject
 #
@@ -277,3 +291,34 @@ def test_the_torchscript_detector_finds_the_legacy_tree_it_describes():
         f"only {len(problems)} TorchScript uses found in mace/modules/, which "
         f"has 52 @compile_mode decorators alone: the detector is broken"
     )
+
+
+FALLBACK = """
+from mace_torch.backends.reference import ReferenceBackend
+
+
+def build(backend, kernel_spec):
+    built = backend.make_radial_mlp(kernel_spec)
+    if built is None:
+        built = ReferenceBackend().make_radial_mlp(kernel_spec)
+    return built
+"""
+
+
+def test_the_fallback_detector_rejects_a_fallback_in_model_code():
+    path = "packages/mace-torch/src/mace_torch/nn/interaction.py"
+    assert v1_surface.reference_fallback_violations(FALLBACK, path)
+
+
+def test_the_fallback_detector_leaves_the_backends_alone():
+    path = "packages/mace-torch/src/mace_torch/backends/composite.py"
+    assert not v1_surface.reference_fallback_violations(FALLBACK, path)
+
+
+def test_the_fallback_detector_accepts_model_code_that_asks_its_backend():
+    source = (
+        "def build(backend, kernel_spec):\n"
+        "    return backend.make_radial_mlp(kernel_spec)\n"
+    )
+    path = "packages/mace-torch/src/mace_torch/nn/interaction.py"
+    assert not v1_surface.reference_fallback_violations(source, path)
