@@ -35,7 +35,7 @@ from typing import Literal
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.config.model import (
-    ChebyshevBasisConfig,
+    DistanceTransformConfig,
     InteractionKind,
     ModelConfig,
     NoDistanceTransformConfig,
@@ -56,9 +56,8 @@ from mace_torch.backends.reference import TORCH_DTYPES
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.embedding import (
     RadialEmbeddingBlock,
-    build_cutoff,
     build_distance_transform,
-    build_radial_basis,
+    radial_basis_spec,
 )
 from mace_torch.nn.interaction import (
     InteractionBlock,
@@ -169,31 +168,19 @@ def _per_channel(irreps: str) -> tuple[str, int]:
 
 
 def _edge_members(
-    config: ModelConfig, precision: Precision
-) -> tuple[KernelSpec, ...] | None:
-    """The specifications of what every edge convolution starts from, or ``None``.
+    radial: RadialBasisSpec,
+    harmonics: SphericalHarmonicsSpec,
+    transform: DistanceTransformConfig,
+    precision: Precision,
+) -> tuple[KernelSpec, ...]:
+    """The specifications of what every edge convolution starts from.
 
     The radial basis with its envelope, the harmonics, and the distance
-    transform when there is one. ``None`` when a piece has no specification that
-    states it: an envelope applied after the radial networks, or a Chebyshev
-    basis that starts at the constant.
+    transform when there is one. The radial basis states whether the envelope
+    multiplies the basis or the radial networks' output, so a backend that
+    handles only one of the two declines the other.
     """
-    basis = config.radial_basis
-    if not config.apply_cutoff:
-        return None
-    if isinstance(basis, ChebyshevBasisConfig) and basis.include_constant:
-        return None
-    members: tuple[KernelSpec, ...] = (
-        RadialBasisSpec(
-            kind=basis.kind,
-            num_basis=basis.num_basis,
-            cutoff=config.r_max,
-            cutoff_order=config.cutoff.polynomial_order,
-            precision=precision,
-        ),
-        SphericalHarmonicsSpec(lmax=config.max_ell, precision=precision),
-    )
-    transform = config.distance_transform
+    members: tuple[KernelSpec, ...] = (radial, harmonics)
     if not isinstance(transform, NoDistanceTransformConfig):
         members += (DistanceTransformSpec(kind=transform.kind, precision=precision),)
     return members
@@ -259,16 +246,25 @@ class MACEBackbone(nn.Module):
         self.num_features = num_features
 
         harmonics = SphericalHarmonicsSpec(lmax=config.max_ell, precision=precision)
+        radial = radial_basis_spec(
+            config.radial_basis,
+            config.cutoff,
+            config.r_max,
+            apply_cutoff=config.apply_cutoff,
+            precision=precision,
+        )
         self.spherical_harmonics = backend.make_spherical_harmonics(harmonics)
+        # The distance transform is the model's own module, not an op, so it
+        # takes the precision from the default dtype it is built under.
         with _default_dtype(TORCH_DTYPES[precision]):
             self.radial_embedding = RadialEmbeddingBlock(
-                build_radial_basis(config.radial_basis, config.r_max),
+                backend.make_radial_basis(radial),
                 build_distance_transform(config.distance_transform),
-                build_cutoff(config.cutoff, config.r_max),
-                apply_cutoff=config.apply_cutoff,
             )
         num_radial = self.radial_embedding.num_basis
-        edge_members = _edge_members(config, precision)
+        edge_members = _edge_members(
+            radial, harmonics, config.distance_transform, precision
+        )
 
         # The embedding is scalars, plus whatever irreps the declared node
         # inputs carry: an equivariant map cannot create an irrep its input

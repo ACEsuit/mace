@@ -17,12 +17,12 @@ from mace_core.config import (
     SoftTransformConfig,
 )
 from mace_torch.backends.radial import ChebyshevBasis
+from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.embedding import (
     LinearNodeEmbeddingBlock,
     RadialEmbeddingBlock,
-    build_cutoff,
     build_distance_transform,
-    build_radial_basis,
+    radial_basis_spec,
 )
 from mace_torch.nn.radial import ZBLBasis
 
@@ -92,15 +92,18 @@ def test_radial_embedding_block_parity(
         distance_transform=LEGACY_TRANSFORM_NAME[distance_transform],
         apply_cutoff=apply_cutoff,
     )
+    spec = radial_basis_spec(
+        V1_BASIS_CONFIG[radial_basis](num_basis=6),
+        PolynomialCutoffConfig(polynomial_order=5),
+        R_MAX,
+        apply_cutoff=apply_cutoff,
+        precision="float64",
+    )
     v1 = RadialEmbeddingBlock(
-        radial_basis=build_radial_basis(
-            V1_BASIS_CONFIG[radial_basis](num_basis=6), R_MAX
-        ),
+        radial_basis=ReferenceBackend().make_radial_basis(spec),
         distance_transform=build_distance_transform(
             V1_TRANSFORM_CONFIG[distance_transform]()
         ),
-        cutoff=build_cutoff(PolynomialCutoffConfig(polynomial_order=5), R_MAX),
-        apply_cutoff=apply_cutoff,
     )
     legacy_radial, legacy_cutoff = legacy(lengths, node_attrs, edge_index, SPECIES)
     v1_radial, v1_cutoff = v1(lengths, node_atomic_numbers, edge_index)

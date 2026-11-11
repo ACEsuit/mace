@@ -9,6 +9,7 @@ envelope that goes with them.
 from __future__ import annotations
 
 import math
+from typing import cast
 
 import torch
 from mace_core.config import (
@@ -22,13 +23,9 @@ from mace_core.config import (
     RadialBasisConfig,
     SoftTransformConfig,
 )
+from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import RadialBasisSpec
 
-from mace_torch.backends.radial import (
-    BesselBasis,
-    ChebyshevBasis,
-    GaussianBasis,
-    PolynomialCutoff,
-)
 from mace_torch.nn.radial import (
     AgnesiTransform,
     SoftTransform,
@@ -37,14 +34,11 @@ from mace_torch.nn.radial import (
 __all__ = [
     "DistanceTransform",
     "LinearNodeEmbeddingBlock",
-    "RadialBasis",
     "RadialEmbeddingBlock",
-    "build_cutoff",
     "build_distance_transform",
-    "build_radial_basis",
+    "radial_basis_spec",
 ]
 
-RadialBasis = BesselBasis | GaussianBasis | ChebyshevBasis
 DistanceTransform = AgnesiTransform | SoftTransform
 
 
@@ -77,10 +71,10 @@ class RadialEmbeddingBlock(torch.nn.Module):
     """The radial basis and the cutoff envelope of every edge, with an optional
     distance transform.
 
-    The block composes three modules it is handed, built from their config
-    sections by `build_radial_basis`, `build_distance_transform` and
-    `build_cutoff`. It does not check that the basis and the envelope were
-    built for the same ``r_max``; the builders take it once for both.
+    The basis and its envelope are one op, the one the backend built from a
+    :class:`~mace_core.kernels.specs.RadialBasisSpec`; the block adds the
+    distance transform, which the model holds, and hands the envelope on to the
+    interaction blocks.
 
     The forward runs three steps in a fixed order that is load-bearing:
 
@@ -97,20 +91,26 @@ class RadialEmbeddingBlock(torch.nn.Module):
 
     def __init__(
         self,
-        radial_basis: RadialBasis,
+        radial_basis: torch.nn.Module,
         distance_transform: DistanceTransform | None,
-        cutoff: PolynomialCutoff,
-        apply_cutoff: bool = True,
     ):
         super().__init__()
-        self.basis = radial_basis
+        self.radial = radial_basis
         self.distance_transform = distance_transform
-        self.cutoff = cutoff
-        self.apply_cutoff = apply_cutoff
+        self.kernel_spec = cast(RadialBasisSpec, radial_basis.kernel_spec)
 
     @property
     def num_basis(self) -> int:
-        return self.basis.num_basis
+        return self.kernel_spec.num_basis
+
+    @property
+    def apply_cutoff(self) -> bool:
+        return self.kernel_spec.apply_cutoff
+
+    @property
+    def cutoff(self) -> torch.nn.Module:
+        """The envelope, which the forward evaluates on the raw lengths."""
+        return cast(torch.nn.Module, self.radial.cutoff)
 
     def forward(
         self,
@@ -130,9 +130,7 @@ class RadialEmbeddingBlock(torch.nn.Module):
             edge_lengths = self.distance_transform(
                 edge_lengths, node_atomic_numbers, edge_index
             )
-        edge_radial_features = self.basis(edge_lengths)
-        if self.apply_cutoff:
-            edge_radial_features = edge_radial_features * edge_cutoff
+        edge_radial_features = self.radial(edge_lengths, envelope=edge_cutoff)
         return edge_radial_features, edge_cutoff
 
     def extra_repr(self) -> str:
@@ -140,28 +138,42 @@ class RadialEmbeddingBlock(torch.nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# Config section -> module
+# Config section -> specification or module
 # ---------------------------------------------------------------------------
 
 
-def build_radial_basis(config: RadialBasisConfig, r_max: float) -> RadialBasis:
-    """The basis a config section describes, for a cutoff ``r_max`` in Angstrom.
-    The Chebyshev basis does not use ``r_max``."""
-    match config:
-        case BesselBasisConfig():
-            return BesselBasis(
-                r_max=r_max, num_basis=config.num_basis, trainable=config.trainable
-            )
-        case GaussianBasisConfig():
-            return GaussianBasis(
-                r_max=r_max, num_basis=config.num_basis, trainable=config.trainable
-            )
-        case ChebyshevBasisConfig():
-            return ChebyshevBasis(
-                num_basis=config.num_basis, include_constant=config.include_constant
-            )
-        case _:
-            raise TypeError(f"no radial basis is built from {type(config).__name__}")
+def radial_basis_spec(
+    radial_basis: RadialBasisConfig,
+    cutoff: PolynomialCutoffConfig,
+    r_max: float,
+    *,
+    apply_cutoff: bool = True,
+    precision: Precision = "float64",
+) -> RadialBasisSpec:
+    """The kernel specification of the basis and envelope the sections describe.
+
+    ``r_max`` is in Angstrom and sets both; the Chebyshev basis does not use it.
+    Every option of the basis section reaches the specification, so a backend
+    sees the whole radial embedding it is asked to build.
+    """
+    return RadialBasisSpec(
+        kind=radial_basis.kind,
+        num_basis=radial_basis.num_basis,
+        cutoff=r_max,
+        cutoff_order=cutoff.polynomial_order,
+        trainable=(
+            radial_basis.trainable
+            if isinstance(radial_basis, BesselBasisConfig | GaussianBasisConfig)
+            else False
+        ),
+        include_constant=(
+            radial_basis.include_constant
+            if isinstance(radial_basis, ChebyshevBasisConfig)
+            else False
+        ),
+        apply_cutoff=apply_cutoff,
+        precision=precision,
+    )
 
 
 def build_distance_transform(
@@ -184,8 +196,3 @@ def build_distance_transform(
             raise TypeError(
                 f"no distance transform is built from {type(config).__name__}"
             )
-
-
-def build_cutoff(config: PolynomialCutoffConfig, r_max: float) -> PolynomialCutoff:
-    """The envelope a config section describes, for a cutoff ``r_max`` in Angstrom."""
-    return PolynomialCutoff(r_max=r_max, polynomial_order=config.polynomial_order)
