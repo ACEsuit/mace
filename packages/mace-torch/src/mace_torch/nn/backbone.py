@@ -19,10 +19,10 @@ Four things it does not do, each replacing something the frozen tree does:
 * It writes nothing into the graph it is given.
 
 **The graph.** A flat dict, read and never written. The backbone reads
-``positions``, ``node_attrs``, ``node_atomic_numbers``, ``edge_index`` and
-``shifts``, plus one key per declared node input. The edge vectors are computed
-here, from the positions and the shifts, so a strain applied to both upstream
-reaches every edge quantity.
+``positions``, ``node_atomic_numbers``, ``edge_index`` and ``shifts``, plus one
+key per declared node input. The element one-hot is formed here from the atomic
+numbers, and the edge vectors from the positions and the shifts, so a strain
+applied to both upstream reaches every edge quantity.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
@@ -77,9 +77,10 @@ __all__ = [
 ]
 
 #: The graph keys every backbone reads, whatever it declares.
-GRAPH_KEYS = frozenset(
-    {"positions", "node_attrs", "node_atomic_numbers", "edge_index", "shifts"}
-)
+GRAPH_KEYS = frozenset({"positions", "node_atomic_numbers", "edge_index", "shifts"})
+
+#: One past the largest atomic number, the length of the element lookup.
+_ATOMIC_NUMBER_COUNT = 119
 
 
 @dataclass(frozen=True)
@@ -116,9 +117,14 @@ class NodeFeatures:
         layers: One ``[n_nodes, dim_layer]`` tensor per interaction, grouped
             by irrep in the canonical ``mul_ir``. The last layer carries only
             scalars. Under a :class:`LocalityInfo`, the local nodes only.
+        node_attrs: ``[n_nodes, n_elements]``, the element one-hot the
+            backbone formed, in the model's precision. What reads the elements
+            after the backbone reads this one and forms none of its own. Under
+            a :class:`LocalityInfo`, the local nodes only.
     """
 
     layers: tuple[Tensor, ...]
+    node_attrs: Tensor
 
 
 #: How :func:`aggregate_atomic_descriptors` reduces per structure.
@@ -197,7 +203,8 @@ class MACEBackbone(nn.Module):
         backend: The kernel backend. Consulted at construction only.
         config: The architecture. Its ``clebsch_gordan_basis`` reaches every
             symmetric contraction's specification unchanged.
-        atomic_numbers: The element table, the columns of ``node_attrs``.
+        atomic_numbers: The element table, the columns of the element one-hot.
+            Atomic number 0, a padding atom, takes the first column.
         avg_num_neighbors: The dataset's average neighbour count, the
             normalization of every block without a learned density.
         precision: The dtype name every op is built and computes in.
@@ -238,6 +245,21 @@ class MACEBackbone(nn.Module):
                 raise ValueError(f"node input {spec.name!r} is declared twice.")
         self.config = config
         self.atomic_numbers = tuple(atomic_numbers)
+        in_range = all(1 <= number < _ATOMIC_NUMBER_COUNT for number in atomic_numbers)
+        if not in_range or len(set(self.atomic_numbers)) != len(self.atomic_numbers):
+            raise ValueError(
+                f"atomic_numbers={list(self.atomic_numbers)} is not an element "
+                f"table: every entry is an atomic number from 1 to "
+                f"{_ATOMIC_NUMBER_COUNT - 1}, each once."
+            )
+        # Atomic number -> column of the one-hot. Zero, a padding atom, and
+        # any number outside the table map to the first column; the data
+        # checks refuse an unknown element before it reaches a model.
+        element_index_of = torch.zeros(_ATOMIC_NUMBER_COUNT, dtype=torch.int64)
+        element_index_of[list(self.atomic_numbers)] = torch.arange(
+            len(self.atomic_numbers)
+        )
+        self.register_buffer("element_index_of", element_index_of, persistent=False)
         self.precision = precision
         self.between_layers = between_layers
         self.node_input_names = tuple(spec.name for spec in node_inputs)
@@ -417,7 +439,11 @@ class MACEBackbone(nn.Module):
                 a decomposed run. ``None`` for a whole system.
         """
         positions = graph["positions"]
-        node_attrs = graph["node_attrs"]
+        element_index_of = cast(Tensor, self.element_index_of)
+        node_element = element_index_of[graph["node_atomic_numbers"]]
+        node_attrs = nn.functional.one_hot(
+            node_element, num_classes=len(self.atomic_numbers)
+        ).to(TORCH_DTYPES[self.precision])
         edge_index = graph["edge_index"]
         sender, receiver = edge_index[0], edge_index[1]
         num_nodes = positions.shape[0]
@@ -447,9 +473,9 @@ class MACEBackbone(nn.Module):
             self.radial_embedding,
         )
         element = (
-            torch.zeros_like(node_attrs[:, 0], dtype=torch.int64)
+            torch.zeros_like(node_element)
             if self.use_agnostic_product
-            else node_attrs.argmax(dim=-1)
+            else node_element
         )
 
         features = self.node_embedding(node_attrs)
@@ -459,6 +485,9 @@ class MACEBackbone(nn.Module):
             features = features + mapping(graph[name])
 
         layers = []
+        local_node_attrs = (
+            node_attrs if locality is None else node_attrs[: locality.n_local]
+        )
         for layer, (interaction, product) in enumerate(
             zip(self.interactions, self.products, strict=True)
         ):
@@ -477,7 +506,7 @@ class MACEBackbone(nn.Module):
                 layer_element = element[: locality.n_local]
             features = product(message, layer_element, carried)
             layers.append(features)
-        return NodeFeatures(layers=tuple(layers))
+        return NodeFeatures(layers=tuple(layers), node_attrs=local_node_attrs)
 
     # ------------------------------------------------------------------
     # Atomic descriptors

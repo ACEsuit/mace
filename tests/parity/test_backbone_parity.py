@@ -210,19 +210,22 @@ def _legacy_model(config: ModelConfig, avg_num_neighbors: float, seed: int):
     return model
 
 
-def _v1_graph(legacy, atoms) -> dict[str, torch.Tensor]:
-    """The legacy model's own graph, with the one key v1 adds."""
-    graph = anchors.anchor_graph(legacy, atoms, torch.float64)
+def _v1_graph(legacy, graph: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """The legacy model's graph as v1 has it: the atomic numbers in place of
+    the element one-hot, which the backbone forms itself."""
     table = torch.tensor([int(z) for z in legacy.atomic_numbers])
-    graph["node_atomic_numbers"] = table[graph["node_attrs"].argmax(dim=-1)]
-    return graph
+    ours = {key: value for key, value in graph.items() if key != "node_attrs"}
+    ours["node_atomic_numbers"] = table[graph["node_attrs"].argmax(dim=-1)]
+    return ours
 
 
 def _compare(legacy, backbone: MACEBackbone, fixtures) -> None:
     for name in FIXTURES:
-        graph = _v1_graph(legacy, fixtures[name])
+        graph = anchors.anchor_graph(legacy, fixtures[name], torch.float64)
         expected = legacy(dict(graph), compute_force=False)["node_feats"]
-        layers = backbone(graph).layers
+        features = backbone(_v1_graph(legacy, graph))
+        assert torch.equal(features.node_attrs, graph["node_attrs"]), name
+        layers = features.layers
         widths = [layer.shape[-1] for layer in layers]
         for index, (ours, theirs) in enumerate(
             zip(layers, expected.split(widths, dim=-1), strict=True)
@@ -377,7 +380,9 @@ def test_the_descriptors_are_the_legacy_calculators(
             atoms, invariants_only=invariants_only, num_layers=num_layers
         )
         ours = backbone.atomic_descriptors(
-            backbone(_v1_graph(legacy, atoms)),
+            backbone(
+                _v1_graph(legacy, anchors.anchor_graph(legacy, atoms, torch.float64))
+            ),
             num_layers=num_layers,
             invariants_only=invariants_only,
         )
@@ -401,9 +406,9 @@ def test_the_aggregations_are_the_eval_command_lines(fp64, fixtures):
     carry_weights(legacy, backbone)
     structures = [fixtures[name] for name in FIXTURES]
     batch = anchors.anchor_batch(legacy, structures).to_dict()
-    table = torch.tensor(list(ELEMENTS))
-    batch["node_atomic_numbers"] = table[batch["node_attrs"].argmax(dim=-1)]
-    descriptors = backbone.atomic_descriptors(backbone(batch)).detach()
+    descriptors = backbone.atomic_descriptors(
+        backbone(_v1_graph(legacy, batch))
+    ).detach()
     element = batch["node_attrs"].argmax(dim=-1)
     num_graphs = batch["ptr"].numel() - 1
     means = aggregate_atomic_descriptors(
