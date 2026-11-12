@@ -1,12 +1,4 @@
-"""Energy continuity at r_max for the magnetic (SOC) interaction blocks.
-
-The radial weights of the magnetic blocks are an MLP of [edge_feats, magmom_feats_j].
-edge_feats vanish at r_max when they carry the envelope, but the neighbour's moment
-features do not, so with the envelope inside the radial basis a neighbour crossing r_max
-changes the energy by a finite step. MagneticMACE now builds the radial basis without the
-envelope and the blocks multiply their weights and edge density by it, so the energy is
-continuous. Models saved before that keep the envelope in the basis and are unchanged.
-"""
+"""Energy continuity at r_max for the magnetic interaction blocks."""
 
 import numpy as np
 import pytest
@@ -22,8 +14,7 @@ _BLOCKS = [
     "MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock",
     "MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock",
 ]
-# Atoms 0 and 1 are fixed neighbours; atom 2 sits on the x axis at distance d from atom 0
-# and stays more than r_max from atom 1, so only the 0-2 edge crosses the cutoff.
+# only the 0-2 edge crosses r_max
 _POS01 = np.array([[0.0, 0.0, 0.0], [-2.0, 0.3, 0.1]])
 _MAG = np.array([[0.1, 0.2, 2.2], [0.2, -0.3, 2.1], [-0.1, 0.1, 2.0]])  # ferromagnetic
 
@@ -87,19 +78,16 @@ def _energy(model, d, mag=_MAG):
 
 
 def _step(model, mag=_MAG, eps=1e-9):
-    """E(atom 2 just inside r_max) - E(just outside)."""
     return _energy(model, _RMAX - eps, mag) - _energy(model, _RMAX + eps, mag)
 
 
 def _as_saved_before_the_fix(model):
-    """A model saved before the fix: envelope inside the radial basis."""
     model.radial_embedding.apply_cutoff = True
     return model
 
 
 @pytest.mark.parametrize("name", _BLOCKS)
 def test_envelope_inside_the_radial_basis_steps_at_cutoff(name):
-    """Documents the bug, on a model configured as before the fix."""
     with default_dtype(torch.float64):
         step = _step(_as_saved_before_the_fix(_build(name)))
     assert abs(step) > 1e-6, step
@@ -112,7 +100,6 @@ def test_energy_is_continuous_at_cutoff(name, seed):
         model = _build(name, seed)
         assert not model.radial_embedding.apply_cutoff
         assert abs(_step(model)) < 1e-10
-        # also with zero moments and with a reversed moment on the crossing atom
         assert abs(_step(model, _MAG * 0.0)) < 1e-10
         mag = _MAG.copy()
         mag[2] *= -1
@@ -121,7 +108,6 @@ def test_energy_is_continuous_at_cutoff(name, seed):
 
 @pytest.mark.parametrize("name", _BLOCKS)
 def test_forces_are_continuous_at_cutoff(name):
-    """The polynomial envelope (p=4) also takes the force on the crossing atom to 0."""
     with default_dtype(torch.float64):
         model = _build(name)
         forces = []
@@ -135,7 +121,6 @@ def test_forces_are_continuous_at_cutoff(name):
 
 @pytest.mark.parametrize("name", _BLOCKS)
 def test_the_envelope_is_applied_once_outside_the_radial_basis(name):
-    """Raw basis times the envelope is the old enveloped basis, so nothing is lost."""
     with default_dtype(torch.float64):
         model = _build(name)
         r = torch.tensor([[1.0], [2.5], [_RMAX - 1e-3]])
@@ -149,8 +134,6 @@ def test_the_envelope_is_applied_once_outside_the_radial_basis(name):
 
 @pytest.mark.parametrize("name", _BLOCKS)
 def test_models_saved_before_the_fix_are_unchanged(name):
-    """With the envelope in the basis the blocks get cutoff=None and skip it, which
-    reproduces the pre-fix forward exactly (computed here by hand)."""
     with default_dtype(torch.float64):
         model = _as_saved_before_the_fix(_build(name))
         e = _energy(model, 3.0)

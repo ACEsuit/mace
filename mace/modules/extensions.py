@@ -1596,17 +1596,13 @@ class MagneticMACE(torch.nn.Module):
                     oeq_config,
                 )
 
-        # The envelope is kept out of the radial basis and applied by the magnetic
-        # interactions themselves: their radial weights also see the neighbour's moment
-        # features, which do not vanish at r_max, so an envelope inside edge_feats would
-        # leave the energy discontinuous at the cutoff.
         self.radial_embedding = RadialEmbeddingBlock(
             r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
-            apply_cutoff=False,
+            apply_cutoff=False,  # applied in the magnetic interactions
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
@@ -1881,8 +1877,6 @@ class MagneticScaleShiftMACE(MagneticMACE):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        # cutoff is None for models saved before the envelope moved out of the radial
-        # basis (apply_cutoff=True); they keep their original behaviour.
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )

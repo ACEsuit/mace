@@ -1753,12 +1753,6 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
 
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
-
-        # The radial weights see the neighbour's moment features, which do not vanish
-        # at r_max, so an envelope inside edge_feats does not take them to zero there.
-        # MagneticMACE therefore builds the radial basis without the envelope and
-        # passes it here as `cutoff`. Models saved before that pass cutoff=None and
-        # keep the envelope inside edge_feats, so they reproduce unchanged.
         if cutoff is not None:
             tp_weights = tp_weights * cutoff
             edge_density = edge_density * cutoff
@@ -1922,12 +1916,6 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
 
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
-
-        # The radial weights see the neighbour's moment features, which do not vanish
-        # at r_max, so an envelope inside edge_feats does not take them to zero there.
-        # MagneticMACE therefore builds the radial basis without the envelope and
-        # passes it here as `cutoff`. Models saved before that pass cutoff=None and
-        # keep the envelope inside edge_feats, so they reproduce unchanged.
         if cutoff is not None:
             tp_weights = tp_weights * cutoff
             edge_density = edge_density * cutoff
