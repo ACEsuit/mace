@@ -35,13 +35,12 @@ again and again.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 import numpy as np
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from mace_core.config.base import ConfigSection
 from mace_core.graph.info import PaddingInfo
@@ -102,9 +101,10 @@ class FixedPadding(ConfigSection):
 
 
 class AutoPadding(ConfigSection):
-    """Size the budgets from the batch: one padding structure with one atom,
-    and ``int(n_edges * headroom)`` edges rounded up to a multiple of
-    ``edge_multiple``, which is the frozen calculator's rule.
+    """Size the budgets from the batch as the frozen calculator does: the edge
+    budget is ``int(n_edges * headroom)`` rounded up to a multiple of
+    ``edge_multiple``, and when that leaves padding edges they go on one
+    padding structure with one atom. A batch without edges is not padded.
 
     Attributes:
         edge_multiple: The edge budget is a multiple of this.
@@ -118,15 +118,8 @@ class AutoPadding(ConfigSection):
 
     kind: Literal["auto"] = "auto"
     edge_multiple: int = Field(default=64, ge=1)
-    headroom: float = Field(default=1.25, ge=1.0)
+    headroom: float = Field(default=1.25, ge=1.0, allow_inf_nan=False)
     on_overflow: Literal["grow", "error"] = "grow"
-
-    @field_validator("headroom")
-    @classmethod
-    def _finite(cls, headroom: float) -> float:
-        if not math.isfinite(headroom):
-            raise ValueError("headroom must be finite.")
-        return headroom
 
 
 PaddingPolicy = Annotated[
@@ -164,6 +157,8 @@ def padding_budget(
         wanted = int(n_edges * policy.headroom)
         multiple = policy.edge_multiple
         edges = (wanted + multiple - 1) // multiple * multiple
+        if edges == n_edges:
+            return PaddingBudget(nodes=n_nodes, edges=n_edges, graphs=n_graphs)
         return PaddingBudget(nodes=n_nodes + 1, edges=edges, graphs=n_graphs + 1)
 
     nodes = max(policy.nodes_budget, n_nodes)
@@ -220,6 +215,11 @@ def padding_sample(
         ValueError: for edges without an atom to loop on, or an embedding
             feature whose trailing sizes are not given.
     """
+    if n_atoms < 0 or (n_edges is not None and n_edges < 0):
+        raise ValueError(
+            f"a padding structure of {n_atoms} atoms and {n_edges} edges; both "
+            f"are counts."
+        )
     if n_edges and not n_atoms:
         raise ValueError(
             f"a padding structure with {n_edges} edges and no atom: a padding "
@@ -267,7 +267,17 @@ def padding_samples(
     graphs = budget.graphs - real.n_real_graphs
     nodes = budget.nodes - real.n_real_nodes
     edges = budget.edges - real.n_real_edges if with_edges else None
-    if graphs <= 0:
+    if graphs < 0 or nodes < 0 or (edges is not None and edges < 0):
+        raise ValueError(
+            f"the budget {budget} is below the real sizes {real}; a budget is "
+            f"at least the batch it pads."
+        )
+    if graphs == 0:
+        if nodes or edges:
+            raise ValueError(
+                f"the budget {budget} pads atoms or edges but no structure to "
+                f"hold them; a padding atom needs a padding structure."
+            )
         return []
     empty = padding_sample(
         0, 0 if with_edges else None, layout, feature_shapes=feature_shapes

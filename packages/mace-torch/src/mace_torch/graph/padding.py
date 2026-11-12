@@ -18,9 +18,10 @@ collated unchecked here.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Mapping
-from typing import Any, overload
+from typing import Any, cast, overload
 
 import torch
 from mace_core.graph import (
@@ -36,7 +37,7 @@ from mace_core.graph import (
     padding_budget,
     padding_samples,
 )
-from mace_core.graph.schema import EDGE_LEVEL, GRAPH_LEVEL, NODE_LEVEL
+from mace_core.graph.schema import GRAPH_LEVEL, NODE_LEVEL
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
 from mace_core.outputs import CORE_FIELD_NAMES, MACEOutput
 
@@ -118,7 +119,7 @@ def pad_batch(
         )
     unpadded = PaddingBudget(info.num_nodes, info.num_edges, info.num_graphs)
     if budget is None or budget == unpadded:
-        result, result_info = dict(graph), _with_padding(info, real)
+        result, result_info = dict(graph), dataclasses.replace(info, padding=real)
         check_layout(result, layout, result_info)
         return result, result_info
 
@@ -143,24 +144,20 @@ def pad_batch(
     return padded, padded_info
 
 
-def _with_padding(info: GraphInfo, real: PaddingInfo) -> GraphInfo:
-    return GraphInfo(
-        num_graphs=info.num_graphs,
-        num_nodes=info.num_nodes,
-        num_edges=info.num_edges,
-        structure_sizes=info.structure_sizes,
-        padding=real,
-    )
-
-
 def _feature_shapes(
     graph: Mapping[str, torch.Tensor], layout: GraphLayout
 ) -> dict[str, tuple[int, ...]]:
     """The trailing sizes of each embedding feature, as the batch carries them."""
     shapes: dict[str, tuple[int, ...]] = {}
     for name, spec in layout.inputs.items():
-        if spec.shape[-1] == ANY_TRAILING:
-            shapes[name] = tuple(int(n) for n in graph[name].shape[1:])
+        if spec.shape[-1] != ANY_TRAILING:
+            continue
+        if name not in graph:
+            raise ValueError(
+                f"the batch is missing the embedding feature {name!r}, which the "
+                f"layout declares."
+            )
+        shapes[name] = tuple(int(n) for n in graph[name].shape[1:])
     return shapes
 
 
@@ -180,28 +177,21 @@ def _append(
                 f"{key!r} is not declared by the layout, so pad_batch cannot tell "
                 f"which dimension to pad. Declare it, or leave it out of the batch."
             )
-        if key in padding:
-            extra = padding[key]
-        elif fields[key].level() == GRAPH_LEVEL:
-            # A per-structure key the caller adds, such as ``displacement``:
-            # padding structures carry zero.
-            extra = value.new_zeros((graphs, *value.shape[1:]))
-        else:
-            raise ValueError(f"{key!r} has no level padding extends.")
+        # A padding structure carries every declared field except the
+        # caller's ``displacement``, which is per structure and zero there.
+        extra = (
+            padding[key]
+            if key in padding
+            else value.new_zeros((graphs, *value.shape[1:]))
+        )
         if key == "edge_index":
             joined[key] = torch.cat((value, extra + info.num_nodes), dim=1)
         elif key == "batch":
             joined[key] = torch.cat((value, extra + info.num_graphs))
         elif key == "ptr":
             joined[key] = torch.cat((value, extra[1:] + info.num_nodes))
-        elif key in fields and fields[key].level() in (
-            NODE_LEVEL,
-            EDGE_LEVEL,
-            GRAPH_LEVEL,
-        ):
-            joined[key] = torch.cat((value, extra.to(value.dtype)))
         else:
-            raise ValueError(f"{key!r} has no level padding extends.")
+            joined[key] = torch.cat((value, extra))
     return joined
 
 
@@ -213,18 +203,32 @@ def pad_targets(
     nothing there.
 
     Raises:
-        ValueError: if ``info`` is not a padded batch's.
+        ValueError: if ``info`` is not a padded batch's, a key is not a declared
+            target, or a value does not have the real batch's rows.
     """
     if info.padding is None:
         raise ValueError("pad_targets needs the GraphInfo pad_batch returned.")
-    extra = {
-        NODE_LEVEL: info.num_nodes - info.padding.n_real_nodes,
-        GRAPH_LEVEL: info.num_graphs - info.padding.n_real_graphs,
+    real = {
+        NODE_LEVEL: info.padding.n_real_nodes,
+        GRAPH_LEVEL: info.padding.n_real_graphs,
     }
+    total = {NODE_LEVEL: info.num_nodes, GRAPH_LEVEL: info.num_graphs}
     fields = layout.target_fields()
     padded: dict[str, torch.Tensor] = {}
     for key, value in targets.items():
-        rows = extra[fields[key].level() or GRAPH_LEVEL]
+        if key not in fields:
+            raise ValueError(
+                f"{key!r} is not a target the layout declares, so pad_targets "
+                f"cannot tell which dimension to pad."
+            )
+        level = cast(str, fields[key].level())
+        if value.shape[0] != real[level]:
+            raise ValueError(
+                f"target {key!r} has {value.shape[0]} rows; the real batch has "
+                f"{real[level]} along {level}. Pad the targets of the real batch, "
+                f"once."
+            )
+        rows = total[level] - real[level]
         tail = torch.zeros(
             (rows, *value.shape[1:]), dtype=value.dtype, device=value.device
         )

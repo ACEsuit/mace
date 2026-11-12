@@ -47,7 +47,13 @@ def test_auto_padding_matches_the_legacy_calculator_rounding():
     budget = padding_budget(AutoPadding(), n_nodes=5, n_edges=100, n_graphs=2)
     assert budget == PaddingBudget(nodes=6, edges=128, graphs=3)
     no_edges = padding_budget(AutoPadding(), n_nodes=1, n_edges=0, n_graphs=1)
-    assert no_edges == PaddingBudget(nodes=2, edges=0, graphs=2)
+    assert no_edges == PaddingBudget(nodes=1, edges=0, graphs=1)
+
+
+@pytest.mark.parametrize("headroom", [float("inf"), float("nan"), 0.5])
+def test_an_auto_headroom_that_is_not_a_finite_growth_is_refused(headroom):
+    with pytest.raises(ValidationError):
+        AutoPadding(headroom=headroom)
 
 
 def test_a_fixed_budget_that_fits_is_kept():
@@ -168,3 +174,26 @@ def test_a_declared_input_pads_with_its_absent_value():
     assert np.all(padded["site_field"][:3] == 0.5)
     assert not padded["site_field"][3:].any()
     assert padded_info.structure_sizes == (3, 0, 3)
+
+
+@pytest.mark.parametrize(
+    ("budget", "real", "message"),
+    [
+        (PaddingBudget(nodes=2, edges=0, graphs=3), PaddingInfo(3, 0, 1), "below"),
+        (PaddingBudget(nodes=3, edges=0, graphs=0), PaddingInfo(3, 0, 1), "below"),
+        (
+            PaddingBudget(nodes=5, edges=0, graphs=1),
+            PaddingInfo(3, 0, 1),
+            "no structure",
+        ),
+    ],
+)
+def test_a_budget_that_does_not_fit_its_batch_is_refused(budget, real, message):
+    with pytest.raises(ValueError, match=message):
+        padding_samples(budget, real, LAYOUT)
+
+
+@pytest.mark.parametrize(("n_atoms", "n_edges"), [(-1, 0), (2, -1)])
+def test_a_padding_structure_of_negative_size_is_refused(n_atoms, n_edges):
+    with pytest.raises(ValueError, match="counts"):
+        padding_sample(n_atoms, n_edges, LAYOUT)

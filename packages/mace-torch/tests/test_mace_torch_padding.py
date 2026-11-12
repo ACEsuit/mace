@@ -495,6 +495,13 @@ def test_a_batch_without_edges_pads_nodes_and_graphs_only(dtype):
     check_batch_invariants(data, padded_info)
 
 
+def test_a_batch_missing_a_declared_feature_is_refused_by_name():
+    layout = _layout(features={"spin_state": "atom"})
+    graph, _, info = _collated(_structures(), LAYOUT)
+    with pytest.raises(ValueError, match="missing the embedding feature 'spin_state'"):
+        pad_batch(graph, info, BUDGET, layout)
+
+
 def test_embedding_features_pad_with_zeros_at_their_own_trailing_sizes(dtype):
     layout = _layout(features={"spin_state": "atom", "phase": "graph"})
     structures = [
@@ -534,6 +541,22 @@ def test_pad_targets_gives_zero_labels_false_flags_and_zero_weights_on_padding(
     assert padded_targets["dipole_weight"].shape == (4, 3)
     assert padded_targets["polarizability_weight"].shape == (4, 3, 3)
     assert padded_targets["weight"].tolist() == [1.0, 1.0, 0.0, 0.0]
+
+
+def test_pad_targets_refuses_a_key_the_layout_does_not_declare(batch, padded):
+    _, targets, _ = batch
+    _, info = padded
+    targets = {**targets, "mystery": torch.zeros(2)}
+    with pytest.raises(ValueError, match="'mystery' is not a target"):
+        pad_targets(targets, info, LAYOUT)
+
+
+def test_pad_targets_refuses_targets_that_are_padded_already(batch, padded):
+    _, targets, _ = batch
+    _, info = padded
+    once = pad_targets(targets, info, LAYOUT)
+    with pytest.raises(ValueError, match="rows; the real batch has"):
+        pad_targets(once, info, LAYOUT)
 
 
 def test_pad_targets_needs_the_info_of_a_padded_batch(batch):
@@ -714,3 +737,42 @@ def test_requirement_fields_are_built_after_padding_and_checked_once_built(dtype
     built["node_degree"] = built["node_degree"][:-1]
     with pytest.raises(GraphValidationError, match="node_degree"):
         check_layout(built, layout, padded_info)
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_padding_random_batches_keeps_every_invariant_and_unpads_exactly(seed):
+    """Random sizes, periodicities and budgets: the padded batch passes the
+    batch invariants, and stripping it gives the real batch back."""
+    rng = np.random.default_rng(seed)
+    structures = []
+    for _ in range(int(rng.integers(1, 5))):
+        n_atoms = int(rng.integers(1, 6))
+        periodic = bool(rng.integers(0, 2))
+        structures.append(
+            Configuration(
+                atomic_numbers=rng.choice(ELEMENTS, size=n_atoms),
+                positions=rng.uniform(0.0, 4.0, size=(n_atoms, 3)),
+                cell=np.eye(3) * 5.0 if periodic else None,
+                pbc=(True, True, True) if periodic else None,
+                properties=dict.fromkeys(DECLARED_NAMES),
+            )
+        )
+    graph, _, info = build_batch(
+        structures, LAYOUT, neighbor_backend=MATSCIPY, check=False
+    )
+    policy = FixedPadding(
+        nodes_budget=info.num_nodes + int(rng.integers(0, 6)),
+        edges_budget=info.num_edges + int(rng.integers(0, 40)),
+        graphs_budget=info.num_graphs + int(rng.integers(0, 3)),
+    )
+    padded, padded_info = pad_batch(graph, info, policy, LAYOUT)
+    check_batch_invariants(padded, padded_info)
+    real = unpad_outputs(
+        {
+            "node_energies": padded["positions"][:, 0],
+            "total_energy": padded["cell"][:, 0, 0],
+        },
+        padded_info,
+    )
+    assert torch.equal(real["node_energies"], graph["positions"][:, 0])
+    assert torch.equal(real["total_energy"], graph["cell"][:, 0, 0])
