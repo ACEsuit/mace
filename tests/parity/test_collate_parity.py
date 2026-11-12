@@ -93,8 +93,8 @@ def test_collate_cell_is_the_legacy_one_wherever_legacy_keeps_the_parsed_cell(
     kept = batch["pbc"].any(dim=1) & batch["cell"].ne(0).any(dim=2).all(dim=1)
     assert kept.any()
     assert torch.equal(batch["cell"][kept], legacy_cells[kept])
-    if (~kept).any():
-        assert not torch.equal(batch["cell"][~kept], legacy_cells[~kept])
+    for index in torch.nonzero(~kept).flatten().tolist():
+        assert not torch.equal(batch["cell"][index], legacy_cells[index]), index
 
 
 def test_the_one_hot_formed_from_atomic_numbers_is_the_legacy_node_attrs(batches):

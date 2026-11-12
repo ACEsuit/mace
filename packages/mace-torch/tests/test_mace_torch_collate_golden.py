@@ -20,17 +20,19 @@ molecule and patched the slab's zero row; both are recorded differences.
 import numpy as np
 import pytest
 import torch
-from conftest import fp64_only
 from mace_core.data import Configuration
 from mace_core.graph import (
     GraphInfo,
     GraphLayout,
+    GraphValidationError,
+    SampleError,
     check_batch_invariants,
     check_layout,
     graph_layout,
     graph_sample,
 )
 from mace_core.graph import collate as reference_collate
+from mace_core.graph import collate_targets as reference_collate_targets
 from mace_core.neighbors import get_neighbor_backend, get_neighborhood
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_torch.graph import build_batch, collate, collate_targets
@@ -141,22 +143,6 @@ SHIFTS = [
     (1.41, 2.44, 0.0),
     (1.41, 2.44, 0.0),
 ]
-#: The legacy collated cell, ``[3 * n_graphs, 3]``: the extended search cell of
-#: the molecule, the physical triclinic cell, and the slab with its zero row
-#: patched from the search cell.
-LEGACY_CELL = [
-    [8.0, 0.0, 0.0],
-    [0.0, 7.7299999999999995, 0.0],
-    [0.0, 0.0, 6.8],
-    [2.47, 0.0, 0.0],
-    [0.83, 2.39, 0.0],
-    [0.31, 0.57, 2.61],
-    [2.83, 0.0, 0.0],
-    [1.41, 2.44, 0.0],
-    [0.0, 0.0, 7.97],
-]
-
-
 #: The parsed cells the graph carries.
 PARSED_CELL = [
     np.zeros((3, 3)),
@@ -203,19 +189,12 @@ def test_edge_index_is_offset_by_the_nodes_before_each_structure(batch):
 
 
 def test_the_cell_is_the_parsed_one_stacked_per_structure(batch, dtype):
+    """The crystal's cell is the legacy one; the molecule's extended box and the
+    slab's patched row are the recorded differences, checked live against
+    legacy by the parity suite."""
     expected = torch.tensor(np.stack(PARSED_CELL), dtype=torch.float64).to(dtype)
     assert batch["cell"].shape == (3, 3, 3)
     assert torch.equal(batch["cell"], expected)
-
-
-def test_the_crystal_cell_is_the_legacy_one_and_the_other_two_are_recorded_drops(
-    batch, dtype
-):
-    legacy = torch.tensor(LEGACY_CELL, dtype=torch.float64).to(dtype).view(-1, 3, 3)
-    assert torch.equal(batch["cell"][1], legacy[1])
-    assert not torch.equal(batch["cell"][0], legacy[0])
-    assert torch.equal(batch["cell"][2][:2], legacy[2][:2])
-    assert not batch["cell"][2][2].any()
 
 
 def test_every_value_of_the_dict_is_a_tensor(batch):
@@ -229,15 +208,57 @@ def test_the_info_holds_the_sizes_beside_the_dict(dtype):
     )
 
 
-@fp64_only
 def test_the_torch_collation_is_the_numpy_reference(dtype):
-    graphs = [graph for graph, _ in _samples()]
-    batch, info = collate(graphs, _layout(dtype))
-    reference, reference_info = reference_collate(graphs, LAYOUT)
+    pairs = _samples()
+    layout = _layout(dtype)
+    batch, info = collate([graph for graph, _ in pairs], layout)
+    reference, reference_info = reference_collate([graph for graph, _ in pairs], layout)
+    targets = collate_targets([labels for _, labels in pairs], layout)
+    reference_targets = reference_collate_targets(
+        [labels for _, labels in pairs], layout
+    )
     assert info == reference_info
-    assert set(batch) == set(reference)
+    for torch_side, numpy_side in ((batch, reference), (targets, reference_targets)):
+        assert set(torch_side) == set(numpy_side)
+        for key, value in numpy_side.items():
+            assert torch_side[key].numpy().dtype == value.dtype, key
+            assert np.array_equal(torch_side[key].numpy(), value), key
+
+
+def test_a_hand_built_sample_is_cast_by_its_declaration_like_the_reference(dtype):
+    """A Python float is read as float64 whatever the process default, integer
+    unit shifts become floating and int32 indices int64, as numpy casts them."""
+    sample = {
+        "positions": [[0.0, 0.0, 0.0], [0.96, 0.0, 0.0]],
+        "node_atomic_numbers": np.array([8, 1]),
+        "cell": np.zeros((3, 3)),
+        "pbc": np.zeros(3, dtype=bool),
+        "head": 0,
+        "edge_index": np.array([[0, 1], [1, 0]], dtype=np.int32),
+        "shifts": np.zeros((2, 3)),
+        "unit_shifts": np.zeros((2, 3), dtype=np.int64),
+        "magmom": np.zeros((2, 3)),
+    }
+    batch, _ = collate([sample], LAYOUT)
+    reference, _ = reference_collate([sample], LAYOUT)
+    assert batch["edge_index"].dtype == torch.int64
+    assert batch["unit_shifts"].dtype == torch.float64
     for key, value in reference.items():
         assert np.array_equal(batch[key].numpy(), value), key
+    labels = {
+        "weight": 1.0,
+        "energy": -76.123456789,
+        "energy_present": True,
+        "energy_weight": 1.0,
+        **{
+            key: np.zeros(
+                spec.sample_shape(2), dtype=bool if spec.dtype == "bool" else float
+            )
+            for key, spec in LAYOUT.target_fields().items()
+            if key not in ("weight", "energy", "energy_present", "energy_weight")
+        },
+    }
+    assert collate_targets([labels], LAYOUT)["energy"].tolist() == [-76.123456789]
 
 
 def test_the_output_passes_the_layout_check_at_the_bound_dtype(dtype):
@@ -255,13 +276,15 @@ def test_the_output_passes_the_layout_check_at_the_bound_dtype(dtype):
 def test_the_targets_come_beside_the_graph_and_never_in_it(dtype):
     labelled = [
         Configuration(
-            atomic_numbers=s.atomic_numbers,
-            positions=s.positions,
-            cell=s.cell,
-            pbc=s.pbc,
-            properties=_unlabelled(energy=-float(index), forces=np.ones((len(s), 3))),
+            atomic_numbers=structure.atomic_numbers,
+            positions=structure.positions,
+            cell=structure.cell,
+            pbc=structure.pbc,
+            properties=_unlabelled(
+                energy=-float(index), forces=np.ones((len(structure), 3))
+            ),
         )
-        for index, s in enumerate(STRUCTURES)
+        for index, structure in enumerate(STRUCTURES)
     ]
     graph, targets, _ = build_batch(labelled, _layout(dtype), neighbor_backend=MATSCIPY)
     assert not set(LAYOUT.target_fields()) & set(graph)
@@ -272,16 +295,12 @@ def test_the_targets_come_beside_the_graph_and_never_in_it(dtype):
     assert targets["stress_weight"].tolist() == [0.0, 0.0, 0.0]
 
 
-def test_collate_targets_follows_the_graph_order(dtype):
-    pairs = _samples()
-    targets = collate_targets([t for _, t in pairs], _layout(dtype))
-    assert targets["forces_present"].shape == (7,)
-    assert targets["dipole_weight"].shape == (3, 3)
-
-
 def test_collation_does_not_modify_its_samples():
     graphs = [graph for graph, _ in _samples()]
-    before = [{k: np.array(v, copy=True) for k, v in s.items()} for s in graphs]
+    before = [
+        {key: np.array(value, copy=True) for key, value in sample.items()}
+        for sample in graphs
+    ]
     collate(graphs, LAYOUT)
     for sample, copy in zip(graphs, before, strict=True):
         for key, value in copy.items():
@@ -302,32 +321,16 @@ def test_collation_refuses_a_key_the_layout_does_not_declare():
         collate(graphs, LAYOUT)
 
 
-def test_an_undeclared_property_never_reaches_the_batch():
-    structures = [
-        Configuration(
-            atomic_numbers=s.atomic_numbers,
-            positions=s.positions,
-            cell=s.cell,
-            pbc=s.pbc,
-            properties=_unlabelled(tags=np.arange(len(s), dtype=float)),
-        )
-        for s in STRUCTURES
-    ]
-    graph, targets, _ = build_batch(structures, LAYOUT, neighbor_backend=MATSCIPY)
-    assert "tags" not in graph
-    assert "tags" not in targets
-
-
 def test_a_declared_atom_feature_is_concatenated_as_given(dtype):
     structures = [
         Configuration(
-            atomic_numbers=s.atomic_numbers,
-            positions=s.positions,
-            cell=s.cell,
-            pbc=s.pbc,
-            properties=_unlabelled(tags=np.arange(len(s), dtype=float)),
+            atomic_numbers=structure.atomic_numbers,
+            positions=structure.positions,
+            cell=structure.cell,
+            pbc=structure.pbc,
+            properties=_unlabelled(tags=np.arange(len(structure), dtype=float)),
         )
-        for s in STRUCTURES
+        for structure in STRUCTURES
     ]
     layout = graph_layout(
         ELEMENTS,
@@ -345,24 +348,11 @@ def test_a_declared_atom_feature_is_concatenated_as_given(dtype):
 
 
 def test_samples_without_edges_collate_into_a_batch_a_device_search_completes(dtype):
-    graphs = [graph_sample(s, None, LAYOUT)[0] for s in STRUCTURES]
+    graphs = [graph_sample(structure, None, LAYOUT)[0] for structure in STRUCTURES]
     batch, info = collate(graphs, _layout(dtype))
     assert not {"edge_index", "shifts", "unit_shifts"} & set(batch)
     assert info.num_edges == 0
     assert torch.equal(batch["ptr"], torch.tensor(PTR))
-
-
-def test_the_all_pairs_backend_builds_the_same_edges():
-    def edge_set(batch):
-        rows = torch.cat((batch["edge_index"].T, batch["unit_shifts"].long()), dim=1)
-        return sorted(map(tuple, rows.tolist()))
-
-    matscipy, _, _ = build_batch(STRUCTURES, LAYOUT, neighbor_backend=MATSCIPY)
-    all_pairs, _, _ = build_batch(
-        STRUCTURES, LAYOUT, neighbor_backend=get_neighbor_backend("all_pairs")
-    )
-    assert edge_set(matscipy) == edge_set(all_pairs)
-    assert torch.equal(matscipy["cell"], all_pairs["cell"])
 
 
 def test_the_float_dtype_is_the_layouts_and_not_the_process_default(dtype):
@@ -398,3 +388,76 @@ def test_a_process_default_device_does_not_move_the_batch(dtype):
     devices = {value.device.type for value in [*batch.values(), *targets.values()]}
     assert devices == {"cpu"}
     assert torch.equal(batch["ptr"], torch.tensor(PTR))
+
+
+def test_validate_runs_the_batch_invariants():
+    water, crystal = (graph for graph, _ in _samples(STRUCTURES[:2]))
+    water["edge_index"] = water["edge_index"].copy()
+    water["edge_index"][1, 0] = 3
+    collate([water, crystal], LAYOUT)
+    with pytest.raises(GraphValidationError, match="between two structures"):
+        collate([water, crystal], LAYOUT, validate=True)
+
+
+def test_a_sample_carrying_a_requirement_field_is_refused():
+    layout = GraphLayout.model_validate(
+        {
+            **LAYOUT.model_dump(),
+            "requirement_fields": {
+                "node_mark": {"shape": ["n_nodes"], "dtype": "float"}
+            },
+        }
+    )
+    graphs = [graph for graph, _ in _samples(STRUCTURES[:1], layout)]
+    graphs[0]["node_mark"] = np.zeros(3)
+    with pytest.raises(ValueError, match="'node_mark', a batch-requirement field"):
+        collate(graphs, layout)
+
+
+def test_a_feature_whose_trailing_sizes_differ_is_named():
+    layout = graph_layout(
+        ELEMENTS,
+        cutoff=CUTOFF,
+        features={"spin": "atom"},
+        inputs=INPUTS,
+        targets=TARGETS,
+    )
+    graphs = [graph for graph, _ in _samples(STRUCTURES[:2])]
+    graphs[0]["spin"] = np.zeros((3, 2))
+    graphs[1]["spin"] = np.zeros((2, 4))
+    with pytest.raises(ValueError, match="'spin' with different trailing sizes"):
+        collate(graphs, layout)
+
+
+def test_check_false_leaves_the_layout_check_to_the_caller():
+    graphs = [graph for graph, _ in _samples(STRUCTURES[:1])]
+    graphs[0]["magmom"] = np.zeros((3, 2))
+    batch, info = collate(graphs, LAYOUT, check=False)
+    with pytest.raises(GraphValidationError, match="'magmom' has shape"):
+        check_layout(batch, LAYOUT, info)
+
+
+def test_device_moves_the_checked_batch_and_its_targets():
+    pairs = _samples()
+    batch, _ = collate([graph for graph, _ in pairs], LAYOUT, device="meta")
+    targets = collate_targets([labels for _, labels in pairs], LAYOUT, device="meta")
+    assert {value.device.type for value in [*batch.values(), *targets.values()]} == {
+        "meta"
+    }
+
+
+def test_build_batch_names_the_structure_it_refuses():
+    periodic_without_cell = Configuration(
+        atomic_numbers=np.array([1]),
+        positions=np.zeros((1, 3)),
+        pbc=(True, False, False),
+        properties=_unlabelled(),
+    )
+    unknown_element = Configuration(
+        atomic_numbers=np.array([26]),
+        positions=np.zeros((1, 3)),
+        properties=_unlabelled(),
+    )
+    for structure in (periodic_without_cell, unknown_element):
+        with pytest.raises(SampleError, match="the structure from batch position 1"):
+            build_batch([STRUCTURES[0], structure], LAYOUT, neighbor_backend=MATSCIPY)

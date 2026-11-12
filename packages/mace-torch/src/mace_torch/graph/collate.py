@@ -29,7 +29,7 @@ from mace_core.graph import (
     graph_sample,
 )
 from mace_core.graph.collate import check_trailing_sizes, sample_keys
-from mace_core.graph.schema import EDGE_LEVEL, NODE_LEVEL, FieldSpec
+from mace_core.graph.schema import EDGE_LEVEL, FLOAT, NODE_LEVEL, FieldSpec
 from mace_core.neighbors import NeighborList, NeighborListBackend, get_neighborhood
 
 __all__ = ["build_batch", "collate", "collate_targets"]
@@ -46,12 +46,18 @@ def _float_dtype(layout: GraphLayout) -> torch.dtype:
 _HOST = torch.device("cpu")
 
 
-def _as_tensor(value: Any, dtype: torch.dtype) -> torch.Tensor:
-    """A host tensor; floating values in ``dtype``."""
+#: The torch dtype of each fixed dtype name a field can declare.
+_FIXED_DTYPES = {"int64": torch.int64, "bool": torch.bool}
+
+
+def _as_tensor(value: Any, spec: FieldSpec, float_dtype: torch.dtype) -> torch.Tensor:
+    """A host tensor in the dtype ``spec`` declares, as the numpy reference
+    casts it. A value that is not a tensor goes through numpy first, so a
+    Python float is read as float64, never at the process default dtype."""
+    if not isinstance(value, torch.Tensor):
+        value = np.asarray(value)
     tensor = torch.as_tensor(value, device=_HOST)
-    if tensor.is_floating_point():
-        tensor = tensor.to(dtype)
-    return tensor
+    return tensor.to(float_dtype if spec.dtype == FLOAT else _FIXED_DTYPES[spec.dtype])
 
 
 def _join(key: str, tensors: list[torch.Tensor], spec: FieldSpec) -> torch.Tensor:
@@ -100,10 +106,10 @@ def collate(
     fields = layout.graph_fields()
     keys = sample_keys(samples, fields, layout.requirement_fields)
     dtype = _float_dtype(layout)
-    node_counts = [int(sample["positions"].shape[0]) for sample in samples]
+    node_counts = [len(sample["positions"]) for sample in samples]
     batch: dict[str, torch.Tensor] = {}
     for key in keys:
-        tensors = [_as_tensor(sample[key], dtype) for sample in samples]
+        tensors = [_as_tensor(sample[key], fields[key], dtype) for sample in samples]
         if key == "edge_index":
             offset, shifted = 0, []
             for tensor, count in zip(tensors, node_counts, strict=True):
@@ -149,7 +155,9 @@ def collate_targets(
     dtype = _float_dtype(layout)
     batch = {
         key: _join(
-            key, [_as_tensor(sample[key], dtype) for sample in samples], fields[key]
+            key,
+            [_as_tensor(sample[key], fields[key], dtype) for sample in samples],
+            fields[key],
         )
         for key in keys
     }
@@ -175,14 +183,11 @@ def build_batch(
             the structure the neighbour search refuses.
         ValueError: as :func:`collate` does.
     """
-    pairs = [
-        graph_sample(
-            configuration,
-            _search(configuration, index, layout, neighbor_backend),
-            layout,
-        )
-        for index, configuration in enumerate(configurations)
-    ]
+    pairs = []
+    for index, configuration in enumerate(configurations):
+        source = f"batch position {index}"
+        neighbors = _search(configuration, source, layout, neighbor_backend)
+        pairs.append(graph_sample(configuration, neighbors, layout, source=source))
     graph, info = collate([graph for graph, _ in pairs], layout, device=device)
     targets = collate_targets([targets for _, targets in pairs], layout, device=device)
     return graph, targets, info
@@ -190,7 +195,7 @@ def build_batch(
 
 def _search(
     configuration: Configuration,
-    index: int,
+    source: str,
     layout: GraphLayout,
     backend: NeighborListBackend,
 ) -> NeighborList:
@@ -203,7 +208,4 @@ def _search(
             backend=backend,
         )
     except ValueError as error:
-        raise SampleError(
-            f"structure {index} of the batch ({len(configuration)} atoms, head "
-            f"{configuration.head!r}): {error}"
-        ) from None
+        raise SampleError(f"the structure from {source}: {error}") from None
