@@ -7,11 +7,10 @@ parsed structures, into one batched dict of tensors with its
 imports torch_geometric.
 """
 
-from mace_torch.graph.collate import build_batch, collate, collate_targets, dtype_name
+from mace_torch.graph.collate import build_batch, collate, collate_targets
 
 __all__ = [
     "build_batch",
     "collate",
     "collate_targets",
-    "dtype_name",
 ]

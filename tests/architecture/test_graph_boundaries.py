@@ -3,14 +3,13 @@
 Three rules of the flat graph contract that only a whole-tree scan can hold:
 
 * ``torch_geometric`` is imported nowhere under ``packages/``, vendored or not;
-* the batch checks, ``check_layout``, ``check_batch_invariants`` and
-  ``GraphView``, run at boundaries. No module that defines a ``forward`` names
-  one, and the modules that do name them are listed here, so a new caller is a
-  reviewed edit;
+* the batch checks, ``check_layout`` and ``check_batch_invariants``, run at
+  boundaries. No module that defines a ``forward`` names one, and the modules
+  that do name them are listed here, so a new caller is a reviewed edit;
 * the host values of a batch live in ``GraphInfo``, read outside compiled
   regions only, so no module that defines a ``forward`` names ``GraphInfo``,
-  ``PaddingInfo`` or one of the per-structure fields that were once keys. A
-  compiled frame would guard on their values and recompile per batch.
+  ``PaddingInfo`` or ``structure_sizes``. A compiled frame would guard on
+  their values and recompile per batch.
 
 The scan is over syntax trees, so docstrings do not count.
 """
@@ -23,16 +22,8 @@ from tests.architecture.test_no_legacy_leak import names_used
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
 
-BOUNDARY_ONLY = frozenset({"check_layout", "check_batch_invariants", "GraphView"})
-HOST_VALUES = frozenset(
-    {
-        "GraphInfo",
-        "PaddingInfo",
-        "structure_sizes",
-        "structure_periodic",
-        "structure_padding",
-    }
-)
+BOUNDARY_ONLY = frozenset({"check_layout", "check_batch_invariants"})
+HOST_VALUES = frozenset({"GraphInfo", "PaddingInfo", "structure_sizes"})
 
 #: The modules allowed to name a batch check: the graph contract itself, and
 #: the collation that produces a batch.

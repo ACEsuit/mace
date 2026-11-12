@@ -15,7 +15,7 @@ import json
 import pytest
 import torch
 from mace_core.data import KeySpecification, configuration_from_atoms
-from mace_core.graph import default_layout
+from mace_core.graph import graph_layout
 from mace_core.neighbors import get_neighbor_backend
 from mace_torch.graph import build_batch
 
@@ -63,11 +63,11 @@ def fixture_batches(default_dtype):
     legacy = torch_geometric.Batch.from_data_list(legacy_graphs)
 
     structures = [configuration_from_atoms(a, KeySpecification()) for a in atoms]
+    layout = graph_layout(
+        zs, cutoff=R_MAX, float_dtype=str(default_dtype).removeprefix("torch.")
+    )
     batch, _, _ = build_batch(
-        structures,
-        default_layout(zs, cutoff=R_MAX),
-        neighbor_backend=get_neighbor_backend("matscipy"),
-        dtype=default_dtype,
+        structures, layout, neighbor_backend=get_neighbor_backend("matscipy")
     )
     return legacy, batch, zs
 
