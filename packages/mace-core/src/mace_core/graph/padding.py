@@ -27,25 +27,31 @@ structure with every pair at ``r = 0``.
 **The policy** is a config section, a union discriminated on ``kind``, and it
 follows the regime. ``none`` is eager training's, with dynamic shapes.
 ``fixed`` is compiled training's, with budgets computed once before the first
-step and identical on every DDP rank, and ``on_overflow: error``. ``auto``,
-which grows its budget with one recompile per growth, is the calculator's: it
-suits one system that changes little, and over a training stream it recompiles
-again and again.
+step and identical on every DDP rank, and ``on_overflow: error``. ``auto``
+sizes each budget from its own batch, by the frozen calculator's rule; keeping
+one budget across calls and growing it, with one recompile per growth, is the
+calculator's to do, since it suits one system that changes little and over a
+training stream it would recompile again and again.
+
+:func:`unpad_outputs` keeps the leading real slots of a model's outputs. It
+only slices, so it serves every framework.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, overload
 
 import numpy as np
 from pydantic import Field
 
 from mace_core.config.base import ConfigSection
-from mace_core.graph.info import PaddingInfo
+from mace_core.graph.info import GraphInfo, PaddingInfo
 from mace_core.graph.layout import GraphLayout
 from mace_core.graph.schema import ANY_TRAILING, NODE_LEVEL
+from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
+from mace_core.outputs import CORE_FIELD_NAMES, MACEOutput
 
 __all__ = [
     "AutoPadding",
@@ -59,6 +65,7 @@ __all__ = [
     "padding_length",
     "padding_sample",
     "padding_samples",
+    "unpad_outputs",
 ]
 
 
@@ -110,16 +117,11 @@ class AutoPadding(ConfigSection):
         edge_multiple: The edge budget is a multiple of this.
         headroom: The real edge count is scaled by this, then truncated,
             before rounding up.
-        on_overflow: For a caller that keeps the first budget across calls,
-            what to do when a later batch exceeds it. A single
-            :func:`padding_budget` call sizes from its own batch and cannot
-            overflow.
     """
 
     kind: Literal["auto"] = "auto"
     edge_multiple: int = Field(default=64, ge=1)
     headroom: float = Field(default=1.25, ge=1.0, allow_inf_nan=False)
-    on_overflow: Literal["grow", "error"] = "grow"
 
 
 PaddingPolicy = Annotated[
@@ -284,3 +286,101 @@ def padding_samples(
     )
     last = padding_sample(nodes, edges, layout, feature_shapes=feature_shapes)
     return [*(dict(empty) for _ in range(graphs - 1)), last]
+
+
+#: Whether each core field of a model output is per atom.
+_CORE_FIELD_PER_ATOM = {
+    "total_energy": False,
+    "node_energies": True,
+    "forces": True,
+    "stress": False,
+    "virials": False,
+    "dipole": False,
+}
+
+
+@overload
+def unpad_outputs(
+    outputs: MACEOutput,
+    info: GraphInfo,
+    *,
+    catalogue: ObservableCatalogue = ...,
+) -> MACEOutput: ...
+
+
+@overload
+def unpad_outputs(
+    outputs: Mapping[str, Any],
+    info: GraphInfo,
+    *,
+    catalogue: ObservableCatalogue = ...,
+) -> dict[str, Any]: ...
+
+
+def unpad_outputs(
+    outputs: MACEOutput | Mapping[str, Any],
+    info: GraphInfo,
+    *,
+    catalogue: ObservableCatalogue = DEFAULT_CATALOGUE,
+) -> MACEOutput | dict[str, Any]:
+    """The real slots of a padded model's outputs.
+
+    Per-graph values keep their first ``n_real_graphs`` rows and per-atom
+    values their first ``n_real_nodes``. Whether a value is per atom comes
+    from the core fields of :class:`~mace_core.outputs.MACEOutput` and, for
+    anything else, from ``catalogue``; it is never inferred from a shape.
+
+    Args:
+        outputs: A :class:`~mace_core.outputs.MACEOutput`, or a mapping from
+            observable name to array, of any framework. ``None`` values are
+            kept.
+        info: What ``pad_batch`` returned. An unpadded batch's info keeps
+            every slot.
+        catalogue: The declared observables of the model.
+
+    Returns:
+        A new object of the same kind.
+
+    Raises:
+        KeyError: for a value the catalogue does not declare.
+    """
+    real = info.padding or PaddingInfo(
+        n_real_nodes=info.num_nodes,
+        n_real_edges=info.num_edges,
+        n_real_graphs=info.num_graphs,
+    )
+    if isinstance(outputs, MACEOutput):
+        unpadded: MACEOutput = MACEOutput()
+        for name in CORE_FIELD_NAMES:
+            value = getattr(outputs, name)
+            setattr(unpadded, name, _keep_real(value, _CORE_FIELD_PER_ATOM[name], real))
+        unpadded.extras = {
+            name: _keep_real(value, _per_atom(name, catalogue), real)
+            for name, value in outputs.extras.items()
+        }
+        return unpadded
+    return {
+        name: _keep_real(value, _per_atom(name, catalogue), real)
+        for name, value in outputs.items()
+    }
+
+
+def _per_atom(name: str, catalogue: ObservableCatalogue) -> bool:
+    if name in _CORE_FIELD_PER_ATOM:
+        return _CORE_FIELD_PER_ATOM[name]
+    for spec in catalogue.observables:
+        if spec.name == name:
+            return spec.per_atom
+    for derivative in catalogue.requested_derivatives():
+        if derivative.name == name:
+            return derivative.per_atom
+    raise KeyError(
+        f"{name!r} is not an observable the catalogue declares, so whether it is "
+        f"per atom is unknown. Declare it, or pass the model's catalogue."
+    )
+
+
+def _keep_real(value: Any, per_atom: bool, real: PaddingInfo) -> Any:
+    if value is None:
+        return None
+    return value[: real.n_real_nodes] if per_atom else value[: real.n_real_graphs]

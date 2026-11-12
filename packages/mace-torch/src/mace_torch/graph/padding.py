@@ -1,12 +1,12 @@
-"""Padding a batched torch graph to a budget, and stripping it from outputs.
+"""Padding a batched torch graph to a budget.
 
 The contract is :mod:`mace_core.graph.padding`'s: padding is a structure. The
 padding structures of :func:`~mace_core.graph.padding_samples` are collated
 and appended after the real ones, exactly as ``collate([*real, *padding])``
 would batch them, and the real sizes travel in the returned
 :class:`~mace_core.graph.GraphInfo`. Nothing is reordered, so
-:func:`unpad_outputs` keeps the leading real slots of each output and that is
-the whole inverse.
+:func:`~mace_core.graph.unpad_outputs` keeps the leading real slots of each
+output and that is the whole inverse.
 
 :func:`pad_batch` checks its output with
 :func:`~mace_core.graph.check_layout`, which reads no value, so a batch already
@@ -21,7 +21,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Mapping
-from typing import Any, cast, overload
+from typing import cast
 
 import torch
 from mace_core.graph import (
@@ -38,24 +38,12 @@ from mace_core.graph import (
     padding_samples,
 )
 from mace_core.graph.schema import GRAPH_LEVEL, NODE_LEVEL
-from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
-from mace_core.outputs import CORE_FIELD_NAMES, MACEOutput
 
 from mace_torch.graph.collate import collate
 
-__all__ = ["pad_batch", "pad_targets", "unpad_outputs"]
+__all__ = ["pad_batch", "pad_targets"]
 
 logger = logging.getLogger(__name__)
-
-#: Whether each core field of a model output is per atom.
-_CORE_FIELD_PER_ATOM = {
-    "total_energy": False,
-    "node_energies": True,
-    "forces": True,
-    "stress": False,
-    "virials": False,
-    "dipole": False,
-}
 
 
 def pad_batch(
@@ -234,89 +222,3 @@ def pad_targets(
         )
         padded[key] = torch.cat((value, tail))
     return padded
-
-
-@overload
-def unpad_outputs(
-    outputs: MACEOutput,
-    info: GraphInfo,
-    *,
-    catalogue: ObservableCatalogue = ...,
-) -> MACEOutput: ...
-
-
-@overload
-def unpad_outputs(
-    outputs: Mapping[str, Any],
-    info: GraphInfo,
-    *,
-    catalogue: ObservableCatalogue = ...,
-) -> dict[str, Any]: ...
-
-
-def unpad_outputs(
-    outputs: MACEOutput | Mapping[str, Any],
-    info: GraphInfo,
-    *,
-    catalogue: ObservableCatalogue = DEFAULT_CATALOGUE,
-) -> MACEOutput | dict[str, Any]:
-    """The real slots of a padded model's outputs.
-
-    Per-graph values keep their first ``n_real_graphs`` rows and per-atom
-    values their first ``n_real_nodes``. Whether a value is per atom comes
-    from the core fields of :class:`~mace_core.outputs.MACEOutput` and, for
-    anything else, from ``catalogue``; it is never inferred from a shape.
-
-    Args:
-        outputs: A :class:`~mace_core.outputs.MACEOutput`, or a mapping from
-            observable name to tensor. ``None`` values are kept.
-        info: What :func:`pad_batch` returned. An unpadded batch's info keeps
-            every slot.
-        catalogue: The declared observables of the model.
-
-    Returns:
-        A new object of the same kind.
-
-    Raises:
-        KeyError: for a value the catalogue does not declare.
-    """
-    real = info.padding or PaddingInfo(
-        n_real_nodes=info.num_nodes,
-        n_real_edges=info.num_edges,
-        n_real_graphs=info.num_graphs,
-    )
-    if isinstance(outputs, MACEOutput):
-        unpadded: MACEOutput = MACEOutput()
-        for name in CORE_FIELD_NAMES:
-            value = getattr(outputs, name)
-            setattr(unpadded, name, _keep_real(value, _CORE_FIELD_PER_ATOM[name], real))
-        unpadded.extras = {
-            name: _keep_real(value, _per_atom(name, catalogue), real)
-            for name, value in outputs.extras.items()
-        }
-        return unpadded
-    return {
-        name: _keep_real(value, _per_atom(name, catalogue), real)
-        for name, value in outputs.items()
-    }
-
-
-def _per_atom(name: str, catalogue: ObservableCatalogue) -> bool:
-    if name in _CORE_FIELD_PER_ATOM:
-        return _CORE_FIELD_PER_ATOM[name]
-    for spec in catalogue.observables:
-        if spec.name == name:
-            return spec.per_atom
-    for derivative in catalogue.requested_derivatives():
-        if derivative.name == name:
-            return derivative.per_atom
-    raise KeyError(
-        f"{name!r} is not an observable the catalogue declares, so whether it is "
-        f"per atom is unknown. Declare it, or pass the model's catalogue."
-    )
-
-
-def _keep_real(value: Any, per_atom: bool, real: PaddingInfo) -> Any:
-    if value is None:
-        return None
-    return value[: real.n_real_nodes] if per_atom else value[: real.n_real_graphs]

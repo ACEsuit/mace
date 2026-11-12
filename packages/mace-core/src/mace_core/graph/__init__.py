@@ -25,6 +25,7 @@ from mace_core.graph.padding import (
     padding_length,
     padding_sample,
     padding_samples,
+    unpad_outputs,
 )
 from mace_core.graph.schema import (
     EDGE_KEYS,
@@ -69,5 +70,6 @@ __all__ = [
     "padding_sample",
     "padding_samples",
     "presence_key",
+    "unpad_outputs",
     "weight_key",
 ]

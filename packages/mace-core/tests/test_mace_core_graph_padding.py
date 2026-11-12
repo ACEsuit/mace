@@ -8,6 +8,7 @@ from mace_core.data import Configuration
 from mace_core.graph import (
     AutoPadding,
     FixedPadding,
+    GraphInfo,
     NoPadding,
     PaddingBudget,
     PaddingInfo,
@@ -21,6 +22,7 @@ from mace_core.graph import (
     padding_length,
     padding_sample,
     padding_samples,
+    unpad_outputs,
 )
 from mace_core.neighbors import get_neighbor_backend, get_neighborhood
 from mace_core.observables import InputSpec
@@ -197,3 +199,21 @@ def test_a_budget_that_does_not_fit_its_batch_is_refused(budget, real, message):
 def test_a_padding_structure_of_negative_size_is_refused(n_atoms, n_edges):
     with pytest.raises(ValueError, match="counts"):
         padding_sample(n_atoms, n_edges, LAYOUT)
+
+
+def test_unpadding_slices_arrays_of_any_framework_by_their_declaration():
+    """Numpy arrays here; the torch suite strips tensors the same way."""
+    info = GraphInfo(
+        num_graphs=3,
+        num_nodes=6,
+        num_edges=0,
+        structure_sizes=(2, 2, 2),
+        padding=PaddingInfo(n_real_nodes=4, n_real_edges=0, n_real_graphs=2),
+    )
+    real = unpad_outputs(
+        {"forces": np.ones((6, 3)), "total_energy": np.arange(3.0), "stress": None},
+        info,
+    )
+    assert real["forces"].shape == (4, 3)
+    assert real["total_energy"].tolist() == [0.0, 1.0]
+    assert real["stress"] is None

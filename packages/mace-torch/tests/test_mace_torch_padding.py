@@ -37,6 +37,7 @@ from mace_core.graph import (
     graph_layout,
     graph_sample,
     padding_samples,
+    unpad_outputs,
 )
 from mace_core.graph import collate as reference_collate
 from mace_core.neighbors import get_neighbor_backend, get_neighborhood
@@ -55,7 +56,6 @@ from mace_torch.graph import (
     collate_targets,
     pad_batch,
     pad_targets,
-    unpad_outputs,
 )
 
 R_MAX = 3.5
