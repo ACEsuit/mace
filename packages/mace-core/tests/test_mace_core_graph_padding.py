@@ -15,15 +15,14 @@ from mace_core.graph import (
     PaddingPolicy,
     check_batch_invariants,
     collate,
-    default_layout,
+    graph_layout,
     graph_sample,
     padding_budget,
     padding_length,
     padding_sample,
     padding_samples,
-    structure_graph,
 )
-from mace_core.neighbors import get_neighbor_backend
+from mace_core.neighbors import get_neighbor_backend, get_neighborhood
 from mace_core.observables import InputSpec
 from pydantic import TypeAdapter, ValidationError
 
@@ -75,20 +74,29 @@ def test_a_fixed_budget_can_refuse_to_grow():
         padding_budget(policy, n_nodes=5, n_edges=7, n_graphs=2)
 
 
-LAYOUT = default_layout([1, 8], cutoff=2.5)
+TOTAL_CHARGE = InputSpec(name="total_charge", irreps="0e", per_atom=False, units="e")
+TOTAL_SPIN = InputSpec(name="total_spin", irreps="0e", per_atom=False, units="1")
+LAYOUT = graph_layout([1, 8], cutoff=2.5, inputs=[TOTAL_CHARGE, TOTAL_SPIN])
 
 
-def _real():
+def _water_sample(layout, **properties):
     water = Configuration(
         atomic_numbers=np.array([8, 1, 1]),
         positions=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]),
+        properties={**{name: None for name in layout.inputs}, **properties},
     )
-    backend = get_neighbor_backend("all_pairs")
-    return [graph_sample(water, structure_graph(water, 2.5, backend), LAYOUT)[0]]
+    neighbors = get_neighborhood(
+        water.positions, 2.5, backend=get_neighbor_backend("all_pairs")
+    )
+    return graph_sample(water, neighbors, layout)[0]
+
+
+def _real():
+    return [_water_sample(LAYOUT)]
 
 
 def test_a_padding_structure_is_aperiodic_at_the_origin_with_z_zero():
-    sample = padding_sample(4, 6, 2.5, LAYOUT)
+    sample = padding_sample(4, 6, LAYOUT)
     assert not sample["positions"].any()
     assert not sample["node_atomic_numbers"].any()
     assert not sample["pbc"].any()
@@ -111,7 +119,6 @@ def test_a_padded_batch_is_the_collation_of_real_and_padding_structures():
     padding = padding_samples(
         budget,
         PaddingInfo(info.num_nodes, info.num_edges, info.num_graphs),
-        2.5,
         LAYOUT,
     )
     padded, padded_info = collate([*real, *padding], LAYOUT, validate=True)
@@ -125,7 +132,6 @@ def test_padding_structures_without_edges_leave_the_edges_to_a_device_search():
     samples = padding_samples(
         PaddingBudget(nodes=5, edges=9, graphs=2),
         PaddingInfo(3, 0, 1),
-        2.5,
         LAYOUT,
         with_edges=False,
     )
@@ -135,33 +141,26 @@ def test_padding_structures_without_edges_leave_the_edges_to_a_device_search():
 
 def test_edges_without_an_atom_to_loop_on_are_refused():
     with pytest.raises(ValueError, match="self loop"):
-        padding_sample(0, 3, 2.5, LAYOUT)
+        padding_sample(0, 3, LAYOUT)
 
 
 def test_an_embedding_feature_pads_at_the_trailing_sizes_the_batch_gives():
-    layout = default_layout([1, 8], cutoff=2.5, features={"spin": "atom"})
+    layout = graph_layout([1, 8], cutoff=2.5, features={"spin": "atom"})
     with pytest.raises(ValueError, match="feature_shapes"):
-        padding_sample(2, 1, 2.5, layout)
-    sample = padding_sample(2, 1, 2.5, layout, feature_shapes={"spin": (4,)})
+        padding_sample(2, 1, layout)
+    sample = padding_sample(2, 1, layout, feature_shapes={"spin": (4,)})
     assert sample["spin"].shape == (2, 4)
     assert not sample["spin"].any()
 
 
-def test_a_declared_input_outside_the_defaults_pads_with_its_absent_value():
+def test_a_declared_input_pads_with_its_absent_value():
     site_field = InputSpec(name="site_field", irreps="1o", per_atom=True, units="V/Å")
-    layout = default_layout([1, 8], cutoff=2.5, inputs=[site_field])
-    water = Configuration(
-        atomic_numbers=np.array([8, 1, 1]),
-        positions=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]),
-        properties={"site_field": np.full((3, 3), 0.5)},
-    )
-    backend = get_neighbor_backend("all_pairs")
-    real = [graph_sample(water, structure_graph(water, 2.5, backend), layout)[0]]
+    layout = graph_layout([1, 8], cutoff=2.5, inputs=[site_field])
+    real = [_water_sample(layout, site_field=np.full((3, 3), 0.5))]
     _, info = collate(real, layout)
     padding = padding_samples(
         PaddingBudget(nodes=6, edges=info.num_edges + 4, graphs=3),
         PaddingInfo(info.num_nodes, info.num_edges, info.num_graphs),
-        2.5,
         layout,
     )
     padded, padded_info = collate([*real, *padding], layout, validate=True)

@@ -4,11 +4,11 @@
 expressed inside the graph as physically inert structures, never as a mask the
 forward has to read, so the model, its kernels and a compiler all stay unaware
 of it. :func:`padding_sample` builds one: an aperiodic structure whose atoms
-have Z = 0 and sit at the origin, whose cell is ``eye(3) * max(2 * r_max, 1)``,
-whose edges are self loops on its last atom with unit shift ``(1, 0, 0)``, so
-every padding edge is ``max(2 * r_max, 1)`` long and the polynomial cutoff is
-exactly zero on it, and whose declared inputs carry their absent value
-(``total_spin`` 1). Padding is then ``collate([*real, *padding])``:
+have Z = 0 and sit at the origin, whose cell is ``eye(3) * max(2 * cutoff, 1)``
+with the layout's cutoff, whose edges are self loops on its last atom with unit
+shift ``(1, 0, 0)``, so every padding edge is ``max(2 * cutoff, 1)`` long and
+the polynomial cutoff is exactly zero on it, and whose declared inputs carry
+their absent value (``total_spin`` 1). Padding is then ``collate([*real, *padding])``:
 
 * real graphs, nodes and edges come first and keep their order and indices;
   padding only appends;
@@ -201,7 +201,6 @@ def padding_budget(
 def padding_sample(
     n_atoms: int,
     n_edges: int | None,
-    r_max: float,
     layout: GraphLayout,
     *,
     feature_shapes: Mapping[str, tuple[int, ...]] | None = None,
@@ -212,7 +211,6 @@ def padding_sample(
         n_atoms: Its atoms, at the origin with Z = 0.
         n_edges: Its edges, self loops on its last atom, or ``None`` for a
             sample without edge keys, as a batch a device search completes.
-        r_max: The model's cutoff, Angstrom.
         layout: What the run batches; every declared input takes its absent
             value, every embedding feature zero.
         feature_shapes: The trailing sizes of each embedding feature, whose
@@ -227,7 +225,7 @@ def padding_sample(
             f"a padding structure with {n_edges} edges and no atom: a padding "
             f"edge is a self loop on one."
         )
-    length = padding_length(r_max)
+    length = padding_length(layout.cutoff)
     sample: dict[str, Any] = {
         "positions": np.zeros((n_atoms, 3)),
         "node_atomic_numbers": np.zeros(n_atoms, dtype=np.int64),
@@ -259,7 +257,6 @@ def padding_sample(
 def padding_samples(
     budget: PaddingBudget,
     real: PaddingInfo,
-    r_max: float,
     layout: GraphLayout,
     *,
     with_edges: bool = True,
@@ -273,7 +270,7 @@ def padding_samples(
     if graphs <= 0:
         return []
     empty = padding_sample(
-        0, 0 if with_edges else None, r_max, layout, feature_shapes=feature_shapes
+        0, 0 if with_edges else None, layout, feature_shapes=feature_shapes
     )
-    last = padding_sample(nodes, edges, r_max, layout, feature_shapes=feature_shapes)
+    last = padding_sample(nodes, edges, layout, feature_shapes=feature_shapes)
     return [*(dict(empty) for _ in range(graphs - 1)), last]

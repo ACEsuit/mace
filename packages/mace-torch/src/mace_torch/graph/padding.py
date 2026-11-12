@@ -10,7 +10,10 @@ the whole inverse.
 
 :func:`pad_batch` checks its output with
 :func:`~mace_core.graph.check_layout`, which reads no value, so a batch already
-on the device is not copied back.
+on the device is not copied back. It checks whether or not anything was
+padded, so it is the batch's one check: collate the real structures with
+``check=False`` when they are padded next, and the padding structures are
+collated unchecked here.
 """
 
 from __future__ import annotations
@@ -33,11 +36,11 @@ from mace_core.graph import (
     padding_budget,
     padding_samples,
 )
-from mace_core.graph.schema import EDGE_LEVEL, GRAPH_LEVEL, NODE_LEVEL, level_of
+from mace_core.graph.schema import EDGE_LEVEL, GRAPH_LEVEL, NODE_LEVEL
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
 from mace_core.outputs import CORE_FIELD_NAMES, MACEOutput
 
-from mace_torch.graph.collate import collate, dtype_name
+from mace_torch.graph.collate import collate
 
 __all__ = ["pad_batch", "pad_targets", "unpad_outputs"]
 
@@ -58,7 +61,6 @@ def pad_batch(
     graph: Mapping[str, torch.Tensor],
     info: GraphInfo,
     policy: NoPadding | FixedPadding | AutoPadding,
-    r_max: float,
     layout: GraphLayout,
 ) -> tuple[dict[str, torch.Tensor], GraphInfo]:
     """``graph`` padded to the budget ``policy`` gives, and its new info.
@@ -67,9 +69,8 @@ def pad_batch(
         graph: A collated, unpadded graph dict. Not modified.
         info: Its :class:`~mace_core.graph.GraphInfo`.
         policy: The padding policy.
-        r_max: The model's cutoff, Angstrom; sets the padding edge length and
-            the padding cell.
-        layout: What the run batches.
+        layout: What the run batches. Its cutoff sets the padding edge
+            length and the padding cell.
 
     Returns:
         The padded graph, on the device and in the dtype of ``graph``, and a
@@ -80,10 +81,11 @@ def pad_batch(
             the policy says ``error``.
         ValueError: for a batch that is padded already, or that carries the
             field of a batch requirement, which is built after padding.
+        GraphValidationError: for a result that breaks its layout.
     """
     if info.padding is not None:
         raise ValueError("the batch is padded already; pad a batch once.")
-    built = sorted(set(graph) & set(layout.requirement_fields()))
+    built = sorted(set(graph) & set(layout.requirement_fields))
     if built:
         raise ValueError(
             f"the batch carries the batch-requirement fields {built}. Pad first, "
@@ -116,19 +118,19 @@ def pad_batch(
         )
     unpadded = PaddingBudget(info.num_nodes, info.num_edges, info.num_graphs)
     if budget is None or budget == unpadded:
-        return dict(graph), _with_padding(info, real)
+        result, result_info = dict(graph), _with_padding(info, real)
+        check_layout(result, layout, result_info)
+        return result, result_info
 
-    positions = graph["positions"]
-    dtype, device = positions.dtype, positions.device
+    device = graph["positions"].device
     samples = padding_samples(
         budget,
         real,
-        r_max,
         layout,
         with_edges="edge_index" in graph,
         feature_shapes=_feature_shapes(graph, layout),
     )
-    padding, padding_info = collate(samples, layout, dtype=dtype, device=device)
+    padding, padding_info = collate(samples, layout, device=device, check=False)
     padded = _append(graph, padding, info, layout)
     padded_info = GraphInfo(
         num_graphs=budget.graphs,
@@ -137,7 +139,7 @@ def pad_batch(
         structure_sizes=info.structure_sizes + padding_info.structure_sizes,
         padding=real,
     )
-    check_layout(padded, layout, padded_info, float_dtype=dtype_name(dtype))
+    check_layout(padded, layout, padded_info)
     return padded, padded_info
 
 
@@ -180,7 +182,7 @@ def _append(
             )
         if key in padding:
             extra = padding[key]
-        elif level_of(fields[key]) == GRAPH_LEVEL:
+        elif fields[key].level() == GRAPH_LEVEL:
             # A per-structure key the caller adds, such as ``displacement``:
             # padding structures carry zero.
             extra = value.new_zeros((graphs, *value.shape[1:]))
@@ -192,7 +194,7 @@ def _append(
             joined[key] = torch.cat((value, extra + info.num_graphs))
         elif key == "ptr":
             joined[key] = torch.cat((value, extra[1:] + info.num_nodes))
-        elif key in fields and level_of(fields[key]) in (
+        elif key in fields and fields[key].level() in (
             NODE_LEVEL,
             EDGE_LEVEL,
             GRAPH_LEVEL,
@@ -222,7 +224,7 @@ def pad_targets(
     fields = layout.target_fields()
     padded: dict[str, torch.Tensor] = {}
     for key, value in targets.items():
-        rows = extra[level_of(fields[key]) or GRAPH_LEVEL]
+        rows = extra[fields[key].level() or GRAPH_LEVEL]
         tail = torch.zeros(
             (rows, *value.shape[1:]), dtype=value.dtype, device=value.device
         )
