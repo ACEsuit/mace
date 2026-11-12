@@ -65,9 +65,3 @@ class GraphInfo:
                 f"structure_sizes sums to {sum(self.structure_sizes)} atoms for "
                 f"{self.num_nodes} nodes."
             )
-
-    @property
-    def is_padding(self) -> tuple[bool, ...]:
-        """For each structure, whether padding appended it."""
-        real = self.num_graphs if self.padding is None else self.padding.n_real_graphs
-        return tuple(index >= real for index in range(self.num_graphs))

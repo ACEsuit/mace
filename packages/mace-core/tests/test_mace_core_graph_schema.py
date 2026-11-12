@@ -9,82 +9,114 @@ import dataclasses
 import json
 import subprocess
 import sys
-from typing import cast
 
 import numpy as np
 import pytest
 from mace_core.data import Configuration
 from mace_core.graph import (
     ANY_TRAILING,
-    DEFAULT_INPUTS,
-    DEFAULT_TARGETS,
     EDGE_KEYS,
-    FLOAT,
     GRAPH_CORE,
-    NOT_KEYS,
     FieldSpec,
     GraphInfo,
     GraphLayout,
     GraphValidationError,
-    GraphView,
-    PaddingInfo,
     SampleError,
     check_batch_invariants,
     check_layout,
     collate,
     collate_targets,
-    default_layout,
-    feature_field,
+    graph_layout,
     graph_sample,
-    input_field,
-    presence_key,
-    structure_graph,
-    target_field,
-    weight_key,
 )
-from mace_core.neighbors import AllPairsBackend, NeighborList
+from mace_core.graph.layout import input_field, target_field
+from mace_core.neighbors import AllPairsBackend, NeighborList, get_neighborhood
 from mace_core.observables import InputSpec, ObservableSpec
 
 ELEMENTS = (1, 8, 14)
 CUTOFF = 2.5
 BACKEND = AllPairsBackend()
-LAYOUT = default_layout(ELEMENTS, cutoff=CUTOFF)
+
+ENERGY = ObservableSpec(name="energy", irreps="0e", per_atom=False, units="eV")
+FORCES = ObservableSpec(name="forces", irreps="1o", per_atom=True, units="eV/Å")
+STRESS = ObservableSpec(name="stress", irreps="0e+2e", per_atom=False, units="eV/Å^3")
+VIRIALS = ObservableSpec(name="virials", irreps="0e+2e", per_atom=False, units="eV")
+DIPOLE = ObservableSpec(name="dipole", irreps="1o", per_atom=False, units="e·Å")
+POLARIZABILITY = ObservableSpec(
+    name="polarizability", irreps="0e+1e+2e", per_atom=False, units="e·Å²/V"
+)
+TOTAL_CHARGE = InputSpec(name="total_charge", irreps="0e", per_atom=False, units="e")
+TOTAL_SPIN = InputSpec(name="total_spin", irreps="0e", per_atom=False, units="1")
+MAGMOM = InputSpec(name="magmom", irreps="1e", per_atom=True, units="μB")
+
+LAYOUT = graph_layout(
+    ELEMENTS,
+    cutoff=CUTOFF,
+    inputs=[TOTAL_CHARGE, TOTAL_SPIN, MAGMOM],
+    targets=[ENERGY, FORCES, STRESS, VIRIALS, DIPOLE, POLARIZABILITY],
+)
 
 WATER_POSITIONS = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
 CRYSTAL_CELL = np.array([[2.47, 0.0, 0.0], [0.83, 2.39, 0.0], [0.31, 0.57, 2.61]])
 
 
-def _water(**properties):
+def _properties(layout, given):
+    """Every name the layout declares, ``None`` unless given, as a reader
+    resolving the run's key specification produces them."""
+    declared = {name: None for name in (*layout.inputs, *layout.targets)}
+    return {**declared, **given}
+
+
+def _water(layout=LAYOUT, **properties):
     return Configuration(
         atomic_numbers=np.array([8, 1, 1]),
         positions=WATER_POSITIONS.copy(),
-        properties=properties,
+        properties=_properties(layout, properties),
     )
 
 
-def _crystal(**properties):
+def _crystal(layout=LAYOUT, **properties):
     return Configuration(
         atomic_numbers=np.array([14, 14]),
         positions=np.array([[0.0, 0.0, 0.0], [0.91, 0.73, 0.62]]),
         cell=CRYSTAL_CELL.copy(),
         pbc=(True, True, True),
-        properties=properties,
+        properties=_properties(layout, properties),
     )
 
 
-def _slab(cell, **properties):
+def _slab(cell, layout=LAYOUT, **properties):
     """Two silicon atoms periodic in x and y, open along z."""
     return Configuration(
         atomic_numbers=np.array([14, 14]),
         positions=np.array([[0.0, 0.0, 0.0], [1.2, 1.2, 1.0]]),
         cell=np.asarray(cell, dtype=float),
         pbc=(True, True, False),
-        properties=properties,
+        properties=_properties(layout, properties),
+    )
+
+
+def _atom(z=1, layout=LAYOUT, **fields):
+    return Configuration(
+        atomic_numbers=np.array([z]),
+        positions=np.zeros((1, 3)),
+        properties=_properties(layout, {}),
+        **fields,
+    )
+
+
+def _search(structure, cutoff=CUTOFF):
+    return get_neighborhood(
+        structure.positions,
+        cutoff,
+        pbc=structure.pbc,
+        cell=structure.cell,
+        backend=BACKEND,
     )
 
 
 def _sample(structure, layout=LAYOUT, *, edges=True, **kwargs):
-    neighbors = structure_graph(structure, layout.cutoff, BACKEND) if edges else None
+    neighbors = _search(structure, layout.cutoff) if edges else None
     return graph_sample(structure, neighbors, layout, **kwargs)
 
 
@@ -95,88 +127,60 @@ def _batch(*structures, layout=LAYOUT, edges=True):
     return graph, targets, info
 
 
+def _layout(**fields):
+    defaults = {"atomic_numbers": ELEMENTS, "heads": ("Default",), "cutoff": CUTOFF}
+    return GraphLayout.model_validate({**defaults, **fields})
+
+
+def _with(layout, **update):
+    """``layout`` with ``update`` applied, validated as a new layout."""
+    return GraphLayout.model_validate({**layout.model_dump(), **update})
+
+
 def _born_charges():
-    """A per-atom tensor observable outside the defaults: nine components."""
+    """A per-atom tensor observable outside the default names: nine components."""
     return ObservableSpec(
         name="born_charges", irreps="0e+1e+2e", per_atom=True, units="e"
     )
 
 
+SCALAR_PER_STRUCTURE = FieldSpec(shape=("n_graphs",), dtype="float")
+
+
 # --- the structural core ---------------------------------------------------------
 
 
-def test_the_core_holds_exactly_the_structural_keys():
-    assert set(GRAPH_CORE) == {
-        "positions",
-        "node_atomic_numbers",
-        "edge_index",
-        "shifts",
-        "unit_shifts",
-        "cell",
-        "pbc",
-        "batch",
-        "ptr",
-        "head",
-        "displacement",
+def test_the_core_is_the_written_out_contract():
+    """One snapshot of the whole core: a change here is a schema change."""
+    assert {
+        key: (spec.shape, spec.dtype, spec.required) for key, spec in GRAPH_CORE.items()
+    } == {
+        "positions": (("n_nodes", 3), "float", True),
+        "node_atomic_numbers": (("n_nodes",), "int64", True),
+        "edge_index": ((2, "n_edges"), "int64", True),
+        "shifts": (("n_edges", 3), "float", True),
+        "unit_shifts": (("n_edges", 3), "float", True),
+        "cell": (("n_graphs", 3, 3), "float", True),
+        "pbc": (("n_graphs", 3), "bool", True),
+        "batch": (("n_nodes",), "int64", True),
+        "ptr": (("n_graphs_plus_one",), "int64", True),
+        "head": (("n_graphs",), "int64", False),
+        "displacement": (("n_graphs", 3, 3), "float", False),
     }
 
 
-def test_the_core_cannot_be_edited_in_place():
-    with pytest.raises(TypeError):
-        cast(dict, GRAPH_CORE)["positions"] = GRAPH_CORE["cell"]
-
-
 @pytest.mark.parametrize(
-    ("key", "shape", "dtype", "required", "producer"),
+    ("shape", "dtype"),
     [
-        ("positions", ("n_nodes", 3), FLOAT, True, "data"),
-        ("node_atomic_numbers", ("n_nodes",), "int64", True, "data"),
-        ("edge_index", (2, "n_edges"), "int64", True, "nbr"),
-        ("shifts", ("n_edges", 3), FLOAT, True, "nbr"),
-        ("unit_shifts", ("n_edges", 3), FLOAT, True, "nbr"),
-        ("cell", ("n_graphs", 3, 3), FLOAT, True, "data"),
-        ("pbc", ("n_graphs", 3), "bool", True, "data"),
-        ("batch", ("n_nodes",), "int64", True, "coll"),
-        ("ptr", ("n_graphs_plus_one",), "int64", True, "coll"),
-        ("head", ("n_graphs",), "int64", False, "derived"),
-        ("displacement", ("n_graphs", 3, 3), FLOAT, False, "caller"),
+        (("n_nodes", ANY_TRAILING, 3), "float"),
+        (("n_nodes", -1), "float"),
+        (("n_nodes", ""), "float"),
+        (("n_nodes",), "float32"),
     ],
 )
-def test_a_row_of_the_core(key, shape, dtype, required, producer):
-    spec = GRAPH_CORE[key]
-    assert (spec.shape, spec.dtype, spec.required, spec.producer) == (
-        shape,
-        dtype,
-        required,
-        producer,
-    )
-
-
-def test_the_edge_keys_are_the_three_a_neighbour_list_writes():
-    assert {"edge_index", "shifts", "unit_shifts"} == EDGE_KEYS
-    assert {GRAPH_CORE[key].producer for key in EDGE_KEYS} == {"nbr"}
-
-
-def test_derived_and_host_quantities_are_never_keys():
-    assert {
-        "num_nodes",
-        "num_edges",
-        "num_graphs",
-        "edge_vectors",
-        "edge_lengths",
-        "node_attrs",
-        "rcell",
-        "volume",
-        "structure_sizes",
-        "structure_periodic",
-        "structure_padding",
-    } == NOT_KEYS
-    assert not NOT_KEYS & set(GRAPH_CORE)
-
-
-def test_labels_are_not_core_keys():
-    assert not set(DEFAULT_TARGETS) & set(GRAPH_CORE)
-    assert not set(DEFAULT_INPUTS) & set(GRAPH_CORE)
+def test_a_malformed_field_spec_is_refused(shape, dtype):
+    with pytest.raises(ValueError):
+        FieldSpec(shape=shape, dtype=dtype)
 
 
 # --- the layout a run declares ------------------------------------------------------
@@ -185,163 +189,123 @@ def test_labels_are_not_core_keys():
 @pytest.mark.parametrize("heads", [(), ("pbe", "pbe"), ("a", "b", "a")])
 def test_a_head_list_that_is_empty_or_repeats_a_name_is_refused(heads):
     with pytest.raises(ValueError, match="head list"):
-        default_layout(ELEMENTS, cutoff=CUTOFF, heads=heads)
+        graph_layout(ELEMENTS, cutoff=CUTOFF, heads=heads)
 
 
-@pytest.mark.parametrize("table", [(), (1, 1), (0, 1), (1, 119), (-8,)])
-def test_an_element_table_that_is_empty_repeats_or_leaves_the_periodic_table_is_refused(
+@pytest.mark.parametrize("heads", [(0,), ("",), ("Default", " ")])
+def test_a_head_that_is_not_a_name_is_refused(heads):
+    with pytest.raises(ValueError, match="head"):
+        _layout(heads=heads)
+
+
+@pytest.mark.parametrize("table", [(), (1, 1), (0, 1), (1, 119), (-8,), (1.7, 8.2)])
+def test_an_element_table_that_is_empty_repeats_or_is_not_a_set_of_elements_is_refused(
     table,
 ):
-    with pytest.raises(ValueError, match="element table"):
-        default_layout(table, cutoff=CUTOFF)
+    with pytest.raises(ValueError, match=r"element table|atomic numbers"):
+        graph_layout(table, cutoff=CUTOFF)
 
 
-@pytest.mark.parametrize("cutoff", [0.0, -1.0, float("nan"), float("inf")])
+@pytest.mark.parametrize("cutoff", [0.0, -1.0, float("nan"), float("inf"), True])
 def test_a_cutoff_that_is_not_a_positive_finite_distance_is_refused(cutoff):
     with pytest.raises(ValueError, match="cutoff"):
-        default_layout(ELEMENTS, cutoff=cutoff)
+        graph_layout(ELEMENTS, cutoff=cutoff)
 
 
-SCALAR_PER_STRUCTURE = FieldSpec(("n_graphs",), FLOAT, True, "data", "A scalar.")
-
-
-@pytest.mark.parametrize(
-    "name", ["positions", "batch", "head", "rcell", "node_attrs", "num_nodes"]
-)
-@pytest.mark.parametrize("kind", ["inputs", "targets"])
-def test_a_declared_name_colliding_with_the_core_or_a_name_never_carried_is_refused(
-    name, kind
-):
+@pytest.mark.parametrize("name", sorted(GRAPH_CORE))
+@pytest.mark.parametrize("kind", ["inputs", "targets", "requirement_fields"])
+def test_a_declared_name_colliding_with_the_core_is_refused(name, kind):
     with pytest.raises(ValueError, match="named like a key of the graph core"):
-        GraphLayout(
-            atomic_numbers=ELEMENTS,
-            heads=("Default",),
-            cutoff=CUTOFF,
-            **{kind: {name: SCALAR_PER_STRUCTURE}},  # ty: ignore[invalid-argument-type]
-        )
+        _layout(**{kind: {name: SCALAR_PER_STRUCTURE}})
 
 
 @pytest.mark.parametrize("name", ["energy_present", "spin_present", "spin_weight"])
-@pytest.mark.parametrize("kind", ["inputs", "targets"])
+@pytest.mark.parametrize("kind", ["inputs", "targets", "requirement_fields"])
 def test_a_declared_name_ending_like_a_flag_or_a_weight_is_refused(name, kind):
     with pytest.raises(ValueError, match="presence flag or a loss weight"):
-        GraphLayout(
-            atomic_numbers=ELEMENTS,
-            heads=("Default",),
-            cutoff=CUTOFF,
-            **{kind: {name: SCALAR_PER_STRUCTURE}},  # ty: ignore[invalid-argument-type]
-        )
+        _layout(**{kind: {name: SCALAR_PER_STRUCTURE}})
 
 
 @pytest.mark.parametrize("name", ["", "  "])
 def test_an_empty_declared_name_is_refused(name):
     with pytest.raises(ValueError, match="empty name"):
-        GraphLayout(
-            atomic_numbers=ELEMENTS,
-            heads=("Default",),
-            cutoff=CUTOFF,
-            inputs={name: SCALAR_PER_STRUCTURE},
+        _layout(inputs={name: SCALAR_PER_STRUCTURE})
+
+
+def test_a_target_named_like_the_structure_weight_is_refused():
+    weight = ObservableSpec(name="weight", irreps="0e", per_atom=False, units="1")
+    with pytest.raises(ValueError, match="loss weight of a whole structure"):
+        graph_layout(ELEMENTS, cutoff=CUTOFF, targets=[weight])
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("inputs", "targets"),
+        ("inputs", "requirement_fields"),
+        ("targets", "requirement_fields"),
+    ],
+)
+def test_a_name_declared_as_two_kinds_of_field_is_refused(first, second):
+    with pytest.raises(ValueError, match="declared twice"):
+        _layout(
+            **{first: {"spin": SCALAR_PER_STRUCTURE}},
+            **{second: {"spin": SCALAR_PER_STRUCTURE}},
         )
 
 
-def test_an_input_that_is_also_a_target_is_refused():
-    with pytest.raises(ValueError, match="both as an input and as a target"):
-        GraphLayout(
-            atomic_numbers=ELEMENTS,
-            heads=("Default",),
-            cutoff=CUTOFF,
-            inputs={"total_charge": SCALAR_PER_STRUCTURE},
-            targets={"total_charge": SCALAR_PER_STRUCTURE},
-        )
+def test_a_name_declared_twice_is_refused_whatever_the_order():
+    scalar = ObservableSpec(name="born", irreps="0e", per_atom=False, units="e")
+    vector = ObservableSpec(name="born", irreps="1o", per_atom=True, units="e")
+    for targets in ([scalar, vector], [vector, scalar]):
+        with pytest.raises(ValueError, match="'born' is declared twice"):
+            graph_layout(ELEMENTS, cutoff=CUTOFF, targets=targets)
+    with pytest.raises(ValueError, match="'total_charge' is declared twice"):
+        graph_layout(ELEMENTS, cutoff=CUTOFF, inputs=[TOTAL_CHARGE, TOTAL_CHARGE])
 
 
 def test_a_feature_named_like_a_declared_input_is_refused():
     with pytest.raises(ValueError, match="name of a declared input"):
-        default_layout(ELEMENTS, cutoff=CUTOFF, features={"total_charge": "graph"})
+        graph_layout(
+            ELEMENTS,
+            cutoff=CUTOFF,
+            inputs=[TOTAL_CHARGE],
+            features={"total_charge": "graph"},
+        )
 
 
 @pytest.mark.parametrize("storage", ["atoms", "structure", ""])
 def test_a_misspelled_feature_storage_is_refused(storage):
     with pytest.raises(ValueError, match="use 'atom' or 'graph'"):
-        default_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": storage})
+        graph_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": storage})
 
 
-def test_equal_layouts_are_equal_and_hash_equal():
-    first = default_layout(list(ELEMENTS), cutoff=CUTOFF)
-    second = default_layout(np.array(ELEMENTS), cutoff=int(CUTOFF * 2) / 2)
-    assert first == second
-    assert hash(first) == hash(second)
-    assert len({first, second}) == 1
-    assert first != default_layout(ELEMENTS, cutoff=CUTOFF + 1)
-    assert first != default_layout(ELEMENTS, cutoff=CUTOFF, heads=("pbe",))
-    assert first != default_layout(ELEMENTS, cutoff=CUTOFF, targets=[_born_charges()])
+def test_a_layout_carries_only_what_is_declared():
+    layout = graph_layout(ELEMENTS, cutoff=CUTOFF, targets=[ENERGY])
+    assert set(layout.graph_fields()) == set(GRAPH_CORE)
+    assert set(layout.target_fields()) == {
+        "weight",
+        "energy",
+        "energy_present",
+        "energy_weight",
+    }
 
 
-def test_a_layout_cannot_be_edited():
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        LAYOUT.cutoff = 3.0  # ty: ignore[invalid-assignment]
-    with pytest.raises(TypeError):
-        cast(dict, LAYOUT.inputs)["mystery"] = SCALAR_PER_STRUCTURE
+def test_a_layout_round_trips_through_json():
+    layout = graph_layout(
+        ELEMENTS,
+        cutoff=CUTOFF,
+        heads=("Default", "pbe"),
+        float_dtype="float32",
+        inputs=[TOTAL_SPIN],
+        features={"spin_state": "atom"},
+        targets=[ENERGY, _born_charges()],
+        requirement_fields={"pairs": FieldSpec(shape=(2, "n_pairs"), dtype="int64")},
+    )
+    assert GraphLayout.model_validate_json(layout.model_dump_json()) == layout
 
 
-def test_the_element_index_is_the_position_in_the_table():
-    assert [LAYOUT.element_index(z) for z in ELEMENTS] == [0, 1, 2]
-    with pytest.raises(ValueError, match="26"):
-        LAYOUT.element_index(26)
-
-
-# --- the default declarations ---------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("name", "shape", "absent_value"),
-    [
-        ("magmom", ("n_nodes", 3), 0.0),
-        ("total_charge", ("n_graphs",), 0.0),
-        ("total_spin", ("n_graphs",), 1.0),
-        ("elec_temp", ("n_graphs",), 0.0),
-        ("fermi_level", ("n_graphs",), 0.0),
-        ("external_field", ("n_graphs", 3), 0.0),
-    ],
-)
-def test_the_default_inputs_are_the_ones_develop_batches(name, shape, absent_value):
-    assert set(LAYOUT.inputs) == set(DEFAULT_INPUTS)
-    spec = LAYOUT.inputs[name]
-    assert (spec.shape, spec.dtype, spec.absent_value) == (shape, FLOAT, absent_value)
-
-
-@pytest.mark.parametrize(
-    ("name", "shape", "weight_shape"),
-    [
-        ("energy", ("n_graphs",), ("n_graphs",)),
-        ("forces", ("n_nodes", 3), ("n_graphs",)),
-        ("magforces", ("n_nodes", 3), ("n_graphs",)),
-        ("stress", ("n_graphs", 3, 3), ("n_graphs",)),
-        ("virials", ("n_graphs", 3, 3), ("n_graphs",)),
-        ("dipole", ("n_graphs", 3), ("n_graphs", 3)),
-        ("charges", ("n_nodes",), ("n_graphs",)),
-        ("polarizability", ("n_graphs", 3, 3), ("n_graphs", 3, 3)),
-    ],
-)
-def test_the_eight_default_targets_carry_a_flag_and_a_weight(name, shape, weight_shape):
-    assert len(DEFAULT_TARGETS) == 8
-    fields = LAYOUT.target_fields()
-    assert fields[name].shape == shape
-    assert fields[presence_key(name)].shape == (shape[0],)
-    assert fields[presence_key(name)].dtype == "bool"
-    assert fields[weight_key(name)].shape == weight_shape
-    assert fields[weight_key(name)].dtype == FLOAT
-
-
-def test_the_targets_carry_the_structure_weight_and_nothing_of_the_graph():
-    fields = LAYOUT.target_fields()
-    assert fields["weight"].shape == ("n_graphs",)
-    assert len(fields) == 1 + 3 * len(DEFAULT_TARGETS)
-    assert not set(fields) & set(LAYOUT.graph_fields())
-
-
-def test_the_graph_fields_are_the_core_and_the_inputs():
-    assert set(LAYOUT.graph_fields()) == set(GRAPH_CORE) | set(DEFAULT_INPUTS)
+# --- declared fields ------------------------------------------------------------------
 
 
 def test_an_input_field_takes_its_level_from_per_atom_and_its_shape_from_the_irreps():
@@ -355,11 +319,29 @@ def test_an_input_field_takes_its_level_from_per_atom_and_its_shape_from_the_irr
     assert shape("charge_states", "2x0e", False) == ("n_graphs", 2)
 
 
-def test_a_default_name_keeps_its_contract_shape_whatever_its_irreps_spell():
-    stress = ObservableSpec(name="stress", irreps="0e+2e", per_atom=False, units="eV")
+@pytest.mark.parametrize("irreps", ["0e+2e", "0e+1e+2e", "9x0e"])
+def test_a_rank_two_default_name_takes_nine_components_or_the_symmetric_pair(irreps):
+    stress = ObservableSpec(name="stress", irreps=irreps, per_atom=False, units="eV")
     assert target_field(stress).shape == ("n_graphs", 3, 3)
-    magmom = InputSpec(name="magmom", irreps="1e", per_atom=True, units="μB")
-    assert input_field(magmom).shape == ("n_nodes", 3)
+
+
+@pytest.mark.parametrize(
+    ("name", "irreps", "per_atom"),
+    [
+        ("stress", "0e", False),
+        ("stress", "2e", False),
+        ("forces", "0e", True),
+        ("energy", "1o", False),
+    ],
+)
+def test_irreps_that_do_not_fill_a_default_names_shape_are_refused(
+    name, irreps, per_atom
+):
+    spec = ObservableSpec(name=name, irreps=irreps, per_atom=per_atom, units="eV")
+    with pytest.raises(ValueError, match="Declare irreps that fill it"):
+        target_field(spec)
+    with pytest.raises(ValueError, match="Declare irreps that fill it"):
+        input_field(InputSpec(name=name, irreps=irreps, per_atom=per_atom, units="eV"))
 
 
 @pytest.mark.parametrize("name", ["pos", "strain"])
@@ -367,30 +349,41 @@ def test_the_inputs_the_derivative_engine_creates_are_never_batched(name):
     spec = InputSpec(name=name, irreps="1o", per_atom=name == "pos", units="Å")
     with pytest.raises(ValueError, match="derivative engine"):
         input_field(spec)
+    with pytest.raises(ValueError, match="derivative engine"):
+        graph_layout(ELEMENTS, cutoff=CUTOFF, features={name: "atom"})
+    with pytest.raises(ValueError, match="derivative engine"):
+        _layout(inputs={name: SCALAR_PER_STRUCTURE})
 
 
-def test_a_feature_field_closes_its_shape_with_the_datas_own_sizes():
-    assert feature_field("spin_state", "atom").shape == ("n_nodes", ANY_TRAILING)
-    assert feature_field("phase", "graph").shape == ("n_graphs", ANY_TRAILING)
-
-
-# --- an observable outside the defaults -----------------------------------------------
-
-
-def test_a_declared_observable_becomes_a_target_with_a_flag_and_a_weight():
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, targets=[_born_charges()])
-    fields = layout.target_fields()
-    assert fields["born_charges"].shape == ("n_nodes", 9)
-    assert fields["born_charges_present"].shape == ("n_nodes",)
-    assert fields["born_charges_weight"].shape == ("n_graphs",)
-    assert "born_charges" not in layout.graph_fields()
+@pytest.mark.parametrize(
+    ("kind", "name", "spec", "message"),
+    [
+        ("targets", "stress", FieldSpec(shape=("n_graphs",), dtype="float"), "stored"),
+        ("inputs", "magmom", FieldSpec(shape=("n_nodes", 4), dtype="float"), "stored"),
+        ("targets", "born", FieldSpec(shape=("n_edges",), dtype="float"), "per atom"),
+        ("targets", "born", FieldSpec(shape=("n_graphs",), dtype="int64"), "per atom"),
+        (
+            "targets",
+            "born",
+            FieldSpec(shape=("n_graphs", ANY_TRAILING), dtype="float"),
+            "no fixed shape",
+        ),
+    ],
+)
+def test_a_layout_read_back_is_held_to_the_same_declarations(kind, name, spec, message):
+    """A layout recorded with a run and loaded again skips the builders, so
+    the layout itself refuses what they would."""
+    record = json.loads(LAYOUT.model_dump_json())
+    record[kind][name] = spec.model_dump()
+    with pytest.raises(ValueError, match=message):
+        GraphLayout.model_validate_json(json.dumps(record))
 
 
 def test_a_declared_observable_is_batched_with_no_new_code():
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, targets=[_born_charges()])
+    layout = graph_layout(ELEMENTS, cutoff=CUTOFF, targets=[_born_charges()])
     charges = np.arange(27.0).reshape(3, 9)
     graph, targets, info = _batch(
-        _water(born_charges=charges), _crystal(), layout=layout
+        _water(layout, born_charges=charges), _crystal(layout), layout=layout
     )
     assert "born_charges" not in graph
     assert targets["born_charges"].shape == (5, 9)
@@ -401,15 +394,13 @@ def test_a_declared_observable_is_batched_with_no_new_code():
     check_layout(graph, layout, info)
 
 
-def test_a_declared_input_outside_the_defaults_is_batched_with_no_new_code():
+def test_a_declared_input_is_batched_with_no_new_code():
     site_field = InputSpec(name="site_field", irreps="1o", per_atom=True, units="V/Å")
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, inputs=[site_field])
+    layout = graph_layout(ELEMENTS, cutoff=CUTOFF, inputs=[site_field])
     values = np.full((3, 3), 0.5)
-    real = [
-        _sample(_water(site_field=values), layout)[0],
-        _sample(_crystal(), layout)[0],
-    ]
-    graph, info = collate(real, layout)
+    graph, _, info = _batch(
+        _water(layout, site_field=values), _crystal(layout), layout=layout
+    )
     np.testing.assert_array_equal(graph["site_field"][:3], values)
     assert not graph["site_field"][3:].any()
     assert info.structure_sizes == (3, 2)
@@ -421,51 +412,28 @@ def test_a_declared_input_outside_the_defaults_is_batched_with_no_new_code():
 def test_a_sample_is_a_graph_and_its_targets_and_the_graph_holds_no_label():
     graph, targets = _sample(_crystal(energy=-2.0, forces=np.ones((2, 3))))
     assert set(graph) == (set(GRAPH_CORE) - {"batch", "ptr", "displacement"}) | set(
-        DEFAULT_INPUTS
+        LAYOUT.inputs
     )
     assert set(targets) == set(LAYOUT.target_fields())
     assert targets["energy"] == -2.0
     assert targets["weight"] == 1.0
 
 
-def test_sample_arrays_have_the_documented_dtypes():
-    graph, targets = _sample(_crystal(energy=-2.0))
-    assert graph["positions"].dtype == np.float64
-    assert graph["unit_shifts"].dtype == np.float64
-    assert graph["edge_index"].dtype == np.int64
-    assert graph["node_atomic_numbers"].dtype == np.int64
-    assert graph["pbc"].dtype == np.bool_
-    assert targets["energy_present"].dtype == np.bool_
-
-
 def test_the_head_is_its_index_in_the_models_head_list():
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, heads=("Default", "pbe"))
-    structure = Configuration(
-        atomic_numbers=np.array([1]), positions=np.zeros((1, 3)), head="pbe"
-    )
-    graph, _ = _sample(structure, layout)
+    layout = graph_layout(ELEMENTS, cutoff=CUTOFF, heads=("Default", "pbe"))
+    graph, _ = _sample(_atom(layout=layout, head="pbe"), layout)
     assert graph["head"] == 1
 
 
 def test_an_unknown_head_is_an_error_rather_than_a_fallback():
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, heads=("Default", "pbe"))
-    structure = Configuration(
-        atomic_numbers=np.array([1]), positions=np.zeros((1, 3)), head="r2scan"
-    )
+    layout = graph_layout(ELEMENTS, cutoff=CUTOFF, heads=("Default", "pbe"))
     with pytest.raises(SampleError, match="r2scan"):
-        _sample(structure, layout)
+        _sample(_atom(layout=layout, head="r2scan"), layout)
 
 
-def test_an_element_outside_the_table_is_refused():
-    structure = Configuration(atomic_numbers=np.array([26]), positions=np.zeros((1, 3)))
-    with pytest.raises(SampleError, match="element 26"):
-        _sample(structure, edges=False)
-
-
-def test_a_refused_structure_is_named_by_its_source():
-    structure = Configuration(atomic_numbers=np.array([26]), positions=np.zeros((1, 3)))
-    with pytest.raises(SampleError, match=r"train\.xyz"):
-        _sample(structure, edges=False, source="train.xyz")
+def test_an_element_outside_the_table_is_refused_and_named_by_its_source():
+    with pytest.raises(SampleError, match=r"train\.xyz.*elements \[26\]"):
+        _sample(_atom(26), edges=False, source="train.xyz")
 
 
 def test_a_non_finite_position_is_refused():
@@ -478,7 +446,14 @@ def test_a_non_finite_position_is_refused():
 def test_a_non_finite_cell_is_refused():
     structure = _crystal()
     structure.cell[0, 0] = np.inf
-    with pytest.raises(SampleError, match="non-finite cell"):
+    with pytest.raises(SampleError, match="non-finite"):
+        _sample(structure, edges=False)
+
+
+def test_a_pbc_that_is_not_three_booleans_is_refused():
+    structure = _crystal()
+    structure.pbc = (True, 1, False)
+    with pytest.raises(SampleError, match="three booleans"):
         _sample(structure, edges=False)
 
 
@@ -503,15 +478,10 @@ def test_a_periodic_axis_with_an_all_zero_cell_row_is_refused():
         _sample(structure, edges=False)
 
 
-def test_an_all_zero_cell_with_a_periodic_axis_stands_for_the_identity():
-    structure = Configuration(
-        atomic_numbers=np.array([1]),
-        positions=np.zeros((1, 3)),
-        cell=np.zeros((3, 3)),
-        pbc=(True, False, False),
-    )
-    graph, _ = _sample(structure)
-    np.testing.assert_array_equal(graph["cell"], np.eye(3))
+@pytest.mark.parametrize("cell", [None, np.zeros((3, 3))])
+def test_a_periodic_structure_without_a_cell_is_refused_rather_than_given_one(cell):
+    with pytest.raises(SampleError, match="axis 0 is periodic"):
+        _sample(_atom(cell=cell, pbc=(True, False, False)), edges=False)
 
 
 def test_a_stress_label_on_a_slab_of_zero_volume_is_refused():
@@ -520,6 +490,13 @@ def test_a_stress_label_on_a_slab_of_zero_volume_is_refused():
     )
     with pytest.raises(SampleError, match="zero volume"):
         _sample(open_slab, edges=False)
+
+
+def test_a_stress_label_on_a_periodic_cell_of_dependent_rows_is_refused():
+    structure = _crystal(stress=np.eye(3))
+    structure.cell[2] = structure.cell[0] + structure.cell[1]
+    with pytest.raises(SampleError, match="three independent rows"):
+        _sample(structure, edges=False)
 
 
 def test_a_slab_of_zero_volume_without_a_stress_label_keeps_its_zero_row():
@@ -538,32 +515,27 @@ def test_a_stress_label_on_a_slab_with_its_vacuum_row_is_accepted():
 
 def test_a_stress_label_on_an_aperiodic_structure_is_accepted():
     """The stress of an open structure is masked downstream, so the label is
-    carried rather than refused."""
-    graph, targets = _sample(_water(stress=np.eye(3)), edges=False)
+    carried rather than refused. Its cell is zero, the parsed none."""
+    structure = _water(stress=np.eye(3))
+    graph, targets = _sample(structure, edges=False)
     assert targets["stress_present"]
-    assert not graph["cell"].any()
+    np.testing.assert_array_equal(graph["cell"], np.zeros((3, 3)))
+    assert structure.cell is None
 
 
 def test_an_aperiodic_structure_carries_its_parsed_cell():
     parsed = np.diag([10.0, 11.0, 12.0])
-    structure = Configuration(
-        atomic_numbers=np.array([8, 1, 1]),
-        positions=WATER_POSITIONS.copy(),
-        cell=parsed,
-        pbc=(False, False, False),
-    )
+    structure = _water()
+    structure.cell = parsed
+    structure.pbc = (False, False, False)
     graph, _ = _sample(structure)
     np.testing.assert_array_equal(graph["cell"], parsed)
     assert not graph["unit_shifts"].any()
 
 
 def test_a_present_label_with_zero_weight_keeps_its_flag():
-    structure = Configuration(
-        atomic_numbers=np.array([8, 1, 1]),
-        positions=WATER_POSITIONS.copy(),
-        properties={"energy": -1.0, "forces": np.ones((3, 3))},
-        property_weights={"energy": 0.0, "forces": 0.0},
-    )
+    structure = _water(energy=-1.0, forces=np.ones((3, 3)))
+    structure.property_weights = {"energy": 0.0, "forces": 0.0}
     _, targets = _sample(structure, edges=False)
     assert targets["energy_present"]
     assert targets["forces_present"].tolist() == [True, True, True]
@@ -572,7 +544,7 @@ def test_a_present_label_with_zero_weight_keeps_its_flag():
 
 
 def test_an_absent_label_is_zero_flagged_absent_and_weighted_zero():
-    _, targets = _sample(_water(energy=None, stress=None), edges=False)
+    _, targets = _sample(_water(), edges=False)
     assert not targets["energy_present"]
     assert targets["energy"] == 0.0
     assert targets["energy_weight"] == 0.0
@@ -584,80 +556,126 @@ def test_an_absent_label_is_zero_flagged_absent_and_weighted_zero():
 
 
 def test_a_property_weight_is_carried_for_a_present_label():
-    structure = Configuration(
-        atomic_numbers=np.array([8, 1, 1]),
-        positions=WATER_POSITIONS.copy(),
-        properties={"dipole": np.ones(3)},
-        property_weights={"dipole": 2.5},
-        weight=0.5,
-    )
+    structure = _water(dipole=np.ones(3))
+    structure.property_weights = {"dipole": 2.5}
+    structure.weight = 0.5
     _, targets = _sample(structure, edges=False)
     assert targets["dipole_weight"].tolist() == [2.5, 2.5, 2.5]
     assert targets["weight"] == 0.5
 
 
 def test_an_absent_total_spin_is_one_and_other_inputs_are_zero():
-    graph, _ = _sample(
-        _water(total_spin=None, total_charge=None, magmom=None), edges=False
-    )
+    graph, _ = _sample(_water(), edges=False)
     assert graph["total_spin"] == 1.0
     assert graph["total_charge"] == 0.0
-    assert graph["external_field"].tolist() == [0.0, 0.0, 0.0]
     assert graph["magmom"].shape == (3, 3)
     assert not graph["magmom"].any()
 
 
+@pytest.mark.parametrize(
+    "layout",
+    [
+        graph_layout(
+            ELEMENTS,
+            cutoff=CUTOFF,
+            inputs=[
+                InputSpec(name="total_charg", irreps="0e", per_atom=False, units="e")
+            ],
+        ),
+        graph_layout(
+            ELEMENTS,
+            cutoff=CUTOFF,
+            targets=[
+                ObservableSpec(name="energ", irreps="0e", per_atom=False, units="eV")
+            ],
+        ),
+    ],
+    ids=["input", "target"],
+)
+def test_a_name_the_structure_does_not_declare_is_an_error_not_an_absence(layout):
+    """A misspelling in the layout, or a key specification that does not
+    resolve a declared name, must not read as an unlabelled structure."""
+    with pytest.raises(SampleError, match=r"the layout declares '(total_charg|energ)'"):
+        _sample(_water(), layout, edges=False)
+
+
 def test_a_label_of_the_wrong_shape_is_refused():
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, targets=[_born_charges()])
+    layout = graph_layout(ELEMENTS, cutoff=CUTOFF, targets=[_born_charges()])
     with pytest.raises(SampleError, match="label 'born_charges' of shape"):
-        _sample(_water(born_charges=np.zeros((3, 3, 3))), layout, edges=False)
+        _sample(_water(layout, born_charges=np.zeros((3, 3, 3))), layout, edges=False)
 
 
 def test_an_input_of_the_wrong_shape_is_refused():
-    with pytest.raises(SampleError, match="input 'external_field' of shape"):
-        _sample(_water(external_field=np.zeros(2)), edges=False)
+    site_field = InputSpec(name="site_field", irreps="1o", per_atom=True, units="V/Å")
+    layout = graph_layout(ELEMENTS, cutoff=CUTOFF, inputs=[site_field])
+    with pytest.raises(SampleError, match="input 'site_field' of shape"):
+        _sample(_water(layout, site_field=np.zeros((3, 2))), layout, edges=False)
+
+
+def _featured(features):
+    return graph_layout(ELEMENTS, cutoff=CUTOFF, features=features)
 
 
 def test_a_declared_atom_feature_with_the_wrong_rows_is_not_reshaped():
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": "atom"})
+    layout = _featured({"spin_state": "atom"})
     with pytest.raises(SampleError, match="not reshaped"):
-        _sample(_water(spin_state=np.array([0, 1])), layout, edges=False)
+        _sample(_water(layout, spin_state=np.array([0, 1])), layout, edges=False)
 
 
 def test_a_declared_feature_that_is_not_a_real_number_is_refused():
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": "atom"})
+    layout = _featured({"spin_state": "atom"})
     with pytest.raises(SampleError, match="real number"):
-        _sample(_water(spin_state=np.array(["up", "down", "up"])), layout, edges=False)
+        _sample(
+            _water(layout, spin_state=np.array(["up", "down", "up"])),
+            layout,
+            edges=False,
+        )
 
 
 @pytest.mark.parametrize("value", [np.nan, np.inf])
 def test_a_non_finite_feature_is_refused(value):
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": "atom"})
+    layout = _featured({"spin_state": "atom"})
     spin_state = np.array([0.0, 1.0, value])
     with pytest.raises(
         SampleError, match="non-finite value in embedding feature 'spin_state'"
     ):
-        _sample(_water(spin_state=spin_state), layout, edges=False)
+        _sample(_water(layout, spin_state=spin_state), layout, edges=False)
 
 
-@pytest.mark.parametrize("properties", [{}, {"spin_state": None}])
-def test_a_declared_feature_the_structure_lacks_is_refused(properties):
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": "atom"})
+def test_a_declared_feature_the_structure_lacks_is_refused():
+    layout = _featured({"spin_state": "atom"})
     with pytest.raises(SampleError, match="cannot be made up"):
-        _sample(_water(**properties), layout, edges=False)
+        _sample(_water(layout), layout, edges=False)
 
 
 def test_a_declared_feature_is_batched_by_its_storage():
-    layout = default_layout(
-        ELEMENTS, cutoff=CUTOFF, features={"spin_state": "atom", "phase": "graph"}
-    )
+    layout = _featured({"spin_state": "atom", "phase": "graph"})
     graph, _, _ = _batch(
-        _water(spin_state=np.array([0, 1, 1]), phase=3.0),
-        _crystal(spin_state=np.array([2, 2]), phase=4.0),
+        _water(layout, spin_state=np.array([0, 1, 1]), phase=3.0),
+        _crystal(layout, spin_state=np.array([2, 2]), phase=4.0),
         layout=layout,
     )
     assert graph["spin_state"].tolist() == [0.0, 1.0, 1.0, 2.0, 2.0]
     assert graph["phase"].tolist() == [3.0, 4.0]
+
+
+@pytest.mark.parametrize(
+    ("storage", "first", "second"),
+    [
+        ("atom", np.zeros((3, 4)), np.zeros((2, 5))),
+        ("graph", np.zeros(2), np.zeros(3)),
+    ],
+)
+def test_a_feature_whose_trailing_sizes_differ_between_samples_is_named(
+    storage, first, second
+):
+    layout = _featured({"spin_state": storage})
+    with pytest.raises(ValueError, match="'spin_state' with different trailing sizes"):
+        _batch(
+            _water(layout, spin_state=first),
+            _crystal(layout, spin_state=second),
+            layout=layout,
+        )
 
 
 def test_a_sample_without_a_neighbour_list_has_no_edge_keys():
@@ -667,42 +685,62 @@ def test_a_sample_without_a_neighbour_list_has_no_edge_keys():
 
 def test_a_neighbour_list_searched_with_another_cutoff_is_refused():
     structure = _crystal()
-    neighbors = structure_graph(structure, CUTOFF + 0.5, BACKEND)
     with pytest.raises(SampleError, match="cutoff"):
-        graph_sample(structure, neighbors, LAYOUT)
+        graph_sample(structure, _search(structure, CUTOFF + 0.5), LAYOUT)
 
 
-def test_a_neighbour_list_reaching_outside_the_structure_is_refused():
-    neighbors = NeighborList(
-        edge_index=np.array([[0], [5]]),
-        unit_shifts=np.zeros((1, 3), dtype=np.int64),
-        shifts=np.zeros((1, 3)),
+def _stored(edge_index, unit_shifts, shifts=None):
+    unit_shifts = np.asarray(unit_shifts)
+    return NeighborList(
+        edge_index=np.asarray(edge_index),
+        unit_shifts=unit_shifts,
+        shifts=np.zeros(unit_shifts.shape) if shifts is None else shifts,
         cutoff=CUTOFF,
     )
-    with pytest.raises(SampleError, match="reach atom 5"):
+
+
+@pytest.mark.parametrize(
+    ("neighbors", "message"),
+    [
+        (_stored([[0], [5]], np.zeros((1, 3), dtype=np.int64)), "edge to atom 5"),
+        (_stored([[0], [1]], [[0, 0, 1]]), "aperiodic"),
+        (_stored([[0, 1, 2]], np.zeros((3, 3), dtype=np.int64)), "edge_index of shape"),
+        (_stored([[0], [1]], np.zeros((5, 3), dtype=np.int64)), "unit_shifts of shape"),
+        (_stored([[0], [1]], [[0.5, 0.0, 0.0]]), "Expected integers"),
+    ],
+    ids=["outside", "open-axis", "edge-shape", "shift-rows", "half-shift"],
+)
+def test_a_malformed_stored_neighbour_list_is_refused_and_named(neighbors, message):
+    with pytest.raises(
+        SampleError, match=rf"a structure .*its neighbour list.*{message}"
+    ):
         graph_sample(_water(), neighbors, LAYOUT)
 
 
-def test_a_neighbour_list_with_images_along_an_open_axis_is_refused():
-    neighbors = NeighborList(
-        edge_index=np.array([[0], [1]]),
-        unit_shifts=np.array([[0, 0, 1]]),
-        shifts=np.zeros((1, 3)),
-        cutoff=CUTOFF,
-    )
-    with pytest.raises(SampleError, match="aperiodic"):
-        graph_sample(_water(), neighbors, LAYOUT)
+def test_a_stored_neighbour_list_with_a_true_self_edge_is_refused():
+    stored = _stored([[0, 0, 1], [0, 1, 0]], np.zeros((3, 3), dtype=np.int64))
+    with pytest.raises(SampleError, match="edge to itself with a zero shift"):
+        graph_sample(_water(), stored, LAYOUT)
 
 
-def test_a_stored_neighbour_list_is_carried_as_given():
+def test_an_empty_stored_neighbour_list_of_any_rank_is_no_edges():
+    graph, _ = graph_sample(_water(), _stored(np.zeros(0), np.zeros(0)), LAYOUT)
+    assert graph["edge_index"].shape == (2, 0)
+    assert graph["shifts"].shape == (0, 3)
+
+
+def test_a_stored_neighbour_list_has_its_shifts_recomputed_in_this_cell():
     structure = _crystal()
-    neighbors = structure_graph(structure, CUTOFF, BACKEND)
-    graph, _ = graph_sample(structure, neighbors, LAYOUT)
-    np.testing.assert_array_equal(graph["edge_index"], neighbors.edge_index)
-    np.testing.assert_array_equal(graph["unit_shifts"], neighbors.unit_shifts)
-    np.testing.assert_array_equal(
-        graph["shifts"], neighbors.unit_shifts @ graph["cell"]
+    searched = _search(structure)
+    stored = _stored(
+        searched.edge_index,
+        searched.unit_shifts,
+        shifts=np.full(searched.shifts.shape, 99.0),
     )
+    graph, _ = graph_sample(structure, stored, LAYOUT)
+    np.testing.assert_array_equal(graph["edge_index"], searched.edge_index)
+    np.testing.assert_array_equal(graph["unit_shifts"], searched.unit_shifts)
+    np.testing.assert_array_equal(graph["shifts"], searched.shifts)
 
 
 def test_an_undeclared_property_never_reaches_the_graph_or_the_targets():
@@ -728,13 +766,6 @@ def test_building_a_sample_does_not_modify_the_configuration():
     np.testing.assert_array_equal(structure.cell, cell)
 
 
-def test_a_structure_without_a_cell_carries_a_zero_cell_and_keeps_none():
-    structure = _water()
-    graph, _ = _sample(structure)
-    assert structure.cell is None
-    np.testing.assert_array_equal(graph["cell"], np.zeros((3, 3)))
-
-
 # --- the numpy reference collation ----------------------------------------------------
 
 
@@ -751,8 +782,6 @@ def test_collate_returns_the_graph_and_its_info(batch):
         num_edges=int(graph["edge_index"].shape[1]),
         structure_sizes=(3, 2),
     )
-    assert info.padding is None
-    assert not set(graph) & NOT_KEYS
 
 
 def test_edge_index_is_offset_and_ptr_and_batch_cover_the_nodes(batch):
@@ -788,6 +817,26 @@ def test_the_targets_are_joined_along_their_levels(batch):
     assert targets["dipole_weight"].shape == (2, 3)
     assert targets["polarizability_weight"].shape == (2, 3, 3)
     assert targets["weight"].tolist() == [1.0, 1.0]
+
+
+def test_the_floats_take_the_layouts_floating_dtype():
+    layout = _with(LAYOUT, float_dtype="float32")
+    graph, targets, info = _batch(_water(), _crystal(), layout=layout)
+    assert graph["positions"].dtype == np.float32
+    assert graph["total_spin"].dtype == np.float32
+    assert graph["edge_index"].dtype == np.int64
+    assert targets["energy"].dtype == np.float32
+    assert targets["weight"].dtype == np.float32
+    assert targets["energy_present"].dtype == np.bool_
+    with pytest.raises(GraphValidationError, match="'cell' has dtype float32"):
+        check_layout(graph, LAYOUT, info)
+
+
+def test_numpy_collation_refuses_a_dtype_numpy_lacks():
+    layout = _with(LAYOUT, float_dtype="bfloat16")
+    sample, _ = _sample(_water())
+    with pytest.raises(ValueError, match="numpy has no bfloat16"):
+        collate([sample], layout)
 
 
 def test_collation_does_not_modify_the_samples():
@@ -851,6 +900,14 @@ def test_validate_runs_the_batch_invariants_on_a_hand_built_sample():
         collate([water, crystal], LAYOUT, validate=True)
 
 
+def test_check_false_leaves_the_layout_check_to_the_caller(batch):
+    water, _ = _sample(_water())
+    water["magmom"] = np.zeros((3, 2))
+    graph, info = collate([water], LAYOUT, check=False)
+    with pytest.raises(GraphValidationError, match="'magmom' has shape"):
+        check_layout(graph, LAYOUT, info)
+
+
 # --- check_layout: every batch, metadata only -----------------------------------------
 
 
@@ -875,25 +932,26 @@ def test_a_missing_key_that_binds_the_sizes_is_named(batch, key):
         check_layout(graph, LAYOUT, info)
 
 
-def test_an_undeclared_key_is_named(batch):
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("ptr", np.zeros((3, 1), dtype=np.int64)),
+        ("positions", np.zeros(15)),
+        ("edge_index", np.zeros(4, dtype=np.int64)),
+    ],
+)
+def test_a_key_that_binds_the_sizes_with_the_wrong_rank_is_named(batch, key, value):
     graph, _, info = batch
-    graph["my_annotation"] = np.zeros(2)
-    with pytest.raises(GraphValidationError, match="'my_annotation' is not declared"):
+    graph[key] = value
+    with pytest.raises(GraphValidationError, match=f"'{key}' has shape"):
         check_layout(graph, LAYOUT, info)
 
 
-@pytest.mark.parametrize("key", ["rcell", "volume", "node_attrs", "structure_sizes"])
-def test_a_key_the_graph_never_carries_is_named(batch, key):
+@pytest.mark.parametrize("key", ["my_annotation", "rcell", "energy"])
+def test_an_undeclared_key_is_named(batch, key):
     graph, _, info = batch
     graph[key] = np.zeros(2)
-    with pytest.raises(GraphValidationError, match=f"'{key}' is never a key"):
-        check_layout(graph, LAYOUT, info)
-
-
-def test_a_label_in_the_graph_is_refused(batch):
-    graph, targets, info = batch
-    graph["energy"] = targets["energy"]
-    with pytest.raises(GraphValidationError, match="'energy' is not declared"):
+    with pytest.raises(GraphValidationError, match=f"'{key}' is not declared"):
         check_layout(graph, LAYOUT, info)
 
 
@@ -902,6 +960,7 @@ def test_a_label_in_the_graph_is_refused(batch):
     [
         ("magmom", np.zeros((5, 2))),
         ("magmom", np.zeros((4, 3))),
+        ("magmom", np.zeros((5, 3, 1))),
         ("cell", np.zeros((6, 3))),
         ("total_charge", np.zeros((2, 1))),
     ],
@@ -948,24 +1007,6 @@ def test_one_edge_key_without_the_others_is_refused(batch, dropped):
         check_layout(graph, LAYOUT, info)
 
 
-def test_the_float_dtype_is_bound_by_the_caller(batch):
-    graph, _, info = batch
-    with pytest.raises(GraphValidationError, match="float32"):
-        check_layout(graph, LAYOUT, info, float_dtype="float32")
-    as_float32 = {
-        key: value.astype(np.float32) if value.dtype == np.float64 else value
-        for key, value in graph.items()
-    }
-    check_layout(as_float32, LAYOUT, info, float_dtype="float32")
-
-
-@pytest.mark.parametrize("float_dtype", ["float6", "int64", "double"])
-def test_a_float_dtype_that_is_not_a_floating_dtype_name_is_refused(batch, float_dtype):
-    graph, _, info = batch
-    with pytest.raises(ValueError, match="float_dtype"):
-        check_layout(graph, LAYOUT, info, float_dtype=float_dtype)
-
-
 def test_the_optional_core_keys_may_be_absent_or_present(batch):
     graph, _, info = batch
     del graph["head"]
@@ -975,10 +1016,10 @@ def test_the_optional_core_keys_may_be_absent_or_present(batch):
 
 
 def test_an_embedding_feature_is_checked_on_its_leading_dimension_only():
-    layout = default_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": "atom"})
+    layout = _featured({"spin_state": "atom"})
     graph, _, info = _batch(
-        _water(spin_state=np.zeros((3, 4))),
-        _crystal(spin_state=np.zeros((2, 4))),
+        _water(layout, spin_state=np.zeros((3, 4))),
+        _crystal(layout, spin_state=np.zeros((2, 4))),
         layout=layout,
     )
     assert graph["spin_state"].shape == (5, 4)
@@ -986,6 +1027,71 @@ def test_an_embedding_feature_is_checked_on_its_leading_dimension_only():
     graph["spin_state"] = np.zeros((4, 4))
     with pytest.raises(GraphValidationError, match="'spin_state' has shape"):
         check_layout(graph, layout, info)
+
+
+# --- batch-requirement fields ---------------------------------------------------------
+
+REQUIRED = {
+    "pair_index": FieldSpec(shape=(2, "n_pairs"), dtype="int64"),
+    "pair_length": FieldSpec(shape=("n_pairs",), dtype="float"),
+}
+WITH_REQUIREMENTS = _with(LAYOUT, requirement_fields=REQUIRED)
+
+
+def test_a_batch_before_its_requirement_fields_are_built_passes(batch):
+    graph, _, info = batch
+    check_layout(graph, WITH_REQUIREMENTS, info)
+
+
+def test_a_batch_with_its_requirement_fields_built_passes(batch):
+    graph, _, info = batch
+    graph["pair_index"] = np.zeros((2, 4), dtype=np.int64)
+    graph["pair_length"] = np.zeros(4)
+    check_layout(graph, WITH_REQUIREMENTS, info)
+
+
+def test_a_batch_with_its_requirement_fields_partly_built_is_refused(batch):
+    graph, _, info = batch
+    graph["pair_index"] = np.zeros((2, 4), dtype=np.int64)
+    with pytest.raises(GraphValidationError, match="pair_length"):
+        check_layout(graph, WITH_REQUIREMENTS, info)
+
+
+def test_a_requirement_dimension_bound_twice_with_different_sizes_is_refused(batch):
+    graph, _, info = batch
+    graph["pair_index"] = np.zeros((2, 4), dtype=np.int64)
+    graph["pair_length"] = np.zeros(5)
+    with pytest.raises(GraphValidationError, match="'pair_length' has shape"):
+        check_layout(graph, WITH_REQUIREMENTS, info)
+
+
+def test_a_requirement_field_of_the_wrong_rank_is_named(batch):
+    graph, _, info = batch
+    graph["pair_index"] = np.zeros((2, 4, 2), dtype=np.int64)
+    graph["pair_length"] = np.zeros(4)
+    with pytest.raises(GraphValidationError, match="'pair_index' has shape"):
+        check_layout(graph, WITH_REQUIREMENTS, info)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("pair_length", np.zeros(2)), ("node_mark", np.zeros(3)), ("graph_mark", 1.0)],
+)
+def test_a_sample_carrying_a_requirement_field_is_refused_by_collation(key, value):
+    """Requirement fields are built on the collated batch, so collation
+    refuses one a sample already carries rather than stacking it."""
+    layout = _with(
+        LAYOUT,
+        requirement_fields={
+            **REQUIRED,
+            "node_mark": FieldSpec(shape=("n_nodes",), dtype="float"),
+            "graph_mark": FieldSpec(shape=("n_graphs",), dtype="float"),
+        },
+    )
+    sample, _ = _sample(_water(), layout)
+    sample[key] = value
+    with pytest.raises(ValueError, match=f"carries '{key}', a batch-requirement"):
+        collate([sample], layout)
 
 
 # --- check_batch_invariants: the index values, in tests and validate=True -------------
@@ -1034,51 +1140,11 @@ def test_the_batch_invariants_need_no_info(batch):
     check_batch_invariants(graph)
 
 
-# --- GraphInfo and GraphView ----------------------------------------------------------
-
-
 def test_graph_info_refuses_sizes_that_disagree_with_its_counts():
     with pytest.raises(ValueError, match="entries"):
         GraphInfo(num_graphs=2, num_nodes=5, num_edges=0, structure_sizes=(5,))
     with pytest.raises(ValueError, match="sums to"):
         GraphInfo(num_graphs=2, num_nodes=5, num_edges=0, structure_sizes=(3, 3))
-
-
-def test_graph_info_marks_padding_structures_from_its_padding_info():
-    unpadded = GraphInfo(num_graphs=2, num_nodes=5, num_edges=0, structure_sizes=(3, 2))
-    assert unpadded.is_padding == (False, False)
-    padded = GraphInfo(
-        num_graphs=4,
-        num_nodes=8,
-        num_edges=0,
-        structure_sizes=(3, 2, 0, 3),
-        padding=PaddingInfo(n_real_nodes=5, n_real_edges=0, n_real_graphs=2),
-    )
-    assert padded.is_padding == (False, False, True, True)
-
-
-def test_graph_info_cannot_be_edited():
-    info = GraphInfo(num_graphs=1, num_nodes=1, num_edges=0, structure_sizes=(1,))
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        info.num_nodes = 2  # ty: ignore[invalid-assignment]
-
-
-def test_the_view_reads_the_dict_without_copying(batch):
-    graph, _, info = batch
-    view = GraphView(graph, LAYOUT, info)
-    assert view.positions is graph["positions"]
-    assert view["cell"] is graph["cell"]
-    assert "edge_index" in view
-    assert view.info.num_graphs == 2
-    with pytest.raises(AttributeError, match="displacement"):
-        _ = view.displacement
-
-
-def test_the_view_checks_the_layout(batch):
-    graph, _, info = batch
-    graph["rcell"] = np.zeros((2, 3, 3))
-    with pytest.raises(GraphValidationError, match="rcell"):
-        GraphView(graph, LAYOUT, info)
 
 
 # --- framework independence -----------------------------------------------------------

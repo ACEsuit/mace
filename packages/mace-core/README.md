@@ -33,7 +33,7 @@ What is here so far:
   refused. A backend that bins may take its box from `search_geometry`; the
   graph carries the parsed cell, `graph_cell`, whichever backend runs.
 - `mace_core.graph` — the flat graph dict a model is handed: the structural
-  core `GRAPH_CORE`, the per-run `GraphLayout` of inputs, targets and batch
-  requirements, the `GraphInfo` kept beside a batch, `check_layout` and the
-  other checks split by cost, the numpy reference `collate`, and
-  `structure_graph` and `graph_sample` from a `Configuration`.
+  core `GRAPH_CORE`, the per-run `GraphLayout` of declared inputs, targets
+  and batch-requirement fields, the `GraphInfo` kept beside a batch,
+  `check_layout` and the other checks split by cost, the numpy reference
+  `collate`, and `graph_sample` from a `Configuration`.

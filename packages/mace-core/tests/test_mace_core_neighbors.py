@@ -250,7 +250,6 @@ def test_the_graph_cell_never_depends_on_the_positions():
     near = get_neighborhood(positions, 2.0, backend=MATSCIPY)
     far = get_neighborhood(positions + 100.0, 2.0, backend=MATSCIPY)
     assert _edges(near) == _edges(far)
-    assert np.array_equal(graph_cell(None, None), np.zeros((3, 3)))
 
 
 def test_a_periodic_structure_carries_its_physical_cell():
@@ -284,11 +283,16 @@ def test_the_search_box_is_wider_than_the_graph_cell_along_an_aperiodic_axis():
 
 
 @pytest.mark.parametrize("cell", [None, np.zeros((3, 3))])
-def test_a_missing_or_all_zero_cell_is_the_identity_along_a_periodic_axis(cell):
-    assert np.array_equal(graph_cell((True, False, False), cell), np.eye(3))
-    geometry = search_geometry(np.zeros((1, 3)), 2.0, (True, False, False), cell)
-    assert np.array_equal(geometry.search_cell[0], [1.0, 0.0, 0.0])
-    assert np.array_equal(geometry.search_cell[1], [0.0, 2 * 2.0 + 1, 0.0])
+def test_a_periodic_axis_without_a_cell_is_refused_rather_than_given_one(cell):
+    with pytest.raises(ValueError, match="axis 0 is periodic"):
+        graph_cell((True, False, False), cell)
+    with pytest.raises(ValueError, match="axis 0 is periodic"):
+        search_geometry(np.zeros((1, 3)), 2.0, (True, False, False), cell)
+
+
+def test_a_non_finite_cell_is_refused():
+    with pytest.raises(ValueError, match="non-finite"):
+        graph_cell((True, True, True), np.diag([1.0, np.nan, 1.0]))
 
 
 def test_pbc_none_is_fully_aperiodic():

@@ -21,15 +21,12 @@ keys are all present in every sample, or absent from all of them while a
 device search has still to join the edges. :func:`collate_targets` batches the
 targets the same way.
 
-A padded batch is ``collate([*real, *padding])`` with the samples of
-:func:`~mace_core.graph.padding.padding_sample`.
-
 The inputs are never modified.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -37,29 +34,43 @@ import numpy as np
 from mace_core.graph.info import GraphInfo
 from mace_core.graph.layout import GraphLayout
 from mace_core.graph.schema import (
+    ANY_TRAILING,
     EDGE_LEVEL,
-    GRAPH_LEVEL,
+    FLOAT,
     NODE_LEVEL,
     FieldSpec,
-    level_of,
 )
 from mace_core.graph.validation import check_batch_invariants, check_layout
 
-__all__ = ["COLLATED_KEYS", "collate", "collate_targets", "sample_keys"]
+__all__ = [
+    "COLLATED_KEYS",
+    "check_trailing_sizes",
+    "collate",
+    "collate_targets",
+    "sample_keys",
+]
 
 #: Keys a sample must not carry, because collation writes them.
 COLLATED_KEYS: frozenset[str] = frozenset({"batch", "ptr"})
 
 
 def sample_keys(
-    samples: Sequence[Mapping[str, Any]], fields: Mapping[str, FieldSpec]
+    samples: Sequence[Mapping[str, Any]],
+    fields: Mapping[str, FieldSpec],
+    built: Collection[str] = (),
 ) -> list[str]:
     """The keys every sample carries, each one the layout declares.
 
+    Args:
+        samples: The samples.
+        fields: What the layout declares for them.
+        built: Declared keys that are built after collation, which no sample
+            may carry: the batch-requirement fields.
+
     Raises:
         ValueError: if there are no samples, if two carry different keys, or
-            if a sample carries a key collation writes or the layout does not
-            declare.
+            if a sample carries a key collation writes, a key built after
+            collation, or a key the layout does not declare.
     """
     if not samples:
         raise ValueError("collate needs at least one sample.")
@@ -77,6 +88,11 @@ def sample_keys(
                 f"a sample carries {key!r}, which collation computes. Remove it "
                 f"from the sample."
             )
+        if key in built:
+            raise ValueError(
+                f"a sample carries {key!r}, a batch-requirement field, which is "
+                f"built on the collated batch. Remove it from the sample."
+            )
         if key not in fields:
             raise ValueError(
                 f"a sample carries {key!r}, which the layout does not declare. "
@@ -85,33 +101,70 @@ def sample_keys(
     return keys
 
 
-def _join(values: list[np.ndarray], level: str | None) -> np.ndarray:
-    if level in (NODE_LEVEL, EDGE_LEVEL):
+def check_trailing_sizes(
+    key: str, shapes: Sequence[tuple[int, ...]], spec: FieldSpec
+) -> None:
+    """Refuse a feature whose trailing sizes differ between samples, naming
+    it, before a framework's concatenate fails without naming anything.
+
+    Raises:
+        ValueError: if ``spec`` ends in :data:`ANY_TRAILING` and two of
+            ``shapes`` differ past the leading node or edge dimension.
+    """
+    if spec.shape[-1] != ANY_TRAILING:
+        return
+    leading = 1 if spec.level() in (NODE_LEVEL, EDGE_LEVEL) else 0
+    trailing = {tuple(shape[leading:]) for shape in shapes}
+    if len(trailing) > 1:
+        raise ValueError(
+            f"the samples carry {key!r} with different trailing sizes "
+            f"{sorted(trailing)}. A feature has one shape across a batch."
+        )
+
+
+def _join(key: str, values: list[np.ndarray], spec: FieldSpec) -> np.ndarray:
+    check_trailing_sizes(key, [np.shape(value) for value in values], spec)
+    if spec.level() in (NODE_LEVEL, EDGE_LEVEL):
         return np.concatenate(values, axis=0)
     return np.stack(values)
+
+
+def _numpy_float(layout: GraphLayout) -> np.dtype:
+    try:
+        return np.dtype(layout.float_dtype)
+    except TypeError:
+        raise ValueError(
+            f"numpy has no {layout.float_dtype}. Collate with the framework's "
+            f"collate for this layout."
+        ) from None
 
 
 def collate(
     samples: Sequence[Mapping[str, Any]],
     layout: GraphLayout,
     *,
-    float_dtype: str = "float64",
+    check: bool = True,
     validate: bool = False,
 ) -> tuple[dict[str, np.ndarray], GraphInfo]:
     """Batch graph samples into one graph dict and its :class:`GraphInfo`.
 
     Args:
-        samples: One graph per structure, all with the same keys.
+        samples: One graph per structure, all with the same keys. Floating
+            fields are cast to the layout's floating dtype.
         layout: What the run batches.
-        float_dtype: The floating dtype the samples carry, for the check.
+        check: Run :func:`check_layout` on the batch. A caller that goes on
+            to extend the batch (padding) turns it off and checks the result
+            once.
         validate: Also run :func:`check_batch_invariants`, which reads the
             index arrays.
 
     Raises:
-        ValueError: as :func:`sample_keys` does.
+        ValueError: as :func:`sample_keys` does, or for a feature whose
+            trailing sizes differ between samples.
     """
     fields = layout.graph_fields()
-    keys = sample_keys(samples, fields)
+    keys = sample_keys(samples, fields, layout.requirement_fields)
+    float_dtype = _numpy_float(layout)
     node_counts = [int(np.shape(sample["positions"])[0]) for sample in samples]
     node_offsets = np.cumsum([0, *node_counts[:-1]])
     graph: dict[str, np.ndarray] = {}
@@ -123,7 +176,9 @@ def collate(
                 axis=1,
             )
         else:
-            graph[key] = _join(values, level_of(fields[key]))
+            graph[key] = _join(key, values, fields[key])
+            if fields[key].dtype == FLOAT:
+                graph[key] = graph[key].astype(float_dtype, copy=False)
     graph["batch"] = np.repeat(np.arange(len(samples), dtype=np.int64), node_counts)
     graph["ptr"] = np.asarray([0, *np.cumsum(node_counts).tolist()], dtype=np.int64)
     n_edges = int(graph["edge_index"].shape[1]) if "edge_index" in graph else 0
@@ -133,7 +188,8 @@ def collate(
         num_edges=n_edges,
         structure_sizes=tuple(node_counts),
     )
-    check_layout(graph, layout, info, float_dtype=float_dtype)
+    if check:
+        check_layout(graph, layout, info)
     if validate:
         check_batch_invariants(graph, info)
     return graph, info
@@ -142,7 +198,8 @@ def collate(
 def collate_targets(
     samples: Sequence[Mapping[str, Any]], layout: GraphLayout
 ) -> dict[str, np.ndarray]:
-    """Batch the targets of the same structures, in the same order.
+    """Batch the targets of the same structures, in the same order, floats in
+    the layout's floating dtype.
 
     Raises:
         ValueError: if there are no samples, if two carry different keys, or
@@ -150,10 +207,13 @@ def collate_targets(
     """
     fields = layout.target_fields()
     keys = sample_keys(samples, fields)
-    return {
-        key: _join(
-            [np.asarray(sample[key]) for sample in samples],
-            level_of(fields[key]) or GRAPH_LEVEL,
+    float_dtype = _numpy_float(layout)
+    targets = {}
+    for key in keys:
+        joined = _join(
+            key, [np.asarray(sample[key]) for sample in samples], fields[key]
         )
-        for key in keys
-    }
+        if fields[key].dtype == FLOAT:
+            joined = joined.astype(float_dtype, copy=False)
+        targets[key] = joined
+    return targets

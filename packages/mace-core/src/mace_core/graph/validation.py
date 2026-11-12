@@ -1,12 +1,11 @@
 """Checking a batch, split by what each check costs.
 
-* :func:`check_layout` runs on **every batch** and reads no value: it compares
-  the batch's signature, ``{key: (shape, dtype)}``, with the one the layout
-  gives once the dimensions are bound from ``ptr``, ``positions``,
-  ``edge_index`` and the requirements' own dimensions. Only on a mismatch does
-  it work out which key is missing, undeclared or misshapen, so the message
-  names the key. The expected signature is cached, so a padded batch of a
-  fixed budget computes it once.
+* :func:`check_layout` runs once on **every batch**, at the boundary that
+  finishes it, and reads no value: it compares the batch's signature,
+  ``{key: (shape, dtype)}``, with the one the layout gives once the dimensions
+  are bound from ``ptr``, ``positions``, ``edge_index`` and the requirement
+  fields' own dimensions. Only on a mismatch does it work out which key is
+  missing, undeclared or misshapen, so the message names the key.
 * The **per-sample value checks** run in
   :func:`~mace_core.graph.build.graph_sample`, on every structure, in the
   worker that builds it.
@@ -25,7 +24,6 @@ as ``float64``. None of it runs inside a forward.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -35,31 +33,19 @@ from mace_core.graph.layout import GraphLayout
 from mace_core.graph.schema import (
     ANY_TRAILING,
     EDGE_KEYS,
+    FIXED_DIMENSIONS,
     FLOAT,
-    NOT_KEYS,
     FieldSpec,
 )
 
-__all__ = [
-    "FLOAT_DTYPES",
-    "GraphValidationError",
-    "GraphView",
-    "check_batch_invariants",
-    "check_layout",
-    "dtype_name",
-]
-
-#: The dtype names a model's floating dtype can take.
-FLOAT_DTYPES: frozenset[str] = frozenset({"float16", "bfloat16", "float32", "float64"})
-
-_FIXED_DIMS = ("n_nodes", "n_edges", "n_graphs", "n_graphs_plus_one")
+__all__ = ["GraphValidationError", "check_batch_invariants", "check_layout"]
 
 
 class GraphValidationError(ValueError):
     """A batch that does not satisfy its layout. The message names the key."""
 
 
-def dtype_name(value: Any) -> str:
+def _dtype_name(value: Any) -> str:
     """The dtype name of an array of any framework: ``torch.float64`` is
     ``float64``."""
     name = str(getattr(value, "dtype", type(value).__name__))
@@ -76,21 +62,14 @@ def _shape(value: Any) -> tuple[int, ...] | None:
         return None
 
 
-def _expected_dtype(spec: FieldSpec, float_dtype: str) -> str:
-    return float_dtype if spec.dtype == FLOAT else spec.dtype
-
-
-@lru_cache(maxsize=256)
 def _expected_signature(
-    layout: GraphLayout,
+    fields: Mapping[str, FieldSpec],
     keys: frozenset[str],
-    sizes: tuple[tuple[str, int], ...],
+    sizes: Mapping[str, int],
     float_dtype: str,
 ) -> tuple[tuple[str, tuple[int, ...], str], ...]:
     """The signature of a batch with these keys and sizes, sorted by key.
     A shape closed by :data:`ANY_TRAILING` keeps only its leading dimension."""
-    bound = dict(sizes)
-    fields = layout.graph_fields()
     signature = []
     for key in sorted(keys):
         spec = fields[key]
@@ -98,8 +77,9 @@ def _expected_signature(
         for dimension in spec.shape:
             if dimension == ANY_TRAILING:
                 break
-            shape.append(dimension if isinstance(dimension, int) else bound[dimension])
-        signature.append((key, tuple(shape), _expected_dtype(spec, float_dtype)))
+            shape.append(dimension if isinstance(dimension, int) else sizes[dimension])
+        dtype = float_dtype if spec.dtype == FLOAT else spec.dtype
+        signature.append((key, tuple(shape), dtype))
     return tuple(signature)
 
 
@@ -112,43 +92,32 @@ def _actual_signature(
         spec = fields.get(key)
         if spec is not None and spec.shape and spec.shape[-1] == ANY_TRAILING:
             shape = shape[: len(spec.shape) - 1]
-        signature.append((key, shape, dtype_name(graph[key])))
+        signature.append((key, shape, _dtype_name(graph[key])))
     return tuple(signature)
 
 
 def check_layout(
-    graph: Mapping[str, Any],
-    layout: GraphLayout,
-    info: GraphInfo,
-    *,
-    float_dtype: str = "float64",
+    graph: Mapping[str, Any], layout: GraphLayout, info: GraphInfo
 ) -> None:
     """Check that ``graph`` carries exactly the keys ``layout`` declares, each
     with its shape and dtype, and agrees with ``info``. Reads no value.
 
     Required: the structural core and every declared input. The edge keys
     come all together or not at all, the latter while a device search has
-    still to join its edges, and so do the fields of the batch requirements,
-    which are built on the padded batch after collation. ``head`` and
+    still to join its edges, and so do the batch-requirement fields, which
+    are built on the padded batch after collation. ``head`` and
     ``displacement`` may be present.
 
     Raises:
         GraphValidationError: naming the first key that breaks a rule.
-        ValueError: if ``float_dtype`` is not a floating dtype name.
     """
-    if float_dtype not in FLOAT_DTYPES:
-        raise ValueError(
-            f"float_dtype is {float_dtype!r}; use one of {sorted(FLOAT_DTYPES)}."
-        )
     fields = layout.graph_fields()
-    sizes = _bound_sizes(graph, fields)
     keys = frozenset(graph)
-    built = frozenset(layout.requirement_fields())
+    built = frozenset(layout.requirement_fields)
     if keys - set(fields) or not _required(fields, keys, built) <= keys:
-        _explain_keys(graph, fields, keys, built)
-    expected = _expected_signature(
-        layout, keys, tuple(sorted(sizes.items())), float_dtype
-    )
+        _explain_keys(fields, keys, built)
+    sizes = _bound_sizes(graph, fields)
+    expected = _expected_signature(fields, keys, sizes, layout.float_dtype)
     if _actual_signature(graph, fields) != expected:
         _explain_signature(graph, fields, expected)
     if (info.num_graphs, info.num_nodes, info.num_edges) != (
@@ -210,11 +179,16 @@ def _bound_sizes(
         if key not in graph:
             continue
         shape = _shape(graph[key])
-        if shape is None:
-            continue
+        closed = spec.shape[-1] == ANY_TRAILING
+        rank = len(spec.shape) - 1 if closed else len(spec.shape)
+        if shape is None or (len(shape) < rank if closed else len(shape) != rank):
+            raise GraphValidationError(
+                f"{key!r} has shape {list(shape or ())}; the layout gives "
+                f"{list(spec.shape)}."
+            )
         for size, dimension in zip(shape, spec.shape, strict=False):
             if isinstance(dimension, str) and dimension not in (
-                *_FIXED_DIMS,
+                *FIXED_DIMENSIONS,
                 ANY_TRAILING,
             ):
                 sizes.setdefault(dimension, size)
@@ -222,17 +196,9 @@ def _bound_sizes(
 
 
 def _explain_keys(
-    graph: Mapping[str, Any],
-    fields: Mapping[str, FieldSpec],
-    keys: frozenset[str],
-    built: frozenset[str],
+    fields: Mapping[str, FieldSpec], keys: frozenset[str], built: frozenset[str]
 ) -> None:
     for key in sorted(keys - set(fields)):
-        if key in NOT_KEYS:
-            raise GraphValidationError(
-                f"{key!r} is never a key of the graph: it is derived from the "
-                f"arrays, computed in the forward, or kept in GraphInfo. Remove it."
-            )
         raise GraphValidationError(
             f"{key!r} is not declared by the layout. Declare it as an input, a "
             f"feature or a requirement field, or leave it out of the batch."
@@ -317,39 +283,3 @@ def check_batch_invariants(
             f"GraphInfo.structure_sizes is {list(info.structure_sizes)}; 'ptr' "
             f"gives {sizes.tolist()}."
         )
-
-
-class GraphView:
-    """Attribute access over a checked graph dict, without copying it.
-
-    ``view.positions`` is ``graph["positions"]`` and ``view.info.num_graphs``
-    the graph count. Sugar for code outside the model: a forward takes the
-    dict itself.
-    """
-
-    __slots__ = ("_graph", "info")
-
-    def __init__(
-        self,
-        graph: Mapping[str, Any],
-        layout: GraphLayout,
-        info: GraphInfo,
-        *,
-        float_dtype: str = "float64",
-    ):
-        check_layout(graph, layout, info, float_dtype=float_dtype)
-        self._graph = graph
-        self.info = info
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
-            raise AttributeError(name)
-        if name not in self._graph:
-            raise AttributeError(f"this graph has no {name!r}.")
-        return self._graph[name]
-
-    def __getitem__(self, name: str) -> Any:
-        return self._graph[name]
-
-    def __contains__(self, name: object) -> bool:
-        return name in self._graph

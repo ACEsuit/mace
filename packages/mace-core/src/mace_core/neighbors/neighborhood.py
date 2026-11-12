@@ -14,8 +14,8 @@ directly:
   ``unit_shifts == 0``. A periodic image of an atom is a real neighbour, so a
   single atom in a cell smaller than the cutoff has edges, all to itself;
 * a structure with **no edges** is legal and returns empty arrays;
-* ``pbc=None`` means no axis is periodic, and a missing or all-zero cell
-  stands for the identity before any aperiodic row is extended;
+* ``pbc=None`` means no axis is periodic, a missing cell is the zero cell, and
+  a periodic axis with an all-zero lattice vector is refused;
 * images exist only along periodic axes, so every unit shift is zero along an
   aperiodic one, and ``shifts`` are measured in the cell the graph carries,
   :func:`~mace_core.neighbors.geometry.graph_cell`. The box a backend searches
@@ -32,7 +32,7 @@ import numpy as np
 from mace_core.neighbors.backends import NeighborListBackend
 from mace_core.neighbors.geometry import graph_cell, search_geometry
 
-__all__ = ["NeighborList", "get_neighborhood"]
+__all__ = ["NeighborList", "checked_edges", "get_neighborhood"]
 
 
 @dataclass(frozen=True)
@@ -86,13 +86,9 @@ def get_neighborhood(
     positions.setflags(write=False)
     geometry = search_geometry(positions, cutoff, pbc, cell)
     edge_index, unit_shifts = backend.search(positions, float(cutoff), geometry)
-    edge_index, unit_shifts = _checked_edges(edge_index, unit_shifts, len(positions))
-    aperiodic = [axis for axis in range(3) if not geometry.pbc[axis]]
-    if unit_shifts[:, aperiodic].any():
-        raise ValueError(
-            f"the neighbour backend returned an image along the aperiodic axes "
-            f"{aperiodic}. Images exist only along periodic axes."
-        )
+    edge_index, unit_shifts = checked_edges(
+        edge_index, unit_shifts, len(positions), geometry.pbc
+    )
 
     true_self_edge = (edge_index[0] == edge_index[1]) & np.all(unit_shifts == 0, axis=1)
     edge_index = edge_index[:, ~true_self_edge]
@@ -108,37 +104,61 @@ def get_neighborhood(
     )
 
 
-def _checked_edges(
-    edge_index: Any, unit_shifts: Any, n_atoms: int
+def checked_edges(
+    edge_index: Any,
+    unit_shifts: Any,
+    n_atoms: int,
+    pbc: tuple[bool, ...],
+    *,
+    origin: str = "the neighbour backend",
 ) -> tuple[np.ndarray, np.ndarray]:
-    """The backend's arrays as int64, or a ``ValueError`` naming what is wrong."""
+    """A neighbour list's index arrays as int64, checked the same way whoever
+    produced them: a search, or a list stored with the data.
+
+    Args:
+        edge_index: ``[2, n_edges]`` integer atom indices.
+        unit_shifts: ``[n_edges, 3]`` integer lattice-vector counts.
+        n_atoms: The atoms of the structure.
+        pbc: Its periodicity per axis.
+        origin: What produced the arrays, named in an error.
+
+    Raises:
+        ValueError: naming ``origin``, for a wrong shape, a non-integer dtype,
+            an index outside the structure, or an image along an aperiodic
+            axis.
+    """
     edge_index = np.asarray(edge_index)
     unit_shifts = np.asarray(unit_shifts)
     if edge_index.size == 0:
         edge_index = edge_index.reshape(2, 0)
     if unit_shifts.size == 0:
         unit_shifts = unit_shifts.reshape(0, 3)
-    n_edges = edge_index.shape[-1] if edge_index.ndim == 2 else -1
     if edge_index.ndim != 2 or edge_index.shape[0] != 2:
         raise ValueError(
-            f"the neighbour backend returned edge_index of shape "
-            f"{edge_index.shape}. Expected [2, n_edges]."
+            f"{origin} gave edge_index of shape {edge_index.shape}. Expected "
+            f"[2, n_edges]."
         )
+    n_edges = edge_index.shape[1]
     if unit_shifts.shape != (n_edges, 3):
         raise ValueError(
-            f"the neighbour backend returned unit_shifts of shape "
-            f"{unit_shifts.shape} for {n_edges} edges. Expected [n_edges, 3]."
+            f"{origin} gave unit_shifts of shape {unit_shifts.shape} for "
+            f"{n_edges} edges. Expected [n_edges, 3]."
         )
     for name, array in (("edge_index", edge_index), ("unit_shifts", unit_shifts)):
         if array.size and not np.issubdtype(array.dtype, np.integer):
             raise ValueError(
-                f"the neighbour backend returned {name} as {array.dtype}. "
-                f"Expected integers."
+                f"{origin} gave {name} as {array.dtype}. Expected integers."
             )
-    if edge_index.size and (edge_index.min() < 0 or edge_index.max() >= n_atoms):
+    outside = edge_index[(edge_index < 0) | (edge_index >= n_atoms)]
+    if outside.size:
         raise ValueError(
-            f"the neighbour backend returned an edge to atom "
-            f"{int(edge_index.max())} or {int(edge_index.min())} in a structure "
-            f"of {n_atoms} atoms."
+            f"{origin} gave an edge to atom {int(outside[0])} in a structure of "
+            f"{n_atoms} atoms."
+        )
+    aperiodic = [axis for axis in range(3) if not pbc[axis]]
+    if unit_shifts[:, aperiodic].any():
+        raise ValueError(
+            f"{origin} gave an image along the aperiodic axes {aperiodic}. "
+            f"Images exist only along periodic axes."
         )
     return edge_index.astype(np.int64), unit_shifts.astype(np.int64)

@@ -15,13 +15,13 @@ bins may take this box from :func:`search_geometry`; it never leaves the
 search.
 
 **The graph cell** is the cell as parsed. It is what the graph carries and what
-``shifts`` are measured in, :func:`graph_cell`. A structure with a periodic
-axis carries its lattice, an all-zero or missing lattice standing for the
-identity as the search reads it. A structure with no periodic axis carries its
-parsed cell, zero when it has none. No row is extended and none is patched:
-unit shifts along an aperiodic axis are zero, so the aperiodic rows never enter
-a shift, and nothing downstream divides by a volume it did not ask for. The
-cell therefore never depends on the positions.
+``shifts`` are measured in, :func:`graph_cell`: the parsed cell, zero when
+there is none. Nothing is invented: a periodic axis needs a non-zero lattice
+vector, and a structure without one is refused rather than given an identity
+cell. No row is extended and none is patched: unit shifts along an aperiodic
+axis are zero, so the aperiodic rows never enter a shift, and nothing
+downstream divides by a volume it did not ask for. The cell therefore never
+depends on the positions.
 
 Neither matrix is ever written back to the
 :class:`~mace_core.data.configuration.Configuration` the positions came from.
@@ -67,16 +67,16 @@ def search_geometry(
         cutoff: The neighbour cutoff in Angstrom, positive and finite.
         pbc: Three flags, one per lattice vector. ``None`` means no axis is
             periodic.
-        cell: ``[3, 3]`` lattice vectors as rows, in Angstrom. ``None`` or an
-            all-zero matrix stands for the identity before any row is
-            extended, which is what an aperiodic structure normally carries.
+        cell: ``[3, 3]`` lattice vectors as rows, in Angstrom, or ``None``,
+            which is the zero cell. Only the periodic rows are read.
 
     Nothing passed in is modified, and nothing returned shares memory with it.
 
     Raises:
         ValueError: if a shape is wrong, the cutoff is not a positive finite
-            number, a ``pbc`` entry is not a boolean, or a periodic axis has an
-            all-zero lattice vector, which leaves the search nothing to repeat.
+            number, a ``pbc`` entry is not a boolean, the cell is not finite,
+            or a periodic axis has an all-zero lattice vector, which leaves the
+            search nothing to repeat.
     """
     positions = np.asarray(positions, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] != 3:
@@ -85,15 +85,7 @@ def search_geometry(
         )
     cutoff = _distance(cutoff)
     periodic = _periodicity(pbc)
-    lattice = _lattice(cell)
-
-    for axis in range(3):
-        if periodic[axis] and not lattice[axis].any():
-            raise ValueError(
-                f"axis {axis} is periodic but its lattice vector is all zero, "
-                f"so there is no image to repeat. Give the cell a non-zero row "
-                f"{axis}, or set pbc[{axis}] to False."
-            )
+    lattice = _lattice(cell, periodic)
 
     search_cell = lattice.copy()
     for axis in range(3):
@@ -110,30 +102,17 @@ def search_geometry(
 
 
 def graph_cell(pbc: Any = None, cell: Any = None) -> np.ndarray:
-    """The cell a structure's graph carries, ``[3, 3]`` float64 in Angstrom.
-
-    With a periodic axis it is the lattice the search repeats: the cell as
-    given, or the identity when the cell is missing or all zero. With no
-    periodic axis it is the cell as given, or zero when there is none. No row
-    is ever extended or patched, so a slab whose aperiodic row is zero keeps
-    that row and a cell of zero volume.
+    """The cell a structure's graph carries, ``[3, 3]`` float64 in Angstrom:
+    the cell as given, or zero when there is none. No row is ever extended or
+    patched, so a slab whose aperiodic row is zero keeps that row and a cell
+    of zero volume. Read-only.
 
     Raises:
-        ValueError: if ``pbc`` or ``cell`` has the wrong form (see
+        ValueError: if ``pbc`` or ``cell`` has the wrong form, the cell is not
+            finite, or a periodic axis has an all-zero lattice vector (see
             :func:`search_geometry`).
     """
-    periodic = _periodicity(pbc)
-    if any(periodic):
-        carried = _lattice(cell)
-    elif cell is None:
-        carried = np.zeros((3, 3), dtype=np.float64)
-    else:
-        carried = np.array(cell, dtype=np.float64, copy=True)
-        if carried.shape != (3, 3):
-            raise ValueError(
-                f"cell has shape {carried.shape}. Expected [3, 3], lattice "
-                f"vectors as rows."
-            )
+    carried = _lattice(cell, _periodicity(pbc))
     carried.setflags(write=False)
     return carried
 
@@ -162,14 +141,23 @@ def _periodicity(pbc: Any) -> tuple[bool, bool, bool]:
     return (bool(flags[0]), bool(flags[1]), bool(flags[2]))
 
 
-def _lattice(cell: Any) -> np.ndarray:
+def _lattice(cell: Any, periodic: tuple[bool, bool, bool]) -> np.ndarray:
+    """``cell`` as a new float64 array, zero for ``None``, checked."""
     if cell is None:
-        return np.eye(3, dtype=np.float64)
-    lattice = np.array(cell, dtype=np.float64, copy=True)
+        lattice = np.zeros((3, 3), dtype=np.float64)
+    else:
+        lattice = np.array(cell, dtype=np.float64, copy=True)
     if lattice.shape != (3, 3):
         raise ValueError(
             f"cell has shape {lattice.shape}. Expected [3, 3], lattice vectors as rows."
         )
-    if not lattice.any():
-        return np.eye(3, dtype=np.float64)
+    if not np.isfinite(lattice).all():
+        raise ValueError("the cell has a non-finite entry.")
+    for axis in range(3):
+        if periodic[axis] and not lattice[axis].any():
+            raise ValueError(
+                f"axis {axis} is periodic but its lattice vector is all zero, "
+                f"so there is no image to repeat. Give the cell a non-zero row "
+                f"{axis}, or set pbc[{axis}] to False."
+            )
     return lattice

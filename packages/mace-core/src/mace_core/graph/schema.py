@@ -2,16 +2,15 @@
 
 The data-to-model boundary is a plain mapping from key to array. It is the
 structural core below, fixed here, plus the fields a run declares in its
-:class:`~mace_core.graph.layout.GraphLayout`: the model's inputs and its batch
-requirements. Labels never travel in the graph: they are targets, beside it.
-Each key has a :class:`FieldSpec` stating its shape over symbolic dimensions,
-its dtype by name, whether it is required and who produces it. The core is a
-file-format contract: a change to it is a breaking schema change.
+:class:`~mace_core.graph.layout.GraphLayout`: the model's inputs and the fields
+of its batch requirements. Labels never travel in the graph: they are targets,
+beside it. Each key has a :class:`FieldSpec` stating its shape over symbolic
+dimensions, its dtype by name and whether every graph carries it. The core is
+a file-format contract: a change to it is a breaking schema change.
 
-**Dtypes are names.** ``"float"`` is the model's floating dtype (``float64``
-by default) and is bound when a batch is tensorized or checked; the others are
-literal (``"int64"``, ``"bool"``). Nothing here knows a framework's dtype
-objects.
+**Dtypes are names.** ``"float"`` is the run's floating dtype, which the
+layout names; the others are literal (``"int64"``, ``"bool"``). Nothing here
+knows a framework's dtype objects.
 
 **Shapes are symbolic.** ``n_nodes``, ``n_edges`` and ``n_graphs`` include the
 padding slots of a padded batch, and every key using one symbol must agree on
@@ -28,38 +27,30 @@ beside it, in :class:`~mace_core.graph.info.GraphInfo`.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
+
+from pydantic import model_validator
+
+from mace_core.config.base import ConfigSection
 
 __all__ = [
     "ANY_TRAILING",
     "EDGE_KEYS",
     "EDGE_LEVEL",
+    "FIXED_DIMENSIONS",
     "FLOAT",
     "GRAPH_CORE",
     "GRAPH_LEVEL",
     "NODE_LEVEL",
-    "NOT_KEYS",
     "PRESENCE_SUFFIX",
     "WEIGHT_SUFFIX",
     "FieldSpec",
-    "Producer",
-    "SymDim",
-    "level_of",
     "presence_key",
     "weight_key",
 ]
 
-SymDim = Literal["n_nodes", "n_edges", "n_graphs", "n_graphs_plus_one"]
-
-#: Who writes a key: the dataset (``data``), the neighbour list (``nbr``),
-#: collation (``coll``), graph construction (``derived``), the caller of the
-#: model (``caller``), or a batch requirement built on the collated batch
-#: (``requirement``).
-Producer = Literal["data", "nbr", "coll", "derived", "caller", "requirement"]
-
-#: The model's floating dtype, bound per framework.
+#: The run's floating dtype, which the layout names.
 FLOAT = "float"
 
 #: The last entry of a shape whose trailing sizes are the data's own.
@@ -75,29 +66,60 @@ NODE_LEVEL = "n_nodes"
 EDGE_LEVEL = "n_edges"
 GRAPH_LEVEL = "n_graphs"
 
+#: The dimensions every batch binds from its own arrays.
+FIXED_DIMENSIONS: frozenset[str] = frozenset(
+    {NODE_LEVEL, EDGE_LEVEL, GRAPH_LEVEL, "n_graphs_plus_one"}
+)
 
-@dataclass(frozen=True)
-class FieldSpec:
+_LEVELS = (NODE_LEVEL, EDGE_LEVEL, GRAPH_LEVEL)
+
+
+class FieldSpec(ConfigSection):
     """One key of the flat graph dict, or of the targets beside it.
 
     Attributes:
-        shape: Symbolic dimensions and fixed integers, possibly closed by
+        shape: Symbolic dimensions and fixed sizes, possibly closed by
             :data:`ANY_TRAILING`.
-        dtype: A dtype name; :data:`FLOAT` is the model's floating dtype.
+        dtype: ``"float"`` for the run's floating dtype, ``"int64"`` or
+            ``"bool"``.
         required: Whether every graph carries the key.
-        producer: Who writes the key.
-        doc: Units and meaning.
         absent_value: What a structure without a value for a declared input
-            carries, and what padding writes. 1 for ``total_spin``, 0 for
-            everything else.
+            carries, and what padding writes.
     """
 
-    shape: tuple[SymDim | int | str, ...]
-    dtype: str
-    required: bool
-    producer: Producer
-    doc: str
+    shape: tuple[int | str, ...]
+    dtype: Literal["float", "int64", "bool"]
+    required: bool = True
     absent_value: float = 0.0
+
+    @model_validator(mode="after")
+    def _validate(self) -> FieldSpec:
+        for position, dimension in enumerate(self.shape):
+            if isinstance(dimension, int) and dimension < 0:
+                raise ValueError(f"shape {self.shape} has a negative size.")
+            if dimension == ANY_TRAILING and position != len(self.shape) - 1:
+                raise ValueError(
+                    f"shape {self.shape} has {ANY_TRAILING!r} before its end; it "
+                    f"only closes a shape."
+                )
+            if isinstance(dimension, str) and not dimension:
+                raise ValueError(f"shape {self.shape} has an unnamed dimension.")
+        return self
+
+    def level(self) -> str | None:
+        """``n_nodes``, ``n_edges`` or ``n_graphs``: the dimension the key is
+        concatenated or stacked along when graphs are batched. ``None`` for
+        ``ptr``, which collation builds."""
+        for dimension in self.shape:
+            if dimension in _LEVELS:
+                return str(dimension)
+        return None
+
+    def sample_shape(self, n_atoms: int) -> tuple[int, ...]:
+        """The shape of one structure's value of a fixed-shape node or graph
+        field: ``(n_atoms, ...)`` per node, the trailing sizes per graph."""
+        trailing = tuple(int(size) for size in self.shape[1:])
+        return (n_atoms, *trailing) if self.shape[0] == NODE_LEVEL else trailing
 
 
 def presence_key(name: str) -> str:
@@ -110,91 +132,37 @@ def weight_key(name: str) -> str:
     return name + WEIGHT_SUFFIX
 
 
-def level_of(spec: FieldSpec) -> str | None:
-    """``n_nodes``, ``n_edges`` or ``n_graphs``: the dimension a key is
-    concatenated or stacked along when graphs are batched. ``None`` for
-    ``ptr``, which collation builds."""
-    for dimension in spec.shape:
-        if dimension in (NODE_LEVEL, EDGE_LEVEL, GRAPH_LEVEL):
-            return dimension
-    return None
-
-
 #: The structural core. Read-only: a change here is a schema change.
 GRAPH_CORE: Mapping[str, FieldSpec] = MappingProxyType(
     {
-        "positions": FieldSpec(
-            ("n_nodes", 3), FLOAT, True, "data", "Cartesian positions, Å."
-        ),
-        "node_atomic_numbers": FieldSpec(
-            ("n_nodes",),
-            "int64",
-            True,
-            "data",
-            "Atomic number Z of each atom; 0 for a padding atom. The model forms "
-            "its element one-hot from it.",
-        ),
-        "edge_index": FieldSpec(
-            (2, "n_edges"),
-            "int64",
-            True,
-            "nbr",
-            "Row 0 the sender, row 1 the receiver, both global node indices.",
-        ),
-        "shifts": FieldSpec(
-            ("n_edges", 3),
-            FLOAT,
-            True,
-            "nbr",
-            "Edge displacement, Å: unit_shifts @ cell.",
-        ),
-        "unit_shifts": FieldSpec(
-            ("n_edges", 3),
-            FLOAT,
-            True,
-            "nbr",
-            "Integer lattice-vector counts, stored as float. Authoritative under "
-            "strain, where shifts are recomputed from them.",
-        ),
-        "cell": FieldSpec(
-            ("n_graphs", 3, 3),
-            FLOAT,
-            True,
-            "data",
-            "The parsed cell per structure, rows as lattice vectors, Å; zero for "
-            "a structure without one. Never extended.",
-        ),
-        "pbc": FieldSpec(
-            ("n_graphs", 3), "bool", True, "data", "Periodicity per axis."
-        ),
-        "batch": FieldSpec(
-            ("n_nodes",),
-            "int64",
-            True,
-            "coll",
-            "The graph each node belongs to, non-decreasing.",
-        ),
-        "ptr": FieldSpec(
-            ("n_graphs_plus_one",),
-            "int64",
-            True,
-            "coll",
-            "Node offsets: graph g owns nodes ptr[g]:ptr[g + 1].",
-        ),
-        "head": FieldSpec(
-            ("n_graphs",),
-            "int64",
-            False,
-            "derived",
-            "Index of the structure's head in the layout's head list; 0 when absent.",
-        ),
+        # Cartesian positions, Å.
+        "positions": FieldSpec(shape=(NODE_LEVEL, 3), dtype=FLOAT),
+        # Atomic number Z of each atom; 0 for a padding atom. The model forms
+        # its element one-hot from it.
+        "node_atomic_numbers": FieldSpec(shape=(NODE_LEVEL,), dtype="int64"),
+        # Row 0 the sender, row 1 the receiver, both global node indices.
+        "edge_index": FieldSpec(shape=(2, EDGE_LEVEL), dtype="int64"),
+        # Edge displacement, Å: unit_shifts @ cell.
+        "shifts": FieldSpec(shape=(EDGE_LEVEL, 3), dtype=FLOAT),
+        # Integer lattice-vector counts, stored as float. Authoritative under
+        # strain, where shifts are recomputed from them.
+        "unit_shifts": FieldSpec(shape=(EDGE_LEVEL, 3), dtype=FLOAT),
+        # The parsed cell per structure, rows as lattice vectors, Å; zero for a
+        # structure without one. Never extended.
+        "cell": FieldSpec(shape=(GRAPH_LEVEL, 3, 3), dtype=FLOAT),
+        # Periodicity per axis.
+        "pbc": FieldSpec(shape=(GRAPH_LEVEL, 3), dtype="bool"),
+        # The graph each node belongs to, non-decreasing. Written by collation.
+        "batch": FieldSpec(shape=(NODE_LEVEL,), dtype="int64"),
+        # Node offsets: graph g owns nodes ptr[g]:ptr[g + 1]. Written by
+        # collation.
+        "ptr": FieldSpec(shape=("n_graphs_plus_one",), dtype="int64"),
+        # Index of the structure's head in the layout's head list.
+        "head": FieldSpec(shape=(GRAPH_LEVEL,), dtype="int64", required=False),
+        # A caller-supplied strain, used in place of the zero strain the
+        # derivative engine otherwise creates. Transported only.
         "displacement": FieldSpec(
-            ("n_graphs", 3, 3),
-            FLOAT,
-            False,
-            "caller",
-            "A caller-supplied strain, used in place of the zero strain the "
-            "derivative engine otherwise creates. Transported only.",
+            shape=(GRAPH_LEVEL, 3, 3), dtype=FLOAT, required=False
         ),
     }
 )
@@ -202,21 +170,3 @@ GRAPH_CORE: Mapping[str, FieldSpec] = MappingProxyType(
 #: The keys a neighbour list writes. A batch carries all three or none: none
 #: while a device search is still to join its edges.
 EDGE_KEYS: frozenset[str] = frozenset({"edge_index", "shifts", "unit_shifts"})
-
-#: Names no graph may carry: each is derived from the arrays, computed in the
-#: forward, or kept beside the dict, so a stored copy could only be stale.
-NOT_KEYS: frozenset[str] = frozenset(
-    {
-        "num_nodes",
-        "num_edges",
-        "num_graphs",
-        "edge_vectors",
-        "edge_lengths",
-        "node_attrs",
-        "rcell",
-        "volume",
-        "structure_sizes",
-        "structure_periodic",
-        "structure_padding",
-    }
-)
