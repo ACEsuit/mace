@@ -1750,11 +1750,12 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
 
         # combined learnable radial
         tp_weights = self.conv_tp_weights(edge_feats_with_magmom)
-        if cutoff is not None:
-            tp_weights = tp_weights * cutoff
 
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        if cutoff is not None:
+            tp_weights = tp_weights * cutoff
+            edge_density = edge_density * cutoff
 
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
@@ -1910,11 +1911,12 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
 
         # combined learnable radial
         tp_weights = self.conv_tp_weights(edge_feats_with_magmom)
-        if cutoff is not None:
-            tp_weights = tp_weights * cutoff
 
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
+        if cutoff is not None:
+            tp_weights = tp_weights * cutoff
+            edge_density = edge_density * cutoff
 
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
