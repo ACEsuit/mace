@@ -1761,6 +1761,7 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
 
+        # No envelope: magmom_conv_tp is linear in mji, which already carries it
         tp_weights_magmom = self.conv_tp_weights_magmom(edge_feats_with_magmom)
 
         magmom_mji = self.magmom_conv_tp(
@@ -1922,6 +1923,7 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
 
+        # No envelope: magmom_conv_tp is linear in mji, which already carries it
         tp_weights_magmom = self.conv_tp_weights_magmom(edge_feats_with_magmom)
 
         magmom_mji = self.magmom_conv_tp(

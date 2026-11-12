@@ -1564,6 +1564,15 @@ class MagneticMACE(torch.nn.Module):
             correlation = [correlation] * num_interactions
 
         self.lammps_mliap = lammps_mliap
+        # The radial MLPs of the magnetic interactions also take the sender's
+        # moment features, which do not vanish at r_max. With smooth_cutoff the
+        # radial basis goes without the envelope and the interactions apply it
+        # once, to their weights and edge density. Without it, and in
+        # checkpoints saved before this attribute existed, the envelope stays
+        # in the radial basis, as before.
+        self.smooth_cutoff = smooth_cutoff
+        if smooth_cutoff:
+            apply_cutoff = False
         self.apply_cutoff = apply_cutoff
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
@@ -1571,11 +1580,6 @@ class MagneticMACE(torch.nn.Module):
         self.use_so3 = use_so3
         self.use_last_readout_only = use_last_readout_only
         self.use_magmom_one_body = use_magmom_one_body
-        # The radial MLPs of the magnetic interactions also take the sender's
-        # moment features, which do not vanish at r_max, so the cutoff envelope
-        # is applied to their weights. Checkpoints saved before this attribute
-        # existed do not have it and keep computing what they were trained as.
-        self.smooth_cutoff = smooth_cutoff
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -1608,6 +1612,10 @@ class MagneticMACE(torch.nn.Module):
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
+            # Not apply_cutoff, which these models have always ignored: a
+            # model built with apply_cutoff=False and smooth_cutoff=False keeps
+            # the envelope in the radial basis, as it did before.
+            apply_cutoff=not smooth_cutoff,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
@@ -1882,12 +1890,9 @@ class MagneticScaleShiftMACE(MagneticMACE):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats, _ = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
-        cutoff: Optional[torch.Tensor] = None
-        if hasattr(self, "smooth_cutoff") and self.smooth_cutoff:
-            cutoff = self.radial_embedding.cutoff_fn(lengths)
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
