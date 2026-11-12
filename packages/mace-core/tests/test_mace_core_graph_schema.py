@@ -344,6 +344,29 @@ def test_irreps_that_do_not_fill_a_default_names_shape_are_refused(
         input_field(InputSpec(name=name, irreps=irreps, per_atom=per_atom, units="eV"))
 
 
+@pytest.mark.parametrize(
+    ("name", "irreps", "per_atom"),
+    [("forces", "1o", False), ("energy", "0e", True), ("magmom", "1e", False)],
+)
+def test_a_default_name_declared_at_the_wrong_level_is_refused(name, irreps, per_atom):
+    """The data stores a default name per atom or per structure, and a
+    declaration that disagrees would fail on every structure instead."""
+    with pytest.raises(ValueError, match=f"per_atom={not per_atom}"):
+        graph_layout(
+            ELEMENTS,
+            cutoff=CUTOFF,
+            targets=[
+                ObservableSpec(name=name, irreps=irreps, per_atom=per_atom, units="x")
+            ],
+        )
+    with pytest.raises(ValueError, match=f"per_atom={not per_atom}"):
+        graph_layout(
+            ELEMENTS,
+            cutoff=CUTOFF,
+            inputs=[InputSpec(name=name, irreps=irreps, per_atom=per_atom, units="x")],
+        )
+
+
 @pytest.mark.parametrize("name", ["pos", "strain"])
 def test_the_inputs_the_derivative_engine_creates_are_never_batched(name):
     spec = InputSpec(name=name, irreps="1o", per_atom=name == "pos", units="Å")
@@ -358,8 +381,14 @@ def test_the_inputs_the_derivative_engine_creates_are_never_batched(name):
 @pytest.mark.parametrize(
     ("kind", "name", "spec", "message"),
     [
-        ("targets", "stress", FieldSpec(shape=("n_graphs",), dtype="float"), "stored"),
-        ("inputs", "magmom", FieldSpec(shape=("n_nodes", 4), dtype="float"), "stored"),
+        ("targets", "stress", FieldSpec(shape=("n_graphs",), dtype="float"), "stores"),
+        ("inputs", "magmom", FieldSpec(shape=("n_nodes", 4), dtype="float"), "stores"),
+        (
+            "targets",
+            "forces",
+            FieldSpec(shape=("n_graphs", 3), dtype="float"),
+            "stores",
+        ),
         ("targets", "born", FieldSpec(shape=("n_edges",), dtype="float"), "per atom"),
         ("targets", "born", FieldSpec(shape=("n_graphs",), dtype="int64"), "per atom"),
         (

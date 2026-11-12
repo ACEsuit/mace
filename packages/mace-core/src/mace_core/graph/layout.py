@@ -81,6 +81,16 @@ _CONVENTION_SHAPES: dict[str, tuple[int, ...]] = {
     member.convention_name: member.value_shape for member in DefaultKeys
 }
 
+#: The batched shape of each default convention name: its level from where
+#: the data stores it, then the shape of one value.
+_CONVENTION_FIELDS: dict[str, tuple[int | str, ...]] = {
+    member.convention_name: (
+        NODE_LEVEL if member.storage == "atom" else GRAPH_LEVEL,
+        *member.value_shape,
+    )
+    for member in DefaultKeys
+}
+
 
 def _is_symmetric_rank_two(irreps: str, observable: str) -> bool:
     terms = parse_irreps(irreps, observable=observable)
@@ -172,22 +182,19 @@ def _check_name(name: str, kind: str) -> None:
 
 def _check_declared(name: str, spec: FieldSpec, kind: str) -> None:
     """A declared input or target is floating, per atom or per structure, and
-    a default name keeps its stored shape."""
+    a default name keeps the level and shape the data stores it with."""
     if spec.dtype != FLOAT or spec.shape[0] not in (NODE_LEVEL, GRAPH_LEVEL):
         raise ValueError(
             f"{kind} {name!r} is declared as {spec.dtype} of shape "
             f"{spec.shape}; a declared {kind} is floating, per atom or per "
             f"structure."
         )
-    stored = _CONVENTION_SHAPES.get(name)
-    if (
-        stored is not None
-        and spec.shape[-1] != ANY_TRAILING
-        and spec.shape[1:] != stored
-    ):
+    stored = _CONVENTION_FIELDS.get(name)
+    if stored is not None and spec.shape[-1] != ANY_TRAILING and spec.shape != stored:
         raise ValueError(
-            f"{kind} {name!r} is declared with shape {spec.shape[1:]}; its "
-            f"stored shape is {stored}."
+            f"{kind} {name!r} is declared with shape {spec.shape}; the data "
+            f"stores it as {stored}. Declare it with per_atom="
+            f"{stored[0] == NODE_LEVEL} and irreps that fill it."
         )
 
 
