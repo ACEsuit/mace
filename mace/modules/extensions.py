@@ -1531,6 +1531,7 @@ class MagneticMACE(torch.nn.Module):
         use_embedding_readout: bool = False,
         distance_transform: str = "None",
         use_magmom_one_body: Optional[bool] = False,
+        smooth_cutoff: bool = True,
         edge_irreps: Optional[o3.Irreps] = None,
         use_edge_irreps_first: bool = False,  # pylint: disable=unused-argument
         radial_MLP: Optional[List[int]] = None,
@@ -1570,6 +1571,11 @@ class MagneticMACE(torch.nn.Module):
         self.use_so3 = use_so3
         self.use_last_readout_only = use_last_readout_only
         self.use_magmom_one_body = use_magmom_one_body
+        # The radial MLPs of the magnetic interactions also take the sender's
+        # moment features, which do not vanish at r_max, so the cutoff envelope
+        # is applied to their weights. Checkpoints saved before this attribute
+        # existed do not have it and keep computing what they were trained as.
+        self.smooth_cutoff = smooth_cutoff
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -1879,6 +1885,9 @@ class MagneticScaleShiftMACE(MagneticMACE):
         edge_feats, _ = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+        cutoff: Optional[torch.Tensor] = None
+        if hasattr(self, "smooth_cutoff") and self.smooth_cutoff:
+            cutoff = self.radial_embedding.cutoff_fn(lengths)
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
@@ -1929,6 +1938,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
                 edge_index=data["edge_index"],
                 magmom_node_inv_feats=magmom_node_feats,
                 magmom_node_attrs=magmom_node_attrs,
+                cutoff=cutoff,
             )
 
             node_feats = product(

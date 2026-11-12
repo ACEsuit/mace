@@ -1624,6 +1624,7 @@ class MagneticInteractionBlock(InteractionBlock):
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
+        cutoff: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -1734,6 +1735,7 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
+        cutoff: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -1748,6 +1750,8 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
 
         # combined learnable radial
         tp_weights = self.conv_tp_weights(edge_feats_with_magmom)
+        if cutoff is not None:
+            tp_weights = tp_weights * cutoff
 
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
@@ -1889,6 +1893,7 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
+        cutoff: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -1905,6 +1910,8 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
 
         # combined learnable radial
         tp_weights = self.conv_tp_weights(edge_feats_with_magmom)
+        if cutoff is not None:
+            tp_weights = tp_weights * cutoff
 
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
