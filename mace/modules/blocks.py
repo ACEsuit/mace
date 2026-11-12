@@ -1624,6 +1624,7 @@ class MagneticInteractionBlock(InteractionBlock):
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
+        cutoff: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -1734,6 +1735,7 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
+        cutoff: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -1752,11 +1754,22 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
 
+        # The radial weights see the neighbour's moment features, which do not vanish
+        # at r_max, so an envelope inside edge_feats does not take them to zero there.
+        # MagneticMACE therefore builds the radial basis without the envelope and
+        # passes it here as `cutoff`. Models saved before that pass cutoff=None and
+        # keep the envelope inside edge_feats, so they reproduce unchanged.
+        if cutoff is not None:
+            tp_weights = tp_weights * cutoff
+            edge_density = edge_density * cutoff
+
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
 
         tp_weights_magmom = self.conv_tp_weights_magmom(edge_feats_with_magmom)
+        if cutoff is not None:
+            tp_weights_magmom = tp_weights_magmom * cutoff
 
         magmom_mji = self.magmom_conv_tp(
             mji, magmom_node_attrs[sender], tp_weights_magmom
@@ -1889,6 +1902,7 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
+        cutoff: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -1909,11 +1923,22 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
 
+        # The radial weights see the neighbour's moment features, which do not vanish
+        # at r_max, so an envelope inside edge_feats does not take them to zero there.
+        # MagneticMACE therefore builds the radial basis without the envelope and
+        # passes it here as `cutoff`. Models saved before that pass cutoff=None and
+        # keep the envelope inside edge_feats, so they reproduce unchanged.
+        if cutoff is not None:
+            tp_weights = tp_weights * cutoff
+            edge_density = edge_density * cutoff
+
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
 
         tp_weights_magmom = self.conv_tp_weights_magmom(edge_feats_with_magmom)
+        if cutoff is not None:
+            tp_weights_magmom = tp_weights_magmom * cutoff
 
         magmom_mji = self.magmom_conv_tp(
             mji, magmom_node_attrs[sender], tp_weights_magmom
