@@ -1563,8 +1563,9 @@ class MagneticMACE(torch.nn.Module):
             correlation = [correlation] * num_interactions
 
         self.lammps_mliap = lammps_mliap
-        # The envelope is applied in the magnetic interaction blocks, never in the
-        # radial basis, so apply_cutoff is ignored.
+        # Accepted because the shared model config passes it. The envelope is
+        # applied in the magnetic interaction blocks, never in the radial basis.
+        del apply_cutoff
         self.apply_cutoff = False
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
