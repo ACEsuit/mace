@@ -11,6 +11,9 @@ give the default residual block), and the forward produces finite energies and
 forces of the right shape.
 """
 
+import logging
+import warnings
+
 import numpy as np
 import pytest
 import torch
@@ -27,7 +30,9 @@ PLAIN_RESIDUAL = "RealAgnosticResidualInteractionBlock"
 @pytest.fixture(name="water_batch")
 def water_batch_fixture():
     table = AtomicNumberTable([1, 8])
-    atoms = Atoms("OH2", positions=[[0.0, 0.0, 0.0], [0.95, 0.0, 0.0], [-0.3, 0.9, 0.0]])
+    atoms = Atoms(
+        "OH2", positions=[[0.0, 0.0, 0.0], [0.95, 0.0, 0.0], [-0.3, 0.9, 0.0]]
+    )
     config = data.Configuration(
         atomic_numbers=atoms.numbers,
         positions=atoms.positions,
@@ -39,7 +44,7 @@ def water_batch_fixture():
     return next(iter(loader)), table, len(atoms)
 
 
-def _model(name, table):
+def _model(name, table, apply_cutoff=True):
     torch.manual_seed(0)
     return modules.MACE(
         r_max=5,
@@ -58,6 +63,7 @@ def _model(name, table):
         atomic_numbers=table.zs,
         correlation=3,
         radial_type="bessel",
+        apply_cutoff=apply_cutoff,
     )
 
 
@@ -93,3 +99,39 @@ def test_the_attention_residual_interaction_is_not_the_plain_one(water_batch):
         f"the attention-residual block reproduced the plain residual energy "
         f"({float(att[0]):.12f}), so it is not doing anything of its own"
     )
+
+
+@pytest.mark.parametrize(
+    "block_name",
+    [
+        "RealAgnosticResidualNonLinearInteractionBlock",
+        ATT_RESIDUAL,
+    ],
+)
+def test_deferred_cutoff_blocks_warn_with_apply_cutoff_true(
+    water_batch, caplog, block_name
+):
+    _, table, _ = water_batch
+    with caplog.at_level(logging.WARNING):
+        with pytest.warns(UserWarning, match="apply_cutoff=False"):
+            _model(block_name, table, apply_cutoff=True)
+    assert any("apply_cutoff=False" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "block_name,apply_cutoff",
+    [
+        ("RealAgnosticResidualNonLinearInteractionBlock", False),
+        (ATT_RESIDUAL, False),
+        (PLAIN_RESIDUAL, True),
+    ],
+)
+def test_no_cutoff_warning_when_configured_safely(
+    water_batch, block_name, apply_cutoff
+):
+    _, table, _ = water_batch
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", UserWarning)
+        _model(block_name, table, apply_cutoff=apply_cutoff)
+    cutoff_warnings = [w for w in caught if "apply_cutoff=False" in str(w.message)]
+    assert not cutoff_warnings
