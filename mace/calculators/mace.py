@@ -318,9 +318,11 @@ class MACECalculator(Calculator):
         self.device = torch_tools.init_device(device)
         self.energy_units_to_eV = energy_units_to_eV
         self.length_units_to_A = length_units_to_A
-        self.z_table = utils.AtomicNumberTable(
-            [int(z) for z in self.models[0].atomic_numbers]
-        )
+        self._model_z_tables = [
+            utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
+            for model in self.models
+        ]
+        self.z_table = self._model_z_tables[0]
         self.charges_key = charges_key
         if self.model_type == "PolarMACE":
             self.density_dim = (
@@ -372,6 +374,18 @@ class MACECalculator(Calculator):
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
         self.default_dtype = default_dtype
+        self._model_head_indices: List[int] = []
+        for idx, model in enumerate(self.models):
+            try:
+                model_heads = list(model.heads)
+            except AttributeError:
+                model_heads = ["Default"]
+            if self.head not in model_heads:
+                raise ValueError(
+                    f"Head {self.head!r} not found in committee model {idx} "
+                    f"heads {model_heads}"
+                )
+            self._model_head_indices.append(model_heads.index(self.head))
 
         if enable_cueq and enable_oeq:
             logging.info(
@@ -743,6 +757,33 @@ class MACECalculator(Calculator):
                 value = batch[key]
                 if torch.is_tensor(value) and torch.is_floating_point(value):
                     batch[key] = value.to(dtype=model_dtype)
+            model_z_table = self._model_z_tables[i]
+            if model_z_table.zs != self.z_table.zs:
+                indices = utils.atomic_numbers_to_indices(
+                    atoms.numbers, z_table=model_z_table
+                )
+                node_attrs = torch_tools.to_one_hot(
+                    torch.tensor(
+                        indices, dtype=torch.long, device=self.device
+                    ).unsqueeze(-1),
+                    num_classes=len(model_z_table),
+                ).to(dtype=model_dtype)
+                if batch["node_attrs"].shape[0] > num_real_atoms:
+                    pad_rows = batch["node_attrs"].shape[0] - num_real_atoms
+                    pad_attrs = torch.zeros(
+                        (pad_rows, len(model_z_table)),
+                        dtype=model_dtype,
+                        device=self.device,
+                    )
+                    pad_attrs[:, 0] = 1.0
+                    node_attrs = torch.cat([node_attrs, pad_attrs], dim=0)
+                if self.use_compile:
+                    node_attrs.requires_grad_(True)
+                batch["node_attrs"] = node_attrs
+            if self._model_head_indices[i] != self._model_head_indices[0]:
+                batch["head"] = torch.full_like(
+                    batch["head"], self._model_head_indices[i]
+                )
             batch_dict = batch.to_dict()
 
             if oeq_compile and compute_stress:

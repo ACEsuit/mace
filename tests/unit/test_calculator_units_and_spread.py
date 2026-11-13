@@ -165,9 +165,7 @@ def test_the_spread_stays_the_spread_under_a_unit_conversion(water):
     )
 
     assert scaled["energy_var"] == pytest.approx(np.var(scaled["energy_comm"]))
-    assert scaled["forces_var"] == pytest.approx(
-        np.var(scaled["forces_comm"], axis=0)
-    )
+    assert scaled["forces_var"] == pytest.approx(np.var(scaled["forces_comm"], axis=0))
 
 
 def test_the_variance_scales_as_the_square_and_the_members_linearly(water):
@@ -181,12 +179,8 @@ def test_the_variance_scales_as_the_square_and_the_members_linearly(water):
         energy_units_to_eV=ENERGY_FACTOR,
     )
 
-    assert scaled["energy_comm"] == pytest.approx(
-        plain["energy_comm"] * ENERGY_FACTOR
-    )
-    assert scaled["energy_var"] == pytest.approx(
-        plain["energy_var"] * ENERGY_FACTOR**2
-    )
+    assert scaled["energy_comm"] == pytest.approx(plain["energy_comm"] * ENERGY_FACTOR)
+    assert scaled["energy_var"] == pytest.approx(plain["energy_var"] * ENERGY_FACTOR**2)
 
 
 def test_a_single_model_reports_no_spread_at_all(water):
@@ -317,9 +311,7 @@ def test_the_stress_variance_scales_as_the_square_of_the_conversion(water):
     """Same rule as the energy and forces above: a variance carries the square,
     and for stress the conversion is itself energy over length cubed."""
     plain = _results(water, [_tiny_model(0), _tiny_model(1)])
-    scaled = _results(
-        water, [_tiny_model(0), _tiny_model(1)], energy_units_to_eV=2.0
-    )
+    scaled = _results(water, [_tiny_model(0), _tiny_model(1)], energy_units_to_eV=2.0)
 
     assert np.allclose(scaled["stress_comm"], plain["stress_comm"] * 2.0)
     assert np.allclose(scaled["stress_var"], plain["stress_var"] * 4.0)
@@ -380,9 +372,9 @@ def test_implemented_properties_is_this_calculator_s_own(water):
     third = _calculator([_tiny_model(0)])
 
     assert first.implemented_properties == second.implemented_properties
-    assert len(third.implemented_properties) < len(first.implemented_properties), (
-        "a single model should advertise fewer properties, not the same list"
-    )
+    assert len(third.implemented_properties) < len(
+        first.implemented_properties
+    ), "a single model should advertise fewer properties, not the same list"
     assert len(set(first.implemented_properties)) == len(
         first.implemented_properties
     ), f"duplicates: {first.implemented_properties}"
@@ -413,3 +405,54 @@ def test_a_single_model_advertises_no_committee_keys(water):
     assert not [
         key for key in calc.implemented_properties if key.endswith(("_comm", "_var"))
     ]
+
+
+def _custom_model(seed: int, atomic_numbers, heads):
+    torch.manual_seed(seed)
+    n_el = len(atomic_numbers)
+    n_heads = len(heads)
+    return modules.ScaleShiftMACE(
+        r_max=4.0,
+        num_bessel=4,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=n_el,
+        hidden_irreps=o3.Irreps("8x0e"),
+        MLP_irreps=o3.Irreps("4x0e"),
+        gate=F.silu,
+        atomic_energies=np.full((n_heads, n_el), -1.0),
+        avg_num_neighbors=4.0,
+        atomic_numbers=atomic_numbers,
+        correlation=2,
+        atomic_inter_scale=[1.0] * n_heads,
+        atomic_inter_shift=[0.0] * n_heads,
+        heads=heads,
+    ).double()
+
+
+def test_committee_with_different_atomic_numbers_and_head_order(water):
+    m1 = _custom_model(0, [1, 8], ["Default", "pt_head"])
+    m2 = _custom_model(1, [1, 6, 8], ["pt_head", "Default"])
+
+    r1 = _results(water, [m1], head="Default")
+    r2 = _results(water, [m2], head="Default")
+    r_comm = _results(water, [m1, m2], head="Default")
+
+    assert r_comm["energy"] == pytest.approx(0.5 * (r1["energy"] + r2["energy"]))
+    np.testing.assert_allclose(r_comm["forces"], 0.5 * (r1["forces"] + r2["forces"]))
+
+
+def test_committee_rejects_member_missing_selected_head():
+    m1 = _custom_model(0, [1, 8], ["Default", "pt_head"])
+    m2 = _custom_model(1, [1, 8], ["other_head"])
+    with pytest.raises(ValueError, match="not found in committee model 1"):
+        MACECalculator(
+            models=[m1, m2], device="cpu", default_dtype="float64", head="Default"
+        )
