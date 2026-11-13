@@ -24,6 +24,7 @@ import torch
 from e3nn import o3
 
 from mace import modules, tools
+from mace.tools.arg_parser import build_default_arg_parser
 from mace.tools.scripts_utils import LRScheduler, get_optimizer, get_params_options
 
 LR = 0.017
@@ -110,6 +111,39 @@ def test_amsgrad_off_stays_off(model):
     optimizer = get_optimizer(args_for(amsgrad=False), options)
 
     assert not any(group["amsgrad"] for group in optimizer.param_groups)
+
+
+def parse_amsgrad(*argv):
+    return build_default_arg_parser().parse_args(["--name", "t", *argv]).amsgrad
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        ((), True),
+        (("--amsgrad",), True),
+        (("--amsgrad", "False"), False),
+        (("--amsgrad=False",), False),
+        (("--amsgrad", "True"), True),
+    ],
+)
+def test_amsgrad_can_be_turned_off_from_the_command_line(argv, expected):
+    """It was a `store_true` switch defaulting to True, so no command line could
+    turn it off. The bare flag of older scripts still has to mean on."""
+    assert parse_amsgrad(*argv) is expected
+
+
+def test_the_bare_amsgrad_flag_does_not_swallow_the_next_one():
+    assert parse_amsgrad("--amsgrad", "--restart_latest") is True
+
+
+@pytest.mark.parametrize("value,expected", [("false", False), ("true", True)])
+def test_amsgrad_can_be_turned_off_from_a_config_file(tmp_path, value, expected):
+    pytest.importorskip("configargparse")
+    config = tmp_path / "config.yaml"
+    config.write_text(f"amsgrad: {value}\n", encoding="utf-8")
+
+    assert parse_amsgrad("--config", str(config)) is expected
 
 
 def test_the_learning_rate_reaches_every_group(model):
