@@ -1,4 +1,4 @@
-"""The kernel backend contract: descriptors, capabilities, protocol, registry.
+"""The kernel backend contract: kernel specifications, capabilities, protocol, registry.
 
 Imports no framework. Everything here is the statement of what an operation is
 and what a backend can do, expressed over strings and numbers, so that the same
@@ -14,7 +14,7 @@ tree does the other way round:
   cannot serve it fails the build loudly.
 * **Dispatch resolves once, at build time.** The frozen tree branches inside
   the interaction blocks on whether an attribute is set, and monkeypatches
-  ``forward`` in three places. Here a descriptor goes in, an op comes out, and
+  ``forward`` in three places. Here a kernel specification goes in, an op comes out, and
   the op is frozen into the module tree.
 * **One canonical weight layout.** The frozen tree has five conversion command
   line tools because each backend stores weights its own way. The layout
@@ -38,20 +38,9 @@ from mace_core.kernels.canonical import (
 )
 from mace_core.kernels.capabilities import (
     BackendCapabilities,
-    UnsupportedDescriptorError,
+    UnsupportedKernelSpecError,
 )
-from mace_core.kernels.descriptors import (
-    CLEBSCH_GORDAN_BASES,
-    ChannelwiseTPConvDescriptor,
-    Descriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
-)
+from mace_core.kernels.paths import ConvolutionPath, channelwise_paths, path_irreps
 from mace_core.kernels.precision import PRECISIONS, Precision
 from mace_core.kernels.protocol import (
     DISPATCHED_OPS,
@@ -68,6 +57,18 @@ from mace_core.kernels.registry import (
     available_backends,
     get_backend,
 )
+from mace_core.kernels.specs import (
+    CLEBSCH_GORDAN_BASES,
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    KernelSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
+)
 
 __all__ = [
     "CANONICAL_LAYOUT",
@@ -82,27 +83,30 @@ __all__ = [
     "SILU_SECOND_MOMENT_SCALE",
     "BackendCapabilities",
     "BackendNotAvailableError",
-    "ChannelwiseTPConvDescriptor",
-    "Descriptor",
+    "ChannelwiseTPConvSpec",
+    "ConvolutionPath",
     "DiscoveredBackend",
     "DuplicateBackendError",
-    "FullyConnectedTPDescriptor",
+    "FullyConnectedTPSpec",
     "InternalWeights",
     "KernelBackend",
-    "LinearDescriptor",
+    "KernelSpec",
+    "LinearSpec",
     "Precision",
-    "RadialBasisDescriptor",
-    "RadialMLPDescriptor",
-    "SegmentReduceDescriptor",
-    "SphericalHarmonicsDescriptor",
-    "SymmetricContractionDescriptor",
-    "UnsupportedDescriptorError",
+    "RadialBasisSpec",
+    "RadialMLPSpec",
+    "SegmentReduceSpec",
+    "SphericalHarmonicsSpec",
+    "SymmetricContractionSpec",
+    "UnsupportedKernelSpecError",
     "available_backends",
     "canonical_weight_shape",
+    "channelwise_paths",
     "exact_silu_second_moment_scale",
     "fully_connected_tp_path_normalization",
     "get_backend",
     "linear_path_normalization",
+    "path_irreps",
     "radial_mlp_initial_bound",
     "radial_mlp_layer_normalization",
     "symmetric_contraction_initial_scale",

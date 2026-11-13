@@ -21,15 +21,15 @@ from mace_core.clebsch_gordan.reduced_basis import (
     reduced_symmetric_tensor_product_basis,
 )
 from mace_core.kernels import (
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
-    UnsupportedDescriptorError,
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
+    UnsupportedKernelSpecError,
 )
 from mace_torch.backends.reference import (
     ReferenceBackend,
@@ -65,8 +65,8 @@ def test_it_declares_every_op_and_a_second_derivative(backend):
 
 
 def test_it_refuses_a_precision_it_did_not_declare(backend):
-    with pytest.raises(UnsupportedDescriptorError, match="does not support"):
-        backend.make_linear(LinearDescriptor(precision="bfloat16"))
+    with pytest.raises(UnsupportedKernelSpecError, match="does not support"):
+        backend.make_linear(LinearSpec(precision="bfloat16"))
 
 
 def test_it_fuses_nothing_and_says_so_rather_than_failing(backend):
@@ -80,19 +80,19 @@ def test_it_fuses_nothing_and_says_so_rather_than_failing(backend):
 # ---------------------------------------------------------------------------
 
 
-def test_the_linear_weight_count_matches_what_the_descriptor_promised(backend):
-    descriptor = LinearDescriptor(
+def test_the_linear_weight_count_matches_what_the_kernel_spec_promised(backend):
+    kernel_spec = LinearSpec(
         irreps_in="4x0e+2x1o", irreps_out="3x0e+2x1o", has_bias=True
     )
-    built = backend.make_linear(descriptor)
-    assert built.weight.numel() + built.bias.numel() == descriptor.weight_numel
+    built = backend.make_linear(kernel_spec)
+    assert built.weight.numel() + built.bias.numel() == kernel_spec.weight_numel
 
 
 def test_the_linear_map_does_not_mix_one_irrep_into_another(backend):
     """The equivariance, stated as the thing it forbids: however the weights are
     set, a 1o input cannot move a 0e output."""
     built = backend.make_linear(
-        LinearDescriptor(irreps_in="2x0e+2x1o", irreps_out="2x0e+2x1o")
+        LinearSpec(irreps_in="2x0e+2x1o", irreps_out="2x0e+2x1o")
     )
     with torch.no_grad():
         built.weight.uniform_(-1, 1)
@@ -106,7 +106,7 @@ def test_the_linear_map_does_not_mix_one_irrep_into_another(backend):
 
 def test_a_bias_lands_only_on_the_scalars(backend):
     built = backend.make_linear(
-        LinearDescriptor(irreps_in="2x0e", irreps_out="2x0e+1x1o", has_bias=True)
+        LinearSpec(irreps_in="2x0e", irreps_out="2x0e+1x1o", has_bias=True)
     )
     with torch.no_grad():
         built.bias.fill_(3.0)
@@ -130,32 +130,35 @@ def chain(backend):
     this test did exactly that and failed for that reason rather than for a
     wrong derivative.
     """
-    harmonics = backend.make_spherical_harmonics(SphericalHarmonicsDescriptor(lmax=1))
+    harmonics = backend.make_spherical_harmonics(SphericalHarmonicsSpec(lmax=1))
     radial = backend.make_radial_basis(
-        RadialBasisDescriptor(kind="bessel", num_basis=8, cutoff=5.0)
-    )
-    convolution = backend.make_channelwise_tp_conv(
-        ChannelwiseTPConvDescriptor(
-            irreps_node="0e+1o", irreps_edge="0e+1o", irreps_out="0e+1o"
-        )
+        RadialBasisSpec(kind="bessel", num_basis=8, cutoff=5.0)
     )
     # One weight per coupling path and channel, read off the built
     # convolution, which is what exposing `num_paths` is for.
     channels = 2
+    convolution = backend.make_channelwise_tp_conv(
+        ChannelwiseTPConvSpec(
+            irreps_node="0e+1o",
+            irreps_edge="0e+1o",
+            irreps_out="0e+1o",
+            num_features=channels,
+        )
+    )
     mlp = backend.make_radial_mlp(
-        RadialMLPDescriptor(channels=(8, 16, convolution.num_paths * channels))
+        RadialMLPSpec(channels=(8, 16, convolution.num_paths * channels))
     )
     mlp.initialize_weights(0)
     contraction = backend.make_symmetric_contraction(
-        SymmetricContractionDescriptor(
-            irreps_in="0e+1o",
+        SymmetricContractionSpec(
+            irreps_in=convolution.kernel_spec.irreps_paths,
             irreps_out="0e",
             correlation=2,
             num_elements=1,
             num_features=2,
         )
     )
-    reduce = backend.make_segment_reduce(SegmentReduceDescriptor())
+    reduce = backend.make_segment_reduce(SegmentReduceSpec())
     with torch.no_grad():
         for parameter in contraction.weights:
             parameter.uniform_(-1, 1)
@@ -165,14 +168,15 @@ def chain(backend):
         lengths = vectors.norm(dim=-1, keepdim=True)
         attributes = harmonics(vectors)
         weights = mlp(radial(lengths)).view(-1, convolution.num_paths, channels)
-        features = torch.zeros(positions.shape[0], channels, 4, dtype=positions.dtype)
-        features[:, :, 0] = 1.0
+        # Grouped: the scalar of every channel first, then the vectors.
+        features = torch.zeros(positions.shape[0], channels * 4, dtype=positions.dtype)
+        features[:, :channels] = 1.0
         messages = convolution(
             features, attributes, weights, sender, receiver, positions.shape[0]
         )
         nodes = torch.zeros(positions.shape[0], dtype=torch.long)
         site = contraction(messages, nodes)
-        return reduce(site.flatten(1), nodes, 1).sum()
+        return reduce(site, nodes, 1).sum()
 
     return energy
 
@@ -223,15 +227,13 @@ def test_the_forces_sum_to_zero(chain):
 
 
 def test_the_linear_weights_round_trip_through_a_fresh_instance(backend):
-    descriptor = LinearDescriptor(
-        irreps_in="4x0e", irreps_out="2x0e+1x1o", has_bias=True
-    )
-    written = backend.make_linear(descriptor)
+    kernel_spec = LinearSpec(irreps_in="4x0e", irreps_out="2x0e+1x1o", has_bias=True)
+    written = backend.make_linear(kernel_spec)
     with torch.no_grad():
         written.weight.uniform_(-1, 1)
         written.bias.uniform_(-1, 1)
     features = torch.randn(3, 4)
-    read = backend.make_linear(descriptor)
+    read = backend.make_linear(kernel_spec)
     read.load_canonical(written.to_canonical())
     assert torch.allclose(read(features), written(features))
 
@@ -245,18 +247,18 @@ RADIAL_MLP_KINDS = ["normalized_silu", "layer_norm_silu"]
 
 def _drawn_mlp(backend, kind, channels=(8, 16, 12), precision="float64"):
     mlp = backend.make_radial_mlp(
-        RadialMLPDescriptor(channels=channels, kind=kind, precision=precision)
+        RadialMLPSpec(channels=channels, kind=kind, precision=precision)
     )
     mlp.initialize_weights(1)
     return mlp
 
 
 @pytest.mark.parametrize("kind", RADIAL_MLP_KINDS)
-def test_the_radial_mlp_holds_the_weights_its_descriptor_counts(backend, kind):
+def test_the_radial_mlp_holds_the_weights_its_kernel_spec_counts(backend, kind):
     mlp = _drawn_mlp(backend, kind, channels=(8, 16, 16, 12))
-    assert sum(p.numel() for p in mlp.parameters()) == mlp.descriptor.weight_numel
+    assert sum(p.numel() for p in mlp.parameters()) == mlp.kernel_spec.weight_numel
     assert sum(t.numel() for t in mlp.to_canonical().values()) == (
-        mlp.descriptor.weight_numel
+        mlp.kernel_spec.weight_numel
     )
 
 
@@ -266,7 +268,7 @@ def test_the_radial_mlp_round_trips_through_a_fresh_instance(backend, kind):
     with torch.no_grad():
         for parameter in written.parameters():
             parameter.uniform_(-1, 1)
-    read = backend.make_radial_mlp(written.descriptor)
+    read = backend.make_radial_mlp(written.kernel_spec)
     read.load_canonical(written.to_canonical())
     radial = torch.randn(5, 8)
     assert torch.equal(read(radial), written(radial))
@@ -308,7 +310,7 @@ def test_the_radial_mlp_compiles_whole_for_every_edge_count(backend, kind):
 
 @pytest.mark.parametrize("kind", RADIAL_MLP_KINDS)
 @pytest.mark.parametrize("precision", ["float32", "float64"])
-def test_the_radial_mlp_holds_its_descriptor_precision(backend, kind, precision):
+def test_the_radial_mlp_holds_its_kernel_spec_precision(backend, kind, precision):
     mlp = _drawn_mlp(backend, kind, precision=precision)
     expected = {"float32": torch.float32, "float64": torch.float64}[precision]
     assert all(p.dtype == expected for p in mlp.parameters())
@@ -339,45 +341,45 @@ def test_the_reference_is_declared_as_an_entry_point_that_resolves():
 
 
 @pytest.mark.parametrize(
-    ("factory", "descriptor", "reason"),
+    ("factory", "kernel_spec", "reason"),
     [
         (
             "make_fully_connected_tp",
-            FullyConnectedTPDescriptor(
+            FullyConnectedTPSpec(
                 irreps_in1="4x0e", irreps_in2="1x1o", irreps_out="4x0e"
             ),
             "only against scalars",
         ),
-        ("make_segment_reduce", SegmentReduceDescriptor(reduction="max"), "'sum'"),
-        ("make_segment_reduce", SegmentReduceDescriptor(reduction="mean"), "'sum'"),
+        ("make_segment_reduce", SegmentReduceSpec(reduction="max"), "'sum'"),
+        ("make_segment_reduce", SegmentReduceSpec(reduction="mean"), "'sum'"),
         (
             "make_radial_basis",
-            RadialBasisDescriptor(kind="gaussian", num_basis=1),
+            RadialBasisSpec(kind="gaussian", num_basis=1),
             "at least two functions",
         ),
     ],
     ids=["skip against a vector", "segment max", "segment mean", "one gaussian"],
 )
 def test_what_the_factory_refuses_supports_refuses_too(
-    backend, factory, descriptor, reason
+    backend, factory, kernel_spec, reason
 ):
     """A build that asks first and builds second must not be told yes and then
     fail. These two shapes used to pass `supports` and raise in the factory.
     A wrong skip connection is a wrong model that still trains, so the unbuilt
     case raises instead of returning something plausible."""
-    assert not backend.capabilities().supports(descriptor)
-    with pytest.raises(UnsupportedDescriptorError, match=reason):
-        getattr(backend, factory)(descriptor)
+    assert not backend.capabilities().supports(kernel_spec)
+    with pytest.raises(UnsupportedKernelSpecError, match=reason):
+        getattr(backend, factory)(kernel_spec)
 
 
 def test_the_contraction_constructor_refuses_a_basis_it_does_not_know(backend):
-    """The descriptor refuses a typo itself, so this needs one forced past it.
+    """The kernel specification refuses a typo itself, so this needs one forced past it.
     The constructor still looks the basis up rather than reading "reduced or
     else full", so nothing reaching it can select the full basis by accident."""
-    descriptor = SymmetricContractionDescriptor(irreps_in="0e+1o", irreps_out="0e")
-    object.__setattr__(descriptor, "basis", "Reduced")
+    kernel_spec = SymmetricContractionSpec(irreps_in="0e+1o", irreps_out="0e")
+    object.__setattr__(kernel_spec, "basis", "Reduced")
     with pytest.raises(ValueError, match="'Reduced'"):
-        ReferenceSymmetricContraction(descriptor)
+        ReferenceSymmetricContraction(kernel_spec)
 
 
 # ---------------------------------------------------------------------------
@@ -395,21 +397,20 @@ def test_the_contraction_builds_every_output_the_layers_ask_for(backend, irreps_
     without complaint and then write into one shared slice instead of adjacent
     ones, which is a model that trains and is wrong.
     """
-    descriptor = SymmetricContractionDescriptor(
+    kernel_spec = SymmetricContractionSpec(
         irreps_in="0e+1o",
         irreps_out=irreps_out,
         correlation=3,
         num_elements=2,
         num_features=4,
     )
-    operation = backend.make_symmetric_contraction(descriptor)
+    operation = backend.make_symmetric_contraction(kernel_spec)
     operation.initialize_weights(3)
-    features = torch.randn(5, 4, Irreps.parse("0e+1o").dimension)
+    features = torch.randn(5, 4 * Irreps.parse("0e+1o").dimension)
     elements = torch.randint(0, 2, (5,))
     assert operation(features, elements).shape == (
         5,
-        4,
-        Irreps.parse(irreps_out).dimension,
+        4 * Irreps.parse(irreps_out).dimension,
     )
 
 
@@ -417,27 +418,27 @@ def test_an_output_irrep_no_body_order_reaches_is_still_built(backend):
     """`2e` is unreachable from `0e+1o` at body order one, so that order's
     basis is empty. Inferring its trailing extent with `-1` cannot work on an
     empty array, and the whole contraction failed to build over it."""
-    descriptor = SymmetricContractionDescriptor(
+    kernel_spec = SymmetricContractionSpec(
         irreps_in="0e+1o",
         irreps_out="2e",
         correlation=2,
         num_elements=1,
         num_features=2,
     )
-    operation = backend.make_symmetric_contraction(descriptor)
+    operation = backend.make_symmetric_contraction(kernel_spec)
     assert operation.weights[0].shape[1] == 0
     assert operation.weights[1].shape[1] > 0
 
 
 def test_the_skip_connection_advertises_the_weights_it_holds(backend):
-    """The descriptor's count is what a capability filter reads and what sizes
+    """The kernel specification's count is what a capability filter reads and what sizes
     a checkpoint, and it used to be whatever the caller passed."""
-    descriptor = FullyConnectedTPDescriptor(
+    kernel_spec = FullyConnectedTPSpec(
         irreps_in1="4x0e+4x1o", irreps_in2="2x0e", irreps_out="4x0e+4x1o"
     )
-    operation = backend.make_fully_connected_tp(descriptor)
-    assert descriptor.weight_numel == operation.weight.numel()
-    assert descriptor.weight_numel == operation.to_canonical()["weight"].numel()
+    operation = backend.make_fully_connected_tp(kernel_spec)
+    assert kernel_spec.weight_numel == operation.weight.numel()
+    assert kernel_spec.weight_numel == operation.to_canonical()["weight"].numel()
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +465,7 @@ def test_a_radial_basis_differentiates_twice_everywhere_it_is_reached(
     closed form put one in.
     """
     operation = backend.make_radial_basis(
-        RadialBasisDescriptor(kind=kind, num_basis=8, cutoff=5.0)
+        RadialBasisSpec(kind=kind, num_basis=8, cutoff=5.0)
     )
     lengths = torch.tensor([[length]], requires_grad=True)
     values = operation(lengths)
@@ -483,13 +484,13 @@ def test_the_chebyshev_basis_is_the_polynomial_it_claims_to_be(backend):
     a checkpoint trained with this basis saw the ``cosh`` branch, so the
     reference has to reproduce it. Compared against torch's own polynomials,
     with the envelope at order five, the legacy command line's default, so
-    the descriptor's ``cutoff_order`` is shown to be read rather than the
+    the kernel specification's ``cutoff_order`` is shown to be read rather than the
     module default of six.
     """
     from mace_torch.backends.radial import polynomial_envelope
 
     operation = backend.make_radial_basis(
-        RadialBasisDescriptor(kind="chebyshev", num_basis=8, cutoff=5.0, cutoff_order=5)
+        RadialBasisSpec(kind="chebyshev", num_basis=8, cutoff=5.0, cutoff_order=5)
     )
     lengths = torch.linspace(0.05, 4.95, 40).reshape(-1, 1)
     orders = torch.arange(1, 9, dtype=lengths.dtype)
@@ -508,44 +509,44 @@ def test_the_contraction_writes_its_paths_in_the_enumerated_order(backend):
     it, since it splits by the counts it wrote itself: what catches it is
     deriving the counts from the basis, the way another backend would.
     """
-    descriptor = SymmetricContractionDescriptor(
+    kernel_spec = SymmetricContractionSpec(
         irreps_in="0e+1o",
         irreps_out="0e+1o",
         correlation=3,
         num_elements=2,
         num_features=4,
     )
-    operation = backend.make_symmetric_contraction(descriptor)
+    operation = backend.make_symmetric_contraction(kernel_spec)
     operation.initialize_weights(5)
 
     derived = [
         int(array.shape[0])
-        for order in range(1, descriptor.correlation + 1)
+        for order in range(1, kernel_spec.correlation + 1)
         for array in reduced_symmetric_tensor_product_basis(
-            descriptor.irreps_in, order, descriptor.irreps_out
+            kernel_spec.irreps_in, order, kernel_spec.irreps_out
         ).values()
     ]
     written = [int(count) for count in operation.to_canonical()["path_counts"]]
     assert written == derived
-    assert sum(written) == descriptor.path_count
+    assert sum(written) == kernel_spec.path_count
 
 
 def test_a_mixed_contraction_round_trips_through_a_fresh_instance(backend):
     """The round trip that matters is into another object, not back into the
     one that wrote the file."""
-    descriptor = SymmetricContractionDescriptor(
+    kernel_spec = SymmetricContractionSpec(
         irreps_in="0e+1o",
         irreps_out="0e+1o",
         correlation=3,
         num_elements=2,
         num_features=4,
     )
-    written = backend.make_symmetric_contraction(descriptor)
+    written = backend.make_symmetric_contraction(kernel_spec)
     written.initialize_weights(7)
-    restored = backend.make_symmetric_contraction(descriptor)
+    restored = backend.make_symmetric_contraction(kernel_spec)
     restored.load_canonical(written.to_canonical())
 
-    features = torch.randn(6, 4, Irreps.parse("0e+1o").dimension)
+    features = torch.randn(6, 4 * Irreps.parse("0e+1o").dimension)
     elements = torch.randint(0, 2, (6,))
     assert torch.equal(written(features, elements), restored(features, elements))
 
@@ -557,11 +558,11 @@ def test_a_mixed_contraction_round_trips_through_a_fresh_instance(backend):
 
 @pytest.mark.parametrize("precision", ["float32", "float64"])
 @pytest.mark.parametrize("kind", ["bessel", "gaussian", "chebyshev"])
-def test_a_radial_basis_computes_in_its_descriptor_precision(backend, precision, kind):
+def test_a_radial_basis_computes_in_its_kernel_spec_precision(backend, precision, kind):
     """Not in the process default, which this file sets to float64. A float32
-    descriptor used to build float64 buffers here and return float64."""
+    kernel specification used to build float64 buffers here and return float64."""
     operation = backend.make_radial_basis(
-        RadialBasisDescriptor(kind=kind, precision=precision)
+        RadialBasisSpec(kind=kind, precision=precision)
     )
     lengths = torch.tensor([[1.5]], dtype=torch.float64)
     assert operation(lengths).dtype == getattr(torch, precision)
@@ -573,9 +574,9 @@ def test_a_radial_basis_computes_in_its_descriptor_precision(backend, precision,
 
 
 @pytest.mark.parametrize("precision", ["float32", "float64"])
-def test_the_harmonics_compute_in_their_descriptor_precision(backend, precision):
+def test_the_harmonics_compute_in_their_kernel_spec_precision(backend, precision):
     operation = backend.make_spherical_harmonics(
-        SphericalHarmonicsDescriptor(lmax=2, precision=precision)
+        SphericalHarmonicsSpec(lmax=2, precision=precision)
     )
     vectors = torch.tensor([[0.3, -0.5, 0.8]], dtype=torch.float64)
     assert operation(vectors).dtype == getattr(torch, precision)
