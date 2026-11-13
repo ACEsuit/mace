@@ -28,7 +28,7 @@ from mace_core.graph import (
     check_layout,
     graph_sample,
 )
-from mace_core.graph.collate import check_trailing_sizes, sample_keys
+from mace_core.graph.collate import sample_keys
 from mace_core.graph.schema import EDGE_LEVEL, FLOAT, NODE_LEVEL, FieldSpec
 from mace_core.neighbors import NeighborList, NeighborListBackend, get_neighborhood
 
@@ -60,8 +60,7 @@ def _as_tensor(value: Any, spec: FieldSpec, float_dtype: torch.dtype) -> torch.T
     return tensor.to(float_dtype if spec.dtype == FLOAT else _FIXED_DTYPES[spec.dtype])
 
 
-def _join(key: str, tensors: list[torch.Tensor], spec: FieldSpec) -> torch.Tensor:
-    check_trailing_sizes(key, [tuple(tensor.shape) for tensor in tensors], spec)
+def _join(tensors: list[torch.Tensor], spec: FieldSpec) -> torch.Tensor:
     if spec.level() in (NODE_LEVEL, EDGE_LEVEL):
         return torch.cat(tensors, dim=0)
     return torch.stack(tensors)
@@ -117,7 +116,7 @@ def collate(
                 offset += count
             batch[key] = torch.cat(shifted, dim=1)
         else:
-            batch[key] = _join(key, tensors, fields[key])
+            batch[key] = _join(tensors, fields[key])
     counts = torch.tensor(node_counts, dtype=torch.int64, device=_HOST)
     graph_ids = torch.arange(len(samples), device=_HOST)
     batch["batch"] = torch.repeat_interleave(graph_ids, counts)
@@ -155,7 +154,6 @@ def collate_targets(
     dtype = _float_dtype(layout)
     batch = {
         key: _join(
-            key,
             [_as_tensor(sample[key], fields[key], dtype) for sample in samples],
             fields[key],
         )

@@ -52,7 +52,8 @@ MATSCIPY = get_neighbor_backend("matscipy")
 
 def _unlabelled(**given):
     """Every name the layout declares, absent unless given."""
-    return {**{name: None for name in (*LAYOUT.inputs, *LAYOUT.targets)}, **given}
+    declared = (*LAYOUT.inputs, *LAYOUT.features, *LAYOUT.targets)
+    return {**{name: None for name in declared}, **given}
 
 
 def _layout(dtype, layout=LAYOUT):
@@ -335,7 +336,7 @@ def test_a_declared_atom_feature_is_concatenated_as_given(dtype):
     layout = graph_layout(
         ELEMENTS,
         cutoff=CUTOFF,
-        features={"tags": "atom"},
+        features={"tags": ("atom", ())},
         inputs=INPUTS,
         targets=TARGETS,
     )
@@ -414,18 +415,18 @@ def test_a_sample_carrying_a_requirement_field_is_refused():
         collate(graphs, layout)
 
 
-def test_a_feature_whose_trailing_sizes_differ_is_named():
+def test_a_feature_of_another_width_than_declared_is_named():
     layout = graph_layout(
         ELEMENTS,
         cutoff=CUTOFF,
-        features={"spin": "atom"},
+        features={"spin": ("atom", (4,))},
         inputs=INPUTS,
         targets=TARGETS,
     )
     graphs = [graph for graph, _ in _samples(STRUCTURES[:2])]
     graphs[0]["spin"] = np.zeros((3, 2))
-    graphs[1]["spin"] = np.zeros((2, 4))
-    with pytest.raises(ValueError, match="'spin' with different trailing sizes"):
+    graphs[1]["spin"] = np.zeros((2, 2))
+    with pytest.raises(GraphValidationError, match="'spin' has shape"):
         collate(graphs, layout)
 
 
