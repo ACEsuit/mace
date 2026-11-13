@@ -319,6 +319,32 @@ atoms.calc = calc
 print(atoms.get_potential_energy())
 ```
 
+#### Optional FP64 total-energy accumulation
+
+For `ScaleShiftMACE` checkpoints, the ASE calculator can accumulate total-energy
+terms in FP64 while retaining the model's output dtype:
+
+```py
+from mace.calculators import MACECalculator
+
+calc = MACECalculator(
+    model_paths="model.model",
+    device="cuda",
+    default_dtype="float32",
+    energy_accumulation_dtype="float64",
+)
+```
+
+The default, `energy_accumulation_dtype=None`, preserves the existing reductions.
+The opt-in policy accumulates atomic reference, embedding-readout (when present),
+and scaled interaction energies per structure in FP64, then casts the total back
+to the original dtype. FP32 model weights, force/stress computation, and the
+other outputs retain their existing behavior; parameter quantization and final
+scalar rounding remain. Direct `ScaleShiftMACE.forward` calls accept the same
+keyword. The option requires a device with FP64 support; MPS is unsupported.
+Models that override `ScaleShiftMACE.forward`, including PolarMACE, are rejected
+by the ASE opt-in path because they define different total-energy expressions.
+
 ### MACE-Polar: Electrostatics foundation models
 
 PolarMACE checkpoints are electrostatics foundation models for molecular chemistry, trained on the OMol25 dataset.
