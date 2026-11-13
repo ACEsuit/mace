@@ -26,13 +26,14 @@ BOUNDARY_ONLY = frozenset({"check_layout", "check_batch_invariants"})
 HOST_VALUES = frozenset({"GraphInfo", "PaddingInfo", "structure_sizes"})
 
 #: The modules allowed to name a batch check: the graph contract itself, and
-#: the collation that produces a batch.
+#: the collation and padding that produce a batch.
 CHECKING_MODULES = frozenset(
     {
         "packages/mace-core/src/mace_core/graph/__init__.py",
         "packages/mace-core/src/mace_core/graph/collate.py",
         "packages/mace-core/src/mace_core/graph/validation.py",
         "packages/mace-torch/src/mace_torch/graph/collate.py",
+        "packages/mace-torch/src/mace_torch/graph/padding.py",
     }
 )
 

@@ -45,7 +45,8 @@ class GraphInfo:
             batch whose edges a device search has not joined yet.
         structure_sizes: Atoms per structure, ``diff(ptr)``, one entry per
             structure, padding included.
-        padding: The real sizes when the batch is padded, ``None`` otherwise.
+        padding: The real sizes, once :func:`~mace_torch.graph.pad_batch` has
+            run, whether or not it padded anything; ``None`` before.
     """
 
     num_graphs: int

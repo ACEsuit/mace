@@ -168,6 +168,7 @@ def build_batch(
     *,
     neighbor_backend: NeighborListBackend,
     device: torch.device | str | None = None,
+    check: bool = True,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], GraphInfo]:
     """Parsed structures to one batched graph dict, its targets and its info.
 
@@ -175,6 +176,7 @@ def build_batch(
     caller resolves it once, with
     :func:`~mace_torch.neighbors.resolve_neighbor_backend` from its
     ``neighbor_list`` section, and passes the same object to every batch.
+    ``check`` is :func:`collate`'s: a caller that pads next turns it off.
 
     Raises:
         SampleError: as :func:`~mace_core.graph.graph_sample` does, or naming
@@ -186,7 +188,9 @@ def build_batch(
         source = f"batch position {index}"
         neighbors = _search(configuration, source, layout, neighbor_backend)
         pairs.append(graph_sample(configuration, neighbors, layout, source=source))
-    graph, info = collate([graph for graph, _ in pairs], layout, device=device)
+    graph, info = collate(
+        [graph for graph, _ in pairs], layout, device=device, check=check
+    )
     targets = collate_targets([targets for _, targets in pairs], layout, device=device)
     return graph, targets, info
 

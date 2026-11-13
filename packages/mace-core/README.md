@@ -36,4 +36,5 @@ What is here so far:
   core `GRAPH_CORE`, the per-run `GraphLayout` of declared inputs, embedding
   features, targets and batch-requirement fields, the `GraphInfo` kept beside a batch,
   `check_layout` and the other checks split by cost, the numpy reference
-  `collate`, and `graph_sample` from a `Configuration`.
+  `collate`, `graph_sample` from a `Configuration`, and the padding policies,
+  budgets and padding structure.
