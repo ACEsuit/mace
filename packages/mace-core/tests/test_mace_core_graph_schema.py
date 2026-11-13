@@ -826,12 +826,33 @@ def test_pbc_given_as_a_numpy_array_is_read():
     assert graph["pbc"].tolist() == [True, True, True]
 
 
-def test_building_a_sample_does_not_modify_the_configuration():
-    structure = _crystal(energy=-2.0)
-    positions, cell = structure.positions.copy(), structure.cell.copy()
-    _sample(structure)
-    np.testing.assert_array_equal(structure.positions, positions)
-    np.testing.assert_array_equal(structure.cell, cell)
+def test_editing_a_sample_in_place_leaves_the_configuration_unchanged():
+    structure = _crystal(
+        energy=-2.0,
+        forces=np.ones((2, 3)),
+        stress=np.ones(6),
+        magmom=np.ones((2, 3)),
+    )
+    before = {
+        "positions": structure.positions.copy(),
+        "cell": structure.cell.copy(),
+        "atomic_numbers": structure.atomic_numbers.copy(),
+        "forces": structure.properties["forces"].copy(),
+        "stress": structure.properties["stress"].copy(),
+        "magmom": structure.properties["magmom"].copy(),
+    }
+    graph, targets = _sample(structure)
+    for array in (*graph.values(), *targets.values()):
+        if isinstance(array, np.ndarray) and array.ndim:
+            array[...] = 7
+    after = {
+        "positions": structure.positions,
+        "cell": structure.cell,
+        "atomic_numbers": structure.atomic_numbers,
+        **{name: structure.properties[name] for name in ("forces", "stress", "magmom")},
+    }
+    for name, value in before.items():
+        np.testing.assert_array_equal(after[name], value, err_msg=name)
 
 
 # --- the numpy reference collation ----------------------------------------------------

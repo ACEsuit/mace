@@ -50,7 +50,8 @@ def graph_sample(
     """One structure's graph and targets.
 
     Args:
-        config: The parsed structure. Not modified.
+        config: The parsed structure. Not modified, and the sample shares no
+            memory with it.
         neighbors: Its neighbour list, searched or stored; ``None`` builds a
             sample without edges, whose batch a device search completes.
         layout: What the run batches.
@@ -172,7 +173,7 @@ def _input_value(
     shape = spec.sample_shape(n_atoms)
     if value is None:
         return np.full(shape, spec.absent_value, dtype=np.float64)
-    array = np.asarray(value, dtype=np.float64)
+    array = np.array(value, dtype=np.float64)
     if array.shape != shape:
         raise SampleError(
             f"{where} has input {name!r} of shape {array.shape}; the layout "
@@ -228,7 +229,7 @@ def _targets(
         shape = spec.sample_shape(n_atoms)
         present = _labelled(config, name, where)
         if present:
-            array = np.asarray(config.properties[name], dtype=np.float64)
+            array = np.array(config.properties[name], dtype=np.float64)
             if array.shape != shape:
                 raise SampleError(
                     f"{where} has label {name!r} of shape {array.shape}; the "
