@@ -72,12 +72,12 @@ error_type = {
     "DipoleRMSE": (
         [
             ("rmse_mu_per_atom", "RMSE MU/atom [mDebye]"),
-            ("rel_rmse_f", "Relative MU RMSE [%]"),
+            ("rel_rmse_mu", "Relative MU RMSE [%]"),
         ],
         [("dipole", "Dipole per atom [Debye]")],
     ),
     "DipoleMAE": (
-        [("mae_mu", "MAE MU [mDebye]"), ("rel_mae_f", "Relative MU MAE [%]")],
+        [("mae_mu", "MAE MU [mDebye]"), ("rel_mae_mu", "Relative MU MAE [%]")],
         [("dipole", "Dipole per atom [Debye]")],
     ),
     "DipolePolarRMSE": (
@@ -134,7 +134,7 @@ class TrainingPlotter:
         self.swa_start = swa_start
         self.plot_interaction_e = plot_interaction_e
 
-    def plot(self, model_epoch: str, model: torch.nn.Module, rank: int) -> None:
+    def plot(self, model_epoch: int, model: torch.nn.Module, rank: int) -> None:
 
         # All ranks process data through model_inference
         train_valid_dict = model_inference(
@@ -190,7 +190,7 @@ class TrainingPlotter:
                         alpha=0.6,
                         label="Stage Two Starts",
                     )
-                stage = "stage_two" if self.swa_start < model_epoch else "stage_one"
+                stage = "stage_two" if model_epoch >= self.swa_start else "stage_one"
             else:
                 stage = "stage_one"
             axsTop[0].legend(loc="best")
@@ -280,7 +280,7 @@ def plot_epoch_dependence(
 
         main_ax.plot(
             valid_data["epoch"],
-            valid_data[key]["mean"] * 1e3,
+            valid_data[key]["mean"] * (1.0 if key.startswith("rel_") else 1e3),
             color=color,
             # `label` is the (key, axis label) pair this loop unpacks two lines
             # above; passing the pair itself gave matplotlib two labels for one
@@ -308,7 +308,7 @@ def plot_epoch_dependence(
 # INFERENCE=========
 
 
-def belongs_to_head(name: str, head: str) -> bool:
+def belongs_to_head(name: str, head: str, dataset_head: Optional[str] = None) -> bool:
     """Whether a data-loader key belongs to `head`.
 
     The two dicts are keyed differently: train and valid are `train_<head>`
@@ -316,6 +316,8 @@ def belongs_to_head(name: str, head: str) -> bool:
     name` substring test mis-assigns overlapping head names, giving every
     H2O point to the H2 head as well.
     """
+    if dataset_head is not None:
+        return dataset_head == head
     return name in (f"train_{head}", f"valid_{head}") or name.startswith(f"{head}_")
 
 
@@ -328,7 +330,7 @@ def plot_inference_from_results(
     plot_interaction_e: bool = False,
 ) -> None:
 
-    for ax, quantity in zip(axes, quantities):
+    for ax, quantity in zip(np.atleast_1d(axes), quantities):
         key, label = quantity
 
         # Store legend handles to avoid duplicates
@@ -342,7 +344,7 @@ def plot_inference_from_results(
             else:
                 fixed_color_train_valid = colors[0]
                 marker = "+"
-            if not belongs_to_head(name, head):
+            if not belongs_to_head(name, head, result.get("head")):
                 continue
 
             # Initialize scatter to None
@@ -402,7 +404,7 @@ def plot_inference_from_results(
 
         # Plot test data (single legend entry per head)
         for name, result in test_dict.items():
-            if not belongs_to_head(name, head):
+            if not belongs_to_head(name, head, result.get("head")):
                 continue
             # Initialize scatter to None to avoid possibly used before assignment
             scatter = None
@@ -489,13 +491,17 @@ def model_inference(
         param.requires_grad = False
 
     results_dict = {}
+    model_heads = getattr(getattr(model, "module", model), "heads", None)
 
     for name in all_data_loaders:
         data_loader = all_data_loaders[name]
         logging.debug(f"Running inference on {name} dataset")
         scatter_metric = InferenceMetric().to(device)
+        head_indices = set()
 
         for batch in data_loader:
+            if model_heads is not None and batch.head is not None:
+                head_indices.update(batch.head.detach().cpu().reshape(-1).tolist())
             batch = batch.to(device)
             batch_dict = batch.to_dict()
             output = model(
@@ -510,8 +516,13 @@ def model_inference(
 
         if distributed:
             torch.distributed.barrier()
+            gathered_heads = [None] * torch.distributed.get_world_size()
+            torch.distributed.all_gather_object(gathered_heads, head_indices)
+            head_indices = set().union(*gathered_heads)
 
         results = scatter_metric.compute()
+        if model_heads is not None and len(head_indices) == 1:
+            results["head"] = model_heads[int(next(iter(head_indices)))]
         results_dict[name] = results
         scatter_metric.reset()
 
@@ -732,10 +743,18 @@ class InferenceMetric(Metric):
             self.pred_dipole_per_atom.append(output["dipole"] / atoms_per_config_3d)
 
             self.n_dipole += filter_nonzero_weight(
-                batch, self.ref_dipole, batch.weight, batch.dipole_weight, "config"
+                batch,
+                self.ref_dipole,
+                batch.weight,
+                batch.dipole_weight,
+                spread_quantity_vector=False,
             )
             filter_nonzero_weight(
-                batch, self.pred_dipole, batch.weight, batch.dipole_weight, "config"
+                batch,
+                self.pred_dipole,
+                batch.weight,
+                batch.dipole_weight,
+                spread_quantity_vector=False,
             )
             filter_nonzero_weight(
                 batch,

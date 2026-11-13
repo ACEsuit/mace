@@ -308,7 +308,7 @@ def train(
                     try:
                         plotter.plot(epoch, model_to_evaluate, rank)
                     except Exception as e:  # pylint: disable=broad-except
-                        logging.debug(f"Plotting failed: {e}")
+                        logging.warning("Plotting failed: %s", e, exc_info=True)
                 valid_loss = (
                     valid_loss_head  # consider only the last head for the checkpoint
                 )
