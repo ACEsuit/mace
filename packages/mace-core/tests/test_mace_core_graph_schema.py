@@ -14,7 +14,6 @@ import numpy as np
 import pytest
 from mace_core.data import Configuration
 from mace_core.graph import (
-    ANY_TRAILING,
     EDGE_KEYS,
     GRAPH_CORE,
     FieldSpec,
@@ -63,7 +62,9 @@ CRYSTAL_CELL = np.array([[2.47, 0.0, 0.0], [0.83, 2.39, 0.0], [0.31, 0.57, 2.61]
 def _properties(layout, given):
     """Every name the layout declares, ``None`` unless given, as a reader
     resolving the run's key specification produces them."""
-    declared = {name: None for name in (*layout.inputs, *layout.targets)}
+    declared = {
+        name: None for name in (*layout.inputs, *layout.features, *layout.targets)
+    }
     return {**declared, **given}
 
 
@@ -172,7 +173,6 @@ def test_the_core_is_the_written_out_contract():
 @pytest.mark.parametrize(
     ("shape", "dtype"),
     [
-        (("n_nodes", ANY_TRAILING, 3), "float"),
         (("n_nodes", -1), "float"),
         (("n_nodes", ""), "float"),
         (("n_nodes",), "float32"),
@@ -265,19 +265,36 @@ def test_a_name_declared_twice_is_refused_whatever_the_order():
 
 
 def test_a_feature_named_like_a_declared_input_is_refused():
-    with pytest.raises(ValueError, match="name of a declared input"):
+    with pytest.raises(ValueError, match="declared twice"):
         graph_layout(
             ELEMENTS,
             cutoff=CUTOFF,
             inputs=[TOTAL_CHARGE],
-            features={"total_charge": "graph"},
+            features={"total_charge": ("graph", ())},
         )
 
 
 @pytest.mark.parametrize("storage", ["atoms", "structure", ""])
 def test_a_misspelled_feature_storage_is_refused(storage):
     with pytest.raises(ValueError, match="use 'atom' or 'graph'"):
-        graph_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": storage})
+        graph_layout(ELEMENTS, cutoff=CUTOFF, features={"spin_state": (storage, ())})
+
+
+@pytest.mark.parametrize(
+    ("value_shape", "message"),
+    [
+        ((0,), "positive integer"),
+        (("width",), "positive integer"),
+        ((-2,), "negative size"),
+    ],
+)
+def test_a_feature_width_that_is_not_a_positive_integer_is_refused(
+    value_shape, message
+):
+    with pytest.raises(ValueError, match=message):
+        graph_layout(
+            ELEMENTS, cutoff=CUTOFF, features={"spin_state": ("atom", value_shape)}
+        )
 
 
 def test_a_layout_carries_only_what_is_declared():
@@ -298,7 +315,7 @@ def test_a_layout_round_trips_through_json():
         heads=("Default", "pbe"),
         float_dtype="float32",
         inputs=[TOTAL_SPIN],
-        features={"spin_state": "atom"},
+        features={"spin_state": ("atom", ()), "phase": ("graph", (4,))},
         targets=[ENERGY, _born_charges()],
         requirement_fields={"pairs": FieldSpec(shape=(2, "n_pairs"), dtype="int64")},
     )
@@ -373,7 +390,7 @@ def test_the_inputs_the_derivative_engine_creates_are_never_batched(name):
     with pytest.raises(ValueError, match="derivative engine"):
         input_field(spec)
     with pytest.raises(ValueError, match="derivative engine"):
-        graph_layout(ELEMENTS, cutoff=CUTOFF, features={name: "atom"})
+        graph_layout(ELEMENTS, cutoff=CUTOFF, features={name: ("atom", (3,))})
     with pytest.raises(ValueError, match="derivative engine"):
         _layout(inputs={name: SCALAR_PER_STRUCTURE})
 
@@ -391,12 +408,10 @@ def test_the_inputs_the_derivative_engine_creates_are_never_batched(name):
         ),
         ("targets", "born", FieldSpec(shape=("n_edges",), dtype="float"), "per atom"),
         ("targets", "born", FieldSpec(shape=("n_graphs",), dtype="int64"), "per atom"),
-        (
-            "targets",
-            "born",
-            FieldSpec(shape=("n_graphs", ANY_TRAILING), dtype="float"),
-            "no fixed shape",
-        ),
+        ("features", "pos", FieldSpec(shape=("n_nodes", 3), dtype="float"), "engine"),
+        ("features", "tag", FieldSpec(shape=("n_edges",), dtype="float"), "per atom"),
+        ("features", "forces", FieldSpec(shape=("n_nodes",), dtype="float"), "stores"),
+        ("features", "tag", FieldSpec(shape=("n_nodes", 0), dtype="float"), "positive"),
     ],
 )
 def test_a_layout_read_back_is_held_to_the_same_declarations(kind, name, spec, message):
@@ -646,13 +661,13 @@ def _featured(features):
 
 
 def test_a_declared_atom_feature_with_the_wrong_rows_is_not_reshaped():
-    layout = _featured({"spin_state": "atom"})
+    layout = _featured({"spin_state": ("atom", ())})
     with pytest.raises(SampleError, match="not reshaped"):
         _sample(_water(layout, spin_state=np.array([0, 1])), layout, edges=False)
 
 
 def test_a_declared_feature_that_is_not_a_real_number_is_refused():
-    layout = _featured({"spin_state": "atom"})
+    layout = _featured({"spin_state": ("atom", ())})
     with pytest.raises(SampleError, match="real number"):
         _sample(
             _water(layout, spin_state=np.array(["up", "down", "up"])),
@@ -663,7 +678,7 @@ def test_a_declared_feature_that_is_not_a_real_number_is_refused():
 
 @pytest.mark.parametrize("value", [np.nan, np.inf])
 def test_a_non_finite_feature_is_refused(value):
-    layout = _featured({"spin_state": "atom"})
+    layout = _featured({"spin_state": ("atom", ())})
     spin_state = np.array([0.0, 1.0, value])
     with pytest.raises(
         SampleError, match="non-finite value in embedding feature 'spin_state'"
@@ -672,13 +687,13 @@ def test_a_non_finite_feature_is_refused(value):
 
 
 def test_a_declared_feature_the_structure_lacks_is_refused():
-    layout = _featured({"spin_state": "atom"})
+    layout = _featured({"spin_state": ("atom", ())})
     with pytest.raises(SampleError, match="cannot be made up"):
         _sample(_water(layout), layout, edges=False)
 
 
 def test_a_declared_feature_is_batched_by_its_storage():
-    layout = _featured({"spin_state": "atom", "phase": "graph"})
+    layout = _featured({"spin_state": ("atom", ()), "phase": ("graph", ())})
     graph, _, _ = _batch(
         _water(layout, spin_state=np.array([0, 1, 1]), phase=3.0),
         _crystal(layout, spin_state=np.array([2, 2]), phase=4.0),
@@ -689,22 +704,20 @@ def test_a_declared_feature_is_batched_by_its_storage():
 
 
 @pytest.mark.parametrize(
-    ("storage", "first", "second"),
+    ("storage", "value_shape", "value"),
     [
-        ("atom", np.zeros((3, 4)), np.zeros((2, 5))),
-        ("graph", np.zeros(2), np.zeros(3)),
+        ("atom", (4,), np.zeros((3, 5))),
+        ("atom", (), np.zeros((3, 1))),
+        ("graph", (), np.zeros(2)),
+        ("graph", (2,), np.zeros(3)),
     ],
 )
-def test_a_feature_whose_trailing_sizes_differ_between_samples_is_named(
-    storage, first, second
+def test_a_feature_of_another_width_than_declared_is_refused_per_structure(
+    storage, value_shape, value
 ):
-    layout = _featured({"spin_state": storage})
-    with pytest.raises(ValueError, match="'spin_state' with different trailing sizes"):
-        _batch(
-            _water(layout, spin_state=first),
-            _crystal(layout, spin_state=second),
-            layout=layout,
-        )
+    layout = _featured({"spin_state": (storage, value_shape)})
+    with pytest.raises(SampleError, match="layout declares"):
+        _sample(_water(layout, spin_state=value), layout, edges=False)
 
 
 def test_a_sample_without_a_neighbour_list_has_no_edge_keys():
@@ -1044,8 +1057,8 @@ def test_the_optional_core_keys_may_be_absent_or_present(batch):
     check_layout(graph, LAYOUT, info)
 
 
-def test_an_embedding_feature_is_checked_on_its_leading_dimension_only():
-    layout = _featured({"spin_state": "atom"})
+def test_an_embedding_feature_is_checked_on_its_declared_shape():
+    layout = _featured({"spin_state": ("atom", (4,))})
     graph, _, info = _batch(
         _water(layout, spin_state=np.zeros((3, 4))),
         _crystal(layout, spin_state=np.zeros((2, 4))),
@@ -1053,9 +1066,10 @@ def test_an_embedding_feature_is_checked_on_its_leading_dimension_only():
     )
     assert graph["spin_state"].shape == (5, 4)
     check_layout(graph, layout, info)
-    graph["spin_state"] = np.zeros((4, 4))
-    with pytest.raises(GraphValidationError, match="'spin_state' has shape"):
-        check_layout(graph, layout, info)
+    for shape in [(4, 4), (5, 3)]:
+        graph["spin_state"] = np.zeros(shape)
+        with pytest.raises(GraphValidationError, match="'spin_state' has shape"):
+            check_layout(graph, layout, info)
 
 
 # --- batch-requirement fields ---------------------------------------------------------

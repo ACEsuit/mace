@@ -26,13 +26,7 @@ import numpy as np
 
 from mace_core.data.configuration import Configuration
 from mace_core.graph.layout import STRUCTURE_WEIGHT, GraphLayout
-from mace_core.graph.schema import (
-    ANY_TRAILING,
-    NODE_LEVEL,
-    FieldSpec,
-    presence_key,
-    weight_key,
-)
+from mace_core.graph.schema import FieldSpec, presence_key, weight_key
 from mace_core.neighbors.geometry import graph_cell
 from mace_core.neighbors.neighborhood import NeighborList, checked_edges
 
@@ -111,10 +105,10 @@ def graph_sample(
         graph.update(_edges(neighbors, n_atoms, pbc, cell, layout.cutoff, where))
     for name, spec in layout.inputs.items():
         value = config.properties[name] if _labelled(config, name, where) else None
-        if spec.shape[-1] == ANY_TRAILING:
-            graph[name] = _feature_value(name, spec, value, n_atoms, where)
-        else:
-            graph[name] = _input_value(name, spec, value, n_atoms, where)
+        graph[name] = _input_value(name, spec, value, n_atoms, where)
+    for name, spec in layout.features.items():
+        value = config.properties[name] if _labelled(config, name, where) else None
+        graph[name] = _feature_value(name, spec, value, n_atoms, where)
     return graph, _targets(config, layout, n_atoms, pbc, cell, where)
 
 
@@ -206,11 +200,11 @@ def _feature_value(
             f"feature is a real number."
         )
     array = array.astype(np.float64)
-    if spec.shape[0] == NODE_LEVEL and (array.ndim == 0 or array.shape[0] != n_atoms):
+    shape = spec.sample_shape(n_atoms)
+    if array.shape != shape:
         raise SampleError(
-            f"{where} has feature {name!r}, declared per atom, of shape "
-            f"{array.shape}; its first dimension must be the {n_atoms} atoms. It "
-            f"is not reshaped."
+            f"{where} has embedding feature {name!r} of shape {array.shape}; the "
+            f"layout declares {shape}. It is not reshaped."
         )
     if not np.isfinite(array).all():
         raise SampleError(

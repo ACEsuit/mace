@@ -17,8 +17,7 @@ padding slots of a padded batch, and every key using one symbol must agree on
 its size. ``n_graphs`` is defined by ``ptr`` alone (``len(ptr) - 1``), which is
 why ``ptr`` has the shape symbol ``n_graphs_plus_one``. Any other name is a
 dimension a batch requirement declares for itself, bound by the first key that
-uses it. :data:`ANY_TRAILING` closes a shape whose trailing sizes are the
-data's own, as for an embedding feature.
+uses it. Every other entry is a fixed size.
 
 The dict holds arrays only. Counts, per-structure sizes and the padding live
 beside it, in :class:`~mace_core.graph.info.GraphInfo`.
@@ -35,7 +34,6 @@ from pydantic import model_validator
 from mace_core.config.base import ConfigSection
 
 __all__ = [
-    "ANY_TRAILING",
     "EDGE_KEYS",
     "EDGE_LEVEL",
     "FIXED_DIMENSIONS",
@@ -52,9 +50,6 @@ __all__ = [
 
 #: The run's floating dtype, which the layout names.
 FLOAT = "float"
-
-#: The last entry of a shape whose trailing sizes are the data's own.
-ANY_TRAILING = "..."
 
 #: The suffix of a target's presence flag.
 PRESENCE_SUFFIX = "_present"
@@ -78,8 +73,7 @@ class FieldSpec(ConfigSection):
     """One key of the flat graph dict, or of the targets beside it.
 
     Attributes:
-        shape: Symbolic dimensions and fixed sizes, possibly closed by
-            :data:`ANY_TRAILING`.
+        shape: Symbolic dimensions and fixed sizes.
         dtype: ``"float"`` for the run's floating dtype, ``"int64"`` or
             ``"bool"``.
         required: Whether every graph carries the key.
@@ -94,14 +88,9 @@ class FieldSpec(ConfigSection):
 
     @model_validator(mode="after")
     def _validate(self) -> FieldSpec:
-        for position, dimension in enumerate(self.shape):
+        for dimension in self.shape:
             if isinstance(dimension, int) and dimension < 0:
                 raise ValueError(f"shape {self.shape} has a negative size.")
-            if dimension == ANY_TRAILING and position != len(self.shape) - 1:
-                raise ValueError(
-                    f"shape {self.shape} has {ANY_TRAILING!r} before its end; it "
-                    f"only closes a shape."
-                )
             if isinstance(dimension, str) and not dimension:
                 raise ValueError(f"shape {self.shape} has an unnamed dimension.")
         return self

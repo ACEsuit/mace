@@ -15,7 +15,6 @@ from mace_core.graph.collate import COLLATED_KEYS, collate, collate_targets
 from mace_core.graph.info import GraphInfo, PaddingInfo
 from mace_core.graph.layout import FloatDtype, GraphLayout, graph_layout
 from mace_core.graph.schema import (
-    ANY_TRAILING,
     EDGE_KEYS,
     FLOAT,
     GRAPH_CORE,
@@ -30,7 +29,6 @@ from mace_core.graph.validation import (
 )
 
 __all__ = [
-    "ANY_TRAILING",
     "COLLATED_KEYS",
     "EDGE_KEYS",
     "FLOAT",

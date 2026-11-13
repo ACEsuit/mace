@@ -34,7 +34,6 @@ import numpy as np
 from mace_core.graph.info import GraphInfo
 from mace_core.graph.layout import GraphLayout
 from mace_core.graph.schema import (
-    ANY_TRAILING,
     EDGE_LEVEL,
     FLOAT,
     NODE_LEVEL,
@@ -44,7 +43,6 @@ from mace_core.graph.validation import check_batch_invariants, check_layout
 
 __all__ = [
     "COLLATED_KEYS",
-    "check_trailing_sizes",
     "collate",
     "collate_targets",
     "sample_keys",
@@ -101,29 +99,7 @@ def sample_keys(
     return keys
 
 
-def check_trailing_sizes(
-    key: str, shapes: Sequence[tuple[int, ...]], spec: FieldSpec
-) -> None:
-    """Refuse a feature whose trailing sizes differ between samples, naming
-    it, before a framework's concatenate fails without naming anything.
-
-    Raises:
-        ValueError: if ``spec`` ends in :data:`ANY_TRAILING` and two of
-            ``shapes`` differ past the leading node or edge dimension.
-    """
-    if spec.shape[-1] != ANY_TRAILING:
-        return
-    leading = 1 if spec.level() in (NODE_LEVEL, EDGE_LEVEL) else 0
-    trailing = {tuple(shape[leading:]) for shape in shapes}
-    if len(trailing) > 1:
-        raise ValueError(
-            f"the samples carry {key!r} with different trailing sizes "
-            f"{sorted(trailing)}. A feature has one shape across a batch."
-        )
-
-
 def _join(key: str, values: list[np.ndarray], spec: FieldSpec) -> np.ndarray:
-    check_trailing_sizes(key, [np.shape(value) for value in values], spec)
     if spec.level() in (NODE_LEVEL, EDGE_LEVEL):
         return np.concatenate(values, axis=0)
     return np.stack(values)
@@ -159,8 +135,7 @@ def collate(
             index arrays.
 
     Raises:
-        ValueError: as :func:`sample_keys` does, or for a feature whose
-            trailing sizes differ between samples.
+        ValueError: as :func:`sample_keys` does.
     """
     fields = layout.graph_fields()
     keys = sample_keys(samples, fields, layout.requirement_fields)

@@ -5,7 +5,8 @@ the layout declares, and nothing else: the inputs and embedding features the
 model reads, and the fields its batch requirements build. The targets beside
 it are the observables the trainer declares, each with a label, a presence
 flag and a loss weight. A model that reads no magnetic moment gets none in its
-batch.
+batch. An embedding feature's width is the model's, since its embedder is
+built for it.
 
 A field's level comes from ``per_atom`` and its trailing shape from the irreps,
 so a property declared in config becomes a batched, padded field with no new
@@ -31,7 +32,6 @@ from mace_core.data.configuration import DEFAULT_HEAD
 from mace_core.elements.default_keys import STORAGES, DefaultKeys, Storage
 from mace_core.elements.number_table import AtomicNumberTable
 from mace_core.graph.schema import (
-    ANY_TRAILING,
     FLOAT,
     GRAPH_CORE,
     GRAPH_LEVEL,
@@ -150,19 +150,22 @@ def target_field(spec: ObservableSpec) -> FieldSpec:
     return _declared(spec.per_atom, _value_shape(spec.name, spec.irreps), 0.0)
 
 
-def feature_field(storage: Storage) -> FieldSpec:
+def feature_field(storage: Storage, value_shape: Sequence[int]) -> FieldSpec:
     """The batched field of an embedding feature, stored per ``atom`` or per
-    ``graph``. Its trailing sizes are the data's own; it is floating.
+    ``graph``, with the shape of one value the model's embedder reads: ``()``
+    for one number, such as a class label, ``(in_dim,)`` for a vector. It is
+    floating.
 
     Raises:
-        ValueError: for a storage other than ``atom`` or ``graph``.
+        ValueError: for a storage other than ``atom`` or ``graph``, or a size
+            that is not a non-negative integer.
     """
     if storage not in STORAGES:
         raise ValueError(
             f"a feature is declared per {storage!r}; use 'atom' or 'graph'."
         )
     level = NODE_LEVEL if storage == "atom" else GRAPH_LEVEL
-    return FieldSpec(shape=(level, ANY_TRAILING), dtype=FLOAT)
+    return FieldSpec(shape=(level, *value_shape), dtype=FLOAT)
 
 
 def _check_name(name: str, kind: str) -> None:
@@ -190,7 +193,7 @@ def _check_declared(name: str, spec: FieldSpec, kind: str) -> None:
             f"structure."
         )
     stored = _CONVENTION_FIELDS.get(name)
-    if stored is not None and spec.shape[-1] != ANY_TRAILING and spec.shape != stored:
+    if stored is not None and spec.shape != stored:
         raise ValueError(
             f"{kind} {name!r} is declared with shape {spec.shape}; the data "
             f"stores it as {stored}. Declare it with per_atom="
@@ -212,7 +215,10 @@ class GraphLayout(ConfigSection):
         cutoff: The neighbour cutoff, Angstrom. A list searched with another
             cutoff is refused.
         float_dtype: The floating dtype every ``"float"`` field carries.
-        inputs: The model's declared inputs and embedding features, by name.
+        inputs: The model's declared inputs, by name. A structure without a
+            value for one carries its absent value.
+        features: The model's embedding features, by name. Every structure
+            carries a value for each.
         targets: The trainer's declared labels, by name. Each carries a
             presence flag and a loss weight beside it.
         requirement_fields: The fields the model's batch requirements build
@@ -225,6 +231,7 @@ class GraphLayout(ConfigSection):
     cutoff: float = Field(gt=0, allow_inf_nan=False, strict=True)
     float_dtype: FloatDtype = "float64"
     inputs: dict[str, FieldSpec] = Field(default_factory=dict)
+    features: dict[str, FieldSpec] = Field(default_factory=dict)
     targets: dict[str, FieldSpec] = Field(default_factory=dict)
     requirement_fields: dict[str, FieldSpec] = Field(default_factory=dict)
 
@@ -262,24 +269,28 @@ class GraphLayout(ConfigSection):
             )
         for kind, fields in (
             ("input", self.inputs),
+            ("feature", self.features),
             ("target", self.targets),
             ("batch-requirement field", self.requirement_fields),
         ):
             for name in fields:
                 _check_name(name, kind)
-        for name, spec in self.inputs.items():
-            if name in ENGINE_INPUTS:
+        for kind, fields in (("input", self.inputs), ("feature", self.features)):
+            for name, spec in fields.items():
+                if name in ENGINE_INPUTS:
+                    raise ValueError(
+                        f"{kind} {name!r} is created by the derivative engine, "
+                        f"not batched. Leave it out of the layout."
+                    )
+                _check_declared(name, spec, kind)
+        for name, spec in self.features.items():
+            if not all(isinstance(size, int) and size > 0 for size in spec.shape[1:]):
                 raise ValueError(
-                    f"input {name!r} is created by the derivative engine, not "
-                    f"batched. Leave it out of the layout."
+                    f"feature {name!r} is declared with shape {spec.shape}; past "
+                    f"its level each size is a positive integer, the width the "
+                    f"model's embedder reads."
                 )
-            _check_declared(name, spec, "input")
         for name, spec in self.targets.items():
-            if spec.shape[-1] == ANY_TRAILING:
-                raise ValueError(
-                    f"target {name!r} has no fixed shape; a label is declared "
-                    f"with irreps."
-                )
             _check_declared(name, spec, "target")
         if STRUCTURE_WEIGHT in self.targets:
             raise ValueError(
@@ -287,22 +298,27 @@ class GraphLayout(ConfigSection):
                 f"whole structure, which the targets already carry. Give it a "
                 f"name of its own."
             )
-        for first, second in (
-            (self.inputs, self.targets),
-            (self.inputs, self.requirement_fields),
-            (self.targets, self.requirement_fields),
-        ):
-            shared = sorted(set(first) & set(second))
-            if shared:
-                raise ValueError(
-                    f"{shared} are declared twice, as two of an input, a target "
-                    f"and a batch-requirement field. Each name is one field."
-                )
+        groups = (self.inputs, self.features, self.targets, self.requirement_fields)
+        for position, first in enumerate(groups):
+            for second in groups[position + 1 :]:
+                shared = sorted(set(first) & set(second))
+                if shared:
+                    raise ValueError(
+                        f"{shared} are declared twice, as two of an input, a "
+                        f"feature, a target and a batch-requirement field. Each "
+                        f"name is one field."
+                    )
         return self
 
     def graph_fields(self) -> dict[str, FieldSpec]:
-        """Every key the graph may carry: core, inputs and requirement fields."""
-        return {**GRAPH_CORE, **self.inputs, **self.requirement_fields}
+        """Every key the graph may carry: core, inputs, features and requirement
+        fields."""
+        return {
+            **GRAPH_CORE,
+            **self.inputs,
+            **self.features,
+            **self.requirement_fields,
+        }
 
     def target_fields(self) -> dict[str, FieldSpec]:
         """Every key of the targets: each label, its presence flag and its
@@ -335,7 +351,7 @@ def graph_layout(
     heads: Sequence[str] = (DEFAULT_HEAD,),
     float_dtype: FloatDtype = "float64",
     inputs: Iterable[InputSpec] = (),
-    features: Mapping[str, Storage] | None = None,
+    features: Mapping[str, tuple[Storage, Sequence[int]]] | None = None,
     targets: Iterable[ObservableSpec] = (),
     requirement_fields: Mapping[str, FieldSpec] | None = None,
 ) -> GraphLayout:
@@ -347,7 +363,9 @@ def graph_layout(
         heads: The model's head names, in order.
         float_dtype: The run's floating dtype.
         inputs: The inputs the model reads.
-        features: Embedding features, by name, stored per ``atom`` or ``graph``.
+        features: Embedding features, by name: where each is stored, ``atom``
+            or ``graph``, and the shape of one value its embedder reads, such
+            as ``("atom", ())`` for a class label per atom.
         targets: The observables the trainer fits.
         requirement_fields: The fields the model's batch requirements build.
 
@@ -359,20 +377,16 @@ def graph_layout(
     features = dict(features or {})
     _unique([spec.name for spec in inputs], "input")
     _unique([spec.name for spec in targets], "target")
-    declared_inputs = {spec.name: input_field(spec) for spec in inputs}
-    for name, storage in features.items():
-        if name in declared_inputs:
-            raise ValueError(
-                f"feature {name!r} has the name of a declared input. A feature "
-                f"cannot stand in for an input; give it a name of its own."
-            )
-        declared_inputs[name] = feature_field(storage)
     return GraphLayout(
         atomic_numbers=tuple(atomic_numbers),
         heads=tuple(heads),
         cutoff=cutoff,
         float_dtype=float_dtype,
-        inputs=declared_inputs,
+        inputs={spec.name: input_field(spec) for spec in inputs},
+        features={
+            name: feature_field(storage, value_shape)
+            for name, (storage, value_shape) in features.items()
+        },
         targets={spec.name: target_field(spec) for spec in targets},
         requirement_fields=dict(requirement_fields or {}),
     )

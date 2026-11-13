@@ -31,7 +31,6 @@ import numpy as np
 from mace_core.graph.info import GraphInfo
 from mace_core.graph.layout import GraphLayout
 from mace_core.graph.schema import (
-    ANY_TRAILING,
     EDGE_KEYS,
     FIXED_DIMENSIONS,
     FLOAT,
@@ -68,32 +67,26 @@ def _expected_signature(
     sizes: Mapping[str, int],
     float_dtype: str,
 ) -> tuple[tuple[str, tuple[int, ...], str], ...]:
-    """The signature of a batch with these keys and sizes, sorted by key.
-    A shape closed by :data:`ANY_TRAILING` keeps only its leading dimension."""
+    """The signature of a batch with these keys and sizes, sorted by key."""
     signature = []
     for key in sorted(keys):
         spec = fields[key]
-        shape = []
-        for dimension in spec.shape:
-            if dimension == ANY_TRAILING:
-                break
-            shape.append(dimension if isinstance(dimension, int) else sizes[dimension])
+        shape = tuple(
+            dimension if isinstance(dimension, int) else sizes[dimension]
+            for dimension in spec.shape
+        )
         dtype = float_dtype if spec.dtype == FLOAT else spec.dtype
-        signature.append((key, tuple(shape), dtype))
+        signature.append((key, shape, dtype))
     return tuple(signature)
 
 
 def _actual_signature(
-    graph: Mapping[str, Any], fields: Mapping[str, FieldSpec]
+    graph: Mapping[str, Any],
 ) -> tuple[tuple[str, tuple[int, ...], str], ...]:
-    signature = []
-    for key in sorted(graph):
-        shape = _shape(graph[key]) or ()
-        spec = fields.get(key)
-        if spec is not None and spec.shape and spec.shape[-1] == ANY_TRAILING:
-            shape = shape[: len(spec.shape) - 1]
-        signature.append((key, shape, _dtype_name(graph[key])))
-    return tuple(signature)
+    return tuple(
+        (key, _shape(graph[key]) or (), _dtype_name(graph[key]))
+        for key in sorted(graph)
+    )
 
 
 def check_layout(
@@ -118,7 +111,7 @@ def check_layout(
         _explain_keys(fields, keys, built)
     sizes = _bound_sizes(graph, fields)
     expected = _expected_signature(fields, keys, sizes, layout.float_dtype)
-    if _actual_signature(graph, fields) != expected:
+    if _actual_signature(graph) != expected:
         _explain_signature(graph, fields, expected)
     if (info.num_graphs, info.num_nodes, info.num_edges) != (
         sizes["n_graphs"],
@@ -179,18 +172,13 @@ def _bound_sizes(
         if key not in graph:
             continue
         shape = _shape(graph[key])
-        closed = spec.shape[-1] == ANY_TRAILING
-        rank = len(spec.shape) - 1 if closed else len(spec.shape)
-        if shape is None or (len(shape) < rank if closed else len(shape) != rank):
+        if shape is None or len(shape) != len(spec.shape):
             raise GraphValidationError(
                 f"{key!r} has shape {list(shape or ())}; the layout gives "
                 f"{list(spec.shape)}."
             )
-        for size, dimension in zip(shape, spec.shape, strict=False):
-            if isinstance(dimension, str) and dimension not in (
-                *FIXED_DIMENSIONS,
-                ANY_TRAILING,
-            ):
+        for size, dimension in zip(shape, spec.shape, strict=True):
+            if isinstance(dimension, str) and dimension not in FIXED_DIMENSIONS:
                 sizes.setdefault(dimension, size)
     return sizes
 
@@ -218,9 +206,7 @@ def _explain_signature(
     fields: Mapping[str, FieldSpec],
     expected: tuple[tuple[str, tuple[int, ...], str], ...],
 ) -> None:
-    actual = {
-        key: (shape, dtype) for key, shape, dtype in _actual_signature(graph, fields)
-    }
+    actual = {key: (shape, dtype) for key, shape, dtype in _actual_signature(graph)}
     for key, shape, dtype in expected:
         have_shape, have_dtype = actual[key]
         if have_shape != shape:
