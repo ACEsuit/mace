@@ -495,6 +495,23 @@ def test_a_batch_without_edges_pads_nodes_and_graphs_only(dtype):
     check_batch_invariants(data, padded_info)
 
 
+def test_a_batch_without_edges_keeps_a_padding_atom_for_the_edges_a_search_joins(
+    dtype,
+):
+    graph, _, info = _collated(_structures(), LAYOUT, edges=False)
+    policy = FixedPadding(
+        nodes_budget=info.num_nodes, edges_budget=64, graphs_budget=info.num_graphs
+    )
+    data, padded_info = pad_batch(graph, info, policy, LAYOUT)
+    assert (padded_info.num_nodes, padded_info.num_edges, padded_info.num_graphs) == (
+        info.num_nodes + 1,
+        0,
+        info.num_graphs + 1,
+    )
+    assert padded_info.structure_sizes[-1] == 1
+    check_layout(data, LAYOUT, padded_info)
+
+
 def test_a_batch_missing_a_declared_feature_is_refused_by_name():
     layout = _layout(features={"spin_state": ("atom", ())})
     graph, _, info = _collated(_structures(), LAYOUT)

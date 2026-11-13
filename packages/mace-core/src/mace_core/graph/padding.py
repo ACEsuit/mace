@@ -148,6 +148,11 @@ def padding_budget(
     structure whenever it has a padding atom or edge, and a padding atom
     whenever it has a padding edge, since a padding edge is a self loop on one.
 
+    A batch without edges is held to the fixed edge budget all the same. A
+    device search joins its real edges and then its padding edges after the
+    batch is padded, and it can add neither an atom nor a structure, so the
+    padding atom and structure those edges loop on are reserved here.
+
     Raises:
         PaddingOverflowError: for a fixed policy with ``on_overflow="error"``
             that the batch does not fit. The message names each size.
