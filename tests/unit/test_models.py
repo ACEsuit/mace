@@ -288,6 +288,10 @@ def test_energy_dipole_mace():
     assert output["dipole"][0].unsqueeze(0).shape == atomic_data.dipole.shape
     # test energy is invariant
     assert torch.allclose(output["energy"][0], output["energy"][1])
+    # test node energies sum to the total energy per graph
+    node_energy_per_graph = torch.zeros_like(output["energy"])
+    node_energy_per_graph.index_add_(0, batch.batch, output["node_energy"])
+    assert torch.allclose(node_energy_per_graph, output["energy"])
     # test equivariance of output dipoles
     assert np.allclose(
         np.array(rot @ output["dipole"][0].detach().numpy()),
