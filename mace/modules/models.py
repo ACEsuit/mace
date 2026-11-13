@@ -4,6 +4,8 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import logging
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -28,6 +30,8 @@ from .blocks import (
     NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
+    RealAgnosticAttResidualInteractionBlock,
+    RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
 from .utils import (
@@ -100,6 +104,24 @@ class MACE(torch.nn.Module):
         self.lammps_mliap = lammps_mliap
         self.apply_cutoff = apply_cutoff
         self.edge_irreps = edge_irreps
+        deferred_cutoff_blocks = (
+            RealAgnosticResidualNonLinearInteractionBlock,
+            RealAgnosticAttResidualInteractionBlock,
+        )
+        if apply_cutoff and any(
+            isinstance(cls, type) and issubclass(cls, deferred_cutoff_blocks)
+            for cls in (interaction_cls, interaction_cls_first)
+        ):
+            msg = (
+                "RealAgnosticResidualNonLinearInteractionBlock and "
+                "RealAgnosticAttResidualInteractionBlock append node features "
+                "before the edge MLP; with apply_cutoff=True the envelope is "
+                "folded into radial features and not applied after the MLP, "
+                "making energies discontinuous at r_max. Pass apply_cutoff=False "
+                "(--apply_cutoff False) for continuous energies."
+            )
+            warnings.warn(msg, UserWarning, stacklevel=2)
+            logging.warning(msg)
         self.use_reduced_cg = use_reduced_cg
         self.use_agnostic_product = use_agnostic_product
         self.use_so3 = use_so3
