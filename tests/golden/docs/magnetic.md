@@ -26,7 +26,7 @@ atoms, identical positions, identical |m|, so every difference between their
 two reference entries is the spin state. A rewrite that dropped the moment
 from the message passing would make them produce one number while every
 non-magnetic golden still passed. The measured splitting on the committed
-anchor is 9.5e-2 eV.
+anchor is 7.1e-2 eV.
 
 Three constraints on the moments, each stated in `make_fixtures.py` next to
 the builders and each asserted by a test rather than trusted:
@@ -60,7 +60,7 @@ pin cannot come out of it. The same reference is then checked against the
 calculator and against `mace_eval_configs --return_magforces`, which is the
 only way a user gets magnetic forces without writing python.
 
-## The SCF reference, and why it covers three fixtures and not five
+## The SCF reference, and why it covers two fixtures and not five
 
 `MagneticSCFMACE` relaxes the moments with LBFGS and returns wherever it
 stopped. The golden pins that state — `equilibrated_magmom`, the energy and
@@ -69,22 +69,24 @@ because they describe how the optimiser got there rather than where it is.
 
 Whether "wherever it stopped" *is* a fixed point is a measurement, and it was
 made: perturb the initial moments by 1e-9 and see what comes back. On
-`mag_fe_atom` and the two dimers the answer moves by ~1e-9 — the relaxation
-tracks its input. On `mag_fe3_canted` and `mag_feo_cluster` it moves by 1e-5,
-four orders of magnitude of amplification, so two runs of the same code on
-two machines land further apart than the tolerance row allows. Those two are
-excluded, and a named test re-measures the amplification so the exclusion
-cannot quietly become wrong.
+`mag_fe_atom` and the antiferromagnetic dimer the answer moves by 2e-9 to
+3e-9, so the relaxation tracks its input. On `mag_fe3_canted` and
+`mag_feo_cluster` it moves by 5e-7 and 3e-5, an amplification of 470 and
+26000, so two runs of the same code on two machines need not land in the
+same place. On the ferromagnetic dimer the relaxation does not stop at all
+(below). Those three are excluded, and a named test re-measures them so the
+exclusion cannot quietly become wrong.
 
 Two related facts are pinned rather than fixed, because both are properties
 of the current implementation that a rewrite has to reproduce or deliberately
 change: `n_scf_step` had to be raised well above the wrapper's default of 10,
 since at 10 every structure stops because the budget ran out (measured: the
 result is identical at 200 and 500, so the pinned state no longer depends on
-the budget); and nothing constrains |m|, so the ferromagnetic dimer relaxes to
-4.3 and 6.5 µB against an `m_max` of 4.5 — the magnetic descriptor uses
-*solid* harmonics of `m`, which grow as |m|^l, so the energy is unbounded
-below in |m| and confinement can only come from training.
+the budget); and nothing constrains |m|, so the ferromagnetic dimer's moments
+pass 1e11 µB within ten closure evaluations, against an `m_max` of 4.5, and
+then overflow. The magnetic descriptor uses *solid* harmonics of `m`, which
+grow as |m|^l, so the energy is unbounded below in |m| and confinement can
+only come from training.
 
 ## Running
 
