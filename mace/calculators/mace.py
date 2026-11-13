@@ -775,6 +775,7 @@ class MACECalculator(Calculator):
                         dtype=model_dtype,
                         device=self.device,
                     )
+                    pad_attrs[:, 0] = 1.0
                     node_attrs = torch.cat([node_attrs, pad_attrs], dim=0)
                 if self.use_compile:
                     node_attrs.requires_grad_(True)
