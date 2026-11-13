@@ -1879,10 +1879,12 @@ class MagneticScaleShiftMACE(MagneticMACE):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        # apply_cutoff = False so cutoff is not None
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+        # The radial basis is built with apply_cutoff=False, so it returns the
+        # envelope for the interaction blocks to apply.
+        assert cutoff is not None
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
