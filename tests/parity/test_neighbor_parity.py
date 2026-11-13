@@ -1,9 +1,13 @@
 """The neighbour list against the frozen legacy one, on the committed fixtures.
 
-It must reproduce the legacy ``get_neighborhood`` exactly, the returned cell
-included, and every registered backend must reproduce the independent
-brute-force oracle in ``tests/neighbour_oracle.py``, which the package suites
-cannot reach.
+It must reproduce the legacy ``get_neighborhood`` exactly: the edges, their
+order, the unit shifts and the shifts. The cell is the one recorded difference:
+legacy returns a regime-dependent effective cell, an extended box for a fully
+aperiodic structure and a patched row for a slab without vacuum, while v1
+carries the parsed cell. The two agree wherever a structure has a periodic axis
+and no all-zero row. Every registered backend must also reproduce the
+independent brute-force oracle in ``tests/neighbour_oracle.py``, which the
+package suites cannot reach.
 """
 
 import json
@@ -14,6 +18,7 @@ from mace_core.neighbors import (
     available_neighbor_backends,
     get_neighbor_backend,
     get_neighborhood,
+    graph_cell,
 )
 
 from mace.data.neighborhood import get_neighborhood as legacy_get_neighborhood
@@ -56,7 +61,9 @@ def test_the_matscipy_neighbor_list_is_the_legacy_one_exactly(name):
     assert np.array_equal(neighbors.edge_index, edge_index)
     assert np.array_equal(neighbors.unit_shifts, unit_shifts)
     assert np.array_equal(neighbors.shifts, shifts)
-    assert np.array_equal(neighbors.cell, returned)
+    carried = graph_cell(pbc, cell)
+    if any(pbc) and np.all(np.any(carried != 0, axis=1)):
+        assert np.array_equal(carried, returned)
 
 
 @pytest.mark.parametrize(

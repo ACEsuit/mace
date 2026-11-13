@@ -1,4 +1,4 @@
-"""The neighbour list: the pinned edge set and the three-regime effective cell.
+"""The neighbour list: the pinned edge set, and the parsed cell its shifts use.
 
 Every registered backend is held to the all-pairs backend's edge set on the
 characterization cases below (triclinic, a cell smaller than the cutoff, an
@@ -26,6 +26,7 @@ from mace_core.neighbors import (
     available_neighbor_backends,
     get_neighbor_backend,
     get_neighborhood,
+    graph_cell,
     resolve_neighbor_backend,
     search_geometry,
 )
@@ -141,16 +142,14 @@ def test_every_registered_backend_reproduces_the_all_pairs_edge_set(case):
         assert _edges(neighbors) == expected, discovered.name
 
 
-def test_the_returned_cell_does_not_depend_on_the_backend(case):
+def test_every_backend_finds_images_along_periodic_axes_only(case):
     positions, cutoff, pbc, cell = case
-    cells = [
-        get_neighborhood(
-            positions, cutoff, pbc, cell, backend=get_neighbor_backend(d.name)
-        ).cell
-        for d in available_neighbor_backends()
-    ]
-    for returned in cells[1:]:
-        assert np.array_equal(returned, cells[0])
+    aperiodic = [axis for axis in range(3) if not (pbc or (False,) * 3)[axis]]
+    for discovered in available_neighbor_backends():
+        neighbors = get_neighborhood(
+            positions, cutoff, pbc, cell, backend=get_neighbor_backend(discovered.name)
+        )
+        assert not neighbors.unit_shifts[:, aperiodic].any(), discovered.name
 
 
 def test_the_list_is_full_and_directed(case):
@@ -185,11 +184,11 @@ def test_a_length_that_rounds_onto_the_cutoff_is_inside_for_every_backend():
         assert neighbors.edge_index.shape[1] == 6 + 12, discovered.name
 
 
-def test_shifts_are_unit_shifts_times_the_returned_cell(case):
+def test_shifts_are_unit_shifts_times_the_graph_cell(case):
     positions, cutoff, pbc, cell = case
     neighbors = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
     assert np.array_equal(
-        neighbors.shifts, np.dot(neighbors.unit_shifts, neighbors.cell)
+        neighbors.shifts, np.dot(neighbors.unit_shifts, graph_cell(pbc, cell))
     )
     assert neighbors.edge_index.dtype == np.int64
     assert neighbors.unit_shifts.dtype == np.int64
@@ -226,98 +225,74 @@ def test_nothing_passed_in_is_modified(case):
         assert np.array_equal(cell, _physical(cell_before))
 
 
-def test_the_returned_arrays_share_no_memory_with_the_inputs_and_are_read_only():
+def test_the_returned_arrays_are_read_only_and_the_cutoff_is_recorded():
     positions, cutoff, pbc, cell = CASES["mixed_pbc_with_vacuum"]
-    cell = _physical(cell)
     neighbors = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY)
-    assert not np.shares_memory(neighbors.cell, cell)
-    for array in (
-        neighbors.edge_index,
-        neighbors.unit_shifts,
-        neighbors.shifts,
-        neighbors.cell,
-    ):
+    assert neighbors.cutoff == cutoff
+    for array in (neighbors.edge_index, neighbors.unit_shifts, neighbors.shifts):
         assert not array.flags.writeable
+    carried = graph_cell(pbc, cell)
+    assert not np.shares_memory(carried, cell)
+    assert not carried.flags.writeable
 
 
-# --- the three effective-cell regimes -----------------------------------------
+# --- the cell the graph carries -------------------------------------------------
 
 
-def test_a_fully_aperiodic_cluster_returns_the_extended_search_cell():
+def test_a_fully_aperiodic_cluster_carries_its_parsed_cell():
+    assert np.array_equal(graph_cell(None, None), np.zeros((3, 3)))
+    given = np.diag([7.0, 8.0, 9.0])
+    assert np.array_equal(graph_cell((False, False, False), given), given)
+
+
+def test_the_graph_cell_never_depends_on_the_positions():
     positions = _cluster()
-    neighbors = get_neighborhood(positions, 2.0, backend=MATSCIPY)
-    extent = positions.max(axis=0) - positions.min(axis=0)
-    assert np.array_equal(neighbors.cell, np.diag(extent + 2 * 2.0 + 1))
-    assert np.linalg.det(neighbors.cell) > 0
+    near = get_neighborhood(positions, 2.0, backend=MATSCIPY)
+    far = get_neighborhood(positions + 100.0, 2.0, backend=MATSCIPY)
+    assert _edges(near) == _edges(far)
 
 
-def test_the_extended_cell_depends_on_the_extent_not_the_origin():
-    positions = _cluster()
-    near = get_neighborhood(positions, 2.0, backend=MATSCIPY).cell
-    far = get_neighborhood(positions + 100.0, 2.0, backend=MATSCIPY).cell
-    np.testing.assert_allclose(near, far, rtol=0, atol=1e-12)
-
-
-def test_a_periodic_structure_returns_its_physical_cell():
-    positions, cutoff, pbc, cell = CASES["triclinic"]
+def test_a_periodic_structure_carries_its_physical_cell():
+    _, _, pbc, cell = CASES["triclinic"]
     cell = _physical(cell)
-    assert np.array_equal(
-        get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY).cell, cell
-    )
+    assert np.array_equal(graph_cell(pbc, cell), cell)
 
 
-def test_a_slab_with_vacuum_returns_its_physical_cell():
+def test_a_slab_with_vacuum_carries_its_physical_cell():
+    _, _, pbc, cell = CASES["mixed_pbc_with_vacuum"]
+    cell = _physical(cell)
+    assert np.array_equal(graph_cell(pbc, cell), cell)
+
+
+def test_a_zero_vacuum_row_is_kept_and_never_patched():
+    _, _, pbc, cell = CASES["mixed_pbc_zero_vacuum_row"]
+    cell = _physical(cell)
+    carried = graph_cell(pbc, cell)
+    assert np.array_equal(carried, cell)
+    assert np.linalg.det(carried) == 0
+
+
+def test_the_search_box_is_wider_than_the_graph_cell_along_an_aperiodic_axis():
     positions, cutoff, pbc, cell = CASES["mixed_pbc_with_vacuum"]
     cell = _physical(cell)
-    assert np.array_equal(
-        get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY).cell, cell
-    )
-
-
-def test_a_zero_vacuum_row_is_patched_from_the_search_cell():
-    positions, cutoff, pbc, cell = CASES["mixed_pbc_zero_vacuum_row"]
-    cell = _physical(cell)
-    returned = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY).cell
-    extent = positions[:, 2].max() - positions[:, 2].min()
-    assert np.array_equal(returned[:2], cell[:2])
-    assert np.array_equal(returned[2], [0.0, 0.0, extent + 2 * cutoff + 1])
-    assert np.linalg.det(returned) != 0
-
-
-def test_a_slab_stress_from_the_returned_cell_uses_the_physical_volume():
-    """stress = -virials / volume: the vacuum box the search used must not
-    enter the volume."""
-    positions, cutoff, pbc, cell = CASES["mixed_pbc_with_vacuum"]
-    cell = _physical(cell)
-    virials = np.diag([0.3, -0.1, 0.2])
     geometry = search_geometry(positions, cutoff, pbc, cell)
-    returned = get_neighborhood(positions, cutoff, pbc, cell, backend=MATSCIPY).cell
-    stress = -virials / np.linalg.det(returned)
-    assert np.array_equal(stress, -virials / np.linalg.det(cell))
-    assert np.linalg.det(geometry.search_cell) != np.linalg.det(cell)
-
-
-def test_the_three_regimes_are_three_different_matrices():
-    positions = _cluster(6, 2.0, 3)
-    physical = HEXAGONAL_SLAB.copy()
-    physical[2] = [0.0, 0.0, 12.0]
-    aperiodic = get_neighborhood(positions, 3.5, None, physical, backend=MATSCIPY).cell
-    periodic = get_neighborhood(
-        positions, 3.5, (True, True, False), physical, backend=MATSCIPY
-    ).cell
-    patched = get_neighborhood(
-        positions, 3.5, (True, True, False), HEXAGONAL_SLAB, backend=MATSCIPY
-    ).cell
-    assert not np.array_equal(aperiodic, periodic)
-    assert not np.array_equal(periodic, patched)
-    assert not np.array_equal(aperiodic, patched)
+    extent = positions[:, 2].max() - positions[:, 2].min()
+    assert np.array_equal(geometry.search_cell[:2], cell[:2])
+    assert np.array_equal(geometry.search_cell[2], [0.0, 0.0, extent + 2 * cutoff + 1])
+    assert not hasattr(geometry, "cell")
 
 
 @pytest.mark.parametrize("cell", [None, np.zeros((3, 3))])
-def test_a_missing_or_all_zero_cell_is_the_identity_before_extension(cell):
-    geometry = search_geometry(np.zeros((1, 3)), 2.0, (True, False, False), cell)
-    assert np.array_equal(geometry.cell[0], [1.0, 0.0, 0.0])
-    assert np.array_equal(geometry.search_cell[1], [0.0, 2 * 2.0 + 1, 0.0])
+def test_a_periodic_axis_without_a_cell_is_refused_rather_than_given_one(cell):
+    with pytest.raises(ValueError, match="axis 0 is periodic"):
+        graph_cell((True, False, False), cell)
+    with pytest.raises(ValueError, match="axis 0 is periodic"):
+        search_geometry(np.zeros((1, 3)), 2.0, (True, False, False), cell)
+
+
+def test_a_non_finite_cell_is_refused():
+    with pytest.raises(ValueError, match="non-finite"):
+        graph_cell((True, True, True), np.diag([1.0, np.nan, 1.0]))
 
 
 def test_pbc_none_is_fully_aperiodic():
@@ -335,9 +310,19 @@ def test_a_cutoff_that_is_not_a_positive_distance_is_refused(cutoff):
         search_geometry(np.zeros((1, 3)), cutoff)
 
 
-def test_only_search_geometry_decides_a_regime():
-    """The graph builder and the all-pairs backend read the box from it; no
-    other function in the package computes one."""
+def test_a_backend_returning_an_image_along_an_aperiodic_axis_is_refused():
+    class Imaging:
+        def search(self, positions, cutoff, geometry):
+            return np.array([[0], [1]]), np.array([[0, 0, 1]])
+
+    with pytest.raises(ValueError, match="aperiodic axes"):
+        get_neighborhood(
+            _cluster(2), 2.0, (True, True, False), TRICLINIC, backend=Imaging()
+        )
+
+
+def test_only_the_search_box_is_sized_from_the_extent():
+    """No function but search_geometry sizes a box, and no box reaches the list."""
     import inspect
 
     from mace_core.neighbors import all_pairs, matscipy_backend, neighborhood
@@ -348,6 +333,7 @@ def test_only_search_geometry_decides_a_regime():
         assert "2 * cutoff" not in source, module.__name__
         assert "search_cell" not in source or module is not neighborhood
     assert "2 * cutoff + 1" in inspect.getsource(geometry_module)
+    assert "cell" not in neighborhood.NeighborList.__dataclass_fields__
 
 
 # --- the registry and the config section ------------------------------------------
@@ -438,10 +424,6 @@ def test_a_backend_registered_through_an_entry_point_is_discovered(
     backend = get_neighbor_backend("dummy")
     neighbors = get_neighborhood(_cluster(), 2.0, backend=backend)
     assert neighbors.edge_index.shape == (2, 0)
-    # The effective cell is the graph builder's, whatever the backend did.
-    assert np.array_equal(
-        neighbors.cell, get_neighborhood(_cluster(), 2.0, backend=MATSCIPY).cell
-    )
 
 
 def test_a_backend_returning_malformed_edges_is_refused():
