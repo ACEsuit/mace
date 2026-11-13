@@ -300,6 +300,47 @@ jobs:
       - name: Run the package suites
         run: python -m pytest packages/*/tests -v
 
+  parity:
+    # The live oracle: tests/parity compares the v1 stack against the frozen
+    # legacy package in one process, so this is the one test job that installs
+    # both trees and runs tests against them. No other job collects
+    # tests/parity: the legacy jobs install no v1 package and the packages job
+    # installs no legacy one.
+    #
+    # One python version, like the architecture job: what this measures is
+    # numbers, not import or packaging behaviour across interpreters.
+    needs: [ legacy-lint, packages-lint ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # hatch-vcs derives each package version from git describe.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-mace
+        with:
+          python-version: "3.12"
+          extras: dev
+      - name: Install the v1 packages
+        # One pip invocation: mace-torch-v1 requires mace-core, which is not
+        # published, so pip only resolves it when it sees the local path in
+        # the same run.
+        run: |
+          python -m pip install -e packages/mace-core \
+                                -e packages/mace-torch
+      - name: Import both stacks
+        # tests/parity/conftest.py skips the whole directory when mace_torch
+        # does not import, which is right for the jobs that collect all of
+        # tests/ without the v1 stack and wrong here: a broken v1 install must
+        # fail this job, by name, before pytest can turn it into a skip. If
+        # everything is skipped or deselected anyway, pytest exits 5 for "no
+        # tests collected" and the job fails on that.
+        run: python -c "import mace, mace_core, mace_torch"
+      - uses: ./.github/actions/run-tests
+        with:
+          tests: tests/parity
+          markers: not slow
+
   workflows:
     # End-to-end CLI trainings via subprocess — the expensive suite. PRs run
     # the python-version frontier (min+max); pushes run the full matrix, and
