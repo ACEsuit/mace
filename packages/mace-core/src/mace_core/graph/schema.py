@@ -27,9 +27,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import model_validator
+from pydantic import Field
 
 from mace_core.config.base import ConfigSection
 
@@ -68,6 +68,12 @@ FIXED_DIMENSIONS: frozenset[str] = frozenset(
 
 _LEVELS = (NODE_LEVEL, EDGE_LEVEL, GRAPH_LEVEL)
 
+#: A fixed size in a shape.
+Size = Annotated[int, Field(ge=0, strict=True)]
+
+#: A symbolic dimension in a shape.
+DimensionName = Annotated[str, Field(min_length=1, strict=True)]
+
 
 class FieldSpec(ConfigSection):
     """One key of the flat graph dict, or of the targets beside it.
@@ -81,19 +87,10 @@ class FieldSpec(ConfigSection):
             carries, and what padding writes.
     """
 
-    shape: tuple[int | str, ...]
+    shape: tuple[Size | DimensionName, ...]
     dtype: Literal["float", "int64", "bool"]
     required: bool = True
     absent_value: float = 0.0
-
-    @model_validator(mode="after")
-    def _validate(self) -> FieldSpec:
-        for dimension in self.shape:
-            if isinstance(dimension, int) and dimension < 0:
-                raise ValueError(f"shape {self.shape} has a negative size.")
-            if isinstance(dimension, str) and not dimension:
-                raise ValueError(f"shape {self.shape} has an unnamed dimension.")
-        return self
 
     def level(self) -> str | None:
         """``n_nodes``, ``n_edges`` or ``n_graphs``: the dimension the key is

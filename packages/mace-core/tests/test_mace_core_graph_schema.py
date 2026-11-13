@@ -174,6 +174,8 @@ def test_the_core_is_the_written_out_contract():
     ("shape", "dtype"),
     [
         (("n_nodes", -1), "float"),
+        (("n_nodes", True), "float"),
+        (("n_nodes", 3.0), "float"),
         (("n_nodes", ""), "float"),
         (("n_nodes",), "float32"),
     ],
@@ -285,7 +287,9 @@ def test_a_misspelled_feature_storage_is_refused(storage):
     [
         ((0,), "positive integer"),
         (("width",), "positive integer"),
-        ((-2,), "negative size"),
+        ((-2,), "greater than or equal to 0"),
+        ((2.0,), "valid integer"),
+        ((True,), "valid integer"),
     ],
 )
 def test_a_feature_width_that_is_not_a_positive_integer_is_refused(
