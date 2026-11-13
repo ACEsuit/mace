@@ -192,7 +192,7 @@ class CheckpointIO:
 
         logging.info(f"Loading checkpoint: {checkpoint_info.path}")
         return (
-            torch.load(f=checkpoint_info.path, map_location=device),
+            torch.load(f=checkpoint_info.path, map_location=device, weights_only=False),
             checkpoint_info.epochs,
         )
 
