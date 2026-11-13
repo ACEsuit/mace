@@ -1531,7 +1531,6 @@ class MagneticMACE(torch.nn.Module):
         use_embedding_readout: bool = False,
         distance_transform: str = "None",
         use_magmom_one_body: Optional[bool] = False,
-        smooth_cutoff: bool = True,
         edge_irreps: Optional[o3.Irreps] = None,
         use_edge_irreps_first: bool = False,  # pylint: disable=unused-argument
         radial_MLP: Optional[List[int]] = None,
@@ -1564,15 +1563,6 @@ class MagneticMACE(torch.nn.Module):
             correlation = [correlation] * num_interactions
 
         self.lammps_mliap = lammps_mliap
-        # The radial MLPs of the magnetic interactions also take the sender's
-        # moment features, which do not vanish at r_max. With smooth_cutoff the
-        # radial basis goes without the envelope and the interactions apply it
-        # once, to their weights and edge density. Without it, and in
-        # checkpoints saved before this attribute existed, the envelope stays
-        # in the radial basis, as before.
-        self.smooth_cutoff = smooth_cutoff
-        if smooth_cutoff:
-            apply_cutoff = False
         self.apply_cutoff = apply_cutoff
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
@@ -1612,10 +1602,7 @@ class MagneticMACE(torch.nn.Module):
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
-            # Not apply_cutoff, which these models have always ignored: a
-            # model built with apply_cutoff=False and smooth_cutoff=False keeps
-            # the envelope in the radial basis, as it did before.
-            apply_cutoff=not smooth_cutoff,
+            apply_cutoff=False,  # applied in the magnetic interactions
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
