@@ -1523,7 +1523,7 @@ class MagneticMACE(torch.nn.Module):
         correlation: Union[int, List[int]],
         gate: Optional[Callable],
         pair_repulsion: bool = False,
-        apply_cutoff: bool = True,
+        apply_cutoff: bool = False,
         use_reduced_cg: bool = True,
         use_so3: bool = False,
         use_agnostic_product: bool = False,
@@ -1563,7 +1563,9 @@ class MagneticMACE(torch.nn.Module):
             correlation = [correlation] * num_interactions
 
         self.lammps_mliap = lammps_mliap
-        self.apply_cutoff = apply_cutoff
+        # The envelope is applied in the magnetic interaction blocks, never in the
+        # radial basis, so apply_cutoff is ignored.
+        self.apply_cutoff = False
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
         self.use_agnostic_product = use_agnostic_product
@@ -1602,7 +1604,7 @@ class MagneticMACE(torch.nn.Module):
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
-            apply_cutoff=False,  # applied in the magnetic interactions
+            apply_cutoff=self.apply_cutoff,  # applied in the magnetic interactions
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
@@ -1877,6 +1879,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
+        # apply_cutoff = False so cutoff is not None
         edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
