@@ -188,6 +188,16 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--readout_cls",
+        help="readout block used for the last layer's energy readout",
+        type=str,
+        default="NonLinearReadoutBlock",
+        choices=[
+            "NonLinearReadoutBlock",
+            "NonLinearBiasReadoutBlock",
+        ],
+    )
+    parser.add_argument(
         "--use_last_readout_only",
         help="use only the last readout for the final output",
         type=str2bool,
