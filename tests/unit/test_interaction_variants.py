@@ -135,3 +135,46 @@ def test_no_cutoff_warning_when_configured_safely(
         _model(block_name, table, apply_cutoff=apply_cutoff)
     cutoff_warnings = [w for w in caught if "apply_cutoff=False" in str(w.message)]
     assert not cutoff_warnings
+
+
+@pytest.mark.parametrize(
+    "block_name",
+    [
+        "RealAgnosticResidualNonLinearInteractionBlock",
+        ATT_RESIDUAL,
+    ],
+)
+def test_deferred_cutoff_blocks_are_continuous_with_apply_cutoff_false(block_name):
+    table = AtomicNumberTable([1, 8])
+    r_max = 5.0
+    prev_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        model = _model(block_name, table, apply_cutoff=False)
+
+        def eval_energy(distance: float) -> float:
+            atoms = Atoms(
+                "OH2",
+                positions=[
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [1.0 + distance, 0.0, 0.0],
+                ],
+            )
+            config = data.Configuration(
+                atomic_numbers=atoms.numbers,
+                positions=atoms.positions,
+                properties={},
+                property_weights={},
+            )
+            atomic_data = data.AtomicData.from_config(
+                config, z_table=table, cutoff=r_max
+            )
+            loader = torch_geometric.dataloader.DataLoader([atomic_data], batch_size=1)
+            batch = next(iter(loader))
+            return float(model(batch.to_dict(), training=False)["energy"][0])
+
+        step = abs(eval_energy(r_max - 1e-6) - eval_energy(r_max + 1e-6))
+        assert step < 1e-9, f"{block_name} jumped by {step:.3e} eV at r_max"
+    finally:
+        torch.set_default_dtype(prev_dtype)
