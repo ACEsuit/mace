@@ -25,7 +25,6 @@ from typing import cast
 
 import torch
 from mace_core.graph import (
-    ANY_TRAILING,
     AutoPadding,
     FixedPadding,
     GraphInfo,
@@ -112,13 +111,7 @@ def pad_batch(
         return result, result_info
 
     device = graph["positions"].device
-    samples = padding_samples(
-        budget,
-        real,
-        layout,
-        with_edges="edge_index" in graph,
-        feature_shapes=_feature_shapes(graph, layout),
-    )
+    samples = padding_samples(budget, real, layout, with_edges="edge_index" in graph)
     padding, padding_info = collate(samples, layout, device=device, check=False)
     padded = _append(graph, padding, info, layout)
     padded_info = GraphInfo(
@@ -130,23 +123,6 @@ def pad_batch(
     )
     check_layout(padded, layout, padded_info)
     return padded, padded_info
-
-
-def _feature_shapes(
-    graph: Mapping[str, torch.Tensor], layout: GraphLayout
-) -> dict[str, tuple[int, ...]]:
-    """The trailing sizes of each embedding feature, as the batch carries them."""
-    shapes: dict[str, tuple[int, ...]] = {}
-    for name, spec in layout.inputs.items():
-        if spec.shape[-1] != ANY_TRAILING:
-            continue
-        if name not in graph:
-            raise ValueError(
-                f"the batch is missing the embedding feature {name!r}, which the "
-                f"layout declares."
-            )
-        shapes[name] = tuple(int(n) for n in graph[name].shape[1:])
-    return shapes
 
 
 def _append(

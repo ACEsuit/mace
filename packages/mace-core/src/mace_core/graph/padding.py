@@ -49,7 +49,6 @@ from pydantic import Field
 from mace_core.config.base import ConfigSection
 from mace_core.graph.info import GraphInfo, PaddingInfo
 from mace_core.graph.layout import GraphLayout
-from mace_core.graph.schema import ANY_TRAILING, NODE_LEVEL
 from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
 from mace_core.outputs import CORE_FIELD_NAMES, MACEOutput
 
@@ -199,8 +198,6 @@ def padding_sample(
     n_atoms: int,
     n_edges: int | None,
     layout: GraphLayout,
-    *,
-    feature_shapes: Mapping[str, tuple[int, ...]] | None = None,
 ) -> dict[str, Any]:
     """One padding structure, as a graph sample :func:`collate` batches.
 
@@ -210,12 +207,9 @@ def padding_sample(
             sample without edge keys, as a batch a device search completes.
         layout: What the run batches; every declared input takes its absent
             value, every embedding feature zero.
-        feature_shapes: The trailing sizes of each embedding feature, whose
-            shape is the data's own, as the batch being padded carries them.
 
     Raises:
-        ValueError: for edges without an atom to loop on, or an embedding
-            feature whose trailing sizes are not given.
+        ValueError: for edges without an atom to loop on.
     """
     if n_atoms < 0 or (n_edges is not None and n_edges < 0):
         raise ValueError(
@@ -241,18 +235,8 @@ def padding_sample(
         sample["edge_index"] = np.full((2, n_edges), n_atoms - 1, dtype=np.int64)
         sample["unit_shifts"] = unit_shifts
         sample["shifts"] = unit_shifts * length
-    for name, spec in layout.inputs.items():
-        if spec.shape[-1] == ANY_TRAILING:
-            if feature_shapes is None or name not in feature_shapes:
-                raise ValueError(
-                    f"feature {name!r} has trailing sizes that are the data's "
-                    f"own; give them in feature_shapes, as the batch carries them."
-                )
-            trailing = tuple(feature_shapes[name])
-        else:
-            trailing = tuple(int(n) for n in spec.shape[1:])
-        rows = (n_atoms,) if spec.shape[0] == NODE_LEVEL else ()
-        sample[name] = np.full((*rows, *trailing), spec.absent_value)
+    for name, spec in {**layout.inputs, **layout.features}.items():
+        sample[name] = np.full(spec.sample_shape(n_atoms), spec.absent_value)
     return sample
 
 
@@ -262,7 +246,6 @@ def padding_samples(
     layout: GraphLayout,
     *,
     with_edges: bool = True,
-    feature_shapes: Mapping[str, tuple[int, ...]] | None = None,
 ) -> list[dict[str, Any]]:
     """The padding structures that take a batch of ``real`` sizes to
     ``budget``: empty ones first, then the one holding every padding atom."""
@@ -281,10 +264,8 @@ def padding_samples(
                 f"hold them; a padding atom needs a padding structure."
             )
         return []
-    empty = padding_sample(
-        0, 0 if with_edges else None, layout, feature_shapes=feature_shapes
-    )
-    last = padding_sample(nodes, edges, layout, feature_shapes=feature_shapes)
+    empty = padding_sample(0, 0 if with_edges else None, layout)
+    last = padding_sample(nodes, edges, layout)
     return [*(dict(empty) for _ in range(graphs - 1)), last]
 
 

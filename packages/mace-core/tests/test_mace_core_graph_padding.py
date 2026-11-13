@@ -91,7 +91,10 @@ def _water_sample(layout, **properties):
     water = Configuration(
         atomic_numbers=np.array([8, 1, 1]),
         positions=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]),
-        properties={**{name: None for name in layout.inputs}, **properties},
+        properties={
+            **{name: None for name in (*layout.inputs, *layout.features)},
+            **properties,
+        },
     )
     neighbors = get_neighborhood(
         water.positions, 2.5, backend=get_neighbor_backend("all_pairs")
@@ -152,13 +155,15 @@ def test_edges_without_an_atom_to_loop_on_are_refused():
         padding_sample(0, 3, LAYOUT)
 
 
-def test_an_embedding_feature_pads_at_the_trailing_sizes_the_batch_gives():
-    layout = graph_layout([1, 8], cutoff=2.5, features={"spin": "atom"})
-    with pytest.raises(ValueError, match="feature_shapes"):
-        padding_sample(2, 1, layout)
-    sample = padding_sample(2, 1, layout, feature_shapes={"spin": (4,)})
+def test_an_embedding_feature_pads_with_zeros_at_its_declared_width():
+    layout = graph_layout(
+        [1, 8], cutoff=2.5, features={"spin": ("atom", (4,)), "phase": ("graph", ())}
+    )
+    sample = padding_sample(2, 1, layout)
     assert sample["spin"].shape == (2, 4)
+    assert sample["phase"].shape == ()
     assert not sample["spin"].any()
+    assert not sample["phase"].any()
 
 
 def test_a_declared_input_pads_with_its_absent_value():

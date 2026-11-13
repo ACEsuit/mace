@@ -496,14 +496,14 @@ def test_a_batch_without_edges_pads_nodes_and_graphs_only(dtype):
 
 
 def test_a_batch_missing_a_declared_feature_is_refused_by_name():
-    layout = _layout(features={"spin_state": "atom"})
+    layout = _layout(features={"spin_state": ("atom", ())})
     graph, _, info = _collated(_structures(), LAYOUT)
-    with pytest.raises(ValueError, match="missing the embedding feature 'spin_state'"):
+    with pytest.raises(GraphValidationError, match=r"missing .*\['spin_state'\]"):
         pad_batch(graph, info, BUDGET, layout)
 
 
-def test_embedding_features_pad_with_zeros_at_their_own_trailing_sizes(dtype):
-    layout = _layout(features={"spin_state": "atom", "phase": "graph"})
+def test_embedding_features_pad_with_zeros_at_their_declared_widths(dtype):
+    layout = _layout(features={"spin_state": ("atom", (2,)), "phase": ("graph", (3,))})
     structures = [
         _water(periodic=True, spin_state=np.ones((3, 2)), phase=np.ones(3)),
         _water(0.1, spin_state=np.full((3, 2), 2.0), phase=np.full(3, 2.0)),
