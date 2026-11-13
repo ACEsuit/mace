@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple, Union
 import torch
 from e3nn import o3
 
-from mace.modules.wrapper_ops import CuEquivarianceConfig
+from mace.modules.wrapper_ops import CuEquivarianceConfig, require_cueq_kernels
 from mace.tools import deprecation
 from mace.tools.cg import O3_e3nn
 from mace.tools.cg_cueq_tools import symmetric_contraction_proj
@@ -267,6 +267,8 @@ def run(
         use_reduced_cg,
         keep_last_layer_irreps,
     )
+    if torch.device(device).type == "cuda":
+        require_cueq_kernels(target_model)
 
     if return_model:
         return target_model
