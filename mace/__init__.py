@@ -8,4 +8,5 @@ from .__version__ import __version__
 # that single harmless type instead of disabling safe loading process-wide via
 # ``TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD``; MACE's own whole-pickle checkpoints
 # pass ``weights_only=False`` at the load site that needs it.
-torch.serialization.add_safe_globals([slice])
+if hasattr(torch.serialization, "add_safe_globals"):
+    torch.serialization.add_safe_globals([slice])

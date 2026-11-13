@@ -1,4 +1,3 @@
-# pylint: disable=wrong-import-position
 import argparse
 import copy
 
