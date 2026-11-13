@@ -378,9 +378,9 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
             )
         )
         # reduce_loss with ddp=False is the plain mean
-        loss_energy = reduce_loss(loss_energy, bool(ddp))
-        loss_forces = reduce_loss(loss_forces, bool(ddp))
-        loss_stress = reduce_loss(loss_stress, bool(ddp))
+        loss_energy = reduce_loss(loss_energy, ddp)
+        loss_forces = reduce_loss(loss_forces, ddp)
+        loss_stress = reduce_loss(loss_stress, ddp)
         return (
             self.energy_weight * loss_energy
             + self.forces_weight * loss_forces
