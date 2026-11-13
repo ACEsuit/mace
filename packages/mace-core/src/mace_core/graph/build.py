@@ -189,7 +189,7 @@ def _feature_value(
     if value is None:
         raise SampleError(
             f"{where} has no value for the embedding feature {name!r}, which the "
-            f"model declares. An input cannot be made up; add it to the file."
+            f"model declares. A feature cannot be made up; add it to the file."
         )
     array = np.asarray(value)
     if not np.issubdtype(array.dtype, np.number) or np.issubdtype(

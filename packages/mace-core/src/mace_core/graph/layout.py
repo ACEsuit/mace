@@ -8,12 +8,14 @@ flag and a loss weight. A model that reads no magnetic moment gets none in its
 batch. An embedding feature's width is the model's, since its embedder is
 built for it.
 
-A field's level comes from ``per_atom`` and its trailing shape from the irreps,
-so a property declared in config becomes a batched, padded field with no new
-code. A default convention name (``forces``, ``stress``) keeps the shape its
-row of :class:`~mace_core.elements.DefaultKeys` gives, and its irreps must fill
-that shape: three components for a vector, nine for a 3x3 tensor, or ``0e+2e``
-for a symmetric one.
+An input's or a target's level comes from ``per_atom`` and its trailing shape
+from the irreps, so a property declared in config becomes a batched, padded
+field with no new code. A default convention name (``forces``, ``stress``)
+keeps the shape its row of :class:`~mace_core.elements.DefaultKeys` gives, and
+its irreps must fill that shape: three components for a vector, nine for a 3x3
+tensor, or ``0e+2e`` for a symmetric one. An embedding feature is declared with
+where it is stored and the shape of one value, and never takes a default
+name.
 
 The layout is resolved once per run and is plain data, so it can be recorded
 with the resolved configuration.
@@ -150,22 +152,60 @@ def target_field(spec: ObservableSpec) -> FieldSpec:
     return _declared(spec.per_atom, _value_shape(spec.name, spec.irreps), 0.0)
 
 
-def feature_field(storage: Storage, value_shape: Sequence[int]) -> FieldSpec:
-    """The batched field of an embedding feature, stored per ``atom`` or per
-    ``graph``, with the shape of one value the model's embedder reads: ``()``
-    for one number, such as a class label, ``(in_dim,)`` for a vector. It is
-    floating.
+def feature_field(name: str, storage: Storage, value_shape: Sequence[int]) -> FieldSpec:
+    """The batched field of embedding feature ``name``, stored per ``atom`` or
+    per ``graph``, with the shape of one value the model's embedder reads:
+    ``()`` for one number, such as a class label, ``(width,)`` for a vector.
+    It is floating.
 
     Raises:
         ValueError: for a storage other than ``atom`` or ``graph``, or a size
-            that is not a non-negative integer.
+            that is not a positive integer.
     """
     if storage not in STORAGES:
         raise ValueError(
-            f"a feature is declared per {storage!r}; use 'atom' or 'graph'."
+            f"feature {name!r} is declared per {storage!r}; use 'atom' or 'graph'."
         )
+    value_shape = tuple(value_shape)
+    _check_feature_width(name, value_shape)
     level = NODE_LEVEL if storage == "atom" else GRAPH_LEVEL
     return FieldSpec(shape=(level, *value_shape), dtype=FLOAT)
+
+
+def _check_feature_width(name: str, value_shape: tuple[object, ...]) -> None:
+    if not all(type(size) is int and size > 0 for size in value_shape):
+        raise ValueError(
+            f"feature {name!r} is declared with value shape {value_shape}; each "
+            f"size is a positive integer, the width the model's embedder reads."
+        )
+
+
+def _check_feature(name: str, spec: FieldSpec) -> None:
+    """A feature is named apart from the default properties, floating, per atom
+    or per structure, of a positive width, and carried by every structure with
+    nothing to stand in for it."""
+    if name in ENGINE_INPUTS:
+        raise ValueError(
+            f"feature {name!r} is created by the derivative engine, not "
+            f"batched. Leave it out of the layout."
+        )
+    if name in _CONVENTION_FIELDS:
+        raise ValueError(
+            f"feature {name!r} is named like a default property. Give the "
+            f"feature a name of its own."
+        )
+    if spec.dtype != FLOAT or spec.shape[0] not in (NODE_LEVEL, GRAPH_LEVEL):
+        raise ValueError(
+            f"feature {name!r} is declared as {spec.dtype} of shape "
+            f"{spec.shape}; a feature is floating, per atom or per structure."
+        )
+    _check_feature_width(name, spec.shape[1:])
+    if not spec.required or spec.absent_value != 0.0:
+        raise ValueError(
+            f"feature {name!r} is declared with required={spec.required} and "
+            f"absent_value={spec.absent_value}; every structure carries a "
+            f"feature, and padding writes zero."
+        )
 
 
 def _check_name(name: str, kind: str) -> None:
@@ -275,21 +315,15 @@ class GraphLayout(ConfigSection):
         ):
             for name in fields:
                 _check_name(name, kind)
-        for kind, fields in (("input", self.inputs), ("feature", self.features)):
-            for name, spec in fields.items():
-                if name in ENGINE_INPUTS:
-                    raise ValueError(
-                        f"{kind} {name!r} is created by the derivative engine, "
-                        f"not batched. Leave it out of the layout."
-                    )
-                _check_declared(name, spec, kind)
-        for name, spec in self.features.items():
-            if not all(isinstance(size, int) and size > 0 for size in spec.shape[1:]):
+        for name, spec in self.inputs.items():
+            if name in ENGINE_INPUTS:
                 raise ValueError(
-                    f"feature {name!r} is declared with shape {spec.shape}; past "
-                    f"its level each size is a positive integer, the width the "
-                    f"model's embedder reads."
+                    f"input {name!r} is created by the derivative engine, not "
+                    f"batched. Leave it out of the layout."
                 )
+            _check_declared(name, spec, "input")
+        for name, spec in self.features.items():
+            _check_feature(name, spec)
         for name, spec in self.targets.items():
             _check_declared(name, spec, "target")
         if STRUCTURE_WEIGHT in self.targets:
@@ -384,7 +418,7 @@ def graph_layout(
         float_dtype=float_dtype,
         inputs={spec.name: input_field(spec) for spec in inputs},
         features={
-            name: feature_field(storage, value_shape)
+            name: feature_field(name, storage, value_shape)
             for name, (storage, value_shape) in features.items()
         },
         targets={spec.name: target_field(spec) for spec in targets},

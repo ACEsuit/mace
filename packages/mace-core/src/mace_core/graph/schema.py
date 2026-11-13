@@ -2,11 +2,12 @@
 
 The data-to-model boundary is a plain mapping from key to array. It is the
 structural core below, fixed here, plus the fields a run declares in its
-:class:`~mace_core.graph.layout.GraphLayout`: the model's inputs and the fields
-of its batch requirements. Labels never travel in the graph: they are targets,
-beside it. Each key has a :class:`FieldSpec` stating its shape over symbolic
-dimensions, its dtype by name and whether every graph carries it. The core is
-a file-format contract: a change to it is a breaking schema change.
+:class:`~mace_core.graph.layout.GraphLayout`: the model's inputs and embedding
+features, and the fields of its batch requirements. Labels never travel in the
+graph: they are targets, beside it. Each key has a :class:`FieldSpec` stating
+its shape over symbolic dimensions, its dtype by name and whether every graph
+carries it. The core is a file-format contract: a change to it is a breaking
+schema change.
 
 **Dtypes are names.** ``"float"`` is the run's floating dtype, which the
 layout names; the others are literal (``"int64"``, ``"bool"``). Nothing here

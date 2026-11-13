@@ -99,7 +99,7 @@ def sample_keys(
     return keys
 
 
-def _join(key: str, values: list[np.ndarray], spec: FieldSpec) -> np.ndarray:
+def _join(values: list[np.ndarray], spec: FieldSpec) -> np.ndarray:
     if spec.level() in (NODE_LEVEL, EDGE_LEVEL):
         return np.concatenate(values, axis=0)
     return np.stack(values)
@@ -151,7 +151,7 @@ def collate(
                 axis=1,
             )
         else:
-            graph[key] = _join(key, values, fields[key])
+            graph[key] = _join(values, fields[key])
             if fields[key].dtype == FLOAT:
                 graph[key] = graph[key].astype(float_dtype, copy=False)
     graph["batch"] = np.repeat(np.arange(len(samples), dtype=np.int64), node_counts)
@@ -185,9 +185,7 @@ def collate_targets(
     float_dtype = _numpy_float(layout)
     targets = {}
     for key in keys:
-        joined = _join(
-            key, [np.asarray(sample[key]) for sample in samples], fields[key]
-        )
+        joined = _join([np.asarray(sample[key]) for sample in samples], fields[key])
         if fields[key].dtype == FLOAT:
             joined = joined.astype(float_dtype, copy=False)
         targets[key] = joined

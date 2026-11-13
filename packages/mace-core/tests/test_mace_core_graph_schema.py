@@ -215,14 +215,18 @@ def test_a_cutoff_that_is_not_a_positive_finite_distance_is_refused(cutoff):
 
 
 @pytest.mark.parametrize("name", sorted(GRAPH_CORE))
-@pytest.mark.parametrize("kind", ["inputs", "targets", "requirement_fields"])
+@pytest.mark.parametrize(
+    "kind", ["inputs", "features", "targets", "requirement_fields"]
+)
 def test_a_declared_name_colliding_with_the_core_is_refused(name, kind):
     with pytest.raises(ValueError, match="named like a key of the graph core"):
         _layout(**{kind: {name: SCALAR_PER_STRUCTURE}})
 
 
 @pytest.mark.parametrize("name", ["energy_present", "spin_present", "spin_weight"])
-@pytest.mark.parametrize("kind", ["inputs", "targets", "requirement_fields"])
+@pytest.mark.parametrize(
+    "kind", ["inputs", "features", "targets", "requirement_fields"]
+)
 def test_a_declared_name_ending_like_a_flag_or_a_weight_is_refused(name, kind):
     with pytest.raises(ValueError, match="presence flag or a loss weight"):
         _layout(**{kind: {name: SCALAR_PER_STRUCTURE}})
@@ -243,8 +247,11 @@ def test_a_target_named_like_the_structure_weight_is_refused():
 @pytest.mark.parametrize(
     ("first", "second"),
     [
+        ("inputs", "features"),
         ("inputs", "targets"),
         ("inputs", "requirement_fields"),
+        ("features", "targets"),
+        ("features", "requirement_fields"),
         ("targets", "requirement_fields"),
     ],
 )
@@ -266,14 +273,14 @@ def test_a_name_declared_twice_is_refused_whatever_the_order():
         graph_layout(ELEMENTS, cutoff=CUTOFF, inputs=[TOTAL_CHARGE, TOTAL_CHARGE])
 
 
-def test_a_feature_named_like_a_declared_input_is_refused():
-    with pytest.raises(ValueError, match="declared twice"):
-        graph_layout(
-            ELEMENTS,
-            cutoff=CUTOFF,
-            inputs=[TOTAL_CHARGE],
-            features={"total_charge": ("graph", ())},
-        )
+@pytest.mark.parametrize(
+    ("name", "storage", "value_shape"),
+    [("energy", "graph", ()), ("forces", "atom", (3,)), ("total_charge", "graph", ())],
+)
+def test_a_feature_named_like_a_default_property_is_refused(name, storage, value_shape):
+    """A label read as a feature would reach the graph, which holds no label."""
+    with pytest.raises(ValueError, match="named like a default property"):
+        graph_layout(ELEMENTS, cutoff=CUTOFF, features={name: (storage, value_shape)})
 
 
 @pytest.mark.parametrize("storage", ["atoms", "structure", ""])
@@ -283,19 +290,17 @@ def test_a_misspelled_feature_storage_is_refused(storage):
 
 
 @pytest.mark.parametrize(
-    ("value_shape", "message"),
+    "value_shape",
     [
-        ((0,), "positive integer"),
-        (("width",), "positive integer"),
-        ((-2,), "greater than or equal to 0"),
-        ((2.0,), "valid integer"),
-        ((True,), "valid integer"),
+        (0,),
+        ("width",),
+        (-2,),
+        (2.0,),
+        (True,),
     ],
 )
-def test_a_feature_width_that_is_not_a_positive_integer_is_refused(
-    value_shape, message
-):
-    with pytest.raises(ValueError, match=message):
+def test_a_feature_width_that_is_not_a_positive_integer_is_refused(value_shape):
+    with pytest.raises(ValueError, match=r"'spin_state'.*positive integer"):
         graph_layout(
             ELEMENTS, cutoff=CUTOFF, features={"spin_state": ("atom", value_shape)}
         )
@@ -414,8 +419,25 @@ def test_the_inputs_the_derivative_engine_creates_are_never_batched(name):
         ("targets", "born", FieldSpec(shape=("n_graphs",), dtype="int64"), "per atom"),
         ("features", "pos", FieldSpec(shape=("n_nodes", 3), dtype="float"), "engine"),
         ("features", "tag", FieldSpec(shape=("n_edges",), dtype="float"), "per atom"),
-        ("features", "forces", FieldSpec(shape=("n_nodes",), dtype="float"), "stores"),
+        (
+            "features",
+            "forces",
+            FieldSpec(shape=("n_nodes", 3), dtype="float"),
+            "default",
+        ),
         ("features", "tag", FieldSpec(shape=("n_nodes", 0), dtype="float"), "positive"),
+        (
+            "features",
+            "tag",
+            FieldSpec(shape=("n_nodes",), dtype="float", required=False),
+            "every structure carries",
+        ),
+        (
+            "features",
+            "tag",
+            FieldSpec(shape=("n_nodes",), dtype="float", absent_value=7.0),
+            "padding writes zero",
+        ),
     ],
 )
 def test_a_layout_read_back_is_held_to_the_same_declarations(kind, name, spec, message):
