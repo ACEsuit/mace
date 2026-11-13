@@ -1,6 +1,6 @@
 # Trimmed-down `pytorch_geometric`
 
-MACE uses [`pytorch_geometric`](https://pytorch-geometric.readthedocs.io/en/latest/) [1, 2] framework. However as only use a very limited subset of that library: the most basic graph data structures.
+MACE uses [`pytorch_geometric`](https://pytorch-geometric.readthedocs.io/en/latest/) [1, 2] framework. However, we only use a very limited subset of that library: the most basic graph data structures.
 
 We follow the same approach to NequIP (https://github.com/mir-group/nequip/tree/main/nequip) and copy their code here.
 
