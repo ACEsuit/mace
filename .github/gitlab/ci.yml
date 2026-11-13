@@ -163,18 +163,16 @@ gpu-amd:
   extends: .gpu
   rules:
     - if: '$ONLY_VENDOR == null || $ONLY_VENDOR == "" || $ONLY_VENDOR == "amd"'
-  # The ROCm dev image is the AMD counterpart of the CUDA one above: it brings
-  # hipcc, which OpenEquivariance needs to JIT-compile its kernels. The version
-  # tracks the PyTorch wheel index below, so the two ROCm stacks match.
-  image: rocm/dev-ubuntu-24.04:6.3.4
+  # The ROCm dev image is the AMD counterpart of the CUDA one above. Its version
+  # tracks the PyTorch wheel index below, so the two ROCm stacks match. ROCm 7
+  # is the floor: OpenEquivariance ships HIP kernels linked against it and needs
+  # torch >= 2.10, and no ROCm 6 index carries a torch past 2.9.
+  image: rocm/dev-ubuntu-24.04:7.1.1
   before_script:
     - apt-get update
-    # rocblas-dev is NOT in the dev image, only in the much larger -complete
-    # one: OpenEquivariance includes rocblas/rocblas.h, so without it every
-    # oeq test dies at JIT time with a missing-header error.
     - >
       apt-get install -y --no-install-recommends
-      python3 python3-venv python3-dev build-essential git rocblas-dev
+      python3 python3-venv python3-dev build-essential git
     - !reference [ .gpu, before_script ]
   tags:
     - mpcdf-shared
@@ -182,7 +180,7 @@ gpu-amd:
   variables:
     ROCM_PATH: /opt/rocm
     PYTORCH_ROCM_ARCH: "gfx90a"
-    TORCH_INDEX: "https://download.pytorch.org/whl/rocm6.3"
+    TORCH_INDEX: "https://download.pytorch.org/whl/rocm7.1"
     EXTRAS: "dev,oeq,schedulefree"
     PIP_REQUIREMENTS: "requirements/polar.txt requirements/les.txt"
     # Narrower than the Nvidia list, because `not cueq` removes the only test
