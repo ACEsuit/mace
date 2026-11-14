@@ -259,6 +259,12 @@ class WeightedEnergyForcesLoss(torch.nn.Module):
         self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
     ) -> torch.Tensor:
         loss_energy = weighted_mean_squared_error_energy(ref, pred, ddp)
+        if pred["forces"] is None:
+            if self.forces_weight != 0:
+                raise ValueError(
+                    "forces_weight must be zero when forces are not computed"
+                )
+            return self.energy_weight * loss_energy
         loss_forces = mean_squared_error_forces(ref, pred, ddp)
         return self.energy_weight * loss_energy + self.forces_weight * loss_forces
 
@@ -649,6 +655,12 @@ class WeightedEnergyForcesL1L2Loss(torch.nn.Module):
         self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
     ) -> torch.Tensor:
         loss_energy = weighted_mean_absolute_error_energy(ref, pred, ddp)
+        if pred["forces"] is None:
+            if self.forces_weight != 0:
+                raise ValueError(
+                    "forces_weight must be zero when forces are not computed"
+                )
+            return self.energy_weight * loss_energy
         loss_forces = mean_normed_error_forces(ref, pred, ddp)
         return self.energy_weight * loss_energy + self.forces_weight * loss_forces
 
