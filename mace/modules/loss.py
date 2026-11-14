@@ -138,7 +138,16 @@ def mean_squared_error_forces(
 def mean_normed_error_forces(
     ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
 ) -> torch.Tensor:
-    raw_loss = torch.linalg.vector_norm(ref["forces"] - pred["forces"], ord=2, dim=-1)
+    # Repeat per-graph weights to per-atom level.
+    configs_weight = torch.repeat_interleave(ref.weight, ref.ptr[1:] - ref.ptr[:-1])
+    configs_forces_weight = torch.repeat_interleave(
+        ref.forces_weight, ref.ptr[1:] - ref.ptr[:-1]
+    )
+    raw_loss = (
+        configs_weight
+        * configs_forces_weight
+        * torch.linalg.vector_norm(ref["forces"] - pred["forces"], ord=2, dim=-1)
+    )
     return reduce_loss(raw_loss, ddp)
 
 
@@ -151,7 +160,13 @@ def weighted_mean_squared_error_dipole(
     ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
 ) -> torch.Tensor:
     num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).unsqueeze(-1)
-    raw_loss = torch.square((ref["dipole"] - pred["dipole"]) / num_atoms)
+    configs_weight = ref.weight.view(-1, 1)
+    configs_dipole_weight = ref.dipole_weight.view(-1, 3)
+    raw_loss = (
+        configs_weight
+        * configs_dipole_weight
+        * torch.square((ref["dipole"] - pred["dipole"]) / num_atoms)
+    )
     return reduce_loss(raw_loss, ddp)
 
 
@@ -170,8 +185,14 @@ def weighted_mean_squared_error_polarizability(
     # polarizability: [n_graphs, ]
     # ref_polar = ref["polarizability"].view(-1, 3, 3) * std.view(1, 3, 3) + mean.view(1, 3, 3) if mean is not None and std is not None else ref["polarizability"]
     num_atoms = (ref.ptr[1:] - ref.ptr[:-1]).view(-1, 1, 1)  # [n_graphs,1]
-    raw_loss = torch.square(
-        (ref["polarizability"].view(-1, 3, 3) - pred["polarizability"]) / num_atoms
+    configs_weight = ref.weight.view(-1, 1, 1)
+    configs_polarizability_weight = ref.polarizability_weight.view(-1, 3, 3)
+    raw_loss = (
+        configs_weight
+        * configs_polarizability_weight
+        * torch.square(
+            (ref["polarizability"].view(-1, 3, 3) - pred["polarizability"]) / num_atoms
+        )
     )
     return reduce_loss(raw_loss, ddp)
 
@@ -213,7 +234,10 @@ def conditional_huber_forces(
     pred_forces: torch.Tensor,
     huber_delta: float,
     ddp: Optional[bool] = None,
+    weight: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
+    # `weight` multiplies the per-element huber term, not its arguments, so it
+    # scales the loss without moving the huber regime.
     factors = huber_delta * torch.tensor(
         [1.0, 0.7, 0.4, 0.1], device=ref_forces.device, dtype=ref_forces.dtype
     )
@@ -235,6 +259,8 @@ def conditional_huber_forces(
     se[c4] = torch.nn.functional.huber_loss(
         ref_forces[c4], pred_forces[c4], reduction="none", delta=factors[3]
     )
+    if weight is not None:
+        se = weight * se
     return reduce_loss(se, ddp)
 
 
@@ -346,39 +372,40 @@ class WeightedHuberEnergyForcesStressLoss(torch.nn.Module):
         self, ref: Batch, pred: TensorDict, ddp: Optional[bool] = None
     ) -> torch.Tensor:
         num_atoms = ref.ptr[1:] - ref.ptr[:-1]
-        if ddp:
-            loss_energy = torch.nn.functional.huber_loss(
+        # Repeat per-graph weights to per-atom level.
+        configs_weight = torch.repeat_interleave(ref.weight, num_atoms).unsqueeze(-1)
+        configs_forces_weight = torch.repeat_interleave(
+            ref.forces_weight, num_atoms
+        ).unsqueeze(-1)
+        raw_energy = (
+            ref.weight
+            * ref.energy_weight
+            * torch.nn.functional.huber_loss(
                 ref["energy"] / num_atoms,
                 pred["energy"] / num_atoms,
                 reduction="none",
                 delta=self.huber_delta,
             )
-            loss_energy = reduce_loss(loss_energy, ddp)
-            loss_forces = torch.nn.functional.huber_loss(
+        )
+        raw_forces = (
+            configs_weight
+            * configs_forces_weight
+            * torch.nn.functional.huber_loss(
                 ref["forces"], pred["forces"], reduction="none", delta=self.huber_delta
             )
-            loss_forces = reduce_loss(loss_forces, ddp)
-            loss_stress = torch.nn.functional.huber_loss(
+        )
+        raw_stress = (
+            ref.weight.view(-1, 1, 1)
+            * ref.stress_weight.view(-1, 1, 1)
+            * torch.nn.functional.huber_loss(
                 ref["stress"], pred["stress"], reduction="none", delta=self.huber_delta
             )
-            loss_stress = reduce_loss(loss_stress, ddp)
-        else:
-            loss_energy = torch.nn.functional.huber_loss(
-                ref["energy"] / num_atoms,
-                pred["energy"] / num_atoms,
-                reduction="mean",
-                delta=self.huber_delta,
-            )
-            loss_forces = torch.nn.functional.huber_loss(
-                ref["forces"], pred["forces"], reduction="mean", delta=self.huber_delta
-            )
-            loss_stress = torch.nn.functional.huber_loss(
-                ref["stress"], pred["stress"], reduction="mean", delta=self.huber_delta
-            )
+        )
+        # Without ddp, reduce_loss is the plain mean.
         return (
-            self.energy_weight * loss_energy
-            + self.forces_weight * loss_forces
-            + self.stress_weight * loss_stress
+            self.energy_weight * reduce_loss(raw_energy, bool(ddp))
+            + self.forces_weight * reduce_loss(raw_forces, bool(ddp))
+            + self.stress_weight * reduce_loss(raw_stress, bool(ddp))
         )
 
     def __repr__(self):
@@ -428,67 +455,51 @@ class UniversalLoss(torch.nn.Module):
         configs_magforces_weight = torch.repeat_interleave(
             ref.magforces_weight, ref.ptr[1:] - ref.ptr[:-1]
         ).unsqueeze(-1)
-        if ddp:
-            loss_energy = torch.nn.functional.huber_loss(
+        # The property weights multiply the huber arguments, which is what masks
+        # a missing label. The config weight multiplies the huber term itself.
+        configs_weight = torch.repeat_interleave(ref.weight, num_atoms).unsqueeze(-1)
+        # Without ddp, reduce_loss is the plain mean.
+        loss_energy = reduce_loss(
+            ref.weight
+            * torch.nn.functional.huber_loss(
                 configs_energy_weight * ref["energy"] / num_atoms,
                 configs_energy_weight * pred["energy"] / num_atoms,
                 reduction="none",
                 delta=self.huber_delta,
-            )
-            loss_energy = reduce_loss(loss_energy, ddp)
-            loss_forces = conditional_huber_forces(
-                configs_forces_weight * ref["forces"],
-                configs_forces_weight * pred["forces"],
-                huber_delta=self.huber_delta,
-                ddp=ddp,
-            )
-            loss_stress = torch.nn.functional.huber_loss(
+            ),
+            bool(ddp),
+        )
+        loss_forces = conditional_huber_forces(
+            configs_forces_weight * ref["forces"],
+            configs_forces_weight * pred["forces"],
+            huber_delta=self.huber_delta,
+            ddp=ddp,
+            weight=configs_weight,
+        )
+        loss_stress = reduce_loss(
+            ref.weight.view(-1, 1, 1)
+            * torch.nn.functional.huber_loss(
                 configs_stress_weight * ref["stress"],
                 configs_stress_weight * pred["stress"],
                 reduction="none",
                 delta=self.huber_delta,
-            )
-            loss_stress = reduce_loss(loss_stress, ddp)
-            loss_magforces = 0
-            if "magforces" in pred.keys() and (
-                pred["magforces"] is not None and ref["magforces"] is not None
-            ):
-                loss_magforces = torch.nn.functional.huber_loss(
+            ),
+            bool(ddp),
+        )
+        loss_magforces = 0
+        if "magforces" in pred.keys() and (
+            pred["magforces"] is not None and ref["magforces"] is not None
+        ):
+            loss_magforces = reduce_loss(
+                configs_weight
+                * torch.nn.functional.huber_loss(
                     configs_magforces_weight * ref["magforces"],
                     configs_magforces_weight * pred["magforces"],
                     reduction="none",
                     delta=self.huber_delta,
-                )
-                loss_magforces = reduce_loss(loss_magforces, ddp)
-        else:
-            loss_energy = torch.nn.functional.huber_loss(
-                configs_energy_weight * ref["energy"] / num_atoms,
-                configs_energy_weight * pred["energy"] / num_atoms,
-                reduction="mean",
-                delta=self.huber_delta,
+                ),
+                bool(ddp),
             )
-            loss_forces = conditional_huber_forces(
-                configs_forces_weight * ref["forces"],
-                configs_forces_weight * pred["forces"],
-                huber_delta=self.huber_delta,
-                ddp=ddp,
-            )
-            loss_stress = torch.nn.functional.huber_loss(
-                configs_stress_weight * ref["stress"],
-                configs_stress_weight * pred["stress"],
-                reduction="mean",
-                delta=self.huber_delta,
-            )
-            loss_magforces = 0
-            if "magforces" in pred.keys() and (
-                pred["magforces"] is not None and ref["magforces"] is not None
-            ):
-                loss_magforces = torch.nn.functional.huber_loss(
-                    configs_magforces_weight * ref["magforces"],
-                    configs_magforces_weight * pred["magforces"],
-                    reduction="mean",
-                    delta=self.huber_delta,
-                )
         return (
             self.energy_weight * loss_energy
             + self.forces_weight * loss_forces

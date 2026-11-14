@@ -6,8 +6,9 @@ batch is a single config with 2 atoms; multi-config cases use 2 configs.
 
 The loss functions only touch a handful of Batch fields (via attribute or
 item access): energy, forces, stress, virials, dipole, polarizability, ptr,
-weight, energy_weight, forces_weight, stress_weight, virials_weight. A
-minimal stand-in object providing both access styles is enough.
+weight, energy_weight, forces_weight, stress_weight, virials_weight,
+dipole_weight, polarizability_weight. A minimal stand-in object providing both
+access styles is enough.
 """
 
 import argparse
@@ -77,6 +78,8 @@ def make_ref(num_atoms_per_graph=(2,), **overrides):
         "magforces_weight": torch.ones(n_graphs),
         "stress_weight": torch.ones(n_graphs),
         "virials_weight": torch.ones(n_graphs),
+        "dipole_weight": torch.ones(n_graphs, 3),
+        "polarizability_weight": torch.ones(n_graphs, 3, 3),
         "energy": torch.zeros(n_graphs),
         "forces": torch.zeros(total_atoms, 3),
         "stress": torch.zeros(n_graphs, 3, 3),
@@ -204,6 +207,55 @@ def test_weighted_mean_squared_error_dipole():
     )
 
 
+def test_weighted_mean_squared_error_dipole_config_and_dipole_weights():
+    # 2 configs of 2 atoms, both off by 2.0 in x: (2/2)^2 = 1 in one of the
+    # three components of each -> 2 / 6 = 1/3
+    ref = make_ref(num_atoms_per_graph=(2, 2))
+    pred = clone_pred(ref)
+    pred["dipole"] = torch.tensor([[2.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    assert weighted_mean_squared_error_dipole(ref, pred).item() == pytest.approx(
+        1.0 / 3.0
+    )
+
+    # config weights [3, 1] -> (3 + 1) / 6
+    ref.weight = torch.tensor([3.0, 1.0])
+    assert weighted_mean_squared_error_dipole(ref, pred).item() == pytest.approx(
+        4.0 / 6.0
+    )
+
+    # the second config has no dipole label (dipole_weight 0): only the first
+    # one's error counts, and the mean keeps its elements -> 1 / 6
+    ref.weight = torch.ones(2)
+    ref.dipole_weight = torch.tensor([[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]])
+    assert weighted_mean_squared_error_dipole(ref, pred).item() == pytest.approx(
+        1.0 / 6.0
+    )
+
+
+def test_weighted_mean_squared_error_polarizability_config_and_property_weights():
+    # 2 configs of 2 atoms, both off by 6.0 in one component: (6/2)^2 = 9 in
+    # one of the nine components of each -> 18 / 18 = 1.0
+    ref = make_ref(num_atoms_per_graph=(2, 2))
+    pred = clone_pred(ref)
+    pred["polarizability"][:, 0, 0] = 6.0
+    assert weighted_mean_squared_error_polarizability(
+        ref, pred
+    ).item() == pytest.approx(1.0)
+
+    # config weights [3, 1] -> (27 + 9) / 18
+    ref.weight = torch.tensor([3.0, 1.0])
+    assert weighted_mean_squared_error_polarizability(
+        ref, pred
+    ).item() == pytest.approx(2.0)
+
+    # the second config has no polarizability label -> 9 / 18
+    ref.weight = torch.ones(2)
+    ref.polarizability_weight = torch.stack([torch.ones(3, 3), torch.zeros(3, 3)])
+    assert weighted_mean_squared_error_polarizability(
+        ref, pred
+    ).item() == pytest.approx(0.5)
+
+
 def test_conditional_mse_forces_regimes():
     # atom 0: |F_ref| = 150 -> regime 2, factor 0.7; error 1 -> se = 0.7
     # atom 1: |F_ref| = 0   -> regime 1, factor 1.0; error 2 -> se = 4.0
@@ -230,6 +282,26 @@ def test_conditional_huber_forces():
     # identical forces -> 0
     out0 = conditional_huber_forces(ref_forces, ref_forces.clone(), huber_delta=1.0)
     assert out0.item() == pytest.approx(0.0)
+
+
+def test_conditional_huber_forces_weight_scales_the_term():
+    # atom 0: |F_ref| = 150 -> delta 0.7, error 2.0 -> 0.7 * (2 - 0.35) = 1.155
+    # atom 1: |F_ref| = 0   -> delta 1.0, error 0.5 -> 0.5 * 0.5^2     = 0.125
+    # mean over 6 components = 1.28 / 6
+    ref_forces = torch.tensor([[150.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    pred_forces = torch.tensor([[152.0, 0.0, 0.0], [0.0, 0.5, 0.0]])
+    out = conditional_huber_forces(ref_forces, pred_forces, huber_delta=1.0)
+    assert out.item() == pytest.approx(1.28 / 6.0)
+
+    # per-atom weights [2, 0] multiply the terms, not the huber arguments, so
+    # neither atom changes regime: 2 * 1.155 / 6
+    weighted = conditional_huber_forces(
+        ref_forces,
+        pred_forces,
+        huber_delta=1.0,
+        weight=torch.tensor([[2.0], [0.0]]),
+    )
+    assert weighted.item() == pytest.approx(2.31 / 6.0)
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +587,7 @@ def test_universal_loss_magforces_per_config_weight_multiplies_the_arguments():
     """Not the term: the *inputs* of the huber, which is not the same thing.
 
     `configs_magforces_weight` multiplies ref and pred before the huber
-    (mace/modules/loss.py:486-491), so the error it sees is scaled and the
+    (mace/modules/loss.py:495-500), so the error it sees is scaled and the
     regime it lands in can change. With weight 2 the 0.5 deviation above
     becomes 1.0, which is exactly at delta: 0.5 * 1.0^2 = 0.5, meaned over 6
     -> 0.5 / 6, i.e. four times the unweighted value, not twice.
@@ -636,15 +708,37 @@ def test_universal_loss_per_config_forces_weight_can_change_the_huber_regime():
     assert loss(doubled, pred).item() == pytest.approx(1.155 / 3.0)
 
 
+def test_universal_loss_config_weight_is_a_linear_factor_on_every_term():
+    """Unlike the property weights above, `ref.weight` scales the huber terms.
+
+    It is where `config_weight`, `--config_type_weights` and `--weight_pt_head`
+    end up, so it has to act on the loss the same way it does in the MSE
+    losses. Same deviations as the four-term hand value above.
+    """
+    expected = 0.5 + 0.25 + 2.5 / 9.0 + 0.125 / 6.0
+    ref = make_ref(num_atoms_per_graph=(2,), energy=torch.tensor([10.0]))
+    pred = clone_pred(ref)
+    pred["energy"] = torch.tensor([12.0])
+    pred["forces"][1, 2] = 2.0
+    pred["stress"][0, 0, 0] = 3.0
+    pred["magforces"] = torch.zeros(2, 3)
+    pred["magforces"][0, 1] = 0.5
+    loss = UniversalLoss(huber_delta=1.0)
+
+    ref.weight = torch.tensor([3.0])
+    assert loss(ref, pred).item() == pytest.approx(3.0 * expected)
+    ref.weight = torch.tensor([0.0])
+    assert loss(ref, pred).item() == pytest.approx(0.0)
+
+
 # ---------------------------------------------------------------------------
 # The ddp=True branches
 #
-# Two loss modules keep a whole second copy of their arithmetic under
-# `if ddp:` -- reduction="none" followed by reduce_loss instead of
-# reduction="mean". With no process group initialised, reduce_loss falls
-# through to a plain mean, so the two branches must agree exactly. That
-# equality is the only thing that makes the single-process test suite say
-# anything at all about the distributed path.
+# The two huber modules reduce with `reduce_loss(..., bool(ddp))`, so ddp=True
+# takes the distributed formula and anything falsy the plain mean. With no
+# process group initialised, reduce_loss falls through to a plain mean, so the
+# two must agree exactly. That equality is the only thing that makes the
+# single-process test suite say anything at all about the distributed path.
 # ---------------------------------------------------------------------------
 
 
@@ -720,27 +814,32 @@ def test_weighted_mean_absolute_error_energy():
     assert weighted_mean_absolute_error_energy(ref, pred).item() == pytest.approx(1.5)
 
 
-def test_mean_normed_error_forces_is_unweighted():
-    """The L1L2 forces term ignores every weight, unlike every other one.
+def test_mean_normed_error_forces_config_and_forces_weights():
+    """The L1L2 forces term: per-atom error norm, weighted, then meaned.
 
-    `mean_normed_error_forces` takes the per-atom error norm and means it,
-    with no `ref.weight` and no `ref.forces_weight` anywhere
-    (mace/modules/loss.py:138-142). Pinned because it is the single
-    exception, and a port that "regularises" it changes what
-    `--loss l1l2energyforces` fits.
+    2 configs of 1 atom each, error norms 5 and 1 -> mean 3.
     """
-    ref = make_ref(num_atoms_per_graph=(2,), weight=torch.tensor([7.0]))
+    ref = make_ref(num_atoms_per_graph=(1, 1))
     pred = clone_pred(ref)
     pred["forces"][0] = torch.tensor([3.0, 4.0, 0.0])  # norm 5
     pred["forces"][1] = torch.tensor([0.0, 0.0, 1.0])  # norm 1
     assert mean_normed_error_forces(ref, pred).item() == pytest.approx(3.0)
+
+    # config weights [7, 1] -> (35 + 1) / 2
+    ref.weight = torch.tensor([7.0, 1.0])
+    assert mean_normed_error_forces(ref, pred).item() == pytest.approx(18.0)
+
+    # the first config has no forces label (forces_weight 0) -> (0 + 1) / 2
+    ref.weight = torch.ones(2)
+    ref.forces_weight = torch.tensor([0.0, 1.0])
+    assert mean_normed_error_forces(ref, pred).item() == pytest.approx(0.5)
 
 
 def test_weighted_mean_squared_error_polarizability_reshapes_only_the_reference():
     """An asymmetry worth pinning: `.view(-1, 3, 3)` is applied to `ref` only.
 
     A reference stored flat as [n_graphs, 9] is accepted and reshaped
-    (mace/modules/loss.py:174); a prediction stored flat is not, and would
+    (mace/modules/loss.py:194); a prediction stored flat is not, and would
     broadcast into nonsense instead of failing. Both sides are pinned.
     """
     ref = make_ref(
@@ -892,26 +991,121 @@ def test_a_zero_config_weight_dilutes_rather_than_renormalizing():
     assert masked == pytest.approx(both / 2)
 
 
-def test_the_weighted_huber_loss_ignores_config_and_property_weights():
-    """Unlike every other class here, this one drops the per-config weights.
+def test_the_weighted_huber_loss_applies_config_and_property_weights():
+    """The per-config weights multiply each huber term, as in the MSE losses.
 
-    Pinned because it is surprising: the constructor takes global weights and
-    honours them, so the natural assumption is that the per-config ones apply
-    too. They do not, and a test that only ever passes weights of 1.0 -- as
-    the hand-value test above does -- cannot tell the difference.
+    1 config, 2 atoms, huber_delta = 1.0:
+      energy: (11 - 10) / 2 = 0.5, quadratic: 0.5 * 0.5^2     = 0.125
+      forces: error 2.0 in one of 6, linear: (2 - 0.5) / 6    = 0.25
+      stress: error 3.0 in one of 9, linear: (3 - 0.5) / 9    = 2.5/9
     """
-    ref = make_ref(num_atoms_per_graph=(2,))
+    energy, forces, stress = 0.125, 0.25, 2.5 / 9.0
+    ref = make_ref(num_atoms_per_graph=(2,), energy=torch.tensor([10.0]))
     pred = clone_pred(ref)
-    pred["energy"] = torch.tensor([0.004])
-    pred["forces"][0, 0] = 0.002
-    pred["forces"][1, 0] = 0.002
-    pred["stress"][0, 0, 0] = 0.001
+    pred["energy"] = torch.tensor([11.0])
+    pred["forces"][0, 1] = 2.0
+    pred["stress"][0, 0, 0] = 3.0
+    loss = WeightedHuberEnergyForcesStressLoss(huber_delta=1.0)
+    assert loss(ref, pred).item() == pytest.approx(energy + forces + stress)
 
-    loss = WeightedHuberEnergyForcesStressLoss(
-        energy_weight=1.0, forces_weight=1.0, stress_weight=1.0, huber_delta=0.01
+    ref.weight = torch.tensor([3.0])
+    assert loss(ref, pred).item() == pytest.approx(3.0 * (energy + forces + stress))
+
+    # a property weight of 0 (that label is missing) removes only its own term
+    ref.weight = torch.ones(1)
+    ref.energy_weight = torch.tensor([0.0])
+    assert loss(ref, pred).item() == pytest.approx(forces + stress)
+    ref.energy_weight = torch.ones(1)
+    ref.forces_weight = torch.tensor([0.0])
+    assert loss(ref, pred).item() == pytest.approx(energy + stress)
+    ref.forces_weight = torch.ones(1)
+    ref.stress_weight = torch.tensor([0.0])
+    assert loss(ref, pred).item() == pytest.approx(energy + forces)
+
+
+# ---------------------------------------------------------------------------
+# Missing labels and config_weight, across every loss class
+#
+# `config_from_atoms` gives a property weight of 0 to a label the atoms do not
+# carry, and `AtomicData.from_config` fills that target with zeros. The weight
+# is the only thing that stops the zeros being trained as data, so every loss
+# has to apply it to every quantity it fits. `config_weight` (and with it
+# `--config_type_weights` and `--weight_pt_head`) lands in `ref.weight`.
+# ---------------------------------------------------------------------------
+
+
+PROPERTY_WEIGHT_SHAPES = {
+    "energy": ("energy_weight", ()),
+    "forces": ("forces_weight", ()),
+    "stress": ("stress_weight", ()),
+    "virials": ("virials_weight", ()),
+    "dipole": ("dipole_weight", (3,)),
+    "polarizability": ("polarizability_weight", (3, 3)),
+}
+
+FITTED_QUANTITIES = (
+    (WeightedEnergyForcesLoss, ("energy", "forces")),
+    (WeightedForcesLoss, ("forces",)),
+    (WeightedEnergyForcesStressLoss, ("energy", "forces", "stress")),
+    (WeightedHuberEnergyForcesStressLoss, ("energy", "forces", "stress")),
+    (UniversalLoss, ("energy", "forces", "stress")),
+    (WeightedEnergyForcesVirialsLoss, ("energy", "forces", "virials")),
+    (DipoleSingleLoss, ("dipole",)),
+    (DipolePolarLoss, ("dipole", "polarizability")),
+    (WeightedEnergyForcesDipoleLoss, ("energy", "forces", "dipole")),
+    (WeightedEnergyForcesL1L2Loss, ("energy", "forces")),
+)
+
+
+def _off_everywhere(ref):
+    """A prediction that misses every quantity, by 0.5 per component."""
+    pred = clone_pred(ref)
+    return {k: (v + 0.5).requires_grad_(True) for k, v in pred.items()}
+
+
+@pytest.mark.parametrize(
+    "cls,quantity",
+    [(cls, q) for cls, quantities in FITTED_QUANTITIES for q in quantities],
+    ids=lambda v: getattr(v, "__name__", v),
+)
+def test_a_missing_label_contributes_no_loss_and_no_gradient(cls, quantity):
+    # the prediction is right everywhere except the quantity whose label is
+    # missing, where it is 0.5 away from the zero fill
+    ref = make_ref(num_atoms_per_graph=(2, 3))
+    weight_name, shape = PROPERTY_WEIGHT_SHAPES[quantity]
+    setattr(ref, weight_name, torch.zeros(2, *shape))
+    pred = {k: v.clone().requires_grad_(True) for k, v in clone_pred(ref).items()}
+    with torch.no_grad():
+        pred[quantity] += 0.5
+
+    loss = cls()(ref, pred)
+    loss.backward()
+    assert loss.item() == 0.0
+    assert pred[quantity].grad is not None
+    assert torch.count_nonzero(pred[quantity].grad) == 0
+
+
+@pytest.mark.parametrize("cls", [cls for cls, _ in FITTED_QUANTITIES])
+def test_config_weight_zero_removes_the_config_from_every_loss(cls):
+    ref = make_ref(num_atoms_per_graph=(2, 3))
+    ref.weight = torch.zeros(2)
+    pred = _off_everywhere(ref)
+
+    loss = cls()(ref, pred)
+    loss.backward()
+    assert loss.item() == 0.0
+    # quantities the loss does not fit have no gradient at all
+    assert all(
+        v.grad is None or torch.count_nonzero(v.grad) == 0 for v in pred.values()
     )
-    unweighted = loss(ref, pred).item()
 
-    for field in ("weight", "energy_weight", "forces_weight", "stress_weight"):
-        setattr(ref, field, torch.tensor([9.0]))
-    assert loss(ref, pred).item() == pytest.approx(unweighted)
+
+@pytest.mark.parametrize("cls", [cls for cls, _ in FITTED_QUANTITIES])
+def test_config_weight_is_a_linear_factor_in_every_loss(cls):
+    ref = make_ref(num_atoms_per_graph=(2, 3))
+    pred = _off_everywhere(ref)
+    unweighted = cls()(ref, pred).item()
+    assert unweighted > 0.0
+
+    ref.weight = torch.tensor([2.0, 2.0])
+    assert cls()(ref, pred).item() == pytest.approx(2.0 * unweighted)
