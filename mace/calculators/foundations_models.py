@@ -351,7 +351,7 @@ def mace_mp(
         from torch_dftd.torch_dftd3_calculator import TorchDFTD3Calculator
     except ImportError as exc:
         raise RuntimeError(
-            "Please install torch-dftd to use dispersion corrections (see https://github.com/pfnet-research/torch-dftd)"
+            'Please install torch-dftd with `pip install "mace-torch[dftd]"` to use dispersion corrections (see https://github.com/pfnet-research/torch-dftd)'
         ) from exc
 
     print("Using TorchDFTD3Calculator for D3 dispersion corrections")

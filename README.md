@@ -92,6 +92,12 @@ pip install mace-torch
 
 **Note:** The homonymous package on [PyPI](https://pypi.org/project/MACE/) has nothing to do with this one.
 
+For D3 dispersion corrections with `mace_mp(..., dispersion=True)`, install the optional `torch-dftd` dependency:
+
+```sh
+pip install "mace-torch[dftd]"
+```
+
 ### Installation from source
 
 ```sh
