@@ -212,6 +212,13 @@ class ChannelwiseTPConvSpec(KernelSpec):
                     f"num_features, so write each irrep once and set "
                     f"num_features for the width."
                 )
+        if not self.paths:
+            raise ValueError(
+                f"irreps_node={self.irreps_node!r} and "
+                f"irreps_edge={self.irreps_edge!r} couple to nothing in "
+                f"irreps_out={self.irreps_out!r}, so the convolution carries "
+                f"no message. Widen irreps_out or the edge attributes."
+            )
 
     @property
     def highest_degree(self) -> int:

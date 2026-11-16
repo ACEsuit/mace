@@ -45,3 +45,8 @@ def test_a_node_multiplicity_is_refused_in_favour_of_the_channel_count():
 def test_a_channel_count_below_one_is_refused():
     with pytest.raises(ValueError, match="num_features"):
         ChannelwiseTPConvSpec(num_features=0)
+
+
+def test_a_convolution_that_keeps_no_coupling_is_refused():
+    with pytest.raises(ValueError, match="no message"):
+        ChannelwiseTPConvSpec(irreps_node="1o", irreps_edge="0e", irreps_out="0e")
