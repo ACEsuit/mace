@@ -1,6 +1,7 @@
 """Tests for training plots and their interaction with application state."""
 
 import json
+import logging
 import subprocess
 import sys
 
@@ -15,17 +16,24 @@ import mace.tools  # noqa: F401  # pylint: disable=unused-import
 from mace.cli.visualise_train import TrainingPlotter, belongs_to_head
 
 
-def test_calculator_import_preserves_font_size(monkeypatch):
+@pytest.mark.parametrize(
+    "log_level", [logging.NOTSET, logging.DEBUG, logging.INFO, logging.ERROR]
+)
+def test_calculator_import_preserves_matplotlib_settings(monkeypatch, log_level):
     monkeypatch.setenv("MPLBACKEND", "Agg")
     result = subprocess.run(
         [
             sys.executable,
             "-c",
+            "import logging; "
             "import matplotlib; "
             "matplotlib.rcParams['font.size'] = 19; "
+            "logger = logging.getLogger('matplotlib'); "
+            f"logger.setLevel({log_level}); "
             "from mace.calculators import MACECalculator; "
             "assert matplotlib.rcParams['font.size'] == 19, "
-            "matplotlib.rcParams['font.size']",
+            "matplotlib.rcParams['font.size']; "
+            f"assert logger.level == {log_level}, logger.level",
         ],
         capture_output=True,
         text=True,

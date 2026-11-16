@@ -11,9 +11,6 @@ from torchmetrics import Metric
 
 from mace.tools.utils import filter_nonzero_weight
 
-mpl_logger = logging.getLogger("matplotlib")
-mpl_logger.setLevel(logging.WARNING)  # Only show WARNING and above
-
 colors = [
     "#1f77b4",  # muted blue
     "#d62728",  # brick red

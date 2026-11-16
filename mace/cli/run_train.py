@@ -115,6 +115,7 @@ def run(args) -> None:
     # Setup
     tools.set_seeds(args.seed)
     tools.setup_logger(level=args.log_level, tag=tag, directory=args.log_dir, rank=rank)
+    logging.getLogger("matplotlib").setLevel(logging.WARNING)
     logging.info("===========VERIFYING SETTINGS===========")
     for message, loglevel in input_log_messages:
         logging.log(level=loglevel, msg=message)
