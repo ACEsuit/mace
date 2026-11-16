@@ -46,6 +46,7 @@ from mace_core.kernels.specs import (
 )
 from torch import Tensor, nn
 
+from mace_torch.backends import require_built
 from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.reference import TORCH_DTYPES
 from mace_torch.nn.edges import EdgeInputs
@@ -140,7 +141,7 @@ class _Convolution(nn.Module):
             kind="normalized_silu",
             precision=precision,
         )
-        self.radial_mlp = backend.make_radial_mlp(weights)
+        self.radial_mlp = require_built(backend, weights)
         self.linear = backend.make_linear(
             LinearSpec(
                 irreps_in=expanded_irreps(convolution.irreps_paths, num_features),
@@ -160,7 +161,7 @@ class _Convolution(nn.Module):
             if learned_density
             else None
         )
-        self.density_mlp = None if density is None else backend.make_radial_mlp(density)
+        self.density_mlp = None if density is None else require_built(backend, density)
         self.reduce = backend.make_segment_reduce(
             SegmentReduceSpec(reduction="sum", num_features=1, precision=precision)
         )
@@ -457,8 +458,8 @@ class NonLinearInteractionBlock(nn.Module):
             kind=kind,
             precision=precision,
         )
-        self.radial_mlp = backend.make_radial_mlp(weights)
-        self.density_mlp = backend.make_radial_mlp(density)
+        self.radial_mlp = require_built(backend, weights)
+        self.density_mlp = require_built(backend, density)
         self.reduce = backend.make_segment_reduce(
             SegmentReduceSpec(reduction="sum", num_features=1, precision=precision)
         )

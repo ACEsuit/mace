@@ -9,6 +9,7 @@ import pytest
 import torch
 from conftest import assert_close
 from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.kernels import UnsupportedKernelSpecError
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.nn.edges import EdgeInputs
@@ -75,7 +76,7 @@ def _inputs(num_features: int, irreps_node: str, num_elements: int = 2):
     )
 
 
-def _block(kind, **options):
+def _block(kind, backend=BACKEND, **options):
     common = {
         "irreps_node": "0e+1o",
         "irreps_edge": "0e+1o+2e",
@@ -90,9 +91,43 @@ def _block(kind, **options):
     if kind is NonLinearInteractionBlock:
         common.setdefault("irreps_up", "0e+1o")
         common.setdefault("num_up_features", 2)
-    block = kind(BACKEND, **common)
+    block = kind(backend, **common)
     initialize_model_weights(block, 1)
     return block
+
+
+class _DecliningBackend(ReferenceBackend):
+    """A backend that leaves radial networks to the reference.
+
+    Either every one, or only the one-number density networks, so that each
+    place a block builds a radial network is reached by one case.
+    """
+
+    def __init__(self, density_only: bool) -> None:
+        super().__init__()
+        self.density_only = density_only
+
+    def make_radial_mlp(self, kernel_spec):
+        if self.density_only and kernel_spec.channels[-1] != 1:
+            return super().make_radial_mlp(kernel_spec)
+        return None
+
+
+@pytest.mark.parametrize(
+    ("kind", "options", "density_only"),
+    [
+        (InteractionBlock, {}, False),
+        (InteractionBlock, {"learned_density": True}, True),
+        (ResidualInteractionBlock, {"irreps_skip_out": "0e+1o"}, False),
+        (NonLinearInteractionBlock, {"irreps_skip_out": "0e+1o"}, False),
+        (NonLinearInteractionBlock, {"irreps_skip_out": "0e+1o"}, True),
+    ],
+)
+def test_a_block_refuses_a_radial_network_its_backend_declined(
+    kind, options, density_only
+):
+    with pytest.raises(UnsupportedKernelSpecError, match="declined 'radial_mlp'"):
+        _block(kind, backend=_DecliningBackend(density_only), **options)
 
 
 def test_the_plain_block_applies_its_skip_to_the_message_and_carries_none():
