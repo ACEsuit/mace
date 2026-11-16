@@ -23,6 +23,8 @@ variables:
   # Keep the JIT-compiled OpenEquivariance kernels inside the project, the only
   # place the cache below can reach.
   TORCH_EXTENSIONS_DIR: "$CI_PROJECT_DIR/.cache/torch_extensions"
+  # Read-only unless the trigger says otherwise; see the cache block below.
+  CACHE_POLICY: "pull"
 
 stages:
   - test
@@ -43,6 +45,13 @@ stages:
   # a rejected upload does not fail the job, so the whole cache silently stops
   # working. Both paths are reused only when what produced them still matches,
   # so a warm cache can save work but never change a result.
+  #
+  # Only trusted pipelines write it. A pipeline started for a fork's pull
+  # request runs that fork's setup.py, requirements and conftest.py, and a
+  # restored wheel or compiled kernel is executed without being rebuilt, so
+  # whatever such a pipeline wrote would run inside every later one with the
+  # same key. CACHE_POLICY is set by the GitHub workflow, and anything that
+  # does not set it (a hand-started pipeline included) only reads.
   cache:
     key:
       files:
@@ -51,6 +60,7 @@ stages:
     paths:
       - .cache/pip/wheels
       - .cache/torch_extensions
+    policy: $CACHE_POLICY
   before_script:
     # `before_script` and `script` are concatenated into ONE shell, which is why
     # both the venv activation below and this function survive into `script`.
