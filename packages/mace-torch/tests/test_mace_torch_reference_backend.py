@@ -116,6 +116,44 @@ def test_a_bias_lands_only_on_the_scalars(backend):
 
 
 # ---------------------------------------------------------------------------
+# A batch without nodes
+# ---------------------------------------------------------------------------
+
+
+def test_a_batch_without_nodes_passes_through_the_grouped_ops(backend):
+    channels = 2
+    convolution = backend.make_channelwise_tp_conv(
+        ChannelwiseTPConvSpec(
+            irreps_node="0e+1o",
+            irreps_edge="0e+1o",
+            irreps_out="0e+1o",
+            num_features=channels,
+        )
+    )
+    paths = convolution.kernel_spec.irreps_paths
+    contraction = backend.make_symmetric_contraction(
+        SymmetricContractionSpec(
+            irreps_in=paths,
+            irreps_out="0e+1o",
+            correlation=2,
+            num_elements=1,
+            num_features=channels,
+        )
+    )
+    no_edges = torch.zeros(0, dtype=torch.long)
+    messages = convolution(
+        torch.zeros(0, channels * 4),
+        torch.zeros(0, 4),
+        torch.zeros(0, len(convolution.kernel_spec.paths), channels),
+        no_edges,
+        no_edges,
+        0,
+    )
+    assert messages.shape == (0, channels * Irreps.parse(paths).dimension)
+    assert contraction(messages, no_edges).shape == (0, channels * 4)
+
+
+# ---------------------------------------------------------------------------
 # The force path, differentiated twice
 # ---------------------------------------------------------------------------
 

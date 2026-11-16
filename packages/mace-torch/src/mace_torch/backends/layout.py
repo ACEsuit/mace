@@ -47,7 +47,13 @@ def grouped(features: Tensor, widths: tuple[int, ...]) -> Tensor:
     """``[n, num_features, sum(widths)]`` to grouped
     ``[n, num_features * sum(widths)]``, the inverse of :func:`per_channel`."""
     blocks = features.split(list(widths), dim=-1)
-    return _join([block.reshape(features.shape[0], -1) for block in blocks])
+    num_nodes, num_features = features.shape[0], features.shape[1]
+    return _join(
+        [
+            block.reshape(num_nodes, num_features * width)
+            for block, width in zip(blocks, widths, strict=True)
+        ]
+    )
 
 
 def _join(blocks: list[Tensor]) -> Tensor:
