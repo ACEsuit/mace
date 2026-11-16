@@ -7,6 +7,8 @@ it and passed through a sigmoid. The scalars themselves go through a SiLU.
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.canonical import SILU_SECOND_MOMENT_SCALE
@@ -43,8 +45,10 @@ class Gate(nn.Module):
     the gates spent.
 
     Args:
-        irreps_out: The output declaration, scalars first. A scalar term may
-            only be even: an odd scalar through a SiLU is not odd any more.
+        irreps_out: The output declaration, sorted by degree and odd before
+            even at one degree, as the frozen tree's gate reads it. A scalar
+            term may only be even: an odd scalar through a SiLU is not odd any
+            more.
     """
 
     def __init__(self, irreps_out: str) -> None:
@@ -55,6 +59,14 @@ class Gate(nn.Module):
                 raise ValueError(
                     f"irreps_out={irreps_out!r} has {mul}x{ir}; an odd scalar "
                     f"does not stay odd through a SiLU. Gate even scalars only."
+                )
+        for (_, before), (mul, ir) in pairwise(terms):
+            if (ir.degree, ir.parity) < (before.degree, before.parity):
+                raise ValueError(
+                    f"irreps_out={irreps_out!r} has {mul}x{ir} after {before}. "
+                    f"The gate reads and writes its irreps sorted, by degree "
+                    f"and odd before even at one degree, so declare them in "
+                    f"that order."
                 )
         self.num_scalars = sum(mul for mul, ir in terms if ir.degree == 0)
         self.gated = [(mul, ir.dimension) for mul, ir in terms if ir.degree > 0]

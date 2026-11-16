@@ -182,3 +182,11 @@ def test_the_gate_scales_each_copy_by_its_own_gate():
 def test_an_odd_scalar_cannot_be_gated():
     with pytest.raises(ValueError, match="odd scalar"):
         Gate("2x0o")
+
+
+@pytest.mark.parametrize(
+    "irreps_out", ["2x1o+3x0e", "2x0e+2x2e+2x1o", "2x0e+2x1e+2x1o"]
+)
+def test_an_unsorted_gate_output_is_refused(irreps_out):
+    with pytest.raises(ValueError, match="sorted"):
+        Gate(irreps_out)
