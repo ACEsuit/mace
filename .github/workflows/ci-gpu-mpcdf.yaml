@@ -31,12 +31,15 @@ name: gpu tests (MPCDF)
 # `pull_request_target` runs with the base repository's credentials, so the
 # usual warning applies — but nothing here EXECUTES the code under test. The
 # steps below are git and curl only; the code runs on the GitLab side, behind
-# the environment gate. Two rules keep it that way, and both matter:
-#   - the pipeline definition comes from the base ref, so a fork cannot choose
-#     what runs on MPCDF's hardware
+# the environment gate. Three rules keep it that way, and all of them matter:
+#   - the pipeline definition comes from the default branch, so a fork cannot
+#     choose what runs on MPCDF's hardware
 #   - the checkout below is explicitly the pull request's head, since
 #     `pull_request_target` otherwise hands you the base branch and the suite
 #     would silently pass on the wrong code
+#   - a fork's pipeline reads the GitLab cache but never writes it, so code
+#     that ran behind one approval cannot leave wheels or compiled kernels for
+#     the trusted pipelines that restore the same cache key later
 #
 # Setup (one-off, outside this repository):
 #   - a GitLab project whose numeric id goes into the repository variable
@@ -143,11 +146,10 @@ jobs:
         env:
           TOKEN: ${{ secrets.MPCDF_GITLAB_TOKEN }}
           PROJECT_ID: ${{ vars.MPCDF_GITLAB_PROJECT_ID }}
-          # Both set ONLY for fork pull requests. Everywhere else — same-repo
-          # PRs, pushes, dispatches, the schedule — HEAD is already the commit
-          # under test and carries the definition that should run it.
+          # Set only for fork pull requests. Everywhere else (same-repo PRs,
+          # pushes, dispatches, the schedule) HEAD is already the commit under
+          # test and carries the definition that should run it.
           FORK_PR_NUMBER: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}
-          BASE_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || '' }}
         run: |
           set -euo pipefail
           # Resolve the path from the id so the project is never configured
@@ -157,23 +159,27 @@ jobs:
           branch="gh-run-${{ github.run_id }}-${{ github.run_attempt }}"
 
           # `tested` is the commit to mirror, `definition` the commit to take the
-          # pipeline definition from. They differ only for a fork: the code is
-          # the fork's, the pipeline that runs it is the base branch's, so a fork
-          # can change what gets tested and never what runs it. Everywhere else
-          # both are HEAD, which is what lets a same-repo PR editing the GPU
-          # pipeline exercise its own change.
+          # pipeline definition from. For a fork the code is the fork's and the
+          # definition is HEAD, which under `pull_request_target` is the default
+          # branch: the same ref this workflow file was read from, so the two
+          # always agree, and a fork can change what gets tested but never what
+          # runs it. Everywhere else HEAD is also the commit under test, which
+          # is what lets a same-repo PR editing the GPU pipeline exercise its
+          # own change.
           #
-          # No --depth on either fetch: a shallow marker cannot be pushed to a
+          # Not `pull_request.base.sha`: that is the base tip as of the pull
+          # request's last sync, so on an older pull request it is a commit
+          # whose pipeline predates fixes the default branch already has.
+          #
+          # No --depth on the fetch: a shallow marker cannot be pushed to a
           # mirror that lacks the history.
+          definition=HEAD
           if [ -n "${FORK_PR_NUMBER}" ]; then
             # refs/pull/N/head is how a fork's commits are reachable here.
             git fetch --no-tags origin "refs/pull/${FORK_PR_NUMBER}/head"
             tested=$(git rev-parse FETCH_HEAD)
-            git fetch --no-tags origin "${BASE_SHA}"
-            definition="${BASE_SHA}"
           else
             tested=$(git rev-parse HEAD)
-            definition=HEAD
           fi
 
           # Read straight out of the object database, so this does not depend on
@@ -221,10 +227,15 @@ jobs:
           BRANCH: ${{ needs.push.outputs.branch }}
           # See the push job: github.sha is the base commit on a pull request.
           TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # A fork's code runs behind a reviewer's approval, and the cache key
+          # it would write is the one every later pipeline restores. So a fork
+          # only reads the cache; every other trigger may also write it.
+          CACHE_POLICY: ${{ github.event_name == 'pull_request_target' && 'pull' || 'pull-push' }}
         run: |
           set -euo pipefail
           # ONLY_VENDOR selects the single job this pipeline will contain; see
-          # the rules in .github/gitlab/ci.yml.
+          # the rules in .github/gitlab/ci.yml. CACHE_POLICY overrides that
+          # file's read-only default.
           if ! response=$(curl -sS --fail-with-body -X POST \
               -H "PRIVATE-TOKEN: ${TOKEN}" \
               "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/pipeline" \
@@ -232,7 +243,9 @@ jobs:
               --form "variables[][key]=ONLY_VENDOR" \
               --form "variables[][value]=${{ matrix.vendor }}" \
               --form "variables[][key]=GITHUB_SHA" \
-              --form "variables[][value]=${TESTED_SHA}"); then
+              --form "variables[][value]=${TESTED_SHA}" \
+              --form "variables[][key]=CACHE_POLICY" \
+              --form "variables[][value]=${CACHE_POLICY}"); then
             echo "::error::could not create the pipeline"
             echo "$response"
             exit 1
@@ -308,6 +321,12 @@ jobs:
       # Mirror the traces here so a failure can be read straight from the pull
       # request, without following a link into GitLab.
       #
+      # A trace is output of the code under test, which for a fork is anyone's,
+      # and the runner parses every `::command::` line a step prints. So each
+      # trace goes out between `::stop-commands::` and a token drawn after the
+      # pipeline has finished, which the trace cannot contain. The resume line
+      # starts on a fresh line because a trace need not end with a newline.
+      #
       # continue-on-error because this step reports a result, it does not
       # produce one: an API blip while fetching the job list would otherwise
       # turn a green pipeline red under `set -e`. The verdict comes from the
@@ -326,7 +345,10 @@ jobs:
           jq -r '.[] | "\(.id)\t\(.name)\t\(.status)"' <<< "$jobs" |
           while IFS=$'\t' read -r id name status; do
             echo "::group::${name} (${status})"
+            stop=$(openssl rand -hex 16)
+            echo "::stop-commands::${stop}"
             curl -sS -H "PRIVATE-TOKEN: ${TOKEN}" "${api}/jobs/${id}/trace" || true
+            printf '\n::%s::\n' "${stop}"
             echo "::endgroup::"
             echo "- \`${name}\`: **${status}**" >> "$GITHUB_STEP_SUMMARY"
           done
