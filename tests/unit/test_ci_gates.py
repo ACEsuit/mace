@@ -601,3 +601,50 @@ def test_a_failure_to_resolve_fails_the_job():
 
     assert "status=1" in script
     assert 'exit "$status"' in script
+
+
+# ---------------------------------------------------------------------------
+# the parity job
+#
+# tests/parity is the one directory that needs both trees in one environment,
+# and its conftest skips the whole directory when the v1 stack does not import,
+# so that the legacy jobs collecting all of tests/ stay green. That skip is the
+# hole: a job that lost the v1 install, or stopped naming the directory, would
+# still pass. These hold the job to installing both stacks, importing them
+# before pytest can skip, and running the directory.
+# ---------------------------------------------------------------------------
+
+
+def _parity_job() -> dict:
+    core = yaml.safe_load((WORKFLOWS / "ci-core.yaml").read_text(encoding="utf-8"))
+    return core["jobs"]["parity"]
+
+
+def test_a_pr_job_runs_the_parity_suite_with_both_stacks_installed():
+    steps = _parity_job()["steps"]
+    uses = [step.get("uses", "") for step in steps]
+    runs = "\n".join(step.get("run", "") for step in steps)
+
+    assert "./.github/actions/setup-mace" in uses, "the legacy package is not installed"
+    assert "packages/mace-core" in runs and "packages/mace-torch" in runs
+    tests = [
+        step["with"]["tests"]
+        for step in steps
+        if step.get("uses") == "./.github/actions/run-tests"
+    ]
+    assert tests and "tests/parity" in tests[0].split()
+
+
+def test_the_parity_job_imports_both_stacks_before_pytest_can_skip_them():
+    steps = _parity_job()["steps"]
+    run_tests = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("uses") == "./.github/actions/run-tests"
+    )
+    before = "\n".join(step.get("run", "") for step in steps[:run_tests])
+
+    assert re.search(r"import mace, mace_core, mace_torch", before), (
+        "without an import before pytest, a broken v1 install turns into a "
+        "conftest skip and the job passes having compared nothing"
+    )
