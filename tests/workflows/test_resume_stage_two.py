@@ -98,17 +98,26 @@ def test_the_first_resumed_stage_two_epoch_trains_at_the_stage_two_lr(
     tmp_path, regression_set
 ):
     """The epoch a resumed run opens stage two with already uses `--swa_lr`."""
-    run_mace_train(base_training_params(tmp_path, regression_set, max_num_epochs=3))
+    run_mace_train(
+        base_training_params(
+            tmp_path, regression_set, max_num_epochs=3, save_all_checkpoints=None
+        )
+    )
 
     resumed = base_training_params(
         tmp_path,
         regression_set,
-        max_num_epochs=3,
+        max_num_epochs=4,
         restart_latest=None,
         swa=None,
         start_swa=2,
         swa_lr=0.0005,
+        save_all_checkpoints=None,
     )
     run_mace_train(resumed)
 
-    assert set(final_lrs(latest_checkpoint(tmp_path, swa=True))) == {0.0005}
+    first_stage_two = min(
+        tmp_path.glob("contract_run-7_epoch-*_swa.pt"),
+        key=lambda path: int(path.stem.split("epoch-")[1].split("_")[0]),
+    )
+    assert set(final_lrs(first_stage_two)) == {0.0005}
