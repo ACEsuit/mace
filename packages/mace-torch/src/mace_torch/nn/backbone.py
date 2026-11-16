@@ -261,6 +261,12 @@ class MACEBackbone(nn.Module):
             len(self.atomic_numbers)
         )
         self.register_buffer("element_index_of", element_index_of, persistent=False)
+        # Saved so that a checkpoint names the elements its weights belong to,
+        # and checked before it loads, so that it only ever loads unchanged:
+        # see `_load_from_state_dict`.
+        self.register_buffer(
+            "element_table", torch.tensor(self.atomic_numbers, dtype=torch.int64)
+        )
         self.precision = precision
         self.between_layers = between_layers
         self.node_input_names = tuple(spec.name for spec in node_inputs)
@@ -427,6 +433,40 @@ class MACEBackbone(nn.Module):
             avg_num_neighbors=avg_num_neighbors,
             learned_density=learned_density,
             **common,
+        )
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ) -> None:
+        """Refuse a checkpoint written for another element table.
+
+        Every element weight is a column of that table, so loading one table's
+        weights into a model built for another would run without error and
+        compute with the wrong elements.
+        """
+        saved = state_dict.get(prefix + "element_table")
+        if saved is not None and tuple(saved.tolist()) != self.atomic_numbers:
+            error_msgs.append(
+                f"the checkpoint was written for the element table "
+                f"{saved.tolist()}, and this model is built for "
+                f"{list(self.atomic_numbers)}. Build the model with the "
+                f"checkpoint's table, in its order."
+            )
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
         )
 
     def forward(

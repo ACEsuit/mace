@@ -422,6 +422,21 @@ def test_the_element_lookup_is_not_saved():
     assert not any("element_index_of" in key for key in _backbone().state_dict())
 
 
+def test_a_checkpoint_loads_only_into_its_own_element_table():
+    state = _backbone().state_dict()
+    _backbone(seed=1).load_state_dict(state)
+    reordered = MACEBackbone(
+        ReferenceBackend(), _config(), (8, 1, 6), precision=_precision()
+    )
+    with pytest.raises(RuntimeError, match=r"element table \[1, 6, 8\]"):
+        reordered.load_state_dict(state)
+
+
+# ---------------------------------------------------------------------------
+# Ops the backend declines
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.parametrize("op", ["spherical_harmonics", "radial_basis"])
 def test_an_edge_op_the_backend_declined_is_refused_at_build(op):
     backend = ReferenceBackend()
