@@ -51,6 +51,7 @@ from mace_core.kernels.specs import (
 from mace_core.observables import InputSpec
 from torch import Tensor, nn
 
+from mace_torch.backends import require_built
 from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.reference import TORCH_DTYPES
 from mace_torch.nn.edges import EdgeInputs
@@ -275,12 +276,12 @@ class MACEBackbone(nn.Module):
             apply_cutoff=config.apply_cutoff,
             precision=precision,
         )
-        self.spherical_harmonics = backend.make_spherical_harmonics(harmonics)
+        self.spherical_harmonics = require_built(backend, harmonics)
         # The distance transform is the model's own module, not an op, so it
         # takes the precision from the default dtype it is built under.
         with _default_dtype(TORCH_DTYPES[precision]):
             self.radial_embedding = RadialEmbeddingBlock(
-                backend.make_radial_basis(radial),
+                require_built(backend, radial),
                 build_distance_transform(config.distance_transform),
             )
         num_radial = self.radial_embedding.num_basis

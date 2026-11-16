@@ -422,6 +422,14 @@ def test_the_element_lookup_is_not_saved():
     assert not any("element_index_of" in key for key in _backbone().state_dict())
 
 
+@pytest.mark.parametrize("op", ["spherical_harmonics", "radial_basis"])
+def test_an_edge_op_the_backend_declined_is_refused_at_build(op):
+    backend = ReferenceBackend()
+    setattr(backend, f"make_{op}", lambda kernel_spec: None)
+    with pytest.raises(UnsupportedKernelSpecError, match=f"declined '{op}'"):
+        _backbone(backend)
+
+
 class _Recording:
     """The reference backend, counting every factory call."""
 
