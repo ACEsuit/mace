@@ -212,6 +212,25 @@ class ChannelwiseTPConvSpec(KernelSpec):
                     f"num_features, so write each irrep once and set "
                     f"num_features for the width."
                 )
+        for name, declaration in (
+            ("irreps_edge", self.irreps_edge),
+            ("irreps_out", self.irreps_out),
+        ):
+            for multiplicity, irrep in Irreps.parse(declaration):
+                if multiplicity != 1:
+                    raise ValueError(
+                        f"{name}={declaration!r} gives {irrep} a multiplicity "
+                        f"of {multiplicity}, which the convolution would "
+                        f"ignore: it reads one copy of each edge irrep and "
+                        f"writes one term per path. Write each irrep once."
+                    )
+        targets = [irrep for _, irrep in Irreps.parse(self.irreps_out)]
+        if len(set(targets)) != len(targets):
+            raise ValueError(
+                f"irreps_out={self.irreps_out!r} names an irrep more than "
+                f"once. It is the set of irreps the convolution keeps, so name "
+                f"each once."
+            )
         if not self.paths:
             raise ValueError(
                 f"irreps_node={self.irreps_node!r} and "

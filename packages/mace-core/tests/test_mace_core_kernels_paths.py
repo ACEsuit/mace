@@ -50,3 +50,16 @@ def test_a_channel_count_below_one_is_refused():
 def test_a_convolution_that_keeps_no_coupling_is_refused():
     with pytest.raises(ValueError, match="no message"):
         ChannelwiseTPConvSpec(irreps_node="1o", irreps_edge="0e", irreps_out="0e")
+
+
+@pytest.mark.parametrize(
+    ("field", "declaration"), [("irreps_edge", "2x0e+1o"), ("irreps_out", "0e+2x1o")]
+)
+def test_an_edge_or_output_multiplicity_is_refused_by_name(field, declaration):
+    with pytest.raises(ValueError, match=rf"{field}=.*multiplicity of 2"):
+        ChannelwiseTPConvSpec(irreps_node="0e+1o", **{field: declaration})
+
+
+def test_an_output_irrep_named_twice_is_refused():
+    with pytest.raises(ValueError, match="more than once"):
+        ChannelwiseTPConvSpec(irreps_node="0e+1o", irreps_out="0e+0e+1o")
