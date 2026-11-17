@@ -80,14 +80,44 @@ def test_keep_isolated_atoms_keeps_them_among_the_structures_too(tmp_path):
     assert len(backend) == 2
 
 
-def test_a_file_of_isolated_atoms_only_has_nothing_to_train_on(tmp_path):
-    path = _write(tmp_path, [_isolated(1, -0.5), _isolated(8, -2.0)])
-    with pytest.raises(DataBackendError, match="only isolated-atom references"):
+@pytest.mark.parametrize(
+    "unlabelled", [[], [_water(None), _water(None)]], ids=["nothing-else", "unlabelled"]
+)
+def test_labels_on_the_isolated_atoms_alone_do_not_count(tmp_path, unlabelled):
+    """The references are taken out of the dataset, so their energies do not
+    make the structures that remain labelled."""
+    path = _write(tmp_path, [_isolated(1, -0.5), _isolated(8, -2.0), *unlabelled])
+    message = "references taken out" if unlabelled else "no structure besides"
+    with pytest.raises(DataBackendError, match=message):
         _open(path)
-    assert _open(path, require_labels=False).isolated_atom_energies() == {
-        1: -0.5,
-        8: -2.0,
-    }
+    opened = _open(path, require_labels=False)
+    assert len(opened) == len(unlabelled)
+    assert opened.isolated_atom_energies() == {1: -0.5, 8: -2.0}
+    # Kept among the structures, the references are labelled structures.
+    assert len(_open(path, keep_isolated_atoms=True)) == 2 + len(unlabelled)
+
+
+def test_a_reserved_key_rewritten_to_nothing_is_not_a_label(tmp_path):
+    """ase moves ``energy`` into a calculator; a structure without one has its
+    rewritten key set to None, which the file-level check counts as present."""
+    key_spec = KeySpecification.from_defaults().apply_overrides(
+        {"energy_key": "energy"}
+    )
+    path = _write(tmp_path, [_water(None), _water(None)])
+    with pytest.raises(DataBackendError) as error:
+        open_dataset(path, format="xyz", key_spec=key_spec)
+    assert "no structure carries any of ['energy', 'REF_forces'" in str(error.value)
+    assert "isolated-atom" not in str(error.value)
+
+
+@pytest.mark.parametrize("label", ["forces", "dipole"])
+def test_forces_or_a_dipole_alone_are_labels(tmp_path, label):
+    structure = _water(None)
+    if label == "forces":
+        structure.arrays["REF_forces"] = np.full((3, 3), 0.1)
+    else:
+        structure.info["dipole"] = np.array([0.1, 0.0, 0.0])
+    assert len(_open(_write(tmp_path, [structure, structure]))) == 2
 
 
 def test_two_isolated_atoms_of_one_element_that_disagree_raise(tmp_path):
