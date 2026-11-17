@@ -69,6 +69,11 @@ class _ForgetsOnPickle(InMemoryBackend):
         return {**self.__dict__, "_configurations": self._configurations[:1]}
 
 
+class _StopsIteratingEarly(InMemoryBackend):
+    def __iter__(self):
+        return self.iter_range(stop=1)
+
+
 class _MiscountsLength(InMemoryBackend):
     def __len__(self):
         return super().__len__() + 1
@@ -102,6 +107,7 @@ class _NoIsolatedAtomEnergies(InMemoryBackend):
         (_NumpyEnergies, 4, "is not \\{int: float\\}"),
         (_NoIsolatedAtomEnergies, 4, "lacks part of the DataBackend protocol"),
         (InMemoryBackend, 1, "needs at least two structures"),
+        (_StopsIteratingEarly, 4, "iterating the backend is not iter_range"),
     ],
 )
 def test_the_contract_check_catches_each_broken_part(broken, length, message):

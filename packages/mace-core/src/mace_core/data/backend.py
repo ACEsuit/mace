@@ -128,6 +128,15 @@ class DataBackend(Protocol):
         """
         ...
 
+    def __iter__(self) -> Iterator[Configuration]:
+        """Every structure, in order, as ``iter_range()`` yields them.
+
+        Declared rather than left to Python's fallback through
+        :meth:`__getitem__`, which stops only on an ``IndexError`` and would
+        read past the end into a :class:`DataBackendError`.
+        """
+        ...
+
     def iter_range(
         self, start: int = 0, stop: int | None = None, step: int = 1
     ) -> Iterator[Configuration]:
