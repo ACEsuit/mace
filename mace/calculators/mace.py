@@ -805,7 +805,7 @@ class MACECalculator(Calculator):
             (
                 "virials",
                 "atomic_virials",
-                self.energy_units_to_eV / self.length_units_to_A**3,
+                self.energy_units_to_eV,
             ),
             ("dipole", "dipole", 1.0),
             ("charges", "charges", 1.0),

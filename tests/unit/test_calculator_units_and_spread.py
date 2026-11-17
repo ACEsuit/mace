@@ -118,6 +118,25 @@ def test_the_length_conversion_divides_the_forces_and_cubes_for_the_stress(water
     assert scaled["stress"] == pytest.approx(plain["stress"] / LENGTH_FACTOR**3)
 
 
+def test_virials_scale_as_energy_while_atomic_stresses_scale_as_stress(water):
+    """Atomic virials carry units of energy (r * F), so they scale with
+    `energy_units_to_eV` alone and are invariant under `length_units_to_A`,
+    unlike atomic stresses which divide by volume (`length_units_to_A**3`)."""
+    plain = _results(water, [_tiny_model(1)], compute_atomic_stresses=True)
+    scaled = _results(
+        water,
+        [_tiny_model(1)],
+        compute_atomic_stresses=True,
+        energy_units_to_eV=ENERGY_FACTOR,
+        length_units_to_A=LENGTH_FACTOR,
+    )
+
+    assert scaled["virials"] == pytest.approx(plain["virials"] * ENERGY_FACTOR)
+    assert scaled["stresses"] == pytest.approx(
+        plain["stresses"] * ENERGY_FACTOR / LENGTH_FACTOR**3
+    )
+
+
 def test_the_default_conversions_change_nothing(water):
     """The identity case, so a test above cannot pass by the factors being
     ignored altogether."""
