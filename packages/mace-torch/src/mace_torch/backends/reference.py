@@ -693,7 +693,9 @@ class ReferenceRadialBasis(nn.Module):
         features = self.basis(lengths)
         if not self.kernel_spec.apply_cutoff:
             return features
-        return features * (self.cutoff(lengths) if envelope is None else envelope)
+        if envelope is None:
+            return features * self.cutoff(lengths)
+        return features * envelope.to(self.dtype)
 
 
 def _layer_widths(kernel_spec: RadialMLPSpec) -> list[tuple[int, int]]:
