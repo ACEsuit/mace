@@ -178,3 +178,46 @@ def test_deferred_cutoff_blocks_are_continuous_with_apply_cutoff_false(block_nam
         assert step < 1e-9, f"{block_name} jumped by {step:.3e} eV at r_max"
     finally:
         torch.set_default_dtype(prev_dtype)
+
+
+@pytest.mark.parametrize(
+    "model_cls,atomic_energies",
+    [
+        (modules.AtomicDipolesMACE, None),
+        (modules.AtomicDielectricMACE, None),
+        (modules.EnergyDipolesMACE, np.zeros(2)),
+    ],
+)
+def test_dipole_and_dielectric_models_forward_apply_cutoff_and_warn(
+    model_cls, atomic_energies
+):
+    block = modules.interaction_classes["RealAgnosticResidualNonLinearInteractionBlock"]
+    common_kwargs = dict(
+        r_max=5.0,
+        num_bessel=4,
+        num_polynomial_cutoff=5,
+        max_ell=1,
+        interaction_cls=block,
+        interaction_cls_first=block,
+        num_interactions=2,
+        num_elements=2,
+        hidden_irreps=o3.Irreps("8x0e + 8x1o"),
+        MLP_irreps=o3.Irreps("8x0e"),
+        avg_num_neighbors=3.0,
+        atomic_numbers=[1, 8],
+        correlation=2,
+        gate=torch.nn.functional.silu,
+        atomic_energies=atomic_energies,
+    )
+    with pytest.warns(UserWarning, match="apply_cutoff=False"):
+        m_true = model_cls(**common_kwargs, apply_cutoff=True)
+    assert m_true.apply_cutoff is True
+    assert m_true.radial_embedding.apply_cutoff is True
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", UserWarning)
+        m_false = model_cls(**common_kwargs, apply_cutoff=False)
+    cutoff_warnings = [w for w in caught if "apply_cutoff=False" in str(w.message)]
+    assert not cutoff_warnings
+    assert m_false.apply_cutoff is False
+    assert m_false.radial_embedding.apply_cutoff is False
