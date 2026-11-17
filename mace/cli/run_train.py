@@ -1030,6 +1030,7 @@ def run(args) -> None:
         data_load_name = "valid_" + head
         train_valid_data_loader[data_load_name] = valid_loader
 
+    plotter = None
     if args.plot and args.plot_frequency > 0:
         try:
             plotter = TrainingPlotter(
@@ -1046,9 +1047,7 @@ def run(args) -> None:
                 plot_interaction_e=args.plot_interaction_e
                 )
         except Exception as e:  # pylint: disable=W0718
-            logging.debug(f"Creating Plotter failed: {e}")
-    else:
-        plotter = None
+            logging.warning("Creating Plotter failed: %s", e, exc_info=True)
 
     if args.dry_run:
         logging.info("DRY RUN mode enabled. Stopping now.")
@@ -1309,11 +1308,12 @@ def run(args) -> None:
                     device=device,
                     plot_frequency=args.plot_frequency,
                     distributed=args.distributed,
-                    swa_start=swa.start if swa else None
+                    swa_start=swa.start if swa else None,
+                    plot_interaction_e=args.plot_interaction_e,
                 )
                 plotter.plot(epoch, model_to_evaluate, rank)
             except Exception as e:  # pylint: disable=W0718
-                logging.debug(f"Plotting failed: {e}")
+                logging.warning("Plotting failed: %s", e, exc_info=True)
 
         if args.distributed:
             torch.distributed.barrier()
