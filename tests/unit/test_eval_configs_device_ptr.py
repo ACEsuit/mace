@@ -217,3 +217,72 @@ def test_eval_configs_splits_all_per_atom_outputs_with_non_cpu_ptr(
         assert atoms.arrays["MACE_latent_kappas"].shape == (expected_atoms,)
         assert atoms.arrays["MACE_latent_alphas"].shape == (expected_atoms, 9)
         assert atoms.arrays["MACE_latent_quads"].shape == (expected_atoms, 9)
+
+
+def test_eval_configs_equivariant_descriptors_and_non_default_heads(
+    tmp_path: Path, monkeypatch
+):
+    configs_path = tmp_path / "structures.xyz"
+    out_inv = tmp_path / "inv.xyz"
+    out_full = tmp_path / "full.xyz"
+
+    model = modules.MACE(
+        r_max=3.0,
+        num_bessel=4,
+        num_polynomial_cutoff=2,
+        max_ell=1,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=1,
+        hidden_irreps=o3.Irreps("2x0e + 2x1o"),
+        MLP_irreps=o3.Irreps("2x0e"),
+        atomic_energies=np.zeros((2, 1)),
+        avg_num_neighbors=1.0,
+        atomic_numbers=[1],
+        correlation=1,
+        gate=torch.nn.functional.silu,
+        heads=["pt_head", "custom_head"],
+    )
+    monkeypatch.setattr(eval_configs.torch, "load", lambda *args, **kwargs: model)
+
+    atoms = ase.Atoms(
+        "H2",
+        positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.8]],
+        cell=[10.0, 10.0, 10.0],
+        pbc=True,
+    )
+    ase.io.write(configs_path, [atoms], format="extxyz")
+
+    for invariants_only, out_path, expected_cols in (
+        (True, out_inv, 4),
+        (False, out_full, 10),
+    ):
+        args = argparse.Namespace(
+            configs=str(configs_path),
+            model="unused.model",
+            output=str(out_path),
+            device="cpu",
+            enable_cueq=False,
+            default_dtype="float32",
+            batch_size=1,
+            compute_stress=False,
+            compute_bec=False,
+            return_contributions=False,
+            return_descriptors=True,
+            descriptor_num_layers=-1,
+            descriptor_aggregation_method=None,
+            descriptor_invariants_only=invariants_only,
+            return_node_energies=False,
+            return_magforces=False,
+            info_prefix="MACE_",
+            head=None,
+            magmom_key="magmom",
+        )
+        eval_configs.run(args)
+        evaluated = ase.io.read(out_path, index=":")
+        assert evaluated[0].arrays["MACE_descriptors"].shape == (2, expected_cols)

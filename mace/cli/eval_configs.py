@@ -206,9 +206,16 @@ def run(args: argparse.Namespace) -> None:
 
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
+    try:
+        heads = model.heads
+    except AttributeError:
+        heads = None
+
     if args.head is not None:
-        assert args.head in model.heads
+        assert heads is not None and args.head in heads
         head_name = args.head
+    elif heads is not None and "Default" not in heads and len(heads) > 0:
+        head_name = heads[-1]
     else:
         head_name = "Default"
     key_specification = update_keyspec_from_kwargs(KeySpecification(), vars(args))
@@ -220,11 +227,6 @@ def run(args: argparse.Namespace) -> None:
     ]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
-
-    try:
-        heads = model.heads
-    except AttributeError:
-        heads = None
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
