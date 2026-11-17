@@ -78,6 +78,16 @@ def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
     raise ValueError(f"Unknown dtype {mode_dtype}")
 
 
+def _uses_scale_shift_forward(model: torch.nn.Module) -> bool:
+    """Whether the model runs ScaleShiftMACE.forward rather than an override.
+
+    A scripted module keeps its source class only by name.
+    """
+    if isinstance(model, torch.jit.ScriptModule):
+        return model.original_name == "ScaleShiftMACE"
+    return type(model).forward is ScaleShiftMACE.forward
+
+
 class MACECalculator(Calculator):
     """MACE ASE Calculator
     args:
@@ -87,9 +97,11 @@ class MACECalculator(Calculator):
         energy_units_to_eV: float, conversion factor from model energy units to eV
         length_units_to_A: float, conversion factor from model length units to Angstroms
         default_dtype: str, default dtype of model
-        energy_accumulation_dtype: None preserves the legacy reductions;
-            "float64" accumulates ScaleShiftMACE total energies in float64
-            and returns the original output dtype. Requires float64 support.
+        energy_accumulation_dtype: "float64" (default) accumulates
+            ScaleShiftMACE total energies in float64 and returns the original
+            output dtype; None keeps the reductions in the working dtype. On
+            MPS, and for models that override ScaleShiftMACE.forward, the
+            reductions stay in the working dtype either way.
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
                     Options: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE,
@@ -131,7 +143,7 @@ class MACECalculator(Calculator):
         keep_neutral: bool = True,
         pbc_handling: str = "auto",
         compute_stress: bool = True,
-        energy_accumulation_dtype: Optional[str] = None,
+        energy_accumulation_dtype: Optional[str] = "float64",
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
@@ -330,21 +342,11 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
-        if self.energy_accumulation_dtype is not None:
-            for model in self.models:
-                # Overridden forwards can define additional energy terms. A
-                # scripted module keeps its source class only by name.
-                if isinstance(model, torch.jit.ScriptModule):
-                    uses_scale_shift_forward = model.original_name == "ScaleShiftMACE"
-                else:
-                    uses_scale_shift_forward = (
-                        type(model).forward is ScaleShiftMACE.forward
-                    )
-                if not uses_scale_shift_forward:
-                    raise ValueError(
-                        "energy_accumulation_dtype requires the "
-                        "ScaleShiftMACE.forward implementation"
-                    )
+        # Only ScaleShiftMACE.forward takes the option. Overridden forwards
+        # define their own energy terms and keep their own reductions.
+        self.forwards_energy_accumulation = all(
+            _uses_scale_shift_forward(model) for model in self.models
+        )
 
         if self.model_type == "PolarMACE":
             self.density_dim = (
@@ -795,7 +797,7 @@ class MACECalculator(Calculator):
             }
             if getattr(self, "compute_bec", False):
                 model_kwargs["compute_bec"] = True
-            if self.energy_accumulation_dtype is not None:
+            if self.forwards_energy_accumulation:
                 model_kwargs["energy_accumulation_dtype"] = (
                     self.energy_accumulation_dtype
                 )

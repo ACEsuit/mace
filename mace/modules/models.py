@@ -468,17 +468,17 @@ class ScaleShiftMACE(MACE):
         compute_edge_forces: bool = False,
         compute_atomic_stresses: bool = False,
         lammps_mliap: bool = False,
-        energy_accumulation_dtype: Optional[str] = None,
+        energy_accumulation_dtype: Optional[str] = "float64",
     ) -> Dict[str, Optional[torch.Tensor]]:
         # Widen only the reported graph-energy reductions. Keep the original
-        # interaction-energy path for force and stress differentiation.
+        # interaction-energy path for force and stress differentiation. None
+        # keeps the reductions in the working dtype. MPS has no float64, so
+        # there the reductions stay in the working dtype either way.
         use_float64_accumulation = False
         if energy_accumulation_dtype is not None:
             if energy_accumulation_dtype != "float64":
                 raise ValueError("energy_accumulation_dtype must be None or 'float64'")
-            use_float64_accumulation = True
-        if use_float64_accumulation and data["positions"].device.type == "mps":
-            raise ValueError("float64 energy accumulation is not supported on MPS")
+            use_float64_accumulation = data["node_attrs"].device.type != "mps"
         # Setup
         ctx = prepare_graph(
             data,

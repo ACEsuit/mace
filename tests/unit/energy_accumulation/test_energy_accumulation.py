@@ -1,4 +1,4 @@
-"""Opt-in energy reduction precision, using tiny offline CPU models.
+"""Energy reduction precision, using tiny offline CPU models.
 
 The network and its outputs keep their original dtype. Only the reported
 graph-energy reductions are widened; the interaction energy used for forces
@@ -154,30 +154,39 @@ def _add_embedding(model, batch):
 
 
 @pytest.mark.parametrize("with_embedding", [False, True])
-def test_default_and_none_keep_legacy_numeric_semantics(structures, with_embedding):
+def test_default_is_float64_and_none_keeps_legacy_numeric_semantics(
+    structures, with_embedding
+):
     model = _tiny_model()
     batch = anchor_batch(model, structures, torch.float32)
     if with_embedding:
         _add_embedding(model, batch)
-    default, terms = _forward_with_terms(model, batch, compute_stress=True)
-    explicit_none = model(
-        batch.clone().to_dict(), compute_stress=True, energy_accumulation_dtype=None
+    default = model(batch.clone().to_dict(), compute_stress=True)
+    explicit_wide = model(
+        batch.clone().to_dict(),
+        compute_stress=True,
+        energy_accumulation_dtype="float64",
     )
     for name, value in default.items():
         if value is None:
-            assert explicit_none[name] is None
+            assert explicit_wide[name] is None
         else:
-            assert torch.equal(value, explicit_none[name]), name
+            assert torch.equal(value, explicit_wide[name]), name
 
     # The legacy total is E0 (+ optional embedding) + interaction_energy,
     # with separate FP32 scatter reductions, not a reduced node_energy.
+    legacy_output, terms = _forward_with_terms(
+        model, batch, compute_stress=True, energy_accumulation_dtype=None
+    )
     num_graphs = len(structures)
     legacy = scatter_sum(terms["e0"], batch["batch"], dim=0, dim_size=num_graphs)
     if with_embedding:
         legacy = legacy + scatter_sum(
             terms["embedding"], batch["batch"], dim=0, dim_size=num_graphs
         )
-    assert torch.equal(default["energy"], legacy + default["interaction_energy"])
+    assert torch.equal(
+        legacy_output["energy"], legacy + legacy_output["interaction_energy"]
+    )
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -209,7 +218,9 @@ def test_wide_reduction_improves_known_cancellation_before_narrowing(structures)
         model.scale_shift.scale.fill_(1.0)
         model.scale_shift.shift.fill_(-1.0e8 + 16.0)
     batch = anchor_batch(model, structures[:1], torch.float32)
-    legacy = model(batch.clone().to_dict(), compute_force=False)["energy"]
+    legacy = model(
+        batch.clone().to_dict(), compute_force=False, energy_accumulation_dtype=None
+    )["energy"]
     improved = model(
         batch.clone().to_dict(),
         compute_force=False,
@@ -227,7 +238,9 @@ def test_wide_reduction_improves_known_cancellation_before_narrowing(structures)
 def test_zbl_is_counted_once_and_force_stress_paths_are_unchanged(structures):
     model = _tiny_model(pair_repulsion=True)
     batch = anchor_batch(model, structures, torch.float32)
-    legacy = model(batch.clone().to_dict(), compute_stress=True)
+    legacy = model(
+        batch.clone().to_dict(), compute_stress=True, energy_accumulation_dtype=None
+    )
     improved, terms = _forward_with_terms(
         model, batch, compute_stress=True, energy_accumulation_dtype="float64"
     )
@@ -241,7 +254,9 @@ def test_zbl_is_counted_once_and_force_stress_paths_are_unchanged(structures):
 def test_wide_reported_energy_remains_differentiable(structures):
     model = _tiny_model()
     batch = anchor_batch(model, structures, torch.float32)
-    legacy = model(batch.clone().to_dict(), compute_force=False)
+    legacy = model(
+        batch.clone().to_dict(), compute_force=False, energy_accumulation_dtype=None
+    )
     legacy["energy"].sum().backward()
     legacy_grads = {
         name: parameter.grad.clone()
@@ -276,15 +291,16 @@ def test_model_rejects_invalid_strategy(structures, strategy):
         model(batch.to_dict(), energy_accumulation_dtype=strategy)
 
 
-def test_torchscript_keeps_default_and_opt_in_energy_results(structures):
+def test_torchscript_keeps_default_and_opt_out_energy_results(structures):
     eager = _tiny_model()
     batch = anchor_batch(eager, structures, torch.float32)
-    expected_default = eager(batch.clone().to_dict())
     expected_wide = eager(batch.clone().to_dict(), energy_accumulation_dtype="float64")
+    expected_legacy = eager(batch.clone().to_dict(), energy_accumulation_dtype=None)
     scripted = jit.compile(copy.deepcopy(eager))
     for kwargs, expected in (
-        ({}, expected_default),
+        ({}, expected_wide),
         ({"energy_accumulation_dtype": "float64"}, expected_wide),
+        ({"energy_accumulation_dtype": None}, expected_legacy),
     ):
         actual = scripted(batch.clone().to_dict(), **kwargs)
         for name in ("energy", "node_energy", "interaction_energy"):
@@ -293,14 +309,8 @@ def test_torchscript_keeps_default_and_opt_in_energy_results(structures):
     # backward operations and does not guarantee bitwise force parity.
 
 
-@pytest.mark.parametrize("strategy", [None, "float64"])
-def test_ase_forwards_strategy_only_when_explicit_and_retains_values(
-    structures, strategy
-):
-    model = _tiny_model()
-    batch = anchor_batch(model, structures[:1], torch.float32)
-    kwargs = {} if strategy is None else {"energy_accumulation_dtype": strategy}
-    expected = model(batch.to_dict(), **kwargs)
+def _calculator_call(model, structures, **calculator_kwargs):
+    """Evaluate one structure through the calculator, recording forward kwargs."""
     seen = []
 
     def record(_module, _args, forwarded):
@@ -309,10 +319,7 @@ def test_ase_forwards_strategy_only_when_explicit_and_retains_values(
     handle = model.register_forward_pre_hook(record, with_kwargs=True)
     try:
         calculator = MACECalculator(
-            models=model,
-            device="cpu",
-            default_dtype="float32",
-            energy_accumulation_dtype=strategy,
+            models=model, device="cpu", default_dtype="float32", **calculator_kwargs
         )
         atoms = structures[0].copy()
         atoms.calc = calculator
@@ -320,9 +327,25 @@ def test_ase_forwards_strategy_only_when_explicit_and_retains_values(
         forces = atoms.get_forces()
     finally:
         handle.remove()
-    assert ("energy_accumulation_dtype" in seen[-1]) is (strategy is not None)
-    if strategy is not None:
-        assert seen[-1]["energy_accumulation_dtype"] == strategy
+    return seen[-1], energy, forces
+
+
+@pytest.mark.parametrize(
+    "calculator_kwargs, strategy",
+    [
+        ({}, "float64"),
+        ({"energy_accumulation_dtype": "float64"}, "float64"),
+        ({"energy_accumulation_dtype": None}, None),
+    ],
+)
+def test_ase_forwards_the_strategy_and_retains_values(
+    structures, calculator_kwargs, strategy
+):
+    model = _tiny_model()
+    batch = anchor_batch(model, structures[:1], torch.float32)
+    expected = model(batch.to_dict(), energy_accumulation_dtype=strategy)
+    forwarded, energy, forces = _calculator_call(model, structures, **calculator_kwargs)
+    assert forwarded["energy_accumulation_dtype"] == strategy
     assert energy == float(expected["energy"].detach()[0])
     np.testing.assert_array_equal(forces, expected["forces"].detach().numpy())
 
@@ -332,42 +355,35 @@ class _OverriddenScaleShift(ScaleShiftMACE):
         return super().forward(data, **kwargs)
 
 
-def test_ase_rejects_a_subclass_that_overrides_the_energy_path():
+def test_ase_does_not_forward_to_a_subclass_that_overrides_the_energy_path(
+    structures,
+):
     model = _tiny_model()
     model.__class__ = _OverriddenScaleShift
-    with pytest.raises(ValueError, match="ScaleShiftMACE.forward"):
-        MACECalculator(
-            models=model,
-            device="cpu",
-            default_dtype="float32",
-            energy_accumulation_dtype="float64",
-        )
+    forwarded, _, _ = _calculator_call(model, structures)
+    assert "energy_accumulation_dtype" not in forwarded
 
 
-def test_ase_accepts_a_scripted_scale_shift_model(structures):
+def test_ase_forwards_to_a_scripted_scale_shift_model(structures):
     scripted = jit.compile(_tiny_model())
     batch = anchor_batch(scripted, structures[:1], torch.float32)
     expected = scripted(batch.to_dict(), energy_accumulation_dtype="float64")
-    calculator = MACECalculator(
-        models=scripted,
-        device="cpu",
-        default_dtype="float32",
-        energy_accumulation_dtype="float64",
-    )
+    calculator = MACECalculator(models=scripted, device="cpu", default_dtype="float32")
+    assert calculator.forwards_energy_accumulation
     atoms = structures[0].copy()
     atoms.calc = calculator
     assert atoms.get_potential_energy() == float(expected["energy"].detach()[0])
 
 
-def test_ase_rejects_a_scripted_model_of_another_class():
+def test_ase_does_not_forward_to_a_scripted_model_of_another_class(structures):
+    # A scripted forward refuses an argument it does not declare, so passing
+    # the option to MACE.forward would fail the call rather than be ignored.
     scripted = jit.compile(_tiny_model(model_cls=modules.MACE))
-    with pytest.raises(ValueError, match="ScaleShiftMACE.forward"):
-        MACECalculator(
-            models=scripted,
-            device="cpu",
-            default_dtype="float32",
-            energy_accumulation_dtype="float64",
-        )
+    calculator = MACECalculator(models=scripted, device="cpu", default_dtype="float32")
+    assert not calculator.forwards_energy_accumulation
+    atoms = structures[0].copy()
+    atoms.calc = calculator
+    assert np.isfinite(atoms.get_potential_energy())
 
 
 def test_ase_rejects_an_invalid_strategy():
@@ -378,3 +394,14 @@ def test_ase_rejects_an_invalid_strategy():
             default_dtype="float32",
             energy_accumulation_dtype="float16",
         )
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="needs MPS")
+def test_mps_keeps_the_working_dtype_reductions(structures):
+    model = _tiny_model()
+    batch = anchor_batch(model, structures, torch.float32)
+    model, batch = model.to("mps"), batch.to("mps")
+    default = model(batch.clone().to_dict())
+    legacy = model(batch.clone().to_dict(), energy_accumulation_dtype=None)
+    assert default["energy"].dtype is torch.float32
+    assert torch.equal(default["energy"], legacy["energy"])
