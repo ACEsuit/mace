@@ -40,6 +40,18 @@ class MACELammpsConfig:
         )
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
+def _get_logger() -> logging.Logger:
+    if not _LOGGER.hasHandlers():
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        _LOGGER.addHandler(handler)
+    _LOGGER.setLevel(logging.INFO)
+    return _LOGGER
+
+
 @contextmanager
 def timer(name: str, enabled: bool = True):
     """Context manager for timing code blocks."""
@@ -52,7 +64,7 @@ def timer(name: str, enabled: bool = True):
         yield
     finally:
         elapsed = time.perf_counter() - start
-        logging.info(f"Timer - {name}: {elapsed*1000:.3f} ms")
+        _get_logger().info(f"Timer - {name}: {elapsed*1000:.3f} ms")
 
 
 @compile_mode("script")
@@ -139,6 +151,10 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
         self.initialized = False
         self.step = 0
 
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.config = MACELammpsConfig()
+
     def _initialize_device(self, data):
         using_kokkos = "kokkos" in data.__class__.__module__.lower()
 
@@ -153,7 +169,7 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
 
         self.device = device
         self.model = self.model.to(device)
-        logging.info(f"MACE model initialized on device: {device}")
+        _get_logger().info(f"MACE model initialized on device: {device}")
         self.initialized = True
 
     def _check_ghost_exchange_support(self, data):
@@ -273,13 +289,13 @@ class LAMMPS_MLIAP_MACE(MLIAPUnified):
             return
 
         if self.step == self.config.profile_start_step:
-            logging.info(f"Starting CUDA profiler at step {self.step}")
+            _get_logger().info(f"Starting CUDA profiler at step {self.step}")
             torch.cuda.profiler.start()
 
         if self.step == self.config.profile_end_step:
-            logging.info(f"Stopping CUDA profiler at step {self.step}")
+            _get_logger().info(f"Stopping CUDA profiler at step {self.step}")
             torch.cuda.profiler.stop()
-            logging.info("Profiling complete. Exiting.")
+            _get_logger().info("Profiling complete. Exiting.")
             sys.exit()
 
     def compute_descriptors(self, data):
