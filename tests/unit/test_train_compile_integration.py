@@ -16,11 +16,15 @@ train_tools = importlib.import_module("mace.tools.train")
 
 
 class _Batch:
-    def __init__(self, values: torch.Tensor):
+    def __init__(self, values: torch.Tensor, num_graphs: int = 2, num_nodes: int = 4):
         self.values = values
+        self.num_graphs = num_graphs
+        self.num_nodes = num_nodes
+        self.edge_index = torch.zeros((2, num_nodes * 10))
 
     def to(self, device: torch.device):
         self.values = self.values.to(device)
+        self.edge_index = self.edge_index.to(device)
         return self
 
     def to_dict(self):
@@ -174,7 +178,10 @@ def test_training_conversion_disables_convolution_fusion(monkeypatch):
 
     assert run_train._convert_e3nn_to_cueq_for_training(source, "cuda") is converted
     assert calls == [
-        (source, {"device": "cuda", "conv_fusion": False, "conv_fusion_node_bucket": 256})
+        (
+            source,
+            {"device": "cuda", "conv_fusion": False, "conv_fusion_node_bucket": 256},
+        )
     ]
 
 
@@ -252,7 +259,10 @@ def test_train_one_epoch_compiles_first_real_batch_once_and_reuses_wrapper(
     cached = train_tools.train_one_epoch(
         model=owner,
         loss_fn=_EnergyLoss(),
-        data_loader=[_Batch(torch.tensor([1.0])), _Batch(torch.tensor([2.0]))],
+        data_loader=[
+            _Batch(torch.tensor([1.0]), num_graphs=2, num_nodes=4),
+            _Batch(torch.tensor([2.0]), num_graphs=2, num_nodes=6),
+        ],
         optimizer=optimizer,
         epoch=0,
         output_args=output_args,
@@ -380,7 +390,10 @@ def test_train_one_epoch_wraps_compiled_facade_once_with_existing_ddp(monkeypatc
     cached = train_tools.train_one_epoch(
         model=owner,
         loss_fn=_EnergyLoss(),
-        data_loader=[_Batch(torch.tensor([1.0])), _Batch(torch.tensor([2.0]))],
+        data_loader=[
+            _Batch(torch.tensor([1.0]), num_graphs=2, num_nodes=4),
+            _Batch(torch.tensor([2.0]), num_graphs=2, num_nodes=6),
+        ],
         optimizer=optimizer,
         epoch=0,
         output_args={"forces": True, "virials": False, "stress": False},
@@ -709,3 +722,122 @@ def test_configure_model_restores_e3nn_codegen_when_construction_raises(monkeypa
         )
 
     assert optimization_defaults["jit_script_fx"] is True
+
+
+def test_train_one_epoch_scans_ahead_for_distinct_probe_signature(monkeypatch):
+    """Identical first two batches must not defeat dynamic compilation."""
+    owner = _EnergyModel()
+    optimizer = torch.optim.Adam(owner.parameters())
+    compile_calls = []
+
+    def fake_compile(
+        model, example_batch, output_args, mode, dynamic, validation_batch
+    ):
+        compile_calls.append((example_batch, validation_batch))
+        return object()
+
+    def fake_take_step(**kwargs):
+        return torch.tensor(0.0), {"loss": 0.0, "time": 0.0}
+
+    monkeypatch.setattr(mace_compile, "compile_training_model", fake_compile)
+    monkeypatch.setattr(train_tools, "take_step", fake_take_step)
+    output_args = {"forces": True, "virials": False, "stress": False}
+
+    # first two batches share the signature; the third differs
+    batches = [
+        _Batch(torch.tensor([1.0]), num_graphs=2, num_nodes=4),
+        _Batch(torch.tensor([2.0]), num_graphs=2, num_nodes=4),
+        _Batch(torch.tensor([3.0]), num_graphs=3, num_nodes=6),
+        _Batch(torch.tensor([4.0]), num_graphs=2, num_nodes=5),
+    ]
+    train_tools.train_one_epoch(
+        model=owner,
+        loss_fn=_EnergyLoss(),
+        data_loader=list(batches),
+        optimizer=optimizer,
+        epoch=0,
+        output_args=output_args,
+        max_grad_norm=None,
+        ema=None,
+        logger=_Logger(),
+        device=torch.device("cpu"),
+        distributed=False,
+        compile_training=True,
+        compiled_training_model=None,
+    )
+
+    assert len(compile_calls) == 1
+    # the third batch (first distinct signature) is the validation probe
+    assert_close(compile_calls[0][0]["values"], torch.tensor([1.0]))
+    assert_close(compile_calls[0][1]["values"], torch.tensor([3.0]))
+
+
+def test_train_one_epoch_identical_batches_stay_eager(monkeypatch):
+    """A fully homogeneous epoch must fall back without skipping data."""
+    owner = _EnergyModel()
+    optimizer = torch.optim.Adam(owner.parameters())
+    compile_calls = []
+    step_values = []
+
+    def fake_compile(
+        model, example_batch, output_args, mode, dynamic, validation_batch
+    ):
+        compile_calls.append((example_batch, validation_batch))
+        return object()
+
+    def fake_take_step(**kwargs):
+        step_values.append(float(kwargs["batch"].values[0]))
+        return torch.tensor(0.0), {"loss": 0.0, "time": 0.0}
+
+    monkeypatch.setattr(mace_compile, "compile_training_model", fake_compile)
+    monkeypatch.setattr(train_tools, "take_step", fake_take_step)
+    output_args = {"forces": True, "virials": False, "stress": False}
+
+    batches = [
+        _Batch(torch.tensor([float(i)]), num_graphs=2, num_nodes=4) for i in range(5)
+    ]
+    wrapper = train_tools.train_one_epoch(
+        model=owner,
+        loss_fn=_EnergyLoss(),
+        data_loader=list(batches),
+        optimizer=optimizer,
+        epoch=0,
+        output_args=output_args,
+        max_grad_norm=None,
+        ema=None,
+        logger=_Logger(),
+        device=torch.device("cpu"),
+        distributed=False,
+        compile_training=True,
+        compiled_training_model=None,
+    )
+
+    # probe batches were replayed: every step runs exactly once, in order
+    assert step_values == [0.0, 1.0, 2.0, 3.0, 4.0]
+    # no distinct pair exists: compilation is attempted with a None
+    # validation batch (the real facade then stays eager)
+    assert len(compile_calls) == 1
+    assert compile_calls[0][1] is None
+    assert wrapper is not owner
+
+
+def test_cueq_conv_fusion_node_bucket_env_parsings(monkeypatch):
+    from mace.tools import utils as tools_utils
+
+    monkeypatch.delenv("MACE_CUEQ_CONV_FUSION_NODE_BUCKET", raising=False)
+    assert tools_utils.cueq_conv_fusion_node_bucket() == 256
+
+    monkeypatch.setenv("MACE_CUEQ_CONV_FUSION_NODE_BUCKET", "512")
+    assert tools_utils.cueq_conv_fusion_node_bucket() == 512
+
+    for spelling in ("none", "off", "0", "NONE"):
+        monkeypatch.setenv("MACE_CUEQ_CONV_FUSION_NODE_BUCKET", spelling)
+        assert tools_utils.cueq_conv_fusion_node_bucket() is None
+
+    monkeypatch.setenv("MACE_CUEQ_CONV_FUSION_NODE_BUCKET", "-3")
+    with pytest.raises(ValueError, match="positive integer"):
+        tools_utils.cueq_conv_fusion_node_bucket()
+
+    monkeypatch.setenv("MACE_CUEQ_CONV_FUSION_NODE_BUCKET", "banana")
+    with pytest.raises(ValueError, match="positive integer"):
+        tools_utils.cueq_conv_fusion_node_bucket()

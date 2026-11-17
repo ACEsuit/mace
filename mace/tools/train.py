@@ -54,6 +54,26 @@ def _compiled_training_facade(model: torch.nn.Module) -> torch.nn.Module:
     return model
 
 
+# Upper bound on batches buffered while searching for a second probe batch
+# with a distinct (graphs, nodes, edges) signature; beyond this, dynamic
+# compilation falls back to eager rather than holding the epoch in memory.
+_PROBE_SCAN_LIMIT = 32
+
+
+def _has_distinct_graph_signature(
+    left: "torch_geometric.data.Data", right: "torch_geometric.data.Data"
+) -> bool:
+    return (
+        left.num_graphs,
+        left.num_nodes,
+        int(left.edge_index.shape[1]),
+    ) != (
+        right.num_graphs,
+        right.num_nodes,
+        int(right.edge_index.shape[1]),
+    )
+
+
 def _synchronize_compiled_training_state(
     model: torch.nn.Module,
     *,
@@ -461,14 +481,26 @@ def train_one_epoch(
     else:
         batch_iterator = iter(data_loader)
         if compile_training and compiled_training_model is None:
-            try:
-                first_batch = next(batch_iterator).to(device)
-            except StopIteration:
+            # Dynamic-shape compilation needs two probe batches with
+            # distinct (graphs, nodes, edges) signatures; identical
+            # signatures cannot be lowered. Scan ahead for a distinct pair,
+            # bounded so a homogeneous epoch is not buffered wholesale.
+            # Every fetched batch is kept and replayed in order, so the
+            # scan never skips or duplicates training data.
+            probe_batches = []
+            validation_batch = None
+            for batch in batch_iterator:
+                probe_batches.append(batch.to(device))
+                if len(probe_batches) > 1 and _has_distinct_graph_signature(
+                    probe_batches[0], probe_batches[-1]
+                ):
+                    validation_batch = probe_batches[-1]
+                    break
+                if len(probe_batches) >= _PROBE_SCAN_LIMIT:
+                    break
+            if not probe_batches:
                 return None
-            try:
-                validation_batch = next(batch_iterator).to(device)
-            except StopIteration:
-                validation_batch = None
+            first_batch = probe_batches[0]
 
             compiled_training_model = mace_compile.compile_training_model(
                 model,
@@ -496,12 +528,8 @@ def train_one_epoch(
                 )
                 logging.info("Compiled training DDP active")
 
-            prefetched = (
-                (first_batch,)
-                if validation_batch is None
-                else (first_batch, validation_batch)
-            )
-            batch_iterator = itertools.chain(prefetched, batch_iterator)
+            # replay every fetched batch exactly once, in order
+            batch_iterator = itertools.chain(probe_batches, batch_iterator)
 
         for batch in batch_iterator:
             _, opt_metrics = take_step(
