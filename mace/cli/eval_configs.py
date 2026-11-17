@@ -20,6 +20,7 @@ from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.utils import extract_invariant
 from mace.tools import deprecation, torch_geometric, torch_tools, utils
+from mace.tools.arg_parser import str2bool
 from mace.tools.default_keys import DefaultKeys
 
 
@@ -90,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--descriptor_invariants_only",
         help="save invariant (l=0) descriptors only",
-        type=bool,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
@@ -205,9 +206,16 @@ def run(args: argparse.Namespace) -> None:
 
     # Load data and prepare input
     atoms_list = ase.io.read(args.configs, index=":")
+    try:
+        heads = model.heads
+    except AttributeError:
+        heads = None
+
     if args.head is not None:
-        assert args.head in model.heads
+        assert heads is not None and args.head in heads
         head_name = args.head
+    elif heads is not None and "Default" not in heads and len(heads) > 0:
+        head_name = heads[-1]
     else:
         head_name = "Default"
     key_specification = update_keyspec_from_kwargs(KeySpecification(), vars(args))
@@ -219,11 +227,6 @@ def run(args: argparse.Namespace) -> None:
     ]
 
     z_table = utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
-
-    try:
-        heads = model.heads
-    except AttributeError:
-        heads = None
 
     data_loader = torch_geometric.dataloader.DataLoader(
         dataset=[
@@ -261,13 +264,14 @@ def run(args: argparse.Namespace) -> None:
             args.compute_bec,
             compute_magforces=args.return_magforces,
         )
+        split_indices = torch_tools.to_numpy(batch.ptr[1:])
         energies_list.append(torch_tools.to_numpy(output["energy"]))
         if args.compute_stress:
             stresses_list.append(torch_tools.to_numpy(output["stress"]))
         if args.compute_bec:
             becs = np.split(
                 torch_tools.to_numpy(output["BEC"]),
-                indices_or_sections=batch.ptr[1:],
+                indices_or_sections=split_indices,
                 axis=0,
             )
             bec_list.append(becs[:-1])  # drop last as its empty
@@ -275,7 +279,7 @@ def run(args: argparse.Namespace) -> None:
         if "latent_charges" in output and output["latent_charges"] is not None:
             qs = np.split(
                 torch_tools.to_numpy(output["latent_charges"]),
-                indices_or_sections=batch.ptr[1:],
+                indices_or_sections=split_indices,
                 axis=0,
             )
             qs_list.append(qs[:-1])  # drop last as its empty
@@ -283,7 +287,7 @@ def run(args: argparse.Namespace) -> None:
         if "latent_dipoles" in output and output["latent_dipoles"] is not None:
             us = np.split(
                 torch_tools.to_numpy(output["latent_dipoles"]),
-                indices_or_sections=batch.ptr[1:],
+                indices_or_sections=split_indices,
                 axis=0,
             )
             us_list.append(us[:-1])
@@ -291,7 +295,7 @@ def run(args: argparse.Namespace) -> None:
         if "latent_kappas" in output and output["latent_kappas"] is not None:
             kappas = np.split(
                 torch_tools.to_numpy(output["latent_kappas"]),
-                indices_or_sections=batch.ptr[1:],
+                indices_or_sections=split_indices,
                 axis=0,
             )
             kappas_list.append(kappas[:-1])
@@ -299,7 +303,7 @@ def run(args: argparse.Namespace) -> None:
         if "latent_alphas" in output and output["latent_alphas"] is not None:
             alphas = np.split(
                 torch_tools.to_numpy(output["latent_alphas"]),
-                indices_or_sections=batch.ptr[1:],
+                indices_or_sections=split_indices,
                 axis=0,
             )
             alphas_list.append(alphas[:-1])
@@ -307,7 +311,7 @@ def run(args: argparse.Namespace) -> None:
         if "latent_quads" in output and output["latent_quads"] is not None:
             quads = np.split(
                 torch_tools.to_numpy(output["latent_quads"]),
-                indices_or_sections=batch.ptr[1:],
+                indices_or_sections=split_indices,
                 axis=0,
             )
             quads_list.append(quads[:-1])
@@ -340,11 +344,11 @@ def run(args: argparse.Namespace) -> None:
                 )
 
             to_keep = np.sum(per_layer_features[:num_layers])
-            descriptors = descriptors[:, :to_keep].detach().cpu().numpy()
+            descriptors = torch_tools.to_numpy(descriptors[:, :to_keep])
 
             descriptors = np.split(
                 descriptors,
-                indices_or_sections=batch.ptr[1:],
+                indices_or_sections=split_indices,
                 axis=0,
             )
             descriptors_list.extend(descriptors[:-1])  # drop last as its empty
@@ -358,7 +362,7 @@ def run(args: argparse.Namespace) -> None:
             node_energies_list.extend(
                 np.split(
                     torch_tools.to_numpy(output["node_energy"]),
-                    indices_or_sections=batch.ptr[1:],
+                    indices_or_sections=split_indices,
                     axis=0,
                 )[
                     :-1
@@ -367,7 +371,7 @@ def run(args: argparse.Namespace) -> None:
 
         forces = np.split(
             torch_tools.to_numpy(output["forces"]),
-            indices_or_sections=batch.ptr[1:],
+            indices_or_sections=split_indices,
             axis=0,
         )
         forces_collection.append(forces[:-1])  # drop last as its empty
@@ -375,7 +379,7 @@ def run(args: argparse.Namespace) -> None:
         if args.return_magforces and output.get("magforces") is not None:
             magforces = np.split(
                 torch_tools.to_numpy(output["magforces"]),
-                indices_or_sections=batch.ptr[1:],
+                indices_or_sections=split_indices,
                 axis=0,
             )
             magforces_collection.append(magforces[:-1])

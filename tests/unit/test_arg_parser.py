@@ -215,9 +215,10 @@ def test_preprocess_parser_requires_train_file(capsys):
 def test_str2bool():
     assert str2bool(True) is True
     assert str2bool(False) is False
+    assert str2bool(None) is False
     for truthy in ("yes", "TRUE", "t", "y", "1"):
         assert str2bool(truthy) is True
-    for falsy in ("no", "False", "f", "N", "0"):
+    for falsy in ("no", "False", "f", "N", "0", "", "   "):
         assert str2bool(falsy) is False
     with pytest.raises(argparse.ArgumentTypeError):
         str2bool("maybe")
