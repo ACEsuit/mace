@@ -59,6 +59,14 @@ def _tiny_model(*, pair_repulsion=False, model_cls=ScaleShiftMACE):
         )
 
 
+@pytest.fixture(autouse=True)
+def _float32_default_dtype():
+    # Another test in the same worker can leave float64 as the default dtype,
+    # which turns the ZBL energy into float64 and breaks the float32 oracles.
+    with torch_tools.default_dtype("float32"):
+        yield
+
+
 @pytest.fixture(name="structures")
 def fixture_structures():
     return [
