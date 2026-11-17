@@ -103,13 +103,15 @@ class DataBackend(Protocol):
                 :meth:`isolated_atom_energies`. Refused like
                 ``config_type_weights`` by a format that stores parsed
                 configurations.
-            require_labels: Refuse a dataset in which no structure carries an
-                energy, forces or a dipole. ``False`` reads an unlabelled
-                dataset, such as structures to evaluate.
+            require_labels: Refuse a dataset in which no structure it yields
+                carries an energy, forces or a dipole; isolated-atom
+                references taken out of it do not count. ``False`` reads an
+                unlabelled dataset, such as structures to evaluate.
 
         Raises:
-            DataBackendError: if the source cannot be read, holds no labels
-                and ``require_labels`` is set, or refuses an option.
+            DataBackendError: if the source cannot be read, yields no
+                labelled structure while ``require_labels`` is set, or refuses
+                an option.
         """
         ...
 
