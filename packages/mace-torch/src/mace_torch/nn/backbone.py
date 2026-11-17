@@ -28,9 +28,9 @@ applied to both upstream reaches every edge quantity.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal, SupportsIndex, cast
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
@@ -40,6 +40,7 @@ from mace_core.config.model import (
     ModelConfig,
     NoDistanceTransformConfig,
 )
+from mace_core.elements import AtomicNumberTable
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.specs import (
     DistanceTransformSpec,
@@ -223,7 +224,7 @@ class MACEBackbone(nn.Module):
         self,
         backend,
         config: ModelConfig,
-        atomic_numbers: Sequence[int],
+        atomic_numbers: Iterable[SupportsIndex],
         avg_num_neighbors: float = 1.0,
         precision: Precision = "float64",
         node_inputs: Sequence[InputSpec] = (),
@@ -245,13 +246,19 @@ class MACEBackbone(nn.Module):
             if names.count(spec.name) > 1:
                 raise ValueError(f"node input {spec.name!r} is declared twice.")
         self.config = config
-        self.atomic_numbers = tuple(atomic_numbers)
-        in_range = all(1 <= number < _ATOMIC_NUMBER_COUNT for number in atomic_numbers)
-        if not in_range or len(set(self.atomic_numbers)) != len(self.atomic_numbers):
+        try:
+            self.atomic_numbers = AtomicNumberTable(atomic_numbers).zs
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"atomic_numbers is not an element table: {error}"
+            ) from None
+        if not self.atomic_numbers or not all(
+            1 <= number < _ATOMIC_NUMBER_COUNT for number in self.atomic_numbers
+        ):
             raise ValueError(
                 f"atomic_numbers={list(self.atomic_numbers)} is not an element "
-                f"table: every entry is an atomic number from 1 to "
-                f"{_ATOMIC_NUMBER_COUNT - 1}, each once."
+                f"table: it names at least one element, and every entry is an "
+                f"atomic number from 1 to {_ATOMIC_NUMBER_COUNT - 1}."
             )
         # Atomic number -> column of the one-hot. Zero, a padding atom, and
         # any number outside the table map to the first column; the data

@@ -409,12 +409,35 @@ def test_the_one_hot_is_in_the_models_precision():
 
 @pytest.mark.parametrize(
     "atomic_numbers",
-    [(0, 1), (1, 119), (1, 6, 1), (-1, 6)],
-    ids=["zero", "beyond-118", "repeated", "negative"],
+    [
+        (),
+        (0, 1),
+        (1, 119),
+        (1, 6, 1),
+        (-1, 6),
+        (1, 6.5),
+        torch.tensor([1, 6, 1]),
+        [[1], [6]],
+    ],
+    ids=[
+        "empty",
+        "zero",
+        "beyond-118",
+        "repeated",
+        "negative",
+        "fractional",
+        "tensor",
+        "nested",
+    ],
 )
 def test_an_element_table_that_is_not_one_is_refused(atomic_numbers):
     with pytest.raises(ValueError, match="element table"):
         MACEBackbone(ReferenceBackend(), _config(), atomic_numbers)
+
+
+def test_an_element_table_given_as_an_iterator_is_checked_once_read():
+    with pytest.raises(ValueError, match="element table"):
+        MACEBackbone(ReferenceBackend(), _config(), iter((0, 1)))
 
 
 def test_the_element_lookup_is_not_saved():
