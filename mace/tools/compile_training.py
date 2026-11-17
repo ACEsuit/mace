@@ -4,7 +4,9 @@ The important transform in this module is ``make_fx``: it executes MACE's
 internal energy derivative while tracing and records that derivative as ATen
 operations.  AOTAutograd therefore sees a normal first-order backward through
 the lowered graph instead of a runtime double-backward through
-``torch.autograd.grad``.
+``torch.autograd.grad``.  The decomposition table must also keep every value
+consumed by that recorded derivative differentiable, including LayerNorm's
+saved statistics.
 """
 
 from __future__ import annotations
@@ -61,11 +63,41 @@ def _stable_silu_backward(
     return grad_output * sigmoid * (1 + value * (1 - sigmoid))
 
 
+def _differentiable_layer_norm(  # noqa: W0622 - mirrors the aten op signature
+    values: torch.Tensor,
+    normalized_shape: Sequence[int],
+    weight: torch.Tensor | None,
+    bias: torch.Tensor | None,
+    eps: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Decompose ``aten.native_layer_norm`` with differentiable statistics.
+
+    The native op returns ``mean`` and ``rstd`` as auxiliary outputs that do
+    not require grad. Its decomposed backward consumes those saved tensors, so
+    re-differentiating a traced energy derivative would drop every term involving
+    the derivative of the normalization statistics. Computing the statistics
+    with ordinary ATen operations preserves those autograd edges and the
+    native op's forward values.
+    """
+    axes = tuple(range(values.ndim - len(normalized_shape), values.ndim))
+    mean = values.mean(dim=axes, keepdim=True)
+    centered = values - mean
+    variance = centered.square().mean(dim=axes, keepdim=True)
+    rstd = torch.rsqrt(variance + eps)
+    output = centered * rstd
+    if weight is not None:
+        output = output * weight
+    if bias is not None:
+        output = output + bias
+    return output, mean, rstd
+
+
 def mace_decomp_table() -> dict[Any, Any]:
-    """Return core ATen decompositions with a stable SiLU double derivative."""
+    """Return decompositions that remain valid under re-differentiation."""
 
     table = dict(core_aten_decompositions())
     table[torch.ops.aten.silu_backward.default] = _stable_silu_backward
+    table[torch.ops.aten.native_layer_norm.default] = _differentiable_layer_norm
     return table
 
 

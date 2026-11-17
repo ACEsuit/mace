@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from ase import build
 from e3nn import o3
 from packaging.requirements import Requirement
+from torch.fx.experimental.proxy_tensor import make_fx
 from torch.testing import assert_close
 from torch_ema import ExponentialMovingAverage
 
@@ -160,6 +161,100 @@ def _assert_parameter_gradients_close(
         assert (eager_parameter.grad is None) == (candidate_parameter.grad is None)
         if eager_parameter.grad is not None:
             assert_close(eager_parameter.grad, candidate_parameter.grad)
+
+
+def test_decomposition_table_preserves_layer_norm_double_backward():
+    """Keep LayerNorm statistics differentiable in the traced derivative."""
+
+    generator = torch.Generator().manual_seed(1702)
+    shapes = ((7, 7), (7,), (7,), (7,), (7, 7), (11, 7))
+    values = tuple(
+        torch.randn(shape, generator=generator, dtype=torch.float64)
+        for shape in shapes
+    )
+
+    def clone_values():
+        return tuple(
+            value.detach().clone().requires_grad_(True) for value in values
+        )
+
+    def forward(weight, bias, gamma, beta, readout_weight, positions):
+        hidden = F.linear(positions, weight, bias)
+        normalized = F.layer_norm(hidden, (7,), gamma, beta, eps=1e-3)
+        activated = F.silu(normalized)
+        energy = F.linear(activated, readout_weight).square().sum()
+        forces = torch.autograd.grad(
+            energy,
+            positions,
+            torch.ones_like(energy),
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+        return energy, forces
+
+    def loss_gradients(callable_):
+        arguments = clone_values()
+        energy, forces = callable_(*arguments)
+        loss = energy + 10.0 * forces.square().mean()
+        loss.backward()
+        return tuple(argument.grad for argument in arguments)
+
+    eager_gradients = loss_gradients(forward)
+    traced_model = make_fx(
+        forward,
+        decomposition_table=compile_training.mace_decomp_table(),
+        tracing_mode="symbolic",
+        _allow_non_fake_inputs=True,
+    )(*clone_values())
+    traced_gradients = loss_gradients(traced_model)
+
+    assert len(eager_gradients) == len(traced_gradients)
+    assert eager_gradients
+    assert all(
+        eager_gradient is not None for eager_gradient in eager_gradients
+    )
+    assert all(
+        traced_gradient is not None for traced_gradient in traced_gradients
+    )
+    for eager_gradient, traced_gradient in zip(
+        eager_gradients, traced_gradients
+    ):
+        assert_close(
+            eager_gradient, traced_gradient, rtol=1e-10, atol=1e-12
+        )
+
+
+def test_differentiable_layer_norm_matches_native_forward():
+    """Check decomposed LayerNorm values, axes, epsilon, and stability."""
+
+    generator = torch.Generator().manual_seed(1801)
+    cases = (
+        ((11, 7), (7,), 1e-3, 0.0),
+        ((5, 3, 4), (3, 4), 1e-4, 1000.0),
+    )
+    for input_shape, normalized_shape, eps, offset in cases:
+        input_tensor = torch.randn(
+            input_shape, generator=generator, dtype=torch.float32
+        )
+        input_tensor = input_tensor + offset
+        weight = torch.randn(
+            normalized_shape, generator=generator, dtype=torch.float32
+        )
+        bias = torch.randn(
+            normalized_shape, generator=generator, dtype=torch.float32
+        )
+        native_output, _, _ = torch.ops.aten.native_layer_norm.default(
+            input_tensor, normalized_shape, weight, bias, eps
+        )
+        decomposed_output, _, _ = compile_training._differentiable_layer_norm(
+            input_tensor, normalized_shape, weight, bias, eps
+        )
+        assert_close(
+            decomposed_output,
+            native_output,
+            rtol=1e-3,
+            atol=1e-3,
+        )
 
 
 @pytest.mark.skipif(
