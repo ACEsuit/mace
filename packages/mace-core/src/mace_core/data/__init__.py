@@ -10,6 +10,8 @@ resolved here, at the parse, and goes no further.
 table whether or not it ever reads a file.
 """
 
+from mace_core.data.backend import DataBackend, DataBackendError
+from mace_core.data.backends.memory import InMemoryBackend
 from mace_core.data.configuration import (
     DEFAULT_CONFIG_TYPE,
     DEFAULT_HEAD,
@@ -20,6 +22,12 @@ from mace_core.data.keys import (
     GRAPH_CONVENTION_NAMES,
     EmbeddingFeatureSpec,
     KeySpecification,
+)
+from mace_core.data.registry import (
+    DataBackendNotAvailableError,
+    DuplicateDataBackendError,
+    available_data_backends,
+    open_dataset,
 )
 from mace_core.data.splitting import group_by_config_type, random_train_valid_split
 from mace_core.data.xyz import (
@@ -42,13 +50,20 @@ __all__ = [
     "ISOLATED_ATOM_CONFIG_TYPE",
     "AtomicNumberTable",
     "Configuration",
+    "DataBackend",
+    "DataBackendError",
+    "DataBackendNotAvailableError",
     "DefaultKeys",
+    "DuplicateDataBackendError",
     "EmbeddingFeatureSpec",
+    "InMemoryBackend",
     "KeySpecification",
     "ParsedConfigurations",
     "atomic_number_table_from_zs",
+    "available_data_backends",
     "configuration_from_atoms",
     "group_by_config_type",
+    "open_dataset",
     "random_train_valid_split",
     "read_configurations",
 ]
