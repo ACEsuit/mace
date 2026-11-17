@@ -88,6 +88,7 @@ def test_device_tensor_rejects_direct_numpy_split_without_cpu():
         ("false", False),
         ("0", False),
         ("no", False),
+        ("", False),
         ("True", True),
         ("true", True),
         ("1", True),
@@ -113,6 +114,24 @@ def test_parse_args_descriptor_invariants_only_str2bool(
     )
     parsed = eval_configs.parse_args()
     assert parsed.descriptor_invariants_only is expected
+
+
+def test_parse_args_descriptor_invariants_only_empty_string_flag(monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "mace_eval_configs",
+            "--configs",
+            "in.xyz",
+            "--model",
+            "m.model",
+            "--output",
+            "out.xyz",
+            "--descriptor_invariants_only=",
+        ],
+    )
+    parsed = eval_configs.parse_args()
+    assert parsed.descriptor_invariants_only is False
 
 
 def test_eval_configs_splits_all_per_atom_outputs_with_non_cpu_ptr(

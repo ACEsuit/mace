@@ -1433,9 +1433,12 @@ def check_float_or_none(value: str) -> Optional[float]:
 def str2bool(value):
     if isinstance(value, bool):
         return value
-    if value.lower() in ("yes", "true", "t", "y", "1"):
+    if value is None:
+        return False
+    s = str(value).strip().lower()
+    if s in ("yes", "true", "t", "y", "1"):
         return True
-    if value.lower() in ("no", "false", "f", "n", "0"):
+    if s in ("no", "false", "f", "n", "0", ""):
         return False
     raise argparse.ArgumentTypeError("Boolean value expected.")
 
