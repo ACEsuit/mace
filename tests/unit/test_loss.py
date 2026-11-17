@@ -772,12 +772,11 @@ def test_universal_loss_config_weight_is_a_linear_factor_on_every_term():
 # ---------------------------------------------------------------------------
 # The ddp=True branches
 #
-# The huber module passes `ddp` to `reduce_loss` unchanged and the universal
-# one passes `bool(ddp)`, so ddp=True takes the distributed formula in both and
-# ddp=False the plain mean. With no
-# process group initialised, reduce_loss falls through to a plain mean, so the
-# two must agree exactly. That equality is the only thing that makes the
-# single-process test suite say anything at all about the distributed path.
+# Both huber modules pass `ddp` to `reduce_loss` unchanged, so ddp=True takes
+# the distributed formula and ddp=False the plain mean. With no process group
+# initialised, reduce_loss falls through to a plain mean, so the two must agree
+# exactly. That equality is the only thing that makes the single-process test
+# suite say anything at all about the distributed path.
 # ---------------------------------------------------------------------------
 
 

@@ -463,7 +463,7 @@ class UniversalLoss(torch.nn.Module):
         # The property weights multiply the huber arguments, which is what masks
         # a missing label. The config weight multiplies the huber term itself.
         configs_weight = torch.repeat_interleave(ref.weight, num_atoms).unsqueeze(-1)
-        # Without ddp, reduce_loss is the plain mean.
+        # reduce_loss with ddp=False is the plain mean
         loss_energy = reduce_loss(
             ref.weight
             * torch.nn.functional.huber_loss(
@@ -472,7 +472,7 @@ class UniversalLoss(torch.nn.Module):
                 reduction="none",
                 delta=self.huber_delta,
             ),
-            bool(ddp),
+            ddp,
         )
         loss_forces = conditional_huber_forces(
             configs_forces_weight * ref["forces"],
@@ -489,7 +489,7 @@ class UniversalLoss(torch.nn.Module):
                 reduction="none",
                 delta=self.huber_delta,
             ),
-            bool(ddp),
+            ddp,
         )
         loss_magforces = 0
         if "magforces" in pred.keys() and (
@@ -503,7 +503,7 @@ class UniversalLoss(torch.nn.Module):
                     reduction="none",
                     delta=self.huber_delta,
                 ),
-                bool(ddp),
+                ddp,
             )
         return (
             self.energy_weight * loss_energy
