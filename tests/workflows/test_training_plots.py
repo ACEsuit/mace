@@ -107,24 +107,9 @@ def test_plotting_does_not_fail_the_run(tmp_path):
     assert "Plotting failed" not in output
 
 
-@pytest.mark.polar
-@pytest.mark.parametrize("stage_two", [False, True])
-def test_polar_energy_force_training_plots_without_dipole_labels(tmp_path, stage_two):
-    extra = dict(model="PolarMACE", loss="weighted", max_num_epochs=2, plot_frequency=1)
-    if stage_two:
-        extra.update(swa=None, start_swa=1)
-    drawn, output = train(tmp_path, "polar", **extra)
-    assert "Plotting failed" not in output
-    assert "Creating Plotter failed" not in output
-    assert any("stage_one" in name for name in drawn), drawn
-    assert any("stage_two" in name for name in drawn) == stage_two, drawn
-
-
-@pytest.mark.parametrize(
-    "model", ["MACE", pytest.param("PolarMACE", marks=pytest.mark.polar)]
-)
-@pytest.mark.parametrize("stage_two", [False, True])
-def test_multihead_plots_with_shared_test_basenames(tmp_path, model, stage_two):
+def check_multihead_plots(tmp_path, model, stage_two):
+    """Train two heads whose test files share a basename and check each head
+    gets its own plots. Shared with the PolarMACE case in tests/extensions/polar."""
     heads = {}
     for i, head in enumerate(["DFT", "DFT_extra"]):
         directory = tmp_path / head
@@ -158,6 +143,11 @@ def test_multihead_plots_with_shared_test_basenames(tmp_path, model, stage_two):
         assert (
             any(name.endswith(f"_{head}_stage_two.png") for name in drawn) == stage_two
         )
+
+
+@pytest.mark.parametrize("stage_two", [False, True])
+def test_multihead_plots_with_shared_test_basenames(tmp_path, stage_two):
+    check_multihead_plots(tmp_path, "MACE", stage_two)
 
 
 def test_dipole_only_training_draws_a_plot(tmp_path):

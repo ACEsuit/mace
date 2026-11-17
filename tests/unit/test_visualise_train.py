@@ -228,13 +228,19 @@ def test_single_quantity_scatter_accepts_a_single_axis():
 
 
 @pytest.mark.parametrize(
-    "table,absolute,relative",
+    "table,absolute,relative,others",
     [
-        ("DipoleRMSE", "rmse_mu_per_atom", "rel_rmse_mu"),
-        ("DipoleMAE", "mae_mu", "rel_mae_mu"),
+        ("DipoleRMSE", "rmse_mu_per_atom", "rel_rmse_mu", {}),
+        ("DipoleMAE", "mae_mu", "rel_mae_mu", {}),
+        (
+            "DipolePolarRMSE",
+            "rmse_mu_per_atom",
+            "rel_rmse_mu",
+            {"rmse_polarizability_per_atom": 0.3},
+        ),
     ],
 )
-def test_dipole_curve_keys_and_percentage_units(table, absolute, relative):
+def test_dipole_curve_keys_and_percentage_units(table, absolute, relative, others):
     import matplotlib.pyplot as plt
     import numpy as np
     import pandas as pd
@@ -248,7 +254,7 @@ def test_dipole_curve_keys_and_percentage_units(table, absolute, relative):
             epoch=i,
             head="Default",
             loss=0.1,
-            **{absolute: 0.2, relative: 25.0},
+            **{absolute: 0.2, relative: 25.0, **others},
         )
         for i in range(2)
     ]
