@@ -20,6 +20,7 @@ from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.utils import extract_invariant
 from mace.tools import deprecation, torch_geometric, torch_tools, utils
+from mace.tools.arg_parser import str2bool
 from mace.tools.default_keys import DefaultKeys
 
 
@@ -90,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--descriptor_invariants_only",
         help="save invariant (l=0) descriptors only",
-        type=bool,
+        type=str2bool,
         default=True,
     )
     parser.add_argument(
@@ -341,7 +342,7 @@ def run(args: argparse.Namespace) -> None:
                 )
 
             to_keep = np.sum(per_layer_features[:num_layers])
-            descriptors = descriptors[:, :to_keep].detach().cpu().numpy()
+            descriptors = torch_tools.to_numpy(descriptors[:, :to_keep])
 
             descriptors = np.split(
                 descriptors,
