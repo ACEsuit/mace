@@ -5,7 +5,7 @@ this module imports neither. The pattern is the one
 :class:`~mace_core.outputs.MACEOutput` uses, and it has to work with no
 framework installed at all.
 
-**Factories, not calls.** Every method takes a descriptor and returns an op.
+**Factories, not calls.** Every method takes a kernel specification and returns an op.
 The resolution happens once, at model build time, and the op is frozen into the
 module tree. Nothing in this file is reachable from ``forward``: no dtype
 check, no device check, no ``isinstance``, no lookup. That is the difference
@@ -19,7 +19,7 @@ declining is a normal answer rather than a failure. Spherical harmonics and the
 radial basis are cheap closed forms. The radial MLP is a few dense matrix
 products that the framework already runs well on its own; what a backend gains
 from it is fusing it into the convolution, which is a span and is negotiated
-through the span factory, handed both descriptors.
+through the span factory, handed both kernel specifications.
 
 **Four of the ops hold their own weights**, and those four have a contract of
 their own: they read and write the canonical layout, and they can draw a fresh
@@ -35,15 +35,15 @@ from __future__ import annotations
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from mace_core.kernels.capabilities import BackendCapabilities
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
 )
 
 __all__ = [
@@ -135,11 +135,11 @@ class KernelBackend(Protocol):
         """What this backend declares it can do. Called before anything is built."""
         ...
 
-    def make_linear(self, descriptor: LinearDescriptor) -> Any:
-        """An equivariant linear map, bias included when the descriptor says so."""
+    def make_linear(self, kernel_spec: LinearSpec) -> Any:
+        """An equivariant linear map, with a bias if the specification has one."""
         ...
 
-    def make_channelwise_tp_conv(self, descriptor: ChannelwiseTPConvDescriptor) -> Any:
+    def make_channelwise_tp_conv(self, kernel_spec: ChannelwiseTPConvSpec) -> Any:
         """The message-passing tensor product. Returns node-level values.
 
         Always ``[n_nodes, ...]``. Whether the reduction over edges is fused
@@ -148,38 +148,36 @@ class KernelBackend(Protocol):
         """
         ...
 
-    def make_symmetric_contraction(
-        self, descriptor: SymmetricContractionDescriptor
-    ) -> Any:
-        """The many-body contraction, over the basis the descriptor records."""
+    def make_symmetric_contraction(self, kernel_spec: SymmetricContractionSpec) -> Any:
+        """The many-body contraction, over the basis the specification records."""
         ...
 
-    def make_fully_connected_tp(self, descriptor: FullyConnectedTPDescriptor) -> Any:
+    def make_fully_connected_tp(self, kernel_spec: FullyConnectedTPSpec) -> Any:
         """The skip connection's tensor product."""
         ...
 
-    def make_segment_reduce(self, descriptor: SegmentReduceDescriptor) -> Any:
+    def make_segment_reduce(self, kernel_spec: SegmentReduceSpec) -> Any:
         """A reduction into segments, with no irreps semantics."""
         ...
 
     def make_spherical_harmonics(
-        self, descriptor: SphericalHarmonicsDescriptor
+        self, kernel_spec: SphericalHarmonicsSpec
     ) -> Any | None:
         """Real spherical harmonics, or ``None`` to leave them to the reference.
 
         A backend that supplies its own must produce the convention
-        :class:`~mace_core.kernels.descriptors.SphericalHarmonicsDescriptor`
+        :class:`~mace_core.kernels.specs.SphericalHarmonicsSpec`
         states, which is e3nn's with ``normalization="component"``, the one
         legacy models were trained in. Producing a different one is not an
         optimization, it is a different model.
         """
         ...
 
-    def make_radial_basis(self, descriptor: RadialBasisDescriptor) -> Any | None:
+    def make_radial_basis(self, kernel_spec: RadialBasisSpec) -> Any | None:
         """The radial embedding, or ``None`` to leave it to the reference."""
         ...
 
-    def make_radial_mlp(self, descriptor: RadialMLPDescriptor) -> Any | None:
+    def make_radial_mlp(self, kernel_spec: RadialMLPSpec) -> Any | None:
         """The radial MLP, or ``None`` to leave it to the reference.
 
         Its weights are canonical whoever builds it, so declining changes where
@@ -187,7 +185,7 @@ class KernelBackend(Protocol):
         """
         ...
 
-    def make_interaction_layer(self, descriptors: tuple[Any, ...]) -> Any | None:
+    def make_interaction_layer(self, kernel_specs: tuple[Any, ...]) -> Any | None:
         """A whole interaction layer in one kernel, or ``None``.
 
         The optional span factory. A backend that can fuse further than one op

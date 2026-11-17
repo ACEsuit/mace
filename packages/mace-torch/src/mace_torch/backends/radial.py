@@ -13,7 +13,7 @@ Conventions shared by every class:
 * buffers are created in the ``dtype`` passed at construction, and in
   ``torch.get_default_dtype()`` when none is, so a module built under
   ``float64`` computes in ``float64``. The reference backend always passes the
-  descriptor's precision rather than leaning on the process default.
+  kernel specification's precision rather than leaning on the process default.
 """
 
 from __future__ import annotations

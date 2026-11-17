@@ -36,21 +36,22 @@ from mace_core.kernels.canonical import (
     symmetric_contraction_initial_scale,
 )
 from mace_core.kernels.capabilities import BackendCapabilities
-from mace_core.kernels.descriptors import (
-    ChannelwiseTPConvDescriptor,
-    Descriptor,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
-)
 from mace_core.kernels.protocol import DISPATCHED_OPS, REFERENCE_ONLY_OPS
+from mace_core.kernels.specs import (
+    ChannelwiseTPConvSpec,
+    FullyConnectedTPSpec,
+    KernelSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
+)
 from torch import Tensor, nn
 
 from mace_torch.backends.harmonics import spherical_harmonics
+from mace_torch.backends.layout import grouped, per_channel, term_widths
 from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
@@ -73,7 +74,7 @@ __all__ = [
 
 _TORCH_DTYPE = {"float64": torch.float64, "float32": torch.float32}
 
-#: The two bases, by the name a descriptor records. A lookup rather than a
+#: The two bases, by the name a kernel specification records. A lookup rather than a
 #: conditional, so a name outside the set raises instead of selecting the
 #: fallback branch.
 _BASIS_BUILDERS = {
@@ -82,15 +83,15 @@ _BASIS_BUILDERS = {
 }
 
 
-def _linear_plan(descriptor: LinearDescriptor):
+def _linear_plan(kernel_spec: LinearSpec):
     """Which weight writes to which entry of the dense matrix.
 
     One weight per matching multiplicity pair, repeated over the ``2l+1``
     components of its irrep. That repetition is the equivariance: a free matrix
     would mix components of one irrep into another.
     """
-    source_irreps = Irreps.parse(descriptor.irreps_in)
-    target_irreps = Irreps.parse(descriptor.irreps_out)
+    source_irreps = Irreps.parse(kernel_spec.irreps_in)
+    target_irreps = Irreps.parse(kernel_spec.irreps_out)
     rows, columns, sources = [], [], []
     weight = 0
     for out_slice, out_ir in target_irreps.slices():
@@ -103,7 +104,7 @@ def _linear_plan(descriptor: LinearDescriptor):
                 sources.append(weight)
             weight += 1
     bias_rows = []
-    if descriptor.has_bias:
+    if kernel_spec.has_bias:
         for out_slice, out_ir in target_irreps.slices():
             if out_ir.degree == 0 and out_ir.parity == 1:
                 bias_rows.append(out_slice.start)
@@ -130,18 +131,18 @@ def _linear_path_normalizations(irreps_in: str, irreps_out: str) -> list[float]:
     return scales
 
 
-def _skip_path_normalizations(descriptor: FullyConnectedTPDescriptor) -> list[float]:
+def _skip_path_normalizations(kernel_spec: FullyConnectedTPSpec) -> list[float]:
     """The same, for the skip connection, whose fan-in counts both inputs.
 
     One factor per output irrep, shared by every path landing on it, which is
     how ``e3nn`` counts the fan-in.
     """
-    source = Irreps.parse(descriptor.irreps_in1)
-    target = Irreps.parse(descriptor.irreps_out)
+    source = Irreps.parse(kernel_spec.irreps_in1)
+    target = Irreps.parse(kernel_spec.irreps_out)
     scales: list[float] = []
     for out_multiplicity, out_irrep in target:
         scale = fully_connected_tp_path_normalization(
-            descriptor.irreps_in1, descriptor.irreps_in2, out_irrep
+            kernel_spec.irreps_in1, kernel_spec.irreps_in2, out_irrep
         )
         for _ in range(out_multiplicity):
             for in_multiplicity, in_irrep in source:
@@ -187,12 +188,12 @@ class ReferenceLinear(nn.Module):
     bias_row: Tensor
     path_normalization: Tensor
 
-    def __init__(self, descriptor: LinearDescriptor) -> None:
+    def __init__(self, kernel_spec: LinearSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        rows, columns, sources, count, bias_rows = _linear_plan(descriptor)
-        dtype = _TORCH_DTYPE[descriptor.precision]
-        self.dim_out = Irreps.parse(descriptor.irreps_out).dimension
+        self.kernel_spec = kernel_spec
+        rows, columns, sources, count, bias_rows = _linear_plan(kernel_spec)
+        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        self.dim_out = Irreps.parse(kernel_spec.irreps_out).dimension
         self.register_buffer("row", torch.tensor(rows, dtype=torch.long))
         self.register_buffer("column", torch.tensor(columns, dtype=torch.long))
         self.register_buffer("source", torch.tensor(sources, dtype=torch.long))
@@ -203,7 +204,7 @@ class ReferenceLinear(nn.Module):
             "path_normalization",
             torch.tensor(
                 _linear_path_normalizations(
-                    descriptor.irreps_in, descriptor.irreps_out
+                    kernel_spec.irreps_in, kernel_spec.irreps_out
                 ),
                 dtype=dtype,
             ),
@@ -267,7 +268,7 @@ class _ConstantTensors(nn.Module):
 
 
 class ReferenceSymmetricContraction(nn.Module):
-    """The many-body contraction, over the basis the descriptor records.
+    """The many-body contraction, over the basis the kernel specification records.
 
     One contraction per output irrep, concatenated on the component axis. They
     cannot share a stacked basis: each output irrep has its own component count,
@@ -276,23 +277,26 @@ class ReferenceSymmetricContraction(nn.Module):
     irrep, and this is that, with the loop kept explicit.
     """
 
-    def __init__(self, descriptor: SymmetricContractionDescriptor) -> None:
+    def __init__(self, kernel_spec: SymmetricContractionSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
-        if descriptor.basis not in _BASIS_BUILDERS:
+        self.kernel_spec = kernel_spec
+        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        if kernel_spec.basis not in _BASIS_BUILDERS:
             raise ValueError(
-                f"basis={descriptor.basis!r} is not a Clebsch-Gordan basis this "
+                f"basis={kernel_spec.basis!r} is not a Clebsch-Gordan basis this "
                 f"backend builds. The bases are {sorted(_BASIS_BUILDERS)}."
             )
-        build = _BASIS_BUILDERS[descriptor.basis]
-        self.orders = descriptor.correlation
-        self.targets = [str(ir) for _, ir in Irreps.parse(descriptor.irreps_out)]
+        build = _BASIS_BUILDERS[kernel_spec.basis]
+        self.orders = kernel_spec.correlation
+        self.targets = [str(ir) for _, ir in Irreps.parse(kernel_spec.irreps_out)]
+        self.num_features = kernel_spec.num_features
+        self.in_widths = term_widths(kernel_spec.irreps_in)
+        self.out_widths = term_widths(kernel_spec.irreps_out)
         weights, bases = [], []
         for target in self.targets:
             group, tables = [], []
-            for order in range(1, descriptor.correlation + 1):
-                array = build(descriptor.irreps_in, order, target)[target]
+            for order in range(1, kernel_spec.correlation + 1):
+                array = build(kernel_spec.irreps_in, order, target)[target]
                 # The trailing extent is computed rather than inferred with
                 # `-1`: an output irrep no path of this body order reaches has
                 # zero paths, and numpy cannot infer a dimension of an empty
@@ -303,9 +307,9 @@ class ReferenceSymmetricContraction(nn.Module):
                 group.append(
                     nn.Parameter(
                         torch.zeros(
-                            descriptor.num_elements,
+                            kernel_spec.num_elements,
                             flat.shape[0],
-                            descriptor.num_features,
+                            kernel_spec.num_features,
                             dtype=dtype,
                         )
                     )
@@ -342,17 +346,27 @@ class ReferenceSymmetricContraction(nn.Module):
         return [self.weights[base + order] for order in range(self.orders)]
 
     def forward(self, features: Tensor, element: Tensor) -> Tensor:
+        """Grouped features in and out.
+
+        Args:
+            features: ``[n_nodes, num_features * dim_in]``, grouped.
+            element: ``[n_nodes]``, int64, which element each node is.
+
+        Returns:
+            ``[n_nodes, num_features * dim_out]``, grouped.
+        """
+        channels = per_channel(features, self.in_widths, self.num_features)
         # `nn.ModuleList` erases what it holds, so the element type has to be
         # said here. It is the one thing put into `self.bases`, two lines of
         # the constructor away.
         bases = cast("list[_ConstantTensors]", list(self.bases))
         pieces = [
             symmetric_contraction(
-                features, self._group(position), list(tables), element
+                channels, self._group(position), list(tables), element
             )
             for position, tables in enumerate(bases)
         ]
-        return torch.cat(pieces, dim=-1)
+        return grouped(torch.cat(pieces, dim=-1), self.out_widths)
 
     def to_canonical(self) -> dict[str, Tensor]:
         """The flat ``[Z, A, mul]`` array, in the pinned path order.
@@ -391,62 +405,81 @@ class ReferenceSymmetricContraction(nn.Module):
         ]
 
 
-def _coupling_coefficients(descriptor: ChannelwiseTPConvDescriptor) -> np.ndarray:
+def _term_offsets(irreps: Irreps) -> list[int]:
+    """Where each term of a declaration starts in its flat vector."""
+    offsets, start = [], 0
+    for multiplicity, irrep in irreps.terms:
+        offsets.append(start)
+        start += multiplicity * irrep.dimension
+    return offsets
+
+
+def _coupling_coefficients(kernel_spec: ChannelwiseTPConvSpec) -> np.ndarray:
     """The Clebsch-Gordan coefficients of the message-passing product.
 
-    One path per ``(node irrep, edge irrep, output irrep)`` the selection rules
-    allow, in the pinned irrep order, written into a dense
-    ``[paths, dim_out, dim_in, dim_edge]`` array. Dense because this is the
-    reference; a backend with a real kernel keeps them sparse.
+    One ``[dim_paths, dim_node, dim_edge]`` block per path, over one channel,
+    stacked into ``[n_paths, dim_paths, dim_node, dim_edge]``. Each path is
+    nonzero only in its own output term, so the kernel's sum over paths weights
+    every coupling separately and writes it where the linear after it expects
+    it. Dense because this is the reference; a backend with a real kernel
+    keeps them sparse.
 
     Each path carries the factor ``sqrt(2 l_out + 1)`` on its unit-norm
     Wigner 3j symbol. That is the per-path weight of the frozen tree's
     ``e3nn`` tensor product, built with ``"component"`` irrep normalization,
-    ``"element"`` path normalization and one ``uvu`` instruction per output
-    term: the fan-in of each instruction is the edge multiplicity, one, so the
-    path weight is ``sqrt(2 l_out + 1)`` exactly. Several paths written to one
-    output irrep here are separate output terms there, so they are summed with
-    that factor each and no further fan-in.
+    ``"element"`` path normalization and one ``uvu`` instruction per path:
+    the fan-in of each instruction is the edge multiplicity, one, so the path
+    weight is ``sqrt(2 l_out + 1)`` exactly.
     """
-    node = Irreps.parse(descriptor.irreps_node)
-    edge = Irreps.parse(descriptor.irreps_edge)
-    target = Irreps.parse(descriptor.irreps_out)
-    paths = []
-    for out_slice, out_ir in target.slices():
-        for in_slice, in_ir in node.slices():
-            for edge_slice, edge_ir in edge.slices():
-                if out_ir not in set(in_ir.couple(edge_ir)):
-                    continue
-                block = np.zeros((target.dimension, node.dimension, edge.dimension))
-                block[out_slice, in_slice, edge_slice] = math.sqrt(
-                    out_ir.dimension
-                ) * wigner_3j_real(out_ir.degree, in_ir.degree, edge_ir.degree)
-                paths.append(block)
-    if not paths:
-        return np.zeros((0, target.dimension, node.dimension, edge.dimension))
-    return np.stack(paths)
+    node = Irreps.parse(kernel_spec.irreps_node)
+    edge = Irreps.parse(kernel_spec.irreps_edge)
+    paths = kernel_spec.paths
+    dim_paths = sum(path.irrep.dimension for path in paths)
+    node_offsets = _term_offsets(node)
+    edge_offsets = _term_offsets(edge)
+    coefficients = np.zeros((len(paths), dim_paths, node.dimension, edge.dimension))
+    out_start = 0
+    for index, path in enumerate(paths):
+        node_irrep = node.terms[path.node_term][1]
+        edge_irrep = edge.terms[path.edge_term][1]
+        node_start = node_offsets[path.node_term]
+        edge_start = edge_offsets[path.edge_term]
+        coefficients[
+            index,
+            out_start : out_start + path.irrep.dimension,
+            node_start : node_start + node_irrep.dimension,
+            edge_start : edge_start + edge_irrep.dimension,
+        ] = math.sqrt(path.irrep.dimension) * wigner_3j_real(
+            path.irrep.degree, node_irrep.degree, edge_irrep.degree
+        )
+        out_start += path.irrep.dimension
+    return coefficients
 
 
 class ReferenceChannelwiseTPConv(nn.Module):
-    """The message-passing tensor product. Node-level, always."""
+    """The message-passing tensor product. Node-level, always.
+
+    Grouped features in and out, as every op of the chain reads them. The
+    kernel computes channel by channel, so the features move to that
+    arrangement and back here, at the backend boundary.
+    """
 
     #: Annotated because `register_buffer` alone leaves it typed as a `Module`,
     #: and then reading its shape reads as subscripting a module.
     coefficients: Tensor
 
-    def __init__(self, descriptor: ChannelwiseTPConvDescriptor) -> None:
+    def __init__(self, kernel_spec: ChannelwiseTPConvSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
-        coefficients = _coupling_coefficients(descriptor)
+        self.kernel_spec = kernel_spec
+        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        coefficients = _coupling_coefficients(kernel_spec)
         self.register_buffer(
             "coefficients", torch.tensor(coefficients, dtype=dtype), persistent=False
         )
-
-    @property
-    def num_paths(self) -> int:
-        """How many weights the external radial MLP has to produce."""
-        return int(self.coefficients.shape[0])
+        self.num_paths = len(kernel_spec.paths)
+        self.num_features = kernel_spec.num_features
+        self.node_widths = term_widths(kernel_spec.irreps_node)
+        self.path_widths = term_widths(kernel_spec.irreps_paths)
 
     def forward(
         self,
@@ -457,8 +490,19 @@ class ReferenceChannelwiseTPConv(nn.Module):
         receiver: Tensor,
         num_nodes: int,
     ) -> Tensor:
-        return channelwise_tp_conv(
-            node_features,
+        """Grouped node features in, one grouped block per path out.
+
+        Args:
+            node_features: ``[n_nodes, num_features * dim_node]``, grouped.
+            edge_attributes: ``[n_edges, dim_edge]``.
+            radial_weights: ``[n_edges, n_paths, num_features]``.
+            sender: ``[n_edges]``, int64.
+            receiver: ``[n_edges]``, int64.
+            num_nodes: The node count, as a plain int.
+        """
+        channels = per_channel(node_features, self.node_widths, self.num_features)
+        message = channelwise_tp_conv(
+            channels,
             edge_attributes,
             radial_weights,
             self.coefficients,
@@ -466,6 +510,7 @@ class ReferenceChannelwiseTPConv(nn.Module):
             receiver,
             num_nodes,
         )
+        return grouped(message, self.path_widths)
 
 
 class ReferenceFullyConnectedTP(nn.Module):
@@ -487,35 +532,35 @@ class ReferenceFullyConnectedTP(nn.Module):
     source: Tensor
     path_normalization: Tensor
 
-    def __init__(self, descriptor: FullyConnectedTPDescriptor) -> None:
+    def __init__(self, kernel_spec: FullyConnectedTPSpec) -> None:
         super().__init__()
-        second = Irreps.parse(descriptor.irreps_in2)
+        second = Irreps.parse(kernel_spec.irreps_in2)
         if any(ir.degree != 0 or ir.parity != 1 for _, ir in second):
             raise NotImplementedError(
                 f"the reference backend builds the fully connected tensor "
-                f"product only against scalars, and {descriptor.irreps_in2!r} "
+                f"product only against scalars, and {kernel_spec.irreps_in2!r} "
                 f"is not. That is the case the models use, for the element "
                 f"attributes; a general second input needs a backend that "
                 f"declares it."
             )
-        self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
+        self.kernel_spec = kernel_spec
+        dtype = _TORCH_DTYPE[kernel_spec.precision]
         rows, columns, sources, count, _ = _linear_plan(
-            LinearDescriptor(
-                irreps_in=descriptor.irreps_in1,
-                irreps_out=descriptor.irreps_out,
-                precision=descriptor.precision,
+            LinearSpec(
+                irreps_in=kernel_spec.irreps_in1,
+                irreps_out=kernel_spec.irreps_out,
+                precision=kernel_spec.precision,
             )
         )
         self.num_scalars = second.dimension
-        self.dim_out = Irreps.parse(descriptor.irreps_out).dimension
+        self.dim_out = Irreps.parse(kernel_spec.irreps_out).dimension
         self.register_buffer("row", torch.tensor(rows, dtype=torch.long))
         self.register_buffer("column", torch.tensor(columns, dtype=torch.long))
         self.register_buffer("source", torch.tensor(sources, dtype=torch.long))
         self.weight = nn.Parameter(torch.zeros(self.num_scalars, count, dtype=dtype))
         self.register_buffer(
             "path_normalization",
-            torch.tensor(_skip_path_normalizations(descriptor), dtype=dtype),
+            torch.tensor(_skip_path_normalizations(kernel_spec), dtype=dtype),
             persistent=False,
         )
 
@@ -558,14 +603,14 @@ class ReferenceFullyConnectedTP(nn.Module):
 class ReferenceSegmentReduce(nn.Module):
     """A reduction into segments. Sum only, which is what the models use."""
 
-    def __init__(self, descriptor: SegmentReduceDescriptor) -> None:
+    def __init__(self, kernel_spec: SegmentReduceSpec) -> None:
         super().__init__()
-        if descriptor.reduction != "sum":
+        if kernel_spec.reduction != "sum":
             raise NotImplementedError(
                 f"the reference backend reduces by sum, not by "
-                f"{descriptor.reduction!r}."
+                f"{kernel_spec.reduction!r}."
             )
-        self.descriptor = descriptor
+        self.kernel_spec = kernel_spec
 
     def forward(self, values: Tensor, index: Tensor, num_segments: int) -> Tensor:
         return segment_sum(values, index, num_segments)
@@ -574,50 +619,50 @@ class ReferenceSegmentReduce(nn.Module):
 class ReferenceSphericalHarmonics(nn.Module):
     """Real spherical harmonics in this project's convention.
 
-    Computed in the descriptor's precision whatever the input's, so the dtype
+    Computed in the kernel specification's precision whatever the input's, so the dtype
     is the one the model was built with and not whatever the caller had.
     """
 
-    def __init__(self, descriptor: SphericalHarmonicsDescriptor) -> None:
+    def __init__(self, kernel_spec: SphericalHarmonicsSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        self.dtype = _TORCH_DTYPE[descriptor.precision]
+        self.kernel_spec = kernel_spec
+        self.dtype = _TORCH_DTYPE[kernel_spec.precision]
 
     def forward(self, directions: Tensor) -> Tensor:
         return spherical_harmonics(
-            directions.to(self.dtype), self.descriptor.lmax, self.descriptor.normalize
+            directions.to(self.dtype), self.kernel_spec.lmax, self.kernel_spec.normalize
         )
 
 
 class ReferenceRadialBasis(nn.Module):
     """The radial embedding, with the cutoff envelope already applied.
 
-    Built and computed in the descriptor's precision, never in the process
-    default dtype, and enveloped by a polynomial cutoff of the descriptor's
+    Built and computed in the kernel specification's precision, never in the process
+    default dtype, and enveloped by a polynomial cutoff of the kernel specification's
     ``cutoff_order``.
     """
 
-    def __init__(self, descriptor: RadialBasisDescriptor) -> None:
+    def __init__(self, kernel_spec: RadialBasisSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        self.dtype = _TORCH_DTYPE[descriptor.precision]
-        if descriptor.kind == "bessel":
+        self.kernel_spec = kernel_spec
+        self.dtype = _TORCH_DTYPE[kernel_spec.precision]
+        if kernel_spec.kind == "bessel":
             self.basis = BesselBasis(
-                descriptor.cutoff, descriptor.num_basis, dtype=self.dtype
+                kernel_spec.cutoff, kernel_spec.num_basis, dtype=self.dtype
             )
-        elif descriptor.kind == "gaussian":
+        elif kernel_spec.kind == "gaussian":
             self.basis = GaussianBasis(
-                descriptor.cutoff, descriptor.num_basis, dtype=self.dtype
+                kernel_spec.cutoff, kernel_spec.num_basis, dtype=self.dtype
             )
-        elif descriptor.kind == "chebyshev":
-            self.basis = ChebyshevBasis(descriptor.num_basis)
+        elif kernel_spec.kind == "chebyshev":
+            self.basis = ChebyshevBasis(kernel_spec.num_basis)
         else:
             raise ValueError(
-                f"{descriptor.kind!r} is not a radial basis this backend builds. "
+                f"{kernel_spec.kind!r} is not a radial basis this backend builds. "
                 f"The kinds are 'bessel', 'gaussian' and 'chebyshev', lowercase."
             )
         self.cutoff = PolynomialCutoff(
-            descriptor.cutoff, descriptor.cutoff_order, dtype=self.dtype
+            kernel_spec.cutoff, kernel_spec.cutoff_order, dtype=self.dtype
         )
 
     def forward(self, lengths: Tensor) -> Tensor:
@@ -626,9 +671,9 @@ class ReferenceRadialBasis(nn.Module):
         return self.basis(lengths) * self.cutoff(lengths)
 
 
-def _layer_widths(descriptor: RadialMLPDescriptor) -> list[tuple[int, int]]:
+def _layer_widths(kernel_spec: RadialMLPSpec) -> list[tuple[int, int]]:
     """``(fan_in, fan_out)`` of every layer, input first."""
-    return list(zip(descriptor.channels[:-1], descriptor.channels[1:], strict=True))
+    return list(zip(kernel_spec.channels[:-1], kernel_spec.channels[1:], strict=True))
 
 
 class ReferenceNormalizedSiluMLP(nn.Module):
@@ -642,11 +687,11 @@ class ReferenceNormalizedSiluMLP(nn.Module):
 
     layer_normalization: Tensor
 
-    def __init__(self, descriptor: RadialMLPDescriptor) -> None:
+    def __init__(self, kernel_spec: RadialMLPSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
-        widths = _layer_widths(descriptor)
+        self.kernel_spec = kernel_spec
+        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        widths = _layer_widths(kernel_spec)
         self.weights = nn.ParameterList(
             [
                 nn.Parameter(torch.zeros(fan_in, fan_out, dtype=dtype))
@@ -657,7 +702,7 @@ class ReferenceNormalizedSiluMLP(nn.Module):
             "layer_normalization",
             torch.tensor(
                 [
-                    radial_mlp_layer_normalization(descriptor.kind, fan_in)
+                    radial_mlp_layer_normalization(kernel_spec.kind, fan_in)
                     for fan_in, _ in widths
                 ],
                 dtype=dtype,
@@ -706,11 +751,11 @@ class ReferenceLayerNormSiluMLP(nn.Module):
     matrices the same way round.
     """
 
-    def __init__(self, descriptor: RadialMLPDescriptor) -> None:
+    def __init__(self, kernel_spec: RadialMLPSpec) -> None:
         super().__init__()
-        self.descriptor = descriptor
-        dtype = _TORCH_DTYPE[descriptor.precision]
-        widths = _layer_widths(descriptor)
+        self.kernel_spec = kernel_spec
+        dtype = _TORCH_DTYPE[kernel_spec.precision]
+        widths = _layer_widths(kernel_spec)
         hidden = [fan_out for _, fan_out in widths[:-1]]
         self.weights = nn.ParameterList(
             [
@@ -804,7 +849,7 @@ class ReferenceLayerNormSiluMLP(nn.Module):
                 norm_bias.copy_(state[f"norm_bias_{index}"])
 
 
-#: The radial MLP classes, by the kind a descriptor records.
+#: The radial MLP classes, by the kind a kernel specification records.
 _RADIAL_MLPS: dict[
     str, type[ReferenceNormalizedSiluMLP] | type[ReferenceLayerNormSiluMLP]
 ] = {
@@ -821,24 +866,24 @@ class ReferenceCapabilities(BackendCapabilities):
     that asks first and builds second must never be told yes and then fail.
     """
 
-    def unsupported_reason(self, descriptor: Descriptor) -> str | None:
-        reason = super().unsupported_reason(descriptor)
+    def unsupported_reason(self, kernel_spec: KernelSpec) -> str | None:
+        reason = super().unsupported_reason(kernel_spec)
         if reason is not None:
             return reason
         if (
-            isinstance(descriptor, SegmentReduceDescriptor)
-            and descriptor.reduction != "sum"
+            isinstance(kernel_spec, SegmentReduceSpec)
+            and kernel_spec.reduction != "sum"
         ):
             return (
-                f"the reference reduces by 'sum' only, not by {descriptor.reduction!r}"
+                f"the reference reduces by 'sum' only, not by {kernel_spec.reduction!r}"
             )
-        if isinstance(descriptor, FullyConnectedTPDescriptor) and any(
+        if isinstance(kernel_spec, FullyConnectedTPSpec) and any(
             irrep.degree != 0 or irrep.parity != 1
-            for _, irrep in Irreps.parse(descriptor.irreps_in2)
+            for _, irrep in Irreps.parse(kernel_spec.irreps_in2)
         ):
             return (
                 f"the reference builds the fully connected tensor product only "
-                f"against scalars, and irreps_in2={descriptor.irreps_in2!r} is "
+                f"against scalars, and irreps_in2={kernel_spec.irreps_in2!r} is "
                 f"not scalars"
             )
         return None
@@ -860,56 +905,54 @@ class ReferenceBackend:
             supports_double_backward=True,
         )
 
-    def _check(self, descriptor) -> None:
-        self.capabilities().require(descriptor, self.name)
+    def _check(self, kernel_spec) -> None:
+        self.capabilities().require(kernel_spec, self.name)
 
-    def make_linear(self, descriptor: LinearDescriptor) -> ReferenceLinear:
-        self._check(descriptor)
-        return ReferenceLinear(descriptor)
+    def make_linear(self, kernel_spec: LinearSpec) -> ReferenceLinear:
+        self._check(kernel_spec)
+        return ReferenceLinear(kernel_spec)
 
     def make_channelwise_tp_conv(
-        self, descriptor: ChannelwiseTPConvDescriptor
+        self, kernel_spec: ChannelwiseTPConvSpec
     ) -> ReferenceChannelwiseTPConv:
-        self._check(descriptor)
-        return ReferenceChannelwiseTPConv(descriptor)
+        self._check(kernel_spec)
+        return ReferenceChannelwiseTPConv(kernel_spec)
 
     def make_symmetric_contraction(
-        self, descriptor: SymmetricContractionDescriptor
+        self, kernel_spec: SymmetricContractionSpec
     ) -> ReferenceSymmetricContraction:
-        self._check(descriptor)
-        return ReferenceSymmetricContraction(descriptor)
+        self._check(kernel_spec)
+        return ReferenceSymmetricContraction(kernel_spec)
 
     def make_fully_connected_tp(
-        self, descriptor: FullyConnectedTPDescriptor
+        self, kernel_spec: FullyConnectedTPSpec
     ) -> ReferenceFullyConnectedTP:
-        self._check(descriptor)
-        return ReferenceFullyConnectedTP(descriptor)
+        self._check(kernel_spec)
+        return ReferenceFullyConnectedTP(kernel_spec)
 
     def make_segment_reduce(
-        self, descriptor: SegmentReduceDescriptor
+        self, kernel_spec: SegmentReduceSpec
     ) -> ReferenceSegmentReduce:
-        self._check(descriptor)
-        return ReferenceSegmentReduce(descriptor)
+        self._check(kernel_spec)
+        return ReferenceSegmentReduce(kernel_spec)
 
     def make_spherical_harmonics(
-        self, descriptor: SphericalHarmonicsDescriptor
+        self, kernel_spec: SphericalHarmonicsSpec
     ) -> ReferenceSphericalHarmonics:
-        self._check(descriptor)
-        return ReferenceSphericalHarmonics(descriptor)
+        self._check(kernel_spec)
+        return ReferenceSphericalHarmonics(kernel_spec)
 
-    def make_radial_basis(
-        self, descriptor: RadialBasisDescriptor
-    ) -> ReferenceRadialBasis:
-        self._check(descriptor)
-        return ReferenceRadialBasis(descriptor)
+    def make_radial_basis(self, kernel_spec: RadialBasisSpec) -> ReferenceRadialBasis:
+        self._check(kernel_spec)
+        return ReferenceRadialBasis(kernel_spec)
 
     def make_radial_mlp(
-        self, descriptor: RadialMLPDescriptor
+        self, kernel_spec: RadialMLPSpec
     ) -> ReferenceNormalizedSiluMLP | ReferenceLayerNormSiluMLP:
-        self._check(descriptor)
-        return _RADIAL_MLPS[descriptor.kind](descriptor)
+        self._check(kernel_spec)
+        return _RADIAL_MLPS[kernel_spec.kind](kernel_spec)
 
-    def make_interaction_layer(self, descriptors) -> None:
+    def make_interaction_layer(self, kernel_specs) -> None:
         """The reference fuses nothing. ``None`` means op by op, which is the
         normal answer and not a failure."""
         return None

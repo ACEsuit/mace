@@ -1,4 +1,4 @@
-"""The kernel contract: descriptors, capabilities, and finding a backend.
+"""The kernel contract: kernel specifications, capabilities, and finding a backend.
 
 All of it torch-free, which is the point rather than a side effect: this is the
 half of the dispatch layer that both the torch and the jax implementations read,
@@ -24,16 +24,16 @@ from mace_core.kernels import (
     SILU_SECOND_MOMENT_SCALE,
     BackendCapabilities,
     BackendNotAvailableError,
-    ChannelwiseTPConvDescriptor,
+    ChannelwiseTPConvSpec,
     DuplicateBackendError,
-    FullyConnectedTPDescriptor,
-    LinearDescriptor,
-    RadialBasisDescriptor,
-    RadialMLPDescriptor,
-    SegmentReduceDescriptor,
-    SphericalHarmonicsDescriptor,
-    SymmetricContractionDescriptor,
-    UnsupportedDescriptorError,
+    FullyConnectedTPSpec,
+    LinearSpec,
+    RadialBasisSpec,
+    RadialMLPSpec,
+    SegmentReduceSpec,
+    SphericalHarmonicsSpec,
+    SymmetricContractionSpec,
+    UnsupportedKernelSpecError,
     available_backends,
     canonical_weight_shape,
     exact_silu_second_moment_scale,
@@ -51,16 +51,16 @@ from mace_core.kernels import registry as registry_module
 EVERY_OP = DISPATCHED_OPS | REFERENCE_ONLY_OPS
 
 # ---------------------------------------------------------------------------
-# Descriptors
+# Kernel specifications
 # ---------------------------------------------------------------------------
 
 
-def test_a_descriptor_is_hashable_so_it_can_key_a_cache():
-    """Resolution happens once per distinct op, so the descriptor has to be
-    usable as a key. A mutable descriptor would also mean an op could be built
+def test_a_kernel_spec_is_hashable_so_it_can_key_a_cache():
+    """Resolution happens once per distinct op, so the kernel specification has to be
+    usable as a key. A mutable kernel specification would also mean an op could be built
     against one shape and asked for another."""
-    first = LinearDescriptor(irreps_in="16x0e", irreps_out="8x0e")
-    second = LinearDescriptor(irreps_in="16x0e", irreps_out="8x0e")
+    first = LinearSpec(irreps_in="16x0e", irreps_out="8x0e")
+    second = LinearSpec(irreps_in="16x0e", irreps_out="8x0e")
     assert hash(first) == hash(second)
     assert len({first, second}) == 1
     with pytest.raises(AttributeError):
@@ -72,30 +72,30 @@ def test_a_descriptor_is_hashable_so_it_can_key_a_cache():
 def test_the_linear_weight_count_is_the_matching_multiplicities():
     """An equivariant linear map connects a term only to a term of the same
     irrep, so 1o never mixes into 0e however wide either is."""
-    assert LinearDescriptor(irreps_in="16x0e", irreps_out="8x0e").weight_numel == 128
-    assert LinearDescriptor(irreps_in="16x0e", irreps_out="8x1o").weight_numel == 0
-    mixed = LinearDescriptor(irreps_in="16x0e+16x1o", irreps_out="32x0e+8x1o")
+    assert LinearSpec(irreps_in="16x0e", irreps_out="8x0e").weight_numel == 128
+    assert LinearSpec(irreps_in="16x0e", irreps_out="8x1o").weight_numel == 0
+    mixed = LinearSpec(irreps_in="16x0e+16x1o", irreps_out="32x0e+8x1o")
     assert mixed.weight_numel == 16 * 32 + 16 * 8
 
 
 def test_a_bias_is_counted_and_only_on_scalars():
     """A bias on anything but 0e would break equivariance, so it is not merely
     unsupported, it is not counted."""
-    plain = LinearDescriptor(irreps_in="16x0e", irreps_out="4x0e+2x1o")
-    biased = LinearDescriptor(irreps_in="16x0e", irreps_out="4x0e+2x1o", has_bias=True)
+    plain = LinearSpec(irreps_in="16x0e", irreps_out="4x0e+2x1o")
+    biased = LinearSpec(irreps_in="16x0e", irreps_out="4x0e+2x1o", has_bias=True)
     assert biased.weight_numel - plain.weight_numel == 4
 
 
 def test_the_symmetric_contraction_weight_count_is_the_canonical_shape():
-    descriptor = SymmetricContractionDescriptor(
+    kernel_spec = SymmetricContractionSpec(
         irreps_in="0e+1o+2e+3o",
         irreps_out="0e+1o",
         correlation=3,
         num_elements=2,
         num_features=16,
     )
-    assert descriptor.path_count == 29
-    assert descriptor.weight_numel == 2 * 29 * 16
+    assert kernel_spec.path_count == 29
+    assert kernel_spec.weight_numel == 2 * 29 * 16
     assert canonical_weight_shape(2, 29, 16) == (2, 29, 16)
 
 
@@ -109,39 +109,39 @@ def test_the_basis_is_a_recorded_field_and_changes_the_count():
         "num_elements": 1,
         "num_features": 1,
     }
-    assert SymmetricContractionDescriptor(**common, basis="reduced").path_count == 29
-    assert SymmetricContractionDescriptor(**common, basis="full").path_count == 86
+    assert SymmetricContractionSpec(**common, basis="reduced").path_count == 29
+    assert SymmetricContractionSpec(**common, basis="full").path_count == 86
 
 
 def test_an_op_whose_weights_come_from_outside_owns_none():
-    assert ChannelwiseTPConvDescriptor().weight_numel == 0
+    assert ChannelwiseTPConvSpec().weight_numel == 0
 
 
 def test_the_normalized_radial_mlp_counts_its_matrices_only():
     """``e3nn``'s ``FullyConnectedNet`` has no bias: 8*64 + 64*64 + 64*192."""
-    descriptor = RadialMLPDescriptor(channels=(8, 64, 64, 192))
-    assert descriptor.weight_numel == 8 * 64 + 64 * 64 + 64 * 192
+    kernel_spec = RadialMLPSpec(channels=(8, 64, 64, 192))
+    assert kernel_spec.weight_numel == 8 * 64 + 64 * 64 + 64 * 192
 
 
 def test_the_layer_norm_radial_mlp_counts_its_biases_and_norms_too():
     """A bias per layer, and a scale and a shift per hidden layer: the last
     layer carries no norm."""
-    descriptor = RadialMLPDescriptor(channels=(8, 16, 4), kind="layer_norm_silu")
-    assert descriptor.weight_numel == (8 * 16 + 16) + (16 * 4 + 4) + 2 * 16
+    kernel_spec = RadialMLPSpec(channels=(8, 16, 4), kind="layer_norm_silu")
+    assert kernel_spec.weight_numel == (8 * 16 + 16) + (16 * 4 + 4) + 2 * 16
 
 
 def test_radial_mlp_widths_read_from_a_list_still_key_a_cache():
-    """A configuration file gives a list, and an unhashable descriptor cannot
+    """A configuration file gives a list, and an unhashable kernel specification cannot
     be resolved once per distinct op."""
-    from_list = RadialMLPDescriptor(channels=[8, 16, 4])  # ty: ignore[invalid-argument-type]
+    from_list = RadialMLPSpec(channels=[8, 16, 4])  # ty: ignore[invalid-argument-type]
     assert from_list.channels == (8, 16, 4)
-    assert hash(from_list) == hash(RadialMLPDescriptor(channels=(8, 16, 4)))
+    assert hash(from_list) == hash(RadialMLPSpec(channels=(8, 16, 4)))
 
 
 @pytest.mark.parametrize("channels", [(8,), (), (8, 0, 4), (8, -1)])
 def test_a_radial_mlp_without_an_input_and_an_output_width_is_refused(channels):
     with pytest.raises(ValueError, match="channels="):
-        RadialMLPDescriptor(channels=channels)
+        RadialMLPSpec(channels=channels)
 
 
 @pytest.mark.parametrize("basis", ["Reduced", "reduce", "", "cueq"])
@@ -149,37 +149,37 @@ def test_a_basis_outside_the_closed_set_is_refused_at_construction(basis):
     """A typo used to select the full basis silently, because the code read
     "reduced or else full". It is model state, so a near miss is an error."""
     with pytest.raises(ValueError, match=repr(basis)):
-        SymmetricContractionDescriptor(basis=basis)
+        SymmetricContractionSpec(basis=basis)
 
 
 def test_a_basis_typo_is_refused_through_replace_too():
     """`dataclasses.replace` builds a new instance through the constructor, so
     the same check has to run there. Asserted rather than assumed."""
     with pytest.raises(ValueError, match="'Reduced'"):
-        dataclasses.replace(SymmetricContractionDescriptor(), basis="Reduced")
+        dataclasses.replace(SymmetricContractionSpec(), basis="Reduced")
 
 
 @pytest.mark.parametrize(
-    ("descriptor", "field", "value"),
+    ("kernel_spec", "field", "value"),
     [
-        (LinearDescriptor, "precision", "flaot64"),
-        (SegmentReduceDescriptor, "reduction", "Sum"),
-        (RadialBasisDescriptor, "kind", "Bessel"),
-        (RadialMLPDescriptor, "kind", "e3nn"),
+        (LinearSpec, "precision", "flaot64"),
+        (SegmentReduceSpec, "reduction", "Sum"),
+        (RadialBasisSpec, "kind", "Bessel"),
+        (RadialMLPSpec, "kind", "e3nn"),
     ],
 )
 def test_every_closed_string_field_refuses_a_value_outside_its_set(
-    descriptor, field, value
+    kernel_spec, field, value
 ):
     with pytest.raises(ValueError, match=f"{field}={value!r}"):
-        descriptor(**{field: value})
+        kernel_spec(**{field: value})
 
 
 def test_a_contraction_output_multiplicity_is_refused_by_name():
     """The irreps are per channel. `2x0e` used to build one `0e` and quietly
     drop the second copy, while the declared dimension said two."""
     with pytest.raises(ValueError, match=r"irreps_out='0e\+2x1o'.*multiplicity of 2"):
-        SymmetricContractionDescriptor(irreps_out="0e+2x1o")
+        SymmetricContractionSpec(irreps_out="0e+2x1o")
 
 
 def test_a_radial_basis_too_small_to_define_is_refused_by_every_backend():
@@ -188,19 +188,17 @@ def test_a_radial_basis_too_small_to_define_is_refused_by_every_backend():
     function does not have; the other kinds are defined from one up."""
     capabilities = BackendCapabilities(ops=EVERY_OP)
     for kind in ("bessel", "gaussian", "chebyshev"):
-        assert not capabilities.supports(RadialBasisDescriptor(kind=kind, num_basis=0))
-    assert not capabilities.supports(
-        RadialBasisDescriptor(kind="gaussian", num_basis=1)
-    )
-    assert capabilities.supports(RadialBasisDescriptor(kind="gaussian", num_basis=2))
-    assert capabilities.supports(RadialBasisDescriptor(kind="bessel", num_basis=1))
+        assert not capabilities.supports(RadialBasisSpec(kind=kind, num_basis=0))
+    assert not capabilities.supports(RadialBasisSpec(kind="gaussian", num_basis=1))
+    assert capabilities.supports(RadialBasisSpec(kind="gaussian", num_basis=2))
+    assert capabilities.supports(RadialBasisSpec(kind="bessel", num_basis=1))
 
 
 def test_the_radial_cutoff_order_is_a_field_with_the_envelope_default():
     """Six is the envelope's own default; a model passes its own, and the
     legacy command line's is five."""
-    assert RadialBasisDescriptor().cutoff_order == 6
-    assert RadialBasisDescriptor(cutoff_order=5).cutoff_order == 5
+    assert RadialBasisSpec().cutoff_order == 6
+    assert RadialBasisSpec(cutoff_order=5).cutoff_order == 5
 
 
 # ---------------------------------------------------------------------------
@@ -210,62 +208,62 @@ def test_the_radial_cutoff_order_is_a_field_with_the_envelope_default():
 
 def test_the_coarse_filter_rejects_a_precision_that_was_not_declared():
     capabilities = BackendCapabilities(ops=EVERY_OP, dtypes=frozenset({"float32"}))
-    assert not capabilities.supports(LinearDescriptor(precision="float64"))
-    assert capabilities.supports(LinearDescriptor(precision="float32"))
+    assert not capabilities.supports(LinearSpec(precision="float64"))
+    assert capabilities.supports(LinearSpec(precision="float32"))
 
 
 def test_a_basis_the_backend_did_not_declare_is_refused_by_name():
     capabilities = BackendCapabilities(ops=EVERY_OP, bases=frozenset({"reduced"}))
-    with pytest.raises(UnsupportedDescriptorError, match="'full' Clebsch-Gordan"):
-        capabilities.require(SymmetricContractionDescriptor(basis="full"), "pretend")
+    with pytest.raises(UnsupportedKernelSpecError, match="'full' Clebsch-Gordan"):
+        capabilities.require(SymmetricContractionSpec(basis="full"), "pretend")
 
 
 def test_an_op_the_backend_did_not_declare_is_refused():
     """`ops` is a coarse field like the others, and was the one never read."""
     capabilities = BackendCapabilities(ops=frozenset({"linear"}))
-    assert capabilities.supports(LinearDescriptor())
-    assert not capabilities.supports(SegmentReduceDescriptor())
-    with pytest.raises(UnsupportedDescriptorError, match="'segment_reduce'"):
-        capabilities.require(SegmentReduceDescriptor(), "pretend")
+    assert capabilities.supports(LinearSpec())
+    assert not capabilities.supports(SegmentReduceSpec())
+    with pytest.raises(UnsupportedKernelSpecError, match="'segment_reduce'"):
+        capabilities.require(SegmentReduceSpec(), "pretend")
 
 
 def test_a_layout_the_backend_did_not_declare_is_refused_for_ops_with_irreps():
     """An op with irreps reads and writes the canonical layout. One without
     irreps has no layout, so the field does not apply to it."""
     capabilities = BackendCapabilities(ops=EVERY_OP, layouts=frozenset({"ir_mul"}))
-    assert not capabilities.supports(LinearDescriptor())
-    assert not capabilities.supports(SymmetricContractionDescriptor())
-    assert capabilities.supports(SegmentReduceDescriptor())
-    assert capabilities.supports(RadialBasisDescriptor())
+    assert not capabilities.supports(LinearSpec())
+    assert not capabilities.supports(SymmetricContractionSpec())
+    assert capabilities.supports(SegmentReduceSpec())
+    assert capabilities.supports(RadialBasisSpec())
 
 
 def test_an_lmax_beyond_the_declared_one_is_refused():
     capabilities = BackendCapabilities(ops=EVERY_OP, max_lmax=2)
-    assert capabilities.supports(SphericalHarmonicsDescriptor(lmax=2))
-    assert not capabilities.supports(SphericalHarmonicsDescriptor(lmax=3))
+    assert capabilities.supports(SphericalHarmonicsSpec(lmax=2))
+    assert not capabilities.supports(SphericalHarmonicsSpec(lmax=3))
 
 
 @pytest.mark.parametrize(
-    "descriptor",
+    "kernel_spec",
     [
-        LinearDescriptor(irreps_in="4x0e+4x3o", irreps_out="4x3o"),
-        ChannelwiseTPConvDescriptor(irreps_edge="0e+1o+2e+3o", irreps_out="0e"),
-        SymmetricContractionDescriptor(irreps_in="0e+1o+2e+3o", irreps_out="0e"),
-        FullyConnectedTPDescriptor(irreps_in1="2x3o", irreps_out="2x3o"),
+        LinearSpec(irreps_in="4x0e+4x3o", irreps_out="4x3o"),
+        ChannelwiseTPConvSpec(irreps_edge="0e+1o+2e+3o", irreps_out="0e"),
+        SymmetricContractionSpec(irreps_in="0e+1o+2e+3o", irreps_out="0e"),
+        FullyConnectedTPSpec(irreps_in1="2x3o", irreps_out="2x3o"),
     ],
-    ids=lambda descriptor: descriptor.op,
+    ids=lambda kernel_spec: kernel_spec.op,
 )
-def test_max_lmax_is_checked_for_every_op_with_irreps(descriptor):
+def test_max_lmax_is_checked_for_every_op_with_irreps(kernel_spec):
     """It used to be read for spherical harmonics only, so a backend declaring
     lmax 2 was handed an l = 3 tensor product without a word."""
-    assert descriptor.highest_degree == 3
-    assert BackendCapabilities(ops=EVERY_OP, max_lmax=3).supports(descriptor)
-    assert not BackendCapabilities(ops=EVERY_OP, max_lmax=2).supports(descriptor)
+    assert kernel_spec.highest_degree == 3
+    assert BackendCapabilities(ops=EVERY_OP, max_lmax=3).supports(kernel_spec)
+    assert not BackendCapabilities(ops=EVERY_OP, max_lmax=2).supports(kernel_spec)
 
 
 def test_a_backend_may_declare_no_limit():
     assert BackendCapabilities(ops=EVERY_OP, max_lmax=0).supports(
-        SphericalHarmonicsDescriptor(lmax=11)
+        SphericalHarmonicsSpec(lmax=11)
     )
 
 
@@ -274,7 +272,7 @@ def test_missing_double_backward_is_a_loud_rejection_naming_what_needed_it():
     itself differentiable gives wrong forces rather than no forces, and wrong
     forces train a model that looks like it is working."""
     capabilities = BackendCapabilities(supports_double_backward=False)
-    with pytest.raises(UnsupportedDescriptorError) as caught:
+    with pytest.raises(UnsupportedKernelSpecError) as caught:
         capabilities.require_double_backward("pretend", "training on forces")
     message = str(caught.value)
     assert "training on forces" in message
@@ -294,21 +292,21 @@ def test_a_backend_can_override_the_exact_answer():
 
     @dataclass(frozen=True)
     class Fussy(BackendCapabilities):
-        def unsupported_reason(self, descriptor):
-            reason = super().unsupported_reason(descriptor)
+        def unsupported_reason(self, kernel_spec):
+            reason = super().unsupported_reason(kernel_spec)
             odd = (
-                isinstance(descriptor, RadialBasisDescriptor)
-                and descriptor.num_basis % 2 == 1
+                isinstance(kernel_spec, RadialBasisSpec)
+                and kernel_spec.num_basis % 2 == 1
             )
             if reason is None and odd:
                 return "an odd basis size"
             return reason
 
     fussy = Fussy(ops=EVERY_OP)
-    assert fussy.supports(RadialBasisDescriptor(num_basis=8))
-    assert not fussy.supports(RadialBasisDescriptor(num_basis=7))
-    with pytest.raises(UnsupportedDescriptorError, match="an odd basis size"):
-        fussy.require(RadialBasisDescriptor(num_basis=7), "fussy")
+    assert fussy.supports(RadialBasisSpec(num_basis=8))
+    assert not fussy.supports(RadialBasisSpec(num_basis=7))
+    with pytest.raises(UnsupportedKernelSpecError, match="an odd basis size"):
+        fussy.require(RadialBasisSpec(num_basis=7), "fussy")
 
 
 # ---------------------------------------------------------------------------
