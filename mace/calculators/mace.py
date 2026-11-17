@@ -332,8 +332,15 @@ class MACECalculator(Calculator):
         self.charges_key = charges_key
         if self.energy_accumulation_dtype is not None:
             for model in self.models:
-                # Overridden forwards can define additional energy terms.
-                if type(model).forward is not ScaleShiftMACE.forward:
+                # Overridden forwards can define additional energy terms. A
+                # scripted module keeps its source class only by name.
+                if isinstance(model, torch.jit.ScriptModule):
+                    uses_scale_shift_forward = model.original_name == "ScaleShiftMACE"
+                else:
+                    uses_scale_shift_forward = (
+                        type(model).forward is ScaleShiftMACE.forward
+                    )
+                if not uses_scale_shift_forward:
                     raise ValueError(
                         "energy_accumulation_dtype requires the "
                         "ScaleShiftMACE.forward implementation"

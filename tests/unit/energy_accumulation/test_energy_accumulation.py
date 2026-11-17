@@ -25,11 +25,16 @@ from mace.tools.scatter import scatter_sum
 from tests.golden.anchors import anchor_batch
 
 
-def _tiny_model(*, pair_repulsion=False):
+def _tiny_model(*, pair_repulsion=False, model_cls=ScaleShiftMACE):
+    scale_shift = (
+        {"atomic_inter_scale": 1.25, "atomic_inter_shift": 0.125}
+        if model_cls is ScaleShiftMACE
+        else {}
+    )
     # Neither construction nor graph creation changes the caller's RNG/dtype.
     with torch.random.fork_rng(devices=[]), torch_tools.default_dtype("float32"):
         torch.manual_seed(9107)
-        return ScaleShiftMACE(
+        return model_cls(
             r_max=3.0,
             num_bessel=3,
             num_polynomial_cutoff=5,
@@ -49,9 +54,8 @@ def _tiny_model(*, pair_repulsion=False):
             avg_num_neighbors=3.0,
             atomic_numbers=[1, 8],
             correlation=2,
-            atomic_inter_scale=1.25,
-            atomic_inter_shift=0.125,
             pair_repulsion=pair_repulsion,
+            **scale_shift,
         )
 
 
@@ -326,6 +330,32 @@ def test_ase_rejects_a_subclass_that_overrides_the_energy_path():
     with pytest.raises(ValueError, match="ScaleShiftMACE.forward"):
         MACECalculator(
             models=model,
+            device="cpu",
+            default_dtype="float32",
+            energy_accumulation_dtype="float64",
+        )
+
+
+def test_ase_accepts_a_scripted_scale_shift_model(structures):
+    scripted = jit.compile(_tiny_model())
+    batch = anchor_batch(scripted, structures[:1], torch.float32)
+    expected = scripted(batch.to_dict(), energy_accumulation_dtype="float64")
+    calculator = MACECalculator(
+        models=scripted,
+        device="cpu",
+        default_dtype="float32",
+        energy_accumulation_dtype="float64",
+    )
+    atoms = structures[0].copy()
+    atoms.calc = calculator
+    assert atoms.get_potential_energy() == float(expected["energy"].detach()[0])
+
+
+def test_ase_rejects_a_scripted_model_of_another_class():
+    scripted = jit.compile(_tiny_model(model_cls=modules.MACE))
+    with pytest.raises(ValueError, match="ScaleShiftMACE.forward"):
+        MACECalculator(
+            models=scripted,
             device="cpu",
             default_dtype="float32",
             energy_accumulation_dtype="float64",
