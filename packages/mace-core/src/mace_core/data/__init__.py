@@ -30,6 +30,12 @@ from mace_core.data.registry import (
     open_dataset,
 )
 from mace_core.data.splitting import group_by_config_type, random_train_valid_split
+from mace_core.data.statistics import (
+    DatasetStatistics,
+    compute_statistics,
+    fit_atomic_energies,
+    joint_avg_num_neighbors,
+)
 from mace_core.data.xyz import (
     ISOLATED_ATOM_CONFIG_TYPE,
     ParsedConfigurations,
@@ -53,6 +59,7 @@ __all__ = [
     "DataBackend",
     "DataBackendError",
     "DataBackendNotAvailableError",
+    "DatasetStatistics",
     "DefaultKeys",
     "DuplicateDataBackendError",
     "EmbeddingFeatureSpec",
@@ -61,8 +68,11 @@ __all__ = [
     "ParsedConfigurations",
     "atomic_number_table_from_zs",
     "available_data_backends",
+    "compute_statistics",
     "configuration_from_atoms",
+    "fit_atomic_energies",
     "group_by_config_type",
+    "joint_avg_num_neighbors",
     "open_dataset",
     "random_train_valid_split",
     "read_configurations",
