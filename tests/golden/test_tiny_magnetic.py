@@ -233,7 +233,7 @@ def test_the_two_dimers_differ_only_in_their_spin_state(reference):
     assert np.array_equal(fm_m[1], -afm_m[1])
 
     splitting = fm["outputs"]["energy"]["value"] - afm["outputs"]["energy"]["value"]
-    # Measured on the committed anchor: 9.53e-2 eV, which is five orders of
+    # Measured on the committed anchor: 7.08e-2 eV, which is five orders of
     # magnitude above the row these references are asserted at. The bound is
     # written against that row rather than as a number of its own, so it says
     # "the splitting is real" and not "the splitting is this large".

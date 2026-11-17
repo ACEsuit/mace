@@ -96,21 +96,23 @@ def magnetic_fixtures() -> Dict[str, Any]:
 #: reason rather than for economy.
 #:
 #: ``MagneticSCFMACE`` relaxes the moments with LBFGS and returns wherever the
-#: optimiser stopped. On these three, that point is a smooth function of where
+#: optimiser stopped. On these two, that point is a smooth function of where
 #: the relaxation started: perturbing the initial moments by 1e-9 moves the
-#: answer by 1e-9. On the other two -- ``mag_fe3_canted`` and
-#: ``mag_feo_cluster`` -- the same 1e-9 perturbation moves it by 2e-5 to 7e-5,
-#: and perturbing by 1e-6 moves it by about the same amount again, which is
-#: the signature of a terminal point that is not a function of the input at
-#: all. Pinning one of those at the fp64 row would be pinning the arithmetic
-#: of one machine: the cross-machine noise a golden has to tolerate is many
-#: orders of magnitude smaller than 1e-9 and would be amplified the same way.
+#: answer by 2e-9 to 3e-9. On ``mag_fe3_canted`` and ``mag_feo_cluster`` the
+#: same 1e-9 perturbation moves it by 5e-7 and 3e-5, and perturbing by 1e-6
+#: moves it by 3e-5 on both, which is the signature of a terminal point that
+#: is not a function of the input. Pinning one of those at the fp64 row would be
+#: pinning the arithmetic of one machine: the cross-machine noise a golden has
+#: to tolerate is many orders of magnitude smaller than 1e-9 and would be
+#: amplified the same way. On ``mag_fe_dimer_fm`` there is no terminal point
+#: at all: the energy is unbounded below in the moments, and LBFGS follows it
+#: down until they overflow and come back as nan.
 #:
-#: So the reference covers the three, and the exclusion of the other two is
-#: itself asserted by a named test, which re-measures the amplification. If
-#: the wrapper ever grows a real convergence criterion, that test fails and
-#: the reference can be widened.
-SCF_REFERENCE_FIXTURES = ("mag_fe_atom", "mag_fe_dimer_fm", "mag_fe_dimer_afm")
+#: So the reference covers the two, and the exclusion of the other three is
+#: itself asserted by a named test, which re-measures it. If the wrapper ever
+#: grows a real convergence criterion, that test fails and the reference can
+#: be widened.
+SCF_REFERENCE_FIXTURES = ("mag_fe_atom", "mag_fe_dimer_afm")
 
 
 def scf_fixtures():

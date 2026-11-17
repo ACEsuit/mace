@@ -6,7 +6,7 @@
   "avg_num_neighbors": 3.0,
   "built_by": "direct instantiation; a seeded untrained network exercises the energy assembly and both derivative paths exactly as a fitted one",
   "class": "MagneticScaleShiftMACE",
-  "command": "python -c \"from tests.golden.build_magnetic_anchor import build_anchor; build_anchor()\"",
+  "command": "python -c \"from tests.golden.build_magnetic_anchor import build_anchor, MODEL_PATH; build_anchor(MODEL_PATH)\"",
   "config": {
     "MLP_irreps": "8x0e",
     "atomic_inter_scale": 0.7,
