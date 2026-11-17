@@ -52,14 +52,25 @@ def _warn_if_deferred_cutoff_with_apply_cutoff(
     interaction_cls: Any,
     interaction_cls_first: Any,
 ) -> None:
+    if not apply_cutoff:
+        return
     deferred_cutoff_blocks = (
         RealAgnosticResidualNonLinearInteractionBlock,
         RealAgnosticAttResidualInteractionBlock,
     )
-    if apply_cutoff and any(
-        isinstance(cls, type) and issubclass(cls, deferred_cutoff_blocks)
-        for cls in (interaction_cls, interaction_cls_first)
-    ):
+    deferred_names = (
+        "RealAgnosticResidualNonLinearInteractionBlock",
+        "RealAgnosticAttResidualInteractionBlock",
+    )
+
+    def _matches(cls: Any) -> bool:
+        if isinstance(cls, str):
+            return cls in deferred_names
+        if isinstance(cls, type):
+            return issubclass(cls, deferred_cutoff_blocks)
+        return getattr(cls, "__name__", None) in deferred_names
+
+    if any(_matches(cls) for cls in (interaction_cls, interaction_cls_first)):
         msg = (
             "RealAgnosticResidualNonLinearInteractionBlock and "
             "RealAgnosticAttResidualInteractionBlock append node features "

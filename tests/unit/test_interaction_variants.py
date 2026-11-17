@@ -221,3 +221,28 @@ def test_dipole_and_dielectric_models_forward_apply_cutoff_and_warn(
     assert not cutoff_warnings
     assert m_false.apply_cutoff is False
     assert m_false.radial_embedding.apply_cutoff is False
+
+
+def test_warn_if_deferred_cutoff_supports_string_names_and_subclasses():
+    from mace.modules.models import _warn_if_deferred_cutoff_with_apply_cutoff
+
+    with pytest.warns(UserWarning, match="apply_cutoff=False"):
+        _warn_if_deferred_cutoff_with_apply_cutoff(
+            True, "RealAgnosticResidualNonLinearInteractionBlock", None
+        )
+
+    with pytest.warns(UserWarning, match="apply_cutoff=False"):
+        _warn_if_deferred_cutoff_with_apply_cutoff(
+            True, None, "RealAgnosticAttResidualInteractionBlock"
+        )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", UserWarning)
+        _warn_if_deferred_cutoff_with_apply_cutoff(
+            False, "RealAgnosticResidualNonLinearInteractionBlock", None
+        )
+        _warn_if_deferred_cutoff_with_apply_cutoff(
+            True, "RealAgnosticInteractionBlock", None
+        )
+    cutoff_warnings = [w for w in caught if "apply_cutoff=False" in str(w.message)]
+    assert not cutoff_warnings
