@@ -94,6 +94,9 @@ def check_data_backend(backend: DataBackend, expected_length: int) -> None:
     assert all(
         isinstance(z, int) and isinstance(e, float) for z, e in energies.items()
     ), f"isolated_atom_energies() is not {{int: float}}: {energies!r}"
+    assert _same_sequence(list(backend), structures), (
+        "iterating the backend is not iter_range()"
+    )
     restored = pickle.loads(pickle.dumps(backend))
     assert _same_sequence(list(restored.iter_range()), structures), (
         "the backend reads differently after a pickle round trip"

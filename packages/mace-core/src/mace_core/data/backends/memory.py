@@ -95,6 +95,9 @@ class InMemoryBackend:
             )
         return self._configurations[index]
 
+    def __iter__(self) -> Iterator[Configuration]:
+        return self.iter_range()
+
     def iter_range(
         self, start: int = 0, stop: int | None = None, step: int = 1
     ) -> Iterator[Configuration]:
