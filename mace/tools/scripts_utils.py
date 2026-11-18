@@ -1051,9 +1051,7 @@ def get_params_options(
             }
         )
         if submodule_name in les_lr_factors:
-            param_options["params"][-1]["lr"] = (
-                les_lr_factors[submodule_name] * args.lr
-            )
+            param_options["params"][-1]["lr"] = les_lr_factors[submodule_name] * args.lr
 
     if (
         hasattr(model, "onebody_magmombasis_coeffs")
