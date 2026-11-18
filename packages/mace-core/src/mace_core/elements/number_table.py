@@ -16,10 +16,18 @@ from __future__ import annotations
 
 import operator
 from collections import Counter
-from collections.abc import Iterable
-from typing import SupportsIndex
+from collections.abc import Iterable, Mapping, Set
+from typing import Final, SupportsIndex
 
-__all__ = ["AtomicNumberTable", "atomic_number_table_from_zs"]
+__all__ = [
+    "MAX_ATOMIC_NUMBER",
+    "AtomicNumberTable",
+    "atomic_number_table_from_zs",
+    "model_atomic_number_table",
+]
+
+#: The largest atomic number an element table may hold.
+MAX_ATOMIC_NUMBER: Final = 118
 
 
 class AtomicNumberTable:
@@ -103,3 +111,72 @@ def atomic_number_table_from_zs(zs: Iterable[int]) -> AtomicNumberTable:
     function of the *set* of elements present.
     """
     return AtomicNumberTable(sorted(set(zs)))
+
+
+def model_atomic_number_table(
+    atomic_numbers: Iterable[SupportsIndex],
+) -> AtomicNumberTable:
+    """Read the element table of a model, in the order given.
+
+    A model's table names at least one element, and every entry is an atomic
+    number from 1 to :data:`MAX_ATOMIC_NUMBER`. Zero is not an element: it
+    marks a padding atom, which the model maps to the first column.
+
+    Raises:
+        ValueError: if the table is not a sequence, is empty, repeats an
+            element, or holds an entry that is not an integer from 1 to
+            :data:`MAX_ATOMIC_NUMBER`. A boolean is not an integer here, and
+            a mapping, a set or a string is not a sequence of them.
+    """
+    if isinstance(atomic_numbers, (Mapping, Set, str, bytes)):
+        raise ValueError(
+            f"the element table is a sequence of atomic numbers in column "
+            f"order, not a {type(atomic_numbers).__name__}."
+        )
+    try:
+        entries = list(atomic_numbers)
+    except TypeError:
+        raise ValueError(
+            f"the element table is a sequence of atomic numbers, not "
+            f"{atomic_numbers!r}."
+        ) from None
+    invalid = [entry for entry in entries if not _is_index(entry)]
+    if invalid:
+        raise ValueError(
+            f"the element table {entries!r} holds {invalid!r}, which are not "
+            f"atomic numbers."
+        )
+    numbers = [operator.index(entry) for entry in entries]
+    repeated = sorted(z for z, count in Counter(numbers).items() if count > 1)
+    if repeated:
+        raise ValueError(
+            f"the element table {numbers} lists {repeated} more than once. Its "
+            f"order is the order of the model's columns, so remove the repeat "
+            f"where it was written rather than sorting the table."
+        )
+    table = AtomicNumberTable(numbers)
+    if not table.zs:
+        raise ValueError(
+            "the element table is empty; a model names at least one element."
+        )
+    outside = [z for z in table.zs if not 1 <= z <= MAX_ATOMIC_NUMBER]
+    if outside:
+        raise ValueError(
+            f"the element table {list(table.zs)} holds {outside}, outside the "
+            f"atomic numbers 1 to {MAX_ATOMIC_NUMBER}. Padding atoms carry 0, "
+            f"which is never an element."
+        )
+    return table
+
+
+def _is_index(entry: object) -> bool:
+    """Whether `entry` has an exact integer value through `__index__`, as a
+    numpy integer or a 0-d integer tensor read from a checkpoint does, and is
+    not a boolean."""
+    if isinstance(entry, bool):
+        return False
+    try:
+        operator.index(entry)  # ty: ignore[invalid-argument-type]
+    except TypeError:
+        return False
+    return True

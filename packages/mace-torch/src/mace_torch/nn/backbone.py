@@ -40,7 +40,7 @@ from mace_core.config.model import (
     ModelConfig,
     NoDistanceTransformConfig,
 )
-from mace_core.elements import AtomicNumberTable
+from mace_core.elements import MAX_ATOMIC_NUMBER, model_atomic_number_table
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.specs import (
     DistanceTransformSpec,
@@ -79,7 +79,7 @@ __all__ = [
 GRAPH_KEYS = frozenset({"positions", "node_atomic_numbers", "edge_index", "shifts"})
 
 #: One past the largest atomic number, the length of the element lookup.
-_ATOMIC_NUMBER_COUNT = 119
+_ATOMIC_NUMBER_COUNT = MAX_ATOMIC_NUMBER + 1
 
 
 @dataclass(frozen=True)
@@ -192,7 +192,9 @@ class MACEBackbone(nn.Module):
         config: The architecture. Its ``clebsch_gordan_basis`` reaches every
             symmetric contraction's specification unchanged.
         atomic_numbers: The element table, the columns of the element one-hot.
-            Atomic number 0, a padding atom, takes the first column.
+            Atomic number 0, a padding atom, takes the first column. The state
+            dict does not hold it: the model's metadata records it, as
+            ``ModelMetadata.atomic_numbers``.
         avg_num_neighbors: The dataset's average neighbour count, the
             normalization of every block without a learned density.
         precision: The dtype name every op is built and computes in.
@@ -236,19 +238,9 @@ class MACEBackbone(nn.Module):
                 raise ValueError(f"node input {spec.name!r} is declared twice.")
         self.config = config
         try:
-            self.atomic_numbers = AtomicNumberTable(atomic_numbers).zs
-        except (TypeError, ValueError) as error:
-            raise ValueError(
-                f"atomic_numbers is not an element table: {error}"
-            ) from None
-        if not self.atomic_numbers or not all(
-            1 <= number < _ATOMIC_NUMBER_COUNT for number in self.atomic_numbers
-        ):
-            raise ValueError(
-                f"atomic_numbers={list(self.atomic_numbers)} is not an element "
-                f"table: it names at least one element, and every entry is an "
-                f"atomic number from 1 to {_ATOMIC_NUMBER_COUNT - 1}."
-            )
+            self.atomic_numbers = model_atomic_number_table(atomic_numbers).zs
+        except ValueError as error:
+            raise ValueError(f"atomic_numbers: {error}") from None
         # Atomic number -> column of the one-hot. Zero, a padding atom, and
         # any number outside the table map to the first column; the data
         # checks refuse an unknown element before it reaches a model.
