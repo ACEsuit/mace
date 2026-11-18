@@ -270,6 +270,7 @@ def test_dipole_curve_keys_and_percentage_units(table, absolute, relative, other
 
 
 def _distributed_inference_head_worker(rank, rendezvous, directory, mixed):
+    from datetime import timedelta
     from pathlib import Path
     from types import SimpleNamespace
 
@@ -277,6 +278,7 @@ def _distributed_inference_head_worker(rank, rendezvous, directory, mixed):
     import torch
 
     from mace.cli.visualise_train import model_inference
+    from tests.helpers import destroy_process_group
 
     class Batch(SimpleNamespace):
         def to(self, device):
@@ -291,8 +293,14 @@ def _distributed_inference_head_worker(rank, rendezvous, directory, mixed):
         def forward(self, batch, **kwargs):
             return {"energy": batch["energy"] + 0.1}
 
+    # A collective that never completes fails within a minute with a named
+    # error instead of running into the pytest timeout.
     torch.distributed.init_process_group(
-        "gloo", init_method=rendezvous, rank=rank, world_size=2
+        "gloo",
+        init_method=rendezvous,
+        rank=rank,
+        world_size=2,
+        timeout=timedelta(seconds=60),
     )
     try:
         batch = Batch(
@@ -316,7 +324,7 @@ def _distributed_inference_head_worker(rank, rendezvous, directory, mixed):
             assert result["head"] == "H2_liquid"
         (Path(directory) / str(rank)).write_text("passed")
     finally:
-        torch.distributed.destroy_process_group()
+        destroy_process_group()
 
 
 @pytest.mark.parametrize("mixed", [False, True])
