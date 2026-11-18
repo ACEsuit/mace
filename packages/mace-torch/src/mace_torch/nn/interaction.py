@@ -33,7 +33,7 @@ declaration expanded to the channel count.
 from __future__ import annotations
 
 import torch
-from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.clebsch_gordan.irreps import Irrep, Irreps
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.specs import (
     ChannelwiseTPConvSpec,
@@ -351,14 +351,6 @@ class ResidualInteractionBlock(nn.Module):
         return message, carried
 
 
-def _even_scalars(irreps: str) -> int:
-    return sum(
-        mul
-        for mul, ir in Irreps.parse(irreps).terms
-        if ir.degree == 0 and ir.parity == 1
-    )
-
-
 class NonLinearInteractionBlock(nn.Module):
     """A convolution conditioned on both elements, with a gated output.
 
@@ -422,7 +414,7 @@ class NonLinearInteractionBlock(nn.Module):
         up_flat = str(Irreps.parse(irreps_up).with_channels(num_up_features))
         target_flat = str(Irreps.parse(irreps_target).with_channels(num_features))
         nonlinear_flat = gate_input_irreps(target_flat)
-        element_scalars = _even_scalars(node_flat)
+        element_scalars = Irreps.parse(node_flat).multiplicity(Irrep(0, 1))
         convolution = ChannelwiseTPConvSpec(
             irreps_node=irreps_up,
             irreps_edge=irreps_edge,

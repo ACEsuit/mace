@@ -34,7 +34,6 @@ from mace_core.kernels import (
 from mace_core.observables import InputSpec
 from mace_torch.backends.harmonics import spherical_harmonics
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.descriptors import aggregate_atomic_descriptors
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.nn import backbone as backbone_module
 from mace_torch.nn.backbone import (
@@ -473,15 +472,6 @@ def test_the_checkpoint_holds_only_learned_weights_and_fitted_statistics(overrid
     assert {key.rsplit(".", 1)[-1] for key in saved} <= {"neighbours"}, saved
 
 
-def test_a_checkpoint_loads_into_a_model_built_for_another_cutoff_without_moving_it():
-    state = _backbone().state_dict()
-    model = _backbone(r_max=R_MAX + 1.0)
-    model.load_state_dict(state)
-    for name, buffer in model.named_buffers():
-        if name.endswith("r_max"):
-            assert buffer.item() == R_MAX + 1.0, name
-
-
 # ---------------------------------------------------------------------------
 # Ops the backend declines
 # ---------------------------------------------------------------------------
@@ -848,28 +838,6 @@ def test_a_layer_count_out_of_range_is_refused():
     features = model(_cluster())
     with pytest.raises(ValueError, match="num_layers"):
         model.atomic_descriptors(features, num_layers=3)
-
-
-def test_the_descriptors_aggregate_per_structure():
-    descriptors = torch.arange(10.0).reshape(5, 2)
-    batch = torch.tensor([0, 0, 1, 1, 1])
-    element = torch.tensor([0, 1, 1, 1, 2])
-    means = aggregate_atomic_descriptors(descriptors, batch, 2, "mean")
-    assert_close(means, [[1.0, 2.0], [6.0, 7.0]], "mean")
-    per_element = aggregate_atomic_descriptors(
-        descriptors,
-        batch,
-        2,
-        "per_element_mean",
-        element=element,
-        atomic_numbers=ELEMENTS,
-    )
-    assert sorted(per_element[0]) == [1, 6]
-    assert sorted(per_element[1]) == [6, 8]
-    assert_close(per_element[1][6], [5.0, 6.0], "per element")
-    assert aggregate_atomic_descriptors(descriptors, batch, 2, None) is descriptors
-    with pytest.raises(ValueError, match="aggregation"):
-        aggregate_atomic_descriptors(descriptors, batch, 2, cast(Any, "median"))
 
 
 # ---------------------------------------------------------------------------

@@ -232,6 +232,10 @@ class Irreps:
         """The total number of components."""
         return sum(mul * ir.dimension for mul, ir in self.terms)
 
+    def multiplicity(self, ir: Irrep) -> int:
+        """How many copies of ``ir`` the declaration holds, over every term."""
+        return sum(mul for mul, term_ir in self.terms if term_ir == ir)
+
     def slices(self) -> Iterator[tuple[slice, Irrep]]:
         """Each term's slice of the flat value vector, in ``mul_ir`` layout.
 

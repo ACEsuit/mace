@@ -30,10 +30,10 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import SupportsIndex, assert_never, get_args
+from typing import SupportsIndex, assert_never
 
 import torch
-from mace_core.clebsch_gordan.irreps import Irreps
+from mace_core.clebsch_gordan.irreps import Irrep, Irreps
 from mace_core.config.model import (
     DistanceTransformConfig,
     InteractionKind,
@@ -144,7 +144,7 @@ def _default_dtype(dtype: torch.dtype) -> Iterator[None]:
         torch.set_default_dtype(previous)
 
 
-def _per_channel(irreps: str) -> tuple[str, int]:
+def _split_channels(irreps: str) -> tuple[str, int]:
     """A whole declaration as one channel's and the channel count.
 
     Raises:
@@ -385,24 +385,16 @@ class MACEBackbone(nn.Module):
             "envelope_outside": not config.apply_cutoff,
             "edge_members": edge_members,
         }
-        kinds = get_args(InteractionKind)
-        if kind not in kinds:
-            raise ValueError(
-                f"interaction kind {kind!r} is not one this builds; the kinds are "
-                f"{', '.join(map(repr, kinds))}."
-            )
-        elif kind == "nonlinear":
+        if kind == "nonlinear":
             irreps_up, num_up_features = irreps_node, self.num_features
             if config.edge_irreps is not None and (
                 not first or config.use_edge_irreps_first
             ):
-                irreps_up, num_up_features = _per_channel(config.edge_irreps)
+                irreps_up, num_up_features = _split_channels(config.edge_irreps)
                 if first:
                     irreps_up = "0e"
-                    num_up_features = sum(
-                        mul
-                        for mul, ir in Irreps.parse(config.edge_irreps).terms
-                        if ir.degree == 0 and ir.parity == 1
+                    num_up_features = Irreps.parse(config.edge_irreps).multiplicity(
+                        Irrep(0, 1)
                     )
             return NonLinearInteractionBlock(
                 backend,

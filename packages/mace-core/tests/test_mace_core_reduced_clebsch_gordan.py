@@ -234,6 +234,13 @@ def test_with_channels_multiplies_every_multiplicity_in_order():
     assert irreps.with_channels(1) == irreps
 
 
+def test_multiplicity_counts_an_irrep_over_every_term():
+    irreps = Irreps.parse("4x0e+1o+2x0e+0o")
+    assert irreps.multiplicity(Irrep(0, 1)) == 6
+    assert irreps.multiplicity(Irrep(0, -1)) == 1
+    assert irreps.multiplicity(Irrep(2, 1)) == 0
+
+
 @pytest.mark.parametrize("num_channels", [0, -2, 2.0, True])
 def test_with_channels_refuses_a_count_that_is_not_one(num_channels):
     with pytest.raises(IrrepsError, match=re.escape(f"num_channels={num_channels!r}")):
