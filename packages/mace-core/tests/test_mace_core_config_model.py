@@ -113,11 +113,34 @@ def test_sizes_the_module_cannot_build_are_errors(written, location):
 def test_the_model_section_defaults_to_the_reduced_basis_and_round_trips():
     config = ModelConfig()
     assert config.clebsch_gordan_basis == "reduced"
-    assert (config.interaction_first, config.interaction) == ("residual", "residual")
+    assert (config.interaction_first, config.interaction) == (None, "residual")
     dumped = config.model_dump(mode="json")
     assert ModelConfig.model_validate(dumped) == config
     full = ModelConfig(clebsch_gordan_basis="full")
     assert ModelConfig.model_validate(full.model_dump(mode="json")) == full
+
+
+def test_interaction_names_every_layer_unless_the_first_is_set_apart():
+    every = ModelConfig(num_interactions=3, interaction="density")
+    assert [every.interaction_of(layer) for layer in range(3)] == ["density"] * 3
+    first = ModelConfig(num_interactions=3, interaction_first="plain")
+    assert [first.interaction_of(layer) for layer in range(3)] == [
+        "plain",
+        "residual",
+        "residual",
+    ]
+
+
+@pytest.mark.parametrize("layer", [True, 0.0])
+def test_a_layer_that_is_not_an_integer_is_refused(layer):
+    with pytest.raises(TypeError, match="layer is an integer"):
+        ModelConfig().interaction_of(layer)
+
+
+@pytest.mark.parametrize("layer", [-1, 2])
+def test_a_layer_the_model_does_not_have_is_refused(layer):
+    with pytest.raises(ValueError, match=f"layer {layer} is not one of the 2"):
+        ModelConfig(num_interactions=2).interaction_of(layer)
 
 
 @pytest.mark.parametrize(
@@ -142,6 +165,7 @@ def test_the_model_section_refuses_what_it_does_not_build(field, value):
         {
             "edge_irreps": "8x0e+8x1o",
             "interaction": "nonlinear",
+            "interaction_first": "residual",
             "use_edge_irreps_first": True,
         },
     ],
@@ -153,6 +177,9 @@ def test_an_edge_irreps_setting_no_layer_reads_is_refused(options):
 
 def test_edge_irreps_are_accepted_where_a_nonlinear_layer_reads_them():
     ModelConfig(edge_irreps="8x0e+8x1o", interaction="nonlinear")
+    ModelConfig(
+        edge_irreps="8x0e+8x1o", interaction="nonlinear", use_edge_irreps_first=True
+    )
     ModelConfig(
         edge_irreps="8x0e+8x1o",
         interaction_first="nonlinear",

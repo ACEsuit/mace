@@ -21,18 +21,19 @@ from mace_core.config import (
     PolynomialCutoffConfig,
     SoftTransformConfig,
 )
+from mace_core.kernels.precision import Precision
 from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
     GaussianBasis,
     PolynomialCutoff,
 )
+from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.embedding import (
     LinearNodeEmbeddingBlock,
     RadialEmbeddingBlock,
-    build_cutoff,
     build_distance_transform,
-    build_radial_basis,
+    radial_basis_spec,
 )
 from mace_torch.nn.radial import (
     AgnesiTransform,
@@ -59,20 +60,36 @@ def _embedding_inputs():
     return lengths, node_atomic_numbers, edge_index
 
 
+def _precision() -> Precision:
+    precisions: dict[torch.dtype, Precision] = {
+        torch.float64: "float64",
+        torch.float32: "float32",
+    }
+    return precisions[torch.get_default_dtype()]
+
+
+def _radial_op(config, cutoff=None, r_max=EMBEDDING_R_MAX, apply_cutoff=True):
+    """The reference backend's op for the basis and envelope the sections name."""
+    spec = radial_basis_spec(
+        config,
+        cutoff or PolynomialCutoffConfig(polynomial_order=6),
+        r_max,
+        apply_cutoff=apply_cutoff,
+        precision=_precision(),
+    )
+    return ReferenceBackend().make_radial_basis(spec)
+
+
 def _block(
     radial_basis: str = "bessel",
     distance_transform: str = "none",
     apply_cutoff: bool = True,
 ) -> RadialEmbeddingBlock:
     return RadialEmbeddingBlock(
-        radial_basis=build_radial_basis(RADIAL_BASES[radial_basis], EMBEDDING_R_MAX),
+        radial_basis=_radial_op(RADIAL_BASES[radial_basis], apply_cutoff=apply_cutoff),
         distance_transform=build_distance_transform(
             DISTANCE_TRANSFORMS[distance_transform]
         ),
-        cutoff=build_cutoff(
-            PolynomialCutoffConfig(polynomial_order=6), EMBEDDING_R_MAX
-        ),
-        apply_cutoff=apply_cutoff,
     )
 
 
@@ -180,7 +197,7 @@ def test_a_padding_edge_contributes_exactly_nothing():
 
 
 # ---------------------------------------------------------------------------
-# The builders: config section -> module
+# The builders: config section -> specification or module
 # ---------------------------------------------------------------------------
 
 
@@ -203,10 +220,10 @@ def test_a_padding_edge_contributes_exactly_nothing():
     ids=["bessel", "gaussian", "chebyshev"],
 )
 def test_a_basis_config_builds_the_module_it_names(config, expected_module):
-    """Every field reaches the module: same class, same buffers and parameters,
-    same numbers. The expected module is a factory so that it is built under
-    the test's default dtype, not at collection."""
-    built = build_radial_basis(config, EMBEDDING_R_MAX)
+    """Every field reaches the module through the specification: same class,
+    same buffers and parameters, same numbers. The expected module is a factory
+    so that it is built under the test's default dtype, not at collection."""
+    built = _radial_op(config).basis
     _assert_same_module(built, expected_module())
 
 
@@ -239,7 +256,9 @@ def test_the_kind_none_builds_no_transform():
 
 
 def test_the_cutoff_config_builds_the_envelope_at_the_given_radius():
-    built = build_cutoff(PolynomialCutoffConfig(polynomial_order=3), r_max=4.0)
+    built = _radial_op(
+        BesselBasisConfig(), PolynomialCutoffConfig(polynomial_order=3), r_max=4.0
+    ).cutoff
     _assert_same_module(built, PolynomialCutoff(r_max=4.0, polynomial_order=3))
 
 

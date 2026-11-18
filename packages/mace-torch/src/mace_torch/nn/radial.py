@@ -84,14 +84,18 @@ class ZBLBasis(torch.nn.Module):
             torch.tensor(
                 [0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()
             ),
+            persistent=False,
         )
         self.register_buffer(
             "screening_exponents",
             torch.tensor(
                 [3.2, 0.9423, 0.4028, 0.2016], dtype=torch.get_default_dtype()
             ),
+            persistent=False,
         )
-        self.register_buffer("covalent_radii", _covalent_radii_buffer())
+        self.register_buffer(
+            "covalent_radii", _covalent_radii_buffer(), persistent=False
+        )
         screening_length_exponent = torch.tensor(0.300, dtype=torch.get_default_dtype())
         screening_length_prefactor = torch.tensor(
             0.4543, dtype=torch.get_default_dtype()
@@ -104,9 +108,13 @@ class ZBLBasis(torch.nn.Module):
                 screening_length_prefactor
             )
         else:
-            self.register_buffer("screening_length_exponent", screening_length_exponent)
             self.register_buffer(
-                "screening_length_prefactor", screening_length_prefactor
+                "screening_length_exponent", screening_length_exponent, persistent=False
+            )
+            self.register_buffer(
+                "screening_length_prefactor",
+                screening_length_prefactor,
+                persistent=False,
             )
 
     def forward(
@@ -200,8 +208,10 @@ class AgnesiTransform(torch.nn.Module):
             if trainable:
                 setattr(self, name, torch.nn.Parameter(value))
             else:
-                self.register_buffer(name, value)
-        self.register_buffer("covalent_radii", _covalent_radii_buffer())
+                self.register_buffer(name, value, persistent=False)
+        self.register_buffer(
+            "covalent_radii", _covalent_radii_buffer(), persistent=False
+        )
 
     def forward(
         self,
@@ -255,8 +265,10 @@ class SoftTransform(torch.nn.Module):
         if trainable:
             self.steepness = torch.nn.Parameter(steepness_tensor)
         else:
-            self.register_buffer("steepness", steepness_tensor)
-        self.register_buffer("covalent_radii", _covalent_radii_buffer())
+            self.register_buffer("steepness", steepness_tensor, persistent=False)
+        self.register_buffer(
+            "covalent_radii", _covalent_radii_buffer(), persistent=False
+        )
 
     def forward(
         self,

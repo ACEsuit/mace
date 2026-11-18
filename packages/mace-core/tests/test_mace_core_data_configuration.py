@@ -33,6 +33,7 @@ from mace_core.data import (
     random_train_valid_split,
     read_configurations,
 )
+from mace_core.elements import model_atomic_number_table
 
 #: The default file keys, where each is stored and the shape of one value (of
 #: one atom's entry, for a per-atom property), written out rather than read
@@ -1220,6 +1221,54 @@ def test_the_class_refuses_an_element_listed_twice():
     every index after it."""
     with pytest.raises(ValueError, match=r"atomic numbers \[1\] appear more"):
         AtomicNumberTable([1, 8, 1])
+
+
+def test_a_model_table_keeps_its_order_up_to_the_last_element():
+    assert model_atomic_number_table([118, 1, 8]).zs == (118, 1, 8)
+
+
+def test_a_model_table_read_from_an_array_is_plain_integers():
+    table = model_atomic_number_table(np.array([8, 1], dtype=np.int64))
+    assert table.zs == (8, 1)
+    assert all(type(z) is int for z in table.zs)
+
+
+@pytest.mark.parametrize(
+    ("atomic_numbers", "message"),
+    [
+        ([], "empty"),
+        ([0, 1], r"holds \[0\], outside"),
+        ([1, 119], r"holds \[119\], outside"),
+        ([-1, 8], r"holds \[-1\], outside"),
+        ([1, 8, 1], r"lists \[1\] more than once.*rather than sorting"),
+        ([1, 6.5], r"holds \[6\.5\], which are not atomic numbers"),
+        (["8"], r"holds \['8'\], which are not atomic numbers"),
+        ([True, 8], r"holds \[True\], which are not atomic numbers"),
+        ({8: "O", 1: "H"}, "not a dict"),
+        (None, "not None"),
+        (8, "not 8"),
+        ({8, 1}, "not a set"),
+        ("18", "not a str"),
+    ],
+    ids=[
+        "empty",
+        "padding",
+        "beyond-118",
+        "negative",
+        "repeated",
+        "float",
+        "string",
+        "boolean",
+        "mapping",
+        "none",
+        "scalar",
+        "set",
+        "string",
+    ],
+)
+def test_a_model_table_that_is_not_one_is_refused(atomic_numbers, message):
+    with pytest.raises(ValueError, match=message):
+        model_atomic_number_table(atomic_numbers)
 
 
 def test_an_element_the_table_does_not_have_raises():

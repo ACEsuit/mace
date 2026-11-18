@@ -194,10 +194,47 @@ class Irreps:
             )
         return cls(tuple(terms))
 
+    @classmethod
+    def spherical_harmonics(cls, lmax: int) -> Irreps:
+        """One copy of each degree up to ``lmax``, with parity ``(-1)^l``.
+
+        ``1x0e+1x1o+1x2e+...``: the irreps the spherical harmonics up to
+        ``lmax`` carry.
+
+        Raises:
+            IrrepsError: If ``lmax`` is not a non-negative integer.
+        """
+        if not _is_integer(lmax) or lmax < 0:
+            raise IrrepsError(
+                f"lmax={lmax!r}; the highest degree is a non-negative integer."
+            )
+        return cls(
+            tuple((1, Irrep(degree, (-1) ** degree)) for degree in range(lmax + 1))
+        )
+
+    def with_channels(self, num_channels: int) -> Irreps:
+        """``num_channels`` channels of this declaration, grouped by irrep.
+
+        Each multiplicity times ``num_channels``, the terms in the same order:
+        ``0e+1o`` with 8 channels is ``8x0e+8x1o``.
+
+        Raises:
+            IrrepsError: If ``num_channels`` is not a positive integer.
+        """
+        if not _is_integer(num_channels) or num_channels < 1:
+            raise IrrepsError(
+                f"num_channels={num_channels!r}; it is an integer of at least 1."
+            )
+        return Irreps(tuple((num_channels * mul, ir) for mul, ir in self.terms))
+
     @property
     def dimension(self) -> int:
         """The total number of components."""
         return sum(mul * ir.dimension for mul, ir in self.terms)
+
+    def multiplicity(self, ir: Irrep) -> int:
+        """How many copies of ``ir`` the declaration holds, over every term."""
+        return sum(mul for mul, term_ir in self.terms if term_ir == ir)
 
     def slices(self) -> Iterator[tuple[slice, Irrep]]:
         """Each term's slice of the flat value vector, in ``mul_ir`` layout.

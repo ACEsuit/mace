@@ -128,8 +128,9 @@ class PolynomialCutoffConfig(ConfigSection):
 # ---------------------------------------------------------------------------
 
 #: The interaction blocks. Each is a different function and a trained model
-#: depends on which one each layer has, so the first layer and the rest are
-#: named separately.
+#: depends on which one each layer has. The first layer reads only the element
+#: embedding, and published models choose its block separately, so it can be
+#: set apart from the rest.
 #:
 #: * `plain` applies the skip connection to the message, which replaces it.
 #: * `residual` takes the skip from the layer's input and adds it after the
@@ -171,8 +172,12 @@ class ModelConfig(ConfigSection):
     apply_cutoff: bool = True
     #: The hidden widths of every interaction's radial network.
     radial_mlp: tuple[int, ...] = (64, 64, 64)
-    interaction_first: InteractionKind = "residual"
+    #: The interaction block of every layer, the first included unless
+    #: `interaction_first` names another.
     interaction: InteractionKind = "residual"
+    #: The interaction block of the first layer, when it differs from
+    #: `interaction`.
+    interaction_first: InteractionKind | None = None
     #: What a `nonlinear` layer convolves, a whole declaration with one
     #: multiplicity for every term, such as `128x0e+128x1o`. Unset, the node
     #: features at their own width.
@@ -191,7 +196,7 @@ class ModelConfig(ConfigSection):
         """`edge_irreps` and `use_edge_irreps_first` are read by `nonlinear`
         layers only, and a setting nothing reads is refused rather than kept."""
         later_nonlinear = self.num_interactions > 1 and self.interaction == "nonlinear"
-        first_nonlinear = self.interaction_first == "nonlinear"
+        first_nonlinear = self.interaction_of(0) == "nonlinear"
         first_reads = first_nonlinear and self.use_edge_irreps_first
         if self.edge_irreps is not None and not (later_nonlinear or first_reads):
             raise ValueError(
@@ -206,3 +211,16 @@ class ModelConfig(ConfigSection):
                 "use_edge_irreps_first needs edge_irreps and a 'nonlinear' first layer."
             )
         return self
+
+    def interaction_of(self, layer: int) -> InteractionKind:
+        """The interaction block layer `layer` builds, counting from 0."""
+        if isinstance(layer, bool) or not isinstance(layer, int):
+            raise TypeError(f"layer is an integer, not {layer!r}.")
+        if not 0 <= layer < self.num_interactions:
+            raise ValueError(
+                f"layer {layer} is not one of the {self.num_interactions} layers "
+                f"of this model, 0 to {self.num_interactions - 1}."
+            )
+        if layer == 0 and self.interaction_first is not None:
+            return self.interaction_first
+        return self.interaction

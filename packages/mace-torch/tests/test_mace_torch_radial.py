@@ -437,6 +437,33 @@ def test_soft_transform_is_monotone_only_above_the_clamp():
     assert float(values.min()) < p_0
 
 
+@pytest.mark.parametrize(
+    ("build", "learned"),
+    [
+        (
+            lambda trainable: BesselBasis(r_max=5.0, trainable=trainable),
+            {"frequencies"},
+        ),
+        (lambda trainable: GaussianBasis(r_max=5.0, trainable=trainable), {"centers"}),
+        (lambda trainable: PolynomialCutoff(r_max=5.0), set()),
+        (
+            lambda trainable: ZBLBasis(polynomial_order=6, trainable=trainable),
+            {"screening_length_exponent", "screening_length_prefactor"},
+        ),
+        (
+            lambda trainable: AgnesiTransform(trainable=trainable),
+            {"exponent_q", "exponent_p", "amplitude"},
+        ),
+        (lambda trainable: SoftTransform(trainable=trainable), {"steepness"}),
+    ],
+    ids=["bessel", "gaussian", "cutoff", "zbl", "agnesi", "soft"],
+)
+def test_only_what_is_learned_is_saved(build, learned):
+    """The constants are rebuilt from the configuration, never loaded."""
+    assert set(build(False).state_dict()) == set()
+    assert set(build(True).state_dict()) == learned
+
+
 def test_transforms_are_trainable_on_request():
     agnesi = AgnesiTransform(trainable=True)
     assert agnesi.amplitude.requires_grad

@@ -603,7 +603,9 @@ def test_a_radial_basis_computes_in_its_kernel_spec_precision(backend, precision
         RadialBasisSpec(kind=kind, precision=precision)
     )
     lengths = torch.tensor([[1.5]], dtype=torch.float64)
+    envelope = torch.tensor([[0.5]], dtype=torch.float64)
     assert operation(lengths).dtype == getattr(torch, precision)
+    assert operation(lengths, envelope=envelope).dtype == getattr(torch, precision)
     assert all(
         buffer.dtype == getattr(torch, precision)
         for buffer in operation.buffers()

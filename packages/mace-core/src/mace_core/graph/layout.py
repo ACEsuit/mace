@@ -32,7 +32,7 @@ from pydantic import Field, model_validator
 from mace_core.config.base import ConfigSection
 from mace_core.data.configuration import DEFAULT_HEAD
 from mace_core.elements.default_keys import STORAGES, DefaultKeys, Storage
-from mace_core.elements.number_table import AtomicNumberTable
+from mace_core.elements.number_table import model_atomic_number_table
 from mace_core.graph.schema import (
     FLOAT,
     GRAPH_CORE,
@@ -279,25 +279,12 @@ class GraphLayout(ConfigSection):
     @classmethod
     def _element_table(cls, data: object) -> object:
         if isinstance(data, Mapping) and "atomic_numbers" in data:
-            # AtomicNumberTable refuses a float, which int() would truncate
-            # into a different element, and a repeated element.
-            try:
-                table = AtomicNumberTable(data["atomic_numbers"])
-            except TypeError as error:
-                raise ValueError(f"the element table: {error}") from None
+            table = model_atomic_number_table(data["atomic_numbers"])
             data = {**data, "atomic_numbers": table.zs}
         return data
 
     @model_validator(mode="after")
     def _validate(self) -> GraphLayout:
-        if not self.atomic_numbers or any(
-            not 1 <= z <= 118 for z in self.atomic_numbers
-        ):
-            raise ValueError(
-                f"the element table {list(self.atomic_numbers)} is empty or "
-                f"holds a number outside 1 to 118. Padding atoms carry 0, which "
-                f"is never an element."
-            )
         if (
             not self.heads
             or len(set(self.heads)) != len(self.heads)

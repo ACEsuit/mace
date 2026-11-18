@@ -448,6 +448,11 @@ class RadialBasisSpec(KernelSpec):
             default is the envelope's own module default, not a model's: the
             legacy command line defaults ``--num_cutoff_basis`` to 5, so a
             model always passes the order it was configured with.
+        trainable: Train the Bessel frequencies or the Gaussian centres.
+        include_constant: Start a Chebyshev basis at the constant ``T_0``.
+        apply_cutoff: Multiply the basis by the envelope. Without it the
+            envelope multiplies the radial networks' output instead, which is
+            the interaction's business, and the op returns the bare basis.
     """
 
     op: ClassVar[str] = "radial_basis"
@@ -456,6 +461,9 @@ class RadialBasisSpec(KernelSpec):
     num_basis: int = 8
     cutoff: float = 5.0
     cutoff_order: int = 6
+    trainable: bool = False
+    include_constant: bool = False
+    apply_cutoff: bool = True
 
     def __post_init__(self) -> None:
         super().__post_init__()
