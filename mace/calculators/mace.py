@@ -11,7 +11,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -22,6 +22,7 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from e3nn import o3
 
 from mace import data as mace_data
+from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import (
@@ -77,6 +78,16 @@ def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
     raise ValueError(f"Unknown dtype {mode_dtype}")
 
 
+def _uses_scale_shift_forward(model: torch.nn.Module) -> bool:
+    """Whether the model runs ScaleShiftMACE.forward rather than an override.
+
+    A scripted module keeps its source class only by name.
+    """
+    if isinstance(model, torch.jit.ScriptModule):
+        return model.original_name == "ScaleShiftMACE"
+    return type(model).forward is ScaleShiftMACE.forward
+
+
 class MACECalculator(Calculator):
     """MACE ASE Calculator
     args:
@@ -86,6 +97,11 @@ class MACECalculator(Calculator):
         energy_units_to_eV: float, conversion factor from model energy units to eV
         length_units_to_A: float, conversion factor from model length units to Angstroms
         default_dtype: str, default dtype of model
+        energy_accumulation_dtype: "float64" (default) accumulates
+            ScaleShiftMACE total energies in float64 and returns the original
+            output dtype; None keeps the reductions in the working dtype. On
+            MPS, and for models that override ScaleShiftMACE.forward, the
+            reductions stay in the working dtype either way.
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
                     Options: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE,
@@ -127,9 +143,13 @@ class MACECalculator(Calculator):
         keep_neutral: bool = True,
         pbc_handling: str = "auto",
         compute_stress: bool = True,
+        energy_accumulation_dtype: Optional[str] = "float64",
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
+        if energy_accumulation_dtype not in (None, "float64"):
+            raise ValueError("energy_accumulation_dtype must be None or 'float64'")
+        self.energy_accumulation_dtype = energy_accumulation_dtype
         self.compute_bec = compute_bec
         self.compute_stress = compute_stress
         if not compute_stress and kwargs.get("compute_atomic_stresses", False):
@@ -322,6 +342,12 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        # Only ScaleShiftMACE.forward takes the option. Overridden forwards
+        # define their own energy terms and keep their own reductions.
+        self.forwards_energy_accumulation = all(
+            _uses_scale_shift_forward(model) for model in self.models
+        )
+
         if self.model_type == "PolarMACE":
             self.density_dim = (
                 getattr(self.models[0], "atomic_multipoles_max_l", 0) + 1
@@ -771,6 +797,10 @@ class MACECalculator(Calculator):
             }
             if getattr(self, "compute_bec", False):
                 model_kwargs["compute_bec"] = True
+            if self.forwards_energy_accumulation:
+                model_kwargs["energy_accumulation_dtype"] = (
+                    self.energy_accumulation_dtype
+                )
 
             # Scoped here too, not only around batch construction: extensions
             # create tensors mid-forward without a dtype (les does, for its
