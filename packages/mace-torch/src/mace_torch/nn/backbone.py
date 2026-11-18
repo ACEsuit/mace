@@ -314,7 +314,7 @@ class MACEBackbone(nn.Module):
             first = layer == 0
             irreps_node = embedding_irreps if first else hidden_irreps
             irreps_out = "0e" if layer == config.num_interactions - 1 else hidden_irreps
-            kind = config.interaction_first if first else config.interaction
+            kind = config.interaction_of(layer)
             interactions.append(
                 self._interaction(
                     backend,

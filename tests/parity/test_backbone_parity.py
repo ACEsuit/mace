@@ -182,7 +182,7 @@ def _legacy_model(config: ModelConfig, avg_num_neighbors: float, seed: int):
         max_ell=config.max_ell,
         interaction_cls=modules.interaction_classes[LEGACY_CLASS[config.interaction]],
         interaction_cls_first=modules.interaction_classes[
-            LEGACY_CLASS[config.interaction_first]
+            LEGACY_CLASS[config.interaction_of(0)]
         ],
         num_interactions=config.num_interactions,
         num_elements=len(ELEMENTS),
