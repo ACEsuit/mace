@@ -270,6 +270,9 @@ def test_dipole_curve_keys_and_percentage_units(table, absolute, relative, other
 
 
 def _distributed_inference_head_worker(rank, rendezvous, directory, mixed):
+    import os
+    import traceback
+    from datetime import timedelta
     from pathlib import Path
     from types import SimpleNamespace
 
@@ -291,10 +294,17 @@ def _distributed_inference_head_worker(rank, rendezvous, directory, mixed):
         def forward(self, batch, **kwargs):
             return {"energy": batch["energy"] + 0.1}
 
-    torch.distributed.init_process_group(
-        "gloo", init_method=rendezvous, rank=rank, world_size=2
-    )
+    outcome = "passed"
     try:
+        # A collective that never completes fails within a minute with a
+        # named error instead of running into the pytest timeout.
+        torch.distributed.init_process_group(
+            "gloo",
+            init_method=rendezvous,
+            rank=rank,
+            world_size=2,
+            timeout=timedelta(seconds=60),
+        )
         batch = Batch(
             ptr=torch.tensor([0, 2]),
             head=torch.tensor([rank if mixed else 1]),
@@ -314,9 +324,16 @@ def _distributed_inference_head_worker(rank, rendezvous, directory, mixed):
             assert "head" not in result
         else:
             assert result["head"] == "H2_liquid"
-        (Path(directory) / str(rank)).write_text("passed")
-    finally:
-        torch.distributed.destroy_process_group()
+    except BaseException:  # pylint: disable=broad-exception-caught
+        outcome = traceback.format_exc()
+    (Path(directory) / str(rank)).write_text(outcome)
+    # Tearing down a gloo group can deadlock on older torch (seen on 2.5 and
+    # 2.6): the group's destructor joins the gloo worker threads while
+    # holding the GIL, and a worker may still need the GIL to free the
+    # tensors of the last collective. Interpreter exit runs the same
+    # destructor, so the rank skips teardown entirely and the parent reads
+    # the outcome from the file.
+    os._exit(0)
 
 
 @pytest.mark.parametrize("mixed", [False, True])
@@ -329,4 +346,5 @@ def test_distributed_inference_uses_global_head_identity(tmp_path, mixed):
         nprocs=2,
         join=True,
     )
-    assert all((tmp_path / str(rank)).read_text() == "passed" for rank in range(2))
+    outcomes = {rank: (tmp_path / str(rank)).read_text() for rank in range(2)}
+    assert outcomes == {0: "passed", 1: "passed"}
