@@ -8,6 +8,7 @@ TorchScript.
 
 from __future__ import annotations
 
+from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.specs import (
     ClebschGordanBasis,
@@ -15,8 +16,6 @@ from mace_core.kernels.specs import (
     SymmetricContractionSpec,
 )
 from torch import Tensor, nn
-
-from mace_torch.backends.layout import expanded_irreps
 
 __all__ = ["EquivariantProductBasisBlock"]
 
@@ -52,7 +51,7 @@ class EquivariantProductBasisBlock(nn.Module):
         precision: Precision = "float64",
     ) -> None:
         super().__init__()
-        out_flat = expanded_irreps(irreps_out, num_features)
+        out_flat = str(Irreps.parse(irreps_out).with_channels(num_features))
         self.contraction = backend.make_symmetric_contraction(
             SymmetricContractionSpec(
                 irreps_in=irreps_in,

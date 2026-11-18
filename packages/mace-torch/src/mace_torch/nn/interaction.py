@@ -47,7 +47,6 @@ from mace_core.kernels.specs import (
 from torch import Tensor, nn
 
 from mace_torch.backends import require_built
-from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.reference import TORCH_DTYPES
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.gate import Gate, gate_input_irreps
@@ -119,7 +118,7 @@ class _Convolution(nn.Module):
         edge_members: tuple[KernelSpec, ...] | None,
     ) -> None:
         super().__init__()
-        node_flat = expanded_irreps(irreps_node, num_features)
+        node_flat = str(Irreps.parse(irreps_node).with_channels(num_features))
         convolution = ChannelwiseTPConvSpec(
             irreps_node=irreps_node,
             irreps_edge=irreps_edge,
@@ -130,7 +129,7 @@ class _Convolution(nn.Module):
         self.num_features = num_features
         self.num_paths = len(convolution.paths)
         self.envelope_outside = envelope_outside
-        self.irreps_out = expanded_irreps(irreps_target, num_features)
+        self.irreps_out = str(Irreps.parse(irreps_target).with_channels(num_features))
 
         self.linear_up = backend.make_linear(
             LinearSpec(irreps_in=node_flat, irreps_out=node_flat, precision=precision)
@@ -144,7 +143,9 @@ class _Convolution(nn.Module):
         self.radial_mlp = require_built(backend, weights)
         self.linear = backend.make_linear(
             LinearSpec(
-                irreps_in=expanded_irreps(convolution.irreps_paths, num_features),
+                irreps_in=str(
+                    Irreps.parse(convolution.irreps_paths).with_channels(num_features)
+                ),
                 irreps_out=self.irreps_out,
                 precision=precision,
             )
@@ -326,9 +327,11 @@ class ResidualInteractionBlock(nn.Module):
         )
         self.skip = backend.make_fully_connected_tp(
             FullyConnectedTPSpec(
-                irreps_in1=expanded_irreps(irreps_node, num_features),
+                irreps_in1=str(Irreps.parse(irreps_node).with_channels(num_features)),
                 irreps_in2=f"{num_elements}x0e",
-                irreps_out=expanded_irreps(irreps_skip_out, num_features),
+                irreps_out=str(
+                    Irreps.parse(irreps_skip_out).with_channels(num_features)
+                ),
                 precision=precision,
             )
         )
@@ -415,9 +418,9 @@ class NonLinearInteractionBlock(nn.Module):
         edge_members: tuple[KernelSpec, ...] | None = None,
     ) -> None:
         super().__init__()
-        node_flat = expanded_irreps(irreps_node, num_features)
-        up_flat = expanded_irreps(irreps_up, num_up_features)
-        target_flat = expanded_irreps(irreps_target, num_features)
+        node_flat = str(Irreps.parse(irreps_node).with_channels(num_features))
+        up_flat = str(Irreps.parse(irreps_up).with_channels(num_up_features))
+        target_flat = str(Irreps.parse(irreps_target).with_channels(num_features))
         nonlinear_flat = gate_input_irreps(target_flat)
         element_scalars = _even_scalars(node_flat)
         convolution = ChannelwiseTPConvSpec(
@@ -439,7 +442,10 @@ class NonLinearInteractionBlock(nn.Module):
 
         embedding = linear(f"{num_elements}x0e", f"{element_scalars}x0e")
         self.skip = backend.make_linear(
-            linear(node_flat, expanded_irreps(irreps_skip_out, num_features))
+            linear(
+                node_flat,
+                str(Irreps.parse(irreps_skip_out).with_channels(num_features)),
+            )
         )
         self.linear_up = backend.make_linear(linear(node_flat, up_flat))
         self.linear_residual = backend.make_linear(linear(up_flat, nonlinear_flat))
@@ -465,7 +471,11 @@ class NonLinearInteractionBlock(nn.Module):
         )
         self.linear_mix = backend.make_linear(
             linear(
-                expanded_irreps(convolution.irreps_paths, num_up_features),
+                str(
+                    Irreps.parse(convolution.irreps_paths).with_channels(
+                        num_up_features
+                    )
+                ),
                 nonlinear_flat,
             )
         )

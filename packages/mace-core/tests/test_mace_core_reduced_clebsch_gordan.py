@@ -217,6 +217,29 @@ def test_a_single_irrep_is_parsed_strictly(text):
         Irrep.parse(text)
 
 
+def test_the_spherical_harmonics_irreps_alternate_parity_by_degree():
+    assert str(Irreps.spherical_harmonics(0)) == "1x0e"
+    assert str(Irreps.spherical_harmonics(3)) == "1x0e+1x1o+1x2e+1x3o"
+
+
+@pytest.mark.parametrize("lmax", [-1, 1.0, True])
+def test_the_spherical_harmonics_irreps_refuse_a_degree_that_is_not_one(lmax):
+    with pytest.raises(IrrepsError, match=re.escape(f"lmax={lmax!r}")):
+        Irreps.spherical_harmonics(lmax)
+
+
+def test_with_channels_multiplies_every_multiplicity_in_order():
+    irreps = Irreps.parse("0e+2x1o+0e")
+    assert str(irreps.with_channels(8)) == "8x0e+16x1o+8x0e"
+    assert irreps.with_channels(1) == irreps
+
+
+@pytest.mark.parametrize("num_channels", [0, -2, 2.0, True])
+def test_with_channels_refuses_a_count_that_is_not_one(num_channels):
+    with pytest.raises(IrrepsError, match=re.escape(f"num_channels={num_channels!r}")):
+        Irreps.parse("0e").with_channels(num_channels)
+
+
 def test_the_irrep_order_is_the_documented_one():
     """Ascending degree, even before odd. This order is the weight order, so it
     is pinned rather than left to whatever sorted() happens to do."""

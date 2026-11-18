@@ -53,7 +53,6 @@ from mace_core.observables import InputSpec
 from torch import Tensor, nn
 
 from mace_torch.backends import require_built
-from mace_torch.backends.layout import expanded_irreps
 from mace_torch.backends.reference import TORCH_DTYPES
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.embedding import (
@@ -149,13 +148,6 @@ def _default_dtype(dtype: torch.dtype) -> Iterator[None]:
         yield
     finally:
         torch.set_default_dtype(previous)
-
-
-def _natural_irreps(lmax: int) -> str:
-    """``0e+1o+2e+...`` up to ``lmax``: one copy of each degree, natural parity."""
-    return "+".join(
-        f"{degree}{'e' if degree % 2 == 0 else 'o'}" for degree in range(lmax + 1)
-    )
 
 
 def _per_channel(irreps: str) -> tuple[str, int]:
@@ -305,7 +297,7 @@ class MACEBackbone(nn.Module):
                 if str(irrep) not in embedding_terms:
                     embedding_terms.append(str(irrep))
         embedding_irreps = "+".join(embedding_terms)
-        embedding_flat = expanded_irreps(embedding_irreps, num_features)
+        embedding_flat = str(Irreps.parse(embedding_irreps).with_channels(num_features))
         self.node_embedding = backend.make_linear(
             LinearSpec(
                 irreps_in=f"{num_elements}x0e",
@@ -324,15 +316,15 @@ class MACEBackbone(nn.Module):
             for spec in node_inputs
         )
 
-        hidden = _natural_irreps(config.max_L)
-        target = _natural_irreps(config.max_ell)
+        hidden_irreps = str(Irreps.spherical_harmonics(config.max_L))
+        target_irreps = str(Irreps.spherical_harmonics(config.max_ell))
         product_elements = 1 if config.use_agnostic_product else num_elements
         self.use_agnostic_product = config.use_agnostic_product
         interactions, products, layer_irreps = [], [], []
         for layer in range(config.num_interactions):
             first = layer == 0
-            irreps_node = embedding_irreps if first else hidden
-            irreps_out = "0e" if layer == config.num_interactions - 1 else hidden
+            irreps_node = embedding_irreps if first else hidden_irreps
+            irreps_out = "0e" if layer == config.num_interactions - 1 else hidden_irreps
             kind = config.interaction_first if first else config.interaction
             interactions.append(
                 self._interaction(
@@ -340,7 +332,7 @@ class MACEBackbone(nn.Module):
                     kind,
                     first,
                     irreps_node=irreps_node,
-                    irreps_edge=target,
+                    irreps_edge=target_irreps,
                     irreps_skip_out=irreps_out,
                     num_radial=num_radial,
                     num_elements=num_elements,
@@ -351,7 +343,7 @@ class MACEBackbone(nn.Module):
             products.append(
                 EquivariantProductBasisBlock(
                     backend,
-                    irreps_in=target,
+                    irreps_in=target_irreps,
                     irreps_out=irreps_out,
                     correlation=config.correlation,
                     num_elements=product_elements,
@@ -360,7 +352,9 @@ class MACEBackbone(nn.Module):
                     precision=precision,
                 )
             )
-            layer_irreps.append(expanded_irreps(irreps_out, num_features))
+            layer_irreps.append(
+                str(Irreps.parse(irreps_out).with_channels(num_features))
+            )
         self.interactions = nn.ModuleList(interactions)
         self.products = nn.ModuleList(products)
         #: Each layer's output declaration, grouped.
