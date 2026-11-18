@@ -17,7 +17,9 @@ from mace_core.config import (
     AgnesiTransformConfig,
     BesselBasisConfig,
     ChebyshevBasisConfig,
+    GaussianBasisConfig,
     ModelConfig,
+    SoftTransformConfig,
 )
 from mace_core.kernels import (
     BackendCapabilities,
@@ -445,14 +447,39 @@ def test_the_element_lookup_is_not_saved():
     assert not any("element_index_of" in key for key in _backbone().state_dict())
 
 
-def test_a_checkpoint_loads_only_into_its_own_element_table():
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {},
+        {
+            "radial_basis": GaussianBasisConfig(),
+            "distance_transform": SoftTransformConfig(),
+        },
+        {"distance_transform": AgnesiTransformConfig()},
+        {"interaction_first": "nonlinear", "interaction": "density"},
+    ],
+    ids=["bessel", "gaussian_soft", "agnesi", "nonlinear_density"],
+)
+def test_the_checkpoint_holds_only_learned_weights_and_fitted_statistics(overrides):
+    """What the configuration fixes is rebuilt from it and never saved.
+
+    A saved constant would be overwritten by the checkpoint's value while the
+    configuration, and so the neighbour list, kept its own: a checkpoint for
+    another `r_max` would load without error and compute with two cutoffs.
+    """
+    model = _backbone(**overrides)
+    parameters = {name for name, _ in model.named_parameters()}
+    saved = set(model.state_dict()) - parameters
+    assert {key.rsplit(".", 1)[-1] for key in saved} <= {"neighbours"}, saved
+
+
+def test_a_checkpoint_loads_into_a_model_built_for_another_cutoff_without_moving_it():
     state = _backbone().state_dict()
-    _backbone(seed=1).load_state_dict(state)
-    reordered = MACEBackbone(
-        ReferenceBackend(), _config(), (8, 1, 6), precision=_precision()
-    )
-    with pytest.raises(RuntimeError, match=r"element table \[1, 6, 8\]"):
-        reordered.load_state_dict(state)
+    model = _backbone(r_max=R_MAX + 1.0)
+    model.load_state_dict(state)
+    for name, buffer in model.named_buffers():
+        if name.endswith("r_max"):
+            assert buffer.item() == R_MAX + 1.0, name
 
 
 # ---------------------------------------------------------------------------

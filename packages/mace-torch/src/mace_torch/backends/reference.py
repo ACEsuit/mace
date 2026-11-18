@@ -196,10 +196,18 @@ class ReferenceLinear(nn.Module):
         rows, columns, sources, count, bias_rows = _linear_plan(kernel_spec)
         dtype = TORCH_DTYPES[kernel_spec.precision]
         self.dim_out = Irreps.parse(kernel_spec.irreps_out).dimension
-        self.register_buffer("row", torch.tensor(rows, dtype=torch.long))
-        self.register_buffer("column", torch.tensor(columns, dtype=torch.long))
-        self.register_buffer("source", torch.tensor(sources, dtype=torch.long))
-        self.register_buffer("bias_row", torch.tensor(bias_rows, dtype=torch.long))
+        self.register_buffer(
+            "row", torch.tensor(rows, dtype=torch.long), persistent=False
+        )
+        self.register_buffer(
+            "column", torch.tensor(columns, dtype=torch.long), persistent=False
+        )
+        self.register_buffer(
+            "source", torch.tensor(sources, dtype=torch.long), persistent=False
+        )
+        self.register_buffer(
+            "bias_row", torch.tensor(bias_rows, dtype=torch.long), persistent=False
+        )
         self.weight = nn.Parameter(torch.zeros(count, dtype=dtype))
         self.bias = nn.Parameter(torch.zeros(len(bias_rows), dtype=dtype))
         self.register_buffer(
@@ -556,9 +564,15 @@ class ReferenceFullyConnectedTP(nn.Module):
         )
         self.num_scalars = second.dimension
         self.dim_out = Irreps.parse(kernel_spec.irreps_out).dimension
-        self.register_buffer("row", torch.tensor(rows, dtype=torch.long))
-        self.register_buffer("column", torch.tensor(columns, dtype=torch.long))
-        self.register_buffer("source", torch.tensor(sources, dtype=torch.long))
+        self.register_buffer(
+            "row", torch.tensor(rows, dtype=torch.long), persistent=False
+        )
+        self.register_buffer(
+            "column", torch.tensor(columns, dtype=torch.long), persistent=False
+        )
+        self.register_buffer(
+            "source", torch.tensor(sources, dtype=torch.long), persistent=False
+        )
         self.weight = nn.Parameter(torch.zeros(self.num_scalars, count, dtype=dtype))
         self.register_buffer(
             "path_normalization",

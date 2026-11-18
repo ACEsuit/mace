@@ -66,10 +66,14 @@ class BesselBasis(torch.nn.Module):
         if trainable:
             self.frequencies = torch.nn.Parameter(frequencies)
         else:
-            self.register_buffer("frequencies", frequencies)
-        self.register_buffer("r_max", torch.tensor(r_max, dtype=dtype))
+            self.register_buffer("frequencies", frequencies, persistent=False)
         self.register_buffer(
-            "prefactor", torch.tensor(math.sqrt(2.0 / r_max), dtype=dtype)
+            "r_max", torch.tensor(r_max, dtype=dtype), persistent=False
+        )
+        self.register_buffer(
+            "prefactor",
+            torch.tensor(math.sqrt(2.0 / r_max), dtype=dtype),
+            persistent=False,
         )
 
     @property
@@ -179,7 +183,7 @@ class GaussianBasis(torch.nn.Module):
         if trainable:
             self.centers = torch.nn.Parameter(centers)
         else:
-            self.register_buffer("centers", centers)
+            self.register_buffer("centers", centers, persistent=False)
         self.exponent_coefficient = -0.5 / (r_max / (num_basis - 1)) ** 2
         self.num_basis = num_basis
 
@@ -234,7 +238,9 @@ class PolynomialCutoff(torch.nn.Module):
         super().__init__()
         self.polynomial_order = int(polynomial_order)
         self.register_buffer(
-            "r_max", torch.tensor(r_max, dtype=dtype or torch.get_default_dtype())
+            "r_max",
+            torch.tensor(r_max, dtype=dtype or torch.get_default_dtype()),
+            persistent=False,
         )
 
     def forward(self, edge_lengths: torch.Tensor) -> torch.Tensor:
