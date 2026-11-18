@@ -16,6 +16,7 @@ from .torch_tools import (
     to_numpy,
     to_one_hot,
     voigt_to_matrix,
+    worker_start_method,
 )
 from .train import SWAContainer, evaluate, train
 from .utils import (
@@ -70,4 +71,5 @@ __all__ = [
     "load_foundations",
     "load_foundations_elements",
     "build_preprocess_arg_parser",
+    "worker_start_method",
 ]

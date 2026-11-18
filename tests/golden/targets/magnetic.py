@@ -53,7 +53,7 @@ def run() -> None:
             f"{exc}. Install it, or run --target fixtures/anchors/references."
         ) from exc
 
-    path = build_anchor()
+    path = build_anchor(MODEL_PATH)
     print(f"  anchor   tiny_magnetic    -> {path.relative_to(REPO_ROOT)}")
 
     sources = {

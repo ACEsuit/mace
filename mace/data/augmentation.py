@@ -145,6 +145,7 @@ def create_random_rotation_loader(original_loader, mode: str = "non-soc"):
     loader_kwargs = dict(
         batch_size=original_loader.batch_size,
         num_workers=original_loader.num_workers,
+        multiprocessing_context=original_loader.multiprocessing_context,
         pin_memory=original_loader.pin_memory,
         drop_last=original_loader.drop_last,
     )
