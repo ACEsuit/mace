@@ -95,6 +95,8 @@ SWA and EMA
 If the keyword `--swa` is enabled, the energy weight of the loss is increased for the last ~25% of the training epochs (or from `--start_swa` epochs).
 This setting usually helps lower the energy errors.
 
+Enabling `--ema` applies an Exponential Moving Average to the model weights during training.
+This smooths out weight fluctuations, improving stability and generalization for molecular dynamics simulations.
 
 Data keys
 ---------
