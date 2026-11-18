@@ -26,7 +26,8 @@ from mace_core.config import (
     PolynomialCutoffConfig,
 )
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.nn.backbone import MACEBackbone, aggregate_atomic_descriptors
+from mace_torch.descriptors import aggregate_atomic_descriptors
+from mace_torch.nn.backbone import MACEBackbone
 
 from mace import modules
 from mace.tools import utils

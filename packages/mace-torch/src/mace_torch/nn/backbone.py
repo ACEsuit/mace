@@ -30,7 +30,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, SupportsIndex, cast
+from typing import SupportsIndex, assert_never, get_args
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irreps
@@ -69,12 +69,10 @@ from mace_torch.nn.product_basis import EquivariantProductBasisBlock
 
 __all__ = [
     "GRAPH_KEYS",
-    "Aggregation",
-    "BetweenLayers",
+    "GhostExchange",
     "LocalityInfo",
     "MACEBackbone",
     "NodeFeatures",
-    "aggregate_atomic_descriptors",
 ]
 
 #: The graph keys every backbone reads, whatever it declares.
@@ -107,7 +105,7 @@ class LocalityInfo:
 #: The exchange between two layers of a decomposed run: the local nodes'
 #: features ``[n_local, dim]`` in, every node's ``[n_local + n_ghost, dim]``
 #: out, the ghosts filled from the domains that own them.
-BetweenLayers = Callable[[Tensor, LocalityInfo], Tensor]
+GhostExchange = Callable[[Tensor, LocalityInfo], Tensor]
 
 
 @dataclass(frozen=True)
@@ -126,10 +124,6 @@ class NodeFeatures:
 
     layers: tuple[Tensor, ...]
     node_attrs: Tensor
-
-
-#: How :func:`aggregate_atomic_descriptors` reduces per structure.
-Aggregation = Literal["mean", "per_element_mean"] | None
 
 
 @contextlib.contextmanager
@@ -206,11 +200,14 @@ class MACEBackbone(nn.Module):
             the first layer, each read from the graph by its name and brought
             in by an equivariant linear map from its declared irreps. Nothing
             about any of them is special-cased.
-        between_layers: The exchange that fills the ghosts' features between
+        ghost_exchange: The exchange that fills the ghosts' features between
             layers of a decomposed run. Absent by default, and when absent a
             forward without a :class:`LocalityInfo` is exactly the hook-free
             one.
     """
+
+    #: Atomic number to column of the element one-hot, ``[119]``, int64.
+    element_index_of: Tensor
 
     def __init__(
         self,
@@ -220,7 +217,7 @@ class MACEBackbone(nn.Module):
         avg_num_neighbors: float = 1.0,
         precision: Precision = "float64",
         node_inputs: Sequence[InputSpec] = (),
-        between_layers: BetweenLayers | None = None,
+        ghost_exchange: GhostExchange | None = None,
     ) -> None:
         super().__init__()
         names = [spec.name for spec in node_inputs]
@@ -261,7 +258,7 @@ class MACEBackbone(nn.Module):
         )
         self.register_buffer("element_index_of", element_index_of, persistent=False)
         self.precision = precision
-        self.between_layers = between_layers
+        self.ghost_exchange = ghost_exchange
         self.node_input_names = tuple(spec.name for spec in node_inputs)
         num_elements = len(self.atomic_numbers)
         num_features = config.num_channels
@@ -388,7 +385,13 @@ class MACEBackbone(nn.Module):
             "envelope_outside": not config.apply_cutoff,
             "edge_members": edge_members,
         }
-        if kind == "nonlinear":
+        kinds = get_args(InteractionKind)
+        if kind not in kinds:
+            raise ValueError(
+                f"interaction kind {kind!r} is not one this builds; the kinds are "
+                f"{', '.join(map(repr, kinds))}."
+            )
+        elif kind == "nonlinear":
             irreps_up, num_up_features = irreps_node, self.num_features
             if config.edge_irreps is not None and (
                 not first or config.use_edge_irreps_first
@@ -408,27 +411,22 @@ class MACEBackbone(nn.Module):
                 num_up_features=num_up_features,
                 **common,
             )
-        if kind not in ("plain", "residual", "density", "density_residual"):
-            raise ValueError(
-                f"interaction kind {kind!r} is not one this builds; the kinds are "
-                f"'plain', 'residual', 'density', 'density_residual' and "
-                f"'nonlinear'."
-            )
-        learned_density = kind in ("density", "density_residual")
-        if kind in ("plain", "density"):
+        elif kind in ("plain", "density"):
             return InteractionBlock(
                 backend,
                 avg_num_neighbors=avg_num_neighbors,
-                learned_density=learned_density,
+                learned_density=kind == "density",
                 **common,
             )
-        return ResidualInteractionBlock(
-            backend,
-            irreps_skip_out=irreps_skip_out,
-            avg_num_neighbors=avg_num_neighbors,
-            learned_density=learned_density,
-            **common,
-        )
+        elif kind in ("residual", "density_residual"):
+            return ResidualInteractionBlock(
+                backend,
+                irreps_skip_out=irreps_skip_out,
+                avg_num_neighbors=avg_num_neighbors,
+                learned_density=kind == "density_residual",
+                **common,
+            )
+        assert_never(kind)
 
     def forward(
         self, graph: Mapping[str, Tensor], locality: LocalityInfo | None = None
@@ -441,8 +439,7 @@ class MACEBackbone(nn.Module):
                 a decomposed run. ``None`` for a whole system.
         """
         positions = graph["positions"]
-        element_index_of = cast(Tensor, self.element_index_of)
-        node_element = element_index_of[graph["node_atomic_numbers"]]
+        node_element = self.element_index_of[graph["node_atomic_numbers"]]
         node_attrs = nn.functional.one_hot(
             node_element, num_classes=len(self.atomic_numbers)
         ).to(TORCH_DTYPES[self.precision])
@@ -451,22 +448,18 @@ class MACEBackbone(nn.Module):
         num_nodes = positions.shape[0]
         if (
             locality is not None
-            and self.between_layers is None
+            and self.ghost_exchange is None
             and len(self.interactions) > 1
         ):
             raise ValueError(
                 f"a LocalityInfo was given to a backbone of "
-                f"{len(self.interactions)} layers built without between_layers. "
+                f"{len(self.interactions)} layers built without ghost_exchange. "
                 f"Past the first layer the ghosts' features have to be exchanged, "
                 f"and nothing here can do that; build the backbone with the "
                 f"exchange its runtime provides."
             )
 
-        vectors = (
-            positions.index_select(0, receiver)
-            - positions.index_select(0, sender)
-            + graph["shifts"]
-        )
+        vectors = positions[receiver] - positions[sender] + graph["shifts"]
         edges = EdgeInputs(
             vectors,
             graph["node_atomic_numbers"],
@@ -494,8 +487,8 @@ class MACEBackbone(nn.Module):
             zip(self.interactions, self.products, strict=True)
         ):
             if locality is not None and layer > 0:
-                assert self.between_layers is not None
-                features = self.between_layers(features, locality)
+                assert self.ghost_exchange is not None
+                features = self.ghost_exchange(features, locality)
             message, carried = interaction(
                 features, edges, node_attrs, sender, receiver, num_nodes
             )
@@ -550,56 +543,3 @@ class MACEBackbone(nn.Module):
             assert irrep.degree == 0 and irrep.parity == 1, irreps
             pieces.append(layer[:, :multiplicity])
         return torch.cat(pieces, dim=-1)
-
-
-def aggregate_atomic_descriptors(
-    atomic_descriptors: Tensor,
-    batch: Tensor,
-    num_graphs: int,
-    aggregation: Aggregation,
-    element: Tensor | None = None,
-    atomic_numbers: Sequence[int] = (),
-) -> Tensor | list[dict[int, Tensor]]:
-    """Reduce atomic descriptors per structure.
-
-    Args:
-        atomic_descriptors: ``[n_nodes, width]``, from
-            :meth:`MACEBackbone.atomic_descriptors`.
-        batch: ``[n_nodes]``, int64, each node's structure.
-        num_graphs: How many structures, ``ptr.numel() - 1``.
-        aggregation: ``None`` returns the atomic descriptors as they are. ``"mean"``
-            averages each structure's atoms, ``[num_graphs, width]``.
-            ``"per_element_mean"`` averages each structure's atoms of each
-            element present, one dict per structure keyed by atomic number.
-        element: ``[n_nodes]``, int64, each node's column of the element
-            table. Needed for ``"per_element_mean"`` only.
-        atomic_numbers: The element table. Needed for ``"per_element_mean"``.
-    """
-    if aggregation is None:
-        return atomic_descriptors
-    if aggregation == "mean":
-        totals = atomic_descriptors.new_zeros(num_graphs, atomic_descriptors.shape[1])
-        totals = totals.index_add(0, batch, atomic_descriptors)
-        counts = torch.bincount(batch, minlength=num_graphs).to(
-            atomic_descriptors.dtype
-        )
-        return totals / counts.unsqueeze(-1)
-    if aggregation == "per_element_mean":
-        if element is None or not atomic_numbers:
-            raise ValueError(
-                "per_element_mean needs each node's element and the element table."
-            )
-        result: list[dict[int, Tensor]] = []
-        for graph in range(num_graphs):
-            in_graph = batch == graph
-            means = {}
-            for column, atomic_number in enumerate(atomic_numbers):
-                mask = in_graph & (element == column)
-                if bool(mask.any()):
-                    means[int(atomic_number)] = atomic_descriptors[mask].mean(dim=0)
-            result.append(means)
-        return result
-    raise ValueError(
-        f"aggregation={aggregation!r} is not one this computes. The choices are "
-        f"None, 'mean' and 'per_element_mean'."
-    )

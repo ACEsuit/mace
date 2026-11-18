@@ -88,12 +88,3 @@ class EdgeInputs:
         self._radial, self._envelope = self._radial_embedding(
             self.lengths, self.node_atomic_numbers, self.edge_index
         )
-
-    def built(self) -> frozenset[str]:
-        """Which derived quantities this forward has computed so far."""
-        made = {
-            "lengths": self._lengths,
-            "attributes": self._attributes,
-            "radial": self._radial,
-        }
-        return frozenset(name for name, value in made.items() if value is not None)

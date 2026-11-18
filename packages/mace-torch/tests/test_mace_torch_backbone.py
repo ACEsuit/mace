@@ -34,6 +34,7 @@ from mace_core.kernels import (
 from mace_core.observables import InputSpec
 from mace_torch.backends.harmonics import spherical_harmonics
 from mace_torch.backends.reference import ReferenceBackend
+from mace_torch.descriptors import aggregate_atomic_descriptors
 from mace_torch.kernels import initialize_model_weights
 from mace_torch.nn import backbone as backbone_module
 from mace_torch.nn.backbone import (
@@ -41,7 +42,6 @@ from mace_torch.nn.backbone import (
     LocalityInfo,
     MACEBackbone,
     NodeFeatures,
-    aggregate_atomic_descriptors,
 )
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.interaction import (
@@ -611,15 +611,13 @@ def test_an_edge_quantity_nobody_reads_is_never_computed():
     edges = EdgeInputs(
         vectors, graph["node_atomic_numbers"], graph["edge_index"], harmonics, radial
     )
-    assert edges.built() == frozenset()
+    assert (harmonics.count, radial.count) == (0, 0)
     _ = edges.attributes
     _ = edges.attributes
-    assert edges.built() == {"attributes"}
     assert (harmonics.count, radial.count) == (1, 0)
     _ = edges.radial
     _ = edges.envelope
-    assert radial.count == 1
-    assert edges.built() == {"attributes", "radial", "lengths"}
+    assert (harmonics.count, radial.count) == (1, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -765,7 +763,7 @@ def test_a_domain_with_ghosts_reproduces_its_local_atoms(variant):
         ELEMENTS,
         avg_num_neighbors=3.0,
         precision=_precision(),
-        between_layers=hook,
+        ghost_exchange=hook,
     )
     domain.load_state_dict(whole.state_dict())
     # The domain holds every edge into its own atoms, from local and ghost
@@ -792,7 +790,7 @@ def test_the_hook_is_inert_without_a_locality():
         ELEMENTS,
         avg_num_neighbors=3.0,
         precision=_precision(),
-        between_layers=lambda features, locality: features * 0.0,
+        ghost_exchange=lambda features, locality: features * 0.0,
     )
     hooked.load_state_dict(plain.state_dict())
     for ours, theirs in zip(hooked(graph).layers, plain(graph).layers, strict=True):
@@ -806,7 +804,7 @@ def test_a_locality_with_impossible_counts_is_refused(n_local, n_ghost):
 
 
 def test_ghosts_without_an_exchange_are_refused_past_one_layer():
-    with pytest.raises(ValueError, match="between_layers"):
+    with pytest.raises(ValueError, match="ghost_exchange"):
         _backbone()(_cluster(), LocalityInfo(n_local=3, n_ghost=3))
 
 
