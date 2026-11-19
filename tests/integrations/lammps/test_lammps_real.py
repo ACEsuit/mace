@@ -89,7 +89,7 @@ def test_lammps_mliap_energy_matches_python(mliap_artifact):
     lmp.close()
 
     model = torch.load(
-        mliap_artifact.parent / "tiny.model", map_location="cpu"
+        mliap_artifact.parent / "tiny.model", map_location="cpu", weights_only=False
     ).double()
     out = model(model_batch(model, atoms), training=False, compute_force=False)
     e_python = out["energy"].item()

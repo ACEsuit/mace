@@ -391,7 +391,8 @@ def extract_config_mace_model(model: torch.nn.Module) -> Dict[str, Any]:
 
 def extract_load(f: str, map_location: str = "cpu") -> torch.nn.Module:
     return extract_model(
-        torch.load(f=f, map_location=map_location), map_location=map_location
+        torch.load(f=f, map_location=map_location, weights_only=False),
+        map_location=map_location,
     )
 
 

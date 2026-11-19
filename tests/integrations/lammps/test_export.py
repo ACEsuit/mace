@@ -32,7 +32,7 @@ def test_export_libtorch(model_copy):
 
     torch.set_default_dtype(torch.float64)
     loaded = torch.jit.load(artifact, map_location="cpu")
-    eager = torch.load(model_copy, map_location="cpu").double()
+    eager = torch.load(model_copy, map_location="cpu", weights_only=False).double()
     batch, local_or_ghost, _, _ = lammps_style_cluster(eager, n_repeat=3)
     out = loaded(batch, local_or_ghost)
     assert out["total_energy_local"] is not None
@@ -64,6 +64,6 @@ def test_export_mliap(model_copy):
     # mliap artifacts are pickled modules (not TorchScript). LAMMPS_MLIAP_MACE
     # wraps the converted model as .model (MACEEdgeForcesWrapper) whose .model
     # carries the flag the ML-IAP runtime dispatches on.
-    loaded = torch.load(artifact, map_location="cpu")
+    loaded = torch.load(artifact, map_location="cpu", weights_only=False)
     assert loaded.element_types, "element_types must be populated for ML-IAP"
     assert getattr(loaded.model.model, "lammps_mliap", False) is True
