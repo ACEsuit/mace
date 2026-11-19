@@ -11,6 +11,8 @@ files:
   (a real ``import`` where files did a real import, ``find_spec`` otherwise).
 * ``base_mace_params()`` — a fresh copy of the standard training params dict
   from ``test_run_train.py``.
+* ``destroy_process_group()`` — tear down a gloo process group without the
+  deadlock torch < 2.8 can hit there.
 
 Note: the shared ``fitting_configs`` / ``pretraining_configs`` fixtures live
 in ``tests/conftest.py``.
@@ -216,3 +218,29 @@ def run_mace_train(
         text=text,
         cwd=cwd,
     )
+
+
+def destroy_process_group() -> None:
+    """Destroy the default process group without deadlocking on torch < 2.8.
+
+    Before torch 2.8 the Python binding of ProcessGroup drops its reference
+    to the backend with the GIL held. The gloo backend's destructor joins its
+    worker threads, and a worker still freeing the tensors of the last
+    collective needs the GIL, so neither thread can continue. The bindings of
+    the backends themselves release the GIL when they drop their reference.
+    Holding one reference per backend across the teardown makes that the
+    last reference, so the worker threads are joined without the GIL.
+
+    run_train does not need this: once a DistributedDataParallel wrapper has
+    been built, the group stays alive until the process exits and its
+    destructor never runs.
+    """
+    group = torch.distributed.group.WORLD
+    backends = [
+        group._get_backend(device)  # pylint: disable=protected-access
+        for device in group._device_types  # pylint: disable=protected-access
+    ]
+    # Otherwise this frame keeps the group alive past the backends.
+    del group
+    torch.distributed.destroy_process_group()
+    del backends
