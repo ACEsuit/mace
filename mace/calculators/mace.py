@@ -338,9 +338,11 @@ class MACECalculator(Calculator):
         self.device = torch_tools.init_device(device)
         self.energy_units_to_eV = energy_units_to_eV
         self.length_units_to_A = length_units_to_A
-        self.z_table = utils.AtomicNumberTable(
-            [int(z) for z in self.models[0].atomic_numbers]
-        )
+        self._model_z_tables = [
+            utils.AtomicNumberTable([int(z) for z in model.atomic_numbers])
+            for model in self.models
+        ]
+        self.z_table = self._model_z_tables[0]
         self.charges_key = charges_key
         # Only ScaleShiftMACE.forward takes the option. Overridden forwards
         # define their own energy terms and keep their own reductions.
@@ -398,6 +400,18 @@ class MACECalculator(Calculator):
             elif default_dtype == "float32":
                 self.models = [model.float() for model in self.models]
         self.default_dtype = default_dtype
+        self._model_head_indices: List[int] = []
+        for idx, model in enumerate(self.models):
+            try:
+                model_heads = list(model.heads)
+            except AttributeError:
+                model_heads = ["Default"]
+            if self.head not in model_heads:
+                raise ValueError(
+                    f"Head {self.head!r} not found in committee model {idx} "
+                    f"heads {model_heads}"
+                )
+            self._model_head_indices.append(model_heads.index(self.head))
 
         if enable_cueq and enable_oeq:
             logging.info(
@@ -599,19 +613,21 @@ class MACECalculator(Calculator):
 
         node_e0 = None
         if "node_energy" in out:
-            node_heads = batch["head"][batch["batch"]][:num_atoms]
-            num_atoms_arange = torch.arange(num_atoms)
-            node_e0 = (
-                self.models[0]
-                .atomic_energies_fn(batch["node_attrs"][:num_atoms])[
-                    num_atoms_arange, node_heads
-                ]
-                .detach()
-                .cpu()
-                .numpy()
-            )
+            node_e0 = self._compute_model_node_e0(self.models[0], batch, num_atoms)
 
         return dict_of_tensors, node_e0
+
+    def _compute_model_node_e0(self, model, batch, num_atoms: int) -> np.ndarray:
+        node_heads = batch["head"][batch["batch"]][:num_atoms]
+        num_atoms_arange = torch.arange(num_atoms, device=batch["node_attrs"].device)
+        return (
+            model.atomic_energies_fn(batch["node_attrs"][:num_atoms])[
+                num_atoms_arange, node_heads
+            ]
+            .detach()
+            .cpu()
+            .numpy()
+        )
 
     def _auto_estimate_padding(self, real_num_atoms: int, real_num_edges: int):
         """Set padding targets on first call based on actual graph size."""
@@ -697,6 +713,44 @@ class MACECalculator(Calculator):
             batch_clone["positions"].requires_grad_(True)
         return batch_clone
 
+    def _prepare_batch_for_model(self, batch, atoms, model_idx: int):
+        batch_clone = self._clone_batch(batch)
+        model = self.models[model_idx]
+        model_dtype = next(model.parameters()).dtype
+        for key in batch_clone.keys:
+            value = batch_clone[key]
+            if torch.is_tensor(value) and torch.is_floating_point(value):
+                batch_clone[key] = value.to(dtype=model_dtype)
+        model_z_table = self._model_z_tables[model_idx]
+        if model_z_table.zs != self.z_table.zs:
+            num_real_atoms = len(atoms)
+            indices = utils.atomic_numbers_to_indices(
+                atoms.numbers, z_table=model_z_table
+            )
+            node_attrs = torch_tools.to_one_hot(
+                torch.tensor(indices, dtype=torch.long, device=self.device).unsqueeze(
+                    -1
+                ),
+                num_classes=len(model_z_table),
+            ).to(dtype=model_dtype)
+            if batch_clone["node_attrs"].shape[0] > num_real_atoms:
+                pad_rows = batch_clone["node_attrs"].shape[0] - num_real_atoms
+                pad_attrs = torch.zeros(
+                    (pad_rows, len(model_z_table)),
+                    dtype=model_dtype,
+                    device=self.device,
+                )
+                pad_attrs[:, 0] = 1.0
+                node_attrs = torch.cat([node_attrs, pad_attrs], dim=0)
+            if self.use_compile:
+                node_attrs.requires_grad_(True)
+            batch_clone["node_attrs"] = node_attrs
+        if self._model_head_indices[model_idx] != self._model_head_indices[0]:
+            batch_clone["head"] = torch.full_like(
+                batch_clone["head"], self._model_head_indices[model_idx]
+            )
+        return batch_clone
+
     def set_electrostatic_pbcs(self, pbc_handling: str) -> None:
         """Set every Polar model's evaluator and invalidate cached ASE results.
 
@@ -763,12 +817,7 @@ class MACECalculator(Calculator):
         ret_tensors = None
         node_e0 = None
         for i, model in enumerate(self.models):
-            batch = self._clone_batch(batch_base)
-            model_dtype = next(model.parameters()).dtype
-            for key in batch.keys:
-                value = batch[key]
-                if torch.is_tensor(value) and torch.is_floating_point(value):
-                    batch[key] = value.to(dtype=model_dtype)
+            batch = self._prepare_batch_for_model(batch_base, atoms, i)
             batch_dict = batch.to_dict()
 
             if oeq_compile and compute_stress:
@@ -814,9 +863,15 @@ class MACECalculator(Calculator):
                 ret_tensors, node_e0 = self._create_result_tensors(
                     self.num_models, num_real_atoms, batch, out
                 )
+            elif node_e0 is not None:
+                node_e0 = node_e0 + self._compute_model_node_e0(
+                    model, batch, num_real_atoms
+                )
             for key, val in ret_tensors.items():
                 if out.get(key) is not None:
                     val[i] = out[key].detach()
+        if node_e0 is not None and self.num_models > 1:
+            node_e0 = node_e0 / self.num_models
 
         # covert from ret_tensors to calculator results dict
         self.results = {}
@@ -997,11 +1052,11 @@ class MACECalculator(Calculator):
         with torch_tools.default_dtype(self.default_dtype):
             outputs = [
                 model(
-                    self._clone_batch(batch).to_dict(),
+                    self._prepare_batch_for_model(batch, atoms, i).to_dict(),
                     compute_dielectric_derivatives=True,
                     training=self.use_compile,
                 )
-                for model in self.models
+                for i, model in enumerate(self.models)
             ]
         dipole_derivatives = [
             output["dmu_dr"].clone().detach().cpu().numpy() for output in outputs
@@ -1031,12 +1086,12 @@ class MACECalculator(Calculator):
         with torch_tools.default_dtype(self.default_dtype):
             hessians = [
                 model(
-                    self._clone_batch(batch).to_dict(),
+                    self._prepare_batch_for_model(batch, atoms, i).to_dict(),
                     compute_hessian=True,
                     compute_stress=False,
                     training=self.use_compile,
                 )["hessian"]
-                for model in self.models
+                for i, model in enumerate(self.models)
             ]
         hessians = [hessian.detach().cpu().numpy() for hessian in hessians]
         if self.num_models == 1:
@@ -1074,14 +1129,14 @@ class MACECalculator(Calculator):
         with torch_tools.default_dtype(self.default_dtype):
             outputs = [
                 model(
-                    self._clone_batch(batch).to_dict(),
+                    self._prepare_batch_for_model(batch, atoms, i).to_dict(),
                     compute_polarizability=True,
                     polarizability_method=method,
                     compute_force=False,
                     compute_stress=False,
                     training=self.use_compile,
                 )
-                for model in self.models
+                for i, model in enumerate(self.models)
             ]
         # [0]: the real graph; a padding graph, if any, comes after it.
         polarizabilities = [
@@ -1110,7 +1165,10 @@ class MACECalculator(Calculator):
         batch = self._atoms_to_batch(atoms)
         with torch_tools.default_dtype(self.default_dtype):
             descriptors = [
-                model(batch.to_dict())["node_feats"] for model in self.models
+                model(self._prepare_batch_for_model(batch, atoms, i).to_dict())[
+                    "node_feats"
+                ]
+                for i, model in enumerate(self.models)
             ]
 
         irreps_out = o3.Irreps(str(self.models[0].products[0].linear.irreps_out))

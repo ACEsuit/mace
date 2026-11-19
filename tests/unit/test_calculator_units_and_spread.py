@@ -413,3 +413,86 @@ def test_a_single_model_advertises_no_committee_keys(water):
     assert not [
         key for key in calc.implemented_properties if key.endswith(("_comm", "_var"))
     ]
+
+
+def _custom_model(seed: int, atomic_numbers, heads, e0_value: float = -1.0):
+    torch.manual_seed(seed)
+    n_el = len(atomic_numbers)
+    n_heads = len(heads)
+    return modules.ScaleShiftMACE(
+        r_max=4.0,
+        num_bessel=4,
+        num_polynomial_cutoff=5,
+        max_ell=2,
+        interaction_cls=modules.interaction_classes[
+            "RealAgnosticResidualInteractionBlock"
+        ],
+        interaction_cls_first=modules.interaction_classes[
+            "RealAgnosticInteractionBlock"
+        ],
+        num_interactions=2,
+        num_elements=n_el,
+        hidden_irreps=o3.Irreps("8x0e"),
+        MLP_irreps=o3.Irreps("4x0e"),
+        gate=F.silu,
+        atomic_energies=np.full((n_heads, n_el), e0_value),
+        avg_num_neighbors=4.0,
+        atomic_numbers=atomic_numbers,
+        correlation=2,
+        atomic_inter_scale=[1.0] * n_heads,
+        atomic_inter_shift=[0.0] * n_heads,
+        heads=heads,
+    ).double()
+
+
+def test_committee_with_different_atomic_numbers_and_head_order(water):
+    m1 = _custom_model(0, [1, 8], ["Default", "pt_head"], e0_value=-1.0)
+    m2 = _custom_model(1, [1, 6, 8], ["pt_head", "Default"], e0_value=-2.0)
+
+    r1 = _results(water, [m1], head="Default")
+    r2 = _results(water, [m2], head="Default")
+    r_comm = _results(water, [m1, m2], head="Default")
+
+    assert r_comm["energy"] == pytest.approx(0.5 * (r1["energy"] + r2["energy"]))
+    np.testing.assert_allclose(r_comm["forces"], 0.5 * (r1["forces"] + r2["forces"]))
+    np.testing.assert_allclose(
+        r_comm["energies"], 0.5 * (r1["energies"] + r2["energies"])
+    )
+    np.testing.assert_allclose(
+        r_comm["node_energy"], 0.5 * (r1["node_energy"] + r2["node_energy"])
+    )
+
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        c1 = MACECalculator(
+            models=[m1], device="cpu", default_dtype="float64", head="Default"
+        )
+        c2 = MACECalculator(
+            models=[m2], device="cpu", default_dtype="float64", head="Default"
+        )
+        c_comm = MACECalculator(
+            models=[m1, m2], device="cpu", default_dtype="float64", head="Default"
+        )
+        d1 = c1.get_descriptors(water.copy())
+        d2 = c2.get_descriptors(water.copy())
+        d_comm = c_comm.get_descriptors(water.copy())
+        np.testing.assert_allclose(d_comm[0], d1)
+        np.testing.assert_allclose(d_comm[1], d2)
+
+        h1 = c1.get_hessian(water.copy())
+        h2 = c2.get_hessian(water.copy())
+        h_comm = c_comm.get_hessian(water.copy())
+        np.testing.assert_allclose(h_comm[0], h1)
+        np.testing.assert_allclose(h_comm[1], h2)
+    finally:
+        torch.set_default_dtype(previous)
+
+
+def test_committee_rejects_member_missing_selected_head():
+    m1 = _custom_model(0, [1, 8], ["Default", "pt_head"])
+    m2 = _custom_model(1, [1, 8], ["other_head"])
+    with pytest.raises(ValueError, match="not found in committee model 1"):
+        MACECalculator(
+            models=[m1, m2], device="cpu", default_dtype="float64", head="Default"
+        )
