@@ -144,8 +144,9 @@ def _carry_interaction(legacy, block) -> None:
     _carry_skip(legacy.skip_tp, block.skip)
     if hasattr(legacy, "density_fn"):
         _carry_fully_connected_net(legacy.density_fn, body.density_mlp)
-    with torch.no_grad():
-        body.neighbours.fill_(float(legacy.avg_num_neighbors))
+    if body.neighbours is not None:
+        with torch.no_grad():
+            body.neighbours.fill_(float(legacy.avg_num_neighbors))
 
 
 def carry_weights(legacy, backbone: MACEBackbone) -> None:

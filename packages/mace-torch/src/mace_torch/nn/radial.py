@@ -167,6 +167,15 @@ class ZBLBasis(torch.nn.Module):
             f"trainable={self.screening_length_exponent.requires_grad}"
         )
 
+    def to_canonical(self) -> dict[str, torch.Tensor]:
+        """The trained screening constants; empty unless built ``trainable``."""
+        return {name: value.detach() for name, value in self.named_parameters()}
+
+    def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
+        with torch.no_grad():
+            for name, value in self.named_parameters():
+                value.copy_(state[name])
+
 
 # ---------------------------------------------------------------------------
 # Distance transforms
@@ -242,6 +251,15 @@ class AgnesiTransform(torch.nn.Module):
             f"exponent_p={self.exponent_p.item():.4f}"
         )
 
+    def to_canonical(self) -> dict[str, torch.Tensor]:
+        """The trained constants; empty unless built ``trainable``."""
+        return {name: value.detach() for name, value in self.named_parameters()}
+
+    def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
+        with torch.no_grad():
+            for name, value in self.named_parameters():
+                value.copy_(state[name])
+
 
 class SoftTransform(torch.nn.Module):
     """A tanh clamp: short distances flatten onto ``p_0``, long ones pass unchanged.
@@ -293,3 +311,12 @@ class SoftTransform(torch.nn.Module):
 
     def extra_repr(self) -> str:
         return f"steepness={self.steepness.item():.4f}"
+
+    def to_canonical(self) -> dict[str, torch.Tensor]:
+        """The trained constants; empty unless built ``trainable``."""
+        return {name: value.detach() for name, value in self.named_parameters()}
+
+    def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
+        with torch.no_grad():
+            for name, value in self.named_parameters():
+                value.copy_(state[name])

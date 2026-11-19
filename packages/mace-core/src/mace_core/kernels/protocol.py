@@ -23,7 +23,9 @@ through the span factory, handed both kernel specifications.
 
 **Four of the ops hold their own weights**, and those four have a contract of
 their own: they read and write the canonical layout, and they can draw a fresh
-set. The last of the three is not an optimization. An op that allocates zeros
+set. The radial basis reads and writes its tensors too when its specification
+makes it trainable, and draws nothing: it starts where the specification puts
+it. The draw is not an optimization. An op that allocates zeros
 and waits to be loaded is correct for every use that loads a checkpoint, and it
 builds a model that cannot be trained from scratch: the product of zero-valued
 tensors is zero, so is its gradient, and the run finishes and reports a model
@@ -50,6 +52,7 @@ __all__ = [
     "DISPATCHED_OPS",
     "INTERNAL_WEIGHT_OPS",
     "REFERENCE_ONLY_OPS",
+    "CanonicalState",
     "InternalWeights",
     "KernelBackend",
     "TensorT",
@@ -85,21 +88,39 @@ INTERNAL_WEIGHT_OPS: frozenset[str] = frozenset(
 
 
 @runtime_checkable
-class InternalWeights(Protocol):
-    """What an op that owns its weights provides beyond computing.
+class CanonicalState(Protocol):
+    """What a module that holds tensors a model saves provides.
 
-    The canonical pair is called only at the checkpoint boundary, never in
-    ``forward``. The draw is called once, when a model is built to be trained
-    rather than loaded.
+    Every tensor a model saves is returned by the ``to_canonical`` of exactly
+    one module, the module that uses it: a learned value, or a fitted one,
+    computed from the data or inherited from a foundation model, such as the
+    average neighbour count. What the config fixes is rebuilt from it when the
+    module is built, and is not saved. A module of the model itself implements
+    this as an op does; a module whose tensors are all rebuilt does not.
+
+    The pair is called only at the checkpoint boundary, never in ``forward``.
     """
 
     def to_canonical(self) -> Any:
-        """This op's weights in the canonical layout, as a mapping of names."""
+        """This module's saved tensors in the canonical layout, by name.
+
+        Empty when the module saves nothing in this configuration, such as a
+        radial basis that is not trainable.
+        """
         ...
 
     def load_canonical(self, state: Any) -> None:
-        """Put canonical weights back. The inverse of :meth:`to_canonical`."""
+        """Put saved tensors back. The inverse of :meth:`to_canonical`."""
         ...
+
+
+@runtime_checkable
+class InternalWeights(CanonicalState, Protocol):
+    """What an op that owns its weights provides beyond its saved state.
+
+    The draw is called once, when a model is built to be trained rather than
+    loaded.
+    """
 
     def initialize_weights(self, seed: int) -> None:
         """Draw a fresh set, in the canonical layout and at the canonical scale.
