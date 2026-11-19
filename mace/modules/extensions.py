@@ -280,7 +280,7 @@ class MACELES(ScaleShiftMACE):
                         _copy_mace_readout(readout, cueq_config=cueq_config)
                     )
 
-    def forward(
+    def forward(  # pylint: disable=arguments-renamed
         self,
         data: Dict[str, torch.Tensor],
         training: bool = False,
@@ -975,7 +975,7 @@ class PolarMACE(ScaleShiftMACE):
         self.pbc_handling = pbc_handling
         self.electric_potential_descriptor.static_quantities = None
 
-    def forward(
+    def forward(  # pylint: disable=arguments-renamed
         self,
         data: Dict[str, torch.Tensor],
         training: bool = False,
