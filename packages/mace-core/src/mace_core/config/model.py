@@ -13,6 +13,10 @@ handed to each section's module when the model is built.
 
 Defaults are the legacy command-line defaults (`--num_radial_basis 8`,
 `--num_cutoff_basis 5`), which differ from some of the legacy class defaults.
+
+A section with `trainable` set gives the starting value of what it makes
+trainable. The trained value is saved with the weights, and is what a loaded
+model computes with.
 """
 
 from typing import Annotated, Literal

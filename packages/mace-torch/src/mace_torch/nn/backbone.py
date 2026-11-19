@@ -18,6 +18,9 @@ Four things it does not do, each replacing something the frozen tree does:
   default.
 * It writes nothing into the graph it is given.
 
+**What it saves** is what :func:`mace_torch.kernels.canonical_state`
+collects from it.
+
 **The graph.** A flat dict, read and never written. The backbone reads
 ``positions``, ``node_atomic_numbers``, ``edge_index`` and ``shifts``, plus one
 key per declared node input. The element one-hot is formed here from the atomic
