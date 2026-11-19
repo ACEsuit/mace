@@ -19,10 +19,37 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+import torch
 from mace_core.kernels.protocol import CanonicalState
 from torch import Tensor, nn
 
-__all__ = ["canonical_state", "load_canonical_state"]
+__all__ = ["TrainableConstants", "canonical_state", "load_canonical_state"]
+
+
+class TrainableConstants(nn.Module):
+    """A module whose constants are learned when it is built trainable.
+
+    Each constant is a parameter when trainable and otherwise a buffer the
+    config rebuilds, so what the module saves is exactly its parameters: empty
+    unless it is trainable. Radial bases, distance transforms and the ZBL term
+    are built on it.
+    """
+
+    def register_constant(self, name: str, value: Tensor, trainable: bool) -> None:
+        """Hold ``value`` as ``name``, learned when ``trainable``."""
+        if trainable:
+            self.register_parameter(name, nn.Parameter(value))
+        else:
+            self.register_buffer(name, value, persistent=False)
+
+    def to_canonical(self) -> dict[str, Tensor]:
+        """The trained constants; empty unless built trainable."""
+        return {name: value.detach() for name, value in self.named_parameters()}
+
+    def load_canonical(self, state: Mapping[str, Tensor]) -> None:
+        with torch.no_grad():
+            for name, value in self.named_parameters():
+                value.copy_(state[name])
 
 
 def _saving_modules(model: nn.Module) -> dict[str, CanonicalState]:

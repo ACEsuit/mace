@@ -711,16 +711,6 @@ class ReferenceRadialBasis(nn.Module):
             return features * self.cutoff(lengths)
         return features * envelope.to(self.dtype)
 
-    def to_canonical(self) -> dict[str, Tensor]:
-        """The basis's trained tensors, the Bessel frequencies or the Gaussian
-        centres; empty unless the specification makes it trainable."""
-        return {name: value.detach() for name, value in self.basis.named_parameters()}
-
-    def load_canonical(self, state: dict[str, Tensor]) -> None:
-        with torch.no_grad():
-            for name, value in self.basis.named_parameters():
-                value.copy_(state[name])
-
 
 def _layer_widths(kernel_spec: RadialMLPSpec) -> list[tuple[int, int]]:
     """``(fan_in, fan_out)`` of every layer, input first."""

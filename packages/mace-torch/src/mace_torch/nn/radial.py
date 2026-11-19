@@ -22,6 +22,7 @@ import ase.data
 import torch
 
 from mace_torch.backends.radial import polynomial_envelope
+from mace_torch.kernels.canonical import TrainableConstants
 
 __all__ = [
     "AgnesiTransform",
@@ -49,7 +50,7 @@ def _edge_atomic_numbers(
 # ---------------------------------------------------------------------------
 
 
-class ZBLBasis(torch.nn.Module):
+class ZBLBasis(TrainableConstants):
     """The Ziegler-Biersack-Littmark screened Coulomb repulsion, per receiving node.
 
     For a directed edge between atomic numbers ``Z_u`` (sender) and ``Z_v``
@@ -100,22 +101,12 @@ class ZBLBasis(torch.nn.Module):
         screening_length_prefactor = torch.tensor(
             0.4543, dtype=torch.get_default_dtype()
         )
-        if trainable:
-            self.screening_length_exponent = torch.nn.Parameter(
-                screening_length_exponent
-            )
-            self.screening_length_prefactor = torch.nn.Parameter(
-                screening_length_prefactor
-            )
-        else:
-            self.register_buffer(
-                "screening_length_exponent", screening_length_exponent, persistent=False
-            )
-            self.register_buffer(
-                "screening_length_prefactor",
-                screening_length_prefactor,
-                persistent=False,
-            )
+        self.register_constant(
+            "screening_length_exponent", screening_length_exponent, trainable
+        )
+        self.register_constant(
+            "screening_length_prefactor", screening_length_prefactor, trainable
+        )
 
     def forward(
         self,
@@ -167,22 +158,13 @@ class ZBLBasis(torch.nn.Module):
             f"trainable={self.screening_length_exponent.requires_grad}"
         )
 
-    def to_canonical(self) -> dict[str, torch.Tensor]:
-        """The trained screening constants; empty unless built ``trainable``."""
-        return {name: value.detach() for name, value in self.named_parameters()}
-
-    def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
-        with torch.no_grad():
-            for name, value in self.named_parameters():
-                value.copy_(state[name])
-
 
 # ---------------------------------------------------------------------------
 # Distance transforms
 # ---------------------------------------------------------------------------
 
 
-class AgnesiTransform(torch.nn.Module):
+class AgnesiTransform(TrainableConstants):
     """The Agnesi distance transform of ACEpotentials.jl (JCP 2023, 10.1063/5.0158783).
 
     With ``r_0`` half the covalent radii sum of the pair and ``y = r / r_0``::
@@ -214,10 +196,7 @@ class AgnesiTransform(torch.nn.Module):
             "amplitude": torch.tensor(amplitude, dtype=dtype),
         }
         for name, value in parameters.items():
-            if trainable:
-                setattr(self, name, torch.nn.Parameter(value))
-            else:
-                self.register_buffer(name, value, persistent=False)
+            self.register_constant(name, value, trainable)
         self.register_buffer(
             "covalent_radii", _covalent_radii_buffer(), persistent=False
         )
@@ -251,17 +230,8 @@ class AgnesiTransform(torch.nn.Module):
             f"exponent_p={self.exponent_p.item():.4f}"
         )
 
-    def to_canonical(self) -> dict[str, torch.Tensor]:
-        """The trained constants; empty unless built ``trainable``."""
-        return {name: value.detach() for name, value in self.named_parameters()}
 
-    def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
-        with torch.no_grad():
-            for name, value in self.named_parameters():
-                value.copy_(state[name])
-
-
-class SoftTransform(torch.nn.Module):
+class SoftTransform(TrainableConstants):
     """A tanh clamp: short distances flatten onto ``p_0``, long ones pass unchanged.
 
     With ``r_0`` the covalent radii sum of the pair, ``p_0 = 3/4 r_0``,
@@ -280,10 +250,7 @@ class SoftTransform(torch.nn.Module):
     def __init__(self, steepness: float = 4.0, trainable: bool = False):
         super().__init__()
         steepness_tensor = torch.tensor(steepness, dtype=torch.get_default_dtype())
-        if trainable:
-            self.steepness = torch.nn.Parameter(steepness_tensor)
-        else:
-            self.register_buffer("steepness", steepness_tensor, persistent=False)
+        self.register_constant("steepness", steepness_tensor, trainable)
         self.register_buffer(
             "covalent_radii", _covalent_radii_buffer(), persistent=False
         )
@@ -311,12 +278,3 @@ class SoftTransform(torch.nn.Module):
 
     def extra_repr(self) -> str:
         return f"steepness={self.steepness.item():.4f}"
-
-    def to_canonical(self) -> dict[str, torch.Tensor]:
-        """The trained constants; empty unless built ``trainable``."""
-        return {name: value.detach() for name, value in self.named_parameters()}
-
-    def load_canonical(self, state: dict[str, torch.Tensor]) -> None:
-        with torch.no_grad():
-            for name, value in self.named_parameters():
-                value.copy_(state[name])

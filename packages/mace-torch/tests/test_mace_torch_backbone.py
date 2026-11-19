@@ -6,6 +6,7 @@ model built in the dtype the suite is running in.
 """
 
 import inspect
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -34,7 +35,11 @@ from mace_core.kernels import (
 from mace_core.observables import InputSpec
 from mace_torch.backends.harmonics import spherical_harmonics
 from mace_torch.backends.reference import ReferenceBackend
-from mace_torch.kernels import initialize_model_weights
+from mace_torch.kernels import (
+    canonical_state,
+    initialize_model_weights,
+    load_canonical_state,
+)
 from mace_torch.nn import backbone as backbone_module
 from mace_torch.nn.backbone import (
     GRAPH_KEYS,
@@ -97,12 +102,17 @@ def _precision() -> Precision:
     return names[torch.get_default_dtype()]
 
 
-def _backbone(backend: Any = None, seed: int = 0, **overrides: Any) -> MACEBackbone:
+def _backbone(
+    backend: Any = None,
+    seed: int = 0,
+    avg_num_neighbors: float = 3.0,
+    **overrides: Any,
+) -> MACEBackbone:
     model = MACEBackbone(
         backend or ReferenceBackend(),
         _config(**overrides),
         ELEMENTS,
-        avg_num_neighbors=3.0,
+        avg_num_neighbors=avg_num_neighbors,
         precision=_precision(),
     )
     initialize_model_weights(model, seed)
@@ -448,6 +458,113 @@ def test_the_checkpoint_holds_only_learned_weights_and_fitted_statistics(overrid
     parameters = {name for name, _ in model.named_parameters()}
     saved = set(model.state_dict()) - parameters
     assert {key.rsplit(".", 1)[-1] for key in saved} <= {"neighbours"}, saved
+
+
+#: Every option that changes which tensors the backbone saves.
+SAVED_STATE_VARIANTS: dict[str, dict[str, Any]] = {
+    **VARIANTS,
+    "bessel_trainable": {"radial_basis": BesselBasisConfig(trainable=True)},
+    "gaussian_trainable": {"radial_basis": GaussianBasisConfig(trainable=True)},
+    "chebyshev": {"radial_basis": ChebyshevBasisConfig()},
+    "agnesi_trainable": {"distance_transform": AgnesiTransformConfig(trainable=True)},
+    "soft_trainable": {"distance_transform": SoftTransformConfig(trainable=True)},
+    "agnostic_product": {"use_agnostic_product": True},
+    "envelope_outside": {"apply_cutoff": False},
+}
+
+
+def _trained(variant: str) -> MACEBackbone:
+    """A backbone whose every saved number differs from a freshly built one's,
+    trainable constants and the neighbour count included."""
+    model = _backbone(seed=1, avg_num_neighbors=3.7, **SAVED_STATE_VARIANTS[variant])
+    generator = torch.Generator().manual_seed(5)
+    for parameter in model.parameters():
+        noise = torch.randn(parameter.shape, generator=generator)
+        parameter.add_(0.01 * noise.to(parameter.dtype))
+    return model
+
+
+@pytest.mark.parametrize("variant", sorted(SAVED_STATE_VARIANTS))
+def test_a_saved_state_rebuilds_the_backbone_bit_for_bit(variant):
+    """The second backbone starts from other weights and another neighbour
+    count, so a tensor the state leaves out is one the two disagree on."""
+    source = _trained(variant)
+    target = _backbone(seed=2, avg_num_neighbors=1.0, **SAVED_STATE_VARIANTS[variant])
+    load_canonical_state(target, canonical_state(source))
+    source_state, target_state = source.state_dict(), target.state_dict()
+    assert source_state.keys() == target_state.keys()
+    for key, tensor in source_state.items():
+        assert torch.equal(tensor, target_state[key]), key
+    graph = _cluster()
+    for ours, theirs in zip(source(graph).layers, target(graph).layers, strict=True):
+        assert torch.equal(ours, theirs)
+
+
+def test_the_neighbour_count_is_saved_where_it_is_read():
+    """A block that normalizes by a learned density has no neighbour count."""
+    plain = canonical_state(_backbone(avg_num_neighbors=3.7))
+    density = canonical_state(_backbone(**VARIANTS["density"]))
+    assert float(plain["interactions.1.body"]["neighbours"]) == pytest.approx(3.7)
+    assert not [path for path in density if path.endswith(".body")]
+
+
+def test_untrained_constants_are_not_saved():
+    """A basis or transform built without ``trainable`` is rebuilt from the config."""
+    state = canonical_state(_backbone(distance_transform=AgnesiTransformConfig()))
+    assert not [path for path in state if path.startswith("radial_embedding")]
+
+
+def _state_without(state, path, name):
+    changed = {key: dict(value) for key, value in state.items()}
+    del changed[path][name]
+    return changed
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (
+            lambda state: _state_without(state, "interactions.0.body", "neighbours"),
+            "interactions.0.body: missing 'neighbours'",
+        ),
+        (
+            lambda state: {**state, "extra": {"weight": torch.zeros(1)}},
+            "extra: no module here saves state",
+        ),
+        (
+            lambda state: {**state, "radial_embedding": {}},
+            "radial_embedding: no module here saves state",
+        ),
+        (
+            lambda state: {**state, "": {}},
+            "<root>: no module here saves state",
+        ),
+        (
+            lambda state: {
+                **state,
+                "interactions.0.body": {
+                    **state["interactions.0.body"],
+                    "extra": torch.zeros(1),
+                },
+            },
+            "interactions.0.body: unexpected 'extra'",
+        ),
+        (
+            lambda state: {
+                **state,
+                "node_embedding": {**state["node_embedding"], "weight": torch.zeros(5)},
+            },
+            "'weight' has shape (5,)",
+        ),
+    ],
+)
+def test_a_state_that_does_not_fit_is_refused_and_nothing_is_loaded(change, message):
+    target = _backbone(seed=2, avg_num_neighbors=1.0)
+    before = {key: tensor.clone() for key, tensor in target.state_dict().items()}
+    with pytest.raises(ValueError, match=re.escape(message)):
+        load_canonical_state(target, change(canonical_state(_trained("residual"))))
+    for key, tensor in target.state_dict().items():
+        assert torch.equal(tensor, before[key]), key
 
 
 # ---------------------------------------------------------------------------

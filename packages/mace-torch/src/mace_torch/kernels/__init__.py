@@ -5,7 +5,11 @@ The ops live in :mod:`mace_torch.kernels.ops` as torch custom operators, and
 the backends that build them live in :mod:`mace_torch.backends`.
 """
 
-from mace_torch.kernels.canonical import canonical_state, load_canonical_state
+from mace_torch.kernels.canonical import (
+    TrainableConstants,
+    canonical_state,
+    load_canonical_state,
+)
 from mace_torch.kernels.initialization import initialize_model_weights, op_seed
 from mace_torch.kernels.ops import (
     channelwise_tp_conv,
@@ -14,6 +18,7 @@ from mace_torch.kernels.ops import (
 )
 
 __all__ = [
+    "TrainableConstants",
     "canonical_state",
     "channelwise_tp_conv",
     "initialize_model_weights",
