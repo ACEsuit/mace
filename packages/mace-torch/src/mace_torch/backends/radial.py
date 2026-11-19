@@ -22,6 +22,8 @@ import math
 
 import torch
 
+from mace_torch.kernels.canonical import TrainableConstants
+
 __all__ = [
     "BesselBasis",
     "ChebyshevBasis",
@@ -36,7 +38,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-class BesselBasis(torch.nn.Module):
+class BesselBasis(TrainableConstants):
     """Spherical Bessel functions of order zero, equation (7) of the MACE paper.
 
     ``f_n(r) = sqrt(2 / r_max) * sin(n * pi * r / r_max) / r`` for ``n = 1..num_basis``.
@@ -63,10 +65,7 @@ class BesselBasis(torch.nn.Module):
             / r_max
             * torch.linspace(start=1.0, end=num_basis, steps=num_basis, dtype=dtype)
         )
-        if trainable:
-            self.frequencies = torch.nn.Parameter(frequencies)
-        else:
-            self.register_buffer("frequencies", frequencies, persistent=False)
+        self.register_constant("frequencies", frequencies, trainable)
         self.register_buffer(
             "r_max", torch.tensor(r_max, dtype=dtype), persistent=False
         )
@@ -149,7 +148,7 @@ class ChebyshevBasis(torch.nn.Module):
         return f"num_basis={self.num_basis}, include_constant={self.include_constant}"
 
 
-class GaussianBasis(torch.nn.Module):
+class GaussianBasis(TrainableConstants):
     """Gaussians on evenly spaced centres in ``[0, r_max]``, ``--radial_type gaussian``.
 
     ``g_k(r) = exp(-0.5 * ((r - c_k) / w)^2)`` with centres
@@ -180,10 +179,7 @@ class GaussianBasis(torch.nn.Module):
             steps=num_basis,
             dtype=dtype or torch.get_default_dtype(),
         )
-        if trainable:
-            self.centers = torch.nn.Parameter(centers)
-        else:
-            self.register_buffer("centers", centers, persistent=False)
+        self.register_constant("centers", centers, trainable)
         self.exponent_coefficient = -0.5 / (r_max / (num_basis - 1)) ** 2
         self.num_basis = num_basis
 
