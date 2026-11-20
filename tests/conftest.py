@@ -1,10 +1,15 @@
 import importlib.util
 import os
-import resource
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+
+# resource module is not available on Windows
+try:
+    import resource
+except ImportError:
+    resource = None
 
 import numpy as np
 import pytest
@@ -311,6 +316,8 @@ def _peak_rss_gb():
     Children count because the workflow tests do their real work in
     ``run_mace_train`` subprocesses.
     """
+    if resource is None:
+        return 0.0  # Windows doesn't have resource module
     return (
         _MAXRSS_TO_BYTES
         * (
