@@ -413,3 +413,30 @@ def test_a_single_model_advertises_no_committee_keys(water):
     assert not [
         key for key in calc.implemented_properties if key.endswith(("_comm", "_var"))
     ]
+
+
+# ---------------------------------------------------------------------------
+# node-energy reference subtraction (energy units)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("factor", [0.5, 2.5])
+@pytest.mark.parametrize("n_models", [1, 2])
+def test_node_energy_reference_subtraction_scales_with_energy_units(
+    water, factor, n_models
+):
+    """The atomic reference E0 is stored in model units, so subtracting it from
+    the converted node energy must scale E0 by the same factor. Otherwise the
+    reference-subtracted node energy is not linear in the unit conversion, and
+    `energies - node_energy` no longer recovers the per-atom references."""
+    with torch.random.fork_rng(devices=[]):
+        models = [_tiny_model(seed) for seed in range(1, n_models + 1)]
+
+    plain = _results(water, models)
+    scaled = _results(water, models, energy_units_to_eV=factor)
+
+    assert scaled["node_energy"] == pytest.approx(plain["node_energy"] * factor)
+    assert scaled["energies"] - scaled["node_energy"] == pytest.approx(
+        factor * np.array([-1.0, -1.0, -5.0])
+    )
+    assert np.sum(scaled["energies"]) == pytest.approx(scaled["energy"])
