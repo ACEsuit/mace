@@ -46,6 +46,7 @@ from mace_core.kernels.protocol import (
     DISPATCHED_OPS,
     INTERNAL_WEIGHT_OPS,
     REFERENCE_ONLY_OPS,
+    CanonicalState,
     InternalWeights,
     KernelBackend,
 )
@@ -84,6 +85,7 @@ __all__ = [
     "SILU_SECOND_MOMENT_SCALE",
     "BackendCapabilities",
     "BackendNotAvailableError",
+    "CanonicalState",
     "ChannelwiseTPConvSpec",
     "ConvolutionPath",
     "DiscoveredBackend",

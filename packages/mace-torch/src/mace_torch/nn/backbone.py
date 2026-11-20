@@ -18,6 +18,9 @@ Four things it does not do, each replacing something the frozen tree does:
   default.
 * It writes nothing into the graph it is given.
 
+**What it saves** is what :func:`mace_torch.kernels.canonical_state`
+collects from it.
+
 **The graph.** A flat dict, read and never written. The backbone reads
 ``positions``, ``node_atomic_numbers``, ``edge_index`` and ``shifts``, plus one
 key per declared node input. The element one-hot is formed here from the atomic
@@ -36,7 +39,6 @@ import torch
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps
 from mace_core.config.model import (
     DistanceTransformConfig,
-    InteractionKind,
     ModelConfig,
     NoDistanceTransformConfig,
 )
@@ -144,21 +146,66 @@ def _default_dtype(dtype: torch.dtype) -> Iterator[None]:
         torch.set_default_dtype(previous)
 
 
-def _split_channels(irreps: str) -> tuple[str, int]:
-    """A whole declaration as one channel's and the channel count.
+# ---------------------------------------------------------------------------
+# Construction helpers. Each answers one question about the configuration.
+# ---------------------------------------------------------------------------
+
+
+def _check_node_inputs(node_inputs: Sequence[InputSpec]) -> None:
+    """Refuse a node input the backbone cannot mix in.
 
     Raises:
-        ValueError: If its terms do not share one multiplicity, which a
-            convolution with one radial weight per path and channel needs.
+        ValueError: If one is per structure, takes a name the backbone already
+            reads, or is declared twice.
     """
-    terms = Irreps.parse(irreps).terms
-    multiplicities = {mul for mul, _ in terms}
-    if len(multiplicities) != 1:
-        raise ValueError(
-            f"edge_irreps={irreps!r}; every term needs the same multiplicity, "
-            f"such as '128x0e+128x1o'."
-        )
-    return "+".join(str(ir) for _, ir in terms), multiplicities.pop()
+    names = [spec.name for spec in node_inputs]
+    for spec in node_inputs:
+        if not spec.per_atom:
+            raise ValueError(
+                f"node input {spec.name!r} is declared per structure; the "
+                f"backbone mixes in per-atom inputs only."
+            )
+        if spec.name in GRAPH_KEYS:
+            raise ValueError(
+                f"node input {spec.name!r} names a key the backbone already "
+                f"reads, {sorted(GRAPH_KEYS)}; declare it under its own name."
+            )
+        if names.count(spec.name) > 1:
+            raise ValueError(f"node input {spec.name!r} is declared twice.")
+
+
+def _element_table(atomic_numbers: Iterable[SupportsIndex]) -> tuple[int, ...]:
+    """The element table, in column order, with the argument named on refusal."""
+    try:
+        return model_atomic_number_table(atomic_numbers).zs
+    except ValueError as error:
+        raise ValueError(f"atomic_numbers: {error}") from None
+
+
+def _element_index_of(atomic_numbers: tuple[int, ...]) -> Tensor:
+    """``[119]``, int64: each atomic number's column of the element one-hot.
+
+    Zero, a padding atom, and any number outside the table map to the first
+    column; the data checks refuse an unknown element before it reaches a
+    model.
+    """
+    element_index_of = torch.zeros(_ATOMIC_NUMBER_COUNT, dtype=torch.int64)
+    element_index_of[list(atomic_numbers)] = torch.arange(len(atomic_numbers))
+    return element_index_of
+
+
+def _embedding_irreps(node_inputs: Sequence[InputSpec]) -> str:
+    """One channel of the node embedding: ``0e`` and every irrep an input adds.
+
+    An equivariant map cannot create an irrep its input lacks, so the first
+    layer has to read every irrep the declared inputs carry.
+    """
+    terms = ["0e"]
+    for spec in node_inputs:
+        for _, irrep in Irreps.parse(spec.irreps).terms:
+            if str(irrep) not in terms:
+                terms.append(str(irrep))
+    return "+".join(terms)
 
 
 def _edge_members(
@@ -180,12 +227,49 @@ def _edge_members(
     return members
 
 
+def _split_channels(irreps: str) -> tuple[str, int]:
+    """A whole declaration as one channel's and the channel count.
+
+    Its terms share one multiplicity: ``ModelConfig`` refuses ``edge_irreps``
+    otherwise.
+    """
+    terms = Irreps.parse(irreps).terms
+    return "+".join(str(ir) for _, ir in terms), terms[0][0]
+
+
+def _nonlinear_up_projection(
+    config: ModelConfig, first: bool, irreps_node: str, num_features: int
+) -> tuple[str, int]:
+    """What a ``nonlinear`` layer convolves: one channel's irreps and the width.
+
+    Three cases:
+
+    * Without ``edge_irreps``, and in the first layer unless
+      ``use_edge_irreps_first`` is set, the node features as they come in.
+    * In the first layer with ``use_edge_irreps_first``, the scalars of
+      ``edge_irreps`` only.
+    * In every later layer, ``edge_irreps`` whole.
+    """
+    if config.edge_irreps is None or (first and not config.use_edge_irreps_first):
+        return irreps_node, num_features
+    if first:
+        return "0e", Irreps.parse(config.edge_irreps).multiplicity(Irrep(0, 1))
+    return _split_channels(config.edge_irreps)
+
+
 class MACEBackbone(nn.Module):
     """The equivariant message-passing backbone, a learned descriptor.
 
-    Node embedding, radial embedding and spherical harmonics, then
-    ``num_interactions`` pairs of an interaction block and a product basis
-    block. Every layer's features are kept: they are the descriptors.
+    Three parts, built in this order in ``__init__`` and run in it in
+    :meth:`forward`:
+
+    * **Edges.** The spherical harmonics and the radial embedding of every
+      edge vector, computed once and read by every layer.
+    * **Nodes.** The element one-hot and the declared node inputs, each mapped
+      by an equivariant linear onto the first layer's features.
+    * **Layers.** ``num_interactions`` pairs of an interaction block and a
+      product basis block. Every layer's features are kept: they are the
+      descriptors.
 
     Args:
         backend: The kernel backend. Consulted at construction only.
@@ -222,40 +306,20 @@ class MACEBackbone(nn.Module):
         ghost_exchange: GhostExchange | None = None,
     ) -> None:
         super().__init__()
-        names = [spec.name for spec in node_inputs]
-        for spec in node_inputs:
-            if not spec.per_atom:
-                raise ValueError(
-                    f"node input {spec.name!r} is declared per structure; the "
-                    f"backbone mixes in per-atom inputs only."
-                )
-            if spec.name in GRAPH_KEYS:
-                raise ValueError(
-                    f"node input {spec.name!r} names a key the backbone already "
-                    f"reads, {sorted(GRAPH_KEYS)}; declare it under its own name."
-                )
-            if names.count(spec.name) > 1:
-                raise ValueError(f"node input {spec.name!r} is declared twice.")
+        _check_node_inputs(node_inputs)
         self.config = config
-        try:
-            self.atomic_numbers = model_atomic_number_table(atomic_numbers).zs
-        except ValueError as error:
-            raise ValueError(f"atomic_numbers: {error}") from None
-        # Atomic number -> column of the one-hot. Zero, a padding atom, and
-        # any number outside the table map to the first column; the data
-        # checks refuse an unknown element before it reaches a model.
-        element_index_of = torch.zeros(_ATOMIC_NUMBER_COUNT, dtype=torch.int64)
-        element_index_of[list(self.atomic_numbers)] = torch.arange(
-            len(self.atomic_numbers)
+        self.atomic_numbers = _element_table(atomic_numbers)
+        self.register_buffer(
+            "element_index_of",
+            _element_index_of(self.atomic_numbers),
+            persistent=False,
         )
-        self.register_buffer("element_index_of", element_index_of, persistent=False)
         self.precision = precision
         self.ghost_exchange = ghost_exchange
         self.node_input_names = tuple(spec.name for spec in node_inputs)
-        num_elements = len(self.atomic_numbers)
-        num_features = config.num_channels
-        self.num_features = num_features
+        self.num_features = config.num_channels
 
+        # Edges.
         harmonics = SphericalHarmonicsSpec(lmax=config.max_ell, precision=precision)
         radial = radial_basis_spec(
             config.radial_basis,
@@ -272,126 +336,106 @@ class MACEBackbone(nn.Module):
                 require_built(backend, radial),
                 build_distance_transform(config.distance_transform),
             )
-        num_radial = self.radial_embedding.num_basis
+        # What every convolution produces and every product basis reads.
+        target_irreps = str(Irreps.spherical_harmonics(config.max_ell))
         edge_members = _edge_members(
             radial, harmonics, config.distance_transform, precision
         )
 
-        # The embedding is scalars, plus whatever irreps the declared node
-        # inputs carry: an equivariant map cannot create an irrep its input
-        # lacks, so the first layer reads them all.
-        embedding_terms = ["0e"]
-        for spec in node_inputs:
-            for _, irrep in Irreps.parse(spec.irreps).terms:
-                if str(irrep) not in embedding_terms:
-                    embedding_terms.append(str(irrep))
-        embedding_irreps = "+".join(embedding_terms)
-        embedding_flat = str(Irreps.parse(embedding_irreps).with_channels(num_features))
-        self.node_embedding = backend.make_linear(
-            LinearSpec(
-                irreps_in=f"{num_elements}x0e",
-                irreps_out=embedding_flat,
-                precision=precision,
-            )
+        # Nodes.
+        embedding_irreps = _embedding_irreps(node_inputs)
+        embedding_declaration = str(
+            Irreps.parse(embedding_irreps).with_channels(self.num_features)
+        )
+        self.node_embedding = self._build_linear(
+            backend, f"{len(self.atomic_numbers)}x0e", embedding_declaration
         )
         self.node_input_maps = nn.ModuleList(
-            backend.make_linear(
-                LinearSpec(
-                    irreps_in=spec.irreps,
-                    irreps_out=embedding_flat,
-                    precision=precision,
-                )
-            )
+            self._build_linear(backend, spec.irreps, embedding_declaration)
             for spec in node_inputs
         )
 
+        # Layers. The first reads the embedding, every later one the hidden
+        # irreps, and the last returns scalars only.
         hidden_irreps = str(Irreps.spherical_harmonics(config.max_L))
-        target_irreps = str(Irreps.spherical_harmonics(config.max_ell))
-        product_elements = 1 if config.use_agnostic_product else num_elements
-        self.use_agnostic_product = config.use_agnostic_product
+        last = config.num_interactions - 1
         interactions, products, layer_irreps = [], [], []
         for layer in range(config.num_interactions):
-            first = layer == 0
-            irreps_node = embedding_irreps if first else hidden_irreps
-            irreps_out = "0e" if layer == config.num_interactions - 1 else hidden_irreps
-            kind = config.interaction_of(layer)
+            irreps_in = embedding_irreps if layer == 0 else hidden_irreps
+            irreps_out = "0e" if layer == last else hidden_irreps
             interactions.append(
-                self._interaction(
+                self._build_interaction(
                     backend,
-                    kind,
-                    first,
-                    irreps_node=irreps_node,
-                    irreps_edge=target_irreps,
-                    irreps_skip_out=irreps_out,
-                    num_radial=num_radial,
-                    num_elements=num_elements,
-                    avg_num_neighbors=avg_num_neighbors,
-                    edge_members=edge_members,
+                    layer,
+                    irreps_in,
+                    irreps_out,
+                    target_irreps,
+                    edge_members,
+                    avg_num_neighbors,
                 )
             )
-            products.append(
-                EquivariantProductBasisBlock(
-                    backend,
-                    irreps_in=target_irreps,
-                    irreps_out=irreps_out,
-                    correlation=config.correlation,
-                    num_elements=product_elements,
-                    num_features=num_features,
-                    basis=config.clebsch_gordan_basis,
-                    precision=precision,
-                )
-            )
+            products.append(self._build_product(backend, target_irreps, irreps_out))
             layer_irreps.append(
-                str(Irreps.parse(irreps_out).with_channels(num_features))
+                str(Irreps.parse(irreps_out).with_channels(self.num_features))
             )
         self.interactions = nn.ModuleList(interactions)
         self.products = nn.ModuleList(products)
         #: Each layer's output declaration, grouped.
         self.layer_irreps = tuple(layer_irreps)
 
-    def _interaction(
+    # ------------------------------------------------------------------
+    # Construction. The builders read what the backbone keeps from ``self``
+    # and take what ``__init__`` derives along the way as arguments.
+    # ------------------------------------------------------------------
+
+    def _build_linear(self, backend, irreps_in: str, irreps_out: str) -> nn.Module:
+        """An equivariant linear between two whole declarations."""
+        return backend.make_linear(
+            LinearSpec(
+                irreps_in=irreps_in, irreps_out=irreps_out, precision=self.precision
+            )
+        )
+
+    def _build_interaction(
         self,
         backend,
-        kind: InteractionKind,
-        first: bool,
-        *,
-        irreps_node: str,
-        irreps_edge: str,
-        irreps_skip_out: str,
-        num_radial: int,
-        num_elements: int,
+        layer: int,
+        irreps_in: str,
+        irreps_out: str,
+        target_irreps: str,
+        edge_members: tuple[KernelSpec, ...],
         avg_num_neighbors: float,
-        edge_members: tuple[KernelSpec, ...] | None,
     ) -> nn.Module:
-        """The interaction block a layer's kind names."""
+        """The interaction block of layer ``layer``, of the kind it names.
+
+        Args:
+            irreps_in: One channel of the node features the layer reads.
+            irreps_out: One channel of the features the layer returns, which
+                is what a skip connection carries to the product basis.
+            target_irreps: One channel of what the convolution produces.
+        """
         config = self.config
+        kind = config.interaction_of(layer)
         common = {
-            "irreps_node": irreps_node,
-            "irreps_edge": irreps_edge,
-            "irreps_target": irreps_edge,
-            "num_radial": num_radial,
+            "irreps_node": irreps_in,
+            "irreps_edge": target_irreps,
+            "irreps_target": target_irreps,
+            "num_radial": self.radial_embedding.num_basis,
             "num_features": self.num_features,
-            "num_elements": num_elements,
+            "num_elements": len(self.atomic_numbers),
             "radial_hidden": tuple(config.radial_mlp),
             "precision": self.precision,
             "envelope_outside": not config.apply_cutoff,
             "edge_members": edge_members,
         }
         if kind == "nonlinear":
-            irreps_up, num_up_features = irreps_node, self.num_features
-            if config.edge_irreps is not None and (
-                not first or config.use_edge_irreps_first
-            ):
-                irreps_up, num_up_features = _split_channels(config.edge_irreps)
-                if first:
-                    irreps_up = "0e"
-                    num_up_features = Irreps.parse(config.edge_irreps).multiplicity(
-                        Irrep(0, 1)
-                    )
+            irreps_up, num_up_features = _nonlinear_up_projection(
+                config, layer == 0, irreps_in, self.num_features
+            )
             return NonLinearInteractionBlock(
                 backend,
                 irreps_up=irreps_up,
-                irreps_skip_out=irreps_skip_out,
+                irreps_skip_out=irreps_out,
                 num_up_features=num_up_features,
                 **common,
             )
@@ -405,12 +449,32 @@ class MACEBackbone(nn.Module):
         elif kind in ("residual", "density_residual"):
             return ResidualInteractionBlock(
                 backend,
-                irreps_skip_out=irreps_skip_out,
+                irreps_skip_out=irreps_out,
                 avg_num_neighbors=avg_num_neighbors,
                 learned_density=kind == "density_residual",
                 **common,
             )
         assert_never(kind)
+
+    def _build_product(
+        self, backend, target_irreps: str, irreps_out: str
+    ) -> EquivariantProductBasisBlock:
+        """The product basis block from ``target_irreps`` to ``irreps_out``."""
+        config = self.config
+        return EquivariantProductBasisBlock(
+            backend,
+            irreps_in=target_irreps,
+            irreps_out=irreps_out,
+            correlation=config.correlation,
+            num_elements=1 if config.use_agnostic_product else len(self.atomic_numbers),
+            num_features=self.num_features,
+            basis=config.clebsch_gordan_basis,
+            precision=self.precision,
+        )
+
+    # ------------------------------------------------------------------
+    # Forward
+    # ------------------------------------------------------------------
 
     def forward(
         self, graph: Mapping[str, Tensor], locality: LocalityInfo | None = None
@@ -422,14 +486,48 @@ class MACEBackbone(nn.Module):
             locality: Which trailing node slots are ghosts, for one domain of
                 a decomposed run. ``None`` for a whole system.
         """
-        positions = graph["positions"]
-        node_element = self.element_index_of[graph["node_atomic_numbers"]]
-        node_attrs = nn.functional.one_hot(
-            node_element, num_classes=len(self.atomic_numbers)
+        self._check_locality(locality)
+        # Every node, ghosts included, takes part in a layer's convolution.
+        # A ghost's message is incomplete, its neighbours living in another
+        # domain, so only the local nodes go on to the product basis.
+        local = slice(None) if locality is None else slice(locality.n_local)
+
+        # Edges.
+        sender, receiver = graph["edge_index"][0], graph["edge_index"][1]
+        edges = self._edge_inputs(graph, sender, receiver)
+
+        # Nodes.
+        element = self.element_index_of[graph["node_atomic_numbers"]]
+        element_one_hot = nn.functional.one_hot(
+            element, num_classes=len(self.atomic_numbers)
         ).to(TORCH_DTYPES[self.precision])
-        edge_index = graph["edge_index"]
-        sender, receiver = edge_index[0], edge_index[1]
-        num_nodes = positions.shape[0]
+        features = self._embed_nodes(graph, element_one_hot)
+
+        # Layers.
+        product_element = (
+            torch.zeros_like(element) if self.config.use_agnostic_product else element
+        )
+        num_nodes = graph["positions"].shape[0]
+        layers = []
+        for layer, (interaction, product) in enumerate(
+            zip(self.interactions, self.products, strict=True)
+        ):
+            if locality is not None and layer > 0:
+                assert self.ghost_exchange is not None
+                features = self.ghost_exchange(features, locality)
+            message, carried = interaction(
+                features, edges, element_one_hot, sender, receiver, num_nodes
+            )
+            features = product(
+                message[local],
+                product_element[local],
+                None if carried is None else carried[local],
+            )
+            layers.append(features)
+        return NodeFeatures(layers=tuple(layers), node_attrs=element_one_hot[local])
+
+    def _check_locality(self, locality: LocalityInfo | None) -> None:
+        """Refuse a decomposed run that needs an exchange this backbone lacks."""
         if (
             locality is not None
             and self.ghost_exchange is None
@@ -443,49 +541,30 @@ class MACEBackbone(nn.Module):
                 f"exchange its runtime provides."
             )
 
+    def _edge_inputs(
+        self, graph: Mapping[str, Tensor], sender: Tensor, receiver: Tensor
+    ) -> EdgeInputs:
+        """The edge vectors, with what every layer derives from them."""
+        positions = graph["positions"]
         vectors = positions[receiver] - positions[sender] + graph["shifts"]
-        edges = EdgeInputs(
+        return EdgeInputs(
             vectors,
             graph["node_atomic_numbers"],
-            edge_index,
+            graph["edge_index"],
             self.spherical_harmonics,
             self.radial_embedding,
         )
-        element = (
-            torch.zeros_like(node_element)
-            if self.use_agnostic_product
-            else node_element
-        )
 
-        features = self.node_embedding(node_attrs)
+    def _embed_nodes(
+        self, graph: Mapping[str, Tensor], element_one_hot: Tensor
+    ) -> Tensor:
+        """The first layer's node features: the elements plus every node input."""
+        features = self.node_embedding(element_one_hot)
         for name, mapping in zip(
             self.node_input_names, self.node_input_maps, strict=True
         ):
             features = features + mapping(graph[name])
-
-        layers = []
-        local_node_attrs = (
-            node_attrs if locality is None else node_attrs[: locality.n_local]
-        )
-        for layer, (interaction, product) in enumerate(
-            zip(self.interactions, self.products, strict=True)
-        ):
-            if locality is not None and layer > 0:
-                assert self.ghost_exchange is not None
-                features = self.ghost_exchange(features, locality)
-            message, carried = interaction(
-                features, edges, node_attrs, sender, receiver, num_nodes
-            )
-            layer_element = element
-            if locality is not None:
-                # The messages of the ghosts are incomplete: their neighbours
-                # live in another domain. Only the local nodes go on.
-                message = message[: locality.n_local]
-                carried = None if carried is None else carried[: locality.n_local]
-                layer_element = element[: locality.n_local]
-            features = product(message, layer_element, carried)
-            layers.append(features)
-        return NodeFeatures(layers=tuple(layers), node_attrs=local_node_attrs)
+        return features
 
     # ------------------------------------------------------------------
     # Atomic descriptors

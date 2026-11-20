@@ -5,6 +5,8 @@ How a tagged union loads, exports and reports errors is the config base's and
 is tested there (`test_mace_core_config_kinds.py`); this file pins only what
 these sections add: the defaults, the kind names and the size bounds."""
 
+import re
+
 import pytest
 from mace_core.config import (
     AgnesiTransformConfig,
@@ -173,6 +175,30 @@ def test_the_model_section_refuses_what_it_does_not_build(field, value):
 def test_an_edge_irreps_setting_no_layer_reads_is_refused(options):
     with pytest.raises(ValidationError, match="edge_irreps"):
         ModelConfig(**options)
+
+
+@pytest.mark.parametrize("edge_irreps", ["8x0e+4x1o", "8x0e+8x1o+4x2e"])
+def test_edge_irreps_with_mixed_multiplicities_are_refused(edge_irreps):
+    with pytest.raises(ValidationError, match=r"multiplicities \[4, 8\]"):
+        ModelConfig(edge_irreps=edge_irreps, interaction="nonlinear")
+
+
+@pytest.mark.parametrize("edge_irreps", ["8x0e+8xq", ""])
+def test_edge_irreps_that_do_not_parse_are_refused_by_name(edge_irreps):
+    with pytest.raises(
+        ValidationError, match=re.escape(f"edge_irreps={edge_irreps!r}: ")
+    ):
+        ModelConfig(edge_irreps=edge_irreps, interaction="nonlinear")
+
+
+def test_a_first_layer_convolving_scalars_needs_a_scalar_term():
+    with pytest.raises(ValidationError, match="no '0e' term"):
+        ModelConfig(
+            edge_irreps="8x1o",
+            interaction="nonlinear",
+            use_edge_irreps_first=True,
+        )
+    ModelConfig(edge_irreps="8x1o", interaction="nonlinear")
 
 
 def test_edge_irreps_are_accepted_where_a_nonlinear_layer_reads_them():

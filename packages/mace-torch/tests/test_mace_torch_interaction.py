@@ -161,11 +161,8 @@ def test_the_average_normalization_divides_after_the_linear():
 def test_a_learned_density_replaces_the_average():
     block = _block(ResidualInteractionBlock, irreps_skip_out="0e", learned_density=True)
     assert block.body.density_mlp is not None
-    inputs = _inputs(3, "0e+1o")
-    before, _ = block(*inputs)
-    block.body.neighbours.fill_(100.0)
-    after, _ = block(*inputs)
-    assert_close(after, before, "the average is not read")
+    assert block.body.neighbours is None
+    assert not [key for key in block.state_dict() if key.endswith("neighbours")]
 
 
 def test_the_envelope_outside_scales_the_radial_weights():
