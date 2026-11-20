@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 import os
 import subprocess
 import sys
 from pathlib import Path
+
 import ase.io
 import numpy as np
 import pytest
@@ -218,7 +220,7 @@ def _build_full_model(
     return model
 
 
-def _build_minimal_model(device, dtype):
+def _build_minimal_model(device, dtype, pair_repulsion=False):
     num_elements = 2
     atomic_numbers = [1, 8]
     hidden_irreps = o3.Irreps("4x0e + 4x1o")
@@ -255,6 +257,7 @@ def _build_minimal_model(device, dtype):
         gate=torch.nn.functional.silu,
         radial_MLP=[16, 16],
         radial_type="bessel",
+        pair_repulsion=pair_repulsion,
         kspace_cutoff_factor=1.0,
         atomic_multipoles_max_l=1,
         atomic_multipoles_smearing_width=1.0,
@@ -1471,3 +1474,42 @@ def test_polar_mace_registers_all_trainable_parameters():
     model = _build_minimal_model(torch.device("cpu"), torch.get_default_dtype())
     args = _optimizer_args()
     get_optimizer(args, get_params_options(args, model))
+
+
+@pytest.mark.parametrize("interaction_scale", [1.0, 2.0])
+def test_polar_pair_repulsion_energy_forces_stress(interaction_scale):
+    with torch.random.fork_rng():
+        torch.manual_seed(2026)
+        model = _build_minimal_model(
+            torch.device("cpu"), torch.float64, pair_repulsion=True
+        ).eval()
+    model.scale_shift.scale.fill_(interaction_scale)
+    plain = copy.deepcopy(model)
+    del plain.pair_repulsion
+    data = _build_minimal_batch(torch.device("cpu"), torch.float64)
+    data["positions"] *= 0.25
+    data["unit_shifts"] = torch.zeros_like(data["shifts"])
+    data["volume"].fill_(1000.0)
+
+    positions = data["positions"].clone().requires_grad_(True)
+    strain = torch.zeros((1, 3, 3), dtype=positions.dtype, requires_grad=True)
+    deformed = positions + torch.einsum("ni,nij->nj", positions, strain[data["batch"]])
+    receivers, senders = data["edge_index"]
+    lengths = (deformed[senders] - deformed[receivers]).norm(dim=-1, keepdim=True)
+    pair_energy = (
+        interaction_scale
+        * model.pair_repulsion_fn(
+            lengths, data["node_attrs"], data["edge_index"], model.atomic_numbers
+        ).sum()
+    )
+    grad_positions, grad_strain = torch.autograd.grad(pair_energy, (positions, strain))
+    actual = model(copy.deepcopy(data), compute_force=True, compute_stress=True)
+    baseline = plain(copy.deepcopy(data), compute_force=True, compute_stress=True)
+    torch.testing.assert_close(
+        actual["energy"] - baseline["energy"], pair_energy.reshape(1)
+    )
+    torch.testing.assert_close(actual["forces"] - baseline["forces"], -grad_positions)
+    torch.testing.assert_close(
+        actual["stress"] - baseline["stress"],
+        grad_strain / data["volume"].view(-1, 1, 1),
+    )
