@@ -11,13 +11,14 @@ from e3nn.o3._reduce import ReducedTensorProducts
 from e3nn.util.jit import compile_mode
 
 try:
-    from graph_longrange.energy import GTOElectrostaticEnergy
     from graph_longrange.features import GTOElectrostaticFeatures
     from graph_longrange.gto_utils import (
         DisplacedGTOExternalFieldBlock,
         gto_basis_kspace_cutoff,
     )
     from graph_longrange.kspace import compute_k_vectors_flat
+
+    from mace.modules.long_range_cache import CachedGTOElectrostaticEnergy
 
     GRAPH_LONGRANGE_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -948,7 +949,7 @@ class PolarMACE(ScaleShiftMACE):
         self.external_field_contribution = DisplacedGTOExternalFieldBlock(
             field_feature_max_l, list(field_feature_widths), "receiver"
         )
-        self.coulomb_energy = GTOElectrostaticEnergy(
+        self.coulomb_energy = CachedGTOElectrostaticEnergy(
             density_max_l=atomic_multipoles_max_l,
             density_smearing_width=atomic_multipoles_smearing_width,
             kspace_cutoff=float(kspace_cutoff),
@@ -1333,17 +1334,26 @@ class PolarMACE(ScaleShiftMACE):
         total_charge, total_dipole = compute_total_charge_dipole_permuted(
             charge_density_mul_ir, long_range_positions, data["batch"], num_graphs
         )
-        electro_energy = self.coulomb_energy(
-            k_vectors=k_vectors,
-            k_norm2=kv_norms_squared,
-            k_vector_batch=k_vectors_batch,
-            k0_mask=k_vectors_0mask,
-            source_feats=charge_density_mul_ir,
-            node_positions=long_range_positions,
-            batch=data["batch"],
-            volume=long_range_volume,
-            pbc=data["pbc"].view(-1, 3),
-        )
+        # The features above already built the reciprocal-space geometry for
+        # this forward; the energy reads it instead of rebuilding the phases,
+        # density basis and Coulomb kernel. Same tensors, same result.
+        if isinstance(self.coulomb_energy, CachedGTOElectrostaticEnergy):
+            electro_energy = self.coulomb_energy.forward_from_geometry(
+                geometry=field_feature_cache,
+                source_feats=charge_density_mul_ir,
+            )
+        else:
+            electro_energy = self.coulomb_energy(
+                k_vectors=k_vectors,
+                k_norm2=kv_norms_squared,
+                k_vector_batch=k_vectors_batch,
+                k0_mask=k_vectors_0mask,
+                source_feats=charge_density_mul_ir,
+                node_positions=long_range_positions,
+                batch=data["batch"],
+                volume=long_range_volume,
+                pbc=data["pbc"].view(-1, 3),
+            )
         total_energy = (
             total_energy
             + electro_energy
