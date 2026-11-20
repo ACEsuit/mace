@@ -131,6 +131,24 @@ def with_scatter_sum(conv_tp: torch.nn.Module) -> torch.nn.Module:
     return conv_tp
 
 
+def require_cueq_kernels(model: torch.nn.Module) -> None:
+    """Raise if every cuequivariance polynomial in `model` fell back to the naive path.
+
+    cuet.SegmentedPolynomial selects SegmentedPolynomialNaive, with only a warning, when
+    cuequivariance_ops_torch cannot be imported, so a CUDA model would run without kernels.
+    """
+    methods = {
+        m.method for m in model.modules() if isinstance(m, cuet.SegmentedPolynomial)
+    }
+    if methods == {"naive"}:
+        raise RuntimeError(
+            "cuEquivariance is running without its CUDA kernels: every polynomial "
+            "selected method='naive', so cuequivariance_ops_torch could not be "
+            "imported. Install the cueq-cuda-* extra matching torch.version.cuda "
+            f"({torch.version.cuda})."
+        )
+
+
 class CueqConvFusionWrapper(torch.nn.Module):
     """A serializable wrapper around cuet.SegmentedPolynomial / mptp.ff.
 
