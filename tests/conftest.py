@@ -1,10 +1,14 @@
 import importlib.util
 import os
-import resource
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 import numpy as np
 import pytest
@@ -305,12 +309,14 @@ def fixture_pretraining_configs():
 _MAXRSS_TO_BYTES = 1 if sys.platform == "darwin" else 2**10
 
 
-def _peak_rss_gb():
+def _peak_rss_gb() -> float:
     """High-water mark of this process plus its reaped children, in GiB.
 
     Children count because the workflow tests do their real work in
     ``run_mace_train`` subprocesses.
     """
+    if resource is None:
+        return 0.0
     return (
         _MAXRSS_TO_BYTES
         * (
