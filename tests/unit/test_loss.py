@@ -41,6 +41,7 @@ from mace.modules.loss import (
     weighted_mean_squared_stress,
     weighted_mean_squared_virials,
 )
+from tests.helpers import destroy_process_group
 
 
 class FakeBatch:
@@ -703,7 +704,7 @@ def test_reduce_loss_ddp_formula_in_a_world_of_one(tmp_path):
         assert reduce_loss(raw, ddp=True).item() == pytest.approx(3.0)
         assert reduce_loss(raw, ddp=None).item() == pytest.approx(3.0)
     finally:
-        dist.destroy_process_group()
+        destroy_process_group()
 
 
 # ---------------------------------------------------------------------------
