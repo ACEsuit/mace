@@ -280,7 +280,7 @@ class MACELES(ScaleShiftMACE):
                         _copy_mace_readout(readout, cueq_config=cueq_config)
                     )
 
-    def forward(
+    def forward(  # pylint: disable=arguments-renamed
         self,
         data: Dict[str, torch.Tensor],
         training: bool = False,
@@ -669,6 +669,12 @@ def _permute_to_e3nn_convention(x: torch.Tensor) -> torch.Tensor:
 
 @compile_mode("script")
 class PolarMACE(ScaleShiftMACE):
+    """Polarizable MACE with long-range electrostatics.
+
+    Optional pair repulsion contributes to the scaled short-range interaction
+    energy and its force and stress derivatives, as in ScaleShiftMACE.
+    """
+
     def __init__(
         self,
         kspace_cutoff_factor: float = 1.5,
@@ -975,7 +981,7 @@ class PolarMACE(ScaleShiftMACE):
         self.pbc_handling = pbc_handling
         self.electric_potential_descriptor.static_quantities = None
 
-    def forward(
+    def forward(  # pylint: disable=arguments-renamed
         self,
         data: Dict[str, torch.Tensor],
         training: bool = False,
@@ -1069,7 +1075,7 @@ class PolarMACE(ScaleShiftMACE):
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
-        node_es_list: List[torch.Tensor] = []
+        node_es_list: List[torch.Tensor] = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
         spin_charge_density = torch.zeros(
             (data["batch"].size(-1), self.charges_irreps.dim),
@@ -1523,7 +1529,7 @@ class MagneticMACE(torch.nn.Module):
         correlation: Union[int, List[int]],
         gate: Optional[Callable],
         pair_repulsion: bool = False,
-        apply_cutoff: bool = True,
+        apply_cutoff: bool = False,
         use_reduced_cg: bool = True,
         use_so3: bool = False,
         use_agnostic_product: bool = False,
@@ -1563,7 +1569,10 @@ class MagneticMACE(torch.nn.Module):
             correlation = [correlation] * num_interactions
 
         self.lammps_mliap = lammps_mliap
-        self.apply_cutoff = apply_cutoff
+        # Accepted because the shared model config passes it. The envelope is
+        # applied in the magnetic interaction blocks, never in the radial basis.
+        del apply_cutoff
+        self.apply_cutoff = False
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
         self.use_agnostic_product = use_agnostic_product
@@ -1602,6 +1611,7 @@ class MagneticMACE(torch.nn.Module):
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
+            apply_cutoff=self.apply_cutoff,  # applied in the magnetic interactions
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
@@ -1876,9 +1886,12 @@ class MagneticScaleShiftMACE(MagneticMACE):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats, _ = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+        # The radial basis is built with apply_cutoff=False, so it returns the
+        # envelope for the interaction blocks to apply.
+        assert cutoff is not None
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
@@ -1929,6 +1942,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
                 edge_index=data["edge_index"],
                 magmom_node_inv_feats=magmom_node_feats,
                 magmom_node_attrs=magmom_node_attrs,
+                cutoff=cutoff,
             )
 
             node_feats = product(

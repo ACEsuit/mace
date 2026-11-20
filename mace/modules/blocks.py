@@ -1624,6 +1624,7 @@ class MagneticInteractionBlock(InteractionBlock):
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
+        cutoff: torch.Tensor,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -1734,6 +1735,7 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
+        cutoff: torch.Tensor,
     ) -> Tuple[torch.Tensor, None]:
         sender = edge_index[0]
         receiver = edge_index[1]
@@ -1752,10 +1754,14 @@ class MagneticRealAgnosticSpinOrbitCoupledDensityInteractionBlock(
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
 
+        tp_weights = tp_weights * cutoff
+        edge_density = edge_density * cutoff
+
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
 
+        # No envelope: magmom_conv_tp is linear in mji, which already carries it
         tp_weights_magmom = self.conv_tp_weights_magmom(edge_feats_with_magmom)
 
         magmom_mji = self.magmom_conv_tp(
@@ -1889,7 +1895,8 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
         edge_index: torch.Tensor,
         magmom_node_inv_feats: torch.Tensor,
         magmom_node_attrs: torch.Tensor,
-    ) -> Tuple[torch.Tensor, None]:
+        cutoff: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         sender = edge_index[0]
         receiver = edge_index[1]
 
@@ -1909,10 +1916,14 @@ class MagneticRealAgnosticResidueSpinOrbitCoupledDensityInteractionBlock(
         # density normalization
         edge_density = torch.tanh(self.density_fn(edge_feats) ** 2)
 
+        tp_weights = tp_weights * cutoff
+        edge_density = edge_density * cutoff
+
         mji = self.conv_tp(
             node_feats[sender], edge_attrs, tp_weights
         )  # [n_edges, irreps]
 
+        # No envelope: magmom_conv_tp is linear in mji, which already carries it
         tp_weights_magmom = self.conv_tp_weights_magmom(edge_feats_with_magmom)
 
         magmom_mji = self.magmom_conv_tp(

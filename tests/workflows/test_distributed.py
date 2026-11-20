@@ -33,6 +33,11 @@ def test_run_train_distributed_cpu(tmp_path, fitting_configs):
             "hidden_irreps": "16x0e",
             "checkpoints_dir": str(tmp_path),
             "model_dir": str(tmp_path),
+            "results_dir": str(tmp_path / "results"),
+            "log_dir": str(tmp_path / "logs"),
+            "plot_frequency": 1,
+            "valid_fraction": 0.2,
+            "valid_batch_size": 1,
             "train_file": str(tmp_path / "fit.xyz"),
             "max_num_epochs": 4,
             "start_swa": 2,
@@ -79,4 +84,10 @@ def test_run_train_distributed_cpu(tmp_path, fitting_configs):
         assert proc.returncode == 0, (
             f"rank {rank} failed (rc={proc.returncode})\n{out[-4000:]}"
         )
+        assert "Plotting failed" not in out, out[-4000:]
+        assert "Creating Plotter failed" not in out, out[-4000:]
     assert (tmp_path / "ddp.model").exists()
+    plots = list((tmp_path / "results").glob("*.png"))
+    assert len(plots) == 2
+    assert any(p.name.endswith("_stage_one.png") for p in plots)
+    assert any(p.name.endswith("_stage_two.png") for p in plots)
