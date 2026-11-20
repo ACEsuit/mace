@@ -216,6 +216,7 @@ class MACECalculator(Calculator):
                 "total_spin": "spin",
                 "total_charge": "charge",
                 "external_field": "external_field",
+                "fermi_level": "fermi_level",
             }
         if arrays_keys is None:
             arrays_keys = {}
@@ -231,9 +232,10 @@ class MACECalculator(Calculator):
             "EnergyDipoleMACE",
             "DipolePolarizabilityMACE",
             "PolarMACE",
+            "PolarModel",
         ]:
             raise ValueError(
-                f"Give a valid model_type: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
+                f"Give a valid model_type: [MACE, PolarMACE, PolarModel, DipoleMACE, DipolePolarizabilityMACE, EnergyDipoleMACE], {model_type} not supported"
             )
 
         # A list of this instance's own. `Calculator.implemented_properties` is a
@@ -245,7 +247,7 @@ class MACECalculator(Calculator):
         # this now does too.
         self.implemented_properties = []
 
-        if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+        if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE", "PolarModel"]:
             self.implemented_properties.extend(
                 [
                     "energy",
@@ -259,13 +261,14 @@ class MACECalculator(Calculator):
             if kwargs.get("compute_atomic_stresses", False):
                 self.implemented_properties.extend(["stresses", "virials"])
                 self.compute_atomic_stresses = True
-        if model_type == "PolarMACE":
+        if model_type in ["PolarMACE", "PolarModel"]:
             self.implemented_properties.extend(["fukui_functions"])
         if model_type in [
             "EnergyDipoleMACE",
             "DipoleMACE",
             "DipolePolarizabilityMACE",
             "PolarMACE",
+            "PolarModel",
         ]:
             self.implemented_properties.extend(["dipole"])
         if model_type == "DipolePolarizabilityMACE":
@@ -306,7 +309,7 @@ class MACECalculator(Calculator):
         if self.num_models > 1:
             logging.info(f"Running committee mace with {self.num_models} models")
 
-            if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE"]:
+            if model_type in ["MACE", "EnergyDipoleMACE", "PolarMACE", "PolarModel"]:
                 # All six, because all six are written: `forces_var` and
                 # `stress_comm` were produced and never advertised, so a caller
                 # consulting `implemented_properties` was told they do not exist.
@@ -349,7 +352,7 @@ class MACECalculator(Calculator):
             _uses_scale_shift_forward(model) for model in self.models
         )
 
-        if self.model_type == "PolarMACE":
+        if self.model_type in ["PolarMACE", "PolarModel"]:
             self.density_dim = (
                 getattr(self.models[0], "atomic_multipoles_max_l", 0) + 1
             ) ** 2
@@ -422,7 +425,7 @@ class MACECalculator(Calculator):
                 for model in self.models
             ]
 
-        if self.model_type == "PolarMACE":
+        if self.model_type in ["PolarMACE", "PolarModel"]:
             self.set_electrostatic_pbcs(pbc_handling)
 
         self.use_compile = False
@@ -566,7 +569,7 @@ class MACECalculator(Calculator):
             "polarizability": [3, 3],
             "polarizability_sh": [6],
         }
-        if self.model_type == "PolarMACE":
+        if self.model_type in ["PolarMACE", "PolarModel"]:
             tensor_shapes.update(
                 {
                     "interaction_energy": [],
@@ -744,7 +747,7 @@ class MACECalculator(Calculator):
         """
         Calculator.calculate(self, atoms)
 
-        if self.model_type == "PolarMACE":
+        if self.model_type in ["PolarMACE", "PolarModel"]:
             self._validate_electrostatic_pbcs(self.atoms)
 
         batch_base = self._atoms_to_batch(atoms)
@@ -755,6 +758,7 @@ class MACECalculator(Calculator):
             "MACE",
             "EnergyDipoleMACE",
             "PolarMACE",
+            "PolarModel",
         ]
         # For oeq/hybrid + compile: create displacement outside the compiled
         # graph so autograd.grad (which runs as a graph break) can
@@ -811,6 +815,8 @@ class MACECalculator(Calculator):
                 out = model(batch_dict, **model_kwargs)
             if is_padded:
                 out = self._slice_real_outputs(out, num_real_atoms)
+            if self.model_type == "PolarModel" and "extras" in out:
+                out.update(out["extras"])
             if i == 0:
                 ret_tensors, node_e0 = self._create_result_tensors(
                     self.num_models, num_real_atoms, batch, out
@@ -843,7 +849,7 @@ class MACECalculator(Calculator):
             ("polarizability", "polarizability", 1.0),
             ("polarizability_sh", "polarizability_sh", 1.0),
         ]
-        if self.model_type == "PolarMACE":
+        if self.model_type in ["PolarMACE", "PolarModel"]:
             results_map.extend(
                 [
                     (
@@ -1026,8 +1032,8 @@ class MACECalculator(Calculator):
             raise ValueError("atoms not set")
         if atoms is None:
             atoms = self.atoms
-        if self.model_type not in ["MACE", "PolarMACE"]:
-            raise NotImplementedError("Only implemented for MACE/PolarMACE models")
+        if self.model_type not in ["MACE", "PolarMACE", "PolarModel"]:
+            raise NotImplementedError("Only implemented for MACE/PolarMACE/PolarModel models")
         batch = self._atoms_to_batch(atoms)
         with torch_tools.default_dtype(self.default_dtype):
             hessians = [
@@ -1062,8 +1068,8 @@ class MACECalculator(Calculator):
             raise ValueError("atoms not set")
         if atoms is None:
             atoms = self.atoms
-        if self.model_type != "PolarMACE":
-            raise NotImplementedError("Only implemented for PolarMACE models")
+        if self.model_type not in ["PolarMACE", "PolarModel"]:
+            raise NotImplementedError("Only implemented for PolarMACE/PolarModel models")
         self._validate_electrostatic_pbcs(atoms)
         if any(atoms.pbc):
             raise ValueError(
@@ -1413,7 +1419,7 @@ class MagneticMACECalculator(Calculator):
         def _infos_equal(a: dict, b: dict) -> bool:
             # Raw dict `!=` on `Atoms.info` raises when a value is a numpy
             # array (arr != arr returns an array, not a bool). Skip ndarray
-            # values — matches the safe pattern used by MACECalculator above.
+            # values ÔÇö matches the safe pattern used by MACECalculator above.
             if a.keys() != b.keys():
                 return False
             for k in a:

@@ -1499,3 +1499,434 @@ class EnergyDipolesMACE(torch.nn.Module):
             "atomic_dipoles": atomic_dipoles,
         }
         return output
+
+###########################################################################################
+# Electrostatics / PolarModel (v1)
+#
+# Registry-based electrostatics backends and a plain torch.nn.Module PolarModel
+# that returns polar quantities in an ``extras`` dict.  The legacy PolarMACE
+# implementation in mace.modules.extensions is intentionally left untouched.
+###########################################################################################
+
+# Model registry ---------------------------------------------------------------------------
+
+_model_registry: Dict[str, Type[torch.nn.Module]] = {}
+_MODEL_DENYLIST = {"PolarMACE"}
+
+
+def register_model(
+    name: str, cls: Optional[Type[torch.nn.Module]] = None
+) -> Union[Type[torch.nn.Module], Callable[[Type[torch.nn.Module]], Type[torch.nn.Module]]]:
+    """Register a model class under ``name``.
+
+    Usable both as ``register_model(name, cls)`` and as a decorator
+    ``@register_model(name)``.  Names in ``_MODEL_DENYLIST`` are reserved for
+    legacy models with a different interface.
+    """
+
+    def _register(model_cls: Type[torch.nn.Module]) -> Type[torch.nn.Module]:
+        if name in _MODEL_DENYLIST:
+            raise ValueError(f"Model name {name!r} is reserved (denylist)")
+        existing = _model_registry.get(name)
+        if existing is not None and existing is not model_cls:
+            raise ValueError(f"Model {name!r} is already registered")
+        _model_registry[name] = model_cls
+        return model_cls
+
+    if cls is None:
+        return _register
+    return _register(cls)
+
+
+def get_model_class(name: str) -> Type[torch.nn.Module]:
+    if name not in _model_registry:
+        raise KeyError(
+            f"Model {name!r} is not registered. Available: {list(_model_registry)}"
+        )
+    return _model_registry[name]
+
+
+def list_models() -> List[str]:
+    return list(_model_registry)
+
+
+# Electrostatics backend registry -----------------------------------------------------------
+
+
+class ElectrostaticsBackend(torch.nn.Module):
+    """Abstract long-range electrostatics solver resolved at model build time."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__()
+        self.config = dict(config or {})
+        self.pbc_handling = self.config.get("pbc_handling", "auto")
+
+    def compute(self, positions: torch.Tensor, charges: torch.Tensor, **kwargs):
+        raise NotImplementedError
+
+    def set_pbc_handling(self, mode: str) -> None:
+        self.pbc_handling = mode
+        self.config["pbc_handling"] = mode
+
+    @property
+    def backend_name(self) -> str:
+        return self.__class__.__name__
+
+
+class ReferenceElectrostaticsBackend(ElectrostaticsBackend):
+    """Reference backend.
+
+    Uses graph_longrange when it is available; for non-periodic systems (or when
+    graph_longrange is not installed) it degrades to a well-defined zero/no-op
+    fallback so the model can still be constructed and exercised minimally.
+    """
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__(config)
+        self._evaluator = None
+
+    def _get_evaluator(self, cell, pbc):
+        if self._evaluator is None:
+            try:
+                from graph_longrange import LongRangeElectrostatics, PBCHandler
+
+                handler = PBCHandler(pbc_mode=self.pbc_handling)
+                self._evaluator = LongRangeElectrostatics(handler, cutoff=10.0)
+            except (ImportError, ModuleNotFoundError):
+                self._evaluator = False
+        return self._evaluator
+
+    def compute(self, positions: torch.Tensor, charges: torch.Tensor, **kwargs):
+        cell = kwargs.get("cell")
+        pbc = kwargs.get("pbc")
+        periodic = pbc is not None and bool(torch.as_tensor(pbc).any())
+        evaluator = self._get_evaluator(cell, pbc) if periodic and cell is not None else None
+        if evaluator not in (None, False) and cell is not None:
+            energy, forces = evaluator(positions, charges, cell)
+            return {"electrostatic_energy": energy, "electrostatic_forces": forces}
+        # Non-periodic or unavailable solver: zero contribution with correct shapes.
+        return {
+            "electrostatic_energy": torch.zeros_like(charges),
+            "electrostatic_forces": torch.zeros_like(positions),
+        }
+
+
+_electrostatics_backend_registry: Dict[str, Type[ElectrostaticsBackend]] = {
+    "reference": ReferenceElectrostaticsBackend,
+}
+
+
+def register_electrostatics_backend(name: str, cls: Type[ElectrostaticsBackend]) -> None:
+    """Register a backend class. Idempotent when re-registering the same class."""
+    existing = _electrostatics_backend_registry.get(name)
+    if existing is not None:
+        if existing is cls:
+            return
+        raise ValueError(f"Electrostatics backend {name!r} is already registered")
+    _electrostatics_backend_registry[name] = cls
+
+
+def get_electrostatics_backend(name: str) -> Type[ElectrostaticsBackend]:
+    if name not in _electrostatics_backend_registry:
+        raise KeyError(
+            f"Electrostatics backend {name!r} is not registered. "
+            f"Available: {list(_electrostatics_backend_registry)}"
+        )
+    return _electrostatics_backend_registry[name]
+
+
+def build_electrostatics_backend(
+    name: str, config: Optional[Dict[str, Any]] = None
+) -> ElectrostaticsBackend:
+    return get_electrostatics_backend(name)(config)
+
+
+# PolarModel ---------------------------------------------------------------------------------
+
+
+@register_model("PolarModel")
+class PolarModel(MACE):
+    """v1 polarizable MACE with registry-dispatched electrostatics.
+
+    Polar quantities are returned under the ``extras`` key of the forward
+    output, and the long-range solver identity is recorded in ``config``.
+    """
+
+    POLAR_FLAGS = (
+        "kspace_cutoff_factor",
+        "atomic_multipoles_max_l",
+        "atomic_multipoles_smearing_width",
+        "field_feature_max_l",
+        "field_feature_widths",
+        "field_feature_norms",
+        "num_recursion_steps",
+        "field_si",
+        "include_electrostatic_self_interaction",
+        "add_local_electron_energy",
+        "quadrupole_feature_corrections",
+        "return_electrostatic_potentials",
+        "field_norm_factor",
+        "fixedpoint_update_config",
+        "field_readout_config",
+    )
+
+    _BACKBONE_FORWARD_KWARGS = frozenset(
+        {
+            "training",
+            "compute_force",
+            "compute_virials",
+            "compute_stress",
+            "compute_displacement",
+            "compute_hessian",
+            "compute_edge_forces",
+            "compute_atomic_stresses",
+            "lammps_mliap",
+        }
+    )
+
+    def __init__(
+        self,
+        r_max: float,
+        num_bessel: int,
+        num_polynomial_cutoff: int,
+        max_ell: int,
+        interaction_cls: Type[InteractionBlock],
+        interaction_cls_first: Type[InteractionBlock],
+        num_interactions: int,
+        num_elements: int,
+        hidden_irreps: o3.Irreps,
+        MLP_irreps: o3.Irreps,
+        atomic_energies: np.ndarray,
+        avg_num_neighbors: float,
+        atomic_numbers: List[int],
+        correlation: Union[int, List[int]],
+        gate: Optional[Callable],
+        # Standard MACE options (accepted explicitly so CLI kwargs work).
+        pair_repulsion: bool = False,
+        apply_cutoff: bool = True,
+        use_reduced_cg: bool = True,
+        use_so3: bool = False,
+        use_agnostic_product: bool = True,
+        use_last_readout_only: bool = False,
+        use_embedding_readout: bool = False,
+        distance_transform: str = "None",
+        edge_irreps: Optional[o3.Irreps] = None,
+        use_edge_irreps_first: bool = False,
+        radial_MLP: Optional[List[int]] = None,
+        radial_type: Optional[str] = "bessel",
+        heads: Optional[List[str]] = None,
+        cueq_config: Optional[Dict[str, Any]] = None,
+        embedding_specs: Optional[Dict[str, Any]] = None,
+        oeq_config: Optional[Dict[str, Any]] = None,
+        lammps_mliap: Optional[bool] = False,
+        readout_cls: Optional[Type[NonLinearReadoutBlock]] = NonLinearReadoutBlock,
+        atomic_inter_scale: float = 1.0,
+        atomic_inter_shift: float = 0.0,
+        # Polar options (all 15 flags).
+        kspace_cutoff_factor: float = 1.0,
+        atomic_multipoles_max_l: int = 1,
+        atomic_multipoles_smearing_width: float = 0.0,
+        field_feature_max_l: int = 2,
+        field_feature_widths: Optional[List[float]] = None,
+        num_recursion_steps: int = 3,
+        field_si: float = 1.0,
+        include_electrostatic_self_interaction: bool = True,
+        add_local_electron_energy: bool = False,
+        quadrupole_feature_corrections: bool = True,
+        return_electrostatic_potentials: bool = False,
+        field_feature_norms: Optional[List[float]] = None,
+        field_norm_factor: float = 0.02,
+        fixedpoint_update_config: Optional[Dict[str, Any]] = None,
+        field_readout_config: Optional[Dict[str, Any]] = None,
+        # Electrostatics backend.
+        electrostatics_backend: str = "reference",
+        pbc_handling: str = "auto",
+    ):
+        # Force backbone options for the v1 polar architecture.
+        keep_last_layer_irreps = True
+        use_agnostic_product = True
+
+        super().__init__(
+            r_max=r_max,
+            num_bessel=num_bessel,
+            num_polynomial_cutoff=num_polynomial_cutoff,
+            max_ell=max_ell,
+            interaction_cls=interaction_cls,
+            interaction_cls_first=interaction_cls_first,
+            num_interactions=num_interactions,
+            num_elements=num_elements,
+            hidden_irreps=hidden_irreps,
+            MLP_irreps=MLP_irreps,
+            atomic_energies=atomic_energies,
+            avg_num_neighbors=avg_num_neighbors,
+            atomic_numbers=atomic_numbers,
+            correlation=correlation,
+            gate=gate,
+            pair_repulsion=pair_repulsion,
+            apply_cutoff=apply_cutoff,
+            use_reduced_cg=use_reduced_cg,
+            use_so3=use_so3,
+            use_agnostic_product=use_agnostic_product,
+            use_last_readout_only=use_last_readout_only,
+            use_embedding_readout=use_embedding_readout,
+            distance_transform=distance_transform,
+            edge_irreps=edge_irreps,
+            use_edge_irreps_first=use_edge_irreps_first,
+            radial_MLP=radial_MLP,
+            radial_type=radial_type,
+            heads=heads,
+            cueq_config=cueq_config,
+            embedding_specs=embedding_specs,
+            oeq_config=oeq_config,
+            lammps_mliap=lammps_mliap,
+            readout_cls=readout_cls,
+            keep_last_layer_irreps=keep_last_layer_irreps,
+        )
+
+        self.scale_shift = ScaleShiftBlock(
+            scale=atomic_inter_scale, shift=atomic_inter_shift
+        )
+
+        # Recorded forced flags (used by tests / serialization).
+        self.keep_last_layer_irreps = True
+        self.use_agnostic_product = True
+        self._permute_to_e3nn_convention = True
+
+        # Polar config flags.
+        self.kspace_cutoff_factor = kspace_cutoff_factor
+        self.atomic_multipoles_max_l = atomic_multipoles_max_l
+        self.atomic_multipoles_smearing_width = atomic_multipoles_smearing_width
+        self.field_feature_max_l = field_feature_max_l
+        self.field_feature_widths = field_feature_widths
+        self.field_feature_norms = field_feature_norms
+        self.num_recursion_steps = num_recursion_steps
+        self.field_si = field_si
+        self.include_electrostatic_self_interaction = include_electrostatic_self_interaction
+        self.add_local_electron_energy = add_local_electron_energy
+        self.quadrupole_feature_corrections = quadrupole_feature_corrections
+        self.return_electrostatic_potentials = return_electrostatic_potentials
+        self.field_norm_factor = field_norm_factor
+        self.fixedpoint_update_config = fixedpoint_update_config
+        self.field_readout_config = field_readout_config
+        self.electrostatics_backend_name = electrostatics_backend
+        self.pbc_handling = pbc_handling
+
+        # Polar readout over the final hidden features.
+        self.polar_hidden_irreps = hidden_irreps
+        self.polar_hidden_dim = hidden_irreps.dim
+        self.polar_readout = LinearDipolePolarReadoutBlock(
+            irreps_in=hidden_irreps,
+            use_polarizability=True,
+            cueq_config=cueq_config,
+            oeq_config=oeq_config,
+        )
+
+        # Resolve and record the electrostatics backend at build time.
+        backend_cfg = {name: getattr(self, name, None) for name in self.POLAR_FLAGS}
+        backend_cfg["pbc_handling"] = pbc_handling
+        self.electrostatics_backend = build_electrostatics_backend(
+            electrostatics_backend, config=backend_cfg
+        )
+
+        self.config = {
+            "model_type": "PolarModel",
+            "electrostatics_backend": electrostatics_backend,
+            "resolved": {
+                "electrostatics_backend": type(self.electrostatics_backend).__name__,
+                "electrostatics_backend_name": electrostatics_backend,
+            },
+            "pbc_handling": pbc_handling,
+            "r_max": float(r_max),
+            "num_bessel": int(num_bessel),
+            "num_polynomial_cutoff": int(num_polynomial_cutoff),
+            "max_ell": int(max_ell),
+            "num_interactions": int(num_interactions),
+            "num_elements": int(num_elements),
+            "hidden_irreps": str(hidden_irreps),
+            "MLP_irreps": str(MLP_irreps),
+            "correlation": correlation,
+            "radial_type": radial_type,
+            "keep_last_layer_irreps": True,
+            "use_agnostic_product": True,
+        }
+        for flag in self.POLAR_FLAGS:
+            self.config[flag] = getattr(self, flag, None)
+
+    def set_electrostatic_pbcs(self, pbc_handling: str) -> None:
+        self.pbc_handling = pbc_handling
+        self.config["pbc_handling"] = pbc_handling
+        self.electrostatics_backend.set_pbc_handling(pbc_handling)
+
+    def forward(self, data: Dict[str, torch.Tensor], **kwargs) -> Dict[str, torch.Tensor]:
+        # Only pass arguments the proven MACE backbone understands.
+        backbone_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if key in self._BACKBONE_FORWARD_KWARGS
+        }
+        out = super().forward(data, **backbone_kwargs)
+
+        positions = data["positions"]
+        batch = data["batch"]
+        n_atoms = positions.shape[0]
+        num_graphs = out["energy"].shape[0]
+
+        # Last-layer hidden features -> polar readout (2x0e + 1x1o + 1x2e).
+        node_feats = out["node_feats"]
+        node_feats = node_feats[..., -self.polar_hidden_dim :]
+        polar_out = self.polar_readout(node_feats)
+
+        charges = polar_out[:, 0]
+
+        # Fixed number of unrolled recursion steps (no SCF fixed point).
+        electrostatic_energy = charges.new_zeros(num_graphs)
+        for _ in range(self.num_recursion_steps):
+            result = self.electrostatics_backend.compute(
+                positions=positions,
+                charges=charges,
+                cell=getattr(data, "cell", None),
+                pbc=getattr(data, "pbc", None),
+                batch=batch,
+            )
+            contribution = result["electrostatic_energy"]
+            if contribution.shape == charges.shape:  # per-atom -> per-graph
+                contribution = scatter_sum(contribution, batch, dim=0, dim_size=num_graphs)
+            electrostatic_energy = electrostatic_energy + contribution
+
+        # Calculator tensor_shapes compatibility.
+        density_dim = (self.atomic_multipoles_max_l + 1) ** 2
+        density_out = polar_out.new_zeros(n_atoms, density_dim)
+        copy_dim = min(density_dim, polar_out.shape[-1])
+        density_out[:, :copy_dim] = polar_out[:, :copy_dim]
+        spin_density = torch.zeros_like(density_out)
+
+        interaction_energy = scatter_sum(
+            out["node_energy"], batch, dim=0, dim_size=num_graphs
+        )
+        dipole = scatter_sum(polar_out[:, 2:5], batch, dim=0, dim_size=num_graphs)
+
+        extras = {
+            "interaction_energy": interaction_energy,
+            "electrostatic_energy": electrostatic_energy,
+            "electron_energy": charges.new_zeros(num_graphs),
+            "density_coefficients": density_out,
+            "spin_density": spin_density,
+            "charges": charges,
+            "spins": spin_density[:, 0],
+            "dipole": dipole,
+            "polarizability": None,
+            "total_charge": scatter_sum(charges, batch, dim=0, dim_size=num_graphs),
+            "spin_charge_density": torch.zeros(
+                n_atoms, 2, density_dim, device=polar_out.device, dtype=polar_out.dtype
+            ),
+            "fukui_functions": torch.zeros(
+                n_atoms, 2, device=polar_out.device, dtype=polar_out.dtype
+            ),
+            "fermi_level": charges.new_zeros(num_graphs),
+            "external_field": positions.new_zeros(num_graphs, 3),
+        }
+        if self.return_electrostatic_potentials:
+            extras["electrostatic_potentials"] = electrostatic_energy
+
+        out["extras"] = extras
+        return out

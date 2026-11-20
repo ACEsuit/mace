@@ -398,6 +398,18 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument(
+        "--electrostatics_backend",
+        help="electrostatics backend used by PolarModel",
+        type=str,
+        default="reference",
+    )
+    parser.add_argument(
+        "--pbc_handling",
+        help="PBC handling mode for long-range electrostatics",
+        type=str,
+        default="auto",
+    )
+    parser.add_argument(
         "--scaling",
         help="type of scaling to the output",
         type=str,

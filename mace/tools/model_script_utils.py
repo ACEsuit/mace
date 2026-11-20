@@ -91,6 +91,7 @@ def configure_model(
         "ScaleShiftMACE",
         "MACELES",
         "PolarMACE",
+        "PolarModel",
     ]:
         logging.info("Loading FOUNDATION model")
         model_config_foundation = extract_config_mace_model(model_foundation)
@@ -329,6 +330,54 @@ def _build_model(
             use_embedding_readout=args.use_embedding_readout,
             use_last_readout_only=args.use_last_readout_only,
             use_agnostic_product=args.use_agnostic_product,
+        )
+    if args.model == "PolarModel" and model_config_foundation is not None:
+        return modules.PolarModel(
+            **model_config_foundation,
+            electrostatics_backend=args.electrostatics_backend,
+            pbc_handling=args.pbc_handling,
+        )
+    if args.model == "PolarModel":
+        field_feature_widths = _parse_literal_or_none(args.field_feature_widths)
+        field_feature_norms = _parse_literal_or_none(args.field_feature_norms)
+        fixedpoint_update_config = _parse_literal_or_none(args.fixedpoint_update_config)
+        field_readout_config = _parse_literal_or_none(args.field_readout_config)
+        return modules.PolarModel(
+            **model_config,
+            pair_repulsion=args.pair_repulsion,
+            distance_transform=args.distance_transform,
+            correlation=args.correlation,
+            gate=modules.gate_dict[args.gate],
+            interaction_cls_first=modules.interaction_classes[args.interaction_first],
+            MLP_irreps=o3.Irreps(args.MLP_irreps),
+            atomic_inter_scale=args.std,
+            atomic_inter_shift=0.0,
+            radial_MLP=ast.literal_eval(args.radial_MLP),
+            radial_type=args.radial_type,
+            heads=heads,
+            embedding_specs=args.embedding_specs,
+            use_embedding_readout=args.use_embedding_readout,
+            use_last_readout_only=args.use_last_readout_only,
+            use_agnostic_product=args.use_agnostic_product,
+            kspace_cutoff_factor=args.kspace_cutoff_factor,
+            atomic_multipoles_max_l=args.atomic_multipoles_max_l,
+            atomic_multipoles_smearing_width=args.atomic_multipoles_smearing_width,
+            field_feature_max_l=args.field_feature_max_l,
+            field_feature_widths=(
+                field_feature_widths if field_feature_widths is not None else [1.0]
+            ),
+            num_recursion_steps=args.num_recursion_steps,
+            field_si=args.field_si,
+            include_electrostatic_self_interaction=args.include_electrostatic_self_interaction,
+            add_local_electron_energy=args.add_local_electron_energy,
+            quadrupole_feature_corrections=args.quadrupole_feature_corrections,
+            return_electrostatic_potentials=args.return_electrostatic_potentials,
+            field_feature_norms=field_feature_norms,
+            field_norm_factor=args.field_norm_factor,
+            fixedpoint_update_config=fixedpoint_update_config,
+            field_readout_config=field_readout_config,
+            electrostatics_backend=args.electrostatics_backend,
+            pbc_handling=args.pbc_handling,
         )
     if args.model == "PolarMACE" and model_config_foundation is not None:
         return modules.PolarMACE(**model_config_foundation)
