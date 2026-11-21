@@ -335,3 +335,35 @@ def test_mace_time_emits_to_stdout_without_logging_setup(tmp_path):
         check=True,
     )
     assert "Timer - total_step:" in proc.stdout
+
+
+def test_mace_time_emits_when_root_handler_is_warning_only():
+    """Even if a host installs a WARNING-level handler on the root logger,
+    `MACE_TIME=true` must still attach its stdout fallback for INFO lines."""
+    env = dict(os.environ)
+    env["MACE_TIME"] = "true"
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "\n".join(
+                [
+                    "import logging, sys",
+                    "err_h = logging.StreamHandler(sys.stderr)",
+                    "err_h.setLevel(logging.WARNING)",
+                    "logging.getLogger().addHandler(err_h)",
+                    "from mace.calculators.lammps_mliap_mace import MACELammpsConfig, timer",
+                    "cfg = MACELammpsConfig()",
+                    "with timer('total_step', enabled=cfg.debug_time):",
+                    "    pass",
+                ]
+            ),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Timer - total_step:" in proc.stdout
+    assert "Timer - total_step:" not in proc.stderr

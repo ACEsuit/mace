@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -41,14 +41,28 @@ class MACELammpsConfig:
 
 
 _LOGGER = logging.getLogger(__name__)
+_LOGGER.setLevel(logging.INFO)
+
+
+def _has_info_handler(logger: logging.Logger) -> bool:
+    current: Optional[logging.Logger] = logger
+    while current is not None:
+        if any(
+            not isinstance(h, logging.NullHandler) and h.level <= logging.INFO
+            for h in current.handlers
+        ):
+            return True
+        if not current.propagate:
+            break
+        current = current.parent
+    return False
 
 
 def _get_logger() -> logging.Logger:
-    if not _LOGGER.hasHandlers():
+    if not _has_info_handler(_LOGGER):
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(logging.Formatter("%(message)s"))
         _LOGGER.addHandler(handler)
-    _LOGGER.setLevel(logging.INFO)
     return _LOGGER
 
 
