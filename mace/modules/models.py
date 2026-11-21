@@ -4,6 +4,8 @@
 # This program is distributed under the MIT License (see MIT.md)
 ###########################################################################################
 
+import logging
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -28,6 +30,8 @@ from .blocks import (
     NonLinearDipoleReadoutBlock,
     NonLinearReadoutBlock,
     RadialEmbeddingBlock,
+    RealAgnosticAttResidualInteractionBlock,
+    RealAgnosticResidualNonLinearInteractionBlock,
     ScaleShiftBlock,
 )
 from .utils import (
@@ -41,6 +45,42 @@ from .utils import (
     prepare_graph,
     safe_double,
 )
+
+
+def _warn_if_deferred_cutoff_with_apply_cutoff(
+    apply_cutoff: bool,
+    interaction_cls: Any,
+    interaction_cls_first: Any,
+) -> None:
+    if not apply_cutoff:
+        return
+    deferred_cutoff_blocks = (
+        RealAgnosticResidualNonLinearInteractionBlock,
+        RealAgnosticAttResidualInteractionBlock,
+    )
+    deferred_names = (
+        "RealAgnosticResidualNonLinearInteractionBlock",
+        "RealAgnosticAttResidualInteractionBlock",
+    )
+
+    def _matches(cls: Any) -> bool:
+        if isinstance(cls, str):
+            return cls in deferred_names
+        if isinstance(cls, type):
+            return issubclass(cls, deferred_cutoff_blocks)
+        return getattr(cls, "__name__", None) in deferred_names
+
+    if any(_matches(cls) for cls in (interaction_cls, interaction_cls_first)):
+        msg = (
+            "RealAgnosticResidualNonLinearInteractionBlock and "
+            "RealAgnosticAttResidualInteractionBlock append node features "
+            "before the edge MLP; with apply_cutoff=True the envelope is "
+            "folded into radial features and not applied after the MLP, "
+            "making predictions discontinuous at r_max. Pass apply_cutoff=False "
+            "(--apply_cutoff False) for continuous predictions."
+        )
+        warnings.warn(msg, UserWarning, stacklevel=3)
+        logging.warning(msg)
 
 
 @compile_mode("script")
@@ -100,6 +140,9 @@ class MACE(torch.nn.Module):
         self.lammps_mliap = lammps_mliap
         self.apply_cutoff = apply_cutoff
         self.edge_irreps = edge_irreps
+        _warn_if_deferred_cutoff_with_apply_cutoff(
+            apply_cutoff, interaction_cls, interaction_cls_first
+        )
         self.use_reduced_cg = use_reduced_cg
         self.use_agnostic_product = use_agnostic_product
         self.use_so3 = use_so3
@@ -684,7 +727,7 @@ class AtomicDipolesMACE(torch.nn.Module):
         atomic_energies: Optional[
             None
         ] = None,  # Just here to make it compatible with energy models, MUST be None
-        apply_cutoff: bool = True,  # pylint: disable=unused-argument
+        apply_cutoff: bool = True,
         use_agnostic_product: bool = False,  # pylint: disable=unused-argument
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
@@ -705,6 +748,10 @@ class AtomicDipolesMACE(torch.nn.Module):
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
         assert atomic_energies is None
+        self.apply_cutoff = apply_cutoff
+        _warn_if_deferred_cutoff_with_apply_cutoff(
+            apply_cutoff, interaction_cls, interaction_cls_first
+        )
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -717,6 +764,7 @@ class AtomicDipolesMACE(torch.nn.Module):
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
+            apply_cutoff=apply_cutoff,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
@@ -900,7 +948,7 @@ class AtomicDielectricMACE(torch.nn.Module):
         atomic_energies: Optional[
             None
         ] = None,  # Just here to make it compatible with energy models, MUST be None
-        apply_cutoff: bool = True,  # pylint: disable=unused-argument
+        apply_cutoff: bool = True,
         use_agnostic_product: bool = False,  # pylint: disable=unused-argument
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
@@ -964,6 +1012,10 @@ class AtomicDielectricMACE(torch.nn.Module):
         if heads is None:
             heads = ["Default"]
         self.heads = heads
+        self.apply_cutoff = apply_cutoff
+        _warn_if_deferred_cutoff_with_apply_cutoff(
+            apply_cutoff, interaction_cls, interaction_cls_first
+        )
 
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
@@ -978,6 +1030,7 @@ class AtomicDielectricMACE(torch.nn.Module):
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
+            apply_cutoff=apply_cutoff,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
@@ -1255,7 +1308,7 @@ class EnergyDipolesMACE(torch.nn.Module):
         correlation: int,
         gate: Optional[Callable],
         atomic_energies: Optional[np.ndarray],
-        apply_cutoff: bool = True,  # pylint: disable=unused-argument
+        apply_cutoff: bool = True,
         use_reduced_cg: bool = True,  # pylint: disable=unused-argument
         use_so3: bool = False,  # pylint: disable=unused-argument
         distance_transform: str = "None",  # pylint: disable=unused-argument
@@ -1273,6 +1326,10 @@ class EnergyDipolesMACE(torch.nn.Module):
         self.register_buffer(
             "num_interactions", torch.tensor(num_interactions, dtype=torch.int64)
         )
+        self.apply_cutoff = apply_cutoff
+        _warn_if_deferred_cutoff_with_apply_cutoff(
+            apply_cutoff, interaction_cls, interaction_cls_first
+        )
         # Embedding
         node_attr_irreps = o3.Irreps([(num_elements, (0, 1))])
         node_feats_irreps = o3.Irreps([(hidden_irreps.count(o3.Irrep(0, 1)), (0, 1))])
@@ -1283,6 +1340,7 @@ class EnergyDipolesMACE(torch.nn.Module):
             r_max=r_max,
             num_bessel=num_bessel,
             num_polynomial_cutoff=num_polynomial_cutoff,
+            apply_cutoff=apply_cutoff,
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
 
