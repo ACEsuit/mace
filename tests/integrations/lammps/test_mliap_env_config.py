@@ -17,6 +17,8 @@ all off, and none of that is visible at the call site.
 """
 
 import logging
+import os
+import subprocess
 import sys
 
 import numpy as np
@@ -28,6 +30,7 @@ from mace.calculators.lammps_mliap_mace import (
     MACELammpsConfig,
     timer,
 )
+from tests.helpers import REPO_ROOT
 from tests.integrations.lammps._harness import StubMACE
 
 BOOL_VARS = ["MACE_TIME", "MACE_PROFILE", "MACE_ALLOW_CPU", "MACE_FORCE_CPU"]
@@ -275,3 +278,92 @@ def test_force_cpu_wins_over_allow_cpu_being_unset(monkeypatch):
     assert unified.config.allow_cpu is False
     unified._initialize_device(_KokkosData())  # pylint: disable=protected-access
     assert unified.device == torch.device("cpu")
+
+
+# ---------------------------------------------------------------------------
+# Unpickled artifacts & standalone logging
+# ---------------------------------------------------------------------------
+
+
+def test_saved_artifact_reads_runtime_environment_on_load(monkeypatch, tmp_path):
+    """`create_lammps_model --format=mliap` pickles `LAMMPS_MLIAP_MACE` at
+    export time, and LAMMPS unpickles it at MD runtime without calling
+    `__init__` again."""
+    artifact = tmp_path / "stub-mliap_lammps.pt"
+    monkeypatch.setenv("MACE_TIME", "true")
+    torch.save(LAMMPS_MLIAP_MACE(StubMACE(1)), artifact)
+
+    monkeypatch.delenv("MACE_TIME")
+    loaded_clean = torch.load(artifact, map_location="cpu", weights_only=False)
+    assert loaded_clean.config.debug_time is False
+
+    monkeypatch.setenv("MACE_TIME", "true")
+    monkeypatch.setenv("MACE_ALLOW_CPU", "true")
+    monkeypatch.setenv("MACE_PROFILE_START", "12")
+    loaded_runtime = torch.load(artifact, map_location="cpu", weights_only=False)
+    assert loaded_runtime.config.debug_time is True
+    assert loaded_runtime.config.allow_cpu is True
+    assert loaded_runtime.config.profile_start_step == 12
+
+
+def test_mace_time_emits_to_stdout_without_logging_setup(tmp_path):
+    """Embedded Python inside LAMMPS leaves the root logger unconfigured at
+    WARNING, so `MACE_TIME=true` must still produce visible timer lines."""
+    artifact = tmp_path / "stub-mliap_lammps.pt"
+    torch.save(LAMMPS_MLIAP_MACE(StubMACE(1)), artifact)
+
+    env = dict(os.environ)
+    env["MACE_TIME"] = "true"
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "\n".join(
+                [
+                    "import torch",
+                    "from mace.calculators.lammps_mliap_mace import timer",
+                    f"u = torch.load({str(artifact)!r}, map_location='cpu', weights_only=False)",
+                    "with timer('total_step', enabled=u.config.debug_time):",
+                    "    pass",
+                ]
+            ),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Timer - total_step:" in proc.stdout
+
+
+def test_mace_time_emits_when_root_handler_is_warning_only():
+    """Even if a host installs a WARNING-level handler on the root logger,
+    `MACE_TIME=true` must still attach its stdout fallback for INFO lines."""
+    env = dict(os.environ)
+    env["MACE_TIME"] = "true"
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "\n".join(
+                [
+                    "import logging, sys",
+                    "err_h = logging.StreamHandler(sys.stderr)",
+                    "err_h.setLevel(logging.WARNING)",
+                    "logging.getLogger().addHandler(err_h)",
+                    "from mace.calculators.lammps_mliap_mace import MACELammpsConfig, timer",
+                    "cfg = MACELammpsConfig()",
+                    "with timer('total_step', enabled=cfg.debug_time):",
+                    "    pass",
+                ]
+            ),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Timer - total_step:" in proc.stdout
+    assert "Timer - total_step:" not in proc.stderr
