@@ -9,6 +9,17 @@ from mace.calculators.mace import MACECalculator
 from mace.tools import torch_tools
 
 
+def _model_inputs(batch, model, external_field):
+    data = batch.clone().to_dict()
+    dtype = next(model.parameters()).dtype
+    for key, value in data.items():
+        if torch.is_tensor(value) and value.is_floating_point():
+            data[key] = value.to(dtype=dtype)
+    if external_field is not None:
+        data["external_field"] = data["positions"].new_tensor(external_field)
+    return data
+
+
 def hessian_operator(calculator: MACECalculator, atoms: Atoms) -> LinearOperator:
     """Return the unweighted Cartesian energy Hessian at a fixed geometry.
 
@@ -33,14 +44,18 @@ def hessian_operator(calculator: MACECalculator, atoms: Atoms) -> LinearOperator
     ):
         # Use the same head, neighbour list and padding as get_hessian.
         batch = calculator._atoms_to_batch(atoms)  # pylint: disable=protected-access
-        data = batch.to_dict()
-        positions = data["positions"].requires_grad_(True)
-        member_forces = [
-            model(data.copy(), training=True, compute_stress=False)["forces"][:n_atoms]
-            for model in calculator.models
-        ]
+        positions = batch["positions"].requires_grad_(True)
+        member_forces = []
+        for model in calculator.models:
+            data = _model_inputs(
+                batch, model, getattr(calculator, "external_field", None)
+            )
+            with torch_tools.default_dtype(data["positions"].dtype):
+                out = model(data, training=True, compute_stress=False)
+            member_forces.append(out["forces"][:n_atoms])
         forces = sum(member_forces) / calculator.num_models
 
+    @torch.inference_mode(False)
     def matvec(vector):
         if np.iscomplexobj(vector):
             return matvec(vector.real) + 1j * matvec(vector.imag)

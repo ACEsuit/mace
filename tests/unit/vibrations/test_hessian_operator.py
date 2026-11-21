@@ -61,6 +61,38 @@ def test_single_precision_product_in_inference_mode():
     atoms = read(FIXTURES_DIR / "dimer_short.xyz")
     vector = np.linspace(-0.4, 0.7, 6, dtype=np.float32)
     with torch.inference_mode():
-        product = hessian_operator(calculator, atoms) @ vector
+        operator = hessian_operator(calculator, atoms)
+        product = operator @ vector
+        lowest = eigsh(operator, k=1, which="SA", v0=vector, return_eigenvectors=False)
     assert product.dtype == np.float32
     np.testing.assert_allclose(product[0], 41.4838068881, rtol=2e-5)
+    np.testing.assert_allclose(lowest[0], -125.7085057214, rtol=2e-5)
+
+
+@pytest.mark.parametrize(
+    "first,second", [(torch.float64, torch.float32), (torch.float32, torch.float64)]
+)
+def test_mixed_precision_committee_with_external_field(first, second):
+    atoms = read(FIXTURES_DIR / "dimer_short.xyz")
+    field = [0.1, -0.2, 0.3]
+    models = [
+        load_anchor("tiny_mace", dtype=first),
+        load_anchor("tiny_scaleshift", dtype=second),
+    ]
+    vector = np.linspace(-0.4, 0.7, 6)
+    products = []
+    for model in models:
+        member = MACECalculator(models=model, device="cpu", external_field=field)
+        products.append(member.get_hessian(atoms).reshape(6, 6) @ vector)
+
+    def check_field(model, args):
+        positions = args[0]["positions"]
+        assert positions.dtype == next(model.parameters()).dtype
+        torch.testing.assert_close(
+            args[0]["external_field"], positions.new_tensor(field)
+        )
+
+    committee = MACECalculator(models=models, device="cpu", external_field=field)
+    with models[1].register_forward_pre_hook(check_field):
+        product = hessian_operator(committee, atoms) @ vector
+    np.testing.assert_allclose(product, np.mean(products, axis=0), rtol=2e-5, atol=2e-5)
