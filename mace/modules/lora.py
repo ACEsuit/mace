@@ -8,6 +8,28 @@ from e3nn import o3
 from e3nn.nn._fc import _Layer as E3NNFCLayer
 from torch import nn
 
+try:
+    import cuequivariance as cue
+    import cuequivariance_torch as cuet
+except (ImportError, ModuleNotFoundError):
+    cue = None
+    cuet = None
+
+
+def _is_cuet_linear(module: nn.Module) -> bool:
+    return cuet is not None and isinstance(module, cuet.Linear)
+
+
+def _linear_instructions(linear: nn.Module):
+    if hasattr(linear, "instructions"):
+        return linear.instructions
+    return o3.Linear(
+        o3.Irreps(str(linear.irreps_in)),
+        o3.Irreps(str(linear.irreps_out)),
+        internal_weights=False,
+        biases=False,
+    ).instructions
+
 
 def build_lora_irreps(
     irreps_in: o3.Irreps, irreps_out: o3.Irreps, rank: int
@@ -16,8 +38,8 @@ def build_lora_irreps(
     Choose an equivariant bottleneck irreps that preserves symmetry: for every irrep
     present in BOTH input and output, allocate `rank` copies.
     """
-    in_set = {ir for _, ir in o3.Irreps(irreps_in)}
-    out_set = {ir for _, ir in o3.Irreps(irreps_out)}
+    in_set = {ir for _, ir in o3.Irreps(str(irreps_in))}
+    out_set = {ir for _, ir in o3.Irreps(str(irreps_out))}
     shared = sorted(in_set & out_set, key=lambda ir: (ir.l, ir.p))
     if not shared:
         raise ValueError(
@@ -34,7 +56,7 @@ class LoRAO3Linear(nn.Module):
     with automatic caching during inference (when grad is disabled).
     """
 
-    def __init__(self, base_linear: o3.Linear, rank: int = 4, alpha: float = 1.0):
+    def __init__(self, base_linear: nn.Module, rank: int = 4, alpha: float = 1.0):
         super().__init__()
         self.base = base_linear
         self.irreps_in = self.base.irreps_in
@@ -42,19 +64,43 @@ class LoRAO3Linear(nn.Module):
         self.scaling = float(alpha) / float(rank)
         self.lora_irreps = build_lora_irreps(self.irreps_in, self.irreps_out, rank)
 
-        # Use the same class as base to avoid layout mismatches if possible
-        layer_type = type(self.base)
-        self.lora_A = layer_type(
-            self.irreps_in, self.lora_irreps, internal_weights=True, biases=False
-        )
-        self.lora_B = layer_type(
-            self.lora_irreps, self.irreps_out, internal_weights=True, biases=False
-        )
-
-        # Match dtype/device to base
         base_param = next(self.base.parameters())
-        self.lora_A.to(dtype=base_param.dtype, device=base_param.device)
-        self.lora_B.to(dtype=base_param.dtype, device=base_param.device)
+        if _is_cuet_linear(self.base):
+            lora_irreps_cue = cue.Irreps(
+                self.base.irreps_in.irrep_class, str(self.lora_irreps)
+            )
+            self.lora_A = cuet.Linear(
+                self.base.irreps_in,
+                lora_irreps_cue,
+                layout_in=self.base.transpose_in.source,
+                layout_out=cue.mul_ir,
+                shared_weights=self.base.shared_weights,
+                internal_weights=True,
+                device=base_param.device,
+                dtype=base_param.dtype,
+                method=self.base.method,
+            )
+            self.lora_B = cuet.Linear(
+                lora_irreps_cue,
+                self.base.irreps_out,
+                layout_in=cue.mul_ir,
+                layout_out=self.base.transpose_out.target,
+                shared_weights=self.base.shared_weights,
+                internal_weights=True,
+                device=base_param.device,
+                dtype=base_param.dtype,
+                method=self.base.method,
+            )
+        else:
+            layer_type = type(self.base)
+            self.lora_A = layer_type(
+                self.irreps_in, self.lora_irreps, internal_weights=True, biases=False
+            )
+            self.lora_B = layer_type(
+                self.lora_irreps, self.irreps_out, internal_weights=True, biases=False
+            )
+            self.lora_A.to(dtype=base_param.dtype, device=base_param.device)
+            self.lora_B.to(dtype=base_param.dtype, device=base_param.device)
 
         # Cache for merged weight (used during inference)
         self._cached_merged_weight: torch.Tensor | None = None
@@ -65,44 +111,48 @@ class LoRAO3Linear(nn.Module):
         with torch.no_grad():
             for p in self.lora_B.parameters():
                 p.zero_()
-            for p in self.lora_A.parameters():
-                if p.dim() >= 2:
-                    p.normal_(mean=0.0, std=1e-3)
 
     def _build_instruction_mapping(self) -> None:
         """Build lookup tables for matching instructions between base, A, and B."""
+        self._base_instructions = _linear_instructions(self.base)
+        self._A_instructions = _linear_instructions(self.lora_A)
+        self._B_instructions = _linear_instructions(self.lora_B)
+
         # lora_A: maps i_in -> (instruction_idx, i_out, path_weight)
         self._A_by_i_in = {}
-        for idx, instr in enumerate(self.lora_A.instructions):
+        for idx, instr in enumerate(self._A_instructions):
             self._A_by_i_in[instr.i_in] = (idx, instr.i_out, instr.path_weight)
 
         # lora_B: maps (i_in, i_out) -> (instruction_idx, path_weight)
         self._B_by_in_out = {}
-        for idx, instr in enumerate(self.lora_B.instructions):
+        for idx, instr in enumerate(self._B_instructions):
             self._B_by_in_out[(instr.i_in, instr.i_out)] = (idx, instr.path_weight)
 
     @staticmethod
-    def _extract_weight_blocks(linear: o3.Linear) -> dict[int, torch.Tensor]:
+    def _extract_weight_blocks(
+        linear: nn.Module, instructions
+    ) -> dict[int, torch.Tensor]:
         """Extract weight blocks indexed by instruction."""
+        flat_weight = linear.weight.reshape(-1)
         blocks = {}
         offset = 0
-        for idx, instr in enumerate(linear.instructions):
+        for idx, instr in enumerate(instructions):
             if instr.i_in == -1:
                 continue
             size = math.prod(instr.path_shape)
-            block = linear.weight[offset : offset + size].reshape(instr.path_shape)
+            block = flat_weight[offset : offset + size].reshape(instr.path_shape)
             blocks[idx] = block
             offset += size
         return blocks
 
     def compute_merged_weight(self) -> torch.Tensor:
         """Compute W_base + scaling * composed(W_A, W_B) in weight space."""
-        base_blocks = self._extract_weight_blocks(self.base)
-        A_blocks = self._extract_weight_blocks(self.lora_A)
-        B_blocks = self._extract_weight_blocks(self.lora_B)
+        base_blocks = self._extract_weight_blocks(self.base, self._base_instructions)
+        A_blocks = self._extract_weight_blocks(self.lora_A, self._A_instructions)
+        B_blocks = self._extract_weight_blocks(self.lora_B, self._B_instructions)
 
         merged_blocks = []
-        for base_idx, base_instr in enumerate(self.base.instructions):
+        for base_idx, base_instr in enumerate(self._base_instructions):
             i_in_base = base_instr.i_in
             i_out_base = base_instr.i_out
             pw_base = base_instr.path_weight
@@ -134,7 +184,9 @@ class LoRAO3Linear(nn.Module):
             merged = base_blocks[base_idx] + self.scaling * ratio * delta
             merged_blocks.append(merged)
 
-        return torch.cat([b.flatten() for b in merged_blocks])
+        return torch.cat([b.flatten() for b in merged_blocks]).reshape_as(
+            self.base.weight
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if torch.is_grad_enabled():
@@ -297,13 +349,21 @@ def inject_lora(
         # Skip already wrapped
         if isinstance(child, (LoRAO3Linear, LoRADenseLinear, LoRAFCLayer)):
             continue
-        # Equivariant o3.Linear
-        if wrap_equivariant and isinstance(child, o3.Linear):
+        # Equivariant o3.Linear / cuet.Linear
+        if wrap_equivariant and (
+            isinstance(child, o3.Linear)
+            or (
+                _is_cuet_linear(child)
+                and getattr(child, "internal_weights", False)
+                and getattr(child, "weight_classes", 1) == 1
+            )
+        ):
             try:
                 wrapped = LoRAO3Linear(child, rank=rank, alpha=alpha)
             except ValueError:  # If no shared irreps, skip
                 continue
             setattr(module, child_name, wrapped)
+            continue
         # Dense nn.Linear
         if wrap_dense and isinstance(child, nn.Linear):
             wrapped = LoRADenseLinear(child, rank=rank, alpha=alpha)

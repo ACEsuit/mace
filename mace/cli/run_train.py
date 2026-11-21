@@ -854,28 +854,6 @@ def run(args) -> None:
     model, output_args = configure_model(args, train_loader, atomic_energies, model_foundation, heads, z_table, head_configs)
     model.to(device)
 
-    if args.lora:
-        lora_rank = args.lora_rank
-        lora_alpha = args.lora_alpha
-
-        logging.info(
-            "Injecting LoRA layers with rank=%s and alpha=%s",
-            lora_rank,
-            lora_alpha,
-        )
-
-        logging.info(
-            "Original model has %s trainable parameters.",
-            tools.count_parameters(model),
-        )
-
-        model = inject_LoRAs(model, rank=lora_rank, alpha=lora_alpha)
-
-        logging.info(
-            "Model with LoRA has %s trainable parameters.",
-            tools.count_parameters(model),
-        )
-
     logging.info("===========OPTIMIZER INFORMATION===========")
     logging.info(f"Using {args.optimizer.upper()} as parameter optimizer")
     logging.info(f"Batch size: {args.batch_size}")
@@ -917,6 +895,28 @@ def run(args) -> None:
             "MagneticScaleShiftMACE",
         ]
         model = run_e3nn_to_oeq(deepcopy(model), device=device)
+
+    if args.lora:
+        lora_rank = args.lora_rank
+        lora_alpha = args.lora_alpha
+
+        logging.info(
+            "Injecting LoRA layers with rank=%s and alpha=%s",
+            lora_rank,
+            lora_alpha,
+        )
+
+        logging.info(
+            "Original model has %s trainable parameters.",
+            tools.count_parameters(model),
+        )
+
+        model = inject_LoRAs(model, rank=lora_rank, alpha=lora_alpha)
+
+        logging.info(
+            "Model with LoRA has %s trainable parameters.",
+            tools.count_parameters(model),
+        )
 
     # Optimizer
     if (
@@ -1204,17 +1204,17 @@ def run(args) -> None:
                 merge_lora_weights(model_to_save)
             if args.enable_cueq and not args.only_cueq:
                 logging.info("RUNING CUEQ TO E3NN")
-                model_to_save = run_cueq_to_e3nn(deepcopy(model), device=device)
+                model_to_save = run_cueq_to_e3nn(model_to_save, device=device)
             if args.enable_oeq:
                 logging.info("RUNING OEQ TO E3NN")
-                model_to_save = run_oeq_to_e3nn(deepcopy(model), device=device)
+                model_to_save = run_oeq_to_e3nn(model_to_save, device=device)
             if args.save_cpu:
                 model_to_save = model_to_save.to("cpu")
             torch.save(model_to_save, model_path)
             extra_files = {
                 "commit.txt": commit.encode("utf-8") if commit is not None else b"",
                 "config.yaml": json.dumps(
-                    convert_to_json_format(extract_config_mace_model(model))
+                    convert_to_json_format(extract_config_mace_model(model_to_save))
                 ),
             }
             os.makedirs(args.model_dir, exist_ok=True)
