@@ -415,7 +415,6 @@ def test_a_single_model_advertises_no_committee_keys(water):
     ]
 
 
-<<<<<<< HEAD
 # ---------------------------------------------------------------------------
 # node-energy reference subtraction (energy units)
 # ---------------------------------------------------------------------------
@@ -488,6 +487,23 @@ def test_committee_with_different_atomic_numbers_and_head_order(water):
     )
     np.testing.assert_allclose(
         r_comm["node_energy"], 0.5 * (r1["node_energy"] + r2["node_energy"])
+    )
+
+    r_scaled_padded = _results(
+        water,
+        [m1, m2],
+        head="Default",
+        energy_units_to_eV=2.5,
+        pad_num_atoms=6,
+        pad_num_edges=12,
+    )
+    np.testing.assert_allclose(r_scaled_padded["energy"], 2.5 * r_comm["energy"])
+    np.testing.assert_allclose(
+        r_scaled_padded["node_energy"], 2.5 * r_comm["node_energy"]
+    )
+    np.testing.assert_allclose(
+        r_scaled_padded["energies"] - r_scaled_padded["node_energy"],
+        2.5 * np.array([-1.5, -1.5, -1.5]),
     )
 
     previous = torch.get_default_dtype()
