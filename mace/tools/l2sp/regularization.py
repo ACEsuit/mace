@@ -21,7 +21,10 @@ class L2SPRegularization:
         if not math.isfinite(strength) or strength < 0:
             raise ValueError("L2-SP strength must be finite and non-negative")
         if any(group.get("weight_decay", 0.0) != 0 for group in optimizer.param_groups):
-            raise ValueError("L2-SP requires ordinary weight_decay=0")
+            raise ValueError(
+                "L2-SP requires optimizer groups with weight_decay=0; "
+                "the coefficient is managed by L2-SP"
+            )
         self.strength = float(strength)
         self.uses_loss = isinstance(optimizer, torch.optim.LBFGS)
         self._schedulefree = type(optimizer).__module__.startswith("schedulefree.")

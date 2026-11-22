@@ -16,10 +16,9 @@ def args_for(**overrides):
     args = build_default_arg_parser().parse_args(["--name=test"])
     vars(args).update(
         l2sp=True,
-        l2sp_strength=10.0,
         freeze="products,interactions.1,readouts",
         optimizer="adamw",
-        weight_decay=0.0,
+        weight_decay=10.0,
         foundation_model="foundation.model",
         multiheads_finetuning=False,
     )
@@ -114,17 +113,16 @@ def test_invalid_selection_is_not_silently_ignored(selection):
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"l2sp_strength": None},
-        {"l2sp_strength": -1},
-        {"l2sp_strength": float("nan")},
+        {"weight_decay": None},
+        {"weight_decay": -1},
+        {"weight_decay": float("nan")},
+        {"weight_decay": float("inf")},
         {"foundation_model": None},
-        {"weight_decay": 1e-7},
         {"multiheads_finetuning": True},
         {"lora": True},
         {"foundation_model_readout": False},
         {"enable_oeq": True},
         {"embedding_specs": "{}"},
-        {"l2sp": False},
     ],
 )
 def test_incompatible_options_fail_early(overrides):
@@ -136,8 +134,26 @@ def test_disabled_defaults_preserve_existing_training():
     args = build_default_arg_parser().parse_args(["--name=test"])
     validate_args(args)
     assert args.l2sp is False
+    assert not hasattr(args, "l2sp_strength")
     assert not hasattr(args, "l2sp_mode")
     assert args.optimizer == "adam"
+    assert args.weight_decay == 5e-7
+
+
+def test_l2sp_uses_existing_weight_decay_default():
+    args = build_default_arg_parser().parse_args(
+        [
+            "--name=test",
+            "--l2sp=True",
+            "--foundation_model=foundation.model",
+            "--multiheads_finetuning=False",
+        ]
+    )
+    validate_args(args)
+    model = load_anchor("tiny_scaleshift")
+    optimizer = get_optimizer(args, get_params_options(args, model))
+    assert args.weight_decay == 5e-7
+    assert optimizer.l2sp.strength == args.weight_decay
 
 
 @pytest.mark.parametrize(
@@ -151,11 +167,11 @@ def test_amsgrad_can_match_equitrain_without_changing_default(argv, expected):
 def test_yaml_config_selects_same_recipe(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(
-        "name: test\nl2sp: true\nl2sp_strength: 10.0\nfreeze: products,interactions.1,readouts\noptimizer: adamw\namsgrad: false\nweight_decay: 0.0\nfoundation_model: foundation.model\nmultiheads_finetuning: false\n"
+        "name: test\nl2sp: true\nfreeze: products,interactions.1,readouts\noptimizer: adamw\namsgrad: false\nweight_decay: 10.0\nfoundation_model: foundation.model\nmultiheads_finetuning: false\n"
     )
     args = build_default_arg_parser().parse_args(["--config", str(path)])
     validate_args(args)
     assert args.l2sp is True
-    assert args.l2sp_strength == 10.0
+    assert args.weight_decay == 10.0
     assert args.amsgrad is False
     assert args.freeze == "products,interactions.1,readouts"

@@ -12,7 +12,7 @@ additional constraint when data are limited. Grandel et al. [1] demonstrate
 this strategy for phonon, thermal, and elastic properties using small
 material-specific datasets.
 
-Enable L2-SP with `--l2sp=True`, set `--l2sp_strength`, and use `--freeze` to
+Enable L2-SP with `--l2sp=True`, set `--weight_decay`, and use `--freeze` to
 select which parts of the model stay fixed. The optimizer determines how
 regularization is applied.
 
@@ -35,11 +35,10 @@ mace_run_train \
     --foundation_model_readout=True \
     --multiheads_finetuning=False \
     --l2sp=True \
-    --l2sp_strength=10.0 \
     --freeze=products,interactions.1,readouts \
     --optimizer=adamw \
     --amsgrad=False \
-    --weight_decay=0.0 \
+    --weight_decay=10.0 \
     --lr=0.01 \
     --loss=huber \
     --huber_delta=0.01 \
@@ -62,21 +61,21 @@ L2-SP requires a foundation model and transfer of its readout weights. Use
 `--foundation_model=...`, `--foundation_model_readout=True`, and
 `--multiheads_finetuning=False`.
 
-Set `--l2sp_strength` to an explicit, finite, non-negative value. It controls
-regularization towards the starting weights; zero disables regularization
-while retaining the chosen frozen layers. Set `--weight_decay=0`, since the
-regularization coefficient is supplied through `--l2sp_strength`.
+With `--l2sp=True`, `--weight_decay` controls regularization towards the
+pretrained starting weights. It must be finite and non-negative; zero disables
+regularization while retaining the chosen frozen layers. Without L2-SP,
+`--weight_decay` keeps its usual optimizer behavior. Its default remains
+`5e-7`; the example explicitly uses `10.0` to match Equitrain's paper recipe.
 
 These settings can also be added to an existing YAML training configuration
 that supplies the foundation model and datasets:
 
 ```yaml
 l2sp: true
-l2sp_strength: 10.0
 freeze: products,interactions.1,readouts
 optimizer: adamw
 amsgrad: false
-weight_decay: 0.0
+weight_decay: 10.0
 multiheads_finetuning: false
 foundation_model_readout: true
 ```
@@ -109,10 +108,10 @@ weight-decay rule to `delta`. L-BFGS uses an explicit loss penalty:
 
 | Selection | Regularization behavior |
 | --- | --- |
-| `--optimizer=adam` | Adds `l2sp_strength * delta` to the gradient before the adaptive update. |
+| `--optimizer=adam` | Adds `weight_decay * delta` to the gradient before the adaptive update. |
 | `--optimizer=adamw` | Applies decoupled decay to `delta`, following Equitrain's residual-AdamW formulation. |
 | `--optimizer=schedulefree` | Applies the native AdamWScheduleFree decay rule to `delta`. |
-| `--lbfgs` | Adds `l2sp_strength / 2 * sum(delta**2)` to the full-dataset loss. |
+| `--lbfgs` | Adds `weight_decay / 2 * sum(delta**2)` to the full-dataset loss. |
 
 For the first three optimizers, gradient clipping applies to the data gradient
 before regularization. For L-BFGS, the penalty is included once per full-dataset
@@ -124,7 +123,7 @@ follows MACE's existing behavior: one parameter group with an initial step scale
 of 1.0, independent of `--lr` and the per-group factors.
 
 Both reduced-CG and unreduced-CG models are supported. Regularization uses the
-training model's parameter coordinates, so the same `--l2sp_strength` can produce
+training model's parameter coordinates, so the same `--weight_decay` can produce
 different behavior across CG representations. These differences are expected.
 
 ## Checkpoints and metrics
@@ -132,7 +131,7 @@ different behavior across CG representations. These differences are expected.
 Training checkpoints store the original reference weights along with the
 optimizer state. `--restart_latest` restores those references, so regularization
 continues towards the original starting point. Keep L2-SP enabled and retain the
-same strength, selected parameters, optimizer, and model representation when
+same `--weight_decay`, selected parameters, optimizer, and model representation when
 resuming. Missing or incompatible L2-SP checkpoints cause an error.
 
 Exported models are ordinary MACE models and need no additional L2-SP component

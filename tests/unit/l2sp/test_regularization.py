@@ -269,15 +269,19 @@ def test_incompatible_checkpoint_fails_before_loading_model(change):
         "lbfgs",
     ],
 )
-def test_mace_optimizer_factory_uses_native_optimizers(kind):
+@pytest.mark.parametrize("weight_decay", [0.0, 0.75, 10.0])
+def test_mace_optimizer_factory_uses_native_optimizers(kind, weight_decay):
     args = args_for(
         optimizer="adam" if kind == "lbfgs" else kind,
         lbfgs=kind == "lbfgs",
+        weight_decay=weight_decay,
     )
     validate_args(args)
     model = load_anchor("tiny_scaleshift")
     optimizer = get_optimizer(args, get_params_options(args, model))
     assert isinstance(optimizer.l2sp, L2SPRegularization)
+    assert optimizer.l2sp.strength == weight_decay
+    assert all(group.get("weight_decay", 0.0) == 0 for group in optimizer.param_groups)
     if kind == "lbfgs":
         assert isinstance(optimizer, torch.optim.LBFGS)
     else:

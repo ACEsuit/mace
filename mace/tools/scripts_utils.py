@@ -1112,7 +1112,7 @@ def get_optimizer(
     if getattr(args, "l2sp", False):
         from .l2sp import L2SPRegularization
 
-        optimizer.l2sp = L2SPRegularization(optimizer, args.l2sp_strength)
+        optimizer.l2sp = L2SPRegularization(optimizer, args.weight_decay)
     return optimizer
 
 

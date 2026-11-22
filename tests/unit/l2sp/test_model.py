@@ -46,7 +46,7 @@ def train_against_residual(
     residual_optimizer = torch.optim.AdamW(
         deltas.values(),
         lr=args.lr,
-        weight_decay=args.l2sp_strength,
+        weight_decay=args.weight_decay,
         betas=(args.beta, 0.999),
         amsgrad=args.amsgrad,
     )

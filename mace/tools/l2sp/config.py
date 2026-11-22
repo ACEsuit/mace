@@ -12,28 +12,16 @@ def add_arguments(parser, str2bool):
         default=False,
         help="Regularize fine-tuning towards the pretrained starting weights",
     )
-    parser.add_argument(
-        "--l2sp_strength",
-        type=float,
-        default=None,
-        help="Non-negative L2-SP coefficient (required with --l2sp)",
-    )
 
 
 def validate_args(args):
     if not getattr(args, "l2sp", False):
-        if getattr(args, "l2sp_strength", None) is not None:
-            raise ValueError("--l2sp_strength requires --l2sp=True")
         return
-    strength = args.l2sp_strength
+    strength = args.weight_decay
     if strength is None or not math.isfinite(strength) or strength < 0:
-        raise ValueError("--l2sp requires an explicit, finite --l2sp_strength >= 0")
+        raise ValueError("--l2sp requires a finite --weight_decay >= 0")
     if args.foundation_model is None:
         raise ValueError("--l2sp requires --foundation_model")
-    if args.weight_decay != 0:
-        raise ValueError(
-            "--l2sp requires --weight_decay=0; use --l2sp_strength for regularization towards starting weights"
-        )
     if args.multiheads_finetuning:
         raise ValueError("--l2sp requires --multiheads_finetuning=False")
     if args.lora:
@@ -72,6 +60,7 @@ def get_param_options(args, model):
                 "params": [],
                 "param_names": [],
                 "lr": args.lr * factor,
+                # L2-SP applies args.weight_decay to residuals during the step.
                 "weight_decay": 0.0,
             }
         groups[group_name]["params"].append(param)
@@ -81,8 +70,8 @@ def get_param_options(args, model):
         sum(parameters[name].numel() for name in selected),
     )
     logging.info(
-        "L2-SP strength: %s; selected tensors: %s",
-        args.l2sp_strength,
+        "L2-SP weight_decay: %s; selected tensors: %s",
+        args.weight_decay,
         sorted(selected),
     )
     return {

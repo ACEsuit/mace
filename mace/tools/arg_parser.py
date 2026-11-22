@@ -934,7 +934,13 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         dest="swa_lr",
     )
     parser.add_argument(
-        "--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
+        "--weight_decay",
+        help=(
+            "Weight-decay coefficient; with --l2sp=True, regularize towards "
+            "the pretrained starting weights instead of zero"
+        ),
+        type=float,
+        default=5e-7,
     )
     parser.add_argument(
         "--lr_params_factors",

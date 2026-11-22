@@ -29,10 +29,9 @@ def training_args(work, **overrides):
         "foundation_model_elements": True,
         "multiheads_finetuning": False,
         "l2sp": True,
-        "l2sp_strength": 10.0,
         "freeze": "products,interactions.1,readouts",
         "optimizer": "adamw",
-        "weight_decay": 0.0,
+        "weight_decay": 10.0,
         "lr": 0.001,
         "error_table": "PerAtomRMSEstressvirials",
         "save_cpu": None,
@@ -76,6 +75,7 @@ def test_cli_training_checkpoint_resume_and_frozen_weights(
     result = run_mace_train(args, capture_output=True, text=True)
     assert result.returncode == 0
     initial = latest_checkpoint(tmp_path)
+    assert initial["optimizer"]["l2sp"]["strength"] == args["weight_decay"]
     source = load_anchor("tiny_scaleshift").state_dict()
     changed = []
     selected = {
