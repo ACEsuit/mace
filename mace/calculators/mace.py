@@ -11,7 +11,7 @@ import logging
 import os
 from glob import glob
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
@@ -22,6 +22,7 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from e3nn import o3
 
 from mace import data as mace_data
+from mace.modules.models import ScaleShiftMACE
 from mace.modules.utils import extract_invariant
 from mace.tools import torch_geometric, torch_tools, utils
 from mace.tools.compile import (
@@ -77,6 +78,16 @@ def get_model_dtype(model: torch.nn.Module) -> torch.dtype:
     raise ValueError(f"Unknown dtype {mode_dtype}")
 
 
+def _uses_scale_shift_forward(model: torch.nn.Module) -> bool:
+    """Whether the model runs ScaleShiftMACE.forward rather than an override.
+
+    A scripted module keeps its source class only by name.
+    """
+    if isinstance(model, torch.jit.ScriptModule):
+        return model.original_name == "ScaleShiftMACE"
+    return type(model).forward is ScaleShiftMACE.forward
+
+
 class MACECalculator(Calculator):
     """MACE ASE Calculator
     args:
@@ -84,8 +95,14 @@ class MACECalculator(Calculator):
                 to make a committee use a wild card notation like mace_*.model
         device: str, device to run on (cuda or cpu or xpu)
         energy_units_to_eV: float, conversion factor from model energy units to eV
+                Applies to node energies and their subtracted atomic references too.
         length_units_to_A: float, conversion factor from model length units to Angstroms
         default_dtype: str, default dtype of model
+        energy_accumulation_dtype: "float64" (default) accumulates
+            ScaleShiftMACE total energies in float64 and returns the original
+            output dtype; None keeps the reductions in the working dtype. On
+            MPS, and for models that override ScaleShiftMACE.forward, the
+            reductions stay in the working dtype either way.
         charges_key: str, Array field of atoms object where atomic charges are stored
         model_type: str, type of model to load
                     Options: [MACE, PolarMACE, DipoleMACE, DipolePolarizabilityMACE,
@@ -127,9 +144,13 @@ class MACECalculator(Calculator):
         keep_neutral: bool = True,
         pbc_handling: str = "auto",
         compute_stress: bool = True,
+        energy_accumulation_dtype: Optional[str] = "float64",
         **kwargs,
     ):
         Calculator.__init__(self, **kwargs)
+        if energy_accumulation_dtype not in (None, "float64"):
+            raise ValueError("energy_accumulation_dtype must be None or 'float64'")
+        self.energy_accumulation_dtype = energy_accumulation_dtype
         self.compute_bec = compute_bec
         self.compute_stress = compute_stress
         if not compute_stress and kwargs.get("compute_atomic_stresses", False):
@@ -322,6 +343,12 @@ class MACECalculator(Calculator):
             [int(z) for z in self.models[0].atomic_numbers]
         )
         self.charges_key = charges_key
+        # Only ScaleShiftMACE.forward takes the option. Overridden forwards
+        # define their own energy terms and keep their own reductions.
+        self.forwards_energy_accumulation = all(
+            _uses_scale_shift_forward(model) for model in self.models
+        )
+
         if self.model_type == "PolarMACE":
             self.density_dim = (
                 getattr(self.models[0], "atomic_multipoles_max_l", 0) + 1
@@ -771,6 +798,10 @@ class MACECalculator(Calculator):
             }
             if getattr(self, "compute_bec", False):
                 model_kwargs["compute_bec"] = True
+            if self.forwards_energy_accumulation:
+                model_kwargs["energy_accumulation_dtype"] = (
+                    self.energy_accumulation_dtype
+                )
 
             # Scoped here too, not only around batch construction: extensions
             # create tensors mid-forward without a dtype (les does, for its
@@ -866,7 +897,7 @@ class MACECalculator(Calculator):
             self.results["free_energy"] = self.results["energy"]
         if self.results.get("node_energy") is not None:
             self.results["energies"] = self.results["node_energy"].copy()
-            self.results["node_energy"] -= node_e0
+            self.results["node_energy"] -= node_e0 * self.energy_units_to_eV
         if self.results.get("stress") is not None:
             self.results["stress"] = full_3x3_to_voigt_6_stress(self.results["stress"])
         # The committee's stresses go with it. Leaving them 3x3 while `stress` is
@@ -1012,6 +1043,54 @@ class MACECalculator(Calculator):
         if self.num_models == 1:
             return hessians[0]
         return hessians
+
+    def get_polarizability(self, atoms=None, method: str = "dipole"):
+        """Polarizability tensor alpha_ij = d(dipole_i)/d(field_j), shape (3, 3),
+        evaluated at the field in atoms.info["external_field"] (zero if unset).
+
+        :param method: "dipole" (default) differentiates the model's dipole
+            readout once with respect to the field. "energy" differentiates the
+            energy twice (the model forward also returns the intermediate
+            d(energy)/d(field) as "dipole_from_energy"). PolarMACE is not
+            variational, so the two methods do not agree in general.
+
+        Only defined for non-periodic structures: the total dipole is not well
+        defined under periodic boundary conditions, so any periodic direction
+        raises a ValueError.
+        """
+        if atoms is None and self.atoms is None:
+            raise ValueError("atoms not set")
+        if atoms is None:
+            atoms = self.atoms
+        if self.model_type != "PolarMACE":
+            raise NotImplementedError("Only implemented for PolarMACE models")
+        self._validate_electrostatic_pbcs(atoms)
+        if any(atoms.pbc):
+            raise ValueError(
+                "get_polarizability requires a non-periodic structure: the total "
+                "dipole is not well defined under periodic boundary conditions "
+                f"(got pbc={tuple(bool(flag) for flag in atoms.pbc)})"
+            )
+        batch = self._atoms_to_batch(atoms)
+        with torch_tools.default_dtype(self.default_dtype):
+            outputs = [
+                model(
+                    self._clone_batch(batch).to_dict(),
+                    compute_polarizability=True,
+                    polarizability_method=method,
+                    compute_force=False,
+                    compute_stress=False,
+                    training=self.use_compile,
+                )
+                for model in self.models
+            ]
+        # [0]: the real graph; a padding graph, if any, comes after it.
+        polarizabilities = [
+            out["polarizability"].detach().cpu().numpy()[0] for out in outputs
+        ]
+        if self.num_models == 1:
+            return polarizabilities[0]
+        return polarizabilities
 
     def get_descriptors(self, atoms=None, invariants_only=True, num_layers=-1):
         """Extracts the descriptors from MACE model.

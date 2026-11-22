@@ -369,6 +369,11 @@ CHANNELS: Dict[str, Channel] = {
     "node_feats": _channel("node_feats", PER_ATOM_MATRIX, "arb"),
     # --- dipole / polarisability family -----------------------------------
     "dipole": _channel("dipole", GRAPH_VECTOR, "Debye"),
+    # The polar model's d(energy)/d(external_field), returned only by the
+    # "energy" polarizability route. A channel of its own rather than an alias
+    # of `dipole`: the model is not variational, so the two differ, and the
+    # same forward returns both.
+    "dipole_from_energy": _channel("dipole_from_energy", GRAPH_VECTOR, "e*Ang"),
     # The per-atom terms the graph dipole is the sum of.
     "atomic_dipoles": _channel("atomic_dipoles", PER_ATOM_VECTOR, "Debye"),
     "polarizability": _channel("polarizability", GRAPH_TENSOR, "Debye*Ang/V"),

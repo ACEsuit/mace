@@ -6,8 +6,10 @@
 
 import functools
 import logging
+import multiprocessing
+import sys
 from contextlib import contextmanager
-from typing import Callable, Dict, Union
+from typing import Callable, Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -83,6 +85,23 @@ dtype_dict = {"float32": torch.float32, "float64": torch.float64}
 
 def set_default_dtype(dtype: str) -> None:
     torch.set_default_dtype(dtype_dict[dtype])
+
+
+def worker_start_method(num_workers: int) -> Optional[str]:
+    """The multiprocessing start method for DataLoader workers.
+
+    Since Python 3.14 the Linux default is forkserver, which pickles the
+    dataset to each worker. Under torch's file_descriptor sharing strategy
+    every tensor then travels as its own descriptor, and an in-memory dataset
+    of more than a few hundred tensors fails with `ValueError: too many fds`.
+    fork hands the dataset over by copy-on-write instead. macOS keeps its own
+    default, spawn, because fork is unsafe there.
+    """
+    if num_workers == 0 or sys.platform == "darwin":
+        return None
+    if "fork" not in multiprocessing.get_all_start_methods():
+        return None
+    return "fork"
 
 
 def get_change_of_basis() -> torch.Tensor:

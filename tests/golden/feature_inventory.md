@@ -778,10 +778,10 @@ eleven `--loss` scheme names of §3.7 map onto these ten classes.
 
 ## 9. Calculator constructor and exports
 
-### 9.1 `__init__` parameters (27)
+### 9.1 `__init__` parameters (28)
 
-`MACECalculator.__init__` declares 23 parameters and reads three more out of `**kwargs`
-(`head`, `compute_atomic_stresses`, `model_path`); the 27th (`magmom_key`) is added by
+`MACECalculator.__init__` declares 24 parameters and reads three more out of `**kwargs`
+(`head`, `compute_atomic_stresses`, `model_path`); the 28th (`magmom_key`) is added by
 `MagneticMACECalculator`, a second `Calculator` subclass rather than a mode of the first, so its
 `__init__` is a second public surface. The set is the union of both signatures and both kwargs
 bags: a knob that exists on only one of the two calculators is still a knob, and so is one that
@@ -812,6 +812,7 @@ only the bag spells.
 | `calc.param.keep_neutral` | `keep_neutral` — MACECalculator | `mace/calculators/mace.py:126` | KEEP — charge-neutrality enforcement in the field path | `tests/golden/test_tiny_maceles.py::test_keep_neutral_removes_exactly_a_uniform_field_force` + `tests/golden/test_tiny_maceles.py::test_keep_neutral_leaves_the_reported_bec_alone_and_repeats_identically` |
 | `calc.param.pbc_handling` | `pbc_handling` — MACECalculator | `mace/calculators/mace.py:128` | KEEP — Polar electrostatic boundary treatment can be selected independently of the physical `atoms.pbc` flags | `tests/extensions/polar/test_polar_conversion.py::test_calculator_constructor_propagates_pbc_handling` |
 | `calc.param.compute_stress` | `compute_stress` — MACECalculator | `mace/calculators/mace.py:129` | KEEP — fixed-cell simulations can skip the strain derivative and remove stress from the ASE interface | `tests/extensions/polar/test_polar_conversion.py::test_calculator_constructor_disables_stress` |
+| `calc.param.energy_accumulation_dtype` | `energy_accumulation_dtype` — MACECalculator | `mace/calculators/mace.py:134` | MERGE — reduction precision in the precision policy, where float64 accumulation of graph energies is the default rather than an option | `tests/unit/energy_accumulation/test_energy_accumulation.py::test_ase_forwards_the_strategy_and_retains_values` |
 | `calc.param.head` | `head` — read from `**kwargs` on MACECalculator | `mace/calculators/mace.py:297` | KEEP — which head of a multihead model the calculator evaluates | `tests/workflows/test_run_train.py::test_run_train_multihead` |
 | `calc.param.compute_atomic_stresses` | `compute_atomic_stresses` — read from `**kwargs` on MACECalculator | `mace/calculators/mace.py:216` | KEEP — decides whether `stresses` and `virials` are implemented properties at all | `tests/golden/test_tiny_anchors.py::test_the_two_per_atom_stress_routes_land_on_one_channel` |
 | `calc.param.model_path` | `model_path` — read from `**kwargs` on MACECalculator | `mace/calculators/mace.py:162` | DROP — deprecated singular alias for `model_paths`; it warns and forwards, and refuses when both are given | — |
@@ -854,7 +855,7 @@ copy — so the tree depends on both at once (§19).
 | `extra.dev` | `[dev]` | `setup.cfg` | KEEP — the lint/format toolchain | the lint job itself |
 | `extra.test` | `[test]` | `setup.cfg` | KEEP — pytest and its plugins, split out of `dev` so a test job need not install the linters | the suite itself |
 
-## 11. Model output keys (43)
+## 11. Model output keys (44)
 
 The keys of the dicts the model `forward`s return. This is the contract every consumer reads —
 the ASE calculator, `mace_eval_configs`, the LAMMPS runtimes, the training loop — so a renamed
@@ -902,6 +903,7 @@ move and which is absorbed into a declared observable.
 | `out.model.fermi_level` | `fermi_level` — first declared by `PolarMACE` | `mace/modules/extensions.py:1336` | KEEP — idem | `tests/extensions/polar/test_polar_output_keys.py::test_the_electrostatic_keys_are_present_with_the_right_extent` |
 | `out.model.external_field` | `external_field` — first declared by `PolarMACE` | `mace/modules/extensions.py:1337` | KEEP — idem | `tests/extensions/polar/test_polar_output_keys.py::test_the_electrostatic_keys_are_present_with_the_right_extent` |
 | `out.model.fukui_functions` | `fukui_functions` — first declared by `PolarMACE` | `mace/modules/extensions.py:1346` | KEEP — the fukui reactivity output | `tests/extensions/polar/test_polar_models.py::test_polar_calculator_returns_fukui_functions_by_default` |
+| `out.model.dipole_from_energy` | `dipole_from_energy` — first declared by `PolarMACE` | `mace/modules/extensions.py:1416` | KEEP — `d(energy)/d(external_field)`, returned only by the opt-in `energy` polarizability route; distinct from `dipole` because the model is not variational | `tests/extensions/polar/test_polar_models.py::test_polar_calculator_polarizability_energy_method_matches_finite_difference` |
 | `out.model.charges_history` | `charges_history` — first declared by `PolarMACE` | `mace/modules/extensions.py:1333` | MERGE — the per-iteration trace of the fixed-point solve; a solver diagnostic, so it belongs to the solver-dispatch layer rather than the model's outputs | `tests/extensions/polar/test_polar_output_keys.py::test_the_density_keys_keep_their_rank` |
 | `out.model.magforces` | `magforces` — first declared by `MagneticScaleShiftMACE` | `mace/modules/extensions.py:1951` | KEEP — `dE/dm`, a declared derivative exactly like forces | `tests/extensions/magnetic` + `tests/golden/test_tiny_magnetic.py::test_anchor_reproduces_its_reference` |
 | `out.model.scf_steps` | `scf_steps` — first declared by `MagneticSCFMACE` | `mace/modules/extensions.py:2102` | MERGE — SCF solver diagnostics belong to the model-transform hook, not to the model's output contract | `tests/extensions/magnetic::test_run_magnetic_scf` |
@@ -1225,7 +1227,7 @@ file on every run.
 | 8. Loss classes | 10 | class name |
 | 9. Calculator constructor + exports | 27 + 9 | parameter name, `__all__` |
 | 10. Optional extras | 13 | extra name |
-| 11. Model output keys | 43 | dict key |
+| 11. Model output keys | 44 | dict key |
 | 12. Calculator + eval output keys | 31 + 13 | results key, written key |
 | 13. Environment variables | 9 + 3 | variable name |
 | 14. Pytest markers | 13 | marker name |

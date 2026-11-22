@@ -128,9 +128,11 @@ ANCHOR_CONFIG: Dict[str, Any] = {
 #: stops because the budget ran out, which means the recorded state is an
 #: iterate and the reference would pin the optimiser's trajectory -- the one
 #: thing an SCF golden must not do. Raised, LBFGS terminates on its own
-#: (between 6 and 75 closure evaluations here) and the result stops depending
+#: (between 6 and 74 closure evaluations here) and the result stops depending
 #: on the budget at all: measured identical, bit for bit, at ``n_scf_step``
-#: 200 and 500 on all five moment-carrying fixtures.
+#: 200 and 500 on four of the five moment-carrying fixtures. The fifth, the
+#: ferromagnetic dimer, does not terminate: its moments run away until they
+#: overflow, and it comes back nan at either budget.
 #:
 #: That still does not make every terminal point a fixed point, and the
 #: difference is measured rather than assumed -- see

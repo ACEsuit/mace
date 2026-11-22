@@ -109,7 +109,7 @@ def test_the_relaxation_lowers_the_energy_and_flattens_the_magnetic_forces(
     says. Two things have to be true of that move for the second file to be
     worth having: the energy has to come down, and the thing being zeroed --
     ``dE/dm`` -- has to be much smaller at the end than at the start. Measured
-    on the committed anchor, the residual falls by four to eight orders of
+    on the committed anchor, the residual falls by five to eight orders of
     magnitude (5.2 -> 7.4e-8 on the isolated atom).
     """
     model = ms.load_anchor()
@@ -154,13 +154,14 @@ def test_the_pinned_state_is_a_fixed_point_and_the_excluded_ones_are_not(
 
     LBFGS returns wherever it stopped, and "wherever it stopped" is only a
     fixed point if it is a function of where it started. Perturb the initial
-    moments by 1e-9 and look at what comes back: on the three fixtures the
+    moments by 1e-9 and look at what comes back: on the two fixtures the
     reference covers, the answer moves by about 1e-9 -- the relaxation tracks
     its input, so the terminal point is determined by the model rather than by
     the arithmetic. On ``mag_fe3_canted`` and ``mag_feo_cluster`` it moves by
-    1e-5, four orders of magnitude of amplification, which means two runs of
-    the same code on two machines land in different places by more than the
-    tolerance row allows. Those two are excluded, and this is why.
+    5e-7 and 3e-5, an amplification of 470 and 26000, which means two runs of
+    the same code on two machines need not land in the same place. On
+    ``mag_fe_dimer_fm`` the relaxation never stops: the moments overflow and
+    come back as nan. Those three are excluded, and this is why.
 
     The exclusion is asserted rather than assumed so it cannot quietly become
     wrong. If the wrapper grows a real convergence criterion -- it currently
@@ -196,9 +197,13 @@ def test_the_pinned_state_is_a_fixed_point_and_the_excluded_ones_are_not(
             f"input. The pinned state has stopped being a fixed point."
         )
     excluded = set(amplification) - set(ms.SCF_REFERENCE_FIXTURES)
-    assert excluded == {"mag_fe3_canted", "mag_feo_cluster"}
-    for name in sorted(excluded):
-        assert amplification[name] > 1e3, (
+    assert excluded == {"mag_fe3_canted", "mag_feo_cluster", "mag_fe_dimer_fm"}
+    assert np.isnan(amplification["mag_fe_dimer_fm"]), (
+        "the ferromagnetic dimer's relaxation now ends at finite moments. If "
+        "they are a fixed point, add it back."
+    )
+    for name in sorted(excluded - {"mag_fe_dimer_fm"}):
+        assert amplification[name] > 1e2, (
             f"{name} is excluded from the SCF reference because its relaxed "
             f"moments were not a function of the starting ones, and it now "
             f"amplifies a 1e-9 perturbation by only {amplification[name]:.1f}. "
@@ -206,7 +211,7 @@ def test_the_pinned_state_is_a_fixed_point_and_the_excluded_ones_are_not(
         )
 
 
-def test_the_relaxation_is_not_bounded_by_the_models_own_m_max(reference):
+def test_the_relaxation_is_not_bounded_by_the_models_own_m_max(all_fixtures):
     """A characterisation, not a defect report, and MAG-1 needs it.
 
     Nothing in ``MagneticSCFMACE`` constrains the magnitude of the moments.
@@ -215,9 +220,10 @@ def test_the_relaxation_is_not_bounded_by_the_models_own_m_max(reference):
     which grow as |m|^l, so the energy is polynomial in |m| and unbounded
     below outside the clamped radial term -- measured on the committed anchor,
     scaling the ferromagnetic dimer's moments by ten takes the energy from
-    -9 eV to -2.9e13 eV. A relaxation therefore has no reason to stay inside
+    -9 eV to -3.6e12 eV. A relaxation therefore has no reason to stay inside
     the range the model was parameterised for, and on the ferromagnetic dimer
-    it does not: it settles at 4.3 and 6.5 muB against an ``m_max`` of 4.5.
+    it does not: within ten closure evaluations the moments pass 1e11 muB and
+    the energy -7e35 eV, against an ``m_max`` of 4.5, and then they overflow.
 
     That is pinned because it is exactly the sort of thing a rewrite would
     "fix" by clamping the moments, which would be a different model producing
@@ -225,13 +231,16 @@ def test_the_relaxation_is_not_bounded_by_the_models_own_m_max(reference):
     come from training or from an explicit constraint, and either is a change
     with a reference to regenerate.
     """
-    relaxed = np.asarray(
-        reference["fixtures"]["mag_fe_dimer_fm"]["outputs"]["equilibrated_magmom"][
-            "value"
-        ]
-    )
-    m_max = float(ms.load_anchor().m_max[1])
-    assert np.linalg.norm(relaxed, axis=-1).max() > m_max, (
+    model = ms.load_anchor()
+    with torch_tools.default_dtype("float64"):
+        out = ms.load_scf_anchor()(
+            ms.build_batch(model, all_fixtures["mag_fe_dimer_fm"]),
+            compute_force=True,
+        )
+    relaxed = out["equilibrated_magmom"].detach().numpy()
+    m_max = float(model.m_max[1])
+    # nan compares false, so moments that overflowed are not "inside" either
+    assert not (np.linalg.norm(relaxed, axis=-1) <= m_max).all(), (
         "the ferromagnetic dimer's relaxed moments now stay inside m_max. "
         "Either the anchor changed or something started constraining the "
         "relaxation; both are reference-regenerating events."
@@ -250,7 +259,7 @@ def test_the_collinear_variant_moves_the_moments_only_along_z(fixtures):
     starts non-collinear, is where the difference is visible. One case, as the
     ticket scopes it: the reference itself is taken with the free variant.
     """
-    atoms = fixtures["mag_fe_dimer_fm"]
+    atoms = fixtures["mag_fe_dimer_afm"]
     model = ms.load_anchor()
     wrapper = ms.load_scf_anchor(use_collinear=True)
     with torch_tools.default_dtype("float64"):
@@ -330,7 +339,7 @@ def test_cache_magmom_supplies_the_moments_when_the_batch_has_none(fixtures):
     show: every fixture here carries its own moments, precisely so that the
     goldens do not depend on the order they were evaluated in.
     """
-    atoms = fixtures["mag_fe_dimer_fm"]
+    atoms = fixtures["mag_fe_dimer_afm"]
     model = ms.load_anchor()
     wrapper = ms.load_scf_anchor()
     assert wrapper.cache_magmom is None
@@ -362,7 +371,7 @@ def test_a_fresh_wrapper_with_no_moments_refuses(fixtures):
     """
     model = ms.load_anchor()
     wrapper = ms.load_scf_anchor()
-    batch = ms.build_batch(model, fixtures["mag_fe_dimer_fm"])
+    batch = ms.build_batch(model, fixtures["mag_fe_dimer_afm"])
     del batch["magmom"]
     with pytest.raises(ValueError, match="No initial magnetic moment provided"):
         wrapper(batch, compute_force=True)
@@ -389,7 +398,7 @@ def test_the_calculator_refuses_a_hessian_for_an_scf_wrapped_model(fixtures):
     """
     from mace.calculators import MagneticMACECalculator  # noqa: PLC0415
 
-    atoms = fixtures["mag_fe_dimer_fm"].copy()
+    atoms = fixtures["mag_fe_dimer_afm"].copy()
     wrapped = MagneticMACECalculator(
         models=[ms.load_scf_anchor()], device="cpu", default_dtype="float64",
         magmom_key=ms.MAGMOM_KEY,
@@ -425,7 +434,7 @@ def test_the_eval_cli_refuses_magforces_for_an_scf_wrapped_model(fixtures, tmp_p
     model_path = tmp_path / "scf.model"
     torch.save(ms.load_scf_anchor(), model_path)
     configs = tmp_path / "in.xyz"
-    probe = fixtures["mag_fe_dimer_fm"].copy()
+    probe = fixtures["mag_fe_dimer_afm"].copy()
     probe.info.pop("golden_name", None)
     ase.io.write(configs, probe, format="extxyz")
 

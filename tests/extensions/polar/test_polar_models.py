@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 import os
 import subprocess
 import sys
 from pathlib import Path
+
 import ase.io
 import numpy as np
 import pytest
@@ -101,7 +103,9 @@ except (ImportError, ModuleNotFoundError):
         return stress.flat[[0, 4, 8, 5, 2, 1]] if voigt else stress
 
 
-from tests.helpers import GRAPH_LONGRANGE_AVAILABLE  # pylint: disable=wrong-import-position
+from tests.helpers import (
+    GRAPH_LONGRANGE_AVAILABLE,
+)  # pylint: disable=wrong-import-position
 
 pytestmark = [
     pytest.mark.polar,
@@ -111,6 +115,7 @@ pytestmark = [
 ]
 
 from tests.helpers import REPO_ROOT, TESTS_ROOT  # noqa: E402
+
 RUN_TRAIN = REPO_ROOT / "mace" / "cli" / "run_train.py"
 
 # ---------------------------------------------------------------------------
@@ -215,7 +220,7 @@ def _build_full_model(
     return model
 
 
-def _build_minimal_model(device, dtype):
+def _build_minimal_model(device, dtype, pair_repulsion=False):
     num_elements = 2
     atomic_numbers = [1, 8]
     hidden_irreps = o3.Irreps("4x0e + 4x1o")
@@ -252,6 +257,7 @@ def _build_minimal_model(device, dtype):
         gate=torch.nn.functional.silu,
         radial_MLP=[16, 16],
         radial_type="bessel",
+        pair_repulsion=pair_repulsion,
         kspace_cutoff_factor=1.0,
         atomic_multipoles_max_l=1,
         atomic_multipoles_smearing_width=1.0,
@@ -500,7 +506,9 @@ def _polar_slab_atoms(vacuum: float) -> Atoms:
     symbols = ["O", "H", "H"]
     positions = [[0.0, 0.0, 0.0], [0.8, 0.8, 0.6], [0.8, 0.8, -0.6]]
     cell = [[a, 0.0, 0.0], [0.0, a, 0.0], [0.0, 0.0, vacuum]]
-    return Atoms(symbols=symbols, positions=positions, cell=cell, pbc=(True, True, False))
+    return Atoms(
+        symbols=symbols, positions=positions, cell=cell, pbc=(True, True, False)
+    )
 
 
 def _run_polar_slab(model, dtype, vacuum: float) -> dict:
@@ -848,6 +856,127 @@ def test_polar_calculator_implements_dipole():
     dipole = atoms.get_dipole_moment()
     assert dipole.shape == (3,)
     np.testing.assert_allclose(dipole, calc.results["dipole"])
+
+
+def _polar_calc_and_atoms():
+    torch.manual_seed(0)
+    model = _build_minimal_model(torch.device("cpu"), torch.float64).eval()
+    calc = MACECalculator(
+        models=model,
+        device="cpu",
+        default_dtype="float64",
+        model_type="PolarMACE",
+    )
+    return calc, _water_atoms()
+
+
+def _central_difference_over_field(calc, atoms, prop, h=1e-4):
+    """d(prop)/d(atoms.info["external_field"]) by central differences,
+    shape (3,) for a scalar property and (3, 3) with [i, j] = d prop_i / d E_j."""
+    cols = []
+    for j in range(3):
+        vals = []
+        for sign in (1.0, -1.0):
+            field = np.zeros(3)
+            field[j] = sign * h
+            atoms.info["external_field"] = field
+            calc.reset()
+            vals.append(np.asarray(calc.get_property(prop, atoms)))
+        cols.append((vals[0] - vals[1]) / (2.0 * h))
+    atoms.info.pop("external_field")
+    return np.stack(cols, axis=-1)
+
+
+def test_polar_calculator_polarizability_dipole_method_matches_finite_difference():
+    """method="dipole" (the default) is -d(dipole)/d(external_field), checked
+    against a central difference of the dipole readout over the field."""
+    calc, atoms = _polar_calc_and_atoms()
+
+    alpha = calc.get_polarizability(atoms)
+    assert alpha.shape == (3, 3)
+    np.testing.assert_allclose(alpha, calc.get_polarizability(atoms, method="dipole"))
+
+    alpha_fd = -_central_difference_over_field(calc, atoms, "dipole")
+    np.testing.assert_allclose(alpha, alpha_fd, atol=1e-6)
+
+
+def test_polar_calculator_polarizability_energy_method_matches_finite_difference():
+    """method="energy" is -d2(energy)/d(external_field)2, checked against a
+    central difference of the (exact, autograd) d(energy)/d(external_field)."""
+    calc, atoms = _polar_calc_and_atoms()
+
+    alpha = calc.get_polarizability(atoms, method="energy")
+    assert alpha.shape == (3, 3)
+
+    def energy_gradient(atoms_):
+        batch = calc._atoms_to_batch(atoms_)  # pylint: disable=protected-access
+        out = calc.models[0](
+            batch.to_dict(),
+            compute_polarizability=True,
+            polarizability_method="energy",
+            compute_force=False,
+        )
+        return out["dipole_from_energy"].detach().cpu().numpy()[0]
+
+    # d(energy)/d(field) is itself a finite difference of the energy.
+    e_grad_fd = _central_difference_over_field(calc, atoms, "energy")
+    np.testing.assert_allclose(energy_gradient(atoms), e_grad_fd, atol=1e-6)
+
+    h = 1e-4
+    alpha_fd = np.zeros((3, 3))
+    for j in range(3):
+        grads = []
+        for sign in (1.0, -1.0):
+            probe = atoms.copy()
+            probe.info["external_field"] = np.eye(3)[j] * sign * h
+            grads.append(energy_gradient(probe))
+        alpha_fd[:, j] = -(grads[0] - grads[1]) / (2.0 * h)
+    np.testing.assert_allclose(alpha, alpha_fd, atol=1e-6)
+
+
+def test_polar_calculator_polarizability_energy_method_is_symmetric():
+    """The energy route is a second derivative, so it is symmetric for any
+    model. The two routes are not compared with each other: they coincide for
+    a variational model and differ otherwise, and neither is a contract."""
+    calc, atoms = _polar_calc_and_atoms()
+    alpha_energy = calc.get_polarizability(atoms, method="energy")
+    np.testing.assert_allclose(alpha_energy, alpha_energy.T, atol=1e-8)
+
+    with pytest.raises(ValueError, match="polarizability method"):
+        calc.get_polarizability(atoms, method="hessian")
+
+
+def test_polar_model_polarizability_is_opt_in():
+    """A plain forward leaves the field alone and returns no polarizability."""
+    calc, atoms = _polar_calc_and_atoms()
+    batch = calc._atoms_to_batch(atoms)  # pylint: disable=protected-access
+    out = calc.models[0](batch.to_dict(), compute_force=False)
+    assert out["polarizability"] is None
+    assert out["dipole_from_energy"] is None
+
+
+def test_polar_calculator_polarizability_validates_electrostatic_pbcs():
+    """get_polarizability applies the same mode/geometry check as calculate:
+    a periodic cell under a forced open-boundary mode is refused, not evaluated."""
+    calc, atoms = _polar_calc_and_atoms()
+    calc.set_electrostatic_pbcs("realspace")
+    atoms.set_cell([10.0, 10.0, 10.0])
+    atoms.pbc = True
+    with pytest.raises(ValueError, match="incompatible with PBC"):
+        calc.get_polarizability(atoms)
+
+
+@pytest.mark.parametrize("pbc", [(True, True, True), (True, True, False)])
+def test_polar_calculator_polarizability_refuses_periodic_structures(pbc):
+    """A periodic cell that calculate() accepts is still refused: the total
+    dipole, and so its field derivative, is not well defined under PBC."""
+    calc, atoms = _polar_calc_and_atoms()
+    atoms.set_cell([10.0, 10.0, 10.0])
+    atoms.pbc = pbc
+    atoms.calc = calc
+    atoms.get_potential_energy()  # the same structure is a valid energy call
+    with pytest.raises(ValueError, match="non-periodic structure"):
+        calc.get_polarizability(atoms)
 
 
 # ---------------------------------------------------------------------------
@@ -1250,12 +1379,8 @@ def test_polar_stress_matches_fd_large_periodic_boxes(
 # Regression values
 # ---------------------------------------------------------------------------
 
-_REG_REF_PATH = (
-    TESTS_ROOT / "references" / "polar_regression_reference.json"
-)
-_LOCAL_BENCH_ROOT = (
-    TESTS_ROOT / "references" / "x23_lattice_energy"
-)
+_REG_REF_PATH = TESTS_ROOT / "references" / "polar_regression_reference.json"
+_LOCAL_BENCH_ROOT = TESTS_ROOT / "references" / "x23_lattice_energy"
 
 if _REG_REF_PATH.exists():
     _REF = json.loads(_REG_REF_PATH.read_text())
@@ -1349,3 +1474,42 @@ def test_polar_mace_registers_all_trainable_parameters():
     model = _build_minimal_model(torch.device("cpu"), torch.get_default_dtype())
     args = _optimizer_args()
     get_optimizer(args, get_params_options(args, model))
+
+
+@pytest.mark.parametrize("interaction_scale", [1.0, 2.0])
+def test_polar_pair_repulsion_energy_forces_stress(interaction_scale):
+    with torch.random.fork_rng():
+        torch.manual_seed(2026)
+        model = _build_minimal_model(
+            torch.device("cpu"), torch.float64, pair_repulsion=True
+        ).eval()
+    model.scale_shift.scale.fill_(interaction_scale)
+    plain = copy.deepcopy(model)
+    del plain.pair_repulsion
+    data = _build_minimal_batch(torch.device("cpu"), torch.float64)
+    data["positions"] *= 0.25
+    data["unit_shifts"] = torch.zeros_like(data["shifts"])
+    data["volume"].fill_(1000.0)
+
+    positions = data["positions"].clone().requires_grad_(True)
+    strain = torch.zeros((1, 3, 3), dtype=positions.dtype, requires_grad=True)
+    deformed = positions + torch.einsum("ni,nij->nj", positions, strain[data["batch"]])
+    receivers, senders = data["edge_index"]
+    lengths = (deformed[senders] - deformed[receivers]).norm(dim=-1, keepdim=True)
+    pair_energy = (
+        interaction_scale
+        * model.pair_repulsion_fn(
+            lengths, data["node_attrs"], data["edge_index"], model.atomic_numbers
+        ).sum()
+    )
+    grad_positions, grad_strain = torch.autograd.grad(pair_energy, (positions, strain))
+    actual = model(copy.deepcopy(data), compute_force=True, compute_stress=True)
+    baseline = plain(copy.deepcopy(data), compute_force=True, compute_stress=True)
+    torch.testing.assert_close(
+        actual["energy"] - baseline["energy"], pair_energy.reshape(1)
+    )
+    torch.testing.assert_close(actual["forces"] - baseline["forces"], -grad_positions)
+    torch.testing.assert_close(
+        actual["stress"] - baseline["stress"],
+        grad_strain / data["volume"].view(-1, 1, 1),
+    )

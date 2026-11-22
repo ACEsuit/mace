@@ -1336,6 +1336,13 @@ DISPOSITIONS: Tuple[Tuple[str, str, str, str], ...] = (
         "it becomes backend dispatch config",
     ),
     (
+        "calc.param.energy_accumulation_dtype",
+        MERGE,
+        "energy_accumulation_dtype",
+        "reduction precision moves into the precision policy, where float64 "
+        "accumulation of graph energies is the default rather than an option",
+    ),
+    (
         "calc.param.model_path",
         DROP,
         "model_path",

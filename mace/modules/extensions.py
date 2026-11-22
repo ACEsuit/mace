@@ -32,6 +32,7 @@ from mace.modules.blocks import (
 )
 from mace.modules.embeddings import GenericJointEmbedding
 from mace.modules.models import ScaleShiftMACE
+from mace.modules.utils import compute_polarizability as _compute_polarizability
 from mace.modules.utils import (
     compute_total_charge_dipole_permuted,
     get_atomic_virials_stresses,
@@ -279,7 +280,7 @@ class MACELES(ScaleShiftMACE):
                         _copy_mace_readout(readout, cueq_config=cueq_config)
                     )
 
-    def forward(
+    def forward(  # pylint: disable=arguments-renamed
         self,
         data: Dict[str, torch.Tensor],
         training: bool = False,
@@ -668,6 +669,12 @@ def _permute_to_e3nn_convention(x: torch.Tensor) -> torch.Tensor:
 
 @compile_mode("script")
 class PolarMACE(ScaleShiftMACE):
+    """Polarizable MACE with long-range electrostatics.
+
+    Optional pair repulsion contributes to the scaled short-range interaction
+    energy and its force and stress derivatives, as in ScaleShiftMACE.
+    """
+
     def __init__(
         self,
         kspace_cutoff_factor: float = 1.5,
@@ -974,7 +981,7 @@ class PolarMACE(ScaleShiftMACE):
         self.pbc_handling = pbc_handling
         self.electric_potential_descriptor.static_quantities = None
 
-    def forward(
+    def forward(  # pylint: disable=arguments-renamed
         self,
         data: Dict[str, torch.Tensor],
         training: bool = False,
@@ -988,6 +995,8 @@ class PolarMACE(ScaleShiftMACE):
         lammps_mliap: bool = False,
         fermi_level: Optional[torch.Tensor] = None,
         external_field: Optional[torch.Tensor] = None,
+        compute_polarizability: bool = False,
+        polarizability_method: str = "dipole",
     ) -> Dict[str, Optional[torch.Tensor]]:
         if not GRAPH_LONGRANGE_AVAILABLE:
             raise ImportError(
@@ -1038,6 +1047,8 @@ class PolarMACE(ScaleShiftMACE):
             fermi_level = data["fermi_level"]
         if external_field is None:
             external_field = data["external_field"]
+        if compute_polarizability and not external_field.requires_grad:
+            external_field = external_field.clone().requires_grad_(True)
         external_potential = torch.hstack(
             (torch.zeros_like(fermi_level).unsqueeze(-1), external_field)
         )
@@ -1064,7 +1075,7 @@ class PolarMACE(ScaleShiftMACE):
         else:
             pair_node_energy = torch.zeros_like(node_e0)
 
-        node_es_list: List[torch.Tensor] = []
+        node_es_list: List[torch.Tensor] = [pair_node_energy]
         node_feats_list: List[torch.Tensor] = []
         spin_charge_density = torch.zeros(
             (data["batch"].size(-1), self.charges_irreps.dim),
@@ -1339,6 +1350,20 @@ class PolarMACE(ScaleShiftMACE):
             + torch.sum(external_potential[:, 1:] * total_dipole, dim=-1)
         )
 
+        # Before get_outputs, which frees the graph unless training.
+        # "dipole": alpha = -d(dipole)/d(external_field), one autograd pass.
+        # "energy": alpha = -d2(energy)/d(external_field)2, two passes; also
+        # yields dipole_from_energy. See mace.modules.utils.compute_polarizability.
+        polarizability: Optional[torch.Tensor] = None
+        dipole_from_energy: Optional[torch.Tensor] = None
+        if compute_polarizability:
+            polarizability, dipole_from_energy = _compute_polarizability(
+                energy=total_energy,
+                dipole=total_dipole,
+                external_field=external_field,
+                method=polarizability_method,
+            )
+
         forces, virials, stress, hessian, edge_forces, _ = get_outputs(
             energy=total_energy,
             positions=positions,
@@ -1393,6 +1418,8 @@ class PolarMACE(ScaleShiftMACE):
             "charges": charge_density_mul_ir[:, 0],
             "spins": spin_density_mul_ir[:, 0],
             "dipole": total_dipole,
+            "polarizability": polarizability,
+            "dipole_from_energy": dipole_from_energy,
             "total_charge": total_charge,
             "electrostatic_energy": electro_energy,
             "electron_energy": le_total,
@@ -1502,7 +1529,7 @@ class MagneticMACE(torch.nn.Module):
         correlation: Union[int, List[int]],
         gate: Optional[Callable],
         pair_repulsion: bool = False,
-        apply_cutoff: bool = True,
+        apply_cutoff: bool = False,
         use_reduced_cg: bool = True,
         use_so3: bool = False,
         use_agnostic_product: bool = False,
@@ -1542,7 +1569,10 @@ class MagneticMACE(torch.nn.Module):
             correlation = [correlation] * num_interactions
 
         self.lammps_mliap = lammps_mliap
-        self.apply_cutoff = apply_cutoff
+        # Accepted because the shared model config passes it. The envelope is
+        # applied in the magnetic interaction blocks, never in the radial basis.
+        del apply_cutoff
+        self.apply_cutoff = False
         self.edge_irreps = edge_irreps
         self.use_reduced_cg = use_reduced_cg
         self.use_agnostic_product = use_agnostic_product
@@ -1581,6 +1611,7 @@ class MagneticMACE(torch.nn.Module):
             num_polynomial_cutoff=num_polynomial_cutoff,
             radial_type=radial_type,
             distance_transform=distance_transform,
+            apply_cutoff=self.apply_cutoff,  # applied in the magnetic interactions
         )
         edge_feats_irreps = o3.Irreps(f"{self.radial_embedding.out_dim}x0e")
         if pair_repulsion:
@@ -1855,9 +1886,12 @@ class MagneticScaleShiftMACE(MagneticMACE):
             shifts=data["shifts"],
         )
         edge_attrs = self.spherical_harmonics(vectors)
-        edge_feats, _ = self.radial_embedding(
+        edge_feats, cutoff = self.radial_embedding(
             lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
         )
+        # The radial basis is built with apply_cutoff=False, so it returns the
+        # envelope for the interaction blocks to apply.
+        assert cutoff is not None
         if hasattr(self, "pair_repulsion"):
             pair_node_energy = self.pair_repulsion_fn(
                 lengths, data["node_attrs"], data["edge_index"], self.atomic_numbers
@@ -1908,6 +1942,7 @@ class MagneticScaleShiftMACE(MagneticMACE):
                 edge_index=data["edge_index"],
                 magmom_node_inv_feats=magmom_node_feats,
                 magmom_node_attrs=magmom_node_attrs,
+                cutoff=cutoff,
             )
 
             node_feats = product(
