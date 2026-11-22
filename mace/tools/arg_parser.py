@@ -9,6 +9,8 @@ import os
 from typing import Dict, Optional
 
 from .default_keys import DefaultKeys
+from .l2sp import add_arguments as add_l2sp_arguments
+from .parameter_freezing import parse_freeze
 
 
 def build_default_arg_parser() -> argparse.ArgumentParser:
@@ -660,6 +662,8 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
         default=1.0,
     )
 
+    add_l2sp_arguments(parser, str2bool)
+
     # Keys
     parser.add_argument(
         "--energy_key",
@@ -940,14 +944,21 @@ def build_default_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--freeze",
-        help="Freeze layers from 1 to N. Can be positive or negative, e.g. -1 means the last layer is frozen. 0 or None means all layers are active and is a default setting",
-        type=int,
+        help=(
+            "Legacy integer level (>=1: embedding, >=5: also interactions, "
+            ">=6: also products, >=7: also readouts; <=0: no additional freezing), "
+            "or comma-separated module names to freeze, e.g. "
+            "products,interactions.1,readouts. Existing frozen weights stay frozen."
+        ),
+        type=parse_freeze,
         default=None,
     )
     parser.add_argument(
         "--amsgrad",
         help="use amsgrad variant of optimizer",
-        action="store_true",
+        type=str2bool,
+        nargs="?",
+        const=True,
         default=True,
     )
     parser.add_argument(

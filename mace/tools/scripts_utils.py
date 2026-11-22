@@ -21,6 +21,7 @@ from torch.optim.swa_utils import SWALR, AveragedModel
 
 from mace import data, modules, tools
 from mace.data import KeySpecification
+from mace.tools.parameter_freezing import freeze_named_modules
 from mace.tools.train import SWAContainer
 
 
@@ -942,7 +943,9 @@ def get_params_options(
 
     lr_params_factors = json.loads(args.lr_params_factors)
 
-    if args.freeze:
+    if isinstance(args.freeze, str):
+        freeze_named_modules(model, args.freeze)
+    elif args.freeze:
         if args.freeze >= 7:
             logging.info("Freezing readout weights")
             lr_params_factors["readouts_lr_factor"] = 0.0
@@ -959,6 +962,11 @@ def get_params_options(
             logging.info("Freezing embedding weights")
             lr_params_factors["embedding_lr_factor"] = 0.0
             freeze_module(model.node_embedding, True)
+
+    if getattr(args, "l2sp", False):
+        from .l2sp import get_param_options
+
+        return get_param_options(args, model)
 
     param_options = dict(
         params=[
@@ -1072,7 +1080,18 @@ def get_params_options(
 def get_optimizer(
     args: argparse.Namespace, param_options: Dict[str, Any]
 ) -> torch.optim.Optimizer:
-    if args.optimizer == "adamw":
+    if getattr(args, "l2sp", False) and args.lbfgs:
+        # L-BFGS has one parameter group. Match MACE's existing step settings,
+        # but create it before scheduler/checkpoint setup for L2-SP reference restore.
+        params = [p for group in param_options["params"] for p in group["params"]]
+        names = [n for group in param_options["params"] for n in group["param_names"]]
+        optimizer = torch.optim.LBFGS(
+            [{"params": params, "param_names": names}],
+            history_size=200,
+            max_iter=20,
+            line_search_fn="strong_wolfe",
+        )
+    elif args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(**param_options)
     elif args.optimizer == "schedulefree":
         try:
@@ -1090,6 +1109,10 @@ def get_optimizer(
         )
     else:
         optimizer = torch.optim.Adam(**param_options)
+    if getattr(args, "l2sp", False):
+        from .l2sp import L2SPRegularization
+
+        optimizer.l2sp = L2SPRegularization(optimizer, args.l2sp_strength)
     return optimizer
 
 

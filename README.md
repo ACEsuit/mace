@@ -263,6 +263,10 @@ And specify the necessary keyword arguments (`--wandb`, `--wandb_project`, `--wa
 ## Pretrained Foundation Models
 
 We provide a series of pretrained foundation models for various applications. These models can be used directly for inference, or as a starting point for fine-tuning on a new dataset.
+
+For fine-tuning with regularization towards pretrained weights, including the
+targeted first-two-layer recipe, see [L2-SP fine-tuning](mace/tools/l2sp/README.md).
+
 Foundation models are a rapidly evolving field. Please look at the [MACE-MP GitHub repository](https://github.com/ACEsuit/mace-foundations/releases) and the [MACE-OFF23 GitHub repository](https://github.com/ACEsuit/mace-off/releases) for the latest releases.
 
 ### Latest Recommended Foundation Models

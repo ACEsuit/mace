@@ -12,6 +12,13 @@ from typing import Dict, List, Optional, Tuple
 
 import torch
 
+from .l2sp import (
+    L2SPCheckpointError,
+    get_regularization,
+    load_optimizer_state_dict,
+    optimizer_state_dict,
+    validate_checkpoint,
+)
 from .torch_tools import TensorDict
 
 Checkpoint = Dict[str, TensorDict]
@@ -29,7 +36,7 @@ class CheckpointBuilder:
     def create_checkpoint(state: CheckpointState) -> Checkpoint:
         return {
             "model": state.model.state_dict(),
-            "optimizer": state.optimizer.state_dict(),
+            "optimizer": optimizer_state_dict(state.optimizer),
             "lr_scheduler": state.lr_scheduler.state_dict(),
         }
 
@@ -37,11 +44,27 @@ class CheckpointBuilder:
     def load_checkpoint(
         state: CheckpointState, checkpoint: Checkpoint, strict: bool
     ) -> None:
-        state.model.load_state_dict(checkpoint["model"], strict=strict)  # type: ignore
+        validate_checkpoint(state.optimizer, checkpoint["optimizer"])
+        l2sp = get_regularization(state.optimizer) is not None
         try:
-            state.optimizer.load_state_dict(checkpoint["optimizer"])
+            state.model.load_state_dict(
+                checkpoint["model"],
+                strict=strict or l2sp,
+            )
+        except RuntimeError as exc:
+            if l2sp:
+                raise L2SPCheckpointError(
+                    "L2-SP checkpoint model is incompatible"
+                ) from exc
+            raise
+        try:
+            load_optimizer_state_dict(state.optimizer, checkpoint["optimizer"])
             state.lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
         except ValueError as exc:
+            if l2sp:
+                raise L2SPCheckpointError(
+                    "Could not restore L2-SP optimizer/scheduler state"
+                ) from exc
             logging.warning(
                 "Restored model weights but could not restore optimizer/scheduler "
                 f"state from checkpoint ({exc}). Resuming at the checkpoint's epoch "

@@ -9,6 +9,7 @@ import torch
 import torch.distributed
 from torchmetrics import Metric
 
+from mace.tools.parameter_freezing import preserve_grad_state
 from mace.tools.utils import filter_nonzero_weight
 
 plt.rcParams.update({"font.size": 8})
@@ -485,10 +486,13 @@ def model_inference(
     device: str,
     distributed: bool = False,
 ):
+    with preserve_grad_state(model):
+        return _model_inference(
+            all_data_loaders, model, output_args, device, distributed
+        )
 
-    for param in model.parameters():
-        param.requires_grad = False
 
+def _model_inference(all_data_loaders, model, output_args, device, distributed):
     results_dict = {}
     model_heads = getattr(getattr(model, "module", model), "heads", None)
 
@@ -526,9 +530,6 @@ def model_inference(
         scatter_metric.reset()
 
         del data_loader
-
-    for param in model.parameters():
-        param.requires_grad = True
 
     return results_dict
 

@@ -8,7 +8,7 @@ import dataclasses
 import logging
 import time
 from collections import defaultdict
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -26,6 +26,8 @@ from mace.cli.visualise_train import TrainingPlotter
 
 from . import torch_geometric
 from .checkpoint import CheckpointHandler, CheckpointState
+from .l2sp import get_regularization, optimizer_step
+from .parameter_freezing import preserve_grad_state
 from .torch_tools import to_numpy
 from .utils import (
     MetricsLogger,
@@ -451,7 +453,7 @@ def take_step(
         return loss
 
     loss = closure()
-    optimizer.step()
+    optimizer_step(optimizer)
 
     if ema is not None:
         ema.update()
@@ -460,6 +462,11 @@ def take_step(
         "loss": to_numpy(loss),
         "time": time.time() - start_time,
     }
+    if get_regularization(optimizer) is not None:
+        with torch.no_grad():
+            loss_dict["l2sp_squared_distance"] = to_numpy(
+                get_regularization(optimizer).squared_distance()
+            )
 
     return loss, loss_dict
 
@@ -515,6 +522,7 @@ def take_step_lbfgs(
         )
         if output_args.get("magforces", False):
             kwargs["compute_magforces"] = True
+        penalty = get_regularization(optimizer)
         for batch in data_loader:
             batch = batch.to(device)
             batch_dict = batch.to_dict()
@@ -522,14 +530,28 @@ def take_step_lbfgs(
             batch_loss = loss_fn(pred=output, ref=batch)
             batch_loss = batch_loss * (batch.num_graphs / total_sample_count)
 
-            batch_loss.backward()
+            backward_loss = batch_loss
+            if distributed and penalty is not None:
+                # The loss is already normalized by the global sample count.
+                # Undo DDP's gradient averaging so the data gradient and the
+                # once-per-closure L2-SP gradient have the same normalization.
+                backward_loss = batch_loss * torch.distributed.get_world_size()
+            backward_loss.backward()
             total_loss += batch_loss
+
+        if distributed:
+            torch.distributed.all_reduce(total_loss, op=torch.distributed.ReduceOp.SUM)
+        if penalty is not None:
+            # Once per full-dataset closure, after reducing the data loss.
+            # Every rank adds the same penalty, without multiplying it by rank
+            # count or number of batches, including L-BFGS line-search calls.
+            penalty.add_gradients()
+            with torch.no_grad():
+                total_loss += penalty.penalty()
 
         if max_grad_norm is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
-        if distributed:
-            torch.distributed.all_reduce(total_loss, op=torch.distributed.ReduceOp.SUM)
         return total_loss
 
     if distributed:
@@ -559,23 +581,13 @@ def take_step_lbfgs(
         "time": time.time() - start_time,
     }
 
+    if get_regularization(optimizer) is not None:
+        with torch.no_grad():
+            loss_dict["l2sp_squared_distance"] = to_numpy(
+                get_regularization(optimizer).squared_distance()
+            )
+
     return loss, loss_dict
-
-
-# Keep parameters frozen/active after evaluation
-@contextmanager
-def preserve_grad_state(model):
-    # save the original requires_grad state for all parameters
-    requires_grad_backup = {param: param.requires_grad for param in model.parameters()}
-    try:
-        # temporarily disable gradients for all parameters
-        for param in model.parameters():
-            param.requires_grad = False
-        yield  # perform evaluation here
-    finally:
-        # restore the original requires_grad states
-        for param, requires_grad in requires_grad_backup.items():
-            param.requires_grad = requires_grad
 
 
 def evaluate(
