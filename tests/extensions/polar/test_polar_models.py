@@ -1513,3 +1513,43 @@ def test_polar_pair_repulsion_energy_forces_stress(interaction_scale):
         actual["stress"] - baseline["stress"],
         grad_strain / data["volume"].view(-1, 1, 1),
     )
+
+
+def test_polar_dimer_repels_at_short_range():
+    """An O-H dimer pushed below its bond length is repelled by the full model.
+
+    Without the pair term nothing in PolarMACE forbids the collapse: this
+    untrained model, electrostatics included, pulls the two atoms together at
+    these distances. The dimer goes through the calculator, so the edges come
+    from the real neighbour list rather than being written by hand.
+
+    The bond lies off the Cartesian axes. The open-boundary electrostatics
+    represent each dipole by charges displaced 0.1 Angstrom along x, y and z,
+    and a separation equal to one of those displacements is a separate
+    singularity of that term.
+    """
+    with torch.random.fork_rng():
+        torch.manual_seed(2026)
+        model = _build_minimal_model(
+            torch.device("cpu"), torch.float64, pair_repulsion=True
+        ).eval()
+    calc = MACECalculator(
+        models=model, device="cpu", default_dtype="float64", model_type="PolarMACE"
+    )
+
+    oxygen = np.array([5.0, 5.0, 5.0])
+    bond_direction = np.array([1.0, 2.0, 2.0]) / 3.0
+    energies, bond_forces = [], []
+    for distance in [0.4, 0.3, 0.2, 0.15]:
+        atoms = Atoms(
+            "OH",
+            positions=[oxygen, oxygen + distance * bond_direction],
+            cell=[10.0, 10.0, 10.0],
+            pbc=False,
+        )
+        atoms.calc = calc
+        energies.append(atoms.get_potential_energy())
+        bond_forces.append(atoms.get_forces()[1] @ bond_direction)
+
+    assert all(force > 0.0 for force in bond_forces), bond_forces
+    assert all(np.diff(energies) > 0.0), energies
