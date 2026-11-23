@@ -11,10 +11,6 @@ from torchmetrics import Metric
 
 from mace.tools.utils import filter_nonzero_weight
 
-plt.rcParams.update({"font.size": 8})
-mpl_logger = logging.getLogger("matplotlib")
-mpl_logger.setLevel(logging.WARNING)  # Only show WARNING and above
-
 colors = [
     "#1f77b4",  # muted blue
     "#d62728",  # brick red
@@ -133,6 +129,7 @@ class TrainingPlotter:
         self.swa_start = swa_start
         self.plot_interaction_e = plot_interaction_e
 
+    @plt.rc_context({"font.size": 8})
     def plot(self, model_epoch: int, model: torch.nn.Module, rank: int) -> None:
 
         # All ranks process data through model_inference
