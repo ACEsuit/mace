@@ -4,8 +4,10 @@ Which tensors are saved is :class:`~mace_core.kernels.protocol.CanonicalState`'s
 rule. These two functions walk the module tree and are the one route between a
 model and what is saved of it. A tensor no module returns is rebuilt when the
 model is built and is registered with ``persistent=False``, so the state dict
-holds what is saved and nothing else; a parameter or persistent buffer outside
-every :class:`CanonicalState` module is refused rather than dropped.
+holds what is saved and nothing else; a parameter or persistent buffer whose
+own module does not implement :class:`CanonicalState` is refused rather than
+dropped, even when a module above it does, since that module returns its own
+tensors and not its children's.
 
 The result is keyed by module path and then by tensor name. The path is the
 model's own tree, the same under every backend because a backend builds each
@@ -52,12 +54,25 @@ class TrainableConstants(nn.Module):
                 value.copy_(state[name])
 
 
+#: Containers a module keeps its own tensors in. A tensor in one belongs to the
+#: module that holds the container, as an attribute of it would.
+_TENSOR_CONTAINERS = (nn.ParameterList, nn.ParameterDict)
+
+
+def _holder(model: nn.Module, key: str) -> nn.Module:
+    """The module whose tensor the state-dict entry ``key`` is."""
+    path = key.rpartition(".")[0]
+    while path and isinstance(model.get_submodule(path), _TENSOR_CONTAINERS):
+        path = path.rpartition(".")[0]
+    return model.get_submodule(path)
+
+
 def _saving_modules(model: nn.Module) -> dict[str, CanonicalState]:
     """Every module that saves state, by path.
 
     Raises:
-        ValueError: If a parameter or persistent buffer sits outside all of
-            them, which a checkpoint would lose.
+        ValueError: If a parameter or persistent buffer is held by a module
+            that does not save state, which a checkpoint would lose.
     """
     modules = {
         path: module
@@ -67,7 +82,7 @@ def _saving_modules(model: nn.Module) -> dict[str, CanonicalState]:
     unsaved = [
         key
         for key in model.state_dict()
-        if not any(path == "" or key.startswith(f"{path}.") for path in modules)
+        if not isinstance(_holder(model, key), CanonicalState)
     ]
     if unsaved:
         raise ValueError(
