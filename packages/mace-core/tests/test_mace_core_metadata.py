@@ -50,7 +50,7 @@ def full_record() -> ModelMetadata:
             versions={"mace-core": "1.0.2", "mace-torch": "1.1.0"},
             git_commit="a" * 40,
         ),
-        atomic_numbers=[1, 8, 6],
+        atomic_numbers=[1, 6, 8],
         data=DataSummary(
             sources=[
                 DataSourceSummary(
@@ -123,8 +123,8 @@ def test_minimal_record_round_trips_too():
 
 
 def test_the_element_table_keeps_its_order():
-    record = minimal_record(atomic_numbers=[8, 1, 6])
-    assert ModelMetadata.from_json(record.to_json()).atomic_numbers == [8, 1, 6]
+    record = minimal_record(atomic_numbers=[1, 6, 8])
+    assert ModelMetadata.from_json(record.to_json()).atomic_numbers == [1, 6, 8]
 
 
 def test_a_record_without_an_element_table_is_refused():

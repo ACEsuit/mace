@@ -7,9 +7,11 @@ weight in the embedding refers to a different element.
 Ordering and de-duplication live in :func:`atomic_number_table_from_zs`, not in
 the class. The split is deliberate and load-bearing. Building the table from a
 dataset means collecting whatever elements appear and sorting them, while
-loading a trained model means adopting the order already recorded in the
-checkpoint, which must be taken exactly as it is. A class that sorted in its
-constructor would silently reorder the second case.
+loading a trained model means adopting the table saved with its weights, which
+must be taken exactly as it is. A class that sorted in its constructor would
+silently move the columns under those weights. A model's table is ascending,
+and :func:`model_atomic_number_table` refuses one that is not rather than
+sorting it.
 """
 
 from __future__ import annotations
@@ -116,17 +118,21 @@ def atomic_number_table_from_zs(zs: Iterable[int]) -> AtomicNumberTable:
 def model_atomic_number_table(
     atomic_numbers: Iterable[SupportsIndex],
 ) -> AtomicNumberTable:
-    """Read the element table of a model, in the order given.
+    """Read the element table of a model, which is strictly ascending.
 
     A model's table names at least one element, and every entry is an atomic
     number from 1 to :data:`MAX_ATOMIC_NUMBER`. Zero is not an element: it
-    marks a padding atom, which the model maps to the first column.
+    marks a padding atom, which sorts below every element and so takes the
+    first column. The table is ascending so that an element set has one table
+    and one column order, and a model finds an atom's column by searching the
+    table rather than through a lookup built from it.
 
     Raises:
-        ValueError: if the table is not a sequence, is empty, repeats an
-            element, or holds an entry that is not an integer from 1 to
-            :data:`MAX_ATOMIC_NUMBER`. A boolean is not an integer here, and
-            a mapping, a set or a string is not a sequence of them.
+        ValueError: if the table is not a sequence, is empty, holds an entry
+            that is not an integer from 1 to :data:`MAX_ATOMIC_NUMBER`, or is
+            not strictly ascending, which includes repeating an element. A
+            boolean is not an integer here, and a mapping, a set or a string
+            is not a sequence of them.
     """
     if isinstance(atomic_numbers, (Mapping, Set, str, bytes)):
         raise ValueError(
@@ -147,26 +153,24 @@ def model_atomic_number_table(
             f"atomic numbers."
         )
     numbers = [operator.index(entry) for entry in entries]
-    repeated = sorted(z for z, count in Counter(numbers).items() if count > 1)
-    if repeated:
-        raise ValueError(
-            f"the element table {numbers} lists {repeated} more than once. Its "
-            f"order is the order of the model's columns, so remove the repeat "
-            f"where it was written rather than sorting the table."
-        )
-    table = AtomicNumberTable(numbers)
-    if not table.zs:
+    if not numbers:
         raise ValueError(
             "the element table is empty; a model names at least one element."
         )
-    outside = [z for z in table.zs if not 1 <= z <= MAX_ATOMIC_NUMBER]
+    outside = [z for z in numbers if not 1 <= z <= MAX_ATOMIC_NUMBER]
     if outside:
         raise ValueError(
-            f"the element table {list(table.zs)} holds {outside}, outside the "
-            f"atomic numbers 1 to {MAX_ATOMIC_NUMBER}. Padding atoms carry 0, "
-            f"which is never an element."
+            f"the element table {numbers} holds {outside}, outside the atomic "
+            f"numbers 1 to {MAX_ATOMIC_NUMBER}. Padding atoms carry 0, which is "
+            f"never an element."
         )
-    return table
+    if numbers != sorted(set(numbers)):
+        raise ValueError(
+            f"the element table {numbers} is not strictly ascending. A model's "
+            f"columns are its elements in ascending atomic number, each once: "
+            f"{sorted(set(numbers))}."
+        )
+    return AtomicNumberTable(numbers)
 
 
 def _is_index(entry: object) -> bool:
