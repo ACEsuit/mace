@@ -39,6 +39,8 @@ from mace.data import KeySpecification, update_keyspec_from_kwargs
 from mace.modules.lora import inject_LoRAs, merge_lora_weights
 from mace.tools import deprecation, torch_geometric
 from mace.tools.distributed_tools import init_distributed, xpu_device_index
+from mace.tools.l2sp import L2SPCheckpointError
+from mace.tools.l2sp import validate_args as validate_l2sp_args
 from mace.tools.model_script_utils import configure_model
 from mace.tools.multihead_tools import (
     HeadConfig,
@@ -105,6 +107,7 @@ def run(args) -> None:
     """
     tag = tools.get_tag(name=args.name, seed=args.seed)
     args, input_log_messages = tools.check_args(args)
+    validate_l2sp_args(args)
 
     # default keyspec to update using heads dictionary
     args.key_specification = KeySpecification()
@@ -965,6 +968,8 @@ def run(args) -> None:
                 swa=True,
                 device=device,
             )
+        except L2SPCheckpointError:
+            raise
         except Exception:  # pylint: disable=W0703
             try:
                 opt_start_epoch = checkpoint_handler.load_latest(
@@ -972,7 +977,11 @@ def run(args) -> None:
                     swa=False,
                     device=device,
                 )
+            except L2SPCheckpointError:
+                raise
             except Exception:  # pylint: disable=W0703
+                if getattr(args, "l2sp", False):
+                    raise
                 # Both attempts raising used to set a flag for the reload below,
                 # so a run that asked to resume and could not started from
                 # scratch without saying so.
@@ -980,6 +989,8 @@ def run(args) -> None:
                     "--restart_latest was requested but no checkpoint could be "
                     "loaded; training starts from scratch"
                 )
+        if getattr(args, "l2sp", False) and opt_start_epoch is None:
+            raise L2SPCheckpointError("--restart_latest found no L2-SP checkpoint")
         if opt_start_epoch is not None:
             start_epoch = opt_start_epoch
             if swa is not None:
@@ -999,7 +1010,7 @@ def run(args) -> None:
     if args.ema:
         ema = ExponentialMovingAverage(model.parameters(), decay=args.ema_decay)
 
-    if args.lbfgs:
+    if args.lbfgs and not getattr(args, "l2sp", False):
         logging.info("Switching optimizer to LBFGS")
         optimizer = LBFGS(model.parameters(),
                           history_size=200,
@@ -1164,6 +1175,9 @@ def run(args) -> None:
         if stop_first_test:
             break
 
+    trainable_parameter_ids = {
+        id(param) for param in model.parameters() if param.requires_grad
+    }
     for swa_eval in swas:
         epoch = checkpoint_handler.load_latest(
             state=tools.CheckpointState(model, optimizer, lr_scheduler),
@@ -1171,11 +1185,11 @@ def run(args) -> None:
             device=device,
         )
         model.to(device)
+        # The error-table pass below disables every parameter's gradients.
+        # Restore the selected set before exporting or wrapping the next stage.
+        for param in model.parameters():
+            param.requires_grad_(id(param) in trainable_parameter_ids)
         if args.distributed:
-            # re-enable gradients for distributed model for evaluation of stage-two model
-            # after param.requires_grad = False was called before evaluating stage-one model
-            for param in model.parameters():
-                param.requires_grad = True
             # device_ids is only valid for single-device accelerator modules;
             # CPU (gloo) requires device_ids=None. xpu counts as an accelerator:
             # narrowing this to cuda alone silently gave XPU runs a CPU-style DDP.
