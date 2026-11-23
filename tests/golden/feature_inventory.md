@@ -844,6 +844,7 @@ copy — so the tree depends on both at once (§19).
 |---|---|---|---|---|
 | `extra.wandb` | `[wandb]` | `setup.cfg` | KEEP | `tests/workflows/test_wandb_logging.py::test_a_training_run_with_wandb_writes_an_offline_run` (`wandb`-marked, and the ci-core workflows job installs the extra and names the capability, so the extra is what is being exercised) |
 | `extra.fpsample` | `[fpsample]` | `setup.cfg` | KEEP — fast farthest-point sampling for fine-tuning selection | `tests/workflows/test_finetuning_select_cli.py::test_fps_without_fpsample_falls_back_and_says_so` (the fallback, in whichever direction the extra is present) |
+| `extra.dftd` | `[dftd]` | `setup.cfg` | KEEP — `torch-dftd`, the D3 backend behind `mace_mp(dispersion=True)` (see `kwarg.dispersion`) | ⚠️ gap (the dispersion tests in `tests/unit/test_foundations_models.py` stub `torch_dftd`, and no CI job installs the extra) |
 | `extra.schedulefree` | `[schedulefree]` | `setup.cfg` | KEEP | `tests/extensions/schedulefree` |
 | `extra.torchsim` | `[torchsim]` | `setup.cfg` | KEEP — a first-class deployment path, not a secondary integration; the coupling to torch-sim's still-moving API becomes MACE's problem, so the version is pinned in `requirements/` | `tests/extensions/torchsim` |
 | `extra.magnetic` | `[magnetic]` | `setup.cfg` | KEEP — `sphericart-torch` + `torch-geometric` | `tests/extensions/magnetic` |
