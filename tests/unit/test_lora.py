@@ -395,3 +395,80 @@ def test_lora_evaluate_preserves_frozen_state(build_lora_model, random_configs) 
         assert not lora_params_after[
             name
         ], f"Base param {name} should still be frozen after evaluate()"
+
+
+@pytest.mark.cueq
+def test_lora_cueq_preserve_initial_and_merged_e3nn_parity(random_configs) -> None:
+    """Regression for #1540: CuEq conversion + LoRA injection preserves initial
+    predictions, wraps cuet.Linear layers, and round-trips through merge + e3nn."""
+    from mace.cli.convert_cueq_e3nn import run as run_cueq_to_e3nn
+    from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+    from mace.modules.lora import LoRAO3Linear
+
+    table = tools.AtomicNumberTable([1, 6])
+    with tools.torch_tools.default_dtype(torch.float64):
+        e3nn_model = modules.ScaleShiftMACE(
+            r_max=4.5,
+            num_bessel=4,
+            num_polynomial_cutoff=3,
+            max_ell=2,
+            interaction_cls=modules.interaction_classes[
+                "RealAgnosticResidualInteractionBlock"
+            ],
+            interaction_cls_first=modules.interaction_classes[
+                "RealAgnosticResidualInteractionBlock"
+            ],
+            num_interactions=2,
+            num_elements=2,
+            hidden_irreps=o3.Irreps("16x0e + 16x1o"),
+            MLP_irreps=o3.Irreps("16x0e"),
+            gate=torch.nn.functional.silu,
+            atomic_energies=np.array([-0.1, -0.2]),
+            avg_num_neighbors=6.0,
+            atomic_numbers=table.zs,
+            correlation=2,
+            radial_type="bessel",
+            atomic_inter_scale=0.8,
+            atomic_inter_shift=0.1,
+        )
+        configs = list(random_configs)
+        e_ref, f_ref = _forward_energy_forces(e3nn_model, configs, table)
+
+        cueq_model = run_e3nn_to_cueq(e3nn_model, device="cpu")
+        inject_lora(cueq_model, rank=2, alpha=0.5)
+
+        equivariant_wrappers = [
+            m for m in cueq_model.modules() if isinstance(m, LoRAO3Linear)
+        ]
+        assert len(equivariant_wrappers) > 0
+        assert all(
+            ("lora_" in name) == p.requires_grad
+            for name, p in cueq_model.named_parameters()
+        )
+
+        # Initial predictions at epoch 0 (lora_B == 0) must match e3nn
+        e_init, f_init = _forward_energy_forces(cueq_model, configs, table)
+        torch.testing.assert_close(e_init, e_ref, rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(f_init, f_ref, rtol=1e-6, atol=1e-6)
+
+        # Simulate trained LoRA weights, verify no_grad cache + merge + cueq->e3nn
+        _randomize_lora_parameters(cueq_model)
+        e_trained, f_trained = _forward_energy_forces(cueq_model, configs, table)
+
+        dataset = [_atomic_data_from_config(cfg, table) for cfg in configs]
+        batch = next(
+            iter(
+                torch_geometric.dataloader.DataLoader(
+                    dataset=dataset, batch_size=len(dataset), shuffle=False
+                )
+            )
+        )
+        with torch.no_grad():
+            e_nograd = cueq_model(batch.to_dict(), compute_force=False)["energy"]
+        torch.testing.assert_close(e_nograd, e_trained, rtol=1e-6, atol=1e-6)
+
+        merge_lora_weights(cueq_model)
+        exported_e3nn = run_cueq_to_e3nn(cueq_model, device="cpu")
+        e_exp, f_exp = _forward_energy_forces(exported_e3nn, configs, table)
+        torch.testing.assert_close(e_exp, e_trained, rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(f_exp, f_trained, rtol=1e-6, atol=1e-6)
