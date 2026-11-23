@@ -128,7 +128,7 @@ packages/mace-torch/
 │   │       └── backend.py             # EXAMPLE backend, out-of-tree-shaped (permanent extensibility gate; zero core edits)
 │   │
 │   ├── nn/                             # blocks WITHOUT @compile_mode('script') from day 1
-│   │   ├── embedding.py                # LinearNodeEmbeddingBlock, RadialEmbeddingBlock
+│   │   ├── embedding.py                # ElementEmbedding (holds the element table), RadialEmbeddingBlock
 │   │   ├── radial.py                   # ZBLBasis, AgnesiTransform, SoftTransform (the radial MLP is the radial_mlp kernel op)
 │   │   ├── interaction.py              # the 6 RealAgnostic*InteractionBlock (fusion-agnostic forward: calls channelwise_tp_conv)
 │   │   ├── product_basis.py            # EquivariantProductBasisBlock (uses the symmetric_contraction op; no layout torch.transpose)
@@ -474,20 +474,21 @@ mybackend = "my_pkg.backend:MyBackend"
 pip install my-backend-pkg        # ships the entry point; MACE discovers it, no repo edits
 ```
 
-Selecting and **switching** between backends is a build-time config choice, resolved once and frozen
-into the module tree (nothing dispatches in `forward`). Because weights are canonical, **the same
-checkpoint loads into any backend** — switching never reconverts weights:
+The backend is chosen by whoever builds the model, as the device is, and is not part of the model:
+it is not a `ModelConfig` field and is not saved with the weights. It is resolved once at build and
+frozen into the module tree (nothing dispatches in `forward`), and a built model never changes
+backend; building again is the only way. Because weights are canonical, **the same checkpoint builds
+with any backend that supports it** — switching never reconverts weights:
 
 ```python
 from mace_torch import build_model
-build_model(ModelConfig(..., backend="reference"))   # default: plain torch, CPU-ok, the oracle
-build_model(ModelConfig(..., backend="cueq"))         # NVIDIA cueq where it applies, reference elsewhere
-build_model(ModelConfig(..., backend="mybackend"))    # your wheel, picked up via the entry point
+build_model(config, backend="reference")   # default: plain torch, CPU-ok, the oracle
+build_model(config, backend="cueq")         # NVIDIA cueq where it applies, reference elsewhere
+build_model(config, backend="mybackend")    # your wheel, picked up via the entry point
 ```
 
-```bash
-mace train --model.backend cueq  ...      # same choice from the CLI (dotted override)
-```
+From the command line the backend is likewise a build option beside the device, never a field of
+`model`.
 
 Any op/dtype/device/irreps a backend declines is served by the reference backend through a
 `CompositeBackend` — so a partial backend (one op, one dtype) is a first-class citizen. A backend that
