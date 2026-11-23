@@ -1,4 +1,4 @@
-"""The node embedding and the radial embedding block.
+"""The element embedding and the radial embedding block.
 
 The radial block's forward runs three steps in an order that is load-bearing
 and invisible from outside unless asserted: the cutoff is computed on the RAW
@@ -9,6 +9,7 @@ transform, an envelope computed from the transformed lengths would differ by
 
 import math
 
+import numpy as np
 import pytest
 import torch
 from conftest import fp64_only
@@ -21,6 +22,8 @@ from mace_core.config import (
     PolynomialCutoffConfig,
     SoftTransformConfig,
 )
+from mace_core.data import Configuration
+from mace_core.graph import SampleError, graph_layout, graph_sample
 from mace_core.kernels.precision import Precision
 from mace_torch.backends.radial import (
     BesselBasis,
@@ -30,7 +33,7 @@ from mace_torch.backends.radial import (
 )
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.nn.embedding import (
-    LinearNodeEmbeddingBlock,
+    ElementEmbedding,
     RadialEmbeddingBlock,
     build_distance_transform,
     radial_basis_spec,
@@ -94,31 +97,117 @@ def _block(
 
 
 # ---------------------------------------------------------------------------
-# LinearNodeEmbeddingBlock
+# ElementEmbedding
 # ---------------------------------------------------------------------------
 
 
-def test_node_embedding_is_a_row_lookup_of_the_weight():
-    """One-hot in, so the output of node i is the row of its element, scaled
-    by the `1/sqrt(num_elements)` path normalisation."""
-    block = LinearNodeEmbeddingBlock(num_elements=3, num_channels=5)
-    assert block.weight.shape == (3, 5)
-    one_hot = torch.eye(3)[[2, 0, 2, 1]]
-    out = block(one_hot)
-    assert out.shape == (4, 5)
-    torch.testing.assert_close(out, block.weight[[2, 0, 2, 1]] / math.sqrt(3))
-    assert block.weight.requires_grad
+def _element_embedding(atomic_numbers=(1, 6, 8), num_channels=5, seed=0):
+    embedding = ElementEmbedding(atomic_numbers, num_channels, _precision())
+    embedding.initialize_weights(seed)
+    return embedding
 
 
-def test_node_embedding_initialisation_scale():
-    """Unit-normal weights; the output carries the `1/sqrt(num_elements)` path
-    normalisation."""
-    torch.manual_seed(0)
-    block = LinearNodeEmbeddingBlock(num_elements=16, num_channels=4096)
-    assert block.weight.std().item() == pytest.approx(1.0, rel=0.05)
-    assert block.weight.mean().item() == pytest.approx(0.0, abs=0.02)
-    out = block(torch.eye(16))
-    assert out.std().item() == pytest.approx(1 / 4.0, rel=0.05)
+def test_each_node_takes_its_elements_column_and_row():
+    """The output of node i is the row of its element, scaled by the
+    `1/sqrt(n_elements)` fan-in; the one-hot and the index say which row."""
+    embedding = _element_embedding()
+    encoding = embedding(torch.tensor([8, 1, 8, 6]))
+    assert encoding.index.tolist() == [2, 0, 2, 1]
+    assert torch.equal(encoding.one_hot, torch.eye(3)[[2, 0, 2, 1]])
+    torch.testing.assert_close(
+        encoding.features, embedding.weight[[2, 0, 2, 1]] / math.sqrt(3)
+    )
+
+
+def test_the_one_hot_keeps_the_tables_width_without_its_last_element():
+    encoding = _element_embedding()(torch.tensor([1, 6, 1]))
+    assert encoding.one_hot.shape == (3, 3)
+
+
+def test_a_padding_atom_takes_the_first_column():
+    assert _element_embedding()(torch.tensor([0, 8])).index.tolist() == [0, 2]
+
+
+def test_the_initial_embedding_is_a_unit_normal_drawn_from_its_seed():
+    embedding = _element_embedding((1, 6, 7, 8), num_channels=4096, seed=3)
+    assert embedding.weight.std().item() == pytest.approx(1.0, rel=0.05)
+    assert embedding.weight.mean().item() == pytest.approx(0.0, abs=0.02)
+    again = _element_embedding((1, 6, 7, 8), num_channels=4096, seed=3)
+    assert torch.equal(embedding.weight, again.weight)
+
+
+def test_the_embedding_saves_its_table_and_its_weight():
+    embedding = _element_embedding()
+    state = embedding.to_canonical()
+    assert state.keys() == {"atomic_numbers", "weight"}
+    assert state["atomic_numbers"].tolist() == [1, 6, 8]
+    assert state["atomic_numbers"].dtype == torch.int64
+    assert state["weight"].shape == (3, 5)
+
+
+def test_a_loaded_table_is_the_one_the_forward_searches():
+    embedding = _element_embedding()
+    embedding.load_canonical(
+        {"atomic_numbers": torch.tensor([3, 29, 79]), "weight": embedding.weight}
+    )
+    assert embedding(torch.tensor([79, 3])).index.tolist() == [2, 0]
+
+
+@pytest.mark.parametrize(
+    ("atomic_numbers", "message"),
+    [
+        ([6, 1, 8], "not strictly ascending"),
+        ([1, 1, 6], "not strictly ascending"),
+        ([0, 1, 6], r"holds \[0\], outside"),
+        ([1.0, 6.7, 8.2], "not atomic numbers"),
+    ],
+    ids=["unsorted", "repeated", "padding", "float"],
+)
+def test_a_saved_table_that_is_not_a_models_is_refused_and_not_loaded(
+    atomic_numbers, message
+):
+    embedding = _element_embedding()
+    before = embedding.to_canonical()
+    before = {name: tensor.clone() for name, tensor in before.items()}
+    with pytest.raises(ValueError, match=f"atomic_numbers: .*{message}"):
+        embedding.load_canonical(
+            {
+                "atomic_numbers": torch.tensor(atomic_numbers),
+                "weight": torch.zeros_like(embedding.weight),
+            }
+        )
+    for name, tensor in embedding.to_canonical().items():
+        assert torch.equal(tensor, before[name]), name
+
+
+@fp64_only
+def test_the_embedding_compiles_whole_at_any_node_count():
+    from torch._dynamo import reset
+    from torch._dynamo.testing import CompileCounter
+
+    embedding = _element_embedding()
+    reset()
+    counter = CompileCounter()
+    compiled = torch.compile(embedding, backend=counter, fullgraph=True, dynamic=True)
+    for numbers in ([8, 1, 1], [6, 0, 8, 1, 1]):
+        ours = compiled(torch.tensor(numbers))
+        theirs = embedding(torch.tensor(numbers))
+        assert torch.equal(ours.index, theirs.index)
+        assert torch.equal(ours.features, theirs.features)
+    assert counter.frame_count == 1
+
+
+def test_a_layout_from_the_embeddings_table_refuses_an_element_outside_it():
+    """The structure's elements are checked once, when its sample is built,
+    against the table the model holds."""
+    embedding = _element_embedding()
+    layout = graph_layout(embedding.atomic_numbers.tolist(), cutoff=3.0)
+    assert layout.atomic_numbers == (1, 6, 8)
+    gold = Configuration(atomic_numbers=np.array([8, 79]), positions=np.zeros((2, 3)))
+    with pytest.raises(
+        SampleError, match=r"elements \[79\], .*element table \[1, 6, 8\]"
+    ):
+        graph_sample(gold, None, layout)
 
 
 # ---------------------------------------------------------------------------

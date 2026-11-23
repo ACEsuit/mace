@@ -50,7 +50,6 @@ def full_record() -> ModelMetadata:
             versions={"mace-core": "1.0.2", "mace-torch": "1.1.0"},
             git_commit="a" * 40,
         ),
-        atomic_numbers=[1, 6, 8],
         data=DataSummary(
             sources=[
                 DataSourceSummary(
@@ -91,7 +90,6 @@ def training_summary() -> TrainingSummary:
 
 
 def minimal_record(**fields) -> ModelMetadata:
-    fields.setdefault("atomic_numbers", [1])
     return ModelMetadata(
         config=ConfigRecord(),
         provenance=Provenance(versions={"mace-core": "0.0.0"}),
@@ -116,29 +114,9 @@ def test_minimal_record_round_trips_too():
     record = ModelMetadata(
         config=ConfigRecord(),
         provenance=Provenance(versions={"mace-core": "0.0.0"}),
-        atomic_numbers=[1],
     )
     assert ModelMetadata.from_json(record.to_json()) == record
     assert record.heads == {}
-
-
-def test_the_element_table_keeps_its_order():
-    record = minimal_record(atomic_numbers=[1, 6, 8])
-    assert ModelMetadata.from_json(record.to_json()).atomic_numbers == [1, 6, 8]
-
-
-def test_a_record_without_an_element_table_is_refused():
-    document = as_document(minimal_record())
-    del document["atomic_numbers"]
-    with pytest.raises(ValidationError, match="atomic_numbers"):
-        ModelMetadata.from_json(json.dumps(document))
-
-
-def test_the_element_table_holds_every_element_of_the_data():
-    record = full_record()
-    record.atomic_numbers = [1, 6]
-    with pytest.raises(ValidationError, match=r"'water' has elements \[8\]"):
-        ModelMetadata.model_validate(record.model_dump())
 
 
 def test_heads_must_name_summarised_sources():
@@ -179,21 +157,6 @@ READ_ROUTES = pytest.mark.parametrize(
     ],
     ids=["model_validate", "from_json", "construction"],
 )
-
-
-@pytest.mark.parametrize(
-    "atomic_numbers",
-    [[1, 119], [8.0, 1], ["8", 1], None],
-    ids=["outside", "float", "string", "null"],
-)
-@READ_ROUTES
-def test_the_element_table_is_checked_before_coercion(atomic_numbers, read):
-    """The table check is the shared one, and it sees the entries as written:
-    a float or a string is refused rather than read as an element."""
-    document = as_document(minimal_record())
-    document["atomic_numbers"] = atomic_numbers
-    with pytest.raises(ValidationError, match="the element table"):
-        read(document)
 
 
 @READ_ROUTES
@@ -293,7 +256,6 @@ def test_a_record_lacking_the_optional_fields_takes_their_defaults():
         "schema_version": SCHEMA_VERSION,
         "config": {},
         "provenance": {"versions": {"mace-core": "0"}},
-        "atomic_numbers": [1],
     }
     record = ModelMetadata.model_validate(document)
     assert record.training is None
@@ -416,7 +378,6 @@ SCHEMA_FIELDS = {
         "DataSummary": {"sources"},
         "HeadSummary": {"sources"},
         "ModelMetadata": {
-            "atomic_numbers",
             "citations",
             "config",
             "data",

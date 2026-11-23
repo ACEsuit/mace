@@ -39,8 +39,11 @@ def aggregate_atomic_descriptors(
             ``"per_element_mean"`` averages each structure's atoms of each
             element present, one dict per structure keyed by atomic number.
         element: ``[n_nodes]``, int64, each node's column of the element
-            table. Needed for ``"per_element_mean"`` only.
-        atomic_numbers: The element table. Needed for ``"per_element_mean"``.
+            table, ``NodeFeatures.element_index``. Needed for
+            ``"per_element_mean"`` only.
+        atomic_numbers: The element table, the model's
+            ``element_embedding.atomic_numbers.tolist()``. Needed for
+            ``"per_element_mean"``.
     """
     if aggregation is None:
         return atomic_descriptors

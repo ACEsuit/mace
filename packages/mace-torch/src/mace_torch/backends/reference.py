@@ -58,6 +58,7 @@ from mace_torch.backends.radial import (
     GaussianBasis,
     PolynomialCutoff,
 )
+from mace_torch.kernels.initialization import standard_normal_like
 from mace_torch.kernels.ops import (
     channelwise_tp_conv,
     equivariant_linear,
@@ -154,26 +155,6 @@ def _skip_path_normalizations(kernel_spec: FullyConnectedTPSpec) -> list[float]:
     return scales
 
 
-def _draw(like: Tensor, seed: int) -> Tensor:
-    """A standard normal shaped, typed and placed like ``like``.
-
-    Its own generator rather than the global one: a model's weights must not
-    depend on how many random numbers anything else drew first, which is what
-    makes a run reproducible from its recorded seed.
-
-    Drawn on the host and moved, never drawn on the device. A device generator
-    seeded the same way produces different numbers, so drawing where the model
-    happens to live would make a recorded seed rebuild a different model on a
-    different machine. It is moved rather than left behind because a model that
-    has been sent to a device has its buffers there, and multiplying a host
-    tensor by one of them is a device mismatch.
-    """
-    generator = torch.Generator().manual_seed(seed)
-    return torch.randn(like.shape, generator=generator, dtype=torch.float64).to(
-        device=like.device, dtype=like.dtype
-    )
-
-
 class ReferenceLinear(nn.Module):
     """An equivariant linear map with first-class bias.
 
@@ -242,7 +223,7 @@ class ReferenceLinear(nn.Module):
         structure. The frozen tree's linear does the same.
         """
         with torch.no_grad():
-            self.weight.copy_(_draw(self.weight, seed))
+            self.weight.copy_(standard_normal_like(self.weight, seed))
             self.bias.zero_()
 
     def to_canonical(self) -> dict[str, Tensor]:
@@ -342,7 +323,9 @@ class ReferenceSymmetricContraction(nn.Module):
         with torch.no_grad():
             for position, parameter in enumerate(self.weights):
                 scale = symmetric_contraction_initial_scale(int(parameter.shape[1]))
-                parameter.copy_(_draw(parameter, seed + position) * scale)
+                parameter.copy_(
+                    standard_normal_like(parameter, seed + position) * scale
+                )
 
     def _group(self, position: int) -> list[Tensor]:
         """One output irrep's weights, by integer index.
@@ -606,7 +589,7 @@ class ReferenceFullyConnectedTP(nn.Module):
     def initialize_weights(self, seed: int) -> None:
         """A standard normal, unscaled, since the forward applies the fan-in."""
         with torch.no_grad():
-            self.weight.copy_(_draw(self.weight, seed))
+            self.weight.copy_(standard_normal_like(self.weight, seed))
 
     def to_canonical(self) -> dict[str, Tensor]:
         return {"weight": self.weight.detach()}
@@ -768,7 +751,7 @@ class ReferenceNormalizedSiluMLP(nn.Module):
         fan-in. Each layer draws from ``seed`` plus its position."""
         with torch.no_grad():
             for index, weight in enumerate(self.weights):
-                weight.copy_(_draw(weight, seed + index))
+                weight.copy_(standard_normal_like(weight, seed + index))
 
     def to_canonical(self) -> dict[str, Tensor]:
         """A view: ``layer_{i}``, one raw matrix per layer."""
@@ -837,7 +820,8 @@ class ReferenceLayerNormSiluMLP(nn.Module):
 
         Weight and bias uniform on ``[-1 / sqrt(fan_in), 1 / sqrt(fan_in)]``,
         both from one generator seeded with ``seed`` plus the layer's position,
-        drawn on the host in float64 for the reason :func:`_draw` gives.
+        drawn on the host in float64 for the reason
+        :func:`~mace_torch.kernels.initialization.standard_normal_like` gives.
         """
         with torch.no_grad():
             for index, (weight, bias) in enumerate(

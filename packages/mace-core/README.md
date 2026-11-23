@@ -15,9 +15,9 @@ What is here so far:
   the same config. `config.cli` holds the `--a.b value` override grammar for a
   command line to compose with it.
 - `mace_core.metadata` — `ModelMetadata`, the versioned record every trained
-  model carries (config as written and as resolved, provenance, the element
-  table in column order, a summary per data source, per head the sources it
-  consumed, DOI, citations and notes,
+  model carries (config as written and as resolved, provenance, a summary
+  per data source, per head the sources it consumed, DOI, citations and
+  notes,
   and, for a trained model, how the training run ended), with a JSON round
   trip, `ConfigRecord.from_config()` to embed a config in its fixed-point
   form, and `format_citations()`. The schema is versioned `major.minor`;
