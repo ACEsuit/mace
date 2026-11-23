@@ -18,6 +18,9 @@ Four things it does not do, each replacing something the frozen tree does:
   default.
 * It writes nothing into the graph it is given.
 
+**What it saves** is what :func:`mace_torch.kernels.canonical_state`
+collects from it.
+
 **The graph.** A flat dict, read and never written. The backbone reads
 ``positions``, ``node_atomic_numbers``, ``edge_index`` and ``shifts``, plus one
 key per declared node input. The element one-hot is formed here from the atomic
@@ -227,18 +230,11 @@ def _edge_members(
 def _split_channels(irreps: str) -> tuple[str, int]:
     """A whole declaration as one channel's and the channel count.
 
-    Raises:
-        ValueError: If its terms do not share one multiplicity, which a
-            convolution with one radial weight per path and channel needs.
+    Its terms share one multiplicity: ``ModelConfig`` refuses ``edge_irreps``
+    otherwise.
     """
     terms = Irreps.parse(irreps).terms
-    multiplicities = {mul for mul, _ in terms}
-    if len(multiplicities) != 1:
-        raise ValueError(
-            f"edge_irreps={irreps!r}; every term needs the same multiplicity, "
-            f"such as '128x0e+128x1o'."
-        )
-    return "+".join(str(ir) for _, ir in terms), multiplicities.pop()
+    return "+".join(str(ir) for _, ir in terms), terms[0][0]
 
 
 def _nonlinear_up_projection(
@@ -256,11 +252,9 @@ def _nonlinear_up_projection(
     """
     if config.edge_irreps is None or (first and not config.use_edge_irreps_first):
         return irreps_node, num_features
-    # Splitting also refuses mixed multiplicities, the first layer's included.
-    irreps_up, num_up_features = _split_channels(config.edge_irreps)
     if first:
         return "0e", Irreps.parse(config.edge_irreps).multiplicity(Irrep(0, 1))
-    return irreps_up, num_up_features
+    return _split_channels(config.edge_irreps)
 
 
 class MACEBackbone(nn.Module):

@@ -100,7 +100,9 @@ class _Convolution(nn.Module):
     skip goes, is visible as the one thing it is.
     """
 
-    neighbours: Tensor
+    #: The dataset's average neighbour count, ``None`` in a block that
+    #: normalizes by a learned density instead.
+    neighbours: Tensor | None
 
     def __init__(
         self,
@@ -152,7 +154,9 @@ class _Convolution(nn.Module):
         )
         self.register_buffer(
             "neighbours",
-            torch.tensor(float(avg_num_neighbors), dtype=TORCH_DTYPES[precision]),
+            None
+            if learned_density
+            else torch.tensor(float(avg_num_neighbors), dtype=TORCH_DTYPES[precision]),
         )
         # One linear map of the radial embedding to one number per edge.
         density = (
@@ -196,13 +200,26 @@ class _Convolution(nn.Module):
             receiver,
             num_nodes,
         )
-        if self.density_mlp is None:
+        if self.neighbours is not None:
             return self.linear(message) / self.neighbours
+        assert self.density_mlp is not None
         edge_density = torch.tanh(self.density_mlp(edges.radial) ** 2)
         if self.envelope_outside:
             edge_density = edge_density * edges.envelope
         density = self.reduce(edge_density, receiver, num_nodes)
         return self.linear(message) / (density + 1.0)
+
+    def to_canonical(self) -> dict[str, Tensor]:
+        """The average neighbour count, which comes from the data and not
+        from the config, so it is saved with the weights."""
+        if self.neighbours is None:
+            return {}
+        return {"neighbours": self.neighbours.detach()}
+
+    def load_canonical(self, state: dict[str, Tensor]) -> None:
+        if self.neighbours is not None:
+            with torch.no_grad():
+                self.neighbours.copy_(state["neighbours"])
 
 
 class InteractionBlock(nn.Module):

@@ -13,12 +13,17 @@ handed to each section's module when the model is built.
 
 Defaults are the legacy command-line defaults (`--num_radial_basis 8`,
 `--num_cutoff_basis 5`), which differ from some of the legacy class defaults.
+
+A section with `trainable` set gives the starting value of what it makes
+trainable. The trained value is saved with the weights, and is what a loaded
+model computes with.
 """
 
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
+from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.config.base import ConfigSection
 
 __all__ = [
@@ -210,6 +215,24 @@ class ModelConfig(ConfigSection):
             raise ValueError(
                 "use_edge_irreps_first needs edge_irreps and a 'nonlinear' first layer."
             )
+        if self.edge_irreps is not None:
+            try:
+                edge_irreps = Irreps.parse(self.edge_irreps)
+            except IrrepsError as error:
+                raise ValueError(f"edge_irreps={self.edge_irreps!r}: {error}") from None
+            multiplicities = sorted({mul for mul, _ in edge_irreps.terms})
+            if len(multiplicities) != 1:
+                raise ValueError(
+                    f"edge_irreps={self.edge_irreps!r} has the multiplicities "
+                    f"{multiplicities}; every term needs the same one, such as "
+                    f"'128x0e+128x1o', since the convolution has one radial "
+                    f"weight per path and channel."
+                )
+            if self.use_edge_irreps_first and not edge_irreps.multiplicity(Irrep(0, 1)):
+                raise ValueError(
+                    f"use_edge_irreps_first convolves the scalars of edge_irreps, "
+                    f"and edge_irreps={self.edge_irreps!r} has no '0e' term."
+                )
         return self
 
     def interaction_of(self, layer: int) -> InteractionKind:
