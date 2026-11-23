@@ -981,7 +981,8 @@ def run(args) -> None:
                     "loaded; training starts from scratch"
                 )
         if opt_start_epoch is not None:
-            start_epoch = opt_start_epoch
+            # Checkpoint filenames identify the epoch already trained.
+            start_epoch = opt_start_epoch + 1
             if swa is not None:
                 # Restoring the optimizer replaces its param groups, including the
                 # "swa_lr" that SWALR stored there: a checkpoint written without

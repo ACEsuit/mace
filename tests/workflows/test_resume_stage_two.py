@@ -94,8 +94,9 @@ def final_lrs(checkpoint: Path) -> list:
 
 
 @pytest.mark.timeout(900)
+@pytest.mark.parametrize("start_swa", [2, 3])
 def test_the_first_resumed_stage_two_epoch_trains_at_the_stage_two_lr(
-    tmp_path, regression_set
+    tmp_path, regression_set, start_swa
 ):
     """The epoch a resumed run opens stage two with already uses `--swa_lr`."""
     run_mace_train(
@@ -110,7 +111,7 @@ def test_the_first_resumed_stage_two_epoch_trains_at_the_stage_two_lr(
         max_num_epochs=4,
         restart_latest=None,
         swa=None,
-        start_swa=2,
+        start_swa=start_swa,
         swa_lr=0.0005,
         save_all_checkpoints=None,
     )
@@ -120,4 +121,7 @@ def test_the_first_resumed_stage_two_epoch_trains_at_the_stage_two_lr(
         tmp_path.glob("contract_run-7_epoch-*_swa.pt"),
         key=lambda path: int(path.stem.split("epoch-")[1].split("_")[0]),
     )
+    # The completed checkpoint is epoch 2. Resume at epoch 3 both when
+    # stage two has already started and when it starts at that boundary.
+    assert first_stage_two.stem.endswith("epoch-3_swa")
     assert set(final_lrs(first_stage_two)) == {0.0005}
