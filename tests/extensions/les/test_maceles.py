@@ -536,6 +536,9 @@ def test_maceles_les_lr_factors():
 
     # no lr_factors: every group keeps the base lr
     assert all(lr == pytest.approx(0.01) for lr in lrs(les_arguments).values())
+    # an empty `lr_factors:` in les.yaml is read as None
+    no_factors = lrs(dict(les_arguments, lr_factors=None))
+    assert all(lr == pytest.approx(0.01) for lr in no_factors.values())
 
     scaled = lrs(
         dict(
@@ -551,3 +554,31 @@ def test_maceles_les_lr_factors():
 
     with pytest.raises(ValueError, match="unknown LES readouts"):
         lrs(dict(les_arguments, lr_factors={"les_alpha": 0.1}))
+
+
+@pytest.mark.les
+@pytest.mark.skipif(not LES_AVAILABLE, reason="LES library is not available")
+def test_maceles_use_last_readout_only_multipolar_readouts():
+    hidden_irreps = o3.Irreps("32x0e + 32x1o + 32x2e")
+    config = dict(MODEL_CONFIG, hidden_irreps=hidden_irreps, use_last_readout_only=True)
+    les_arguments = {
+        "use_atomwise": False,
+        "use_dipole": True,
+        "use_quad": True,
+        "use_induced_dipole": True,
+        "use_anisotropic_polarizability": True,
+        "alpha_irreps": "0e+1o+2e",
+    }
+    with default_dtype(torch.float32):
+        model = MACELES(les_arguments=les_arguments, **config)
+        node_feats = torch.randn(4, hidden_irreps.dim)
+        # l>0 readouts must not be built from the scalar MLP of the nonlinear readout
+        for container in [
+            "les_u_readouts",
+            "les_quad_1o_readouts",
+            "les_quad_2e_readouts",
+            "les_alpha_1o_readouts",
+            "les_alpha_2e_readouts",
+        ]:
+            readout = getattr(model, container)[0]
+            assert readout(node_feats).abs().max() > 0, container

@@ -1024,7 +1024,8 @@ def get_params_options(
     ]
     # les.yaml `lr_factors: {<LES readout>: factor}` scales the learning rate of
     # individual LES readouts (e.g. les_alpha_1o_readouts); the rest keep args.lr.
-    les_lr_factors = (getattr(args, "les_arguments", None) or {}).get("lr_factors", {})
+    les_arguments = getattr(args, "les_arguments", None) or {}
+    les_lr_factors = les_arguments.get("lr_factors") or {}
     les_readout_names = [
         name
         for name in optional_submodule_names

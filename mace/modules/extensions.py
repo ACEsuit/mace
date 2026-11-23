@@ -87,6 +87,13 @@ def _copy_mace_readout(
             cueq_config=cueq_config,
         )
     if isinstance(mace_readout, NonLinearReadoutBlock):  # type: ignore
+        # The scalar MLP has no path to l>0 outputs, so read them out linearly.
+        if change_irrep_out is not None and o3.Irreps(change_irrep_out).lmax > 0:
+            return LinearReadoutBlock(
+                irreps_in=mace_readout.linear_1.irreps_in,  # type: ignore
+                irrep_out=o3.Irreps(change_irrep_out),
+                cueq_config=cueq_config,
+            )
         return NonLinearReadoutBlock(
             irreps_in=mace_readout.linear_1.irreps_in,  # type: ignore
             MLP_irreps=mace_readout.hidden_irreps,
@@ -141,6 +148,14 @@ def _get_readout_input_dim(block: torch.nn.Module) -> int:
     if isinstance(block, NonLinearReadoutBlock):  # type: ignore
         return block.linear_1.irreps_in.dim  # type: ignore
     raise TypeError("Unsupported readout type for input dimension retrieval.")
+
+
+def _get_readout_irreps_in(block: torch.nn.Module) -> o3.Irreps:
+    if isinstance(block, LinearReadoutBlock):
+        return block.linear.irreps_in  # type: ignore
+    if isinstance(block, NonLinearReadoutBlock):  # type: ignore
+        return block.linear_1.irreps_in  # type: ignore
+    raise TypeError("Unsupported readout type for input irreps retrieval.")
 
 
 @compile_mode("script")
@@ -222,7 +237,7 @@ class MACELES(ScaleShiftMACE):
                     )
                 )
             if self.use_quads:
-                mace_irreps = str(self.readouts[0].linear.irreps_in)
+                mace_irreps = str(_get_readout_irreps_in(self.readouts[0]))
                 if "2e" in mace_irreps:
                     logging.info("Using l=2 readout to predict quadrupoles.")
                     change_of_basis_quads = ReducedTensorProducts(
@@ -252,7 +267,7 @@ class MACELES(ScaleShiftMACE):
                 )
             if self.use_induced_dipoles:
                 if self.use_anisotropic_polarizability:
-                    mace_irreps = str(self.readouts[0].linear.irreps_in)
+                    mace_irreps = str(_get_readout_irreps_in(self.readouts[0]))
                     if "2e" in mace_irreps and "2e" in self.alpha_irreps:
                         logging.info(
                             "Using l=2 readout to predict anisotropic polarizability."
