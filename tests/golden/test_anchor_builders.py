@@ -85,7 +85,7 @@ def test_a_builder_still_builds_when_given_a_path(name, tmp_path):
 
     assert written == destination
     assert destination.exists()
-    assert torch.load(destination, map_location="cpu") is not None
+    assert torch.load(destination, map_location="cpu", weights_only=False) is not None
     assert (tmp_path / "anchor.build.json").exists(), (
         "the sidecar has to land beside the model it documents, or a build into a "
         "temporary directory overwrites the committed one"

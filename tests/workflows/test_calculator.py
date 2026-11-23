@@ -153,7 +153,7 @@ def trained_model_equivariant_fixture_cueq(tmp_path_factory, fitting_configs):
 
     assert p.returncode == 0
 
-    model = torch.load(tmp_path / "MACE.model", map_location="cpu")
+    model = torch.load(tmp_path / "MACE.model", map_location="cpu", weights_only=False)
     print("DEBUG model", model)
     return MACECalculator(
         model_paths=tmp_path / "MACE.model", device="cpu", enable_cueq=True

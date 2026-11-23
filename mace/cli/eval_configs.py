@@ -161,7 +161,7 @@ def run(args: argparse.Namespace) -> None:
     device = torch_tools.init_device(args.device)
 
     # Load model
-    model = torch.load(f=args.model, map_location=args.device)
+    model = torch.load(f=args.model, map_location=args.device, weights_only=False)
 
     # Reconcile the requested dtype with the checkpoint's, as the ase
     # calculator already does. Without this, `--default_dtype float32` against a

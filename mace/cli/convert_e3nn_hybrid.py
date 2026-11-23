@@ -39,7 +39,7 @@ def run(
         raise ImportError("openequivariance is required for hybrid conversion")
 
     if isinstance(input_model, str):
-        source_model = torch.load(input_model, map_location=device)
+        source_model = torch.load(input_model, map_location=device, weights_only=False)
     else:
         source_model = input_model
 

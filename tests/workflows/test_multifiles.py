@@ -399,7 +399,7 @@ def test_multifile_training():
         assert os.path.exists(model_path), f"Model was not created at {model_path}"
 
         # Try to load and run the model
-        model = torch.load(model_path, map_location="cpu")
+        model = torch.load(model_path, map_location="cpu", weights_only=False)
         assert model is not None, "Failed to load model"
 
         # Create a calculator
@@ -590,7 +590,7 @@ def test_multiple_xyz_per_head():
         assert os.path.exists(model_path), f"Model was not created at {model_path}"
 
         # Try to load and run the model
-        model = torch.load(model_path, map_location="cpu")
+        model = torch.load(model_path, map_location="cpu", weights_only=False)
         assert model is not None, "Failed to load model"
 
         # Create a calculator
@@ -783,7 +783,7 @@ def test_single_xyz_per_head():
         assert os.path.exists(model_path), f"Model was not created at {model_path}"
 
         # Try to load and run the model
-        model = torch.load(model_path, map_location="cpu")
+        model = torch.load(model_path, map_location="cpu", weights_only=False)
         assert model is not None, "Failed to load model"
 
         # Create a calculator
@@ -991,7 +991,7 @@ def test_multihead_finetuning_different_formats():
         assert os.path.exists(model_path), f"Model was not created at {model_path}"
 
         # Load model and verify it has the expected heads
-        model = torch.load(model_path, map_location="cpu")
+        model = torch.load(model_path, map_location="cpu", weights_only=False)
         assert hasattr(model, "heads"), "Model does not have heads attribute"
         assert set(["xyz_head", "h5_head", "pt_head"]).issubset(
             set(model.heads)

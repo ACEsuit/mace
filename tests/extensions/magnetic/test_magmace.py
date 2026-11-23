@@ -709,7 +709,7 @@ def test_eval_configs_unwraps_scf_wrapped_models(tmp_path, magnetic_configs):
 
     # reachable after a save/load round trip, which is where a __getattr__ that
     # touched self.magmom_mace instead of __dict__ would recurse
-    loaded = torch.load(model_path, map_location="cpu")
+    loaded = torch.load(model_path, map_location="cpu", weights_only=False)
     assert float(loaded.r_max) == float(loaded.magmom_mace.r_max)
 
     ase.io.write(tmp_path / "fit.xyz", magnetic_configs[1:3])
