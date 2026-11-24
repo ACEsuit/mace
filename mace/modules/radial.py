@@ -75,9 +75,18 @@ class ChebychevBasis(torch.nn.Module):
         self.r_max = r_max
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # [..., 1]
-        x = x.repeat(1, self.num_basis)
-        n = self.n.repeat(len(x), 1)
-        return torch.special.chebyshev_polynomial_t(x, n)
+        if self.num_basis == 0:
+            return x.new_empty(x.shape[:-1] + (0,))
+        x_flat = x.squeeze(-1)
+        t_prev = torch.ones_like(x_flat)
+        t_curr = x_flat
+        terms = [t_curr]
+        for _ in range(2, self.num_basis + 1):
+            t_next = 2.0 * x_flat * t_curr - t_prev
+            terms.append(t_next)
+            t_prev = t_curr
+            t_curr = t_next
+        return torch.stack(terms, dim=-1)
 
     def __repr__(self):
         return (

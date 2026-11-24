@@ -193,6 +193,28 @@ def test_chebychev_ignores_r_max_and_diverges_outside_the_unit_interval(
     assert_close(near(distances), [[1.7, 4.78, 14.552]], "chebychev beyond 1")
 
 
+def test_chebychev_preserves_autograd_gradients(fp64):  # pylint: disable=unused-argument
+    """Regression test for #1840: ChebychevBasis must preserve autograd
+    derivatives dT_n/dr rather than detaching via torch.special."""
+    basis = ChebychevBasis(r_max=BESSEL_R_MAX, num_basis=6)
+    x = torch.tensor([[0.3], [0.9], [1.7]], requires_grad=True)
+    assert torch.autograd.gradcheck(basis, (x,))
+
+    # Also verify TorchScript compilation succeeds with gradients intact.
+    scripted = torch.jit.script(basis)
+    out = scripted(x)
+    assert torch.allclose(out, basis(x))
+    assert out.requires_grad
+    (grad,) = torch.autograd.grad(out.sum(), x)
+    assert grad.shape == x.shape
+    assert torch.all(torch.isfinite(grad))
+
+    # Empty batch edge case (isolated atom with zero edges).
+    empty = torch.zeros((0, 1), requires_grad=True)
+    assert basis(empty).shape == (0, 6)
+
+
+
 # ===========================================================================
 # GaussianBasis -- exp(-0.5 * ((r - c_k) / w)^2), c_k linspace(0, r_max)
 # ===========================================================================
