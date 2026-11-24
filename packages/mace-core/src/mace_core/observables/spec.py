@@ -78,7 +78,8 @@ _SCALAR = (IrrepTerm(multiplicity=1, degree=0, parity="e"),)
 _STORAGE_ONLY_NAMES: dict[str, str] = {**OBSERVABLE_BY_FIELD, **RETIRED_NAMES}
 
 
-def _check_name(value: str, kind: str) -> str:
+def check_name(value: str, kind: str) -> str:
+    """``value``, refused unless it can name a key and a derivative."""
     if not value.isidentifier():
         raise ValueError(
             f"{kind} name {value!r} is not usable: a name must be a valid "
@@ -104,7 +105,7 @@ def check_observable_name(value: str, kind: str) -> str:
 
 def _check_output_name(value: str, kind: str) -> str:
     """Check a name that a model output is stored under."""
-    _check_name(value, kind)
+    check_name(value, kind)
     if value in _STORAGE_ONLY_NAMES:
         raise ValueError(
             f"{kind} name {value!r} is not usable: MACEOutput reserves it, "
@@ -139,7 +140,7 @@ class InputSpec(ConfigSection):
 
     @model_validator(mode="after")
     def _validate(self) -> InputSpec:
-        _check_name(self.name, "input")
+        check_name(self.name, "input")
         parse_irreps(self.irreps, observable=self.name)
         return self
 

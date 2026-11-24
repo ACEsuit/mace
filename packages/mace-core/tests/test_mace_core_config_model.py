@@ -12,7 +12,9 @@ from mace_core.config import (
     AgnesiTransformConfig,
     BaseConfig,
     BesselBasisConfig,
+    CategoricalFeatureConfig,
     ChebyshevBasisConfig,
+    ContinuousFeatureConfig,
     DistanceTransformConfig,
     GaussianBasisConfig,
     ModelConfig,
@@ -497,3 +499,130 @@ def test_a_contribution_named_like_a_derivative_is_refused():
                 atomic_contributions={"dipole": "atomic_dipoles"},
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Graph features
+# ---------------------------------------------------------------------------
+
+
+def test_a_feature_kind_picks_its_section_with_its_defaults():
+    config = ModelConfig.model_validate(
+        _with([_ENERGY], [_SPIN_IN])
+        | {
+            "graph_features": [
+                {
+                    "kind": "categorical",
+                    "name": "total_spin",
+                    "num_classes": 100,
+                    "embedding_dim": 32,
+                },
+                {
+                    "kind": "continuous",
+                    "name": "quant",
+                    "per": "atom",
+                    "embedding_dim": 32,
+                },
+            ]
+        }
+    )
+    spin, quant = config.graph_features
+    assert spin == CategoricalFeatureConfig(
+        name="total_spin", per="graph", num_classes=100, embedding_dim=32, offset=0
+    )
+    assert quant == ContinuousFeatureConfig(
+        name="quant", per="atom", input_dim=1, embedding_dim=32, bias=True
+    )
+    assert ModelConfig.model_validate(config.model_dump(mode="json")) == config
+
+
+@pytest.mark.parametrize(
+    ("features", "message"),
+    [
+        ([{"kind": "continuous", "name": "forces", "embedding_dim": 4}], "fitted to"),
+        (
+            [
+                {
+                    "kind": "continuous",
+                    "name": "elec_temp",
+                    "per": "atom",
+                    "embedding_dim": 4,
+                }
+            ],
+            "set per to 'graph'",
+        ),
+        (
+            [{"kind": "continuous", "name": "x", "embedding_dim": 4}] * 2,
+            "declared more than once",
+        ),
+        ([{"kind": "ordinal", "name": "x", "embedding_dim": 4}], "ordinal"),
+        ([{"kind": "categorical", "name": "x", "embedding_dim": 4}], "num_classes"),
+    ],
+)
+def test_a_feature_the_model_cannot_embed_is_refused(features, message):
+    with pytest.raises(ValidationError, match=message):
+        ModelConfig.model_validate({"graph_features": features})
+
+
+_TEMPERATURE = {"kind": "continuous", "name": "elec_temp", "embedding_dim": 4}
+_ENERGY = {"name": "energy", "irreps": "0e", "per_atom": False, "units": "eV"}
+_TEMPERATURE_IN = {"name": "elec_temp", "irreps": "0e", "per_atom": False, "units": "1"}
+_SPIN_IN = {"name": "total_spin", "irreps": "0e", "per_atom": False, "units": "1"}
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ({"graph_features": [_TEMPERATURE]}, "declare it in observables.inputs"),
+        (
+            _with([_ENERGY], [_TEMPERATURE_IN])
+            | {"graph_features": [_TEMPERATURE | {"input_dim": 3}]},
+            "set input_dim to 1",
+        ),
+        (
+            _with([_ENERGY, _ENERGY | {"name": "born"}])
+            | {"graph_features": [_TEMPERATURE | {"name": "born"}]},
+            "named like a declared input or observable",
+        ),
+        (
+            {"graph_features": [_TEMPERATURE | {"name": "pos"}]},
+            "named like a declared input or observable",
+        ),
+        (
+            _with([_ENERGY], [_TEMPERATURE_IN | {"per_atom": True}])
+            | {"graph_features": [_TEMPERATURE]},
+            "the input is declared '0e' per atom",
+        ),
+    ],
+)
+def test_a_feature_reads_a_value_of_its_own(document, message):
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        ModelConfig.model_validate(document)
+
+
+@pytest.mark.parametrize(
+    "name", ["positions", "batch", "cell", "x_weight", "x_present"]
+)
+def test_a_feature_named_like_a_graph_key_is_refused(name):
+    with pytest.raises(ValidationError, match="Give it a name of its own"):
+        ModelConfig.model_validate({"graph_features": [_TEMPERATURE | {"name": name}]})
+
+
+def test_an_embedding_readout_reads_out_the_energy_of_graph_features():
+    ModelConfig.model_validate(
+        _with([_ENERGY], [_TEMPERATURE_IN], from_embedding=True)
+        | {"graph_features": [_TEMPERATURE]}
+    )
+    with pytest.raises(ValidationError, match="'energy' is not a declared observable"):
+        ModelConfig.model_validate(
+            _with([_DIPOLE], [_TEMPERATURE_IN], from_embedding=True)
+            | {"graph_features": [_TEMPERATURE]}
+        )
+    with pytest.raises(ValidationError, match="no graph feature is declared"):
+        ModelConfig.model_validate({"readout": {"from_embedding": True}})
+
+
+@pytest.mark.parametrize("name", ["a.b", "", "2x"])
+def test_a_feature_name_that_cannot_be_a_key_is_refused(name):
+    with pytest.raises(ValidationError, match="is not usable"):
+        ModelConfig.model_validate({"graph_features": [_TEMPERATURE | {"name": name}]})

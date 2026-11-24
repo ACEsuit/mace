@@ -25,6 +25,7 @@ is rebuilt from it.
 
 **The graph.** A flat dict, read and never written. The backbone reads
 ``positions``, ``node_atomic_numbers``, ``edge_index`` and ``shifts``, and
+with declared graph features ``batch``, ``ptr`` and each feature by name,
 nothing else. The element one-hot is formed here from the atomic numbers, and
 the edge vectors from the positions and the shifts, so a strain applied to
 both upstream reaches every edge quantity.
@@ -62,6 +63,7 @@ from mace_torch.nn.embedding import (
     build_distance_transform,
     radial_basis_spec,
 )
+from mace_torch.nn.graph_features import GraphFeatureEmbedding
 from mace_torch.nn.interaction import (
     InteractionBlock,
     NonLinearInteractionBlock,
@@ -116,6 +118,8 @@ class NodeFeatures:
             backbone formed, in the model's precision.
         element_index: ``[n_nodes]``, int64, each node's column of the
             element table, the index the one-hot was formed from.
+        embedding: ``[n_nodes, num_channels]``, what the first layer reads:
+            the element embedding, with the graph features added.
 
     What reads the elements after the backbone reads these two and forms no
     lookup of its own. Under a :class:`LocalityInfo`, both hold the local
@@ -125,6 +129,7 @@ class NodeFeatures:
     layers: tuple[Tensor, ...]
     node_attrs: Tensor
     element_index: Tensor
+    embedding: Tensor
 
 
 @contextlib.contextmanager
@@ -271,6 +276,11 @@ class MACEBackbone(nn.Module):
         self.element_embedding = ElementEmbedding(
             atomic_numbers, self.num_features, precision
         )
+        self.graph_feature_embedding = (
+            GraphFeatureEmbedding(config.graph_features, self.num_features, precision)
+            if config.graph_features
+            else None
+        )
 
         # Layers. The first reads the element embedding's scalars, every later
         # one the hidden irreps, and the last returns `last_layer_irreps`.
@@ -412,6 +422,9 @@ class MACEBackbone(nn.Module):
         # Nodes.
         element = self.element_embedding(graph["node_atomic_numbers"])
         features = element.features
+        if self.graph_feature_embedding is not None:
+            features = features + self.graph_feature_embedding(graph, graph["batch"])
+        embedding = features
 
         # Layers.
         product_element = (
@@ -440,6 +453,7 @@ class MACEBackbone(nn.Module):
             layers=tuple(layers),
             node_attrs=element.one_hot[local],
             element_index=element.index[local],
+            embedding=embedding[local],
         )
 
     def _check_locality(self, locality: LocalityInfo | None) -> None:

@@ -17,7 +17,12 @@ from mace_torch.nn.backbone import MACEBackbone
 from mace_torch.nn.radial import ZBLBasis
 
 from mace import modules
-from tests.parity.legacy_weights import carry_readout, carry_weights
+from tests.parity.legacy_weights import (
+    carry_joint_embedding,
+    carry_linear,
+    carry_readout,
+    carry_weights,
+)
 
 #: The elements of the fixtures the parity suites run on.
 ELEMENTS = (1, 6, 8)
@@ -151,7 +156,8 @@ def v1_graph(legacy, graph: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
 
 class V1Model:
     """A v1 backbone, output layer and pair repulsion holding a legacy
-    model's weights.
+    model's weights, its graph-feature embedding and embedding readout
+    included.
 
     Args:
         legacy: The legacy model.
@@ -176,6 +182,14 @@ class V1Model:
         )
         for readout in self.outputs.readouts.values():
             carry_readout(legacy, readout)
+        if self.backbone.graph_feature_embedding is not None:
+            carry_joint_embedding(
+                legacy.joint_embedding, self.backbone.graph_feature_embedding
+            )
+        if self.outputs.embedding_readout is not None:
+            carry_linear(
+                legacy.embedding_readout.linear, self.outputs.embedding_readout
+            )
         self.pair_repulsion = (
             ZBLBasis(polynomial_order=int(legacy.pair_repulsion_fn.p))
             if hasattr(legacy, "pair_repulsion_fn")

@@ -59,7 +59,7 @@ from mace_torch.backends.radial import (
     GaussianBasis,
     PolynomialCutoff,
 )
-from mace_torch.kernels.initialization import standard_normal_like
+from mace_torch.kernels.initialization import standard_normal_like, uniform_like
 from mace_torch.kernels.ops import (
     channelwise_tp_conv,
     equivariant_linear,
@@ -838,14 +838,7 @@ class ReferenceLayerNormSiluMLP(nn.Module):
                 bound = radial_mlp_initial_bound(int(weight.shape[0]))
                 generator = torch.Generator().manual_seed(seed + index)
                 for parameter in (weight, bias):
-                    unit = torch.rand(
-                        parameter.shape, generator=generator, dtype=torch.float64
-                    )
-                    parameter.copy_(
-                        ((2.0 * unit - 1.0) * bound).to(
-                            device=parameter.device, dtype=parameter.dtype
-                        )
-                    )
+                    parameter.copy_(uniform_like(parameter, bound, generator))
             for norm_weight, norm_bias in zip(
                 self.norm_weights, self.norm_biases, strict=True
             ):

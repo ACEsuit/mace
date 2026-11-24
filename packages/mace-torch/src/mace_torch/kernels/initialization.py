@@ -22,7 +22,12 @@ import torch
 from mace_core.kernels.protocol import InternalWeights
 from torch import Tensor, nn
 
-__all__ = ["initialize_model_weights", "op_seed", "standard_normal_like"]
+__all__ = [
+    "initialize_model_weights",
+    "op_seed",
+    "standard_normal_like",
+    "uniform_like",
+]
 
 #: Keeps the derived seeds inside the range a torch generator accepts.
 _SEED_MODULUS = 2**31
@@ -83,3 +88,14 @@ def standard_normal_like(like: Tensor, seed: int) -> Tensor:
     return torch.randn(like.shape, generator=generator, dtype=torch.float64).to(
         device=like.device, dtype=like.dtype
     )
+
+
+def uniform_like(like: Tensor, bound: float, generator: torch.Generator) -> Tensor:
+    """Uniform on ``[-bound, bound]``, shaped, typed and placed like ``like``.
+
+    Drawn on the host in float64 from ``generator`` and moved, for the reasons
+    :func:`standard_normal_like` gives. The generator is the caller's, so the
+    tensors of one op can be drawn in turn from one seed.
+    """
+    unit = torch.rand(like.shape, generator=generator, dtype=torch.float64)
+    return ((2.0 * unit - 1.0) * bound).to(device=like.device, dtype=like.dtype)

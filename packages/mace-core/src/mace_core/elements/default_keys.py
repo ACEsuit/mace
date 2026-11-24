@@ -39,7 +39,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal, get_args
 
-__all__ = ["STORAGES", "DefaultKeys", "Storage"]
+__all__ = ["DEFAULT_KEYS_BY_NAME", "STORAGES", "DefaultKeys", "Storage"]
 
 #: Where a value is read from. Two places, because a structure file stores a
 #: per-structure value and a per-atom array in different ones and there is no
@@ -128,3 +128,9 @@ class DefaultKeys(Enum):
         return frozenset(
             member.convention_name for member in cls if member.storage == storage
         )
+
+
+#: Every member, by its convention name.
+DEFAULT_KEYS_BY_NAME: dict[str, DefaultKeys] = {
+    member.convention_name: member for member in DefaultKeys
+}

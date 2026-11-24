@@ -30,7 +30,7 @@ from typing import Any
 import numpy as np
 from ase.stress import voigt_6_to_full_3x3_stress
 
-from mace_core.elements.default_keys import DefaultKeys
+from mace_core.elements.default_keys import DEFAULT_KEYS_BY_NAME, DefaultKeys
 from mace_core.heads import DEFAULT_HEAD
 
 __all__ = [
@@ -43,11 +43,6 @@ __all__ = [
 #: The config type a structure gets when the file does not name one.
 DEFAULT_CONFIG_TYPE = "Default"
 
-
-#: The default convention names whose shape is known, by name.
-_DEFAULT_PROPERTIES: dict[str, DefaultKeys] = {
-    member.convention_name: member for member in DefaultKeys
-}
 
 #: The two structure-level tensors that may arrive as the six Voigt
 #: components in ase's order (xx, yy, zz, yz, xz, xy), which is what
@@ -191,7 +186,7 @@ def _checked_property(name: str, value: Any, n_atoms: int) -> Any:
     A stress or virial given as six Voigt components comes back as the
     ``[3, 3]`` matrix. A name outside the default table comes back unchecked.
     """
-    member = _DEFAULT_PROPERTIES.get(name)
+    member = DEFAULT_KEYS_BY_NAME.get(name)
     if value is None or member is None:
         return value
     shape = np.shape(value)

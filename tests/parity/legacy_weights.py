@@ -264,3 +264,29 @@ def carry_readout(legacy, readout) -> None:
             carry_linear(legacy_readout.linear_2, readout_map.linear_out)
         else:
             carry_linear(legacy_readout.linear, readout_map)
+
+
+def carry_joint_embedding(legacy, embedding) -> None:
+    """The frozen tree's ``GenericJointEmbedding`` into a v1
+    ``GraphFeatureEmbedding`` of the same features: each feature's table or
+    two maps, and the projection."""
+    ours = {
+        feature.name: module
+        for feature, module in zip(
+            embedding.features, embedding.embeddings, strict=True
+        )
+    }
+    for name, embedder in legacy.embedders.items():
+        target = ours[name]
+        if isinstance(embedder, torch.nn.Embedding):
+            target.load_canonical({"table": embedder.weight.detach()})
+            continue
+        first, _, second = embedder
+        state = {
+            "weight_in": first.weight.detach(),
+            "weight_out": second.weight.detach(),
+        }
+        if first.bias is not None:
+            state |= {"bias_in": first.bias.detach(), "bias_out": second.bias.detach()}
+        target.load_canonical(state)
+    embedding.load_canonical({"projection": legacy.project[0].weight.detach()})
