@@ -427,3 +427,24 @@ def test_distributed_inference_uses_global_head_identity(tmp_path, mixed):
         join=True,
     )
     assert all((tmp_path / str(rank)).read_text() == "passed" for rank in range(2))
+
+
+def test_model_inference_preserves_requires_grad():
+    import torch
+
+    from mace.cli.visualise_train import model_inference
+
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.frozen = torch.nn.Parameter(torch.ones(2), requires_grad=False)
+            self.trainable = torch.nn.Parameter(torch.ones(2), requires_grad=True)
+
+        def forward(self, batch, **kwargs):
+            return {"energy": batch["energy"]}
+
+    model = Model()
+    model_inference({}, model, {}, "cpu")
+    assert model.frozen.requires_grad is False
+    assert model.trainable.requires_grad is True
+

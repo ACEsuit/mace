@@ -483,49 +483,51 @@ def model_inference(
     distributed: bool = False,
 ):
 
+    prev_requires_grad = [param.requires_grad for param in model.parameters()]
     for param in model.parameters():
         param.requires_grad = False
 
     results_dict = {}
-    model_heads = getattr(getattr(model, "module", model), "heads", None)
+    try:
+        model_heads = getattr(getattr(model, "module", model), "heads", None)
 
-    for name in all_data_loaders:
-        data_loader = all_data_loaders[name]
-        logging.debug(f"Running inference on {name} dataset")
-        scatter_metric = InferenceMetric().to(device)
-        head_indices = set()
+        for name in all_data_loaders:
+            data_loader = all_data_loaders[name]
+            logging.debug(f"Running inference on {name} dataset")
+            scatter_metric = InferenceMetric().to(device)
+            head_indices = set()
 
-        for batch in data_loader:
-            if model_heads is not None and batch.head is not None:
-                head_indices.update(batch.head.detach().cpu().reshape(-1).tolist())
-            batch = batch.to(device)
-            batch_dict = batch.to_dict()
-            output = model(
-                batch_dict,
-                training=False,
-                compute_force=output_args.get("forces", False),
-                compute_virials=output_args.get("virials", False),
-                compute_stress=output_args.get("stress", False),
-            )
+            for batch in data_loader:
+                if model_heads is not None and batch.head is not None:
+                    head_indices.update(batch.head.detach().cpu().reshape(-1).tolist())
+                batch = batch.to(device)
+                batch_dict = batch.to_dict()
+                output = model(
+                    batch_dict,
+                    training=False,
+                    compute_force=output_args.get("forces", False),
+                    compute_virials=output_args.get("virials", False),
+                    compute_stress=output_args.get("stress", False),
+                )
 
-            results = scatter_metric(batch, output)
+                results = scatter_metric(batch, output)
 
-        if distributed:
-            torch.distributed.barrier()
-            gathered_heads = [None] * torch.distributed.get_world_size()
-            torch.distributed.all_gather_object(gathered_heads, head_indices)
-            head_indices = set().union(*gathered_heads)
+            if distributed:
+                torch.distributed.barrier()
+                gathered_heads = [None] * torch.distributed.get_world_size()
+                torch.distributed.all_gather_object(gathered_heads, head_indices)
+                head_indices = set().union(*gathered_heads)
 
-        results = scatter_metric.compute()
-        if model_heads is not None and len(head_indices) == 1:
-            results["head"] = model_heads[int(next(iter(head_indices)))]
-        results_dict[name] = results
-        scatter_metric.reset()
+            results = scatter_metric.compute()
+            if model_heads is not None and len(head_indices) == 1:
+                results["head"] = model_heads[int(next(iter(head_indices)))]
+            results_dict[name] = results
+            scatter_metric.reset()
 
-        del data_loader
-
-    for param in model.parameters():
-        param.requires_grad = True
+            del data_loader
+    finally:
+        for param, req_grad in zip(model.parameters(), prev_requires_grad):
+            param.requires_grad = req_grad
 
     return results_dict
 
