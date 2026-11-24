@@ -1153,7 +1153,11 @@ class AtomicDielectricMACE(torch.nn.Module):
                 polarizabilities.append(node_polarizability)
                 dipoles.append(node_dipoles)
             else:
-                node_dipoles = node_out[:, 1:4]
+                # Legacy dipole-only readouts emit [charge (1), dipole (3)], whereas
+                # DipolePolarReadoutBlock emits [charge (1), alpha_0 (1), dipole (3), alpha_2 (5)].
+                node_dipoles = (
+                    node_out[:, 1:4] if node_out.shape[-1] == 4 else node_out[:, 2:5]
+                )
                 dipoles.append(node_dipoles)
                 # raise ValueError(
                 #    "Polarizability is not used in this model, but it is required for the AtomicDielectricMACE."
