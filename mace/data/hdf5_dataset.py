@@ -59,6 +59,10 @@ class HDF5Dataset(Dataset):
         for key in subgrp["property_weights"]:
             property_weights[key] = unpack_value(subgrp["property_weights"][key][()])
 
+        head = self.kwargs.get("head")
+        if head is None and "head" in subgrp:
+            head = unpack_value(subgrp["head"][()])
+
         config = Configuration(
             atomic_numbers=subgrp["atomic_numbers"][()],
             positions=subgrp["positions"][()],
@@ -68,9 +72,8 @@ class HDF5Dataset(Dataset):
             config_type=unpack_value(subgrp["config_type"][()]),
             pbc=unpack_value(subgrp["pbc"][()]),
             cell=unpack_value(subgrp["cell"][()]),
+            head=head if head is not None else "Default",
         )
-        if config.head is None:
-            config.head = self.kwargs.get("head")
         atomic_data = self.atomic_dataclass.from_config(
             config,
             z_table=self.z_table,
