@@ -157,6 +157,35 @@ class TestAtomicData:
             assert torch.all(batch_direct.energy == batch.energy)
             assert torch.all(batch_direct.forces == batch.forces)
 
+    def test_hdf5_dataset_respects_head(self, tmp_path):
+        dataset_path = tmp_path / "head_test.h5"
+        with h5py.File(str(dataset_path), "w") as f:
+            save_configurations_as_HDF5([self.config], 0, f)
+        ds = HDF5Dataset(
+            str(dataset_path),
+            z_table=self.table,
+            r_max=3.0,
+            head="head_a",
+            heads=["head_a", "Default"],
+        )
+        try:
+            assert int(ds[0].head.item()) == 0
+        finally:
+            ds.file.close()
+
+        ds_default = HDF5Dataset(
+            str(dataset_path),
+            z_table=self.table,
+            r_max=3.0,
+            head=None,
+            heads=["head_a", "Default"],
+        )
+        try:
+            assert int(ds_default[0].head.item()) == 1
+        finally:
+            ds_default.file.close()
+
+
 
 class TestNeighborhood:
     def test_basic(self):
