@@ -33,9 +33,10 @@ def run() -> None:
     nobody can reproduce, and no way to tell whether the model or the solver
     moved.
     """
-    import torch  # pylint: disable=import-outside-toplevel
-
     from tests.golden import maceles_surfaces  # pylint: disable=import-outside-toplevel
+    from tests.golden.anchors import (  # pylint: disable=import-outside-toplevel
+        load_checkpoint,
+    )
     from tests.golden.build_maceles_anchor import (  # pylint: disable=import-outside-toplevel
         LES_ARGUMENTS_PATH,
         MODEL_PATH,
@@ -59,9 +60,7 @@ def run() -> None:
     path = build_anchor()
     print(f"  anchor   tiny_maceles     -> {path.relative_to(REPO_ROOT)}")
 
-    model = torch.load(MODEL_PATH, weights_only=False, map_location="cpu").to(
-        torch.float64
-    )
+    model = load_checkpoint(MODEL_PATH)
     les_arguments = load_les_arguments()
     provenance_base = {
         "source": f"tests/golden/models/{MODEL_PATH.name}",

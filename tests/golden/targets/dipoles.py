@@ -57,8 +57,9 @@ def _dipole_projection(out: dict) -> dict:
 def run() -> None:
     # Late imports: the builder pulls in the framework, and --help has to
     # work where torch cannot be loaded.
-    import torch  # pylint: disable=import-outside-toplevel
-
+    from tests.golden.anchors import (  # pylint: disable=import-outside-toplevel
+        load_checkpoint,
+    )
     from tests.golden.build_dipole_anchor import (  # pylint: disable=import-outside-toplevel
         MODEL_PATH as DIPOLE_ANCHOR_PATH,
     )
@@ -74,9 +75,7 @@ def run() -> None:
     # docstring and tests/golden/routes.py.
     from tests.golden.routes import ForwardRoute  # pylint: disable=import-outside-toplevel
 
-    model = torch.load(DIPOLE_ANCHOR_PATH, weights_only=False, map_location="cpu").to(
-        torch.float64
-    )
+    model = load_checkpoint(DIPOLE_ANCHOR_PATH)
     snapshot = harness.snapshot_outputs(
         ForwardRoute(model, _dipole_projection),
         harness.load_fixtures(tags=MOLECULAR_TAGS, elements=DIPOLE_ELEMENTS),

@@ -1607,3 +1607,13 @@ def test_deviations_reports_headroom(two_fixtures):
     drifted = harness.snapshot_outputs(FakeSource(offset=2e-7), two_fixtures)
     worst = max(d.max_abs for d in harness.deviations(drifted, reference))
     assert worst == pytest.approx(2e-7, rel=1e-6)
+
+
+def test_assert_within_holds_the_row_and_the_shape():
+    row = harness.FP64_CPU_REFERENCE
+    harness.assert_within(row, np.array([1.0, 2.0]), np.array([1.0, 2.0 + 5e-7]), "x")
+    with pytest.raises(AssertionError, match="outside the 'fp64_cpu_reference' row"):
+        harness.assert_within(row, np.array([1.0]), np.array([1.0 + 2e-6]), "x")
+    with pytest.raises(AssertionError, match=r"shape \(3, 1\)"):
+        harness.assert_within(row, np.zeros((3, 1)), np.zeros((1, 3)), "x")
+    harness.assert_within(row, np.zeros(0), np.zeros(0), "empty")

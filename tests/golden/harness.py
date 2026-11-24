@@ -95,6 +95,10 @@ class Tolerance:
     rtol: float
     rationale: str
 
+    def bound(self, reference: np.ndarray) -> np.ndarray:
+        """The largest ``|a - b|`` the row accepts, element by element."""
+        return self.atol + self.rtol * np.abs(reference)
+
 
 #: fp64, legacy e3nn kernels, CPU, compared across machines and Python
 #: versions. This is the row every committed CPU reference is asserted at.
@@ -213,6 +217,29 @@ def tolerance(row: str) -> Tolerance:
             f"Add a row only in a dedicated, reviewed change -- never inline "
             f"a number in a test."
         ) from None
+
+
+def assert_within(row: Tolerance, got: Any, want: Any, what: str) -> None:
+    """Assert ``got`` is within a row of the table of ``want``, the reference.
+
+    The shapes must agree, and the bound is :meth:`Tolerance.bound`, as in
+    :func:`compare_to_reference`. A test compares through this rather than
+    ``numpy.testing.assert_allclose``, whose ``atol=``/``rtol=`` keywords are
+    how a second tolerance table starts.
+    """
+    got = np.asarray(got, dtype=float)
+    want = np.asarray(want, dtype=float)
+    assert got.shape == want.shape, (
+        f"{what}: shape {got.shape}, and the reference is {want.shape}"
+    )
+    if not want.size:
+        return
+    excess = np.abs(got - want) - row.bound(want)
+    assert excess.max() <= 0.0, (
+        f"{what}: outside the '{row.name}' row by {excess.max():.3g}\n"
+        f"  got       {got.tolist()}\n"
+        f"  reference {want.tolist()}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1592,7 +1619,7 @@ def _compare_entry(
         return
     got = _values(got_entry)
     want = _values(ref_entry)
-    bound = tol.atol + tol.rtol * np.abs(want)
+    bound = tol.bound(want)
     diff = np.abs(got - want)
     bad = diff > bound
     if not bad.any():

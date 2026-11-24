@@ -16,14 +16,18 @@ import pytest
 import torch
 
 from tests.golden import harness, routes
-from tests.golden.build_dipole_anchor import ANCHOR_CONFIG, build_model
+from tests.golden.anchors import load_checkpoint
+from tests.golden.build_dipole_anchor import (
+    ANCHOR_CONFIG,
+    MODEL_PATH,
+    SIDECAR_PATH,
+    build_model,
+)
 
 #: The basis is constructed on both sides, so the only difference between them
 #: is the order of the fp64 operations. Same claim as tests/unit/test_radial.py.
 BASIS = harness.tolerance("closed_form_fp64")
 
-MODEL_PATH = harness.MODELS_DIR / "tiny_dipoles.model"
-SIDECAR_PATH = harness.MODELS_DIR / "tiny_dipoles.build.json"
 REFERENCE_PATH = harness.REFERENCES_DIR / "tiny_dipoles_e3nn_cpu_fp64.json"
 
 #: The reference is taken on the molecular fixtures only. A dipole is defined
@@ -34,32 +38,6 @@ REFERENCE_PATH = harness.REFERENCES_DIR / "tiny_dipoles_e3nn_cpu_fp64.json"
 FIXTURE_TAGS = ("molecular",)
 #: The manifest is shared; this anchor knows H/C/O only.
 FIXTURE_ELEMENTS = (1, 6, 8)
-
-
-def _load():
-    return torch.load(MODEL_PATH, weights_only=False, map_location="cpu").to(
-        torch.float64
-    )
-
-
-def _assert_within(row, got, want, what):
-    """Compare at a named row of the one tolerance table.
-
-    Spelled out rather than handed to ``numpy.testing.assert_allclose``
-    because passing ``atol=``/``rtol=`` keywords anywhere under
-    ``tests/golden/`` is what ``test_harness.py`` scans for, and rightly so: a
-    literal in a keyword is how a second tolerance table starts. The bound is
-    the same one ``harness.compare_to_reference`` applies.
-    """
-    got = np.asarray(got, dtype=float)
-    want = np.asarray(want, dtype=float)
-    bound = row.atol + row.rtol * np.abs(want)
-    excess = np.abs(got - want) - bound
-    assert excess.max() <= 0.0, (
-        f"{what}: outside the '{row.name}' row by {excess.max():.3g}\n"
-        f"  got       {got.tolist()}\n"
-        f"  reference {want.tolist()}"
-    )
 
 
 def _projection(out):
@@ -75,7 +53,7 @@ def fixture_fixtures():
 
 
 def test_anchor_reproduces_its_reference(fixtures):
-    model = _load()
+    model = load_checkpoint(MODEL_PATH)
     snapshot = harness.snapshot_outputs(
         routes.ForwardRoute(model, _projection),
         fixtures,
@@ -90,7 +68,7 @@ def test_anchor_reproduces_its_reference(fixtures):
 
 
 def test_anchor_is_the_class_it_claims_to_be():
-    model = _load()
+    model = load_checkpoint(MODEL_PATH)
     assert type(model).__name__ == "AtomicDipolesMACE"
     # Not an energy model, and the class asserts as much on construction
     # (mace/modules/models.py:664). If this ever gains an atomic_energies_fn
@@ -129,7 +107,7 @@ def test_the_committed_anchor_carries_the_plain_e3nn_basis():
     anyone's dispatch table. A sign flip, or a genuinely different basis, is
     O(1) and still fails.
     """
-    committed = _load()
+    committed = load_checkpoint(MODEL_PATH)
     previous = torch.get_default_dtype()
     torch.set_default_dtype(torch.float64)
     try:
@@ -185,7 +163,7 @@ def test_the_fixed_charge_baseline_is_live():
     edit-locked, and inventing a second charged fixture here would fork the
     structure set that every other golden shares.
     """
-    model = _load()
+    model = load_checkpoint(MODEL_PATH)
     atoms = harness.load_fixtures(names=["water_cluster"])["water_cluster"]
     graph = routes.graph_batch(model, atoms)
 
@@ -219,7 +197,7 @@ def test_the_fixed_charge_baseline_is_live():
 
     e_ang_to_debye = 1.0 / (1e-11 / c / e)
     expected = (charges @ graph["positions"].detach()) * e_ang_to_debye
-    _assert_within(
+    harness.assert_within(
         harness.FP64_CPU_REFERENCE,
         (moved - neutral).numpy(),
         expected.numpy(),
@@ -264,7 +242,7 @@ def test_the_two_fixed_charge_baselines_do_not_share_a_unit():
     debye = compute_fixed_charge_dipole(charges, positions, batch, 1)
     raw = compute_fixed_charge_dipole_polar(charges, positions, batch, 1)
     ratio = (debye / raw).numpy()
-    _assert_within(
+    harness.assert_within(
         harness.FP64_CPU_REFERENCE,
         ratio,
         np.full_like(ratio, 1.0 / (1e-11 / c / e)),
@@ -289,7 +267,7 @@ def test_the_calculator_route_reaches_the_same_dipole(fixtures):
     """
     from mace.calculators import MACECalculator  # noqa: PLC0415
 
-    model = _load()
+    model = load_checkpoint(MODEL_PATH)
     calc = MACECalculator(
         models=[model], device="cpu", default_dtype="float64", model_type="DipoleMACE"
     )
@@ -318,7 +296,7 @@ def test_a_dipole_model_cannot_be_driven_through_an_ase_accessor(fixtures):
     from mace.calculators import MACECalculator  # noqa: PLC0415
 
     calc = MACECalculator(
-        models=[_load()],
+        models=[load_checkpoint(MODEL_PATH)],
         device="cpu",
         default_dtype="float64",
         model_type="DipoleMACE",

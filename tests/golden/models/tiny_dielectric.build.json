@@ -1,0 +1,38 @@
+{
+  "atomic_energies": null,
+  "avg_num_neighbors": 3.0,
+  "built_by": "direct instantiation; the training CLI can emit this class (--model AtomicDielectricMACE) but only against a dataset labelled with dipoles and polarizabilities, and an untrained network exercises the same assembly",
+  "class": "AtomicDielectricMACE",
+  "command": "python -c \"from tests.golden.build_dielectric_anchor import build_anchor, MODEL_PATH; build_anchor(MODEL_PATH)\"",
+  "config": {
+    "MLP_irreps": "4x0e + 4x1o + 4x2e",
+    "atomic_numbers": [
+      1,
+      6,
+      8
+    ],
+    "correlation": 2,
+    "gate": "silu",
+    "hidden_irreps": "4x0e + 4x1o + 4x2e",
+    "interaction_cls": "RealAgnosticResidualInteractionBlock",
+    "interaction_cls_first": "RealAgnosticInteractionBlock",
+    "max_ell": 2,
+    "num_bessel": 6,
+    "num_elements": 3,
+    "num_interactions": 2,
+    "num_polynomial_cutoff": 5,
+    "r_max": 3.5,
+    "radial_MLP": [
+      64,
+      64,
+      64
+    ],
+    "radial_type": "bessel"
+  },
+  "dtype": "float64",
+  "model": "tiny_dielectric.model",
+  "num_parameters": 21868,
+  "recipe": "tests/golden/build_dielectric_anchor.py",
+  "regenerate_with": "python tests/golden/regenerate.py --target dielectric --i-know-what-i-am-doing",
+  "seed": 20261105
+}
