@@ -339,12 +339,161 @@ def test_a_declared_observable_round_trips_with_the_model_section():
 @pytest.mark.parametrize(
     ("mlp_irreps", "message"),
     [
-        ("8x0e+8x1o", "more than even scalars"),
-        ("8x0o", "more than even scalars"),
-        ("8xq", "mlp_irreps='8xq'"),
+        ("8x0o", "has an odd scalar"),
+        ("8x1o+8x0e", "is not sorted"),
         ("8x0e+8x0e", "one term per irrep"),
+        ("8xq", "mlp_irreps='8xq'"),
     ],
 )
 def test_a_middle_the_gate_cannot_hold_is_refused(mlp_irreps, message):
     with pytest.raises(ValidationError, match=re.escape(message)):
         ReadoutConfig(mlp_irreps=mlp_irreps)
+
+
+# ---------------------------------------------------------------------------
+# The last layer and the reporting of observables
+# ---------------------------------------------------------------------------
+
+_DIPOLE = {"name": "dipole", "irreps": "1o", "per_atom": False, "units": "e*A"}
+_CHARGES = {"name": "charges", "irreps": "0e", "per_atom": True, "units": "e"}
+_ALPHA = {"name": "polarizability", "irreps": "0e+2e", "per_atom": False, "units": "1"}
+_TOTAL_IN = {"name": "total_charge", "irreps": "0e", "per_atom": False, "units": "e"}
+
+
+def _with(observables, inputs=(), **readout):
+    return {
+        "observables": {"inputs": list(inputs), "observables": observables},
+        "readout": readout,
+    }
+
+
+@pytest.mark.parametrize("kept", ["0e", "1o", "0e+1o+2e", "0e+2e"])
+def test_the_last_layer_keeps_a_sorted_choice_of_node_irreps(kept):
+    assert ModelConfig(max_L=2, last_layer_irreps=kept).last_layer_irreps == kept
+
+
+@pytest.mark.parametrize("kept", ["1e", "0e+0e", "1o+0e", "2x1o", "3o", "0e+q"])
+def test_a_last_layer_the_node_features_cannot_give_is_refused(kept):
+    with pytest.raises(ValidationError, match="last_layer_irreps"):
+        ModelConfig(max_L=2, last_layer_irreps=kept)
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        (
+            _with([_DIPOLE], groups=[["dipole", "spin"]]),
+            "'spin' is not a declared observable",
+        ),
+        (
+            _with([_CHARGES], dipole_charges="input"),
+            "'dipole' is not a declared observable",
+        ),
+        (
+            _with([_DIPOLE | {"per_atom": True}], dipole_charges="input"),
+            "is not declared '1o' per structure",
+        ),
+        (_with([_DIPOLE], dipole_charges="input"), "'charges' is not a declared input"),
+        (
+            _with([_DIPOLE], dipole_charges="predicted"),
+            "'charges' is not a declared observable",
+        ),
+        (
+            _with([_DIPOLE, _CHARGES | {"irreps": "1o"}], dipole_charges="predicted"),
+            "is not declared '0e' per atom",
+        ),
+        (
+            _with([_DIPOLE, _CHARGES], dipole_charges="predicted"),
+            "'total_charge' is not a declared input",
+        ),
+        (
+            _with(
+                [{"name": "energy", "irreps": "0e", "per_atom": False, "units": "eV"}],
+                atomic_contributions={"energy": "site_energies"},
+            ),
+            "node_energies already",
+        ),
+        (_with([_DIPOLE], symmetric_matrices=["dipole"]), "'0e+2e' per structure"),
+        (
+            _with([_CHARGES], atomic_contributions={"charges": "atomic_charges"}),
+            "'charges', which is not declared per structure",
+        ),
+    ],
+)
+def test_the_readout_names_observables_the_model_declares(document, message):
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        ModelConfig.model_validate(document)
+
+
+def test_the_dielectric_readout_is_a_configuration():
+    config = ModelConfig.model_validate(
+        _with(
+            [_CHARGES, _DIPOLE, _ALPHA],
+            [_TOTAL_IN],
+            mlp_irreps="4x0e+4x1o+4x2e",
+            groups=[["charges", "polarizability", "dipole"]],
+            dipole_charges="predicted",
+            symmetric_matrices=["polarizability"],
+            atomic_contributions={"dipole": "atomic_dipoles"},
+        )
+    )
+    assert ModelConfig.model_validate(config.model_dump(mode="json")) == config
+
+
+@pytest.mark.parametrize(
+    ("readout", "message"),
+    [
+        ({"groups": [["dipole"]]}, "two members at least"),
+        ({"groups": [["dipole", "charges"], ["charges", "x"]]}, "more than one"),
+    ],
+)
+def test_a_readout_that_contradicts_itself_is_refused(readout, message):
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        ReadoutConfig.model_validate(readout)
+
+
+def test_an_irreps_spelled_with_its_multiplicity_is_the_same_irreps():
+    ModelConfig.model_validate(
+        _with(
+            [_DIPOLE | {"irreps": "1x1o", "units": "Debye"}],
+            [_CHARGES],
+            dipole_charges="input",
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("a.b", "is not usable"),
+        ("", "is not usable"),
+        ("d_dipole_d_pos", "spelled like a generated derivative"),
+    ],
+)
+def test_a_contribution_is_reported_under_a_usable_name(name, message):
+    with pytest.raises(ValidationError, match=message):
+        ReadoutConfig(atomic_contributions={"dipole": name})
+
+
+@pytest.mark.parametrize(("mode", "units"), [("input", "e*A"), ("predicted", "Debye")])
+def test_the_dipole_is_declared_in_the_unit_its_charge_part_is_added_in(mode, units):
+    inputs = [_CHARGES] if mode == "input" else [_TOTAL_IN]
+    observables = [_DIPOLE | {"units": units}]
+    if mode == "predicted":
+        observables.append(_CHARGES)
+    with pytest.raises(ValidationError, match="'dipole' is declared in"):
+        ModelConfig.model_validate(_with(observables, inputs, dipole_charges=mode))
+
+
+def test_a_contribution_named_like_a_derivative_is_refused():
+    dipole = _DIPOLE | {
+        "derivatives": [{"wrt": "pos", "name": "atomic_dipoles", "sign": 1}]
+    }
+    with pytest.raises(ValidationError, match="would both be reported"):
+        ModelConfig.model_validate(
+            _with(
+                [dipole],
+                [{"name": "pos", "irreps": "1o", "per_atom": True, "units": "A"}],
+                atomic_contributions={"dipole": "atomic_dipoles"},
+            )
+        )

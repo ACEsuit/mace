@@ -1,24 +1,30 @@
-"""One readout per declared observable, one copy of it per head.
+"""One readout per declared observable or group of them, one copy per head.
 
-A readout is built from an :class:`~mace_core.observables.ObservableSpec`: its
-irreps and nothing else decide what the readout produces. It reads every
-layer's node features and returns one contribution per layer, which the
-caller sums: the frozen tree's site energy is a sum over layers, and a readout
-of the last layer alone is a different model.
+A readout is built from :class:`~mace_core.observables.ObservableSpec`
+declarations: their irreps and nothing else decide what the readout produces.
+Observables read out together share every map, the frozen dielectric model's
+charge, dipole and polarizability among them; :func:`group_irreps` lays them
+out. A readout reads every layer's node features and returns one contribution
+per layer, which the caller sums: the frozen tree's site energy is a sum over
+layers, and a readout of the last layer alone is a different model.
+
+The last layer of a model with more than one is read out through a gate: the
+middle keeps the terms of the configured middle whose irrep the output has,
+the scalars through a SiLU and every higher copy scaled by the SiLU of a
+scalar of its own, as the frozen tree's gated readouts do.
 
 **Each head has its own readout.** Heads share the backbone and nothing after
 it. Every readout map produces the observable once per head, and each atom
 takes its own head's copy. The copies of one term sit together, head-major,
 which is the frozen tree's layout, so a multi-head checkpoint converts by
 copying: the observable ``0e+1o`` for two heads is ``2x0e+2x1o``, head ``h``
-owning copy ``h`` of each term. The gated readout's middle is
-``(heads * width)x0e``, head ``h`` owning channels ``[h * width, (h + 1) *
-width)``, and every other head's channels are zeroed before the second map,
-as the frozen tree's ``mask_head`` does. The second map is dense across heads;
+owning copy ``h`` of each term. The gated readout's middle is laid out the
+same way, and every other head's middle is zeroed before the second map, as
+the frozen tree's ``mask_head`` does. The second map is dense across heads;
 its cross-head blocks multiply zeros, in the frozen tree's weights as here.
 
 One head's readout can be read and written on its own, in the canonical layout
-of a one-head readout of the same observable: that is how a head starts from
+of a one-head readout of the same observables: that is how a head starts from
 another head's readout, or from a one-head model's.
 """
 
@@ -29,7 +35,11 @@ from typing import cast
 
 import torch
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps
-from mace_core.kernels.canonical import linear_path_normalization, linear_weight_paths
+from mace_core.kernels.canonical import (
+    gate_order,
+    linear_path_normalization,
+    linear_weight_paths,
+)
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.protocol import CanonicalState
 from mace_core.kernels.specs import LinearSpec
@@ -37,7 +47,7 @@ from mace_core.observables import ObservableSpec
 from torch import Tensor, nn
 
 from mace_torch.backends.reference import torch_dtype
-from mace_torch.nn.gate import Gate
+from mace_torch.nn.gate import Gate, gate_input_irreps, scalars_and_gated
 
 __all__ = ["ObservableReadout", "head_columns"]
 
@@ -47,14 +57,35 @@ def _per_head(irreps: str, num_heads: int) -> str:
     return str(Irreps.parse(irreps).with_channels(num_heads))
 
 
-def _head_copies(irreps: str, num_heads: int, head: int) -> list[int]:
-    """The copies of ``irreps`` once per head that are ``head``'s, in the
-    order of the copies of ``irreps``."""
+def _copies(multiplicities: Sequence[int], num_heads: int, head: int) -> list[int]:
+    """Of terms of ``multiplicities`` once per head, each term's copies
+    together, the copies that are ``head``'s, in the order of one head's."""
     copies, offset = [], 0
-    for mul, _ in Irreps.parse(irreps).terms:
+    for mul in multiplicities:
         copies.extend(range(offset + head * mul, offset + (head + 1) * mul))
         offset += num_heads * mul
     return copies
+
+
+def _head_copies(irreps: str, num_heads: int, head: int) -> list[int]:
+    """The copies of ``irreps`` once per head that are ``head``'s, in the
+    order of the copies of ``irreps``."""
+    return _copies([mul for mul, _ in Irreps.parse(irreps).terms], num_heads, head)
+
+
+def _gate_input_copies(middle: str, num_heads: int, head: int) -> list[int]:
+    """The copies of the gate input of ``middle`` once per head that are
+    ``head``'s, in the order of a one-head gate input: its scalars, then its
+    gates, then each gated term."""
+    scalars, gated = scalars_and_gated(middle)
+    multiplicities = [mul for mul, _ in gated]
+    gates_start = num_heads * scalars
+    gated_start = gates_start + num_heads * sum(multiplicities)
+    return (
+        _copies([scalars], num_heads, head)
+        + [gates_start + c for c in _copies(multiplicities, num_heads, head)]
+        + [gated_start + c for c in _copies(multiplicities, num_heads, head)]
+    )
 
 
 def head_columns(irreps: str, num_heads: int) -> Tensor:
@@ -130,9 +161,52 @@ def _head_weights(
     )
 
 
+def group_irreps(specs: Sequence[ObservableSpec]) -> tuple[str, dict[str, list[int]]]:
+    """The declaration a readout of ``specs`` produces, and where each one's
+    components sit in it.
+
+    One term per irrep, sorted by degree, odd before even at one degree; within
+    a term, the copies of the observables in the order of ``specs``. So
+    ``charges`` (``0e``), ``polarizability`` (``0e+2e``) and ``dipole``
+    (``1o``) read out together are ``2x0e+1x1o+1x2e``.
+
+    Returns:
+        The declaration, and per observable the columns of its components,
+        in the order of its own declaration.
+    """
+    copies: dict[Irrep, int] = {}
+    for spec in specs:
+        for mul, ir in Irreps.parse(spec.irreps).terms:
+            copies[ir] = copies.get(ir, 0) + mul
+    order = sorted(copies, key=gate_order)
+    start, offset = {}, 0
+    for ir in order:
+        start[ir] = offset
+        offset += copies[ir] * ir.dimension
+    taken = dict.fromkeys(order, 0)
+    columns: dict[str, list[int]] = {}
+    for spec in specs:
+        own: list[int] = []
+        for mul, ir in Irreps.parse(spec.irreps).terms:
+            first = start[ir] + taken[ir] * ir.dimension
+            own.extend(range(first, first + mul * ir.dimension))
+            taken[ir] += mul
+        columns[spec.name] = own
+    return "+".join(f"{copies[ir]}x{ir}" for ir in order), columns
+
+
+def gated_middle(mlp_irreps: str, irreps_out: str) -> str:
+    """The terms of ``mlp_irreps`` whose irrep ``irreps_out`` has, as the
+    frozen tree's gated readouts keep them; ``""`` when none is left."""
+    produced = {ir for _, ir in Irreps.parse(irreps_out).terms}
+    return "+".join(
+        f"{mul}x{ir}" for mul, ir in Irreps.parse(mlp_irreps).terms if ir in produced
+    )
+
+
 class _GatedReadout(nn.Module):
-    """A linear map to a middle per head, a SiLU, every other head's middle
-    zeroed, and a linear map to the output."""
+    """A linear map to a gate's input per head, the gate, every other head's
+    middle zeroed, and a linear map to the output."""
 
     mask: Tensor
 
@@ -150,10 +224,12 @@ class _GatedReadout(nn.Module):
         self.every_middle = _per_head(middle, num_heads)
         self.linear_in = backend.make_linear(
             LinearSpec(
-                irreps_in=irreps_in, irreps_out=self.every_middle, precision=precision
+                irreps_in=irreps_in,
+                irreps_out=gate_input_irreps(self.every_middle),
+                precision=precision,
             )
         )
-        self.activation = Gate(self.every_middle)
+        self.activation = Gate(self.every_middle, gate_activation="silu")
         self.linear_out = backend.make_linear(
             LinearSpec(
                 irreps_in=self.every_middle, irreps_out=irreps_out, precision=precision
@@ -175,15 +251,15 @@ class _GatedReadout(nn.Module):
 
 
 class ObservableReadout(nn.Module):
-    """The readout of one observable, one contribution per layer read.
+    """The readout of a group of observables, one contribution per layer read.
 
     Args:
         backend: The kernel backend. Consulted at construction only.
-        spec: The observable.
+        specs: The observables read out together; one for a readout of its own.
         layer_irreps: Each layer's node-feature declaration, whole, as the
             backbone reports it.
         num_heads: How many heads the model has.
-        mlp_irreps: The gated middle per head, even scalars.
+        mlp_irreps: The gated middle per head.
         last_only: Read out only the last layer.
         precision: The dtype every op is built at.
 
@@ -199,11 +275,12 @@ class ObservableReadout(nn.Module):
     """
 
     columns: Tensor
+    component_order: Tensor
 
     def __init__(
         self,
         backend,
-        spec: ObservableSpec,
+        specs: Sequence[ObservableSpec],
         layer_irreps: Sequence[str],
         num_heads: int,
         mlp_irreps: str,
@@ -211,58 +288,73 @@ class ObservableReadout(nn.Module):
         precision: Precision = "float64",
     ) -> None:
         super().__init__()
+        irreps, components = group_irreps(specs)
+        names = tuple(spec.name for spec in specs)
         last = len(layer_irreps) - 1
+        middle = gated_middle(mlp_irreps, irreps)
         gated_layer = last if last > 0 else None
         wanted = (last,) if last_only else tuple(range(last + 1))
         given = {
             layer: _given(
-                layer_irreps[layer],
-                spec.irreps,
-                mlp_irreps,
-                gated=layer == gated_layer,
+                layer_irreps[layer], irreps, middle, gated=layer == gated_layer
             )
             for layer in wanted
         }
         #: The layers read out, in order: those whose readout is not zero.
         self.layers = tuple(layer for layer in wanted if given[layer])
         _check_reachable(
-            spec,
+            specs,
+            irreps,
             set().union(*given.values()),
             [layer_irreps[layer] for layer in wanted],
-            mlp_irreps if gated_layer in wanted else None,
+            (
+                f"{middle or 'nothing'!r} kept of mlp_irreps={mlp_irreps!r}"
+                if gated_layer in wanted
+                else None
+            ),
         )
         self.num_heads = num_heads
+        #: The observables, in the order their components are laid out.
+        self.observables = names
+        self.component_sizes = tuple(len(components[name]) for name in names)
+        self.register_buffer(
+            "component_order",
+            torch.tensor([c for name in names for c in components[name]]),
+            persistent=False,
+        )
         #: Per op, by its path in this module, where each weight of a one-head
         #: readout's op sits in this one's, head by head, and the factor
         #: between the two stored weights.
         self.head_weights: dict[str, tuple[Tensor, Tensor]] = {}
-        out_copies = [_head_copies(spec.irreps, num_heads, h) for h in range(num_heads)]
-        irreps_out = _per_head(spec.irreps, num_heads)
+        out_copies = [_head_copies(irreps, num_heads, h) for h in range(num_heads)]
+        irreps_out = _per_head(irreps, num_heads)
         maps = []
         for layer in self.layers:
             path = f"maps.{len(maps)}"
             irreps_in = layer_irreps[layer]
             if layer == gated_layer:
                 gated = _GatedReadout(
-                    backend, irreps_in, mlp_irreps, irreps_out, num_heads, precision
+                    backend, irreps_in, middle, irreps_out, num_heads, precision
                 )
-                middle_copies = [
-                    _head_copies(mlp_irreps, num_heads, h) for h in range(num_heads)
-                ]
                 self.head_weights[f"{path}.linear_in"] = _head_weights(
                     one_in=irreps_in,
-                    one_out=mlp_irreps,
+                    one_out=gate_input_irreps(middle),
                     every_in=irreps_in,
-                    every_out=gated.every_middle,
+                    every_out=gate_input_irreps(gated.every_middle),
                     in_copies=None,
-                    out_copies=middle_copies,
+                    out_copies=[
+                        _gate_input_copies(middle, num_heads, h)
+                        for h in range(num_heads)
+                    ],
                 )
                 self.head_weights[f"{path}.linear_out"] = _head_weights(
-                    one_in=mlp_irreps,
-                    one_out=spec.irreps,
+                    one_in=middle,
+                    one_out=irreps,
                     every_in=gated.every_middle,
                     every_out=irreps_out,
-                    in_copies=middle_copies,
+                    in_copies=[
+                        _head_copies(middle, num_heads, h) for h in range(num_heads)
+                    ],
                     out_copies=out_copies,
                 )
                 maps.append(gated)
@@ -276,7 +368,7 @@ class ObservableReadout(nn.Module):
             )
             self.head_weights[path] = _head_weights(
                 one_in=irreps_in,
-                one_out=spec.irreps,
+                one_out=irreps,
                 every_in=irreps_in,
                 every_out=irreps_out,
                 in_copies=None,
@@ -284,13 +376,23 @@ class ObservableReadout(nn.Module):
             )
         self.maps = nn.ModuleList(maps)
         self.register_buffer(
-            "columns", head_columns(spec.irreps, num_heads), persistent=False
+            "columns", head_columns(irreps, num_heads), persistent=False
         )
+
+    def split(self, values: Tensor) -> dict[str, Tensor]:
+        """One contribution's components, by observable."""
+        if len(self.observables) == 1:
+            return {self.observables[0]: values}
+        pieces = values.index_select(1, self.component_order).split(
+            self.component_sizes, dim=1
+        )
+        return dict(zip(self.observables, pieces, strict=True))
 
     def forward(
         self, layers: Sequence[Tensor], node_head: Tensor | None
     ) -> list[Tensor]:
-        """``[n_nodes, dim]`` per layer read, each node its own head's copy.
+        """``[n_nodes, dim]`` per layer read, each node its own head's copy,
+        the observables side by side; :meth:`split` separates them.
 
         Args:
             layers: Every layer's node features, as the backbone returns them.
@@ -315,7 +417,7 @@ class ObservableReadout(nn.Module):
         return contributions
 
     def head_state(self, head: int) -> dict[str, dict[str, Tensor]]:
-        """One head's readout, as a one-head readout of the same observable
+        """One head's readout, as a one-head readout of the same observables
         and layers saves it: by op path, each op's canonical tensors.
 
         Raises:
@@ -336,7 +438,7 @@ class ObservableReadout(nn.Module):
         self, head: int, state: Mapping[str, Mapping[str, Tensor]]
     ) -> None:
         """Write one head's readout from a :meth:`head_state`, of this
-        readout or of another with the same observable and layers. The other
+        readout or of another with the same observables and layers. The other
         heads are left as they are.
 
         Raises:
@@ -390,25 +492,30 @@ def _given(irreps_in: str, irreps_out: str, middle: str, gated: bool) -> set[Irr
 
 
 def _check_reachable(
-    spec: ObservableSpec,
+    specs: Sequence[ObservableSpec],
+    irreps: str,
     given: set[Irrep],
     read_irreps: Sequence[str],
     middle: str | None,
 ) -> None:
-    """Refuse an observable some irrep of which no layer read out gives.
+    """Refuse observables some irrep of which no layer read out gives.
 
-    ``middle`` is the gated middle of the last layer read, ``None`` when no
-    layer read is gated.
+    ``middle`` describes the gated middle of the last layer read, ``None``
+    when no layer read is gated.
     """
-    missing = [f"{ir}" for _, ir in Irreps.parse(spec.irreps).terms if ir not in given]
+    missing = [f"{ir}" for _, ir in Irreps.parse(irreps).terms if ir not in given]
     if not missing:
         return
-    through = f", the last through the gated middle {middle!r}" if middle else ""
+    if len(specs) == 1:
+        subject = f"the observable {specs[0].name!r} declares {specs[0].irreps!r},"
+    else:
+        declared = ", ".join(f"{spec.name!r} {spec.irreps!r}" for spec in specs)
+        subject = f"the observables read out together, {declared},"
+    through = f", the last through the gated middle {middle}" if middle else ""
     widen = "the node features or the middle" if middle else "the node features"
     raise ValueError(
-        f"the observable {spec.name!r} declares {spec.irreps!r}, and no layer "
-        f"read out gives {missing}: the layers read carry {list(read_irreps)}"
-        f"{through}. A readout cannot create an irrep its input lacks, so "
-        f"those components would be zero. Widen {widen}, or change the "
-        f"declaration."
+        f"{subject} and no layer read out gives {missing}: the layers read "
+        f"carry {list(read_irreps)}{through}. A readout cannot create an irrep "
+        f"its input lacks, so those components would be zero. Widen {widen}, "
+        f"or change the declaration."
     )

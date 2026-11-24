@@ -91,6 +91,11 @@ def perturb(model, seed: int, size: float = 0.1):
     return model
 
 
+def heads_of(legacy) -> list[str]:
+    """The legacy model's heads. The dipole classes keep none, and have one."""
+    return list(getattr(legacy, "heads", ["Default"]))
+
+
 def resolved_e0s(legacy, heads) -> ResolvedE0s:
     """The legacy model's isolated-atom energies, one row per head."""
     table = torch.atleast_2d(legacy.atomic_energies_fn.atomic_energies).double()
@@ -111,7 +116,7 @@ def energy_head_from(legacy, precision: str = "float64") -> EnergyOutputHead:
     and accumulates the per-atom energies in float64; a plain `MACE` has no
     scale or shift of its own and keeps its own dtype.
     """
-    heads = list(legacy.heads)
+    heads = heads_of(legacy)
     scale_shift = hasattr(legacy, "scale_shift")
     if scale_shift:
         scale = _per_head(legacy.scale_shift.scale, len(heads))
@@ -164,10 +169,9 @@ class V1Model:
         carry_weights(legacy, self.backbone)
         self.outputs = MACEOutputs(
             BACKEND,
-            config.observables,
-            config.readout,
+            config,
             self.backbone.layer_irreps,
-            len(legacy.heads),
+            len(heads_of(legacy)),
             energy_head_from(legacy) if "energy" in names else None,
         )
         for readout in self.outputs.readouts.values():

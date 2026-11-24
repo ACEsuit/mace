@@ -27,6 +27,7 @@ PINNED = {
     "KJ_PER_MOL": 0.010364269574711572,
     "GIGAPASCAL": 0.006241509125883258,
     "DEBYE": 0.20819433442462576,
+    "DEBYE_FROM_SI": 0.20819433270935597,
     "BOLTZMANN": 8.617330337217213e-05,
 }
 
@@ -50,7 +51,10 @@ def test_every_factor_the_module_defines_is_pinned():
 
 
 def test_the_constants_are_ase_s_and_not_a_second_copy():
-    assert {name: getattr(units, name) for name in PINNED} == {
+    """All but the one the frozen tree's dipole models computed for themselves
+    from the SI constants, see below."""
+    following_ase = set(PINNED) - {"DEBYE_FROM_SI"}
+    assert {name: getattr(units, name) for name in following_ase} == {
         "BOHR": ase.units.Bohr,
         "HARTREE": ase.units.Hartree,
         "RYDBERG": ase.units.Rydberg,

@@ -65,6 +65,7 @@ __all__ = [
     "InputSpec",
     "ObservableCatalogue",
     "ObservableSpec",
+    "check_observable_name",
     "declared_as",
 ]
 
@@ -83,6 +84,20 @@ def _check_name(value: str, kind: str) -> str:
             f"{kind} name {value!r} is not usable: a name must be a valid "
             f"Python identifier, because it is also the key the value is "
             f"stored under and part of any derivative name derived from it."
+        )
+    return value
+
+
+def check_observable_name(value: str, kind: str) -> str:
+    """``value``, refused unless a declared value can be reported under it:
+    a key no output reserves, not spelled like a derivative's name."""
+    _check_output_name(value, kind)
+    if is_default_shaped_name(value):
+        raise ValueError(
+            f"{kind} name {value!r} is spelled like a generated derivative "
+            f"name, `d_<quantity>_d_<input>`, which states that it is the "
+            f"derivative of a declared quantity. If it is one, request it in "
+            f"that quantity's `derivatives`; otherwise rename it."
         )
     return value
 
@@ -262,15 +277,7 @@ class ObservableSpec(ConfigSection):
 
     @model_validator(mode="after")
     def _validate(self) -> ObservableSpec:
-        _check_output_name(self.name, "observable")
-        if is_default_shaped_name(self.name):
-            raise ValueError(
-                f"observable name {self.name!r} is spelled like a generated "
-                f"derivative name, `d_<quantity>_d_<input>`, which states that "
-                f"it is the derivative of a declared quantity. If it is one, "
-                f"request it in that quantity's `derivatives`; otherwise "
-                f"rename it."
-            )
+        check_observable_name(self.name, "observable")
         parse_irreps(self.irreps, observable=self.name)
         seen: set[str] = set()
         for request in self.derivatives:
