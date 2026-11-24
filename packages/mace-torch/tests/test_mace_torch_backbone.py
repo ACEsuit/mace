@@ -640,6 +640,17 @@ def test_a_table_its_module_refuses_leaves_the_whole_backbone_as_it_was():
         assert torch.equal(tensor, before[key]), key
 
 
+def test_load_state_dict_refuses_a_table_that_is_not_a_models():
+    target = _backbone(seed=2, avg_num_neighbors=1.0)
+    state = _trained("residual").state_dict()
+    state["element_embedding.atomic_numbers"] = torch.tensor([8, 6, 1])
+    with pytest.raises(
+        RuntimeError, match=r"element_embedding\.atomic_numbers: .*not strictly"
+    ):
+        target.load_state_dict(state)
+    assert target.element_embedding.atomic_numbers.tolist() == list(ELEMENTS)
+
+
 def _state_without(state, path, name):
     changed = {key: dict(value) for key, value in state.items()}
     del changed[path][name]

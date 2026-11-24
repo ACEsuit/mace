@@ -137,19 +137,61 @@ class ElementEmbedding(torch.nn.Module):
                 search it and find the wrong columns. Nothing of this module
                 is loaded then.
         """
-        try:
-            model_atomic_number_table(state["atomic_numbers"].tolist())
-        except ValueError as error:
-            raise ValueError(f"atomic_numbers: {error}") from None
+        _check_model_table(state["atomic_numbers"], "atomic_numbers")
         with torch.no_grad():
             self.atomic_numbers.copy_(state["atomic_numbers"])
             self.weight.copy_(state["weight"])
+
+    def _load_from_state_dict(
+        self,
+        state_dict: Mapping[str, Tensor],
+        prefix: str,
+        local_metadata: dict,
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        """Refuse a table that is not a model's, as :meth:`load_canonical` does.
+
+        The refusal is reported through torch's ``error_msgs``, so
+        ``load_state_dict`` raises at the end even with ``strict=False``.
+        Nothing of this module is loaded then, but torch's loader still loads
+        every other module of the state; only ``load_canonical_state`` loads
+        nothing on a refusal. A value that is not a tensor is left to torch's
+        own check.
+        """
+        key = f"{prefix}atomic_numbers"
+        table = state_dict.get(key)
+        if isinstance(table, Tensor):
+            try:
+                _check_model_table(table, key)
+            except ValueError as error:
+                error_msgs.append(str(error))
+                return
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def extra_repr(self) -> str:
         return (
             f"atomic_numbers={self.atomic_numbers.tolist()}, "
             f"num_channels={self.weight.shape[1]}"
         )
+
+
+def _check_model_table(table: Tensor, name: str) -> None:
+    """Raise, naming ``name``, if a saved ``table`` is not a model's element table."""
+    try:
+        model_atomic_number_table(table.tolist())
+    except ValueError as error:
+        raise ValueError(f"{name}: {error}") from None
 
 
 class RadialEmbeddingBlock(torch.nn.Module):

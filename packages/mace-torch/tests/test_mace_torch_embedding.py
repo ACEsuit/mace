@@ -145,14 +145,31 @@ def test_the_embedding_saves_its_table_and_its_weight():
     assert state["weight"].shape == (3, 5)
 
 
-def test_a_loaded_table_is_the_one_the_forward_searches():
+# Each way a saved state reaches the embedding, and the error it raises on a
+# table that is not a model's. torch's loader reports through its error list,
+# which raises even when not strict.
+LOADERS = {
+    "canonical": (lambda module, state: module.load_canonical(state), ValueError),
+    "state_dict": (lambda module, state: module.load_state_dict(state), RuntimeError),
+    "state_dict_not_strict": (
+        lambda module, state: module.load_state_dict(state, strict=False),
+        RuntimeError,
+    ),
+}
+
+
+@pytest.mark.parametrize("loader", LOADERS)
+def test_a_loaded_table_is_the_one_the_forward_searches(loader):
+    load, _ = LOADERS[loader]
     embedding = _element_embedding()
-    embedding.load_canonical(
-        {"atomic_numbers": torch.tensor([3, 29, 79]), "weight": embedding.weight}
+    load(
+        embedding,
+        {"atomic_numbers": torch.tensor([3, 29, 79]), "weight": embedding.weight},
     )
     assert embedding(torch.tensor([79, 3])).index.tolist() == [2, 0]
 
 
+@pytest.mark.parametrize("loader", LOADERS)
 @pytest.mark.parametrize(
     ("atomic_numbers", "message"),
     [
@@ -164,20 +181,31 @@ def test_a_loaded_table_is_the_one_the_forward_searches():
     ids=["unsorted", "repeated", "padding", "float"],
 )
 def test_a_saved_table_that_is_not_a_models_is_refused_and_not_loaded(
-    atomic_numbers, message
+    atomic_numbers, message, loader
 ):
+    load, error = LOADERS[loader]
     embedding = _element_embedding()
-    before = embedding.to_canonical()
-    before = {name: tensor.clone() for name, tensor in before.items()}
-    with pytest.raises(ValueError, match=f"atomic_numbers: .*{message}"):
-        embedding.load_canonical(
+    before = {name: tensor.clone() for name, tensor in embedding.state_dict().items()}
+    with pytest.raises(error, match=f"atomic_numbers: .*{message}"):
+        load(
+            embedding,
             {
                 "atomic_numbers": torch.tensor(atomic_numbers),
                 "weight": torch.zeros_like(embedding.weight),
-            }
+            },
         )
-    for name, tensor in embedding.to_canonical().items():
+    for name, tensor in embedding.state_dict().items():
         assert torch.equal(tensor, before[name]), name
+
+
+def test_load_state_dict_leaves_a_table_that_is_not_a_tensor_to_torch():
+    embedding = _element_embedding()
+    with pytest.raises(
+        RuntimeError, match=r'named "atomic_numbers", expected torch\.Tensor'
+    ):
+        embedding.load_state_dict(
+            {"atomic_numbers": [1, 6, 8], "weight": embedding.weight}
+        )
 
 
 @fp64_only
