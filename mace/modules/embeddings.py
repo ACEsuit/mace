@@ -31,11 +31,14 @@ class GenericJointEmbedding(nn.Module):
             if spec["type"] == "categorical":
                 self.embedders[name] = nn.Embedding(spec["num_classes"], E)
             elif spec["type"] == "continuous":
-                self.embedders[name] = nn.Sequential(
-                    nn.Linear(spec["in_dim"], E, bias=use_bias),
-                    nn.SiLU(),
-                    nn.Linear(E, E, bias=use_bias),
-                )
+                num_hidden = spec.get("num_hidden_layers", 1)
+                layers = []
+                d_in = spec["in_dim"]
+                for _ in range(num_hidden):
+                    layers += [nn.Linear(d_in, E, bias=use_bias), nn.SiLU()]
+                    d_in = E
+                layers.append(nn.Linear(d_in, E, bias=use_bias))
+                self.embedders[name] = nn.Sequential(*layers)
             else:
                 raise ValueError(f"Unknown type {spec['type']} for feature {name}")
 
