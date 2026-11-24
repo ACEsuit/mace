@@ -215,6 +215,9 @@ def train(
 
     # variable used for broadcast by rank == 0 if epoch loop is exited early, e.g. patience
     exit_now = torch.zeros(1, device=device) if distributed else None
+    epoch_tensor = (
+        torch.zeros(1, dtype=torch.long, device=device) if distributed else None
+    )
 
     if data_aug_magmom:
         # pylint: disable=cyclic-import
@@ -360,6 +363,10 @@ def train(
             torch.distributed.broadcast(exit_now, src=0)
             if exit_now == 1:
                 break
+        if epoch_tensor is not None:
+            epoch_tensor.fill_(epoch)
+            torch.distributed.broadcast(epoch_tensor, src=0)
+            epoch = int(epoch_tensor.item())
 
         epoch += 1
 
