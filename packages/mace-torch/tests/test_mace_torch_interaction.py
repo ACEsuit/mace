@@ -23,10 +23,7 @@ from mace_torch.nn.interaction import (
 BACKEND = ReferenceBackend()
 
 
-@pytest.fixture(autouse=True)
-def no_gradients():
-    with torch.no_grad():
-        yield
+pytestmark = pytest.mark.usefixtures("no_gradients")
 
 
 class _Edges(EdgeInputs):

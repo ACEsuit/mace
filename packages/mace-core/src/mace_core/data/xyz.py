@@ -333,7 +333,7 @@ def _check_something_is_labelled(
         )
     energy_key = key_spec.graph_keys["energy"]
     forces_key = key_spec.atom_keys["forces"]
-    dipole_key = key_spec.graph_keys.get("dipole")
+    dipole_key = key_spec.file_key("dipole")
 
     def present(file_key: str, per: Storage) -> bool:
         return any(_stored_value(atoms, file_key, per)[0] for atoms in atoms_list)

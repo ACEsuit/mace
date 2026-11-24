@@ -9,16 +9,35 @@ so that no parameter sits at a value that hides it.
 import numpy as np
 import torch
 from e3nn import o3
+from mace_core.config import BesselBasisConfig, ModelConfig, PolynomialCutoffConfig
 from mace_core.elements import ResolvedE0s
-from mace_torch.models import EnergyOutputHead
+from mace_torch.backends.reference import ReferenceBackend
+from mace_torch.models import EnergyOutputHead, MACEOutputs
+from mace_torch.nn.backbone import MACEBackbone
+from mace_torch.nn.radial import ZBLBasis
 
 from mace import modules
+from tests.parity.legacy_weights import carry_readout, carry_weights
 
 #: The elements of the fixtures the parity suites run on.
 ELEMENTS = (1, 6, 8)
 
 #: Isolated-atom energies of the live models, one per element.
 ATOMIC_ENERGIES = (-1.5, -5.25, -8.75)
+
+#: The committed anchors' backbone, the interaction kinds left to the caller.
+ANCHOR_CONFIG = {
+    "r_max": 3.5,
+    "num_interactions": 2,
+    "num_channels": 16,
+    "max_L": 1,
+    "max_ell": 2,
+    "correlation": 3,
+    "radial_basis": BesselBasisConfig(num_basis=8),
+    "cutoff": PolynomialCutoffConfig(polynomial_order=5),
+}
+
+BACKEND = ReferenceBackend()
 
 
 def live_model(
@@ -114,3 +133,71 @@ def energy_head_from(legacy, precision: str = "float64") -> EnergyOutputHead:
 def _per_head(value, num_heads: int) -> list[float]:
     values = torch.atleast_1d(value).double().tolist()
     return values * num_heads if len(values) == 1 else values
+
+
+def v1_graph(legacy, graph: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """The legacy model's graph as v1 has it: the atomic numbers in place of
+    the element one-hot, which the backbone forms itself."""
+    table = torch.tensor([int(z) for z in legacy.atomic_numbers])
+    ours = {key: value for key, value in graph.items() if key != "node_attrs"}
+    ours["node_atomic_numbers"] = table[graph["node_attrs"].argmax(dim=-1)]
+    return ours
+
+
+class V1Model:
+    """A v1 backbone, output layer and pair repulsion holding a legacy
+    model's weights.
+
+    Args:
+        legacy: The legacy model.
+        config: The v1 configuration of the same architecture.
+    """
+
+    def __init__(self, legacy, config: ModelConfig) -> None:
+        names = [spec.name for spec in config.observables.observables]
+        self.backbone = MACEBackbone(
+            BACKEND,
+            config,
+            [int(z) for z in legacy.atomic_numbers],
+            avg_num_neighbors=float(legacy.interactions[0].avg_num_neighbors),
+        )
+        carry_weights(legacy, self.backbone)
+        self.outputs = MACEOutputs(
+            BACKEND,
+            config.observables,
+            config.readout,
+            self.backbone.layer_irreps,
+            len(legacy.heads),
+            energy_head_from(legacy) if "energy" in names else None,
+        )
+        for readout in self.outputs.readouts.values():
+            carry_readout(legacy, readout)
+        self.pair_repulsion = (
+            ZBLBasis(polynomial_order=int(legacy.pair_repulsion_fn.p))
+            if hasattr(legacy, "pair_repulsion_fn")
+            else None
+        )
+        self.legacy = legacy
+
+    def __call__(self, legacy_graph):
+        """The output of the legacy model's graph, and the positions it was
+        taken at, ready to be differentiated against."""
+        graph = v1_graph(self.legacy, legacy_graph)
+        positions = graph["positions"].clone().requires_grad_(True)
+        graph["positions"] = positions
+        pair = None
+        if self.pair_repulsion is not None:
+            sender, receiver = graph["edge_index"]
+            vectors = positions[receiver] - positions[sender] + graph["shifts"]
+            pair = self.pair_repulsion(
+                vectors.norm(dim=-1, keepdim=True),
+                graph["node_atomic_numbers"],
+                graph["edge_index"],
+            )
+        return self.outputs(graph, self.backbone(graph), pair), positions
+
+
+def forces(energy: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+    """``-dE/dr``, the energies of a batch summed."""
+    (gradient,) = torch.autograd.grad(energy.sum(), positions)
+    return -gradient

@@ -31,6 +31,7 @@ from mace_core.kernels.canonical import (
     SILU_SECOND_MOMENT_SCALE,
     fully_connected_tp_path_normalization,
     linear_path_normalization,
+    linear_weight_paths,
     radial_mlp_initial_bound,
     radial_mlp_layer_normalization,
     symmetric_contraction_initial_scale,
@@ -106,49 +107,39 @@ _BASIS_BUILDERS = {
 def _linear_plan(kernel_spec: LinearSpec):
     """Which weight writes to which entry of the dense matrix.
 
-    One weight per matching multiplicity pair, repeated over the ``2l+1``
-    components of its irrep. That repetition is the equivariance: a free matrix
-    would mix components of one irrep into another.
+    One weight per matching copy pair, in the canonical order of
+    :func:`~mace_core.kernels.canonical.linear_weight_paths`, repeated over
+    the ``2l+1`` components of its irrep. That repetition is the
+    equivariance: a free matrix would mix components of one irrep into
+    another.
     """
-    source_irreps = Irreps.parse(kernel_spec.irreps_in)
-    target_irreps = Irreps.parse(kernel_spec.irreps_out)
+    sources_in = list(Irreps.parse(kernel_spec.irreps_in).slices())
+    targets = list(Irreps.parse(kernel_spec.irreps_out).slices())
+    paths = linear_weight_paths(kernel_spec.irreps_in, kernel_spec.irreps_out)
     rows, columns, sources = [], [], []
-    weight = 0
-    for out_slice, out_ir in target_irreps.slices():
-        for in_slice, in_ir in source_irreps.slices():
-            if in_ir != out_ir:
-                continue
-            for component in range(in_ir.dimension):
-                rows.append(out_slice.start + component)
-                columns.append(in_slice.start + component)
-                sources.append(weight)
-            weight += 1
+    for weight, (out_copy, in_copy) in enumerate(paths):
+        out_slice, irrep = targets[out_copy]
+        in_slice, _ = sources_in[in_copy]
+        for component in range(irrep.dimension):
+            rows.append(out_slice.start + component)
+            columns.append(in_slice.start + component)
+            sources.append(weight)
     bias_rows = []
     if kernel_spec.has_bias:
-        for out_slice, out_ir in target_irreps.slices():
+        for out_slice, out_ir in targets:
             if out_ir.degree == 0 and out_ir.parity == 1:
                 bias_rows.append(out_slice.start)
-    return rows, columns, sources, weight, bias_rows
+    return rows, columns, sources, len(paths), bias_rows
 
 
 def _linear_path_normalizations(irreps_in: str, irreps_out: str) -> list[float]:
-    """The forward factor of every weight of a linear plan, in plan order.
-
-    One entry per weight, so the forward applies it as one multiplication. The
-    order is `_linear_plan`'s: output copies outermost, and within one output
-    copy the matching input copies in declaration order.
-    """
-    source = Irreps.parse(irreps_in)
-    target = Irreps.parse(irreps_out)
-    scales: list[float] = []
-    for out_multiplicity, out_irrep in target:
-        scale = linear_path_normalization(irreps_in, out_irrep)
-        for _ in range(out_multiplicity):
-            for in_multiplicity, in_irrep in source:
-                if in_irrep != out_irrep:
-                    continue
-                scales.extend([scale] * in_multiplicity)
-    return scales
+    """The forward factor of every weight of a linear plan, in plan order,
+    each the ``1 / sqrt(fan_in)`` of its output copy's irrep."""
+    targets = [irrep for _, irrep in Irreps.parse(irreps_out).slices()]
+    return [
+        linear_path_normalization(irreps_in, targets[out_copy])
+        for out_copy, _ in linear_weight_paths(irreps_in, irreps_out)
+    ]
 
 
 def _skip_path_normalizations(kernel_spec: FullyConnectedTPSpec) -> list[float]:

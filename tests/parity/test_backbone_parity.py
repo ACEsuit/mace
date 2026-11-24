@@ -21,9 +21,7 @@ from ase.data import chemical_symbols
 from e3nn import o3
 from mace_core.config import (
     AgnesiTransformConfig,
-    BesselBasisConfig,
     ModelConfig,
-    PolynomialCutoffConfig,
 )
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.descriptors import aggregate_atomic_descriptors
@@ -33,145 +31,13 @@ from mace import modules
 from mace.tools import utils
 from tests.golden import anchors, harness
 from tests.golden.harness import tolerance
-from tests.parity.legacy_weights import (
-    legacy_contraction_blocks,
-    legacy_to_reference_map,
-    linear_permutation,
-    skip_permutation,
-)
+from tests.parity.legacy_models import ANCHOR_CONFIG, v1_graph
+from tests.parity.legacy_weights import LEGACY_CLASS, carry_weights
 
 FP64 = tolerance("fp64_cpu_reference")
 BACKEND = ReferenceBackend()
 ELEMENTS = (1, 6, 8)
 FIXTURES = ("water_cluster", "triclinic_bulk", "dimer_short")
-
-#: The legacy class of each interaction kind.
-LEGACY_CLASS = {
-    "plain": "RealAgnosticInteractionBlock",
-    "residual": "RealAgnosticResidualInteractionBlock",
-    "density": "RealAgnosticDensityInteractionBlock",
-    "density_residual": "RealAgnosticDensityResidualInteractionBlock",
-    "nonlinear": "RealAgnosticResidualNonLinearInteractionBlock",
-}
-
-
-# ---------------------------------------------------------------------------
-# Carrying the weights
-# ---------------------------------------------------------------------------
-
-
-def _carry_linear(legacy: o3.Linear, op) -> None:
-    assert str(legacy.irreps_in) == op.kernel_spec.irreps_in, (
-        legacy.irreps_in,
-        op.kernel_spec.irreps_in,
-    )
-    assert str(legacy.irreps_out) == op.kernel_spec.irreps_out, (
-        legacy.irreps_out,
-        op.kernel_spec.irreps_out,
-    )
-    state = op.to_canonical()
-    weight = torch.zeros_like(state["weight"])
-    weight[linear_permutation(legacy)] = legacy.weight.detach()
-    op.load_canonical({"weight": weight, "bias": state["bias"]})
-
-
-def _carry_skip(legacy: o3.FullyConnectedTensorProduct, op) -> None:
-    assert str(legacy.irreps_in1) == op.kernel_spec.irreps_in1
-    assert str(legacy.irreps_out) == op.kernel_spec.irreps_out
-    weight = torch.zeros_like(op.to_canonical()["weight"])
-    weight.view(-1)[skip_permutation(legacy)] = legacy.weight.detach()
-    op.load_canonical({"weight": weight})
-
-
-def _carry_fully_connected_net(legacy, op) -> None:
-    layers = len(op.kernel_spec.channels) - 1
-    op.load_canonical(
-        {
-            f"layer_{i}": getattr(legacy, f"layer{i}").weight.detach()
-            for i in range(layers)
-        }
-    )
-
-
-def _carry_radial_mlp(legacy, op) -> None:
-    linears = [m for m in legacy.net if isinstance(m, torch.nn.Linear)]
-    norms = [m for m in legacy.net if isinstance(m, torch.nn.LayerNorm)]
-    state = {}
-    for i, linear in enumerate(linears):
-        state[f"layer_{i}"] = linear.weight.detach().T
-        state[f"bias_{i}"] = linear.bias.detach()
-    for i, norm in enumerate(norms):
-        state[f"norm_weight_{i}"] = norm.weight.detach()
-        state[f"norm_bias_{i}"] = norm.bias.detach()
-    op.load_canonical(state)
-
-
-def _carry_contraction(legacy, op) -> None:
-    correlation = op.kernel_spec.correlation
-    with torch.no_grad():
-        for position, contraction in enumerate(legacy.contractions):
-            tables = list(op.bases[position])
-            for coupling, weight, order in legacy_contraction_blocks(contraction):
-                if weight.numel() == 0:
-                    continue
-                target = op.weights[position * correlation + order - 1]
-                mapping = torch.from_numpy(
-                    legacy_to_reference_map(coupling, tables[order - 1], order)
-                )
-                target.copy_(torch.einsum("pq,zpc->zqc", mapping, weight))
-
-
-def _carry_interaction(legacy, block) -> None:
-    name = type(legacy).__name__
-    if name == LEGACY_CLASS["nonlinear"]:
-        _carry_linear(legacy.source_embedding, block.sender_embedding)
-        _carry_linear(legacy.target_embedding, block.receiver_embedding)
-        _carry_linear(legacy.linear_up, block.linear_up)
-        _carry_linear(legacy.skip_tp, block.skip)
-        _carry_linear(legacy.linear_res, block.linear_residual)
-        _carry_linear(legacy.linear_1, block.linear_mix)
-        _carry_linear(legacy.linear_2, block.linear_out)
-        _carry_radial_mlp(legacy.conv_tp_weights, block.radial_mlp)
-        _carry_radial_mlp(legacy.density_fn, block.density_mlp)
-        block.load_canonical(
-            {"alpha": legacy.alpha.detach(), "beta": legacy.beta.detach()}
-        )
-        return
-    body = block.body
-    _carry_linear(legacy.linear_up, body.linear_up)
-    _carry_fully_connected_net(legacy.conv_tp_weights, body.radial_mlp)
-    _carry_linear(legacy.linear, body.linear)
-    _carry_skip(legacy.skip_tp, block.skip)
-    if hasattr(legacy, "density_fn"):
-        _carry_fully_connected_net(legacy.density_fn, body.density_mlp)
-    if body.neighbours is not None:
-        with torch.no_grad():
-            body.neighbours.fill_(float(legacy.avg_num_neighbors))
-
-
-def _carry_element_embedding(legacy: o3.Linear, embedding) -> None:
-    """Legacy's ``Nx0e -> Cx0e`` linear holds one weight per element and
-    channel, ``[N, C]`` flattened, which is the element embedding's matrix."""
-    state = embedding.to_canonical()
-    embedding.load_canonical(
-        {
-            "atomic_numbers": state["atomic_numbers"],
-            "weight": legacy.weight.detach().reshape(state["weight"].shape),
-        }
-    )
-
-
-def carry_weights(legacy, backbone: MACEBackbone) -> None:
-    """Every weight of the modules the backbone rebuilds, legacy to v1."""
-    _carry_element_embedding(legacy.node_embedding.linear, backbone.element_embedding)
-    for legacy_block, block in zip(
-        legacy.interactions, backbone.interactions, strict=True
-    ):
-        _carry_interaction(legacy_block, block)
-    for legacy_product, product in zip(legacy.products, backbone.products, strict=True):
-        _carry_contraction(legacy_product.symmetric_contractions, product.contraction)
-        _carry_linear(legacy_product.linear, product.linear)
-
 
 # ---------------------------------------------------------------------------
 # Building and running
@@ -224,20 +90,11 @@ def _legacy_model(config: ModelConfig, avg_num_neighbors: float, seed: int):
     return model
 
 
-def _v1_graph(legacy, graph: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-    """The legacy model's graph as v1 has it: the atomic numbers in place of
-    the element one-hot, which the backbone forms itself."""
-    table = torch.tensor([int(z) for z in legacy.atomic_numbers])
-    ours = {key: value for key, value in graph.items() if key != "node_attrs"}
-    ours["node_atomic_numbers"] = table[graph["node_attrs"].argmax(dim=-1)]
-    return ours
-
-
 def _compare(legacy, backbone: MACEBackbone, fixtures) -> None:
     for name in FIXTURES:
         graph = anchors.anchor_graph(legacy, fixtures[name], torch.float64)
         expected = legacy(dict(graph), compute_force=False)["node_feats"]
-        features = backbone(_v1_graph(legacy, graph))
+        features = backbone(v1_graph(legacy, graph))
         assert torch.equal(features.node_attrs, graph["node_attrs"]), name
         layers = features.layers
         widths = [layer.shape[-1] for layer in layers]
@@ -263,17 +120,6 @@ def fixture_fixtures():
 # ---------------------------------------------------------------------------
 # The anchors
 # ---------------------------------------------------------------------------
-
-ANCHOR_CONFIG = {
-    "r_max": 3.5,
-    "num_interactions": 2,
-    "num_channels": 16,
-    "max_L": 1,
-    "max_ell": 2,
-    "correlation": 3,
-    "radial_basis": BesselBasisConfig(num_basis=8),
-    "cutoff": PolynomialCutoffConfig(polynomial_order=5),
-}
 
 
 @pytest.mark.parametrize("anchor", ["tiny_mace", "tiny_scaleshift"])
@@ -395,7 +241,7 @@ def test_the_descriptors_are_the_legacy_calculators(
         )
         ours = backbone.atomic_descriptors(
             backbone(
-                _v1_graph(legacy, anchors.anchor_graph(legacy, atoms, torch.float64))
+                v1_graph(legacy, anchors.anchor_graph(legacy, atoms, torch.float64))
             ),
             num_layers=num_layers,
             invariants_only=invariants_only,
@@ -421,7 +267,7 @@ def test_the_aggregations_are_the_eval_command_lines(fp64, fixtures):
     structures = [fixtures[name] for name in FIXTURES]
     batch = anchors.anchor_batch(legacy, structures).to_dict()
     descriptors = backbone.atomic_descriptors(
-        backbone(_v1_graph(legacy, batch))
+        backbone(v1_graph(legacy, batch))
     ).detach()
     element = batch["node_attrs"].argmax(dim=-1)
     num_graphs = batch["ptr"].numel() - 1

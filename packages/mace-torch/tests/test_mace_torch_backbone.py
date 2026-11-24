@@ -11,10 +11,19 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
-import numpy as np
 import pytest
 import torch
-from conftest import assert_close, fp64_only, precision
+from conftest import (
+    ELEMENTS,
+    R_MAX,
+    assert_close,
+    cluster,
+    fp64_only,
+    graph_of,
+    precision,
+    rotation_matrix,
+    transform_features,
+)
 from mace_core.config import (
     AgnesiTransformConfig,
     BesselBasisConfig,
@@ -32,7 +41,6 @@ from mace_core.kernels import (
     SphericalHarmonicsSpec,
     UnsupportedKernelSpecError,
 )
-from mace_torch.backends.harmonics import spherical_harmonics
 from mace_torch.backends.reference import ReferenceBackend, ReferenceLinear
 from mace_torch.kernels import (
     canonical_state,
@@ -54,8 +62,6 @@ from mace_torch.nn.interaction import (
 )
 from mace_torch.nn.product_basis import EquivariantProductBasisBlock
 
-ELEMENTS = (1, 6, 8)
-R_MAX = 3.0
 NN = Path(backbone_module.__file__).parent
 
 #: Every interaction variant in scope, as the two layer kinds that build it.
@@ -72,11 +78,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
 }
 
 
-@pytest.fixture(autouse=True)
-def no_gradients():
-    """Nothing here differentiates, and the comparisons read values."""
-    with torch.no_grad():
-        yield
+pytestmark = pytest.mark.usefixtures("no_gradients")
 
 
 def _config(**overrides: Any) -> ModelConfig:
@@ -110,48 +112,6 @@ def _backbone(
     return model
 
 
-def _graph(structures) -> dict[str, torch.Tensor]:
-    """Aperiodic structures batched into the flat graph dict.
-
-    Every ordered pair of atoms of one structure closer than the cutoff is an
-    edge, which is what any neighbour list returns for a cluster with no
-    cell, so the shifts are zero.
-    """
-    dtype = torch.get_default_dtype()
-    positions, numbers, senders, receivers, batch, ptr = [], [], [], [], [], [0]
-    for index, (atomic_numbers, coordinates) in enumerate(structures):
-        offset = ptr[-1]
-        coordinates = np.asarray(coordinates, dtype=float)
-        distances = np.linalg.norm(coordinates[:, None] - coordinates[None], axis=-1)
-        sender, receiver = np.nonzero((distances < R_MAX) & (distances > 0.0))
-        senders.append(sender + offset)
-        receivers.append(receiver + offset)
-        positions.append(coordinates)
-        numbers.extend(atomic_numbers)
-        batch.extend([index] * len(atomic_numbers))
-        ptr.append(offset + len(atomic_numbers))
-    atomic_numbers = torch.tensor(numbers, dtype=torch.int64)
-    edge_index = torch.tensor(
-        np.stack([np.concatenate(senders), np.concatenate(receivers)]),
-        dtype=torch.int64,
-    )
-    return {
-        "positions": torch.tensor(np.concatenate(positions), dtype=dtype),
-        "node_atomic_numbers": atomic_numbers,
-        "edge_index": edge_index,
-        "shifts": torch.zeros(edge_index.shape[1], 3, dtype=dtype),
-        "batch": torch.tensor(batch, dtype=torch.int64),
-        "ptr": torch.tensor(ptr, dtype=torch.int64),
-    }
-
-
-def _cluster(seed: int = 0, n_atoms: int = 6) -> dict[str, torch.Tensor]:
-    """A small aperiodic cluster, every pair within the cutoff an edge."""
-    generator = np.random.default_rng(seed)
-    positions = generator.uniform(-1.2, 1.2, size=(n_atoms, 3))
-    return _graph([([8, 1, 1, 6, 1, 8, 1, 6][:n_atoms], positions)])
-
-
 def _padded(graph, n_atoms: int, n_edges: int) -> dict[str, torch.Tensor]:
     """``graph`` with inert padding appended, as the backbone's contract has it.
 
@@ -182,45 +142,6 @@ def _padded(graph, n_atoms: int, n_edges: int) -> dict[str, torch.Tensor]:
     }
 
 
-def _wigner_d(degree: int, rotation: torch.Tensor) -> torch.Tensor:
-    """``D^l(R)`` in this project's real basis, read off the harmonics.
-
-    ``Y(R x) = D(R) Y(x)`` for every direction, solved over enough random
-    directions to fix it. The harmonics define the basis the features are in,
-    so this is the matrix the features must transform by.
-    """
-    points = torch.randn(
-        64, 3, generator=torch.Generator().manual_seed(3), dtype=torch.float64
-    )
-    start, stop = degree**2, (degree + 1) ** 2
-    original = spherical_harmonics(points, degree)[:, start:stop]
-    rotated = spherical_harmonics(points @ rotation.T, degree)[:, start:stop]
-    return torch.linalg.lstsq(original, rotated).solution.T
-
-
-def _transform_features(features: torch.Tensor, irreps: str, rotation, parity: int):
-    """Apply ``D(R)`` and the parity to grouped features."""
-    from mace_core.clebsch_gordan.irreps import Irreps
-
-    pieces, start = [], 0
-    for mul, irrep in Irreps.parse(irreps).terms:
-        width = mul * irrep.dimension
-        block = features[:, start : start + width].reshape(-1, mul, irrep.dimension)
-        matrix = _wigner_d(irrep.degree, rotation).to(features.dtype)
-        sign = irrep.parity**1 if parity == -1 else 1
-        pieces.append((sign * block @ matrix.T).reshape(-1, width))
-        start += width
-    return torch.cat(pieces, dim=-1)
-
-
-def _rotation(seed: int) -> torch.Tensor:
-    generator = torch.Generator().manual_seed(seed)
-    rotation, _ = torch.linalg.qr(
-        torch.randn(3, 3, generator=generator, dtype=torch.float64)
-    )
-    return rotation if torch.det(rotation) > 0 else -rotation
-
-
 def _moved(graph, positions=None, shifts=None) -> dict[str, torch.Tensor]:
     moved = dict(graph)
     if positions is not None:
@@ -238,8 +159,8 @@ def _moved(graph, positions=None, shifts=None) -> dict[str, torch.Tensor]:
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_rotated_inputs_give_wigner_rotated_features(variant):
     model = _backbone(**VARIANTS[variant])
-    graph = _cluster()
-    rotation = _rotation(11)
+    graph = cluster()
+    rotation = rotation_matrix(11)
     dtype = graph["positions"].dtype
     rotated = _moved(
         graph,
@@ -248,7 +169,7 @@ def test_rotated_inputs_give_wigner_rotated_features(variant):
     )
     before, after = model(graph).layers, model(rotated).layers
     for layer, irreps in enumerate(model.layer_irreps):
-        expected = _transform_features(before[layer], irreps, rotation, parity=1)
+        expected = transform_features(before[layer], irreps, rotation, parity=1)
         assert_close(after[layer], expected, f"{variant} layer {layer}")
     # The invariant channels do not move at all.
     assert_close(
@@ -261,19 +182,19 @@ def test_rotated_inputs_give_wigner_rotated_features(variant):
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_inverted_inputs_flip_exactly_the_odd_irreps(variant):
     model = _backbone(**VARIANTS[variant])
-    graph = _cluster(1)
+    graph = cluster(1)
     inverted = _moved(graph, -graph["positions"], -graph["shifts"])
     before, after = model(graph).layers, model(inverted).layers
     identity = torch.eye(3, dtype=torch.float64)
     for layer, irreps in enumerate(model.layer_irreps):
-        expected = _transform_features(before[layer], irreps, identity, parity=-1)
+        expected = transform_features(before[layer], irreps, identity, parity=-1)
         assert_close(after[layer], expected, f"{variant} layer {layer}")
 
 
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_translated_inputs_give_the_same_features(variant):
     model = _backbone(**VARIANTS[variant])
-    graph = _cluster(2)
+    graph = cluster(2)
     translation = torch.tensor([[1.7, -0.4, 3.1]], dtype=graph["positions"].dtype)
     moved = _moved(graph, graph["positions"] + translation)
     for ours, theirs in zip(model(moved).layers, model(graph).layers, strict=True):
@@ -283,7 +204,7 @@ def test_translated_inputs_give_the_same_features(variant):
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_permuted_nodes_give_permuted_features(variant):
     model = _backbone(**VARIANTS[variant])
-    graph = _cluster(3)
+    graph = cluster(3)
     permutation = torch.tensor([3, 0, 5, 1, 4, 2])
     inverse = torch.argsort(permutation)
     permuted = dict(graph)
@@ -325,7 +246,7 @@ class _ReadKeys(Mapping):
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_the_forward_reads_four_keys_whatever_else_the_graph_carries(variant):
     graph = _ReadKeys(
-        {**_cluster(), "magmom": torch.zeros(6, 3), "total_charge": torch.zeros(1)}
+        {**cluster(), "magmom": torch.zeros(6, 3), "total_charge": torch.zeros(1)}
     )
     _backbone(**VARIANTS[variant])(graph)
     assert graph.read == {"positions", "node_atomic_numbers", "edge_index", "shifts"}
@@ -333,7 +254,7 @@ def test_the_forward_reads_four_keys_whatever_else_the_graph_carries(variant):
 
 def test_the_forward_never_writes_into_the_graph():
     model = _backbone()
-    graph = _cluster()
+    graph = cluster()
     snapshot = {
         key: (value, value.clone())
         for key, value in graph.items()
@@ -360,7 +281,7 @@ def _table_one_hot(atomic_numbers: torch.Tensor) -> torch.Tensor:
 
 
 def test_the_one_hot_and_the_index_are_the_element_tables():
-    graph = _cluster()
+    graph = cluster()
     features = _backbone()(graph)
     assert torch.equal(
         features.node_attrs, _table_one_hot(graph["node_atomic_numbers"])
@@ -370,7 +291,7 @@ def test_the_one_hot_and_the_index_are_the_element_tables():
 
 def test_the_one_hot_is_in_the_models_precision():
     model = _backbone()
-    assert model(_cluster()).node_attrs.dtype == torch.get_default_dtype()
+    assert model(cluster()).node_attrs.dtype == torch.get_default_dtype()
 
 
 @pytest.mark.parametrize(
@@ -426,7 +347,7 @@ def test_a_backbone_built_at_one_table_computes_at_the_table_it_loads():
     loaded_into_original = _backbone(**VARIANTS["residual"])
     load_canonical_state(built_at_other, state)
     load_canonical_state(loaded_into_original, state)
-    graph = _padded(_cluster(), n_atoms=2, n_edges=2)
+    graph = _padded(cluster(), n_atoms=2, n_edges=2)
     graph["node_atomic_numbers"] = torch.tensor([3, 29, 79, 29, 3, 79, 0, 0])
     results = []
     with torch.enable_grad():
@@ -453,7 +374,7 @@ def test_a_backbone_built_from_a_saved_table_loads_its_state():
         precision=precision(),
     )
     load_canonical_state(target, state)
-    graph = _cluster()
+    graph = cluster()
     for ours, theirs in zip(target(graph).layers, source(graph).layers, strict=True):
         assert torch.equal(ours, theirs)
 
@@ -524,7 +445,7 @@ def test_a_saved_state_rebuilds_the_backbone_bit_for_bit(variant):
     assert source_state.keys() == target_state.keys()
     for key, tensor in source_state.items():
         assert torch.equal(tensor, target_state[key]), key
-    graph = _cluster()
+    graph = cluster()
     for ours, theirs in zip(source(graph).layers, target(graph).layers, strict=True):
         assert torch.equal(ours, theirs)
 
@@ -586,7 +507,7 @@ def test_one_saved_state_builds_with_any_backend():
     )
     load_canonical_state(target, canonical_state(source))
     assert any(isinstance(module, _ReversedLinear) for module in target.modules())
-    graph = _cluster()
+    graph = cluster()
     for ours, theirs in zip(target(graph).layers, source(graph).layers, strict=True):
         assert_close(ours, theirs, "derived backend")
 
@@ -754,7 +675,7 @@ def test_the_forward_builds_and_resolves_nothing():
     backend = _Recording()
     model = _backbone(backend)
     made = len(backend.calls)
-    model(_cluster())
+    model(cluster())
     assert len(backend.calls) == made
 
 
@@ -817,7 +738,7 @@ class _Counting(torch.nn.Module):
 
 def test_an_edge_quantity_nobody_reads_is_never_computed():
     model = _backbone()
-    graph = _cluster()
+    graph = cluster()
     harmonics = _Counting(model.spherical_harmonics)
     radial = _Counting(model.radial_embedding)
     vectors = (
@@ -897,7 +818,7 @@ def test_the_radial_embedding_is_the_backends_op():
 
 
 def test_an_accepted_span_changes_nothing_the_reference_computes():
-    graph = _cluster()
+    graph = cluster()
     plain = _backbone(seed=9)
     offered = _backbone(_Recording(span=torch.nn.Identity()), seed=9)
     for ours, theirs in zip(offered(graph).layers, plain(graph).layers, strict=True):
@@ -942,7 +863,7 @@ def test_a_padded_batch_gives_identical_features_on_the_real_slots():
     model = _backbone(**VARIANTS["density"])
     water = ([8, 1, 1], [[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
     methane_fragment = ([6, 1], [[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]])
-    batch = _graph([water, methane_fragment])
+    batch = graph_of([water, methane_fragment])
     padded = _padded(batch, n_atoms=4, n_edges=9)
     n_real = batch["positions"].shape[0]
     # The same numbers up to rounding, not bit for bit: a matrix product over
@@ -969,7 +890,7 @@ def _exchange(full_layers: tuple[torch.Tensor, ...]):
 
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_a_domain_with_ghosts_reproduces_its_local_atoms(variant):
-    graph = _cluster(5)
+    graph = cluster(5)
     whole = _backbone(seed=2, **VARIANTS[variant])
     full_layers = whole(graph).layers
     hook, calls = _exchange(full_layers)
@@ -998,7 +919,7 @@ def test_a_domain_with_ghosts_reproduces_its_local_atoms(variant):
 
 
 def test_the_hook_is_inert_without_a_locality():
-    graph = _cluster()
+    graph = cluster()
     plain = _backbone(seed=3)
     hooked = MACEBackbone(
         ReferenceBackend(),
@@ -1021,7 +942,7 @@ def test_a_locality_with_impossible_counts_is_refused(n_local, n_ghost):
 
 def test_ghosts_without_an_exchange_are_refused_past_one_layer():
     with pytest.raises(ValueError, match="ghost_exchange"):
-        _backbone()(_cluster(), LocalityInfo(n_local=3, n_ghost=3))
+        _backbone()(cluster(), LocalityInfo(n_local=3, n_ghost=3))
 
 
 # ---------------------------------------------------------------------------
@@ -1031,7 +952,7 @@ def test_ghosts_without_an_exchange_are_refused_past_one_layer():
 
 def test_the_invariant_descriptors_are_each_layers_scalars():
     model = _backbone(num_interactions=3)
-    features = model(_cluster())
+    features = model(cluster())
     channels = model.num_features
     every = model.atomic_descriptors(features)
     assert every.shape[1] == 3 * channels
@@ -1047,7 +968,7 @@ def test_the_invariant_descriptors_are_each_layers_scalars():
 
 def test_the_full_descriptors_are_the_layers_side_by_side():
     model = _backbone()
-    features = model(_cluster())
+    features = model(cluster())
     full = model.atomic_descriptors(features, invariants_only=False)
     widths = [layer.shape[1] for layer in features.layers]
     assert full.shape[1] == sum(widths)
@@ -1061,7 +982,7 @@ def test_the_full_descriptors_are_the_layers_side_by_side():
 
 def test_a_layer_count_out_of_range_is_refused():
     model = _backbone()
-    features = model(_cluster())
+    features = model(cluster())
     with pytest.raises(ValueError, match="num_layers"):
         model.atomic_descriptors(features, num_layers=3)
 
@@ -1078,7 +999,7 @@ def test_the_backbone_compiles_whole(variant):
     from torch._dynamo.testing import CompileCounter
 
     model = _backbone(**VARIANTS[variant])
-    graph = _cluster()
+    graph = cluster()
     reset()
     counter = CompileCounter()
     compiled = torch.compile(model, backend=counter, fullgraph=True)

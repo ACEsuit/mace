@@ -243,6 +243,11 @@ class KeySpecification:
         self.atom_keys = atom_keys
         return self
 
+    def file_key(self, name: str) -> str | None:
+        """The file key a convention name is read from, in whichever half
+        holds it; ``None`` for a name neither half resolves."""
+        return self.graph_keys.get(name, self.atom_keys.get(name))
+
     def property_names(self) -> tuple[str, ...]:
         """Every convention name this specification resolves, per-atom first.
 
