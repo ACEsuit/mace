@@ -72,10 +72,27 @@ __all__ = [
     "ReferenceCapabilities",
     "ReferenceLayerNormSiluMLP",
     "ReferenceNormalizedSiluMLP",
+    "torch_dtype",
 ]
 
 #: The torch dtype of each precision name this backend computes in.
 TORCH_DTYPES = {"float64": torch.float64, "float32": torch.float32}
+
+
+def torch_dtype(name: str, argument: str = "precision") -> torch.dtype:
+    """The torch dtype of a precision name.
+
+    Raises:
+        ValueError: Naming ``argument``, if the name is not one a model
+            computes in.
+    """
+    if name not in TORCH_DTYPES:
+        raise ValueError(
+            f"{argument}={name!r} is not one of the dtypes a model computes in, "
+            f"{sorted(TORCH_DTYPES)}."
+        )
+    return TORCH_DTYPES[name]
+
 
 #: The two bases, by the name a kernel specification records. A lookup rather than a
 #: conditional, so a name outside the set raises instead of selecting the

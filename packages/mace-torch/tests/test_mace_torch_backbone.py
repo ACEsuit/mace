@@ -14,7 +14,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 import torch
-from conftest import assert_close, fp64_only
+from conftest import assert_close, fp64_only, precision
 from mace_core.config import (
     AgnesiTransformConfig,
     BesselBasisConfig,
@@ -27,7 +27,6 @@ from mace_core.kernels import (
     BackendCapabilities,
     ChannelwiseTPConvSpec,
     DistanceTransformSpec,
-    Precision,
     RadialBasisSpec,
     RadialMLPSpec,
     SphericalHarmonicsSpec,
@@ -94,14 +93,6 @@ def _config(**overrides: Any) -> ModelConfig:
     return ModelConfig(**options)
 
 
-def _precision() -> Precision:
-    names: dict[torch.dtype, Precision] = {
-        torch.float64: "float64",
-        torch.float32: "float32",
-    }
-    return names[torch.get_default_dtype()]
-
-
 def _backbone(
     backend: Any = None,
     seed: int = 0,
@@ -113,7 +104,7 @@ def _backbone(
         _config(**overrides),
         ELEMENTS,
         avg_num_neighbors=avg_num_neighbors,
-        precision=_precision(),
+        precision=precision(),
     )
     initialize_model_weights(model, seed)
     return model
@@ -430,7 +421,7 @@ def test_a_backbone_built_at_one_table_computes_at_the_table_it_loads():
         _config(**VARIANTS["residual"]),
         other,
         avg_num_neighbors=3.7,
-        precision=_precision(),
+        precision=precision(),
     )
     loaded_into_original = _backbone(**VARIANTS["residual"])
     load_canonical_state(built_at_other, state)
@@ -459,7 +450,7 @@ def test_a_backbone_built_from_a_saved_table_loads_its_state():
         ReferenceBackend(),
         _config(**VARIANTS["residual"]),
         state["element_embedding"]["atomic_numbers"],
-        precision=_precision(),
+        precision=precision(),
     )
     load_canonical_state(target, state)
     graph = _cluster()
@@ -591,7 +582,7 @@ def test_one_saved_state_builds_with_any_backend():
         _DerivedBackend(),
         _config(**VARIANTS["residual"]),
         ELEMENTS,
-        precision=_precision(),
+        precision=precision(),
     )
     load_canonical_state(target, canonical_state(source))
     assert any(isinstance(module, _ReversedLinear) for module in target.modules())
@@ -927,7 +918,7 @@ def test_a_span_holding_state_is_refused():
 def test_the_basis_reaches_every_contraction_unchanged(basis):
     config = _config(clebsch_gordan_basis=basis)
     assert ModelConfig.model_validate(config.model_dump(mode="json")) == config
-    model = MACEBackbone(ReferenceBackend(), config, ELEMENTS, precision=_precision())
+    model = MACEBackbone(ReferenceBackend(), config, ELEMENTS, precision=precision())
     products = cast(list[EquivariantProductBasisBlock], list(model.products))
     assert [product.contraction.kernel_spec.basis for product in products] == [
         basis,
@@ -987,7 +978,7 @@ def test_a_domain_with_ghosts_reproduces_its_local_atoms(variant):
         _config(**VARIANTS[variant]),
         ELEMENTS,
         avg_num_neighbors=3.0,
-        precision=_precision(),
+        precision=precision(),
         ghost_exchange=hook,
     )
     domain.load_state_dict(whole.state_dict())
@@ -1014,7 +1005,7 @@ def test_the_hook_is_inert_without_a_locality():
         _config(),
         ELEMENTS,
         avg_num_neighbors=3.0,
-        precision=_precision(),
+        precision=precision(),
         ghost_exchange=lambda features, locality: features * 0.0,
     )
     hooked.load_state_dict(plain.state_dict())

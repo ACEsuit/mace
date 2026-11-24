@@ -31,6 +31,7 @@ import numpy as np
 from ase.stress import voigt_6_to_full_3x3_stress
 
 from mace_core.elements.default_keys import DefaultKeys
+from mace_core.heads import DEFAULT_HEAD
 
 __all__ = [
     "DEFAULT_CONFIG_TYPE",
@@ -42,8 +43,6 @@ __all__ = [
 #: The config type a structure gets when the file does not name one.
 DEFAULT_CONFIG_TYPE = "Default"
 
-#: The head a structure is attributed to when the caller does not name one.
-DEFAULT_HEAD = "Default"
 
 #: The default convention names whose shape is known, by name.
 _DEFAULT_PROPERTIES: dict[str, DefaultKeys] = {

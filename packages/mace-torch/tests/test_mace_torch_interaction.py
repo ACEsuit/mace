@@ -7,7 +7,7 @@ equivariance among them, are in the backbone's suite.
 
 import pytest
 import torch
-from conftest import assert_close
+from conftest import assert_close, precision
 from mace_core.clebsch_gordan.irreps import Irreps
 from mace_core.kernels import UnsupportedKernelSpecError
 from mace_torch.backends.reference import ReferenceBackend
@@ -27,12 +27,6 @@ BACKEND = ReferenceBackend()
 def no_gradients():
     with torch.no_grad():
         yield
-
-
-def _precision() -> str:
-    return {torch.float64: "float64", torch.float32: "float32"}[
-        torch.get_default_dtype()
-    ]
 
 
 class _Edges(EdgeInputs):
@@ -85,7 +79,7 @@ def _block(kind, backend=BACKEND, **options):
         "num_features": 3,
         "num_elements": 2,
         "radial_hidden": (8,),
-        "precision": _precision(),
+        "precision": precision(),
     }
     common.update(options)
     if kind is NonLinearInteractionBlock:

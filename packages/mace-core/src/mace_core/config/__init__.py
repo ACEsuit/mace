@@ -23,6 +23,9 @@ from mace_core.config.model import (
     NoDistanceTransformConfig,
     PolynomialCutoffConfig,
     RadialBasisConfig,
+    ScaleShiftSpec,
+    ScalingMethod,
+    ShiftMethod,
     SoftTransformConfig,
 )
 
@@ -40,6 +43,9 @@ __all__ = [
     "NoDistanceTransformConfig",
     "PolynomialCutoffConfig",
     "RadialBasisConfig",
+    "ScaleShiftSpec",
+    "ScalingMethod",
+    "ShiftMethod",
     "SoftTransformConfig",
     "apply_overrides",
     "parse_overrides",
