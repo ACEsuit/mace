@@ -68,10 +68,17 @@ def anchor_path(name: str) -> Path:
     return ANCHORS[name]["model"]
 
 
-def load_anchor(name: str, dtype: torch.dtype = torch.float64) -> torch.nn.Module:
-    """Read a committed anchor checkpoint and cast it to ``dtype``."""
-    model = torch.load(anchor_path(name), weights_only=False, map_location="cpu")
+def load_checkpoint(
+    path: Path, dtype: torch.dtype = torch.float64
+) -> torch.nn.Module:
+    """Read a committed checkpoint onto the CPU and cast it to ``dtype``."""
+    model = torch.load(path, weights_only=False, map_location="cpu")
     return model.to(dtype)
+
+
+def load_anchor(name: str, dtype: torch.dtype = torch.float64) -> torch.nn.Module:
+    """Read a committed energy anchor and cast it to ``dtype``."""
+    return load_checkpoint(anchor_path(name), dtype)
 
 
 def _dtype_name(dtype: torch.dtype) -> str:

@@ -20,14 +20,13 @@ from pathlib import Path
 import pytest
 import torch
 
-BUILDERS = [
-    "build_mace_anchor",
-    "build_dipole_anchor",
-    "build_maceles_anchor",
-    "build_magnetic_anchor",
-]
+#: Discovered rather than listed, so a family that adds a builder is checked
+#: without editing this file.
+BUILDERS = sorted(
+    path.stem for path in Path(__file__).resolve().parent.glob("build_*_anchor.py")
+)
 
-#: `train_anchor.py` is the fifth of these and trains rather than instantiating,
+#: `train_anchor.py` is one of these too, but it trains rather than instantiating,
 #: so it has its own function name and is not run here: a training belongs in the
 #: workflows tier, not in a check about signatures.
 TRAINED = ("train_anchor", "train_anchor")
@@ -75,9 +74,11 @@ def test_the_main_block_passes_the_committed_path(name):
     assert any("MODEL_PATH" in call for call in calls), calls
 
 
-@pytest.mark.parametrize("name", ["build_mace_anchor", "build_dipole_anchor"])
+@pytest.mark.parametrize(
+    "name", ["build_mace_anchor", "build_dipole_anchor", "build_dielectric_anchor"]
+)
 def test_a_builder_still_builds_when_given_a_path(name, tmp_path):
-    """Only the two that need no optional dependency; the LES and magnetic
+    """The builders that need no optional dependency; the LES and magnetic
     builders are covered by their own families' tests."""
     destination = tmp_path / "anchor.model"
 
