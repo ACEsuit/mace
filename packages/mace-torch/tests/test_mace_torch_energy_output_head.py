@@ -302,3 +302,21 @@ def test_the_head_writes_no_double_cast():
     model's. A literal ``.double()`` would fix one of them whatever the
     arguments say, and on a device without float64 it would fail."""
     assert ".double()" not in inspect.getsource(energy)
+
+
+@fp32_only
+def test_an_embedding_energy_keeps_its_digits_beside_a_large_e0(dtype):
+    """Each per-atom term is widened before it is added: summed in float32
+    first, a 0.0123 eV term beside a 2041 eV one loses about 1e-5 eV."""
+    head = _head(dtype)
+    layers, element_index, node_head, batch = _batch(dtype)
+    embedding = torch.full((7,), 0.0123, dtype=dtype)
+    terms = head(layers, None, element_index, node_head, batch, 3, embedding)
+    e0 = head.e0_table[node_head, element_index].to(dtype).double()
+    interaction = (
+        head.scale[node_head] * torch.stack(layers).sum(0) + head.shift[node_head]
+    ).double()
+    expected = e0 + embedding.double() + interaction
+    torch.testing.assert_close(terms.node_energy, expected, atol=1e-12, rtol=0.0)
+    totals = torch.stack([expected[batch == g].sum() for g in range(3)])
+    torch.testing.assert_close(terms.total_energy.double(), totals, atol=2e-3, rtol=0.0)

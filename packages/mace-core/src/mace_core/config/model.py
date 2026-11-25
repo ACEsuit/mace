@@ -26,17 +26,20 @@ model computes with.
 """
 
 import logging
+import math
 from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.config.base import ConfigSection
+from mace_core.elements.default_keys import DEFAULT_KEYS_BY_NAME, DefaultKeys
 from mace_core.heads import DEFAULT_HEAD, HeadName
 from mace_core.kernels.canonical import gate_irreps_problem
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
     ObservableCatalogue,
+    check_name,
     check_observable_name,
     declared_as,
 )
@@ -47,9 +50,12 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "AgnesiTransformConfig",
     "BesselBasisConfig",
+    "CategoricalFeatureConfig",
     "ChebyshevBasisConfig",
+    "ContinuousFeatureConfig",
     "DistanceTransformConfig",
     "GaussianBasisConfig",
+    "GraphFeatureConfig",
     "InteractionKind",
     "ModelConfig",
     "NoDistanceTransformConfig",
@@ -241,10 +247,99 @@ class ScaleShiftSpec(ConfigSection):
 
 
 # ---------------------------------------------------------------------------
+# Graph features
+# ---------------------------------------------------------------------------
+
+#: The default properties a model may embed: the structure's own inputs.
+#: Every other default property is a label, which a model is fitted to and
+#: cannot be given.
+_EMBEDDABLE_DEFAULTS = frozenset(
+    member.convention_name
+    for member in (
+        DefaultKeys.TOTAL_CHARGE,
+        DefaultKeys.TOTAL_SPIN,
+        DefaultKeys.ELEC_TEMP,
+    )
+)
+
+
+class _GraphFeature(ConfigSection):
+    #: The graph key it is read from.
+    name: str
+    #: One value per structure (`graph`) or per atom (`atom`).
+    per: Literal["graph", "atom"] = "graph"
+    #: The width it is embedded to.
+    embedding_dim: int = Field(ge=1)
+
+    @field_validator("name")
+    @classmethod
+    def _a_name_is_a_key(cls, value: str) -> str:
+        return check_name(value, "graph feature")
+
+    @model_validator(mode="after")
+    def _a_feature_is_not_a_label(self) -> "_GraphFeature":
+        # Imported here: the graph layout imports the config package.
+        from mace_core.graph.layout import check_graph_key
+
+        check_graph_key(self.name, "graph feature")
+        default = DEFAULT_KEYS_BY_NAME.get(self.name)
+        if default is None:
+            return self
+        if self.name not in _EMBEDDABLE_DEFAULTS:
+            raise ValueError(
+                f"graph feature {self.name!r} is a default property a model is "
+                f"fitted to, not given; name the feature otherwise."
+            )
+        if self.per != default.storage:
+            raise ValueError(
+                f"graph feature {self.name!r} is stored per {default.storage}; "
+                f"set per to {default.storage!r}."
+            )
+        components = math.prod(default.value_shape)
+        if getattr(self, "input_dim", components) != components:
+            raise ValueError(
+                f"graph feature {self.name!r} has {components} component(s); "
+                f"set input_dim to {components}."
+            )
+        return self
+
+
+class CategoricalFeatureConfig(_GraphFeature):
+    """A small integer label, embedded by a table of one row per class."""
+
+    kind: Literal["categorical"] = "categorical"
+    num_classes: int = Field(ge=1)
+    #: Added to the value before it is used as a row, so a label that can be
+    #: negative, such as a charge, finds a row.
+    offset: int = 0
+
+
+class ContinuousFeatureConfig(_GraphFeature):
+    """A real value, embedded by a linear map, a SiLU and a linear map."""
+
+    kind: Literal["continuous"] = "continuous"
+    #: How many components it has.
+    input_dim: int = Field(default=1, ge=1)
+    #: Whether the two maps carry biases.
+    bias: bool = True
+
+
+GraphFeatureConfig = Annotated[
+    CategoricalFeatureConfig | ContinuousFeatureConfig,
+    Field(discriminator="kind"),
+]
+
+
+# ---------------------------------------------------------------------------
 # Readouts
 # ---------------------------------------------------------------------------
 
 _PER = {True: "per atom", False: "per structure"}
+
+
+def _repeated(names: list[str]) -> list[str]:
+    """The names that appear more than once, sorted."""
+    return sorted({name for name in names if names.count(name) > 1})
 
 
 def _parse_irreps(value: str, setting: str) -> Irreps:
@@ -296,6 +391,11 @@ class ReadoutConfig(ConfigSection):
     #: Structure observables whose per-atom values are reported as well, by
     #: observable, under the given name.
     atomic_contributions: dict[str, str] = Field(default_factory=dict)
+    #: Read an energy out of the node embedding as well, the element
+    #: embedding with the graph features added, before any interaction; the
+    #: legacy `--use_embedding_readout`, with graph features declared. It is
+    #: added unscaled, beside the isolated-atom energies.
+    from_embedding: bool = False
 
     @field_validator("atomic_contributions")
     @classmethod
@@ -315,8 +415,7 @@ class ReadoutConfig(ConfigSection):
 
     @model_validator(mode="after")
     def _groups_are_disjoint(self) -> "ReadoutConfig":
-        members = [name for group in self.groups for name in group]
-        repeated = sorted({name for name in members if members.count(name) > 1})
+        repeated = _repeated([name for group in self.groups for name in group])
         if repeated:
             raise ValueError(f"{repeated} are in more than one readout group.")
         short = [list(group) for group in self.groups if len(group) < 2]
@@ -465,6 +564,10 @@ class ModelConfig(ConfigSection):
     #: vectors, and a dielectric one every degree, the legacy
     #: `keep_last_layer_irreps`.
     last_layer_irreps: str = "0e"
+    #: Inputs embedded beside the elements, such as the total charge: each
+    #: is embedded, the embeddings are joined and projected, and the result
+    #: is added to the element embedding before the first layer.
+    graph_features: tuple[GraphFeatureConfig, ...] = ()
     #: What the model computes: the observables it reads out and the inputs
     #: they are differentiated against.
     observables: ObservableCatalogue = DEFAULT_CATALOGUE
@@ -555,6 +658,53 @@ class ModelConfig(ConfigSection):
     @model_validator(mode="after")
     def _every_value_is_reported_under_its_own_name(self) -> "ModelConfig":
         _check_destinations(self.observables, self.readout)
+        return self
+
+    @model_validator(mode="after")
+    def _each_graph_feature_is_a_value_of_its_own(self) -> "ModelConfig":
+        repeated = _repeated([feature.name for feature in self.graph_features])
+        if repeated:
+            raise ValueError(f"graph features {repeated} are declared more than once.")
+        inputs = {spec.name for spec in self.observables.inputs}
+        observables = {spec.name for spec in self.observables.observables}
+        for feature in self.graph_features:
+            if feature.name in _EMBEDDABLE_DEFAULTS:
+                if feature.name not in inputs:
+                    raise ValueError(
+                        f"graph feature {feature.name!r} is the structure's own "
+                        f"input, which reaches the graph only when declared; "
+                        f"declare it in observables.inputs."
+                    )
+                spec = self.observables.input(feature.name)
+                if not declared_as(spec, "0e", per_atom=feature.per == "atom"):
+                    raise ValueError(
+                        f"graph feature {feature.name!r} is one value "
+                        f"{_PER[feature.per == 'atom']}, and the input is "
+                        f"declared {spec.irreps!r} {_PER[spec.per_atom]}; "
+                        f"declare the input to match."
+                    )
+            elif feature.name in inputs | observables:
+                raise ValueError(
+                    f"graph feature {feature.name!r} is named like a declared "
+                    f"input or observable; name the feature otherwise."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _the_embedding_readout_reads_graph_features(self) -> "ModelConfig":
+        if not self.readout.from_embedding:
+            return self
+        if all(spec.name != "energy" for spec in self.observables.observables):
+            raise ValueError(
+                "readout.from_embedding reads an energy out of the node "
+                "embedding, and 'energy' is not a declared observable."
+            )
+        if not self.graph_features:
+            raise ValueError(
+                "readout.from_embedding reads the graph features' energy, and "
+                "no graph feature is declared; the frozen tree's flag does "
+                "nothing without them."
+            )
         return self
 
     @model_validator(mode="after")

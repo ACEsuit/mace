@@ -197,6 +197,7 @@ class EnergyOutputHead(nn.Module):
         node_head: Tensor,
         batch: Tensor,
         num_graphs: int,
+        embedding_node_energy: Tensor | None = None,
     ) -> EnergyTerms:
         """The energies of a batch from its per-layer site energies.
 
@@ -210,6 +211,10 @@ class EnergyOutputHead(nn.Module):
             node_head: ``[n_nodes]``, each atom's head.
             batch: ``[n_nodes]``, each atom's structure.
             num_graphs: How many structures.
+            embedding_node_energy: ``[n_nodes]``, the energy read out of the
+                node embedding, or ``None``. It is added unscaled beside the
+                isolated-atom energies, summed on its own, and counted in
+                each atom's energy.
         """
         terms = list(node_energy_layers)
         if pair_node_energy is not None and self.zbl_in_scale_shift:
@@ -223,10 +228,20 @@ class EnergyOutputHead(nn.Module):
 
         node_e0 = self.e0_table[node_head, element_index].to(node_interaction.dtype)
         interaction_energy = segment_sum(node_interaction, batch, num_graphs)
-        total_energy = segment_sum(node_e0, batch, num_graphs) + interaction_energy
+        e0_energy = segment_sum(node_e0, batch, num_graphs)
+        if embedding_node_energy is not None:
+            e0_energy = e0_energy + segment_sum(
+                embedding_node_energy, batch, num_graphs
+            )
+        total_energy = e0_energy + interaction_energy
 
         node_dtype = self.node_energy_dtype
-        node_energy = node_e0.to(node_dtype) + node_interaction.to(node_dtype)
+        # Each term widened before it is added, so a small one keeps the
+        # digits a large isolated-atom energy would round away.
+        node_energy = node_e0.to(node_dtype)
+        if embedding_node_energy is not None:
+            node_energy = node_energy + embedding_node_energy.to(node_dtype)
+        node_energy = node_energy + node_interaction.to(node_dtype)
         return EnergyTerms(
             total_energy=total_energy,
             node_energy=node_energy,

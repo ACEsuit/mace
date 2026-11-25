@@ -53,6 +53,7 @@ __all__ = [
     "ENGINE_INPUTS",
     "FloatDtype",
     "GraphLayout",
+    "check_graph_key",
     "feature_field",
     "graph_layout",
     "input_field",
@@ -209,7 +210,8 @@ def _check_feature(name: str, spec: FieldSpec) -> None:
         )
 
 
-def _check_name(name: str, kind: str) -> None:
+def check_graph_key(name: str, kind: str) -> None:
+    """Refuse a declared name the graph holds something else under."""
     if not name or not name.strip():
         raise ValueError(f"a declared {kind} has an empty name.")
     if name in GRAPH_CORE:
@@ -298,7 +300,7 @@ class GraphLayout(ConfigSection):
             ("batch-requirement field", self.requirement_fields),
         ):
             for name in fields:
-                _check_name(name, kind)
+                check_graph_key(name, kind)
         for name, spec in self.inputs.items():
             if name in ENGINE_INPUTS:
                 raise ValueError(

@@ -59,6 +59,11 @@ tree keeps it:
   hidden layer a layer norm with epsilon :data:`LAYER_NORM_EPSILON`. A fresh
   weight and bias are uniform on ``[-1 / sqrt(fan_in), 1 / sqrt(fan_in)]``,
   ``torch.nn.Linear``'s draw, and a fresh layer norm is the identity.
+
+**The graph-feature embedding** is the other way round: its maps and its
+projection are saved ``[fan_out, fan_in]``, ``torch.nn.Linear``'s own layout
+and the frozen joint embedding's, so they convert by copying. Its tables are
+``[num_classes, width]``.
 """
 
 from __future__ import annotations

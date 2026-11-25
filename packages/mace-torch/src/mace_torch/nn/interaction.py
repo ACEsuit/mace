@@ -48,6 +48,7 @@ from torch import Tensor, nn
 
 from mace_torch.backends import require_built
 from mace_torch.backends.reference import TORCH_DTYPES
+from mace_torch.kernels.initialization import uniform_like
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.gate import Gate, gate_input_irreps
 
@@ -555,10 +556,7 @@ class NonLinearInteractionBlock(nn.Module):
             state = dict(embedding.to_canonical())
             weight = state["weight"]
             generator = torch.Generator().manual_seed(seed + offset)
-            unit = torch.rand(weight.shape, generator=generator, dtype=torch.float64)
-            state["weight"] = ((2.0 * unit - 1.0) * _ELEMENT_EMBEDDING_BOUND).to(
-                device=weight.device, dtype=weight.dtype
-            )
+            state["weight"] = uniform_like(weight, _ELEMENT_EMBEDDING_BOUND, generator)
             embedding.load_canonical(state)
 
     def to_canonical(self) -> dict[str, Tensor]:

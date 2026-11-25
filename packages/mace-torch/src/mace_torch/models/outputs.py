@@ -24,8 +24,9 @@ class of model:
 * **The per-atom values** of an observable of a structure, before the sum.
 
 The energy is the one observable with more to it: its per-layer site energies
-go through the :class:`~mace_torch.models.energy.EnergyOutputHead`. No
-derivative is taken here.
+go through the :class:`~mace_torch.models.energy.EnergyOutputHead`, with an
+energy read out of the node embedding when ``readout.from_embedding`` asks for
+one. No derivative is taken here.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ import torch
 from mace_core.clebsch_gordan import symmetric_matrix_basis
 from mace_core.config.model import ModelConfig
 from mace_core.kernels.precision import Precision
+from mace_core.kernels.specs import LinearSpec
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
 from mace_core.units import DEBYE_FROM_SI
 from torch import Tensor, nn
@@ -138,6 +140,18 @@ class MACEOutputs(nn.Module):
                 for group in groups
             }
         )
+        #: The energy read out of the node embedding, one scalar per head.
+        self.embedding_readout = (
+            backend.make_linear(
+                LinearSpec(
+                    irreps_in=f"{config.num_channels}x0e",
+                    irreps_out=f"{num_heads}x0e",
+                    precision=precision,
+                )
+            )
+            if readout.from_embedding
+            else None
+        )
         self.register_buffer(
             "matrix_basis",
             torch.tensor(symmetric_matrix_basis(), dtype=torch.float64),
@@ -218,6 +232,10 @@ class MACEOutputs(nn.Module):
             report(name, _squeezed(values))
 
         if self.energy_head is not None:
+            embedding_energy = None
+            if self.embedding_readout is not None:
+                every_head = self.embedding_readout(features.embedding)
+                embedding_energy = every_head.gather(1, node_head[:, None]).squeeze(-1)
             terms = self.energy_head(
                 [value.squeeze(-1) for value in per_layer[ENERGY]],
                 pair_node_energy,
@@ -225,6 +243,7 @@ class MACEOutputs(nn.Module):
                 node_head,
                 batch,
                 num_graphs,
+                embedding_energy,
             )
             fields["total_energy"] = terms.total_energy
             fields["node_energies"] = terms.node_energy
