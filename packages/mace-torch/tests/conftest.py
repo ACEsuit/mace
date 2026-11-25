@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 import torch
+from mace_core.kernels.precision import Precision
 
 #: Tolerance per dtype, `(atol, rtol)`. Each mirrors a row of
 #: `tests/golden/harness.py`, which this package cannot import: the packages
@@ -42,6 +43,22 @@ def dtype(request):
 fp64_only = pytest.mark.parametrize(
     "dtype", [torch.float64], ids=["float64"], indirect=True
 )
+
+#: Restricts a test to fp32, for claims about a model that is not float64.
+fp32_only = pytest.mark.parametrize(
+    "dtype", [torch.float32], ids=["float32"], indirect=True
+)
+
+#: The precision name of each dtype the suite runs at.
+PRECISIONS: dict[torch.dtype, Precision] = {
+    torch.float64: "float64",
+    torch.float32: "float32",
+}
+
+
+def precision() -> Precision:
+    """The precision name of the active default dtype."""
+    return PRECISIONS[torch.get_default_dtype()]
 
 
 def assert_close(actual, expected, what: str = "") -> None:

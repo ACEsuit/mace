@@ -31,7 +31,6 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from mace_core.config.base import ConfigSection
-from mace_core.data.configuration import DEFAULT_HEAD
 from mace_core.elements.default_keys import STORAGES, DefaultKeys, Storage
 from mace_core.elements.number_table import model_atomic_number_table
 from mace_core.graph.schema import (
@@ -45,6 +44,7 @@ from mace_core.graph.schema import (
     presence_key,
     weight_key,
 )
+from mace_core.heads import DEFAULT_HEAD, HeadName
 from mace_core.observables import InputSpec, ObservableSpec
 from mace_core.observables.defaults import DEFAULT_CATALOGUE
 from mace_core.observables.grammar import irreps_dimension, parse_irreps
@@ -268,7 +268,7 @@ class GraphLayout(ConfigSection):
     """
 
     atomic_numbers: tuple[int, ...]
-    heads: tuple[str, ...]
+    heads: tuple[HeadName, ...]
     cutoff: float = Field(gt=0, allow_inf_nan=False, strict=True)
     float_dtype: FloatDtype = "float64"
     inputs: dict[str, FieldSpec] = Field(default_factory=dict)
@@ -286,14 +286,10 @@ class GraphLayout(ConfigSection):
 
     @model_validator(mode="after")
     def _validate(self) -> GraphLayout:
-        if (
-            not self.heads
-            or len(set(self.heads)) != len(self.heads)
-            or not all(head.strip() for head in self.heads)
-        ):
+        if not self.heads or len(set(self.heads)) != len(self.heads):
             raise ValueError(
-                f"the head list {list(self.heads)} is empty, repeats a head or "
-                f"holds an empty name; each head has one name and one index."
+                f"the head list {list(self.heads)} is empty or repeats a head; "
+                f"each head has one name and one index."
             )
         for kind, fields in (
             ("input", self.inputs),

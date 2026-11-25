@@ -19,6 +19,7 @@ from mace_core.config import (
     NoDistanceTransformConfig,
     PolynomialCutoffConfig,
     RadialBasisConfig,
+    ScaleShiftSpec,
     SoftTransformConfig,
 )
 from pydantic import ValidationError
@@ -213,3 +214,100 @@ def test_edge_irreps_are_accepted_where_a_nonlinear_layer_reads_them():
         interaction_first="nonlinear",
         use_edge_irreps_first=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Scale and shift
+# ---------------------------------------------------------------------------
+
+STATISTICS = {
+    "energy_mean": -0.25,
+    "energy_std": 0.5,
+    "rms_forces": 1.5,
+    "rms_dipoles": 0.75,
+}
+
+
+@pytest.mark.parametrize(
+    ("scale", "shift", "expected"),
+    [
+        ("std", "mean", (0.5, -0.25)),
+        ("std", "none", (0.5, 0.0)),
+        ("rms_forces", "mean", (1.5, -0.25)),
+        ("rms_forces", "none", (1.5, 0.0)),
+        ("rms_dipoles", "none", (0.75, 0.0)),
+        ("none", "mean", (1.0, -0.25)),
+        ("none", "none", (1.0, 0.0)),
+    ],
+)
+def test_each_method_takes_its_value_from_its_statistic(scale, shift, expected):
+    spec = ScaleShiftSpec(scale=scale, shift=shift)
+    assert spec.scale_and_shift(**STATISTICS) == expected
+
+
+@pytest.mark.parametrize(
+    ("scale", "shift", "absent"),
+    [
+        ("std", "none", "energy_std"),
+        ("std", "mean", "energy_mean"),
+        ("rms_forces", "none", "rms_forces"),
+        ("rms_dipoles", "none", "rms_dipoles"),
+        ("none", "mean", "energy_mean"),
+    ],
+)
+def test_a_statistic_a_method_needs_and_the_data_lacks_is_an_error(
+    scale, shift, absent
+):
+    statistics = {**STATISTICS, absent: None}
+    spec = ScaleShiftSpec(scale=scale, shift=shift)
+    with pytest.raises(ValueError, match=re.escape(f"needs [{absent!r}]")):
+        spec.scale_and_shift(**statistics)
+
+
+def test_no_scale_and_no_shift_need_no_statistics():
+    spec = ScaleShiftSpec(scale="none", shift="none")
+    assert spec.scale_and_shift() == (1.0, 0.0)
+
+
+def test_a_dipole_scale_with_an_energy_shift_is_refused():
+    with pytest.raises(ValidationError, match="cannot shift"):
+        ScaleShiftSpec(scale="rms_dipoles", shift="mean")
+
+
+def test_a_zero_scale_becomes_one_and_says_so(caplog):
+    statistics = {**STATISTICS, "rms_forces": 0.0}
+    with caplog.at_level("WARNING"):
+        spec = ScaleShiftSpec(scale="rms_forces", shift="mean")
+        scale_shift = spec.scale_and_shift(**statistics)
+    assert scale_shift == (1.0, -0.25)
+    assert "measured zero" in caplog.text
+
+
+def test_scale_shift_is_one_entry_per_named_head():
+    config = ModelConfig.model_validate(
+        {
+            "scale_shift": {
+                "pbe": {"scale": "std", "shift": "mean"},
+                "mp2": {"scale": "none"},
+            }
+        }
+    )
+    assert config.scale_shift == {
+        "pbe": ScaleShiftSpec(scale="std", shift="mean"),
+        "mp2": ScaleShiftSpec(scale="none", shift="none"),
+    }
+    assert ModelConfig.model_validate(config.model_dump(mode="json")) == config
+
+
+@pytest.mark.parametrize(
+    ("scale_shift", "message"),
+    [
+        ({}, "at least 1 item"),
+        ({" ": {"scale": "std"}}, "pattern"),
+        ({"pbe": {"scale": "rms"}}, "rms"),
+        ({"pbe": {"shift": "median"}}, "median"),
+    ],
+)
+def test_scale_shift_refuses_what_names_no_head_or_no_method(scale_shift, message):
+    with pytest.raises(ValidationError, match=message):
+        ModelConfig.model_validate({"scale_shift": scale_shift})
