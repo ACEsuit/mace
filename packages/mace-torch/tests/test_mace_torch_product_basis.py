@@ -13,10 +13,7 @@ from mace_torch.nn.product_basis import EquivariantProductBasisBlock
 BACKEND = ReferenceBackend()
 
 
-@pytest.fixture(autouse=True)
-def no_gradients():
-    with torch.no_grad():
-        yield
+pytestmark = pytest.mark.usefixtures("no_gradients")
 
 
 def _block(**options: Any) -> EquivariantProductBasisBlock:

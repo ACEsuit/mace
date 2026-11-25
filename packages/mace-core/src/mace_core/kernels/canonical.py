@@ -74,6 +74,7 @@ __all__ = [
     "exact_silu_second_moment_scale",
     "fully_connected_tp_path_normalization",
     "linear_path_normalization",
+    "linear_weight_paths",
     "radial_mlp_initial_bound",
     "radial_mlp_layer_normalization",
     "symmetric_contraction_initial_scale",
@@ -134,6 +135,24 @@ def linear_path_normalization(irreps_in: str, irrep_out: Irrep) -> float:
         if irrep == irrep_out
     )
     return 1.0 if fan_in == 0 else float(fan_in) ** -0.5
+
+
+def linear_weight_paths(irreps_in: str, irreps_out: str) -> list[tuple[int, int]]:
+    """Every weight of a linear map, in canonical order, as the
+    ``(output copy, input copy)`` it connects.
+
+    Output copies outermost, then the input copies of the same irrep in
+    declaration order; copies count across the whole declaration, a ``2x1o``
+    term being two. An equivariant map connects a copy only to copies of its
+    own irrep, so that is one weight per matching pair.
+    """
+    inputs = [irrep for _, irrep in Irreps.parse(irreps_in).slices()]
+    return [
+        (out_copy, in_copy)
+        for out_copy, (_, out_irrep) in enumerate(Irreps.parse(irreps_out).slices())
+        for in_copy, in_irrep in enumerate(inputs)
+        if in_irrep == out_irrep
+    ]
 
 
 def fully_connected_tp_path_normalization(

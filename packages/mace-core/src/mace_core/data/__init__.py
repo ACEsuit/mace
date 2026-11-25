@@ -21,6 +21,7 @@ from mace_core.data.keys import (
     EmbeddingFeatureSpec,
     KeySpecification,
 )
+from mace_core.data.labels import check_observables_labelled
 from mace_core.data.splitting import group_by_config_type, random_train_valid_split
 from mace_core.data.xyz import (
     ISOLATED_ATOM_CONFIG_TYPE,
@@ -47,6 +48,7 @@ __all__ = [
     "KeySpecification",
     "ParsedConfigurations",
     "atomic_number_table_from_zs",
+    "check_observables_labelled",
     "configuration_from_atoms",
     "group_by_config_type",
     "random_train_valid_split",

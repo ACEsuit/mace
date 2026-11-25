@@ -19,6 +19,7 @@ from mace_core.config import (
     NoDistanceTransformConfig,
     PolynomialCutoffConfig,
     RadialBasisConfig,
+    ReadoutConfig,
     ScaleShiftSpec,
     SoftTransformConfig,
 )
@@ -311,3 +312,39 @@ def test_scale_shift_is_one_entry_per_named_head():
 def test_scale_shift_refuses_what_names_no_head_or_no_method(scale_shift, message):
     with pytest.raises(ValidationError, match=message):
         ModelConfig.model_validate({"scale_shift": scale_shift})
+
+
+# ---------------------------------------------------------------------------
+# Observables and readouts
+# ---------------------------------------------------------------------------
+
+
+def test_a_declared_observable_round_trips_with_the_model_section():
+    document = {
+        "observables": {
+            "observables": [
+                {"name": "energy", "irreps": "0e", "per_atom": False, "units": "eV"},
+                {"name": "dipole", "irreps": "1o", "per_atom": False, "units": "e*A"},
+            ]
+        }
+    }
+    config = ModelConfig.model_validate(document)
+    assert [spec.name for spec in config.observables.observables] == [
+        "energy",
+        "dipole",
+    ]
+    assert ModelConfig.model_validate(config.model_dump(mode="json")) == config
+
+
+@pytest.mark.parametrize(
+    ("mlp_irreps", "message"),
+    [
+        ("8x0e+8x1o", "more than even scalars"),
+        ("8x0o", "more than even scalars"),
+        ("8xq", "mlp_irreps='8xq'"),
+        ("8x0e+8x0e", "one term per irrep"),
+    ],
+)
+def test_a_middle_the_gate_cannot_hold_is_refused(mlp_irreps, message):
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        ReadoutConfig(mlp_irreps=mlp_irreps)

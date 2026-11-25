@@ -7,8 +7,9 @@ by `kind` (`radial_basis: {kind: gaussian, num_basis: 16}`); "no transform" is
 the kind `none`, not an absent key. The envelope has one kind, so its section
 is a plain section without a tag.
 
-The model section also holds, per head, how that head's interaction energy is
-scaled and shifted (`scale_shift`). It holds the methods only: the scale and
+The model section also holds the observables the model reads out and how
+(`observables`, `readout`), and, per head, how that head's interaction energy
+is scaled and shifted (`scale_shift`). It holds the methods only: the scale and
 the shift are computed from the data before the model is built and are saved
 with the weights.
 
@@ -32,6 +33,7 @@ from pydantic import Field, model_validator
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.config.base import ConfigSection
 from mace_core.heads import DEFAULT_HEAD, HeadName
+from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ __all__ = [
     "NoDistanceTransformConfig",
     "PolynomialCutoffConfig",
     "RadialBasisConfig",
+    "ReadoutConfig",
     "ScaleShiftSpec",
     "ScalingMethod",
     "ShiftMethod",
@@ -231,6 +234,48 @@ class ScaleShiftSpec(ConfigSection):
 
 
 # ---------------------------------------------------------------------------
+# Readouts
+# ---------------------------------------------------------------------------
+
+
+class ReadoutConfig(ConfigSection):
+    """How each declared observable is read out of the node features.
+
+    Every layer is read out linearly and the readouts are summed, except the
+    last layer of a model with more than one, which is read out through a
+    gated middle: a linear map to ``mlp_irreps`` per head, a SiLU, and a
+    linear map to the observable.
+    """
+
+    #: The gated middle's irreps per head, the legacy `--MLP_irreps`. Even
+    #: scalars only, in one term.
+    mlp_irreps: str = "16x0e"
+    #: Read out only the last layer, the legacy `--use_last_readout_only`.
+    last_only: bool = False
+
+    @model_validator(mode="after")
+    def _the_middle_holds_even_scalars(self) -> "ReadoutConfig":
+        try:
+            terms = Irreps.parse(self.mlp_irreps).terms
+        except IrrepsError as error:
+            raise ValueError(f"mlp_irreps={self.mlp_irreps!r}: {error}") from None
+        if any(ir != Irrep(0, 1) for _, ir in terms):
+            raise ValueError(
+                f"mlp_irreps={self.mlp_irreps!r} holds more than even scalars; "
+                f"the gated middle applies a SiLU, which only even scalars "
+                f"pass through unchanged in parity."
+            )
+        if len(terms) > 1:
+            width = sum(mul for mul, _ in terms)
+            raise ValueError(
+                f"mlp_irreps={self.mlp_irreps!r} is not one term per irrep; "
+                f"each head owns one block of the middle, so write it as "
+                f"'{width}x0e'."
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
 # The model
 # ---------------------------------------------------------------------------
 
@@ -253,7 +298,8 @@ InteractionKind = Literal[
 
 
 class ModelConfig(ConfigSection):
-    """The model: the backbone's architecture and each head's scale and shift.
+    """The model: the backbone's architecture, what it reads out and how,
+    and each head's scale and shift.
 
     Defaults are the legacy command-line defaults. The node features of every
     layer but the last carry `num_channels` copies of each irrep up to `max_L`
@@ -297,6 +343,11 @@ class ModelConfig(ConfigSection):
     #: against. Recorded with the model and never inferred from what is
     #: installed; `full` builds only on a backend that declares it.
     clebsch_gordan_basis: Literal["reduced", "full"] = "reduced"
+    #: What the model computes: the observables it reads out and the inputs
+    #: they are differentiated against.
+    observables: ObservableCatalogue = DEFAULT_CATALOGUE
+    #: How the observables are read out.
+    readout: ReadoutConfig = ReadoutConfig()
     #: How each head's interaction energy is scaled and shifted, by head name.
     scale_shift: dict[HeadName, ScaleShiftSpec] = Field(
         default_factory=lambda: {DEFAULT_HEAD: ScaleShiftSpec()}, min_length=1
