@@ -248,7 +248,7 @@ class ReadoutConfig(ConfigSection):
     """
 
     #: The gated middle's irreps per head, the legacy `--MLP_irreps`. Even
-    #: scalars only.
+    #: scalars only, in one term.
     mlp_irreps: str = "16x0e"
     #: Read out only the last layer, the legacy `--use_last_readout_only`.
     last_only: bool = False
@@ -264,6 +264,13 @@ class ReadoutConfig(ConfigSection):
                 f"mlp_irreps={self.mlp_irreps!r} holds more than even scalars; "
                 f"the gated middle applies a SiLU, which only even scalars "
                 f"pass through unchanged in parity."
+            )
+        if len(terms) > 1:
+            width = sum(mul for mul, _ in terms)
+            raise ValueError(
+                f"mlp_irreps={self.mlp_irreps!r} is not one term per irrep; "
+                f"each head owns one block of the middle, so write it as "
+                f"'{width}x0e'."
             )
         return self
 

@@ -342,6 +342,7 @@ def test_a_declared_observable_round_trips_with_the_model_section():
         ("8x0e+8x1o", "more than even scalars"),
         ("8x0o", "more than even scalars"),
         ("8xq", "mlp_irreps='8xq'"),
+        ("8x0e+8x0e", "one term per irrep"),
     ],
 )
 def test_a_middle_the_gate_cannot_hold_is_refused(mlp_irreps, message):

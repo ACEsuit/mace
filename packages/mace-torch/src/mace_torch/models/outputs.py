@@ -20,7 +20,7 @@ from collections.abc import Mapping, Sequence
 import torch
 from mace_core.config.model import ReadoutConfig
 from mace_core.kernels.precision import Precision
-from mace_core.observables import ObservableCatalogue, ObservableSpec
+from mace_core.observables import ObservableCatalogue, ObservableSpec, declared_as
 from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE, MACEOutput
 from torch import Tensor, nn
 
@@ -185,7 +185,7 @@ def _check_destination(spec: ObservableSpec, energy_declared: bool) -> None:
     field = FIELD_BY_OBSERVABLE.get(spec.name, spec.name)
     if field not in CORE_FIELD_NAMES:
         return
-    if field == "dipole" and spec.irreps == "1o" and not spec.per_atom:
+    if field == "dipole" and declared_as(spec, "1o", per_atom=False):
         return
     raise ValueError(
         f"the observable {spec.name!r} would fill the output's {field!r} "

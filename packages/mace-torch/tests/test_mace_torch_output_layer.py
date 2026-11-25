@@ -232,6 +232,10 @@ def test_the_energy_head_has_a_row_per_head():
             ObservableSpec(name="dipole", irreps="1o", per_atom=True, units="e*A"),
             "declared '1o', per atom",
         ),
+        (
+            ObservableSpec(name="dipole", irreps="1e", per_atom=False, units="e*A"),
+            "declared '1e', per structure",
+        ),
     ],
 )
 def test_an_observable_that_would_overwrite_another_value_is_refused(spec, message):
@@ -257,8 +261,10 @@ def test_an_observable_filling_a_derivatives_field_is_refused():
         _model(ObservableCatalogue(observables=(forces,)))
 
 
-def test_a_structure_dipole_fills_the_dipole_field():
-    dipole = ObservableSpec(name="dipole", irreps="1o", per_atom=False, units="e*A")
+@pytest.mark.parametrize("irreps", ["1o", "1x1o"])
+def test_a_structure_dipole_fills_the_dipole_field(irreps):
+    """However the vector is spelled."""
+    dipole = ObservableSpec(name="dipole", irreps=irreps, per_atom=False, units="e*A")
     output = _run(_model(ObservableCatalogue(observables=(dipole,))), _two_structures())
     assert output.dipole is not None and output.dipole.shape == (2, 3)
     assert "dipole" not in output.extras

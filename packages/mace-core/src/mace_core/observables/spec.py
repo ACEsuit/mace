@@ -65,6 +65,7 @@ __all__ = [
     "InputSpec",
     "ObservableCatalogue",
     "ObservableSpec",
+    "declared_as",
 ]
 
 _SCALAR = (IrrepTerm(multiplicity=1, degree=0, parity="e"),)
@@ -126,6 +127,16 @@ class InputSpec(ConfigSection):
         _check_name(self.name, "input")
         parse_irreps(self.irreps, observable=self.name)
         return self
+
+
+def declared_as(
+    spec: InputSpec | ObservableSpec, irreps: str, *, per_atom: bool
+) -> bool:
+    """Whether ``spec`` is declared ``irreps``, however spelled, and per atom
+    exactly when ``per_atom`` is."""
+    return parse_irreps(spec.irreps) == parse_irreps(irreps) and (
+        spec.per_atom == per_atom
+    )
 
 
 class DerivativeRequest(ConfigSection):
