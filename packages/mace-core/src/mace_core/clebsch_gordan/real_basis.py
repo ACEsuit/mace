@@ -42,7 +42,7 @@ import numpy as np
 
 from mace_core.clebsch_gordan.coefficients import wigner_3j_complex
 
-__all__ = ["real_basis_change", "wigner_3j_real"]
+__all__ = ["real_basis_change", "symmetric_matrix_basis", "wigner_3j_real"]
 
 
 def real_basis_change(degree: int) -> np.ndarray:
@@ -102,3 +102,20 @@ def wigner_3j_real(l1: int, l2: int, l3: int) -> np.ndarray:
             f"phase convention in this module is wrong for this triple."
         )
     return np.ascontiguousarray(carried.real)
+
+
+def symmetric_matrix_basis() -> np.ndarray:
+    """``[6, 3, 3]``: a symmetric matrix from its ``0e+2e`` components.
+
+    Contracting the six components, the scalar then the five of degree 2 in
+    the order of the models' harmonics, with this array gives the matrix:
+    ``M = sum_k c_k B_k``. The matrices are the 3j tables coupling two vectors
+    to degree 0 and to degree 2, scaled to unit Frobenius norm, so they are
+    orthonormal and ``c_k = sum_ij B_kij M_ij`` reads the components back.
+    ``B_0`` is the identity over ``sqrt(3)``, the trace part; the other five
+    are traceless.
+    """
+    tables = [
+        wigner_3j_real(1, 1, degree) * math.sqrt(2 * degree + 1) for degree in (0, 2)
+    ]
+    return np.concatenate(tables, axis=-1).transpose(2, 0, 1)

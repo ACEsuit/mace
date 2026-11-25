@@ -19,6 +19,7 @@ from mace_core.observables.spec import (
     InputSpec,
     ObservableCatalogue,
     ObservableSpec,
+    check_observable_name,
     declared_as,
 )
 
@@ -33,6 +34,7 @@ __all__ = [
     "IrrepsGrammarError",
     "ObservableCatalogue",
     "ObservableSpec",
+    "check_observable_name",
     "declared_as",
     "default_derivative_name",
     "irreps_dimension",

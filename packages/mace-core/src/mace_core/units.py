@@ -8,9 +8,10 @@ below is the factor that takes a quantity *into* that base, so
 
 The factors are read from :mod:`ase.units` rather than written out, so a CODATA
 revision reaches the two stacks together instead of leaving one of them on the
-old numbers. ``test_mace_core_units.py`` pins the values that revision would
-move, which is what keeps "follows ase" from meaning "changes without anyone
-noticing".
+old numbers. :data:`DEBYE_FROM_SI` is the one written out, from the exact SI
+definitions, which no revision moves. ``test_mace_core_units.py`` pins the
+values that revision would move, which is what keeps "follows ase" from
+meaning "changes without anyone noticing".
 
 Layout conventions
 ------------------
@@ -58,6 +59,7 @@ __all__ = [
     "BOHR",
     "BOLTZMANN",
     "DEBYE",
+    "DEBYE_FROM_SI",
     "ENERGY_UNIT",
     "FORCE_SIGN_CONVENTION",
     "GIGAPASCAL",
@@ -99,6 +101,14 @@ GIGAPASCAL: float = _ase_units.GPa
 
 #: One Debye, in the base dipole unit (elementary charge times Angstrom).
 DEBYE: float = _ase_units.Debye
+
+#: One Debye in elementary charge times Angstrom, from the exact SI values of
+#: the speed of light and the elementary charge: ``1e-11 / c / e``. It differs
+#: from :data:`DEBYE` in the ninth significant digit, ase's being an older
+#: CODATA value, and is written out because ase does not carry it.
+#: The frozen tree's dipole models convert the dipole of their input charges by
+#: this one, and a model trained against it is evaluated with it.
+DEBYE_FROM_SI: float = 1e-11 / 299_792_458.0 / 1.602_176_634e-19
 
 #: Boltzmann's constant, in eV/K. Reaches the model as the scale of the
 #: electronic temperature input.

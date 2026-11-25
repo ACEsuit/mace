@@ -980,6 +980,17 @@ def test_the_full_descriptors_are_the_layers_side_by_side():
     )
 
 
+def test_a_layer_without_scalars_gives_no_invariant_descriptors():
+    model = _backbone(last_layer_irreps="1o")
+    features = model(cluster())
+    descriptors = model.atomic_descriptors(features)
+    assert torch.equal(descriptors, features.layers[0][:, : model.num_features])
+    with pytest.raises(ValueError, match="carries scalars"):
+        _backbone(num_interactions=1, last_layer_irreps="1o").atomic_descriptors(
+            _backbone(num_interactions=1, last_layer_irreps="1o")(cluster())
+        )
+
+
 def test_a_layer_count_out_of_range_is_refused():
     model = _backbone()
     features = model(cluster())

@@ -73,6 +73,8 @@ __all__ = [
     "canonical_weight_shape",
     "exact_silu_second_moment_scale",
     "fully_connected_tp_path_normalization",
+    "gate_irreps_problem",
+    "gate_order",
     "linear_path_normalization",
     "linear_weight_paths",
     "radial_mlp_initial_bound",
@@ -101,6 +103,28 @@ SILU_SECOND_MOMENT_SCALE = 1.679176792398942
 #: The epsilon of the ``"layer_norm_silu"`` radial MLP's layer norms, which is
 #: ``torch.nn.LayerNorm``'s default and what the frozen tree trained with.
 LAYER_NORM_EPSILON = 1e-5
+
+
+def gate_order(ir: Irrep) -> tuple[int, int]:
+    """The key a gate and a readout of several observables sort irreps by:
+    degree, then odd before even. It is not :class:`Irrep`'s own order, which
+    puts even first and orders the weight paths."""
+    return (ir.degree, ir.parity)
+
+
+def gate_irreps_problem(irreps: Irreps) -> str | None:
+    """Why a gate cannot write ``irreps``, or ``None`` when it can.
+
+    A gate reads and writes its irreps sorted by degree, odd before even at one
+    degree, one term per irrep, as the frozen tree's gate does. Its scalars go
+    through a SiLU, so they are even: an odd scalar does not stay odd.
+    """
+    if any(ir.degree == 0 and ir.parity != 1 for _, ir in irreps.terms):
+        return "has an odd scalar, which does not stay odd through a SiLU"
+    order = [gate_order(ir) for _, ir in irreps.terms]
+    if order != sorted(set(order)):
+        return "is not sorted by degree, odd before even, one term per irrep"
+    return None
 
 
 def canonical_weight_shape(

@@ -202,6 +202,29 @@ def test_the_gate_scales_each_copy_by_its_own_gate():
     assert_close(ratio - ratio[:, :, :1], torch.zeros_like(ratio), "one gate per copy")
 
 
+@pytest.mark.parametrize("activation", ["sigmoid", "silu"])
+def test_each_gate_goes_through_the_activation_named(activation):
+    """The nonlinear interaction gates through a sigmoid and the readouts
+    through a SiLU, each with its unit-second-moment factor."""
+    from mace_core.kernels.canonical import SILU_SECOND_MOMENT_SCALE
+    from mace_torch.nn.gate import SIGMOID_SECOND_MOMENT_SCALE
+
+    gate = Gate("1x0e+1x1o", gate_activation=activation)
+    features = torch.randn(3, 2 + 3, generator=torch.Generator().manual_seed(3))
+    gates = features[:, 1:2]
+    expected = (
+        SIGMOID_SECOND_MOMENT_SCALE * torch.sigmoid(gates)
+        if activation == "sigmoid"
+        else SILU_SECOND_MOMENT_SCALE * torch.nn.functional.silu(gates)
+    )
+    assert_close(gate(features)[:, 1:], features[:, 2:] * expected, activation)
+
+
+def test_an_activation_a_gate_does_not_know_is_refused():
+    with pytest.raises(ValueError, match="gate_activation='sigmod'"):
+        Gate("1x0e+1x1o", gate_activation="sigmod")  # ty: ignore[invalid-argument-type]
+
+
 def test_an_odd_scalar_cannot_be_gated():
     with pytest.raises(ValueError, match="odd scalar"):
         Gate("2x0o")

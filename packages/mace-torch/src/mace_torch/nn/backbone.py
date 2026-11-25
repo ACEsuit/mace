@@ -109,8 +109,9 @@ class NodeFeatures:
 
     Attributes:
         layers: One ``[n_nodes, dim_layer]`` tensor per interaction, grouped
-            by irrep in the canonical ``mul_ir``. The last layer carries only
-            scalars. Under a :class:`LocalityInfo`, the local nodes only.
+            by irrep in the canonical ``mul_ir``. The last layer carries
+            ``last_layer_irreps``, its scalars by default. Under a
+            :class:`LocalityInfo`, the local nodes only.
         node_attrs: ``[n_nodes, n_elements]``, the element one-hot the
             backbone formed, in the model's precision.
         element_index: ``[n_nodes]``, int64, each node's column of the
@@ -272,13 +273,13 @@ class MACEBackbone(nn.Module):
         )
 
         # Layers. The first reads the element embedding's scalars, every later
-        # one the hidden irreps, and the last returns scalars only.
+        # one the hidden irreps, and the last returns `last_layer_irreps`.
         hidden_irreps = str(Irreps.spherical_harmonics(config.max_L))
         last = config.num_interactions - 1
         interactions, products, layer_irreps = [], [], []
         for layer in range(config.num_interactions):
             irreps_in = "0e" if layer == 0 else hidden_irreps
-            irreps_out = "0e" if layer == last else hidden_irreps
+            irreps_out = config.last_layer_irreps if layer == last else hidden_irreps
             interactions.append(
                 self._build_interaction(
                     backend,
@@ -486,12 +487,13 @@ class MACEBackbone(nn.Module):
             features: What :meth:`forward` returned.
             num_layers: How many layers to keep, from the first. ``-1`` keeps
                 every one.
-            invariants_only: Keep only each layer's scalar channels. The last
-                layer carries nothing else, which is why its width differs.
+            invariants_only: Keep only each layer's scalar channels. A layer
+                without scalars, such as a dipole model's last, gives none.
 
         Returns:
             ``[n_nodes, width]``, the kept layers side by side. With
-            ``invariants_only`` the width is ``num_channels`` per layer.
+            ``invariants_only`` the width is ``num_channels`` per layer that
+            has scalars.
         """
         count = len(features.layers) if num_layers == -1 else num_layers
         if not 1 <= count <= len(features.layers):
@@ -507,6 +509,12 @@ class MACEBackbone(nn.Module):
                 pieces.append(layer)
                 continue
             multiplicity, irrep = Irreps.parse(irreps).terms[0]
-            assert irrep.degree == 0 and irrep.parity == 1, irreps
-            pieces.append(layer[:, :multiplicity])
+            if irrep.degree == 0 and irrep.parity == 1:
+                pieces.append(layer[:, :multiplicity])
+        if not pieces:
+            raise ValueError(
+                f"none of the first {count} layer(s) carries scalars, "
+                f"{list(self.layer_irreps[:count])}; ask for more layers or "
+                f"for invariants_only=False."
+            )
         return torch.cat(pieces, dim=-1)

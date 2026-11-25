@@ -16,18 +16,21 @@ from conftest import (
     rotation_matrix,
     transform_features,
 )
+from mace_core.clebsch_gordan import symmetric_matrix_basis
 from mace_core.config import ModelConfig, ReadoutConfig
 from mace_core.elements import ResolvedE0s
 from mace_core.observables import (
     DEFAULT_CATALOGUE,
+    InputSpec,
     ObservableCatalogue,
     ObservableSpec,
 )
 from mace_core.outputs import MACEOutput
+from mace_core.units import DEBYE_FROM_SI
 from mace_torch.backends.reference import ReferenceBackend
 from mace_torch.kernels import canonical_state, initialize_model_weights, segment_sum
 from mace_torch.models import EnergyOutputHead, MACEOutputs, ObservableReadout
-from mace_torch.models.readouts import head_columns
+from mace_torch.models.readouts import gated_middle, group_irreps, head_columns
 from mace_torch.nn.backbone import MACEBackbone
 
 #: The comparisons read values; the head tests ask for their gradients.
@@ -74,9 +77,14 @@ def _model(
         "correlation": 2,
         "radial_mlp": (8,),
     } | config
+    config = ModelConfig(
+        **options,
+        observables=observables,
+        readout=readout or ReadoutConfig(mlp_irreps="8x0e"),
+    )
     backbone = MACEBackbone(
         BACKEND,
-        ModelConfig(**options),
+        config,
         ELEMENTS,
         avg_num_neighbors=3.0,
         precision=precision(),
@@ -84,8 +92,7 @@ def _model(
     names = [spec.name for spec in observables.observables]
     outputs = MACEOutputs(
         BACKEND,
-        observables,
-        readout or ReadoutConfig(mlp_irreps="8x0e"),
+        config,
         backbone.layer_irreps,
         num_heads,
         _energy_head(num_heads) if "energy" in names else None,
@@ -166,8 +173,17 @@ def test_an_irrep_no_layer_carries_is_refused_at_construction():
     catalogue = ObservableCatalogue(
         inputs=DEFAULT_CATALOGUE.inputs, observables=(VECTOR,)
     )
-    with pytest.raises(ValueError, match=r"'moment' declares '1o'.*\['1o'\]"):
+    with pytest.raises(ValueError, match=r"'moment' declares '1o', and.*\['1o'\]"):
         _model(catalogue, max_L=0)
+
+
+def test_a_model_of_one_layer_has_no_gated_middle_to_blame():
+    catalogue = ObservableCatalogue(
+        inputs=DEFAULT_CATALOGUE.inputs, observables=(VECTOR,)
+    )
+    with pytest.raises(ValueError, match="Widen the node features, or") as error:
+        _model(catalogue, max_L=0, num_interactions=1)
+    assert "gated middle" not in str(error.value)
 
 
 def test_the_last_layer_alone_cannot_give_what_only_earlier_layers_carry():
@@ -176,7 +192,7 @@ def test_the_last_layer_alone_cannot_give_what_only_earlier_layers_carry():
     )
     _, outputs = _model(catalogue)
     assert outputs.readouts["moment"].layers == (0,)
-    with pytest.raises(ValueError, match="through the gated middle '8x0e'"):
+    with pytest.raises(ValueError, match="through the gated middle"):
         _model(catalogue, readout=ReadoutConfig(mlp_irreps="8x0e", last_only=True))
 
 
@@ -190,8 +206,7 @@ def test_the_energy_head_is_given_exactly_when_the_energy_is_declared(given):
     with pytest.raises(ValueError, match="energy head was"):
         MACEOutputs(
             BACKEND,
-            observables,
-            ReadoutConfig(),
+            ModelConfig(observables=observables),
             backbone.layer_irreps,
             1,
             _energy_head() if given else None,
@@ -204,8 +219,7 @@ def test_the_energy_head_has_a_row_per_head():
     with pytest.raises(ValueError, match="for 1 head"):
         MACEOutputs(
             BACKEND,
-            DEFAULT_CATALOGUE,
-            ReadoutConfig(),
+            ModelConfig(),
             backbone.layer_irreps,
             2,
             _energy_head(1),
@@ -220,13 +234,13 @@ def test_the_energy_head_has_a_row_per_head():
             ObservableSpec(
                 name="node_energies", irreps="0e", per_atom=True, units="eV"
             ),
-            "a name the energy fills",
+            "and the energy would both be reported",
         ),
         (
             ObservableSpec(
                 name="interaction_energy", irreps="0e", per_atom=False, units="eV"
             ),
-            "a name the energy fills",
+            "and the energy would both be reported",
         ),
         (
             ObservableSpec(name="dipole", irreps="1o", per_atom=True, units="e*A"),
@@ -255,7 +269,7 @@ def test_an_observable_that_would_overwrite_another_value_is_refused(spec, messa
 
 def test_an_observable_filling_a_derivatives_field_is_refused():
     """With the energy declared the catalogue already refuses ``forces``;
-    without it, the output layer does."""
+    without it, the model configuration does."""
     forces = ObservableSpec(name="forces", irreps="1o", per_atom=True, units="eV/A")
     with pytest.raises(ValueError, match="'forces' field"):
         _model(ObservableCatalogue(observables=(forces,)))
@@ -275,8 +289,7 @@ def test_a_model_has_at_least_one_head():
     with pytest.raises(ValueError, match="at least one head"):
         MACEOutputs(
             BACKEND,
-            ObservableCatalogue(observables=(VECTOR,)),
-            ReadoutConfig(),
+            ModelConfig(observables=ObservableCatalogue(observables=(VECTOR,))),
             backbone.layer_irreps,
             0,
             None,
@@ -408,14 +421,14 @@ def test_each_head_reaches_its_own_readout_weights():
 # ---------------------------------------------------------------------------
 
 LAYERS = ("4x0e+4x1o+4x2e", "4x0e+4x1o")
-#: Scalars and a vector: the gated last layer reads out the scalars, the
-#: first layer both.
+#: Scalars and a vector, so the gated last layer has both a SiLU and gates.
 MIXED = ObservableSpec(name="mixed", irreps="0e+1o", per_atom=True, units="1")
+MIDDLE = "3x0e+3x1o"
 
 
 def _readout(num_heads, seed):
     readout = ObservableReadout(
-        BACKEND, MIXED, LAYERS, num_heads, "3x0e", precision=precision()
+        BACKEND, [MIXED], LAYERS, num_heads, MIDDLE, precision=precision()
     )
     initialize_model_weights(readout, seed)
     return readout
@@ -470,13 +483,12 @@ def test_a_state_of_another_shape_writes_nothing():
     readout = _readout(2, seed=5)
     before = canonical_state(readout)
     wrong = ObservableReadout(
-        BACKEND, MIXED, ("8x0e+8x1o", "8x0e"), 1, "3x0e", precision=precision()
+        BACKEND, [MIXED], ("8x0e+8x1o", "8x0e+8x1o"), 1, MIDDLE, precision=precision()
     )
     with pytest.raises(ValueError, match="one head of this readout holds"):
         readout.load_head_state(1, canonical_state(wrong))
-    scalar = ObservableSpec(name="scalar", irreps="0e", per_atom=True, units="1")
     last_only = ObservableReadout(
-        BACKEND, scalar, LAYERS, 1, "3x0e", last_only=True, precision=precision()
+        BACKEND, [MIXED], LAYERS, 1, MIDDLE, last_only=True, precision=precision()
     )
     with pytest.raises(ValueError, match="the state holds the ops"):
         readout.load_head_state(1, canonical_state(last_only))
@@ -505,10 +517,253 @@ def test_an_energy_head_of_another_precision_is_refused():
     with pytest.raises(ValueError, match="build both at the model's precision"):
         MACEOutputs(
             BACKEND,
-            DEFAULT_CATALOGUE,
-            ReadoutConfig(mlp_irreps="8x0e"),
+            ModelConfig(readout=ReadoutConfig(mlp_irreps="8x0e")),
             backbone.layer_irreps,
             1,
             _energy_head(1, other),
             precision=precision(),
         )
+
+
+# ---------------------------------------------------------------------------
+# Readout groups, dipoles and symmetric matrices
+# ---------------------------------------------------------------------------
+
+DIPOLE = ObservableSpec(name="dipole", irreps="1o", per_atom=False, units="e*A")
+CHARGES = ObservableSpec(name="charges", irreps="0e", per_atom=True, units="e")
+ALPHA = ObservableSpec(name="polarizability", irreps="0e+2e", per_atom=False, units="1")
+CHARGES_INPUT = InputSpec(name="charges", irreps="0e", per_atom=True, units="e")
+TOTAL_CHARGE = InputSpec(name="total_charge", irreps="0e", per_atom=False, units="e")
+
+
+def test_a_group_is_one_term_per_irrep_its_members_in_order():
+    """The frozen dielectric readout's ``2x0e+1o+2e``: charge, trace,
+    dipole, traceless part."""
+    irreps, members = group_irreps([CHARGES, ALPHA, DIPOLE])
+    assert irreps == "2x0e+1x1o+1x2e"
+    assert members == {
+        "charges": [0],
+        "polarizability": [1, 5, 6, 7, 8, 9],
+        "dipole": [2, 3, 4],
+    }
+
+
+def test_an_observable_is_reported_in_the_order_it_is_declared():
+    """The readout lays the components out by degree, odd before even, so
+    ``1o+0e`` is computed as ``0e+1o`` and reported back in its own order."""
+    swapped = ObservableSpec(name="mixed", irreps="1o+0e", per_atom=True, units="1")
+    declared = ObservableReadout(
+        BACKEND, [swapped], LAYERS, 1, MIDDLE, precision=precision()
+    )
+    initialize_model_weights(declared, 4)
+    in_gate_order = _readout(1, seed=4)
+    features = _features(2)
+    for mine, theirs in zip(
+        declared(features, None), in_gate_order(features, None), strict=True
+    ):
+        assert torch.equal(mine, theirs)
+        assert torch.equal(
+            declared.split(mine)["mixed"],
+            in_gate_order.split(theirs)["mixed"][:, [1, 2, 3, 0]],
+        )
+
+
+def test_the_gated_middle_keeps_what_the_output_has():
+    assert gated_middle("4x0e+4x1o+4x2e", "1x0e+1x1o") == "4x0e+4x1o"
+    assert gated_middle("8x0e", "1x1o") == ""
+
+
+def test_a_middle_with_nothing_of_the_output_reads_out_no_last_layer():
+    """Scalars cannot give a vector, so the frozen dipole model's last
+    readout is zero and is not built here."""
+    _, outputs = _model(
+        ObservableCatalogue(observables=(DIPOLE,)),
+        last_layer_irreps="1o",
+        readout=ReadoutConfig(mlp_irreps="8x0e"),
+    )
+    assert outputs.readouts["dipole"].layers == (0,)
+
+
+def _dielectric():
+    return _model(
+        ObservableCatalogue(
+            inputs=(TOTAL_CHARGE,), observables=(CHARGES, DIPOLE, ALPHA)
+        ),
+        last_layer_irreps="0e+1o+2e",
+        readout=ReadoutConfig(
+            mlp_irreps="4x0e+4x1o+4x2e",
+            groups=(("charges", "polarizability", "dipole"),),
+            dipole_charges="predicted",
+            symmetric_matrices=("polarizability",),
+            atomic_contributions={"dipole": "atomic_dipoles"},
+        ),
+    )
+
+
+def test_predicted_charges_sum_to_each_structures_total_charge():
+    graph = _two_structures()
+    graph["total_charge"] = torch.tensor([1.0, -2.0], dtype=graph["positions"].dtype)
+    output = _run(_dielectric(), graph)
+    charges = output.extras["charges"]
+    assert charges.shape == (12,)
+    assert_close(torch.stack([charges[:6].sum(), charges[6:].sum()]), [1.0, -2.0], "Q")
+    charge_part = torch.stack(
+        [
+            (charges[:6, None] * graph["positions"][:6]).sum(0),
+            (charges[6:, None] * graph["positions"][6:]).sum(0),
+        ]
+    )
+    atoms = output.extras["atomic_dipoles"]
+    summed = torch.stack([atoms[:6].sum(0), atoms[6:].sum(0)])
+    assert_close(output.dipole, summed + charge_part, "dipole")
+
+
+def test_input_charges_add_their_dipole_in_debye():
+    """As the frozen dipole models add it: the structure's own charges, their
+    dipole converted from e*A by the SI Debye."""
+    graph = _two_structures()
+    graph["charges"] = torch.linspace(-0.5, 0.5, 12, dtype=graph["positions"].dtype)
+    in_debye = DIPOLE.model_copy(update={"units": "Debye"})
+    output = _run(
+        _model(
+            ObservableCatalogue(inputs=(CHARGES_INPUT,), observables=(in_debye,)),
+            readout=ReadoutConfig(
+                dipole_charges="input",
+                atomic_contributions={"dipole": "atomic_dipoles"},
+            ),
+        ),
+        graph,
+    )
+    atoms = output.extras["atomic_dipoles"]
+    assert output.dipole is not None
+    charge_part = output.dipole - torch.stack([atoms[:6].sum(0), atoms[6:].sum(0)])
+    expected = torch.stack(
+        [
+            (graph["charges"][:6, None] * graph["positions"][:6]).sum(0),
+            (graph["charges"][6:, None] * graph["positions"][6:]).sum(0),
+        ]
+    )
+    assert_close(charge_part, expected / DEBYE_FROM_SI, "Debye")
+
+
+def test_a_symmetric_matrix_is_its_components_in_the_basis_and_rotates():
+    model = _dielectric()
+    graph = cluster(7)
+    graph["total_charge"] = torch.zeros(1, dtype=graph["positions"].dtype)
+    rotation = rotation_matrix(8)
+    dtype = graph["positions"].dtype
+    moved = dict(graph)
+    moved["positions"] = graph["positions"] @ rotation.T.to(dtype)
+    before, after = _run(model, graph), _run(model, moved)
+    basis = torch.tensor(symmetric_matrix_basis(), dtype=dtype)
+    components = before.extras["polarizability_sh"]
+    assert components.shape == (1, 6)
+    assert_close(
+        before.extras["polarizability"],
+        torch.einsum("kij,gk->gij", basis, components),
+        "matrix",
+    )
+    rotation = rotation.to(dtype)
+    assert_close(
+        after.extras["polarizability"],
+        rotation @ before.extras["polarizability"] @ rotation.T,
+        "rotated matrix",
+    )
+    assert_close(after.dipole, before.dipole @ rotation.T, "rotated dipole")
+    assert_close(after.extras["charges"], before.extras["charges"], "charges")
+    assert_close(
+        after.extras["atomic_dipoles"],
+        before.extras["atomic_dipoles"] @ rotation.T,
+        "rotated atomic dipoles",
+    )
+
+
+@pytest.mark.parametrize("total_charge", [0.0, 1.0])
+def test_a_dielectric_model_under_inversion_and_translation(total_charge):
+    """Inverted, the dipole flips and the charges and polarizability do not;
+    translated by ``t``, only the dipole moves, by ``Q t``."""
+    model = _dielectric()
+    graph = cluster(11)
+    dtype = graph["positions"].dtype
+    graph["total_charge"] = torch.full((1,), total_charge, dtype=dtype)
+    inverted, translated = dict(graph), dict(graph)
+    inverted["positions"] = -graph["positions"]
+    shift = torch.tensor([0.4, -1.1, 0.7], dtype=dtype)
+    translated["positions"] = graph["positions"] + shift
+    before = _run(model, graph)
+    flipped, moved = _run(model, inverted), _run(model, translated)
+    assert_close(flipped.dipole, -before.dipole, "inverted dipole")
+    for output, what in ((flipped, "inverted"), (moved, "translated")):
+        for name in ("charges", "polarizability"):
+            assert_close(output.extras[name], before.extras[name], f"{what} {name}")
+    assert_close(moved.dipole, before.dipole + total_charge * shift, "Q t")
+
+
+@pytest.mark.parametrize(
+    ("readout", "message"),
+    [
+        (
+            {"symmetric_matrices": ("polarizability",)},
+            "would both be reported as 'polarizability_sh'",
+        ),
+        (
+            {"atomic_contributions": {"polarizability": "forces"}},
+            "'forces' is a field of the output",
+        ),
+    ],
+)
+def test_a_reported_value_that_would_overwrite_another_is_refused(readout, message):
+    shadow = ObservableSpec(
+        name="polarizability_sh", irreps="0e", per_atom=False, units="1"
+    )
+    observables = (ALPHA, shadow) if "symmetric_matrices" in readout else (ALPHA,)
+    with pytest.raises(ValueError, match=re.escape(message)):
+        _model(
+            ObservableCatalogue(observables=observables),
+            readout=ReadoutConfig(**readout),
+        )
+
+
+def test_a_contribution_reported_under_an_observables_name_is_refused():
+    shadow = ObservableSpec(name="site_alpha", irreps="0e", per_atom=True, units="1")
+    with pytest.raises(ValueError, match="would both be reported as 'site_alpha'"):
+        _model(
+            ObservableCatalogue(observables=(ALPHA, shadow)),
+            readout=ReadoutConfig(
+                atomic_contributions={"polarizability": "site_alpha"}
+            ),
+        )
+
+
+def test_the_last_layer_keeps_what_the_configuration_names():
+    backbone, _ = _model(
+        ObservableCatalogue(observables=(DIPOLE,)), last_layer_irreps="0e+1o+2e"
+    )
+    assert backbone.layer_irreps[-1] == "4x0e+4x1o+4x2e"
+
+
+def test_a_last_layer_without_the_outputs_irreps_is_not_read_out():
+    """An energy of a last layer of vectors only: the gate has no scalars to
+    act on, and the readout would be zero."""
+    _, outputs = _model(last_layer_irreps="1o")
+    assert outputs.readouts["energy"].layers == (0,)
+
+
+def test_reading_out_only_a_last_layer_that_gives_nothing_names_the_middle():
+    with pytest.raises(
+        ValueError, match=r"gated middle 'nothing' kept of mlp_irreps='8x0e'"
+    ):
+        _model(
+            ObservableCatalogue(observables=(DIPOLE,)),
+            last_layer_irreps="1o",
+            readout=ReadoutConfig(mlp_irreps="8x0e", last_only=True),
+        )
+
+
+def test_the_charge_part_takes_the_models_dtype_not_the_graphs():
+    graph = cluster(12)
+    graph["total_charge"] = torch.ones(1, dtype=torch.float64)
+    output = _run(_dielectric(), graph)
+    assert output.dipole is not None
+    assert output.extras["charges"].dtype == torch.get_default_dtype()
+    assert output.dipole.dtype == torch.get_default_dtype()

@@ -28,12 +28,19 @@ model computes with.
 import logging
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.config.base import ConfigSection
 from mace_core.heads import DEFAULT_HEAD, HeadName
-from mace_core.observables import DEFAULT_CATALOGUE, ObservableCatalogue
+from mace_core.kernels.canonical import gate_irreps_problem
+from mace_core.observables import (
+    DEFAULT_CATALOGUE,
+    ObservableCatalogue,
+    check_observable_name,
+    declared_as,
+)
+from mace_core.outputs import CORE_FIELD_NAMES, FIELD_BY_OBSERVABLE
 
 logger = logging.getLogger(__name__)
 
@@ -237,42 +244,151 @@ class ScaleShiftSpec(ConfigSection):
 # Readouts
 # ---------------------------------------------------------------------------
 
+_PER = {True: "per atom", False: "per structure"}
+
+
+def _parse_irreps(value: str, setting: str) -> Irreps:
+    """``value`` parsed, an error naming the setting it was given for."""
+    try:
+        return Irreps.parse(value)
+    except IrrepsError as error:
+        raise ValueError(f"{setting}={value!r}: {error}") from None
+
 
 class ReadoutConfig(ConfigSection):
-    """How each declared observable is read out of the node features.
+    """How each declared observable is read out of the node features, and
+    reported.
 
     Every layer is read out linearly and the readouts are summed, except the
     last layer of a model with more than one, which is read out through a
-    gated middle: a linear map to ``mlp_irreps`` per head, a SiLU, and a
-    linear map to the observable.
+    gated middle: a linear map to the terms of ``mlp_irreps`` whose irrep the
+    readout produces, a SiLU on its scalars and each higher copy scaled by the
+    SiLU of a scalar of its own, and a linear map to the readout's output. A
+    middle left with none of the output's irreps gives that layer no readout.
     """
 
-    #: The gated middle's irreps per head, the legacy `--MLP_irreps`. Even
-    #: scalars only, in one term.
+    #: The gated middle's irreps per head, the legacy `--MLP_irreps`, sorted
+    #: by degree, odd before even at one degree. Scalars are even.
     mlp_irreps: str = "16x0e"
     #: Read out only the last layer, the legacy `--use_last_readout_only`.
     last_only: bool = False
+    #: Observables read out together, by one readout producing all of them.
+    #: Within each irrep their copies follow the order of the group, so
+    #: `[charges, polarizability, dipole]` is the frozen dielectric readout's
+    #: `2x0e+1o+2e`: the charge, the polarizability's trace, the dipole and
+    #: the polarizability's traceless part. An observable is in one group at
+    #: most.
+    groups: tuple[tuple[str, ...], ...] = ()
+    #: Where the dipole's charge part, ``sum_i q_i r_i``, comes from, as the
+    #: frozen tree's dipole models add it:
+    #:
+    #: * `none`: no charge part.
+    #: * `input`: the `charges` input, the structure's own, converted from
+    #:   e*Angstrom to Debye by :data:`~mace_core.units.DEBYE_FROM_SI`.
+    #: * `predicted`: the `charges` observable, every atom of a structure
+    #:   shifted by one constant so they sum to the `total_charge` input, in
+    #:   e*Angstrom.
+    dipole_charges: Literal["none", "input", "predicted"] = "none"
+    #: `0e+2e` observables of a structure reported as the symmetric matrix
+    #: they are, under their own name, and as their six components under
+    #: `<name>_sh`.
+    symmetric_matrices: tuple[str, ...] = ()
+    #: Structure observables whose per-atom values are reported as well, by
+    #: observable, under the given name.
+    atomic_contributions: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("atomic_contributions")
+    @classmethod
+    def _contributions_are_reported_under_usable_names(
+        cls, value: dict[str, str]
+    ) -> dict[str, str]:
+        for name in value.values():
+            check_observable_name(name, "readout.atomic_contributions")
+        return value
 
     @model_validator(mode="after")
-    def _the_middle_holds_even_scalars(self) -> "ReadoutConfig":
-        try:
-            terms = Irreps.parse(self.mlp_irreps).terms
-        except IrrepsError as error:
-            raise ValueError(f"mlp_irreps={self.mlp_irreps!r}: {error}") from None
-        if any(ir != Irrep(0, 1) for _, ir in terms):
-            raise ValueError(
-                f"mlp_irreps={self.mlp_irreps!r} holds more than even scalars; "
-                f"the gated middle applies a SiLU, which only even scalars "
-                f"pass through unchanged in parity."
-            )
-        if len(terms) > 1:
-            width = sum(mul for mul, _ in terms)
-            raise ValueError(
-                f"mlp_irreps={self.mlp_irreps!r} is not one term per irrep; "
-                f"each head owns one block of the middle, so write it as "
-                f"'{width}x0e'."
-            )
+    def _the_middle_is_sorted_with_even_scalars(self) -> "ReadoutConfig":
+        problem = gate_irreps_problem(_parse_irreps(self.mlp_irreps, "mlp_irreps"))
+        if problem:
+            raise ValueError(f"mlp_irreps={self.mlp_irreps!r} {problem}.")
         return self
+
+    @model_validator(mode="after")
+    def _groups_are_disjoint(self) -> "ReadoutConfig":
+        members = [name for group in self.groups for name in group]
+        repeated = sorted({name for name in members if members.count(name) > 1})
+        if repeated:
+            raise ValueError(f"{repeated} are in more than one readout group.")
+        short = [list(group) for group in self.groups if len(group) < 2]
+        if short:
+            raise ValueError(f"a readout group has two members at least, got {short}.")
+        return self
+
+
+#: What the energy head writes besides the total energy.
+_ENERGY_WRITES = ("node_energies", "interaction_energy")
+
+
+def _check_destinations(catalogue: ObservableCatalogue, readout: ReadoutConfig) -> None:
+    """Refuse a value that would land where another one does.
+
+    The energy head fills ``node_energies`` and ``extras["interaction_energy"]``,
+    every observable and every derivative asked for fills its own name, a
+    symmetric matrix also ``<name>_sh``, and a per-atom contribution the name
+    it is given. A core
+    field of the output has one shape. Two values with one destination would
+    leave the one written last, which depends on the order of the
+    declarations.
+    """
+    destinations: dict[str, str] = {}
+
+    def claim(name: str, by: str) -> None:
+        if name in destinations:
+            raise ValueError(
+                f"{by} and {destinations[name]} would both be reported as "
+                f"{name!r}; declare one of them under another name."
+            )
+        destinations[name] = by
+
+    specs = {spec.name: spec for spec in catalogue.observables}
+    if "energy" in specs:
+        for name in _ENERGY_WRITES:
+            claim(name, "the energy")
+    for derivative in catalogue.requested_derivatives():
+        claim(derivative.name, f"the derivative {derivative.name!r}")
+    for name, spec in specs.items():
+        claim(name, f"the observable {name!r}")
+        if name in readout.symmetric_matrices:
+            claim(f"{name}_sh", f"the components of {name!r}")
+        if name in readout.atomic_contributions:
+            claim(readout.atomic_contributions[name], f"the atoms' {name!r}")
+        if name == "energy":
+            continue
+        field = FIELD_BY_OBSERVABLE.get(name, name)
+        if field not in CORE_FIELD_NAMES:
+            continue
+        if field == "dipole" and declared_as(spec, "1o", per_atom=False):
+            continue
+        raise ValueError(
+            f"the observable {name!r} would fill the output's {field!r} field, "
+            f"which holds "
+            + (
+                "one 1o vector per structure"
+                if field == "dipole"
+                else "what the energy or its derivatives give"
+            )
+            + f"; it is declared {spec.irreps!r}, "
+            f"{_PER[spec.per_atom]}. Declare it to "
+            f"match, or under another name."
+        )
+    for name in list(readout.atomic_contributions.values()) + [
+        f"{name}_sh" for name in readout.symmetric_matrices
+    ]:
+        if FIELD_BY_OBSERVABLE.get(name, name) in CORE_FIELD_NAMES:
+            raise ValueError(
+                f"{name!r} is a field of the output, and a reported value "
+                f"cannot take it; choose another name."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +419,8 @@ class ModelConfig(ConfigSection):
 
     Defaults are the legacy command-line defaults. The node features of every
     layer but the last carry `num_channels` copies of each irrep up to `max_L`
-    with natural parity, `0e+1o+2e+...`; the last carries only the scalars.
+    with natural parity, `0e+1o+2e+...`; the last carries `num_channels`
+    copies of the irreps `last_layer_irreps` names.
     """
 
     #: The cutoff radius in Angstrom, shared by the radial basis, the envelope
@@ -343,6 +460,11 @@ class ModelConfig(ConfigSection):
     #: against. Recorded with the model and never inferred from what is
     #: installed; `full` builds only on a backend that declares it.
     clebsch_gordan_basis: Literal["reduced", "full"] = "reduced"
+    #: One channel of the last layer's node features: its scalars by
+    #: default, which is what an energy needs. A dipole model keeps its
+    #: vectors, and a dielectric one every degree, the legacy
+    #: `keep_last_layer_irreps`.
+    last_layer_irreps: str = "0e"
     #: What the model computes: the observables it reads out and the inputs
     #: they are differentiated against.
     observables: ObservableCatalogue = DEFAULT_CATALOGUE
@@ -352,6 +474,88 @@ class ModelConfig(ConfigSection):
     scale_shift: dict[HeadName, ScaleShiftSpec] = Field(
         default_factory=lambda: {DEFAULT_HEAD: ScaleShiftSpec()}, min_length=1
     )
+
+    @model_validator(mode="after")
+    def _the_last_layer_keeps_node_irreps(self) -> "ModelConfig":
+        hidden = Irreps.spherical_harmonics(self.max_L)
+        kept = _parse_irreps(self.last_layer_irreps, "last_layer_irreps")
+        if kept.terms != tuple((1, ir) for _, ir in hidden.terms if ir in kept):
+            raise ValueError(
+                f"last_layer_irreps={self.last_layer_irreps!r} is not a sorted "
+                f"choice of one copy each of the node irreps {str(hidden)!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _the_readout_reads_what_is_declared(self) -> "ModelConfig":
+        readout = self.readout
+
+        def need(
+            setting: str,
+            name: str,
+            *,
+            per_atom: bool | None = None,
+            irreps: str | None = None,
+            kind: Literal["observable", "input"] = "observable",
+        ) -> None:
+            try:
+                spec = getattr(self.observables, kind)(name)
+            except KeyError as error:
+                raise ValueError(f"readout.{setting}: {error.args[0]}") from None
+            if per_atom is None:
+                return
+            if irreps is None:
+                if spec.per_atom == per_atom:
+                    return
+            elif declared_as(spec, irreps, per_atom=per_atom):
+                return
+            shape = f"{irreps!r} {_PER[per_atom]}" if irreps else _PER[per_atom]
+            raise ValueError(
+                f"readout.{setting} reads the {kind} {name!r}, which is not "
+                f"declared {shape}; declare it so in observables."
+            )
+
+        for group in readout.groups:
+            for name in group:
+                need("groups", name)
+        if readout.dipole_charges != "none":
+            need("dipole_charges", "dipole", irreps="1o", per_atom=False)
+        if readout.dipole_charges == "input":
+            need("dipole_charges", "charges", irreps="0e", per_atom=True, kind="input")
+        if readout.dipole_charges == "predicted":
+            need("dipole_charges", "charges", irreps="0e", per_atom=True)
+            need(
+                "dipole_charges",
+                "total_charge",
+                irreps="0e",
+                per_atom=False,
+                kind="input",
+            )
+        if readout.dipole_charges != "none":
+            in_debye = readout.dipole_charges == "input"
+            units = self.observables.observable("dipole").units
+            if (units == "Debye") != in_debye:
+                raise ValueError(
+                    f"readout.dipole_charges {readout.dipole_charges!r} adds a "
+                    f"charge part in {'Debye' if in_debye else 'e*Å'}, and "
+                    f"'dipole' is declared in {units!r}; declare it in "
+                    f"{'Debye' if in_debye else 'e*Å, not Debye'}."
+                )
+        for name in readout.symmetric_matrices:
+            need("symmetric_matrices", name, irreps="0e+2e", per_atom=False)
+        for name in readout.atomic_contributions:
+            if name == "energy":
+                raise ValueError(
+                    "readout.atomic_contributions names 'energy', whose "
+                    "per-atom values are node_energies already."
+                )
+            need("atomic_contributions", name, per_atom=False)
+        return self
+
+    @model_validator(mode="after")
+    def _every_value_is_reported_under_its_own_name(self) -> "ModelConfig":
+        _check_destinations(self.observables, self.readout)
+        return self
 
     @model_validator(mode="after")
     def _edge_irreps_need_a_nonlinear_layer(self) -> "ModelConfig":
@@ -373,10 +577,7 @@ class ModelConfig(ConfigSection):
                 "use_edge_irreps_first needs edge_irreps and a 'nonlinear' first layer."
             )
         if self.edge_irreps is not None:
-            try:
-                edge_irreps = Irreps.parse(self.edge_irreps)
-            except IrrepsError as error:
-                raise ValueError(f"edge_irreps={self.edge_irreps!r}: {error}") from None
+            edge_irreps = _parse_irreps(self.edge_irreps, "edge_irreps")
             multiplicities = sorted({mul for mul, _ in edge_irreps.terms})
             if len(multiplicities) != 1:
                 raise ValueError(
