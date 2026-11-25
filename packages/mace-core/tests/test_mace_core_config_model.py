@@ -151,6 +151,8 @@ def test_a_layer_the_model_does_not_have_is_refused(layer):
         ("clebsch_gordan_basis", "cueq"),
         ("interaction", "attention_residual"),
         ("num_interactions", 0),
+        # Chosen by whoever builds the model, as the device is.
+        ("backend", "cueq"),
     ],
 )
 def test_the_model_section_refuses_what_it_does_not_build(field, value):

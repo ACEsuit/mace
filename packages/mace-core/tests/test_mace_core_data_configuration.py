@@ -1209,8 +1209,8 @@ def test_the_factory_sorts_and_de_duplicates():
 
 
 def test_the_class_takes_the_order_it_is_given():
-    """A trained model's element order comes out of its checkpoint and has to
-    be adopted exactly: sorting it would repoint every embedding weight."""
+    """A table read back has to be adopted exactly: sorting it would repoint
+    every per-element weight."""
     table = AtomicNumberTable([8, 1, 6])
     assert list(table.zs) == [8, 1, 6]
     assert table.z_to_index(8) == 0
@@ -1223,13 +1223,13 @@ def test_the_class_refuses_an_element_listed_twice():
         AtomicNumberTable([1, 8, 1])
 
 
-def test_a_model_table_keeps_its_order_up_to_the_last_element():
-    assert model_atomic_number_table([118, 1, 8]).zs == (118, 1, 8)
+def test_a_model_table_reaches_the_last_element():
+    assert model_atomic_number_table([1, 8, 118]).zs == (1, 8, 118)
 
 
 def test_a_model_table_read_from_an_array_is_plain_integers():
-    table = model_atomic_number_table(np.array([8, 1], dtype=np.int64))
-    assert table.zs == (8, 1)
+    table = model_atomic_number_table(np.array([1, 8], dtype=np.int64))
+    assert table.zs == (1, 8)
     assert all(type(z) is int for z in table.zs)
 
 
@@ -1240,7 +1240,8 @@ def test_a_model_table_read_from_an_array_is_plain_integers():
         ([0, 1], r"holds \[0\], outside"),
         ([1, 119], r"holds \[119\], outside"),
         ([-1, 8], r"holds \[-1\], outside"),
-        ([1, 8, 1], r"lists \[1\] more than once.*rather than sorting"),
+        ([1, 8, 1], r"\[1, 8, 1\] is not strictly ascending.*\[1, 8\]"),
+        ([8, 1, 6], r"\[8, 1, 6\] is not strictly ascending.*\[1, 6, 8\]"),
         ([1, 6.5], r"holds \[6\.5\], which are not atomic numbers"),
         (["8"], r"holds \['8'\], which are not atomic numbers"),
         ([True, 8], r"holds \[True\], which are not atomic numbers"),
@@ -1256,6 +1257,7 @@ def test_a_model_table_read_from_an_array_is_plain_integers():
         "beyond-118",
         "negative",
         "repeated",
+        "unsorted",
         "float",
         "string",
         "boolean",

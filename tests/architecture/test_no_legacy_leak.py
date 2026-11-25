@@ -58,7 +58,6 @@ DELIBERATELY_REUSED = frozenset(
         "PolynomialCutoff",
         "ZBLBasis",
         "RadialEmbeddingBlock",
-        "LinearNodeEmbeddingBlock",
         "AtomicNumberTable",
         "Configuration",
         "KeySpecification",

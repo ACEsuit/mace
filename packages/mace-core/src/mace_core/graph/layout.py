@@ -17,8 +17,9 @@ tensor, or ``0e+2e`` for a symmetric one. An embedding feature is declared with
 where it is stored and the shape of one value, and never takes a default
 name.
 
-The layout is resolved once per run and is plain data, so it can be recorded
-with the resolved configuration.
+The layout is resolved once per run and is plain data. It is not recorded
+with the model: its configured parts are in the config, and its element table
+is the model's, saved with the weights by the element embedding.
 """
 
 from __future__ import annotations
@@ -249,7 +250,7 @@ class GraphLayout(ConfigSection):
     the same way.
 
     Attributes:
-        atomic_numbers: The model's element table, in its order.
+        atomic_numbers: The model's element table, ascending.
         heads: The model's head names, in order; a structure's ``head`` is
             the index of its head here.
         cutoff: The neighbour cutoff, Angstrom. A list searched with another
@@ -379,7 +380,9 @@ def graph_layout(
     """The layout of a run, from what the model and the trainer declare.
 
     Args:
-        atomic_numbers: The model's element table.
+        atomic_numbers: The model's element table, read from the model that
+            uses it so that every structure is checked against the table
+            the model was built or loaded with.
         cutoff: The neighbour cutoff, Angstrom.
         heads: The model's head names, in order.
         float_dtype: The run's floating dtype.

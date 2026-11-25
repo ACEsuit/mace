@@ -149,9 +149,21 @@ def _carry_interaction(legacy, block) -> None:
             body.neighbours.fill_(float(legacy.avg_num_neighbors))
 
 
+def _carry_element_embedding(legacy: o3.Linear, embedding) -> None:
+    """Legacy's ``Nx0e -> Cx0e`` linear holds one weight per element and
+    channel, ``[N, C]`` flattened, which is the element embedding's matrix."""
+    state = embedding.to_canonical()
+    embedding.load_canonical(
+        {
+            "atomic_numbers": state["atomic_numbers"],
+            "weight": legacy.weight.detach().reshape(state["weight"].shape),
+        }
+    )
+
+
 def carry_weights(legacy, backbone: MACEBackbone) -> None:
     """Every weight of the modules the backbone rebuilds, legacy to v1."""
-    _carry_linear(legacy.node_embedding.linear, backbone.node_embedding)
+    _carry_element_embedding(legacy.node_embedding.linear, backbone.element_embedding)
     for legacy_block, block in zip(
         legacy.interactions, backbone.interactions, strict=True
     ):

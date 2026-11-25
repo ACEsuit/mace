@@ -1,6 +1,6 @@
 """Node and edge embeddings: the element embedding and the radial embedding.
 
-Both are the first thing a MACE model does with a graph. The node embedding
+Both are the first thing a MACE model does with a graph. The element embedding
 maps each atom's element to a vector of scalar channels; the radial embedding
 maps each edge's length to a vector of radial features and the smooth cutoff
 envelope that goes with them.
@@ -9,7 +9,9 @@ envelope that goes with them.
 from __future__ import annotations
 
 import math
-from typing import cast
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from typing import SupportsIndex, cast
 
 import torch
 from mace_core.config import (
@@ -23,9 +25,13 @@ from mace_core.config import (
     RadialBasisConfig,
     SoftTransformConfig,
 )
+from mace_core.elements import model_atomic_number_table
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.specs import RadialBasisSpec
+from torch import Tensor
 
+from mace_torch.backends.reference import TORCH_DTYPES
+from mace_torch.kernels.initialization import standard_normal_like
 from mace_torch.nn.radial import (
     AgnesiTransform,
     SoftTransform,
@@ -33,7 +39,8 @@ from mace_torch.nn.radial import (
 
 __all__ = [
     "DistanceTransform",
-    "LinearNodeEmbeddingBlock",
+    "ElementEmbedding",
+    "ElementEncoding",
     "RadialEmbeddingBlock",
     "build_distance_transform",
     "radial_basis_spec",
@@ -42,29 +49,149 @@ __all__ = [
 DistanceTransform = AgnesiTransform | SoftTransform
 
 
-class LinearNodeEmbeddingBlock(torch.nn.Module):
-    """One-hot element attributes -> scalar node channels, a plain weight matrix.
+@dataclass(frozen=True)
+class ElementEncoding:
+    """Each node's element, in the three forms a model reads it in.
 
-    The element attributes are scalars (``l = 0``), so the equivariant linear
-    layer legacy used reduces to ``node_attributes @ weight / sqrt(num_elements)``
-    with no bias.
+    Attributes:
+        index: ``[n_nodes]``, int64, each node's column of the element table.
+        one_hot: ``[n_nodes, n_elements]``, the index as a one-hot, in the
+            model's precision.
+        features: ``[n_nodes, num_channels]``, the learned embedding of each
+            node's element, the scalars the first layer reads.
     """
 
-    def __init__(self, num_elements: int, num_channels: int):
+    index: Tensor
+    one_hot: Tensor
+    features: Tensor
+
+
+class ElementEmbedding(torch.nn.Module):
+    """The model's element table and the learned embedding of each element.
+
+    It saves both: the table, ascending, is fitted from the data or inherited
+    from a foundation model, and the embedding is learned. A node's column is
+    found by searching the table, so the table this module holds, built with or
+    loaded, is the one every forward uses, and nothing is derived from it and
+    kept. Atomic number 0, a padding atom, sorts below every element and takes
+    the first column.
+
+    The embedding is ``one_hot @ weight / sqrt(n_elements)``, legacy's
+    equivariant linear map on scalars with its fan-in applied in the forward.
+
+    Args:
+        atomic_numbers: The element table, strictly ascending.
+        num_channels: The width of each element's embedding.
+        precision: The dtype name the embedding and the one-hot are in.
+    """
+
+    #: ``[n_elements]``, int64, the element table.
+    atomic_numbers: Tensor
+
+    def __init__(
+        self,
+        atomic_numbers: Iterable[SupportsIndex],
+        num_channels: int,
+        precision: Precision = "float64",
+    ) -> None:
         super().__init__()
-        self.num_elements = num_elements
-        self.num_channels = num_channels
-        self.normalisation = 1.0 / math.sqrt(num_elements)
+        try:
+            table = model_atomic_number_table(atomic_numbers).zs
+        except ValueError as error:
+            raise ValueError(f"atomic_numbers: {error}") from None
+        self.num_elements = len(table)
+        self.normalization = 1.0 / math.sqrt(self.num_elements)
+        self.register_buffer("atomic_numbers", torch.tensor(table, dtype=torch.int64))
         self.weight = torch.nn.Parameter(
-            torch.randn(num_elements, num_channels, dtype=torch.get_default_dtype())
+            torch.zeros(self.num_elements, num_channels, dtype=TORCH_DTYPES[precision])
         )
 
-    def forward(self, node_attributes: torch.Tensor) -> torch.Tensor:
-        """``[n_nodes, num_elements]`` one-hot -> ``[n_nodes, num_channels]``."""
-        return (node_attributes @ self.weight) * self.normalisation
+    def forward(self, node_atomic_numbers: Tensor) -> ElementEncoding:
+        """``node_atomic_numbers`` is ``[n_nodes]``, int64: 0 for a padding
+        atom, an element of the table otherwise."""
+        index = torch.searchsorted(self.atomic_numbers, node_atomic_numbers)
+        one_hot = torch.nn.functional.one_hot(index, self.num_elements).to(
+            self.weight.dtype
+        )
+        features = (one_hot @ self.weight) * self.normalization
+        return ElementEncoding(index=index, one_hot=one_hot, features=features)
+
+    def initialize_weights(self, seed: int) -> None:
+        """A standard normal, unscaled, since the forward applies the fan-in."""
+        with torch.no_grad():
+            self.weight.copy_(standard_normal_like(self.weight, seed))
+
+    def to_canonical(self) -> dict[str, Tensor]:
+        """The element table and the embedding, ``[n_elements, num_channels]``,
+        its rows in the table's order."""
+        return {
+            "atomic_numbers": self.atomic_numbers.detach(),
+            "weight": self.weight.detach(),
+        }
+
+    def load_canonical(self, state: Mapping[str, Tensor]) -> None:
+        """Put a saved table and embedding back.
+
+        Raises:
+            ValueError: If the saved table is not a model's: a forward would
+                search it and find the wrong columns. Nothing of this module
+                is loaded then.
+        """
+        _check_model_table(state["atomic_numbers"], "atomic_numbers")
+        with torch.no_grad():
+            self.atomic_numbers.copy_(state["atomic_numbers"])
+            self.weight.copy_(state["weight"])
+
+    def _load_from_state_dict(
+        self,
+        state_dict: Mapping[str, Tensor],
+        prefix: str,
+        local_metadata: dict,
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        """Refuse a table that is not a model's, as :meth:`load_canonical` does.
+
+        The refusal is reported through torch's ``error_msgs``, so
+        ``load_state_dict`` raises at the end even with ``strict=False``.
+        Nothing of this module is loaded then, but torch's loader still loads
+        every other module of the state; only ``load_canonical_state`` loads
+        nothing on a refusal. A value that is not a tensor is left to torch's
+        own check.
+        """
+        key = f"{prefix}atomic_numbers"
+        table = state_dict.get(key)
+        if isinstance(table, Tensor):
+            try:
+                _check_model_table(table, key)
+            except ValueError as error:
+                error_msgs.append(str(error))
+                return
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def extra_repr(self) -> str:
-        return f"num_elements={self.num_elements}, num_channels={self.num_channels}"
+        return (
+            f"atomic_numbers={self.atomic_numbers.tolist()}, "
+            f"num_channels={self.weight.shape[1]}"
+        )
+
+
+def _check_model_table(table: Tensor, name: str) -> None:
+    """Raise, naming ``name``, if a saved ``table`` is not a model's element table."""
+    try:
+        model_atomic_number_table(table.tolist())
+    except ValueError as error:
+        raise ValueError(f"{name}: {error}") from None
 
 
 class RadialEmbeddingBlock(torch.nn.Module):

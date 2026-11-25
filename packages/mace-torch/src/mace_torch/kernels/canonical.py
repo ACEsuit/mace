@@ -118,8 +118,10 @@ def load_canonical_state(
 
     Raises:
         ValueError: If ``state`` lacks a tensor the model saves, holds one it
-            does not or one of another shape, or names a module that saves
-            nothing. Nothing is loaded then.
+            does not or one of another shape, names a module that saves
+            nothing, or holds a value its module refuses. Nothing is loaded
+            then: a module that refuses its state is checked after the ones
+            before it have loaded, and those are put back.
     """
     modules = _saving_modules(model)
     expected = canonical_state(model)
@@ -146,6 +148,18 @@ def load_canonical_state(
             "the saved state does not fit this model, which has to be built from "
             "the config it was saved with: " + "; ".join(problems) + "."
         )
+    previous = {
+        path: {name: tensor.clone() for name, tensor in tensors.items()}
+        for path, tensors in expected.items()
+    }
+    loaded: list[str] = []
     for path, tensors in state.items():
-        if tensors:
+        if not tensors:
+            continue
+        loaded.append(path)
+        try:
             modules[path].load_canonical(dict(tensors))
+        except ValueError as error:
+            for done in loaded:
+                modules[done].load_canonical(previous[done])
+            raise ValueError(f"{path or '<root>'}: {error}") from None
