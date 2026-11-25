@@ -314,14 +314,15 @@ class ObservableReadout(nn.Module):
             ),
         )
         self.num_heads = num_heads
-        #: The observables, in the order their components are laid out.
+        #: The observables, in the order of ``specs``, which is the order of
+        #: their copies within each term of the layout.
         self.observables = names
         self.component_sizes = tuple(len(components[name]) for name in names)
-        self.register_buffer(
-            "component_order",
-            torch.tensor([c for name in names for c in components[name]]),
-            persistent=False,
-        )
+        order = [c for name in names for c in components[name]]
+        #: Whether the layout differs from the observables' declarations side
+        #: by side, as a declaration out of gate order or a group can make it.
+        self.reorders = order != list(range(len(order)))
+        self.register_buffer("component_order", torch.tensor(order), persistent=False)
         #: Per op, by its path in this module, where each weight of a one-head
         #: readout's op sits in this one's, head by head, and the factor
         #: between the two stored weights.
@@ -380,19 +381,19 @@ class ObservableReadout(nn.Module):
         )
 
     def split(self, values: Tensor) -> dict[str, Tensor]:
-        """One contribution's components, by observable."""
-        if len(self.observables) == 1:
-            return {self.observables[0]: values}
-        pieces = values.index_select(1, self.component_order).split(
-            self.component_sizes, dim=1
-        )
+        """One contribution's components, by observable, each in the order of
+        its own declaration."""
+        if self.reorders:
+            values = values.index_select(1, self.component_order)
+        pieces = values.split(self.component_sizes, dim=1)
         return dict(zip(self.observables, pieces, strict=True))
 
     def forward(
         self, layers: Sequence[Tensor], node_head: Tensor | None
     ) -> list[Tensor]:
         """``[n_nodes, dim]`` per layer read, each node its own head's copy,
-        the observables side by side; :meth:`split` separates them.
+        in the layout of :func:`group_irreps`; :meth:`split` separates the
+        observables.
 
         Args:
             layers: Every layer's node features, as the backbone returns them.

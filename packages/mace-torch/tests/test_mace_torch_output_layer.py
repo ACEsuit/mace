@@ -548,6 +548,26 @@ def test_a_group_is_one_term_per_irrep_its_members_in_order():
     }
 
 
+def test_an_observable_is_reported_in_the_order_it_is_declared():
+    """The readout lays the components out by degree, odd before even, so
+    ``1o+0e`` is computed as ``0e+1o`` and reported back in its own order."""
+    swapped = ObservableSpec(name="mixed", irreps="1o+0e", per_atom=True, units="1")
+    declared = ObservableReadout(
+        BACKEND, [swapped], LAYERS, 1, MIDDLE, precision=precision()
+    )
+    initialize_model_weights(declared, 4)
+    in_gate_order = _readout(1, seed=4)
+    features = _features(2)
+    for mine, theirs in zip(
+        declared(features, None), in_gate_order(features, None), strict=True
+    ):
+        assert torch.equal(mine, theirs)
+        assert torch.equal(
+            declared.split(mine)["mixed"],
+            in_gate_order.split(theirs)["mixed"][:, [1, 2, 3, 0]],
+        )
+
+
 def test_the_gated_middle_keeps_what_the_output_has():
     assert gated_middle("4x0e+4x1o+4x2e", "1x0e+1x1o") == "4x0e+4x1o"
     assert gated_middle("8x0e", "1x1o") == ""
