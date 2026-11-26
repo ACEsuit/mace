@@ -248,9 +248,9 @@ def channelwise_tp_conv(
         carries inside its interaction blocks.
     """
     gathered = node_features.index_select(0, sender)
-    messages = torch.einsum(
-        "poid,emi,ed,epm->emo", coefficients, gathered, edge_attributes, radial_weights
-    )
+    radial_by_feature = radial_weights.transpose(1, 2).contiguous()
+    weighted = _weighted_features(radial_by_feature, gathered)
+    messages = torch.bmm(weighted, _edge_coupling(coefficients, edge_attributes))
     out = node_features.new_zeros(
         (num_nodes, node_features.shape[1], coefficients.shape[1])
     )
@@ -270,6 +270,45 @@ def _(
     return node_features.new_empty(
         (num_nodes, node_features.shape[1], coefficients.shape[1])
     )
+
+
+# The contractions of this op are batched matrix products over a fixed axis
+# order, never one einsum over three or more operands. torch.einsum plans such
+# an einsum with opt_einsum when that is installed, which reads every size as a
+# Python int and so pins the edge count of the traced backward under
+# torch.compile. Without opt_einsum it contracts left to right, through a
+# [n_paths, dim_out, dim_edge, n_edges, num_features] intermediate. The
+# per-edge intermediates below keep the contracted pair (n_paths, dim_in)
+# adjacent and contiguous, so each batched product reads them in place.
+
+
+def _coefficient_matrix(coefficients: Tensor) -> Tensor:
+    """The coefficients as ``[n_paths * dim_in * dim_out, dim_edge]``."""
+    n_paths, dim_out, dim_in, dim_edge = coefficients.shape
+    return coefficients.permute(0, 2, 1, 3).reshape(
+        n_paths * dim_in * dim_out, dim_edge
+    )
+
+
+def _edge_coupling(coefficients: Tensor, edge_attributes: Tensor) -> Tensor:
+    """The coefficients contracted with each edge's attributes.
+
+    ``[n_edges, n_paths * dim_in, dim_out]``.
+    """
+    n_paths, dim_out, dim_in, _ = coefficients.shape
+    coupling = edge_attributes @ _coefficient_matrix(coefficients).T
+    return coupling.view(edge_attributes.shape[0], n_paths * dim_in, dim_out)
+
+
+def _weighted_features(radial_by_feature: Tensor, gathered: Tensor) -> Tensor:
+    """Each gathered feature scaled by its radial weight on every path.
+
+    Takes the radial weights as a contiguous ``[n_edges, num_features,
+    n_paths]`` and returns ``[n_edges, num_features, n_paths * dim_in]``.
+    """
+    n_edges, num_features, n_paths = radial_by_feature.shape
+    weighted = radial_by_feature.unsqueeze(-1) * gathered.unsqueeze(2)
+    return weighted.view(n_edges, num_features, n_paths * gathered.shape[2])
 
 
 def _conv_setup(ctx, inputs, output) -> None:
@@ -298,25 +337,23 @@ def _conv_backward(ctx, grad):
     ) = ctx.saved_tensors
     grad_messages = grad.index_select(0, receiver)
     gathered = node_features.index_select(0, sender)
+    n_edges, n_paths, num_features = radial_weights.shape
+    dim_in = gathered.shape[2]
+    radial_by_feature = radial_weights.transpose(1, 2).contiguous()
 
-    grad_gathered = torch.einsum(
-        "poid,emo,ed,epm->emi",
-        coefficients,
-        grad_messages,
-        edge_attributes,
-        radial_weights,
-    )
+    coupling = _edge_coupling(coefficients, edge_attributes)
+    projected = torch.bmm(grad_messages, coupling.transpose(1, 2))
+    projected = projected.view(n_edges, num_features, n_paths, dim_in)
+    # Two sums over one short axis each. As batched products they would be one
+    # tiny matrix per edge and feature.
+    grad_gathered = (projected * radial_by_feature.unsqueeze(-1)).sum(2)
     grad_nodes = torch.zeros_like(node_features).index_add(0, sender, grad_gathered)
-    grad_edges = torch.einsum(
-        "poid,emo,emi,epm->ed",
-        coefficients,
-        grad_messages,
-        gathered,
-        radial_weights,
-    )
-    grad_radial = torch.einsum(
-        "poid,emo,emi,ed->epm", coefficients, grad_messages, gathered, edge_attributes
-    )
+    grad_radial = (projected * gathered.unsqueeze(2)).sum(-1).transpose(1, 2)
+    del coupling, projected
+
+    weighted = _weighted_features(radial_by_feature, gathered)
+    paired = torch.bmm(weighted.transpose(1, 2), grad_messages)
+    grad_edges = paired.flatten(1) @ _coefficient_matrix(coefficients)
     return grad_nodes, grad_edges, grad_radial, None, None, None, None
 
 
