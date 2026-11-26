@@ -12,12 +12,10 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationInfo,
-    field_validator,
     model_validator,
 )
 
 from mace_core.config import BaseConfig
-from mace_core.elements import model_atomic_number_table
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -227,12 +225,6 @@ class ModelMetadata(_Record):
     schema_version: str = SCHEMA_VERSION
     config: ConfigRecord
     provenance: Provenance
-    #: The model's element table: the atomic numbers its per-element weights
-    #: are indexed by, in column order. The weights do not hold it, so this is
-    #: the only record of which element each column is. It holds every element
-    #: of the data, and may hold more, such as a foundation model's elements
-    #: kept through a fine-tune.
-    atomic_numbers: list[int]
     data: DataSummary = Field(default_factory=DataSummary)
     #: Keyed by head name, as in the config; a single-head model has one entry.
     heads: dict[_Name, HeadSummary] = Field(default_factory=dict)
@@ -257,25 +249,6 @@ class ModelMetadata(_Record):
                 _check_schema_version(data.get("schema_version"), present=present)
             data = {**data, "schema_version": SCHEMA_VERSION}
         return data
-
-    @field_validator("atomic_numbers", mode="before")
-    @classmethod
-    def _atomic_numbers_are_an_element_table(cls, value: Any) -> list[int]:
-        # Before coercion, so a float or a string is refused rather than
-        # truncated or parsed into an element.
-        return list(model_atomic_number_table(value).zs)
-
-    @model_validator(mode="after")
-    def _data_elements_are_in_the_table(self) -> ModelMetadata:
-        for source in self.data.sources:
-            missing = sorted(set(source.elements) - set(self.atomic_numbers))
-            if missing:
-                raise ValueError(
-                    f"data source {source.name!r} has elements {missing}, which "
-                    f"are not in atomic_numbers {self.atomic_numbers}; a model "
-                    "is built over every element of its data"
-                )
-        return self
 
     @model_validator(mode="after")
     def _heads_name_known_sources(self) -> ModelMetadata:

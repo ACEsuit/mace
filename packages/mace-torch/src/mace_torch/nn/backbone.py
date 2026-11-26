@@ -19,19 +19,21 @@ Four things it does not do, each replacing something the frozen tree does:
 * It writes nothing into the graph it is given.
 
 **What it saves** is what :func:`mace_torch.kernels.canonical_state`
-collects from it.
+collects from it: the element table and the learned weights, and the average
+neighbour count in every convolution normalized by it. What the config fixes
+is rebuilt from it.
 
 **The graph.** A flat dict, read and never written. The backbone reads
-``positions``, ``node_atomic_numbers``, ``edge_index`` and ``shifts``, plus one
-key per declared node input. The element one-hot is formed here from the atomic
-numbers, and the edge vectors from the positions and the shifts, so a strain
-applied to both upstream reaches every edge quantity.
+``positions``, ``node_atomic_numbers``, ``edge_index`` and ``shifts``, and
+nothing else. The element one-hot is formed here from the atomic numbers, and
+the edge vectors from the positions and the shifts, so a strain applied to
+both upstream reaches every edge quantity.
 """
 
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import SupportsIndex, assert_never
 
@@ -42,22 +44,20 @@ from mace_core.config.model import (
     ModelConfig,
     NoDistanceTransformConfig,
 )
-from mace_core.elements import MAX_ATOMIC_NUMBER, model_atomic_number_table
 from mace_core.kernels.precision import Precision
 from mace_core.kernels.specs import (
     DistanceTransformSpec,
     KernelSpec,
-    LinearSpec,
     RadialBasisSpec,
     SphericalHarmonicsSpec,
 )
-from mace_core.observables import InputSpec
 from torch import Tensor, nn
 
 from mace_torch.backends import require_built
 from mace_torch.backends.reference import TORCH_DTYPES
 from mace_torch.nn.edges import EdgeInputs
 from mace_torch.nn.embedding import (
+    ElementEmbedding,
     RadialEmbeddingBlock,
     build_distance_transform,
     radial_basis_spec,
@@ -70,18 +70,11 @@ from mace_torch.nn.interaction import (
 from mace_torch.nn.product_basis import EquivariantProductBasisBlock
 
 __all__ = [
-    "GRAPH_KEYS",
     "GhostExchange",
     "LocalityInfo",
     "MACEBackbone",
     "NodeFeatures",
 ]
-
-#: The graph keys every backbone reads, whatever it declares.
-GRAPH_KEYS = frozenset({"positions", "node_atomic_numbers", "edge_index", "shifts"})
-
-#: One past the largest atomic number, the length of the element lookup.
-_ATOMIC_NUMBER_COUNT = MAX_ATOMIC_NUMBER + 1
 
 
 @dataclass(frozen=True)
@@ -119,13 +112,18 @@ class NodeFeatures:
             by irrep in the canonical ``mul_ir``. The last layer carries only
             scalars. Under a :class:`LocalityInfo`, the local nodes only.
         node_attrs: ``[n_nodes, n_elements]``, the element one-hot the
-            backbone formed, in the model's precision. What reads the elements
-            after the backbone reads this one and forms none of its own. Under
-            a :class:`LocalityInfo`, the local nodes only.
+            backbone formed, in the model's precision.
+        element_index: ``[n_nodes]``, int64, each node's column of the
+            element table, the index the one-hot was formed from.
+
+    What reads the elements after the backbone reads these two and forms no
+    lookup of its own. Under a :class:`LocalityInfo`, both hold the local
+    nodes only.
     """
 
     layers: tuple[Tensor, ...]
     node_attrs: Tensor
+    element_index: Tensor
 
 
 @contextlib.contextmanager
@@ -149,63 +147,6 @@ def _default_dtype(dtype: torch.dtype) -> Iterator[None]:
 # ---------------------------------------------------------------------------
 # Construction helpers. Each answers one question about the configuration.
 # ---------------------------------------------------------------------------
-
-
-def _check_node_inputs(node_inputs: Sequence[InputSpec]) -> None:
-    """Refuse a node input the backbone cannot mix in.
-
-    Raises:
-        ValueError: If one is per structure, takes a name the backbone already
-            reads, or is declared twice.
-    """
-    names = [spec.name for spec in node_inputs]
-    for spec in node_inputs:
-        if not spec.per_atom:
-            raise ValueError(
-                f"node input {spec.name!r} is declared per structure; the "
-                f"backbone mixes in per-atom inputs only."
-            )
-        if spec.name in GRAPH_KEYS:
-            raise ValueError(
-                f"node input {spec.name!r} names a key the backbone already "
-                f"reads, {sorted(GRAPH_KEYS)}; declare it under its own name."
-            )
-        if names.count(spec.name) > 1:
-            raise ValueError(f"node input {spec.name!r} is declared twice.")
-
-
-def _element_table(atomic_numbers: Iterable[SupportsIndex]) -> tuple[int, ...]:
-    """The element table, in column order, with the argument named on refusal."""
-    try:
-        return model_atomic_number_table(atomic_numbers).zs
-    except ValueError as error:
-        raise ValueError(f"atomic_numbers: {error}") from None
-
-
-def _element_index_of(atomic_numbers: tuple[int, ...]) -> Tensor:
-    """``[119]``, int64: each atomic number's column of the element one-hot.
-
-    Zero, a padding atom, and any number outside the table map to the first
-    column; the data checks refuse an unknown element before it reaches a
-    model.
-    """
-    element_index_of = torch.zeros(_ATOMIC_NUMBER_COUNT, dtype=torch.int64)
-    element_index_of[list(atomic_numbers)] = torch.arange(len(atomic_numbers))
-    return element_index_of
-
-
-def _embedding_irreps(node_inputs: Sequence[InputSpec]) -> str:
-    """One channel of the node embedding: ``0e`` and every irrep an input adds.
-
-    An equivariant map cannot create an irrep its input lacks, so the first
-    layer has to read every irrep the declared inputs carry.
-    """
-    terms = ["0e"]
-    for spec in node_inputs:
-        for _, irrep in Irreps.parse(spec.irreps).terms:
-            if str(irrep) not in terms:
-                terms.append(str(irrep))
-    return "+".join(terms)
 
 
 def _edge_members(
@@ -265,8 +206,8 @@ class MACEBackbone(nn.Module):
 
     * **Edges.** The spherical harmonics and the radial embedding of every
       edge vector, computed once and read by every layer.
-    * **Nodes.** The element one-hot and the declared node inputs, each mapped
-      by an equivariant linear onto the first layer's features.
+    * **Nodes.** The element embedding: each node's column of the element
+      table, its one-hot, and the learned scalars the first layer reads.
     * **Layers.** ``num_interactions`` pairs of an interaction block and a
       product basis block. Every layer's features are kept: they are the
       descriptors.
@@ -275,25 +216,17 @@ class MACEBackbone(nn.Module):
         backend: The kernel backend. Consulted at construction only.
         config: The architecture. Its ``clebsch_gordan_basis`` reaches every
             symmetric contraction's specification unchanged.
-        atomic_numbers: The element table, the columns of the element one-hot.
-            Atomic number 0, a padding atom, takes the first column. The state
-            dict does not hold it: the model's metadata records it, as
-            ``ModelMetadata.atomic_numbers``.
+        atomic_numbers: The element table, strictly ascending, the columns of
+            the element one-hot. The element embedding holds and saves it, so
+            a model built from a saved state reads it from there.
         avg_num_neighbors: The dataset's average neighbour count, the
             normalization of every block without a learned density.
         precision: The dtype name every op is built and computes in.
-        node_inputs: Declared per-atom inputs mixed into the features before
-            the first layer, each read from the graph by its name and brought
-            in by an equivariant linear map from its declared irreps. Nothing
-            about any of them is special-cased.
         ghost_exchange: The exchange that fills the ghosts' features between
             layers of a decomposed run. Absent by default, and when absent a
             forward without a :class:`LocalityInfo` is exactly the hook-free
             one.
     """
-
-    #: Atomic number to column of the element one-hot, ``[119]``, int64.
-    element_index_of: Tensor
 
     def __init__(
         self,
@@ -302,21 +235,12 @@ class MACEBackbone(nn.Module):
         atomic_numbers: Iterable[SupportsIndex],
         avg_num_neighbors: float = 1.0,
         precision: Precision = "float64",
-        node_inputs: Sequence[InputSpec] = (),
         ghost_exchange: GhostExchange | None = None,
     ) -> None:
         super().__init__()
-        _check_node_inputs(node_inputs)
         self.config = config
-        self.atomic_numbers = _element_table(atomic_numbers)
-        self.register_buffer(
-            "element_index_of",
-            _element_index_of(self.atomic_numbers),
-            persistent=False,
-        )
         self.precision = precision
         self.ghost_exchange = ghost_exchange
-        self.node_input_names = tuple(spec.name for spec in node_inputs)
         self.num_features = config.num_channels
 
         # Edges.
@@ -343,25 +267,17 @@ class MACEBackbone(nn.Module):
         )
 
         # Nodes.
-        embedding_irreps = _embedding_irreps(node_inputs)
-        embedding_declaration = str(
-            Irreps.parse(embedding_irreps).with_channels(self.num_features)
-        )
-        self.node_embedding = self._build_linear(
-            backend, f"{len(self.atomic_numbers)}x0e", embedding_declaration
-        )
-        self.node_input_maps = nn.ModuleList(
-            self._build_linear(backend, spec.irreps, embedding_declaration)
-            for spec in node_inputs
+        self.element_embedding = ElementEmbedding(
+            atomic_numbers, self.num_features, precision
         )
 
-        # Layers. The first reads the embedding, every later one the hidden
-        # irreps, and the last returns scalars only.
+        # Layers. The first reads the element embedding's scalars, every later
+        # one the hidden irreps, and the last returns scalars only.
         hidden_irreps = str(Irreps.spherical_harmonics(config.max_L))
         last = config.num_interactions - 1
         interactions, products, layer_irreps = [], [], []
         for layer in range(config.num_interactions):
-            irreps_in = embedding_irreps if layer == 0 else hidden_irreps
+            irreps_in = "0e" if layer == 0 else hidden_irreps
             irreps_out = "0e" if layer == last else hidden_irreps
             interactions.append(
                 self._build_interaction(
@@ -387,14 +303,6 @@ class MACEBackbone(nn.Module):
     # Construction. The builders read what the backbone keeps from ``self``
     # and take what ``__init__`` derives along the way as arguments.
     # ------------------------------------------------------------------
-
-    def _build_linear(self, backend, irreps_in: str, irreps_out: str) -> nn.Module:
-        """An equivariant linear between two whole declarations."""
-        return backend.make_linear(
-            LinearSpec(
-                irreps_in=irreps_in, irreps_out=irreps_out, precision=self.precision
-            )
-        )
 
     def _build_interaction(
         self,
@@ -422,7 +330,7 @@ class MACEBackbone(nn.Module):
             "irreps_target": target_irreps,
             "num_radial": self.radial_embedding.num_basis,
             "num_features": self.num_features,
-            "num_elements": len(self.atomic_numbers),
+            "num_elements": self.element_embedding.num_elements,
             "radial_hidden": tuple(config.radial_mlp),
             "precision": self.precision,
             "envelope_outside": not config.apply_cutoff,
@@ -466,7 +374,11 @@ class MACEBackbone(nn.Module):
             irreps_in=target_irreps,
             irreps_out=irreps_out,
             correlation=config.correlation,
-            num_elements=1 if config.use_agnostic_product else len(self.atomic_numbers),
+            num_elements=(
+                1
+                if config.use_agnostic_product
+                else self.element_embedding.num_elements
+            ),
             num_features=self.num_features,
             basis=config.clebsch_gordan_basis,
             precision=self.precision,
@@ -497,15 +409,14 @@ class MACEBackbone(nn.Module):
         edges = self._edge_inputs(graph, sender, receiver)
 
         # Nodes.
-        element = self.element_index_of[graph["node_atomic_numbers"]]
-        element_one_hot = nn.functional.one_hot(
-            element, num_classes=len(self.atomic_numbers)
-        ).to(TORCH_DTYPES[self.precision])
-        features = self._embed_nodes(graph, element_one_hot)
+        element = self.element_embedding(graph["node_atomic_numbers"])
+        features = element.features
 
         # Layers.
         product_element = (
-            torch.zeros_like(element) if self.config.use_agnostic_product else element
+            torch.zeros_like(element.index)
+            if self.config.use_agnostic_product
+            else element.index
         )
         num_nodes = graph["positions"].shape[0]
         layers = []
@@ -516,7 +427,7 @@ class MACEBackbone(nn.Module):
                 assert self.ghost_exchange is not None
                 features = self.ghost_exchange(features, locality)
             message, carried = interaction(
-                features, edges, element_one_hot, sender, receiver, num_nodes
+                features, edges, element.one_hot, sender, receiver, num_nodes
             )
             features = product(
                 message[local],
@@ -524,7 +435,11 @@ class MACEBackbone(nn.Module):
                 None if carried is None else carried[local],
             )
             layers.append(features)
-        return NodeFeatures(layers=tuple(layers), node_attrs=element_one_hot[local])
+        return NodeFeatures(
+            layers=tuple(layers),
+            node_attrs=element.one_hot[local],
+            element_index=element.index[local],
+        )
 
     def _check_locality(self, locality: LocalityInfo | None) -> None:
         """Refuse a decomposed run that needs an exchange this backbone lacks."""
@@ -554,17 +469,6 @@ class MACEBackbone(nn.Module):
             self.spherical_harmonics,
             self.radial_embedding,
         )
-
-    def _embed_nodes(
-        self, graph: Mapping[str, Tensor], element_one_hot: Tensor
-    ) -> Tensor:
-        """The first layer's node features: the elements plus every node input."""
-        features = self.node_embedding(element_one_hot)
-        for name, mapping in zip(
-            self.node_input_names, self.node_input_maps, strict=True
-        ):
-            features = features + mapping(graph[name])
-        return features
 
     # ------------------------------------------------------------------
     # Atomic descriptors

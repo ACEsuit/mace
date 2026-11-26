@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import hashlib
 
+import torch
 from mace_core.kernels.protocol import InternalWeights
-from torch import nn
+from torch import Tensor, nn
 
-__all__ = ["initialize_model_weights", "op_seed"]
+__all__ = ["initialize_model_weights", "op_seed", "standard_normal_like"]
 
 #: Keeps the derived seeds inside the range a torch generator accepts.
 _SEED_MODULUS = 2**31
@@ -62,3 +63,23 @@ def initialize_model_weights(model: nn.Module, seed: int = 0) -> tuple[str, ...]
     for path, module in reversed(modules):
         module.initialize_weights(op_seed(seed, path))
     return tuple(path for path, _ in modules)
+
+
+def standard_normal_like(like: Tensor, seed: int) -> Tensor:
+    """A standard normal shaped, typed and placed like ``like``.
+
+    Its own generator rather than the global one: a model's weights must not
+    depend on how many random numbers anything else drew first, which is what
+    makes a run reproducible from its recorded seed.
+
+    Drawn on the host and moved, never drawn on the device. A device generator
+    seeded the same way produces different numbers, so drawing where the model
+    happens to live would make a recorded seed rebuild a different model on a
+    different machine. It is moved rather than left behind because a model that
+    has been sent to a device has its buffers there, and multiplying a host
+    tensor by one of them is a device mismatch.
+    """
+    generator = torch.Generator().manual_seed(seed)
+    return torch.randn(like.shape, generator=generator, dtype=torch.float64).to(
+        device=like.device, dtype=like.dtype
+    )

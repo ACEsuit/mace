@@ -7,6 +7,7 @@ model built in the dtype the suite is running in.
 
 import inspect
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -32,17 +33,16 @@ from mace_core.kernels import (
     SphericalHarmonicsSpec,
     UnsupportedKernelSpecError,
 )
-from mace_core.observables import InputSpec
 from mace_torch.backends.harmonics import spherical_harmonics
-from mace_torch.backends.reference import ReferenceBackend
+from mace_torch.backends.reference import ReferenceBackend, ReferenceLinear
 from mace_torch.kernels import (
     canonical_state,
     initialize_model_weights,
     load_canonical_state,
 )
+from mace_torch.kernels.ops import equivariant_linear
 from mace_torch.nn import backbone as backbone_module
 from mace_torch.nn.backbone import (
-    GRAPH_KEYS,
     LocalityInfo,
     MACEBackbone,
     NodeFeatures,
@@ -303,55 +303,41 @@ def test_permuted_nodes_give_permuted_features(variant):
         assert_close(ours, theirs[permutation], f"{variant} permutation")
 
 
-def test_a_declared_node_input_is_read_by_name_and_rotates_with_the_rest():
-    spec = InputSpec(name="magmom", irreps="1o", per_atom=True, units="muB")
-    model = MACEBackbone(
-        ReferenceBackend(),
-        _config(),
-        ELEMENTS,
-        precision=_precision(),
-        node_inputs=[spec],
-    )
-    initialize_model_weights(model, 4)
-    graph = _cluster(4)
-    dtype = graph["positions"].dtype
-    graph["magmom"] = torch.randn(
-        6, 3, generator=torch.Generator().manual_seed(1), dtype=dtype
-    )
-    rotation = _rotation(5)
-    rotated = _moved(
-        graph,
-        graph["positions"] @ rotation.T.to(dtype),
-        graph["shifts"] @ rotation.T.to(dtype),
-    )
-    rotated["magmom"] = graph["magmom"] @ rotation.T.to(dtype)
-    before, after = model(graph).layers, model(rotated).layers
-    for layer, irreps in enumerate(model.layer_irreps):
-        expected = _transform_features(before[layer], irreps, rotation, parity=1)
-        assert_close(after[layer], expected, f"magmom layer {layer}")
-    changed = dict(graph)
-    changed["magmom"] = graph["magmom"] * 2.0
-    assert not torch.allclose(model(changed).layers[-1], model(graph).layers[-1])
-
-
-def test_a_per_structure_input_is_refused_as_a_node_input():
-    spec = InputSpec(name="total_charge", irreps="0e", per_atom=False, units="e")
-    with pytest.raises(ValueError, match="per structure"):
-        MACEBackbone(ReferenceBackend(), _config(), ELEMENTS, node_inputs=[spec])
-
-
-@pytest.mark.parametrize("names", [("positions",), ("magmom", "magmom")])
-def test_a_node_input_that_collides_is_refused(names):
-    specs = [
-        InputSpec(name=name, irreps="1o", per_atom=True, units="1") for name in names
-    ]
-    with pytest.raises(ValueError, match="node input"):
-        MACEBackbone(ReferenceBackend(), _config(), ELEMENTS, node_inputs=specs)
-
-
 # ---------------------------------------------------------------------------
 # The forward reads, resolves nothing, and permutes nothing
 # ---------------------------------------------------------------------------
+
+
+class _ReadKeys(Mapping):
+    """A graph that records every key read, through any accessor.
+
+    ``get`` and ``in`` go through ``__getitem__``, and anything that walks the
+    keys is recorded as reading all of them.
+    """
+
+    def __init__(self, graph):
+        self._graph = dict(graph)
+        self.read: set[str] = set()
+
+    def __getitem__(self, key):
+        self.read.add(key)
+        return self._graph[key]
+
+    def __iter__(self):
+        self.read.update(self._graph)
+        return iter(self._graph)
+
+    def __len__(self):
+        return len(self._graph)
+
+
+@pytest.mark.parametrize("variant", sorted(VARIANTS))
+def test_the_forward_reads_four_keys_whatever_else_the_graph_carries(variant):
+    graph = _ReadKeys(
+        {**_cluster(), "magmom": torch.zeros(6, 3), "total_charge": torch.zeros(1)}
+    )
+    _backbone(**VARIANTS[variant])(graph)
+    assert graph.read == {"positions", "node_atomic_numbers", "edge_index", "shifts"}
 
 
 def test_the_forward_never_writes_into_the_graph():
@@ -382,35 +368,13 @@ def _table_one_hot(atomic_numbers: torch.Tensor) -> torch.Tensor:
     )
 
 
-def test_the_graph_carries_no_one_hot():
-    assert "node_attrs" not in GRAPH_KEYS
-    assert "node_attrs" not in _cluster()
-
-
-def test_the_one_hot_is_the_element_tables():
+def test_the_one_hot_and_the_index_are_the_element_tables():
     graph = _cluster()
     features = _backbone()(graph)
     assert torch.equal(
         features.node_attrs, _table_one_hot(graph["node_atomic_numbers"])
     )
-
-
-def test_the_one_hot_keeps_the_tables_width_without_its_last_element():
-    """Inferred from the batch, the width would be the largest index present
-    plus one, and a batch with no oxygen would get two columns."""
-    assert ELEMENTS[-1] == 8
-    graph = _graph([([1, 6, 1], [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])])
-    node_attrs = _backbone()(graph).node_attrs
-    assert node_attrs.shape == (3, len(ELEMENTS))
-    assert torch.equal(node_attrs, _table_one_hot(graph["node_atomic_numbers"]))
-
-
-def test_a_padding_atom_takes_the_first_element():
-    graph = _padded(_cluster(), n_atoms=2, n_edges=2)
-    node_attrs = _backbone()(graph).node_attrs
-    expected = torch.zeros(2, len(ELEMENTS), dtype=node_attrs.dtype)
-    expected[:, 0] = 1.0
-    assert torch.equal(node_attrs[-2:], expected)
+    assert torch.equal(features.element_index, features.node_attrs.argmax(dim=-1))
 
 
 def test_the_one_hot_is_in_the_models_precision():
@@ -418,20 +382,89 @@ def test_the_one_hot_is_in_the_models_precision():
     assert model(_cluster()).node_attrs.dtype == torch.get_default_dtype()
 
 
-def test_the_element_table_is_checked_at_build():
+@pytest.mark.parametrize(
+    ("atomic_numbers", "message"),
+    [
+        ((1, 119), r"atomic_numbers: .*holds \[119\]"),
+        ((8, 1, 6), r"atomic_numbers: the element table \[8, 1, 6\] is not strictly"),
+        (iter((0, 1)), "element table"),
+    ],
+    ids=["outside", "unsorted", "iterator"],
+)
+def test_the_element_table_is_checked_at_build(atomic_numbers, message):
     """The check itself is mace_core's, tested there."""
-    with pytest.raises(ValueError, match=r"atomic_numbers: .*holds \[119\]"):
-        MACEBackbone(ReferenceBackend(), _config(), (1, 119))
+    with pytest.raises(ValueError, match=message):
+        MACEBackbone(ReferenceBackend(), _config(), atomic_numbers)
 
 
-def test_an_element_table_given_as_an_iterator_is_checked_once_read():
-    with pytest.raises(ValueError, match="element table"):
-        MACEBackbone(ReferenceBackend(), _config(), iter((0, 1)))
+def test_nothing_the_backbone_keeps_beyond_its_saved_state_depends_on_the_table():
+    """A lookup derived from the table and kept would go stale when a saved
+    state replaces the table."""
+
+    def kept(model):
+        saved = set(model.state_dict())
+        return {
+            name: tensor for name, tensor in model.named_buffers() if name not in saved
+        }
+
+    first = MACEBackbone(ReferenceBackend(), _config(), (1, 6, 8))
+    second = MACEBackbone(ReferenceBackend(), _config(), (3, 29, 79))
+    first_kept, second_kept = kept(first), kept(second)
+    assert first_kept.keys() == second_kept.keys()
+    for name, tensor in first_kept.items():
+        assert torch.equal(tensor, second_kept[name]), name
 
 
-def test_the_element_lookup_is_not_saved():
-    """It is derived from the element table, which the model records."""
-    assert not any("element_index_of" in key for key in _backbone().state_dict())
+def test_a_backbone_built_at_one_table_computes_at_the_table_it_loads():
+    """Only the table's length is fixed at build: a state for another table
+    of that length gives the backbone built at that table, padding included."""
+    source = _trained("residual")
+    other = (3, 29, 79)
+    state = canonical_state(source)
+    state["element_embedding"] = {
+        **state["element_embedding"],
+        "atomic_numbers": torch.tensor(other),
+    }
+    built_at_other = MACEBackbone(
+        ReferenceBackend(),
+        _config(**VARIANTS["residual"]),
+        other,
+        avg_num_neighbors=3.7,
+        precision=_precision(),
+    )
+    loaded_into_original = _backbone(**VARIANTS["residual"])
+    load_canonical_state(built_at_other, state)
+    load_canonical_state(loaded_into_original, state)
+    graph = _padded(_cluster(), n_atoms=2, n_edges=2)
+    graph["node_atomic_numbers"] = torch.tensor([3, 29, 79, 29, 3, 79, 0, 0])
+    results = []
+    with torch.enable_grad():
+        for model in (loaded_into_original, built_at_other):
+            positions = graph["positions"].clone().requires_grad_(True)
+            layers = model({**graph, "positions": positions}).layers
+            (gradient,) = torch.autograd.grad(layers[-1].sum(), positions)
+            results.append((layers, gradient))
+    (ours, our_gradient), (theirs, their_gradient) = results
+    for our_layer, their_layer in zip(ours, theirs, strict=True):
+        assert torch.equal(our_layer, their_layer)
+    assert torch.equal(our_gradient, their_gradient)
+
+
+def test_a_backbone_built_from_a_saved_table_loads_its_state():
+    """What a checkpoint loader does: the table is read from the state before
+    the model is built."""
+    source = _trained("residual")
+    state = canonical_state(source)
+    target = MACEBackbone(
+        ReferenceBackend(),
+        _config(**VARIANTS["residual"]),
+        state["element_embedding"]["atomic_numbers"],
+        precision=_precision(),
+    )
+    load_canonical_state(target, state)
+    graph = _cluster()
+    for ours, theirs in zip(target(graph).layers, source(graph).layers, strict=True):
+        assert torch.equal(ours, theirs)
 
 
 @pytest.mark.parametrize(
@@ -443,9 +476,10 @@ def test_the_element_lookup_is_not_saved():
             "distance_transform": SoftTransformConfig(),
         },
         {"distance_transform": AgnesiTransformConfig()},
+        {"radial_basis": ChebyshevBasisConfig()},
         {"interaction_first": "nonlinear", "interaction": "density"},
     ],
-    ids=["bessel", "gaussian_soft", "agnesi", "nonlinear_density"],
+    ids=["bessel", "gaussian_soft", "agnesi", "chebyshev", "nonlinear_density"],
 )
 def test_the_checkpoint_holds_only_learned_weights_and_fitted_statistics(overrides):
     """What the configuration fixes is rebuilt from it and never saved.
@@ -457,7 +491,11 @@ def test_the_checkpoint_holds_only_learned_weights_and_fitted_statistics(overrid
     model = _backbone(**overrides)
     parameters = {name for name, _ in model.named_parameters()}
     saved = set(model.state_dict()) - parameters
-    assert {key.rsplit(".", 1)[-1] for key in saved} <= {"neighbours"}, saved
+    assert "element_embedding.atomic_numbers" in saved
+    assert {key.rsplit(".", 1)[-1] for key in saved} <= {
+        "atomic_numbers",
+        "neighbours",
+    }, saved
 
 
 #: Every option that changes which tensors the backbone saves.
@@ -500,6 +538,74 @@ def test_a_saved_state_rebuilds_the_backbone_bit_for_bit(variant):
         assert torch.equal(ours, theirs)
 
 
+@pytest.mark.parametrize("variant", sorted(SAVED_STATE_VARIANTS))
+def test_the_saved_state_holds_the_element_table_once(variant):
+    state = canonical_state(_backbone(**SAVED_STATE_VARIANTS[variant]))
+    assert [
+        (path, name)
+        for path, tensors in state.items()
+        for name in tensors
+        if name == "atomic_numbers"
+    ] == [("element_embedding", "atomic_numbers")]
+    assert state["element_embedding"]["atomic_numbers"].tolist() == list(ELEMENTS)
+    assert state["element_embedding"]["weight"].shape == (len(ELEMENTS), 4)
+
+
+class _ReversedLinear(ReferenceLinear):
+    """The reference linear holding its weight reversed, as a backend with
+    its own layout would, and converting at the canonical boundary."""
+
+    def forward(self, features):
+        return equivariant_linear(
+            features,
+            self.weight.flip(0) * self.path_normalization,
+            self.row,
+            self.column,
+            self.source,
+            self.bias,
+            self.bias_row,
+            self.dim_out,
+        )
+
+    def to_canonical(self):
+        return {"weight": self.weight.detach().flip(0), "bias": self.bias.detach()}
+
+    def load_canonical(self, state):
+        super().load_canonical({**state, "weight": state["weight"].flip(0)})
+
+
+class _DerivedBackend(ReferenceBackend):
+    name = "derived"
+
+    def make_linear(self, kernel_spec):
+        return _ReversedLinear(kernel_spec)
+
+
+@fp64_only
+def test_one_saved_state_builds_with_any_backend():
+    """The backend is chosen by whoever builds the model: it is not part of
+    the config, and what is saved is the canonical layout, not the layout a
+    backend holds."""
+    source = _trained("residual")
+    target = MACEBackbone(
+        _DerivedBackend(),
+        _config(**VARIANTS["residual"]),
+        ELEMENTS,
+        precision=_precision(),
+    )
+    load_canonical_state(target, canonical_state(source))
+    assert any(isinstance(module, _ReversedLinear) for module in target.modules())
+    graph = _cluster()
+    for ours, theirs in zip(target(graph).layers, source(graph).layers, strict=True):
+        assert_close(ours, theirs, "derived backend")
+
+
+def test_the_element_embedding_draws_its_weights_with_the_ops():
+    model = MACEBackbone(ReferenceBackend(), _config(), ELEMENTS)
+    assert "element_embedding" in initialize_model_weights(model, 0)
+    assert float(model.element_embedding.weight.abs().max()) > 0.0
+
+
 def test_the_neighbour_count_is_saved_where_it_is_read():
     """A block that normalizes by a learned density has no neighbour count."""
     plain = canonical_state(_backbone(avg_num_neighbors=3.7))
@@ -512,6 +618,37 @@ def test_untrained_constants_are_not_saved():
     """A basis or transform built without ``trainable`` is rebuilt from the config."""
     state = canonical_state(_backbone(distance_transform=AgnesiTransformConfig()))
     assert not [path for path in state if path.startswith("radial_embedding")]
+
+
+def test_a_table_its_module_refuses_leaves_the_whole_backbone_as_it_was():
+    """The table is checked by the module that loads it, after the modules
+    before it in the state have loaded; those are put back."""
+    variant = "bessel_trainable"
+    target = _backbone(seed=2, avg_num_neighbors=1.0, **SAVED_STATE_VARIANTS[variant])
+    state = canonical_state(_trained(variant))
+    assert list(state).index("element_embedding") > 0
+    state["element_embedding"] = {
+        **state["element_embedding"],
+        "atomic_numbers": torch.tensor([8, 6, 1]),
+    }
+    before = {key: tensor.clone() for key, tensor in target.state_dict().items()}
+    with pytest.raises(
+        ValueError, match=r"^element_embedding: atomic_numbers: .*not strictly"
+    ):
+        load_canonical_state(target, state)
+    for key, tensor in target.state_dict().items():
+        assert torch.equal(tensor, before[key]), key
+
+
+def test_load_state_dict_refuses_a_table_that_is_not_a_models():
+    target = _backbone(seed=2, avg_num_neighbors=1.0)
+    state = _trained("residual").state_dict()
+    state["element_embedding.atomic_numbers"] = torch.tensor([8, 6, 1])
+    with pytest.raises(
+        RuntimeError, match=r"element_embedding\.atomic_numbers: .*not strictly"
+    ):
+        target.load_state_dict(state)
+    assert target.element_embedding.atomic_numbers.tolist() == list(ELEMENTS)
 
 
 def _state_without(state, path, name):
@@ -552,7 +689,10 @@ def _state_without(state, path, name):
         (
             lambda state: {
                 **state,
-                "node_embedding": {**state["node_embedding"], "weight": torch.zeros(5)},
+                "element_embedding": {
+                    **state["element_embedding"],
+                    "weight": torch.zeros(5),
+                },
             },
             "'weight' has shape (5,)",
         ),
@@ -957,4 +1097,5 @@ def test_the_backbone_compiles_whole(variant):
     for ours, theirs in zip(result.layers, eager.layers, strict=True):
         assert_close(ours, theirs, f"{variant} compiled")
     assert torch.equal(result.node_attrs, eager.node_attrs)
+    assert torch.equal(result.element_index, eager.element_index)
     assert counter.frame_count == 1
