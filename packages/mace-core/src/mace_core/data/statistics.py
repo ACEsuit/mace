@@ -28,7 +28,7 @@ from pydantic import Field, FiniteFloat, NonNegativeInt, PositiveInt, model_vali
 from mace_core.config.base import ConfigSection
 from mace_core.data.backend import DataBackend, DataBackendError
 from mace_core.data.configuration import Configuration
-from mace_core.elements import AtomicNumberTable
+from mace_core.elements import AtomicNumberTable, atomic_number_table_from_zs
 from mace_core.neighbors import NeighborListBackend, get_neighborhood
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ _Spread = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 
 __all__ = [
     "DatasetStatistics",
+    "collect_atomic_numbers",
     "compute_statistics",
     "fit_atomic_energies",
     "joint_avg_num_neighbors",
@@ -177,6 +178,40 @@ def _label(
     if not np.all(np.isfinite(value)):
         raise DataBackendError(backend.source, index, f"its {name} is not finite.")
     return value
+
+
+def collect_atomic_numbers(
+    backend: DataBackend, indices: Sequence[int] | None = None
+) -> AtomicNumberTable:
+    """The elements present in one head's structures, sorted.
+
+    The element table comes before the other statistics: fitting the
+    isolated-atom energies needs it, and :func:`compute_statistics` needs those
+    energies. The model's table is the union over its heads, which
+    :func:`~mace_core.elements.atomic_number_table_from_zs` builds from theirs.
+
+    :func:`fit_atomic_energies` refuses an element that no energy-labelled
+    structure it reads contains. A table taken over more structures than the
+    fit reads, the validation split included, therefore needs the energies of
+    the elements found only there given explicitly.
+
+    Args:
+        backend: Where the structures are read from.
+        indices: Which structures; every structure when ``None``. Only these
+            are read.
+
+    Returns:
+        The table of every atomic number in those structures, sorted. It is
+        empty when ``indices`` is.
+
+    Raises:
+        DataBackendError: at the first structure of a second head.
+    """
+    return atomic_number_table_from_zs(
+        int(z)
+        for _, structure in _one_head(backend, indices)
+        for z in structure.atomic_numbers
+    )
 
 
 def compute_statistics(

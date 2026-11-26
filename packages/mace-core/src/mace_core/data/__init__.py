@@ -32,6 +32,7 @@ from mace_core.data.registry import (
 from mace_core.data.splitting import group_by_config_type, random_train_valid_split
 from mace_core.data.statistics import (
     DatasetStatistics,
+    collect_atomic_numbers,
     compute_statistics,
     fit_atomic_energies,
     joint_avg_num_neighbors,
@@ -68,6 +69,7 @@ __all__ = [
     "ParsedConfigurations",
     "atomic_number_table_from_zs",
     "available_data_backends",
+    "collect_atomic_numbers",
     "compute_statistics",
     "configuration_from_atoms",
     "fit_atomic_energies",

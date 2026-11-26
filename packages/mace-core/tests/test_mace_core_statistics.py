@@ -19,6 +19,7 @@ from mace_core.data import (
     DataBackendError,
     DatasetStatistics,
     InMemoryBackend,
+    collect_atomic_numbers,
     compute_statistics,
     fit_atomic_energies,
     joint_avg_num_neighbors,
@@ -163,6 +164,8 @@ def test_one_call_reads_one_head():
         )
     with pytest.raises(DataBackendError, match="head is 'b'"):
         fit_atomic_energies(mixed, atomic_numbers=AtomicNumberTable([1, 8]))
+    with pytest.raises(DataBackendError, match="head is 'b'"):
+        collect_atomic_numbers(mixed)
 
 
 def test_only_the_given_indices_are_read():
@@ -200,6 +203,24 @@ def test_only_the_given_indices_are_read():
     assert fitted == fit_atomic_energies(
         InMemoryBackend([structures[0], structures[2]]),
         atomic_numbers=AtomicNumberTable([1, 8]),
+    )
+
+    Counting.read.clear()
+    assert collect_atomic_numbers(backend, [2, 0]) == AtomicNumberTable([1, 8])
+    assert Counting.read == [2, 0]
+
+
+# The element table.
+
+
+def test_the_elements_are_every_atomic_number_present_sorted():
+    structures = [_molecule([8, 1], None), _molecule([6, 8, 1, 1], -3.4)]
+    # An unlabelled structure counts: the model embeds every element it reads.
+    assert collect_atomic_numbers(InMemoryBackend(structures)) == AtomicNumberTable(
+        [1, 6, 8]
+    )
+    assert collect_atomic_numbers(InMemoryBackend(structures), []) == (
+        AtomicNumberTable([])
     )
 
 
