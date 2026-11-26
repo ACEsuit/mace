@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pytest
 import torch
-from conftest import fp64_only
+from conftest import fp64_only, precision
 from mace_core.config import (
     AgnesiTransformConfig,
     BesselBasisConfig,
@@ -24,7 +24,6 @@ from mace_core.config import (
 )
 from mace_core.data import Configuration
 from mace_core.graph import SampleError, graph_layout, graph_sample
-from mace_core.kernels.precision import Precision
 from mace_torch.backends.radial import (
     BesselBasis,
     ChebyshevBasis,
@@ -63,14 +62,6 @@ def _embedding_inputs():
     return lengths, node_atomic_numbers, edge_index
 
 
-def _precision() -> Precision:
-    precisions: dict[torch.dtype, Precision] = {
-        torch.float64: "float64",
-        torch.float32: "float32",
-    }
-    return precisions[torch.get_default_dtype()]
-
-
 def _radial_op(config, cutoff=None, r_max=EMBEDDING_R_MAX, apply_cutoff=True):
     """The reference backend's op for the basis and envelope the sections name."""
     spec = radial_basis_spec(
@@ -78,7 +69,7 @@ def _radial_op(config, cutoff=None, r_max=EMBEDDING_R_MAX, apply_cutoff=True):
         cutoff or PolynomialCutoffConfig(polynomial_order=6),
         r_max,
         apply_cutoff=apply_cutoff,
-        precision=_precision(),
+        precision=precision(),
     )
     return ReferenceBackend().make_radial_basis(spec)
 
@@ -102,7 +93,7 @@ def _block(
 
 
 def _element_embedding(atomic_numbers=(1, 6, 8), num_channels=5, seed=0):
-    embedding = ElementEmbedding(atomic_numbers, num_channels, _precision())
+    embedding = ElementEmbedding(atomic_numbers, num_channels, precision())
     embedding.initialize_weights(seed)
     return embedding
 

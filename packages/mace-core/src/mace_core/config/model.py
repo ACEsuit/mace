@@ -7,6 +7,11 @@ by `kind` (`radial_basis: {kind: gaussian, num_basis: 16}`); "no transform" is
 the kind `none`, not an absent key. The envelope has one kind, so its section
 is a plain section without a tag.
 
+The model section also holds, per head, how that head's interaction energy is
+scaled and shifted (`scale_shift`). It holds the methods only: the scale and
+the shift are computed from the data before the model is built and are saved
+with the weights.
+
 The cutoff radius `r_max` is in none of them. The basis, the envelope and the
 neighbour list must all use the same radius, so it is one model-level field,
 handed to each section's module when the model is built.
@@ -19,12 +24,16 @@ trainable. The trained value is saved with the weights, and is what a loaded
 model computes with.
 """
 
+import logging
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
 from mace_core.clebsch_gordan.irreps import Irrep, Irreps, IrrepsError
 from mace_core.config.base import ConfigSection
+from mace_core.heads import DEFAULT_HEAD, HeadName
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AgnesiTransformConfig",
@@ -37,6 +46,9 @@ __all__ = [
     "NoDistanceTransformConfig",
     "PolynomialCutoffConfig",
     "RadialBasisConfig",
+    "ScaleShiftSpec",
+    "ScalingMethod",
+    "ShiftMethod",
     "SoftTransformConfig",
 ]
 
@@ -129,6 +141,96 @@ class PolynomialCutoffConfig(ConfigSection):
 
 
 # ---------------------------------------------------------------------------
+# Scale and shift
+# ---------------------------------------------------------------------------
+
+#: What a head's scale is taken from.
+#:
+#: * `std`: the standard deviation of the per-atom interaction energy.
+#: * `rms_forces`: the root mean square of the force components.
+#: * `rms_dipoles`: the root mean square of the dipole components.
+#: * `none`: a scale of one.
+ScalingMethod = Literal["std", "rms_forces", "rms_dipoles", "none"]
+
+#: What its shift is: the mean per-atom interaction energy, or zero.
+ShiftMethod = Literal["mean", "none"]
+
+#: The statistic each method is taken from, by the name the dataset statistics
+#: give it; a method without one is a scale of one or a shift of zero.
+_STATISTIC_OF: dict[str, str] = {
+    "std": "energy_std",
+    "rms_forces": "rms_forces",
+    "rms_dipoles": "rms_dipoles",
+    "mean": "energy_mean",
+}
+
+
+class ScaleShiftSpec(ConfigSection):
+    """How one head's interaction energy is scaled and shifted.
+
+    The methods only. The two numbers they give are computed from the head's
+    training data by :meth:`scale_and_shift` before the model is built, and
+    the model saves them with its weights.
+
+    The default is the legacy command line's: `--model MACE` scales by the
+    force RMS and does not shift. `--model ScaleShiftMACE` is
+    `shift: mean`.
+    """
+
+    scale: ScalingMethod = "rms_forces"
+    shift: ShiftMethod = "none"
+
+    @model_validator(mode="after")
+    def _a_dipole_scale_takes_no_energy_shift(self) -> "ScaleShiftSpec":
+        if self.scale == "rms_dipoles" and self.shift != "none":
+            raise ValueError(
+                "scale 'rms_dipoles' scales a dipole, which a per-atom energy "
+                "cannot shift; set shift to 'none'."
+            )
+        return self
+
+    def scale_and_shift(self, **statistics: float | None) -> tuple[float, float]:
+        """``(scale, shift)`` from one head's measured statistics.
+
+        Args:
+            statistics: By the dataset statistics' names: ``energy_mean`` and
+                ``energy_std`` in eV/atom, ``rms_forces`` in eV/A,
+                ``rms_dipoles``. Absent or ``None`` when the data does not
+                give one.
+
+        A zero scale becomes one, with a warning: a set whose spread is zero
+        gives nothing to scale by, and dividing the targets by it would not be
+        a model.
+
+        Raises:
+            ValueError: If a method needs a statistic that was not given,
+                which is what a head without the matching labels measures.
+        """
+        needed = [
+            _STATISTIC_OF[method]
+            for method in (self.scale, self.shift)
+            if method in _STATISTIC_OF
+        ]
+        missing = [name for name in needed if statistics.get(name) is None]
+        if missing:
+            raise ValueError(
+                f"scale_shift (scale {self.scale!r}, shift {self.shift!r}) needs "
+                f"{missing}, which the head's data did not provide. Label the "
+                f"data, or choose methods it can provide."
+            )
+        scale = statistics.get(_STATISTIC_OF.get(self.scale, ""))
+        shift = statistics.get(_STATISTIC_OF.get(self.shift, ""))
+        scale = 1.0 if scale is None else float(scale)
+        if scale == 0.0:
+            logger.warning(
+                "scale_shift scale %r measured zero; using a scale of one.",
+                self.scale,
+            )
+            scale = 1.0
+        return scale, 0.0 if shift is None else float(shift)
+
+
+# ---------------------------------------------------------------------------
 # The model
 # ---------------------------------------------------------------------------
 
@@ -151,7 +253,7 @@ InteractionKind = Literal[
 
 
 class ModelConfig(ConfigSection):
-    """The architecture of the backbone.
+    """The model: the backbone's architecture and each head's scale and shift.
 
     Defaults are the legacy command-line defaults. The node features of every
     layer but the last carry `num_channels` copies of each irrep up to `max_L`
@@ -195,6 +297,10 @@ class ModelConfig(ConfigSection):
     #: against. Recorded with the model and never inferred from what is
     #: installed; `full` builds only on a backend that declares it.
     clebsch_gordan_basis: Literal["reduced", "full"] = "reduced"
+    #: How each head's interaction energy is scaled and shifted, by head name.
+    scale_shift: dict[HeadName, ScaleShiftSpec] = Field(
+        default_factory=lambda: {DEFAULT_HEAD: ScaleShiftSpec()}, min_length=1
+    )
 
     @model_validator(mode="after")
     def _edge_irreps_need_a_nonlinear_layer(self) -> "ModelConfig":
